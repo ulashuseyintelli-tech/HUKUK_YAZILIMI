@@ -1,8 +1,7 @@
-import { Controller, Post, Body, Res, Get, Param, HttpStatus, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Res, Get, Param, HttpStatus, HttpException, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
 import { PdfService } from './pdf.service';
 import { TemplateEngineService } from '../template-engine/template-engine.service';
-import { formatTemplateTotalsCurrencyHeader, TEMPLATE_TOTALS_CURRENCY_HEADER } from '../template-engine/template-totals-currency';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
@@ -38,14 +37,15 @@ export class PdfController {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="takip-talebi-${caseId}.pdf"`,
         'Content-Length': pdfBuffer.length,
-        // Basılan toplam geçerli tek tutar mı (belge gövdesi değişmez; yalnız bildirilir)
-        ...(document.paraBirimiDurumu
-          ? { [TEMPLATE_TOTALS_CURRENCY_HEADER]: formatTemplateTotalsCurrencyHeader(document.paraBirimiDurumu) }
-          : {}),
       });
 
       res.status(HttpStatus.OK).send(pdfBuffer);
     } catch (error) {
+      // Resmî çıktı ret kapısı (400 + neden) 500'e ÇEVRİLMEZ: durum kodu ve gövde olduğu gibi döner
+      if (error instanceof HttpException) {
+        res.status(error.getStatus()).json(error.getResponse());
+        return;
+      }
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         success: false,
         message: 'PDF olusturulamadi',

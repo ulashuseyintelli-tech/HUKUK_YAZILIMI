@@ -1,5 +1,5 @@
 /**
- * Belge şablonu toplamları — PARA BİRİMİ BAĞLAMI.
+ * Belge şablonu toplamları — PARA BİRİMİ BAĞLAMI ve resmî çıktı ret kapısının karar mantığı.
  *
  * Ölçülen kusur (main 6681b1d5, gerçek HTTP + disposable PostgreSQL): dosya kaydından üretilen belgelerde toplam, alacak
  * kalemlerinin tutarı para birimine bakılmadan toplanarak bulunuyor ve DOSYA para birimiyle etiketleniyor. USD dosyada
@@ -7,12 +7,14 @@
  * `<Total>17000</Total><Currency>USD</Currency>`; aynı kalemler TRY dosyada "17.000,00 TL". Kalemleri TRY kayıtlı USD
  * dosyada satırlar "TL", toplam "10.250,00 $". Dava dilekçeleri tutarı sabit "TL" ile yazıyor (USD dosyada "10.250 TL").
  *
- * Bu yardımcı belge METNİNİ DEĞİŞTİRMEZ, tutar ÇEVİRMEZ ve para birimleri arasında toplama YAPMAZ. Yalnız şunu bildirir:
- * belgeye basılan toplam (tutar + para birimi etiketi) geçerli tek tutar mıdır; değilse para birimi bazında toplamlar nedir?
+ * OWNER KARARI (2026-10-03, "KARMA PARA BİRİMLİ BELGE: B"): yanlış tek toplam üreten resmî çıktı akışı REDDEDİLİR; format
+ * (PDF / Word / XML / UDF / metin / merkezi uç) seçerek atlanamaz; hata belgenin neden üretilemediğini söyler. Bu GEÇİCİ
+ * korumadır — para birimi bazında doğru resmî belge tasarımının tamamlandığı anlamına GELMEZ; kur / çevirme yoktur.
+ * Tek para birimli geçerli akışlar (TL ve dövizli) bayt bayt aynı kalır.
  *
- * KAPSAM DIŞI (owner / hukuki karar): karma dosyada belgenin üretilip üretilmeyeceği, toplamın belgede nasıl yazılacağı,
- * kalem başına para birimi kuralı ve dövizli takipte kur. Burada kural SEÇİLMEZ; belgeye giren kalemler olduğu gibi
- * raporlanır.
+ * Bu yardımcı belge METNİNİ DEĞİŞTİRMEZ, tutar ÇEVİRMEZ ve para birimleri arasında toplama YAPMAZ. Yalnız şunu bildirir:
+ * belgeye basılacak toplam (tutar + para birimi etiketi) geçerli tek tutar mıdır; değilse para birimi bazında toplamlar
+ * nedir? Karar `toplamGosterilebilir`dir.
  *
  * Dayanak: RECEIVABLE-GOVERNANCE REC-ALLOC-008 (çapraz para birimi toplamı ve çevirme yapılmaz; eksik para birimi
  * bağlamı 0 değildir), REC-FX-001 / REC-FX-002 (yetkili kur sözleşmesi olmadan çevirme yok), §15.2 (şablon ayrı bakiye
@@ -60,13 +62,10 @@ export interface TemplateTotalsCurrencyRow {
 
 export interface TemplateTotalsCurrencyStatus {
   readonly durum: TemplateTotalsCurrencyState;
-  /**
-   * Belgeye basılan toplam (tutar + para birimi etiketi) geçerli tek tutar olarak gösterilebilir mi? `false` olsa da belge
-   * metni AYNIDIR; ne yapılacağı (üretimi engelle / uyar / para birimi bazında yaz) owner kararıdır.
-   */
+  /** Belgeye basılacak toplam (tutar + para birimi etiketi) geçerli tek tutar mı? `false` ise resmî çıktı REDDEDİLİR. */
   readonly toplamGosterilebilir: boolean;
   readonly gerekce: TemplateTotalsCurrencyReason | null;
-  /** Kullanıcıya gösterilecek açıklama (toplam geçerliyse null). */
+  /** Belgenin neden üretilemediğini söyleyen açıklama (toplam geçerliyse null). */
   readonly mesaj: string | null;
   readonly toplamEtiketi: TemplateTotalsLabel;
   /** Belgeye giren kalemlerin tek para birimi; kalem yoksa ya da tek para birimi belirlenemiyorsa null. */
@@ -86,9 +85,7 @@ const normalizeCurrency = (value: string | null | undefined): string => String(v
  *
  * /// <remarks>
  * /// Çağrıldığı yerler:
- * ///  - TemplateEngineService.caseTotalsCurrencyStatus() → dosya kaydından üretilen takip talebi / ödeme emri / icra emri
- * ///    (metin, PDF, Word, XML, UDF) ve merkezi üretim ucu
- * ///  - TemplateEngineService.petitionTotalsCurrencyStatus() → dava dilekçeleri (sabit "TL")
+ * ///  - TemplateEngineService.assertTotalsCurrencyValid() → dosya kaydından belge üreten TÜM yollar (ret kapısı)
  * /// </remarks>
  */
 export function buildTemplateTotalsCurrencyStatus(
@@ -128,28 +125,25 @@ export function buildTemplateTotalsCurrencyStatus(
     durum = 'PARA_BIRIMI_EKSIK';
     gerekce = 'KALEM_PARA_BIRIMI_EKSIK';
     mesaj =
-      `${paraBirimiEksikKalemSayisi} alacak kaleminin para birimi kayıtlı değil. Belgedeki toplam bu kalemleri de içerir; ` +
-      'geçerli tek tutar olduğu doğrulanamadı. Belge metni değiştirilmedi.';
+      `${paraBirimiEksikKalemSayisi} alacak kaleminin para birimi kayıtlı değil; belgeye geçerli tek bir toplam yazılamaz.`;
   } else if (karma) {
     durum = 'KARMA_PARA_BIRIMI';
     gerekce = 'FARKLI_PARA_BIRIMLERI_TEK_TOPLAMDA_BIRLESTIRILEMEZ';
     mesaj =
       `Dosyada birden fazla para biriminde alacak kalemi var (${paraBirimleri.join(', ')}). ` +
       (dilekce
-        ? 'Dilekçe bu tutarları çevirmeden tek sayıda toplar ve sabit "TL" ile yazar; bu tutar geçerli tek tutar değildir. '
-        : `Belge toplamı bu tutarları çevirmeden tek sayıda toplar ve dosya para birimiyle (${toplamEtiketi.paraBirimi}) ` +
-          'etiketler; bu toplam geçerli tek tutar değildir. ') +
-      'Belge metni değiştirilmedi; toplamlar para birimi bazında ayrıca bildirildi.';
+        ? 'Dilekçe tutarları çevirmeden tek sayıda toplar ve sabit "TL" ile yazar; bu tutar geçerli değildir.'
+        : `Belge tutarları çevirmeden tek sayıda toplar ve dosya para birimiyle (${toplamEtiketi.paraBirimi}) etiketler; ` +
+          'bu toplam geçerli değildir.');
   } else if (etiketUyusmuyor) {
     durum = 'ETIKET_UYUSMUYOR';
     gerekce = 'TOPLAM_ETIKETI_KALEM_PARA_BIRIMIYLE_UYUSMUYOR';
     mesaj =
       `Alacak kalemleri ${paraBirimleri[0]} para biriminde kayıtlı; ` +
       (dilekce
-        ? 'dilekçe ise tutarı sabit "TL" ile yazıyor. Dilekçedeki para birimi kalemlerin para birimini göstermiyor. '
-        : `belge toplamı ise dosya para birimiyle (${toplamEtiketi.paraBirimi}) etiketleniyor. Toplam satırındaki para ` +
-          'birimi kalemlerin para birimini göstermiyor. ') +
-      'Belge metni değiştirilmedi.';
+        ? 'dilekçe ise tutarı sabit "TL" ile yazıyor, yani yazılacak para birimi kalemlerin para birimini göstermiyor.'
+        : `belge toplamı ise dosya para birimiyle (${toplamEtiketi.paraBirimi}) etiketlenecek, yani toplam satırındaki ` +
+          'para birimi kalemlerin para birimini göstermiyor.');
   } else {
     durum = paraBirimleri.length === 1 ? 'TEK_PARA_BIRIMI' : 'KALEM_YOK';
     gerekce = null;
@@ -169,53 +163,21 @@ export function buildTemplateTotalsCurrencyStatus(
   };
 }
 
-/** Belge gövdeli yanıtlarda (PDF / Word / XML / UDF) durumu taşıyan başlık. */
-export const TEMPLATE_TOTALS_CURRENCY_HEADER = 'X-Belge-Toplam-Para-Birimi';
-
-/** Başlık değeri yalnız ASCII kod taşır; kayıttaki para birimi serbest metin olduğundan kod dışı karakterler ayıklanır. */
-const headerCode = (value: string): string => value.replace(/[^A-Z0-9_]/g, '_').slice(0, 16) || '_';
+/** Reddedilen üretimin hata kodu (400). */
+export const TEMPLATE_TOTALS_CURRENCY_REJECTION_CODE = 'BELGE_TOPLAMI_PARA_BIRIMI_GECERSIZ';
 
 /**
- * Başlık değeri: `DURUM;toplamGosterilebilir=<true|false>;etiket=<para birimi>;paraBirimleri=<a,b>[;gerekce=<KOD>]`.
- * Tutar ve açıklama metni taşımaz (ayrıntı JSON yanıtlardaki `paraBirimiDurumu` bloğundadır).
+ * Reddedilen üretimin kullanıcıya dönen açıklaması: neden üretilemedi + ne yapılmadı + geçici korumanın sınırı.
  *
  * /// <remarks>
  * /// Çağrıldığı yerler:
- * ///  - TemplateEngineController (belge gövdeli dosya-kaydı uçları), PdfController.downloadTakipTalebi()
+ * ///  - TemplateEngineService.assertTotalsCurrencyValid() → BadRequestException gövdesi
  * /// </remarks>
  */
-export function formatTemplateTotalsCurrencyHeader(status: TemplateTotalsCurrencyStatus): string {
-  const parts = [
-    status.durum,
-    `toplamGosterilebilir=${status.toplamGosterilebilir}`,
-    `etiket=${headerCode(status.toplamEtiketi.paraBirimi)}`,
-    `paraBirimleri=${status.paraBirimleri.map(headerCode).join(',')}`,
-  ];
-  if (status.gerekce) parts.push(`gerekce=${status.gerekce}`);
-  return parts.join(';');
-}
-
-/** Üretim denetim kaydına yazılan özet (tutar ve açıklama metni taşımaz). */
-export interface TemplateTotalsCurrencyAuditSummary {
-  readonly durum: TemplateTotalsCurrencyState;
-  readonly toplamGosterilebilir: boolean;
-  readonly gerekce: TemplateTotalsCurrencyReason | null;
-  readonly toplamEtiketi: TemplateTotalsLabel;
-  readonly paraBirimleri: readonly string[];
-}
-
-/**
- * /// <remarks>
- * /// Çağrıldığı yerler:
- * ///  - TemplateEngineService.recordDocumentArtifact() → DOCUMENT_GENERATED denetim kaydı (`paraBirimiDurumu`)
- * /// </remarks>
- */
-export function summarizeTemplateTotalsCurrencyStatus(status: TemplateTotalsCurrencyStatus): TemplateTotalsCurrencyAuditSummary {
-  return {
-    durum: status.durum,
-    toplamGosterilebilir: status.toplamGosterilebilir,
-    gerekce: status.gerekce,
-    toplamEtiketi: status.toplamEtiketi,
-    paraBirimleri: status.paraBirimleri,
-  };
+export function formatTemplateTotalsCurrencyRejection(status: TemplateTotalsCurrencyStatus): string {
+  return (
+    `Resmî belge üretilemedi: ${status.mesaj} Tutarlar çevrilmedi ve belge üretilmedi; hiçbir biçimde (PDF, Word, XML, ` +
+    'UDF, metin) üretilmez. Bu geçici bir korumadır; para birimi bazında resmî belge tasarımının tamamlandığı anlamına ' +
+    'gelmez. Alacak kalemlerinin para birimlerini kontrol edin.'
+  );
 }

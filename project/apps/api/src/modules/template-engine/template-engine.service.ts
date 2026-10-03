@@ -21,8 +21,8 @@ import {
 } from './template-case-classification';
 import {
   buildTemplateTotalsCurrencyStatus,
-  summarizeTemplateTotalsCurrencyStatus,
-  type TemplateTotalsCurrencyStatus,
+  formatTemplateTotalsCurrencyRejection,
+  TEMPLATE_TOTALS_CURRENCY_REJECTION_CODE,
 } from './template-totals-currency';
 import { previewCekFormation, type CekFormationPreviewInput } from '../claim-item/formation-cek/cek-formation-preview';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -208,24 +208,6 @@ export interface GeneratedDocument {
   templateCode: string;
   /** Şablonun hangi takip yolu seçimine dayandığı; explicit=false → açık seçim yok (ilamsız varsayıldı) */
   selection?: ProceedingSelection;
-  /**
-   * Yalnız dosya kaydından üretilen belgede: basılan toplam (tutar + para birimi etiketi) geçerli tek tutar mı?
-   * Eklemelidir — belge metni (`content`) bu bilgiyle DEĞİŞMEZ.
-   */
-  paraBirimiDurumu?: TemplateTotalsCurrencyStatus;
-}
-
-/** Dosya kaydından üretilen belge gövdesi + basılan toplamın para birimi durumu (AYNI okumadan). */
-export interface CaseDocumentOutput<T> {
-  output: T;
-  paraBirimiDurumu: TemplateTotalsCurrencyStatus;
-}
-
-/** Dosya kaydından üretilen dava dilekçesi (tutar sabit "TL" ile yazılır). */
-export interface CasePetitionDocument {
-  title: string;
-  content: string;
-  paraBirimiDurumu: TemplateTotalsCurrencyStatus;
 }
 
 // UDF (UYAP Document Format) yapısı
@@ -330,8 +312,8 @@ export class TemplateEngineService {
   /// - PdfController.downloadTakipTalebi() → GET /pdf/takip-talebi/:caseId (legacy PDF üretimi)
   /// </remarks>
   async generateTakipTalebiFromCase(caseId: string, tenantId: string): Promise<GeneratedDocument> {
-    const caseData = await this.getCaseData(caseId, tenantId);
-    return { ...this.generateTakipTalebi(caseData), paraBirimiDurumu: this.caseTotalsCurrencyStatus(caseData) };
+    const caseData = await this.getCaseDataForOfficialTotals(caseId, tenantId, 'CASE');
+    return this.generateTakipTalebi(caseData);
   }
 
   /// <remarks>
@@ -339,8 +321,8 @@ export class TemplateEngineService {
   /// - TemplateEngineController.generateOdemeEmriFromCase() → GET /template-engine/odeme-emri/case/:caseId (ödeme emri üretimi)
   /// </remarks>
   async generateOdemeEmriFromCase(caseId: string, tenantId?: string): Promise<GeneratedDocument> {
-    const caseData = await this.getCaseData(caseId, tenantId);
-    return { ...this.generateOdemeEmri(caseData), paraBirimiDurumu: this.caseTotalsCurrencyStatus(caseData) };
+    const caseData = await this.getCaseDataForOfficialTotals(caseId, tenantId, 'CASE');
+    return this.generateOdemeEmri(caseData);
   }
 
   /// <remarks>
@@ -348,35 +330,8 @@ export class TemplateEngineService {
   /// - TemplateEngineController.generateIcraEmriFromCase() → GET /template-engine/icra-emri/case/:caseId (icra emri üretimi)
   /// </remarks>
   async generateIcraEmriFromCase(caseId: string, tenantId?: string): Promise<GeneratedDocument> {
-    const caseData = await this.getCaseData(caseId, tenantId);
-    return { ...this.generateIcraEmri(caseData), paraBirimiDurumu: this.caseTotalsCurrencyStatus(caseData) };
-  }
-
-  /**
-   * Dosya kaydından üretilen belgede basılan toplamın para birimi durumu (toplam DOSYA para birimiyle etiketlenir).
-   * Belge verisini DEĞİŞTİRMEZ; UDF / XML gövdesine ve veri parmak izine GİRMEZ.
-   *
-   * /// <remarks>
-   * /// Çağrıldığı yerler:
-   * ///  - generateTakipTalebiFromCase() / generateOdemeEmriFromCase() / generateIcraEmriFromCase() (`paraBirimiDurumu`)
-   * ///  - generatePdfFromCase() / generateWordFromCase() / generateUdfFromCase() / generateXmlFromCase()
-   * ///  - generateDocumentFromCase() (önbellekten dönen belge)
-   * /// </remarks>
-   */
-  private caseTotalsCurrencyStatus(data: Pick<TemplateData, 'claimItems' | 'totals'>): TemplateTotalsCurrencyStatus {
-    return buildTemplateTotalsCurrencyStatus(data.claimItems, { paraBirimi: data.totals.currency, kaynak: 'DOSYA_PARA_BIRIMI' });
-  }
-
-  /**
-   * Dava dilekçeleri tutarı şablon metnindeki sabit "TL" ile yazar; dosya para birimi etikete girmez.
-   *
-   * /// <remarks>
-   * /// Çağrıldığı yerler:
-   * ///  - generateItirazinIptaliFromCase() / generateTasarrufunIptaliFromCase() / generateDolandiricilikSucDuyurusuFromCase()
-   * /// </remarks>
-   */
-  private petitionTotalsCurrencyStatus(data: Pick<TemplateData, 'claimItems'>): TemplateTotalsCurrencyStatus {
-    return buildTemplateTotalsCurrencyStatus(data.claimItems, { paraBirimi: 'TRY', kaynak: 'SABIT_TL' });
+    const caseData = await this.getCaseDataForOfficialTotals(caseId, tenantId, 'CASE');
+    return this.generateIcraEmri(caseData);
   }
 
   getAvailableTemplates(): Array<{ code: string; name: string; category: string }> {
@@ -698,6 +653,42 @@ export class TemplateEngineService {
       instrumentInfos,
       collateralInfo,
     };
+  }
+
+  /**
+   * RESMÎ ÇIKTI RET KAPISI (owner kararı 2026-10-03, "KARMA PARA BİRİMLİ BELGE: B"): dosya kaydından belge üreten HER yol
+   * veriyi buradan alır. Belgeye basılacak toplam (tutar + para birimi etiketi) geçerli tek tutar değilse — karma para
+   * birimi, para birimi kayıtlı olmayan kalem, ya da toplam etiketinin kalemlerin para birimiyle uyuşmaması — belge
+   * ÜRETİLMEZ: 400 + neden. Kapı format seçiminden ÖNCE olduğu için PDF / Word / XML / UDF / metin / merkezi uç ile
+   * atlanamaz. Tutar çevrilmez; tek para birimli geçerli dosyada hiçbir şey değişmez. GEÇİCİ korumadır.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - generateTakipTalebiFromCase() / generateOdemeEmriFromCase() / generateIcraEmriFromCase()  → etiket = dosya para birimi
+   * ///  - generatePdfFromCase() / generateWordFromCase() / generateUdfFromCase() / generateXmlFromCase() → etiket = dosya para birimi
+   * ///  - generateDocumentFromCase() → merkezi üretim (önbellek aramasından ÖNCE)
+   * ///  - generateItirazinIptaliFromCase() / generateTasarrufunIptaliFromCase() / generateDolandiricilikSucDuyurusuFromCase()
+   * ///    → etiket = şablondaki sabit "TL"
+   * /// </remarks>
+   */
+  private async getCaseDataForOfficialTotals(caseId: string, tenantId: string | undefined, label: 'CASE' | 'PETITION'): Promise<TemplateData> {
+    const caseData = await this.getCaseData(caseId, tenantId);
+    const status = buildTemplateTotalsCurrencyStatus(
+      caseData.claimItems,
+      label === 'PETITION' ? { paraBirimi: 'TRY', kaynak: 'SABIT_TL' } : { paraBirimi: caseData.totals.currency, kaynak: 'DOSYA_PARA_BIRIMI' },
+    );
+    if (!status.toplamGosterilebilir) {
+      // Günlükte yalnız kimlik ve kodlar (tutar / ad yok)
+      this.logger.warn(
+        `[TotalsCurrency] resmi cikti reddedildi: case=${caseId} durum=${status.durum} etiket=${status.toplamEtiketi.paraBirimi} paraBirimleri=${status.paraBirimleri.join(',')}`,
+      );
+      throw new BadRequestException({
+        code: TEMPLATE_TOTALS_CURRENCY_REJECTION_CODE,
+        message: formatTemplateTotalsCurrencyRejection(status),
+        paraBirimiDurumu: status,
+      });
+    }
+    return caseData;
   }
 
   private getInstrumentInfos(data: TemplateData): TemplateInstrumentInfo[] {
@@ -1861,14 +1852,12 @@ Borclu: ............................    Yediemin: ..............................
     caseId: string,
     documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri',
     tenantId?: string,
-  ): Promise<CaseDocumentOutput<Buffer>> {
-    const caseData = await this.getCaseData(caseId, tenantId);
-    // Basılan toplamın para birimi durumu belgeyle AYNI okumadan gelir; belge gövdesi değişmez
-    const paraBirimiDurumu = this.caseTotalsCurrencyStatus(caseData);
+  ): Promise<Buffer> {
+    const caseData = await this.getCaseDataForOfficialTotals(caseId, tenantId, 'CASE');
     
     // Takip talebi için resmi formatlı PDF kullan
     if (documentType === 'takip-talebi') {
-      return { output: await this.generateTakipTalebiPdfFormatted(caseData), paraBirimiDurumu };
+      return this.generateTakipTalebiPdfFormatted(caseData);
     }
     
     // Diğer belge türleri için text-based PDF
@@ -1884,7 +1873,7 @@ Borclu: ............................    Yediemin: ..............................
         doc = this.generateTakipTalebi(caseData);
     }
     
-    return { output: await this.textToPdf(doc.content, doc.title), paraBirimiDurumu };
+    return this.textToPdf(doc.content, doc.title);
   }
 
   /**
@@ -1899,13 +1888,12 @@ Borclu: ............................    Yediemin: ..............................
     caseId: string,
     documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri',
     tenantId?: string,
-  ): Promise<CaseDocumentOutput<Buffer>> {
-    const caseData = await this.getCaseData(caseId, tenantId);
-    const paraBirimiDurumu = this.caseTotalsCurrencyStatus(caseData);
+  ): Promise<Buffer> {
+    const caseData = await this.getCaseDataForOfficialTotals(caseId, tenantId, 'CASE');
     
     // Takip talebi için resmi formatlı Word kullan
     if (documentType === 'takip-talebi') {
-      return { output: await this.generateTakipTalebiWordFormatted(caseData), paraBirimiDurumu };
+      return this.generateTakipTalebiWordFormatted(caseData);
     }
     
     // Diğer belge türleri için text-based Word
@@ -1921,7 +1909,7 @@ Borclu: ............................    Yediemin: ..............................
         doc = this.generateTakipTalebi(caseData);
     }
     
-    return { output: await this.textToWord(doc.content, doc.title), paraBirimiDurumu };
+    return this.textToWord(doc.content, doc.title);
   }
 
   /**
@@ -1936,8 +1924,8 @@ Borclu: ............................    Yediemin: ..............................
     caseId: string,
     documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri',
     tenantId?: string,
-  ): Promise<CaseDocumentOutput<UdfDocument>> {
-    const caseData = await this.getCaseData(caseId, tenantId);
+  ): Promise<UdfDocument> {
+    const caseData = await this.getCaseDataForOfficialTotals(caseId, tenantId, 'CASE');
     
     const documentCodeMap: Record<string, string> = {
       'takip-talebi': 'ORNEK_1',
@@ -1951,15 +1939,11 @@ Borclu: ............................    Yediemin: ..............................
       'icra-emri': 'ICRA_EMRI',
     };
     
-    // UDF gövdesi belgenin kendisidir: para birimi durumu gövdeye GİRMEZ, yanında döner
-    return {
-      output: this.createUdfDocument(
-        caseData,
-        documentTypeMap[documentType] || 'TAKIP_TALEBI',
-        documentCodeMap[documentType] || 'ORNEK_1'
-      ),
-      paraBirimiDurumu: this.caseTotalsCurrencyStatus(caseData),
-    };
+    return this.createUdfDocument(
+      caseData, 
+      documentTypeMap[documentType] || 'TAKIP_TALEBI',
+      documentCodeMap[documentType] || 'ORNEK_1'
+    );
   }
 
   // ============================================
@@ -1985,8 +1969,8 @@ Borclu: ............................    Yediemin: ..............................
     caseId: string,
     documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri',
     tenantId?: string,
-  ): Promise<CaseDocumentOutput<string>> {
-    const caseData = await this.getCaseData(caseId, tenantId);
+  ): Promise<string> {
+    const caseData = await this.getCaseDataForOfficialTotals(caseId, tenantId, 'CASE');
     
     const documentCodeMap: Record<string, string> = {
       'takip-talebi': 'ORNEK_1',
@@ -2000,15 +1984,11 @@ Borclu: ............................    Yediemin: ..............................
       'icra-emri': 'ICRA_EMRI',
     };
     
-    // XML gövdesi belgenin kendisidir: para birimi durumu gövdeye GİRMEZ, yanında döner
-    return {
-      output: this.createXmlDocument(
-        caseData,
-        documentTypeMap[documentType] || 'TAKIP_TALEBI',
-        documentCodeMap[documentType] || 'ORNEK_1'
-      ),
-      paraBirimiDurumu: this.caseTotalsCurrencyStatus(caseData),
-    };
+    return this.createXmlDocument(
+      caseData, 
+      documentTypeMap[documentType] || 'TAKIP_TALEBI',
+      documentCodeMap[documentType] || 'ORNEK_1'
+    );
   }
 
   /**
@@ -3139,8 +3119,8 @@ karar verilmesini saygılarımızla arz ve talep ederiz. {{TARIH}}
   /// - TemplateEngineController.generateItirazinIptaliFromCase() → GET /template-engine/itirazin-iptali/case/:caseId
   /// - TemplateEngineController.previewItirazinIptali() → GET /template-engine/itirazin-iptali/case/:caseId/preview
   /// </remarks>
-  async generateItirazinIptaliFromCase(caseId: string, tenantId?: string): Promise<CasePetitionDocument> {
-    const caseData = await this.getCaseData(caseId, tenantId);
+  async generateItirazinIptaliFromCase(caseId: string, tenantId?: string): Promise<{ title: string; content: string }> {
+    const caseData = await this.getCaseDataForOfficialTotals(caseId, tenantId, 'PETITION');
     
     const template = this.getItirazinIptaliTemplate();
     const today = new Date().toLocaleDateString('tr-TR');
@@ -3171,8 +3151,6 @@ karar verilmesini saygılarımızla arz ve talep ederiz. {{TARIH}}
     return {
       title: `İtirazın İptali Dilekçesi - ${caseData.fileNumber}`,
       content,
-      // Dilekçe tutarı sabit "TL" ile yazar; metin değişmez, durum eklemeli olarak bildirilir
-      paraBirimiDurumu: this.petitionTotalsCurrencyStatus(caseData),
     };
   }
 
@@ -3180,9 +3158,9 @@ karar verilmesini saygılarımızla arz ve talep ederiz. {{TARIH}}
   /// Çağrıldığı yerler:
   /// - TemplateEngineController.downloadItirazinIptaliWord() → GET /template-engine/itirazin-iptali/case/:caseId/word
   /// </remarks>
-  async generateItirazinIptaliWord(caseId: string, tenantId?: string): Promise<CaseDocumentOutput<Buffer>> {
+  async generateItirazinIptaliWord(caseId: string, tenantId?: string): Promise<Buffer> {
     const doc = await this.generateItirazinIptaliFromCase(caseId, tenantId);
-    return { output: await this.textToWord(doc.content, doc.title), paraBirimiDurumu: doc.paraBirimiDurumu };
+    return this.textToWord(doc.content, doc.title);
   }
 
 
@@ -3262,8 +3240,8 @@ karar verilmesini saygılarımızla arz ve talep ederiz. {{TARIH}}
   /// - TemplateEngineController.generateTasarrufunIptaliFromCase() → GET /template-engine/tasarrufun-iptali/case/:caseId
   /// - TemplateEngineController.previewTasarrufunIptali() → GET /template-engine/tasarrufun-iptali/case/:caseId/preview
   /// </remarks>
-  async generateTasarrufunIptaliFromCase(caseId: string, tenantId?: string): Promise<CasePetitionDocument> {
-    const caseData = await this.getCaseData(caseId, tenantId);
+  async generateTasarrufunIptaliFromCase(caseId: string, tenantId?: string): Promise<{ title: string; content: string }> {
+    const caseData = await this.getCaseDataForOfficialTotals(caseId, tenantId, 'PETITION');
     
     const template = this.getTasarrufunIptaliTemplate();
     const today = new Date().toLocaleDateString('tr-TR');
@@ -3296,7 +3274,6 @@ karar verilmesini saygılarımızla arz ve talep ederiz. {{TARIH}}
     return {
       title: `Tasarrufun İptali Dilekçesi - ${caseData.fileNumber}`,
       content,
-      paraBirimiDurumu: this.petitionTotalsCurrencyStatus(caseData),
     };
   }
 
@@ -3304,9 +3281,9 @@ karar verilmesini saygılarımızla arz ve talep ederiz. {{TARIH}}
   /// Çağrıldığı yerler:
   /// - TemplateEngineController.downloadTasarrufunIptaliWord() → GET /template-engine/tasarrufun-iptali/case/:caseId/word
   /// </remarks>
-  async generateTasarrufunIptaliWord(caseId: string, tenantId?: string): Promise<CaseDocumentOutput<Buffer>> {
+  async generateTasarrufunIptaliWord(caseId: string, tenantId?: string): Promise<Buffer> {
     const doc = await this.generateTasarrufunIptaliFromCase(caseId, tenantId);
-    return { output: await this.textToWord(doc.content, doc.title), paraBirimiDurumu: doc.paraBirimiDurumu };
+    return this.textToWord(doc.content, doc.title);
   }
 
   // ==================== DOLANDIRICILIK SUÇ DUYURUSU ====================
@@ -3377,8 +3354,8 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
   /// - TemplateEngineController.generateDolandiricilikFromCase() → GET /template-engine/dolandiricilik/case/:caseId
   /// - TemplateEngineController.previewDolandiricilik() → GET /template-engine/dolandiricilik/case/:caseId/preview
   /// </remarks>
-  async generateDolandiricilikSucDuyurusuFromCase(caseId: string, tenantId?: string): Promise<CasePetitionDocument> {
-    const caseData = await this.getCaseData(caseId, tenantId);
+  async generateDolandiricilikSucDuyurusuFromCase(caseId: string, tenantId?: string): Promise<{ title: string; content: string }> {
+    const caseData = await this.getCaseDataForOfficialTotals(caseId, tenantId, 'PETITION');
     
     const template = this.getDolandiricilikSucDuyurusuTemplate();
     const today = new Date().toLocaleDateString('tr-TR');
@@ -3406,7 +3383,6 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
     return {
       title: `Dolandırıcılık Suç Duyurusu - ${caseData.fileNumber}`,
       content,
-      paraBirimiDurumu: this.petitionTotalsCurrencyStatus(caseData),
     };
   }
 
@@ -3414,9 +3390,9 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
   /// Çağrıldığı yerler:
   /// - TemplateEngineController.downloadDolandiricilikWord() → GET /template-engine/dolandiricilik/case/:caseId/word
   /// </remarks>
-  async generateDolandiricilikSucDuyurusuWord(caseId: string, tenantId?: string): Promise<CaseDocumentOutput<Buffer>> {
+  async generateDolandiricilikSucDuyurusuWord(caseId: string, tenantId?: string): Promise<Buffer> {
     const doc = await this.generateDolandiricilikSucDuyurusuFromCase(caseId, tenantId);
-    return { output: await this.textToWord(doc.content, doc.title), paraBirimiDurumu: doc.paraBirimiDurumu };
+    return this.textToWord(doc.content, doc.title);
   }
 
   // ==================== MERKEZI DOKÜMAN ÜRETİM SERVİSİ ====================
@@ -3436,15 +3412,9 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
     templateVersion: string = 'v1',
     tenantId?: string,
     actorUserId?: string,
-  ): Promise<{
-    buffer: Buffer;
-    artifact?: any;
-    fromCache: boolean;
-    selection?: ProceedingSelection;
-    paraBirimiDurumu: TemplateTotalsCurrencyStatus;
-  }> {
+  ): Promise<{ buffer: Buffer; artifact?: any; fromCache: boolean; selection?: ProceedingSelection }> {
     // 1. Case verisini çek
-    const caseData = await this.getCaseData(caseId, tenantId);
+    const caseData = await this.getCaseDataForOfficialTotals(caseId, tenantId, 'CASE');
     
     // 2. Veri hash'i oluştur (cache key için)
     const dataHash = this.generateDataHash(caseData);
@@ -3468,8 +3438,7 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
         try {
           const fs = await import('fs/promises');
           const buffer = await fs.readFile(existingArtifact.filePath);
-          // Aynı veri parmak izi → aynı kalemler ve toplam: durum güncel veriden hesaplanır
-          return { buffer, artifact: existingArtifact, fromCache: true, paraBirimiDurumu: this.caseTotalsCurrencyStatus(caseData) };
+          return { buffer, artifact: existingArtifact, fromCache: true };
         } catch (err) {
           // Dosya bulunamadı, yeniden üret
           this.logger.warn(`[DocumentGeneration] Cache file not found, regenerating: ${existingArtifact.filePath}`);
@@ -3484,22 +3453,18 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
     this.logger.log(`[DocumentGeneration] Generating: ${caseId}/${documentType}/${format}`);
     
     let buffer: Buffer;
-    // Basılan toplamın para birimi durumu: belgeyi üreten okumadan (belge gövdesi değişmez)
-    let paraBirimiDurumu: TemplateTotalsCurrencyStatus;
     
     switch (format) {
       case 'DOCX':
-        ({ output: buffer, paraBirimiDurumu } = await this.generateWordFromCase(caseId, documentType, tenantId));
+        buffer = await this.generateWordFromCase(caseId, documentType, tenantId);
         break;
       case 'PDF':
-        ({ output: buffer, paraBirimiDurumu } = await this.generatePdfFromCase(caseId, documentType, tenantId));
+        buffer = await this.generatePdfFromCase(caseId, documentType, tenantId);
         break;
-      case 'XML': {
-        const xml = await this.generateXmlFromCase(caseId, documentType, tenantId);
-        buffer = Buffer.from(xml.output, 'utf-8');
-        paraBirimiDurumu = xml.paraBirimiDurumu;
+      case 'XML':
+        const xmlContent = await this.generateXmlFromCase(caseId, documentType, tenantId);
+        buffer = Buffer.from(xmlContent, 'utf-8');
         break;
-      }
       default:
         throw new Error(`Desteklenmeyen format: ${format}`);
     }
@@ -3521,10 +3486,9 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
       fileName: `${documentType}-${caseId}.${format.toLowerCase()}`,
       actorUserId,
       proceedingSelection: caseData.proceedingSelection,
-      paraBirimiDurumu,
     });
 
-    return { buffer, artifact, fromCache: false, selection: caseData.proceedingSelection, paraBirimiDurumu };
+    return { buffer, artifact, fromCache: false, selection: caseData.proceedingSelection };
   }
 
   private async recordDocumentArtifact(input: {
@@ -3538,7 +3502,6 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
     fileName: string;
     actorUserId?: string;
     proceedingSelection?: ProceedingSelection;
-    paraBirimiDurumu: TemplateTotalsCurrencyStatus;
   }): Promise<any | undefined> {
     const contentHash = createHash('sha256').update(input.buffer).digest('hex');
     // Tipli erişim (tenant sayım envanteri çözümlesin); mock prisma'da model yoksa kayıt atlanır
@@ -3612,8 +3575,6 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
           fileSize: input.buffer.length,
           // Şablonun dayandığı takip yolu seçimi (explicit=false → açık seçim yoktu, ilamsız varsayıldı)
           takipYoluSecimi: input.proceedingSelection ?? null,
-          // Belgeye basılan toplam geçerli tek tutar mıydı (karma para birimi / etiket uyuşmazlığı sessiz kalmasın)
-          paraBirimiDurumu: summarizeTemplateTotalsCurrencyStatus(input.paraBirimiDurumu),
           // Biçim gerçek örnek belge / UYAP şemasıyla doğrulanmadı; bu kayıt ÜRETİM kaydıdır, kabul kaydı DEĞİL
           adliyeKabulu: 'DOGRULANMADI',
         },

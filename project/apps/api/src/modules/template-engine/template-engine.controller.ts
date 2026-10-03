@@ -1,30 +1,11 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Res, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards, Res, Query, HttpException } from '@nestjs/common';
 import { Response } from 'express';
 import { IsString, IsOptional, IsArray, IsObject, ValidateNested, IsNumber, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { TemplateEngineService, TemplateData, GeneratedDocument, UdfDocument, CasePetitionDocument } from './template-engine.service';
-import {
-  formatTemplateTotalsCurrencyHeader,
-  TEMPLATE_TOTALS_CURRENCY_HEADER,
-  type TemplateTotalsCurrencyStatus,
-} from './template-totals-currency';
+import { TemplateEngineService, TemplateData, GeneratedDocument, UdfDocument } from './template-engine.service';
 import { CekFormationPreviewDto } from '../claim-item/dto/claim-item.dto';
-
-/**
- * Belge gövdeli yanıtlarda (PDF / Word / XML / UDF) basılan toplamın para birimi durumu başlıkla bildirilir: gövde
- * belgenin kendisidir ve DEĞİŞMEZ. Yalnız ASCII kod taşır (tutar / açıklama yok).
- *
- * /// <remarks>
- * /// Çağrıldığı yerler:
- * ///  - TemplateEngineController: dosya kaydından belge gövdesi dönen uçlar (case/:caseId/pdf|word|udf|udf/download|xml,
- * ///    dava dilekçesi Word uçları, cases/:caseId/documents/:format)
- * /// </remarks>
- */
-function setTotalsCurrencyHeader(res: Response, status: TemplateTotalsCurrencyStatus): void {
-  res.setHeader(TEMPLATE_TOTALS_CURRENCY_HEADER, formatTemplateTotalsCurrencyHeader(status));
-}
 
 // Nested DTO'lar
 class ExecutionOfficeDto {
@@ -432,9 +413,8 @@ export class TemplateEngineController {
     @CurrentUser('tenantId') tenantId: string,
     @Res() res: Response
   ): Promise<void> {
-    const { output: pdfBuffer, paraBirimiDurumu } = await this.templateEngineService.generatePdfFromCase(caseId, documentType, tenantId);
+    const pdfBuffer = await this.templateEngineService.generatePdfFromCase(caseId, documentType, tenantId);
     
-    setTotalsCurrencyHeader(res, paraBirimiDurumu);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${documentType}-${caseId}.pdf"`);
     res.send(pdfBuffer);
@@ -476,9 +456,8 @@ export class TemplateEngineController {
     @CurrentUser('tenantId') tenantId: string,
     @Res() res: Response
   ): Promise<void> {
-    const { output: wordBuffer, paraBirimiDurumu } = await this.templateEngineService.generateWordFromCase(caseId, documentType, tenantId);
+    const wordBuffer = await this.templateEngineService.generateWordFromCase(caseId, documentType, tenantId);
     
-    setTotalsCurrencyHeader(res, paraBirimiDurumu);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', `attachment; filename="${documentType}-${caseId}.docx"`);
     res.send(wordBuffer);
@@ -508,12 +487,8 @@ export class TemplateEngineController {
     @Param('caseId') caseId: string,
     @Query('type') documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi',
     @CurrentUser('tenantId') tenantId: string,
-    @Res({ passthrough: true }) res: Response,
   ): Promise<UdfDocument> {
-    const { output, paraBirimiDurumu } = await this.templateEngineService.generateUdfFromCase(caseId, documentType, tenantId);
-    // Yanıt gövdesi UDF belgesinin kendisidir (değişmez); durum başlıkla bildirilir
-    setTotalsCurrencyHeader(res, paraBirimiDurumu);
-    return output;
+    return this.templateEngineService.generateUdfFromCase(caseId, documentType, tenantId);
   }
 
   /**
@@ -530,9 +505,8 @@ export class TemplateEngineController {
     @CurrentUser('tenantId') tenantId: string,
     @Res() res: Response
   ): Promise<void> {
-    const { output: udfDocument, paraBirimiDurumu } = await this.templateEngineService.generateUdfFromCase(caseId, documentType, tenantId);
+    const udfDocument = await this.templateEngineService.generateUdfFromCase(caseId, documentType, tenantId);
     
-    setTotalsCurrencyHeader(res, paraBirimiDurumu);
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Disposition', `attachment; filename="${documentType}-${caseId}.udf"`);
     res.send(JSON.stringify(udfDocument, null, 2));
@@ -574,9 +548,8 @@ export class TemplateEngineController {
     @CurrentUser('tenantId') tenantId: string,
     @Res() res: Response
   ): Promise<void> {
-    const { output: xmlContent, paraBirimiDurumu } = await this.templateEngineService.generateXmlFromCase(caseId, documentType, tenantId);
+    const xmlContent = await this.templateEngineService.generateXmlFromCase(caseId, documentType, tenantId);
     
-    setTotalsCurrencyHeader(res, paraBirimiDurumu);
     res.setHeader('Content-Type', 'application/xml; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${documentType}-${caseId}.xml"`);
     res.send(xmlContent);
@@ -677,7 +650,7 @@ export class TemplateEngineController {
   async generateItirazinIptaliFromCase(
     @Param('caseId') caseId: string,
     @CurrentUser('tenantId') tenantId: string,
-  ): Promise<CasePetitionDocument> {
+  ): Promise<{ title: string; content: string }> {
     return this.templateEngineService.generateItirazinIptaliFromCase(caseId, tenantId);
   }
 
@@ -715,9 +688,8 @@ export class TemplateEngineController {
     @CurrentUser('tenantId') tenantId: string,
     @Res() res: Response
   ): Promise<void> {
-    const { output: wordBuffer, paraBirimiDurumu } = await this.templateEngineService.generateItirazinIptaliWord(caseId, tenantId);
+    const wordBuffer = await this.templateEngineService.generateItirazinIptaliWord(caseId, tenantId);
     
-    setTotalsCurrencyHeader(res, paraBirimiDurumu);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', `attachment; filename="itirazin-iptali-${caseId}.docx"`);
     res.send(wordBuffer);
@@ -738,7 +710,7 @@ export class TemplateEngineController {
   async generateTasarrufunIptaliFromCase(
     @Param('caseId') caseId: string,
     @CurrentUser('tenantId') tenantId: string,
-  ): Promise<CasePetitionDocument> {
+  ): Promise<{ title: string; content: string }> {
     return this.templateEngineService.generateTasarrufunIptaliFromCase(caseId, tenantId);
   }
 
@@ -776,9 +748,8 @@ export class TemplateEngineController {
     @CurrentUser('tenantId') tenantId: string,
     @Res() res: Response
   ): Promise<void> {
-    const { output: wordBuffer, paraBirimiDurumu } = await this.templateEngineService.generateTasarrufunIptaliWord(caseId, tenantId);
+    const wordBuffer = await this.templateEngineService.generateTasarrufunIptaliWord(caseId, tenantId);
     
-    setTotalsCurrencyHeader(res, paraBirimiDurumu);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', `attachment; filename="tasarrufun-iptali-${caseId}.docx"`);
     res.send(wordBuffer);
@@ -799,7 +770,7 @@ export class TemplateEngineController {
   async generateDolandiricilikFromCase(
     @Param('caseId') caseId: string,
     @CurrentUser('tenantId') tenantId: string,
-  ): Promise<CasePetitionDocument> {
+  ): Promise<{ title: string; content: string }> {
     return this.templateEngineService.generateDolandiricilikSucDuyurusuFromCase(caseId, tenantId);
   }
 
@@ -837,9 +808,8 @@ export class TemplateEngineController {
     @CurrentUser('tenantId') tenantId: string,
     @Res() res: Response
   ): Promise<void> {
-    const { output: wordBuffer, paraBirimiDurumu } = await this.templateEngineService.generateDolandiricilikSucDuyurusuWord(caseId, tenantId);
+    const wordBuffer = await this.templateEngineService.generateDolandiricilikSucDuyurusuWord(caseId, tenantId);
     
-    setTotalsCurrencyHeader(res, paraBirimiDurumu);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', `attachment; filename="dolandiricilik-suc-duyurusu-${caseId}.docx"`);
     res.send(wordBuffer);
@@ -881,8 +851,6 @@ export class TemplateEngineController {
         res.setHeader('X-Takip-Yolu-Secimi', `${result.selection.kind};basis=${result.selection.basis};explicit=${result.selection.explicit}`);
         if (result.selection.warnings.length > 0) res.setHeader('X-Takip-Yolu-Uyari', result.selection.warnings.join(','));
       }
-      // Basılan toplam geçerli tek tutar mı (karma para birimi / etiket uyuşmazlığı sessiz bırakılmaz); gövde değişmez
-      setTotalsCurrencyHeader(res, result.paraBirimiDurumu);
       
       const mimeTypes: Record<string, string> = {
         DOCX: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -901,6 +869,11 @@ export class TemplateEngineController {
       res.setHeader('X-From-Cache', result.fromCache ? 'true' : 'false');
       res.send(result.buffer);
     } catch (error: any) {
+      // İstemci hatası (ör. resmî çıktı ret kapısı 400 + neden) 500'e ÇEVRİLMEZ: durum kodu ve gövde olduğu gibi döner
+      if (error instanceof HttpException) {
+        res.status(error.getStatus()).json(error.getResponse());
+        return;
+      }
       console.error('[TemplateEngine] Document generation error:', error);
       res.status(500).json({ message: error.message || 'Doküman oluşturulamadı' });
     }

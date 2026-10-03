@@ -25,28 +25,22 @@ import { PdfModule } from '../../pdf/pdf.module';
 import { TemplateEngineModule } from '../template-engine.module';
 
 /**
- * Belge şablonu toplamı — para birimi bağlamı. GERÇEK HTTP + disposable PostgreSQL.
+ * Belge şablonu toplamı — para birimi bağlamı ve RESMÎ ÇIKTI RET KAPISI. GERÇEK HTTP + disposable PostgreSQL.
  *
  * Ölçülen kusur (main 6681b1d5): dosya kaydından üretilen belgelerde toplam, alacak kalemlerinin tutarı para birimine
- * bakılmadan toplanarak bulunuyor ve DOSYA para birimiyle etiketleniyor. USD dosyada 10.000 USD + 5.000 EUR + 2.000 TRY
- * anapara → takip talebi / ödeme emri / icra emri / Word / PDF "17.000,00 $", XML `<Total>17000</Total>
- * <Currency>USD</Currency>`, UDF `total: 17000, currency: "USD"`; aynı kalemler TRY dosyada "17.000,00 TL". Kalemleri TRY
- * kayıtlı USD dosyada satırlar "TL", toplam "10.250,00 $". Dava dilekçeleri tutarı sabit "TL" ile yazıyor (USD dosyada
- * "10.250 TL").
+ * bakılmadan toplanarak bulunuyor ve DOSYA para birimiyle etiketleniyordu. USD dosyada 10.000 USD + 5.000 EUR + 2.000 TRY
+ * anapara → takip talebi / ödeme emri / icra emri / Word / PDF "17.000,00 $", XML `<Total>17000</Total><Currency>USD</Currency>`,
+ * UDF `total: 17000, currency: "USD"`; aynı kalemler TRY dosyada "17.000,00 TL". Kalemleri TRY kayıtlı USD dosyada
+ * satırlar "TL", toplam "10.250,00 $". Dava dilekçeleri tutarı sabit "TL" ile yazıyordu (USD dosyada "10.250 TL").
  *
- * Kural (politika gerektirmeyen kısım): belge ÇIKTISI DEĞİŞMEZ — tek para birimli dosyada da karma dosyada da. Dosya
- * kaydından belge üreten her yanıt, basılan toplamın (tutar + para birimi etiketi) geçerli tek tutar olup olmadığını ve
- * para birimi bazında toplamları eklemeli olarak bildirir: JSON yanıtta `paraBirimiDurumu` alanı, belge gövdeli yanıtta
- * `X-Belge-Toplam-Para-Birimi` başlığı, üretim denetim kaydında `paraBirimiDurumu`. Tutar ÇEVRİLMEZ.
+ * OWNER KARARI (2026-10-03, "KARMA PARA BİRİMLİ BELGE: B"): yanlış tek toplam üreten resmî çıktı akışı REDDEDİLİR; PDF /
+ * Word / XML / UDF / metin / merkezi uç gibi format seçerek atlanamaz; hata belgenin neden üretilemediğini söyler.
+ * GEÇİCİ korumadır — para birimi bazında doğru resmî belge tasarımının tamamlandığı anlamına GELMEZ; tutar ÇEVRİLMEZ, kur
+ * yoktur. Tek para birimli geçerli akışlar (TL ve dövizli) değişmez.
  *
- * KAPSAM DIŞI (owner / hukuki karar): karma dosyada belgenin üretilip üretilmeyeceği, toplamın belgede nasıl yazılacağı,
- * kalem başına para birimi kuralı ve dövizli takipte kur. Aşağıdaki karma dosyalar bugün `POST /cases/:id/dues` ile açıkça
- * para birimi verilerek oluşabiliyor; "belge 17.000,00 $ yazmayı sürdürür" iddiaları bugünkü davranışı SABİTLER
- * (karakterizasyon) — kural seçildiğinde bilinçli olarak güncellenir.
- *
- * ALTIN DEĞERLER: `GOLDEN` parmak izleri bu değişiklikten ÖNCEKİ kodla (main 6681b1d5) üretildi; yani "aynı" iddiası
- * düzeltmesiz kodla da geçer. Belge şablonu bilinçli olarak değiştirilirse düşen karşılaştırmadaki alınan değerlerle
- * güncellenir. Parmak izine girmeyenler: üretim zamanı (XML `CreatedAt`, UDF `createdAt` / imza zamanı, DOCX
+ * ALTIN DEĞERLER: tek para birimli dosyaların `GOLDEN` parmak izleri bu değişiklikten ÖNCEKİ kodla (main 6681b1d5) üretildi;
+ * yani "aynı" iddiası düzeltmesiz kodla da geçer. Belge şablonu bilinçli olarak değiştirilirse düşen karşılaştırmadaki alınan
+ * değerlerle güncellenir. Parmak izine girmeyenler: üretim zamanı (XML `CreatedAt`, UDF `createdAt` / imza zamanı, DOCX
  * `docProps/core.xml`, PDF bilgi sözlüğü) ve dilekçelerdeki günün tarihi. Faiz oranı tarifeden ve günden bağımsız
  * sabitlendi (TRY %24, döviz %9 — ölçüm günündeki değerler); belge üretim yolunun geri kalanı gerçektir.
  */
@@ -113,7 +107,7 @@ const normalizeUdf = (udf: Record<string, any>): string =>
 
 const DOCUMENT_KINDS = ['takip-talebi', 'odeme-emri', 'icra-emri'] as const;
 const PETITION_KINDS = ['itirazin-iptali', 'tasarrufun-iptali', 'dolandiricilik'] as const;
-const TOTALS_HEADER = 'x-belge-toplam-para-birimi';
+const REJECTION_CODE = 'BELGE_TOPLAMI_PARA_BIRIMI_GECERSIZ';
 
 type Fingerprints = Record<string, string>;
 
@@ -158,35 +152,6 @@ const GOLDEN: Record<string, Fingerprints> = {
     'udf:icra-emri': '1f3683933d456203722b849bb3d10b55da1cce587452e18b9427b1b8487b4486',
     'word:icra-emri': '3d967d77159f0fef49b895418b3fe99f2ba567ebf8ad4971513b9eb3381ede22',
     'pdf:icra-emri': 'e59e566fecb5390981081be0c29056fd95d20b9e9a6394b7f21532dc02c4b8a6',
-    'dilekce:itirazin-iptali': '051d540119739b56278d8f67673596fe582e33cd5e2115f6ca5c14f14a0dbcb5',
-    'dilekce-word:itirazin-iptali': '97c83bb73ef9220e0a5c16b0d0cb6b892ca5710a02366a183c9b9012c8869472',
-    'dilekce:tasarrufun-iptali': 'd13837f4b599e3ebdb7080bfc0fc7c6e791b3fd09cc6ee6b6522498a7920c946',
-    'dilekce-word:tasarrufun-iptali': '358ba45255a5f87ae51d8b58d4db07715174da59f18f44ab4519dce3733b78d5',
-    'dilekce:dolandiricilik': '13c3584274584b636927adc186fb4c278280ee9f9ae9791bb914a00d88db4598',
-    'dilekce-word:dolandiricilik': '8741340b525419ae4e153bde74c95a32edb62c28cad705eb76711a1193a4e2f1',
-  },
-  KARMA_USD: {
-    'metin:takip-talebi': '4059db00afdaeb2289178c8dfffda672634570ef13c0b1461b1386c1e8b65530',
-    'xml:takip-talebi': '01d948e9ad8f85ff17246770ea4fbc94079341f8e07059dbdbf4567743c537e2',
-    'udf:takip-talebi': 'c3d798dbdb5c881653ea37602b0a81c3f58847243fdba61adb57a2ec3da5ac80',
-    'word:takip-talebi': 'e93b9c233a869ecbbee6836115efefe6486140c8bf654c83aa7bfddb38a7895e',
-    'pdf:takip-talebi': 'ea8f544cd1c6532af922993707a14814942b7a84c76110ca41abd813dcf1f1a6',
-    'metin:odeme-emri': '588a9163fe3902f1063e16e84755afba8e48ec1f67b1c8811b115f8ac25d7e0f',
-    'xml:odeme-emri': '294d1b7f86f1b7da3bb75593cc52c7dc38e4c49e683b771c42d356f923a9f759',
-    'udf:odeme-emri': '56102939c51da8ad232fe6941b404debcf6ba0da64e66129b8c51429d566b61d',
-    'word:odeme-emri': '36aa61dc62e24253f52d120305a2f4993584f76cc33e9833c276af6fa9c59c31',
-    'pdf:odeme-emri': '2a90ce43ef14306746c7d9f9fcc39e2a53f68774eb31d2f8a242f9b7a4ab0ba3',
-    'metin:icra-emri': 'd570a3af14308c0d2015a6c1efa06d6b78de816a50fb55554f58dc554ccb05c3',
-    'xml:icra-emri': '72ede71acdda1f5c67483d8c11a5c7a20cac44c0e7a9ee5a253da93b5576db1d',
-    'udf:icra-emri': 'a8017b11d4eb2f95033f1dc44dfb0a4d8eddf86f35bbae3a5080e0982c2a246e',
-    'word:icra-emri': '90ae411774cf7cc228d583ac964187ff4b87bbb52e22ae3baa8fd2c7874933cc',
-    'pdf:icra-emri': 'd0092456385518b5899e91ef5a2b28eb81de59e981b7c74deab1874231342daf',
-    'dilekce:itirazin-iptali': '913a9696e22b7c68b38714d6b036ec1480469cf05a8cab25573888fc349d19e6',
-    'dilekce-word:itirazin-iptali': '799c8fc19bb20edc37c697ebeecd7e34d8d138720c17bbf2290cc13e2f5cb30e',
-    'dilekce:tasarrufun-iptali': 'c177b4df29e5bf4a5d28791c74839717347ca404eb8b83365811c4c53a262267',
-    'dilekce-word:tasarrufun-iptali': '8e7d297558c35eb0f6f32ecbc12b0f97e8a395ccf614b82e18cc9def200504c6',
-    'dilekce:dolandiricilik': '03ce0ead1afb5803a518d659785e7baa987b73639e691377c79c893cddfd9fb2',
-    'dilekce-word:dolandiricilik': 'b96467a1f0b7af8a78569567d079501acff6fa70249a3ef19bd5ac2ca6873f69',
   },
   MERKEZI_TRY: {
     'xml': 'ce388662b8af1e6e09e044dbfb15bd7cddaf133dae657632e25fb6a47c2d67b3',
@@ -202,7 +167,7 @@ const GOLDEN: Record<string, Fingerprints> = {
   },
 };
 
-describeWithDisposableDb('Belge şablonu toplamı — para birimi bağlamı (HTTP + disposable PostgreSQL)', () => {
+describeWithDisposableDb('Belge şablonu toplamı — resmî çıktı ret kapısı (HTTP + disposable PostgreSQL)', () => {
   jest.setTimeout(300_000);
 
   let prisma: PrismaClient;
@@ -285,6 +250,7 @@ describeWithDisposableDb('Belge şablonu toplamı — para birimi bağlamı (HTT
   const http = () => request(app.getHttpServer());
   const post = (path: string, body: object, userId: string = adminId) => http().post(path).set('x-test-user-id', userId).send(body);
   const get = (path: string, userId: string = adminId) => http().get(path).set('x-test-user-id', userId);
+  /** İkili gövde (PDF / DOCX) — hata yanıtı JSON olduğundan gövde Buffer'dan çözülür. */
   const getBinary = (path: string, userId: string = adminId) => get(path, userId).responseType('blob');
   /** Metin gövdeli yanıt (XML): superagent bu içerik türünü kendiliğinden metne çevirmez. */
   const getText = (path: string, userId: string = adminId) =>
@@ -325,20 +291,13 @@ describeWithDisposableDb('Belge şablonu toplamı — para birimi bağlamı (HTT
   /** Dilekçeler günün tarihini basar; parmak izinden çıkarılır. */
   const withoutToday = (text: string): string => text.split(new Date().toLocaleDateString('tr-TR')).join('BUGUN');
 
-  /** Yanıtın bu değişiklikten önce de var olan alanları (eklemeli blok hariç). */
-  const existingFieldsOf = (body: Record<string, any>): Record<string, any> => {
-    const existing = { ...body };
-    delete existing.paraBirimiDurumu;
-    return existing;
-  };
-
   /** Dosya kaydından üretilen HER belgenin parmak izi (belge çıktısının değişmediğinin ölçüm birimi). */
-  async function fingerprintsOf(caseId: string): Promise<Fingerprints> {
+  async function fingerprintsOf(caseId: string, withPetitions: boolean): Promise<Fingerprints> {
     const fp: Fingerprints = {};
     for (const kind of DOCUMENT_KINDS) {
       const text = await get(`/template-engine/${kind}/case/${caseId}`);
       expect(text.status).toBe(200);
-      fp[`metin:${kind}`] = sha256(JSON.stringify(existingFieldsOf(text.body)));
+      fp[`metin:${kind}`] = sha256(JSON.stringify(text.body));
       const xml = await getText(`/template-engine/case/${caseId}/xml?type=${kind}`);
       expect(xml.status).toBe(200);
       fp[`xml:${kind}`] = sha256(normalizeXml(String(xml.body)));
@@ -352,22 +311,16 @@ describeWithDisposableDb('Belge şablonu toplamı — para birimi bağlamı (HTT
       expect(pdf.status).toBe(200);
       fp[`pdf:${kind}`] = sha256(pdfContentStreams(pdf.body as Buffer));
     }
-    for (const kind of PETITION_KINDS) {
+    for (const kind of withPetitions ? PETITION_KINDS : []) {
       const text = await get(`/template-engine/${kind}/case/${caseId}`);
       expect(text.status).toBe(200);
-      fp[`dilekce:${kind}`] = sha256(withoutToday(JSON.stringify(existingFieldsOf(text.body))));
+      fp[`dilekce:${kind}`] = sha256(withoutToday(JSON.stringify(text.body)));
       const word = await getBinary(`/template-engine/${kind}/case/${caseId}/word`);
       expect(word.status).toBe(200);
       fp[`dilekce-word:${kind}`] = sha256(docxEntries(word.body as Buffer, withoutToday));
     }
     return fp;
   }
-
-  const statusOf = async (caseId: string, kind: string = 'takip-talebi') => {
-    const res = await get(`/template-engine/${kind}/case/${caseId}`);
-    expect(res.status).toBe(200);
-    return res.body.paraBirimiDurumu as Record<string, any>;
-  };
 
   const contentOf = async (caseId: string, kind: string) => {
     const res = await get(`/template-engine/${kind}/case/${caseId}`);
@@ -383,36 +336,95 @@ describeWithDisposableDb('Belge şablonu toplamı — para birimi bağlamı (HTT
       .filter((line) => /^(\d+\. .*: )?\d{1,3}(\.\d{3})*,\d{2} (TL|\$|EUR)( |$)/.test(line) || line.startsWith('TOPLAM'))
       .map((line) => (line.includes(' tutarındaki ') ? `${line.split(' tutarındaki ')[0]} tutarındaki …` : line));
 
-  /** Belge gövdeli yanıt veren uçlar (başlıkla bildirilir). */
-  const bodyDocumentPaths = (caseId: string): string[] =>
-    DOCUMENT_KINDS.flatMap((kind) => [
-      `/template-engine/case/${caseId}/pdf?type=${kind}`,
-      `/template-engine/case/${caseId}/word?type=${kind}`,
-      `/template-engine/case/${caseId}/xml?type=${kind}`,
-      `/template-engine/case/${caseId}/udf?type=${kind}`,
-      `/template-engine/case/${caseId}/udf/download?type=${kind}`,
-    ]);
+  /**
+   * Dosya kaydından belge üreten HER HTTP yolu — "format seçerek atlanamaz" iddiasının ölçüm birimi.
+   * [ad, yöntem, adres]: icra belgeleri 3 türde × (metin, PDF, Word, XML, UDF, UDF indirme, merkezi DOCX / PDF / XML),
+   * eski PDF ucu, dava dilekçeleri (JSON, önizleme, Word).
+   */
+  const officialPaths = (caseId: string): Array<[string, 'GET' | 'POST', string]> => [
+    ...DOCUMENT_KINDS.flatMap((kind): Array<[string, 'GET' | 'POST', string]> => [
+      [`metin ${kind}`, 'GET', `/template-engine/${kind}/case/${caseId}`],
+      [`PDF ${kind}`, 'GET', `/template-engine/case/${caseId}/pdf?type=${kind}`],
+      [`Word ${kind}`, 'GET', `/template-engine/case/${caseId}/word?type=${kind}`],
+      [`XML ${kind}`, 'GET', `/template-engine/case/${caseId}/xml?type=${kind}`],
+      [`UDF ${kind}`, 'GET', `/template-engine/case/${caseId}/udf?type=${kind}`],
+      [`UDF indir ${kind}`, 'GET', `/template-engine/case/${caseId}/udf/download?type=${kind}`],
+      [`merkezi DOCX ${kind}`, 'POST', `/template-engine/cases/${caseId}/documents/docx?type=${kind}`],
+      [`merkezi PDF ${kind}`, 'POST', `/template-engine/cases/${caseId}/documents/pdf?type=${kind}`],
+      [`merkezi XML ${kind}`, 'POST', `/template-engine/cases/${caseId}/documents/xml?type=${kind}`],
+    ]),
+    ['eski PDF ucu', 'GET', `/pdf/takip-talebi/${caseId}`],
+    ...PETITION_KINDS.flatMap((kind): Array<[string, 'GET' | 'POST', string]> => [
+      [`dilekçe ${kind}`, 'GET', `/template-engine/${kind}/case/${caseId}`],
+      [`dilekçe önizleme ${kind}`, 'GET', `/template-engine/${kind}/case/${caseId}/preview`],
+      [`dilekçe Word ${kind}`, 'GET', `/template-engine/${kind}/case/${caseId}/word`],
+    ]),
+  ];
 
-  const totalsHeadersOf = async (paths: string[], userId: string = adminId): Promise<string[]> => {
-    const values: string[] = [];
-    for (const path of paths) {
-      const res = await getBinary(path, userId);
-      expect({ path, status: res.status }).toEqual({ path, status: 200 });
-      values.push(String(res.headers[TOTALS_HEADER]));
-    }
-    return values;
+  const callOfficial = (method: 'GET' | 'POST', path: string, userId: string = adminId) =>
+    (method === 'GET' ? get(path, userId) : post(path, {}, userId)).responseType('blob');
+
+  /** Hata yanıtı: JSON gövde (ikili beklenen uçlarda da Buffer olarak gelir). */
+  const jsonBody = (res: { body: unknown }): Record<string, any> => {
+    const body = res.body as unknown;
+    return Buffer.isBuffer(body) ? JSON.parse(body.toString('utf8')) : (body as Record<string, any>);
   };
 
-  const totals = (currency: string, overrides: Record<string, number>) => ({ principal: 0, interest: 0, fees: 0, total: 0, ...overrides, currency });
+  const writeCounts = async (caseId: string) => ({
+    claimItems: await prisma.claimItem.count({ where: { tenantId, caseId } }),
+    dues: await prisma.due.count({ where: { caseId } }),
+    artifacts: await prisma.documentArtifact.count({ where: { tenantId } }),
+    audits: await prisma.auditLog.count({ where: { tenantId } }),
+  });
 
-  describe('tek para birimli dosya — belge çıktısı AYNEN; toplam geçerli tek tutar olarak bildirilir', () => {
+  /** Reddedilen dosyada HER yol 400 + neden kodu + para birimi dökümü verir; hiçbir kayıt yazılmaz. */
+  async function expectEveryPathRejected(
+    caseId: string,
+    expectedDurum: string,
+    expectedCurrencies: string[],
+    reasonText: string,
+    petitions: 'REJECTED' | 'VALID',
+  ) {
+    const before = await writeCounts(caseId);
+    expect(before.claimItems).toBeGreaterThan(0); // bakıldığının kanıtı: sayaçlar bu dosyanın kayıtlarını görüyor
+    const all = officialPaths(caseId);
+    expect(all).toHaveLength(3 * 9 + 1 + 3 * 3); // 37 yol
+    const paths = all.filter(([name]) => !name.startsWith('dilekçe'));
+    const petitionPaths = all.filter(([name]) => name.startsWith('dilekçe'));
+    for (const [name, method, path] of petitions === 'REJECTED' ? all : paths) {
+      const res = await callOfficial(method, path);
+      const body = jsonBody(res);
+      expect({ name, status: res.status, code: body.code ?? body.message }).toEqual({ name, status: 400, code: REJECTION_CODE });
+      expect(body.message).toContain('Resmî belge üretilemedi');
+      expect(body.message).toContain(reasonText);
+      expect(body.paraBirimiDurumu.toplamGosterilebilir).toBe(false);
+      expect(body.paraBirimiDurumu.paraBirimleri).toEqual(expectedCurrencies);
+      expect(res.headers['content-type']).toMatch(/application\/json/);
+      // Gövdede çapraz para birimi toplamı yok
+      expect(JSON.stringify(body)).not.toMatch(/17\.?000|10\.?550|10\.?250,00/);
+      if (!name.startsWith('dilekçe')) expect({ name, durum: body.paraBirimiDurumu.durum }).toEqual({ name, durum: expectedDurum });
+    }
+    // Dilekçe etiketi sabit "TL": kalemler TRY ise dilekçe geçerlidir, üretilir
+    if (petitions === 'VALID') {
+      for (const [name, method, path] of petitionPaths) {
+        const res = await callOfficial(method, path);
+        expect({ name, status: res.status }).toEqual({ name, status: 200 });
+      }
+    }
+    // Reddedilen üretim hiçbir kayıt yazmaz (kalem, üretim kaydı, denetim)
+    expect(await writeCounts(caseId)).toEqual(before);
+    expect(await prisma.documentArtifact.count({ where: { tenantId, caseId } })).toBe(0);
+  }
+
+  describe('tek para birimli geçerli dosya — belge çıktısı AYNEN (reddedilmez)', () => {
     it.each([
       ['TRY', 'TL'],
       ['USD', '$'],
-    ])('%s dosya (10.000 anapara + 250 masraf): her belge bu değişiklikten önceki çıktıyla AYNI; blok TEK_PARA_BIRIMI', async (currency, symbol) => {
+    ])('%s dosya (10.000 anapara + 250 masraf): her belge bu değişiklikten önceki çıktıyla AYNI; yanıt şekli aynı, ek alan / başlık yok', async (currency, symbol) => {
       const caseId = await openCase(`2026/TEK-${currency}`, { currency, dues: [principal(10_000), expense(250)] });
 
-      const fp = await fingerprintsOf(caseId);
+      // Dilekçe sabit "TL" yazar: yalnız TRY dosyada geçerlidir (döviz dosyada reddedilir — aşağıdaki testte)
+      const fp = await fingerprintsOf(caseId, currency === 'TRY');
       expect(fp).toEqual(GOLDEN[currency]);
 
       // Okunur karşılık: tutar satırları kalemin para birimiyle, toplam dosya para birimiyle
@@ -429,168 +441,103 @@ describeWithDisposableDb('Belge şablonu toplamı — para birimi bağlamı (HTT
         `2. Masraf: 250,00 ${symbol}`,
         `TOPLAM          : 10.250,00 ${symbol}`,
       ]);
-
-      const expectedStatus = {
-        durum: 'TEK_PARA_BIRIMI',
-        toplamGosterilebilir: true,
-        gerekce: null,
-        mesaj: null,
-        toplamEtiketi: { paraBirimi: currency, kaynak: 'DOSYA_PARA_BIRIMI' },
-        alacakParaBirimi: currency,
-        paraBirimleri: [currency],
-        paraBirimiEksikKalemSayisi: 0,
-        toplamlarParaBirimiBazinda: [
-          { paraBirimi: currency, kalemSayisi: 2, totals: totals(currency, { principal: 10_000, fees: 250, total: 10_250 }) },
-        ],
-      };
       for (const kind of DOCUMENT_KINDS) {
         const res = await get(`/template-engine/${kind}/case/${caseId}`);
-        expect(Object.keys(res.body)).toEqual(['title', 'content', 'format', 'templateCode', 'selection', 'paraBirimiDurumu']);
-        expect(res.body.paraBirimiDurumu).toEqual(expectedStatus);
+        expect(Object.keys(res.body)).toEqual(['title', 'content', 'format', 'templateCode', 'selection']);
       }
-      // Bloktaki tek satır belgenin kendi toplamıyla aynıdır (UDF `totals`)
-      const udf = await get(`/template-engine/case/${caseId}/udf?type=takip-talebi`);
-      const udfTotals = udf.body.content.sections.find((section: { type: string }) => section.type === 'CLAIMS').data.totals;
-      expect(expectedStatus.toplamlarParaBirimiBazinda[0].totals).toEqual(udfTotals);
-
-      const header = `TEK_PARA_BIRIMI;toplamGosterilebilir=true;etiket=${currency};paraBirimleri=${currency}`;
-      const paths = [...bodyDocumentPaths(caseId), `/pdf/takip-talebi/${caseId}`];
-      expect(await totalsHeadersOf(paths)).toEqual(paths.map(() => header));
+      for (const kind of PETITION_KINDS) {
+        const res = await get(`/template-engine/${kind}/case/${caseId}`);
+        // Dilekçe sabit "TL" yazar: TRY dosyada geçerli; döviz dosyada aşağıdaki testte reddedilir
+        if (currency === 'TRY') expect(Object.keys(res.body)).toEqual(['title', 'content']);
+      }
     });
 
-    it('iptal edilmiş başka para birimindeki kalem belgeye de bloğa da girmez: dosya tek para birimli kalır', async () => {
+    it.each(['TRY', 'USD'])('%s dosya: eski PDF ucu (2 kalem) 200 ve PDF döner', async (currency) => {
+      const caseId = await openCase(`2026/ESKIPDF-${currency}`, { currency, dues: [principal(10_000), expense(250)] });
+
+      const res = await getBinary(`/pdf/takip-talebi/${caseId}`);
+
+      expect({ status: res.status, magic: (res.body as Buffer).subarray(0, 5).toString('latin1') }).toEqual({ status: 200, magic: '%PDF-' });
+    });
+
+    it('iptal edilmiş başka para birimindeki kalem belgeye girmez: iptalden önce reddedilir, iptalden sonra üretilir', async () => {
       const caseId = await openCase('2026/IPTAL', { currency: 'USD', dues: [principal(10_000)] });
       await addDue(caseId, expense(300), 'EUR');
-      expect((await statusOf(caseId)).durum).toBe('KARMA_PARA_BIRIMI'); // kontrol: iptalden önce karma
+      const before = await get(`/template-engine/odeme-emri/case/${caseId}`);
+      expect({ status: before.status, code: before.body.code }).toEqual({ status: 400, code: REJECTION_CODE }); // kontrol: iptalden önce karma
 
       const cancelled = await prisma.claimItem.updateMany({ where: { tenantId, caseId, currency: 'EUR' }, data: { status: 'CANCELLED' } });
       expect(cancelled.count).toBe(1);
 
       expect(amountLines(await contentOf(caseId, 'odeme-emri'))).toEqual(['1. Asıl alacak: 10.000,00 $', 'TOPLAM          : 10.000,00 $']);
-      expect(await statusOf(caseId)).toMatchObject({
-        durum: 'TEK_PARA_BIRIMI',
-        toplamGosterilebilir: true,
-        paraBirimleri: ['USD'],
-        toplamlarParaBirimiBazinda: [{ paraBirimi: 'USD', kalemSayisi: 1, totals: totals('USD', { principal: 10_000, total: 10_000 }) }],
-      });
+    });
+
+    it('kalemsiz dosya reddedilmez (toplam 0, para birimi çelişkisi yok)', async () => {
+      const caseId = await openCase('2026/KALEMSIZ', { currency: 'USD' });
+
+      const res = await get(`/template-engine/odeme-emri/case/${caseId}`);
+
+      expect(res.status).toBe(200);
     });
   });
 
-  describe('karma dosya — belge metni DEĞİŞMEDİ (owner kararı); toplamın geçerli tek tutar OLMADIĞI bildirilir', () => {
-    const KARMA_MESAJ =
-      'Dosyada birden fazla para biriminde alacak kalemi var (EUR, TRY, USD). Belge toplamı bu tutarları çevirmeden tek ' +
-      'sayıda toplar ve dosya para birimiyle (USD) etiketler; bu toplam geçerli tek tutar değildir. Belge metni ' +
-      'değiştirilmedi; toplamlar para birimi bazında ayrıca bildirildi.';
-
-    it('USD dosya + USD 10.000 + EUR 5.000 + TRY 2.000: belge "17.000,00 $" yazmayı sürdürür; blok KARMA, toplamlar para birimi bazında, çevrilmeden', async () => {
+  describe('karma dosya — resmî çıktı HER yolda reddedilir (owner kararı B)', () => {
+    it('USD dosya + USD 10.000 + EUR 5.000 + TRY 2.000: 37 yolun HEPSİ 400 + neden + para birimi dökümü; kayıt yazılmaz', async () => {
       const caseId = await openCase('2026/KARMA-USD', { currency: 'USD', dues: [principal(10_000)] });
       await addDue(caseId, principal(5_000), 'EUR');
       await addDue(caseId, principal(2_000), 'TRY');
 
-      // Karakterizasyon: belge çıktısı bu değişiklikten önceki ile aynı
-      const fp = await fingerprintsOf(caseId);
-      expect(fp).toEqual(GOLDEN.KARMA_USD);
-      expect(amountLines(await contentOf(caseId, 'takip-talebi'))).toEqual([
-        '10.000,00 $ Asıl alacak (15.01.2026)',
-        '5.000,00 EUR EUR kalem (15.01.2026)',
-        '2.000,00 TL TRY kalem (15.01.2026)',
-        '17.000,00 $',
-        '17.000,00 $ tutarındaki …',
-        '10.000,00 $ Asıl alacak (Tarih:15.01.2026)',
-        '5.000,00 EUR EUR kalem (Tarih:15.01.2026)',
-        '2.000,00 TL TRY kalem (Tarih:15.01.2026)',
-      ]);
-      expect(amountLines(await contentOf(caseId, 'odeme-emri')).at(-1)).toBe('TOPLAM          : 17.000,00 $');
-      expect(amountLines(await contentOf(caseId, 'icra-emri')).at(-1)).toBe('TOPLAM          : 17.000,00 $');
-      const xml = String((await getText(`/template-engine/case/${caseId}/xml?type=takip-talebi`)).body);
-      expect(xml.replace(/\s+/g, '')).toContain('<Totals><Principal>17000</Principal><Interest>0</Interest><Fees>0</Fees><Total>17000</Total><Currency>USD</Currency></Totals>');
+      await expectEveryPathRejected(caseId, 'KARMA_PARA_BIRIMI', ['EUR', 'TRY', 'USD'], 'birden fazla para biriminde alacak kalemi var (EUR, TRY, USD)', 'REJECTED');
 
-      const expectedStatus = {
-        durum: 'KARMA_PARA_BIRIMI',
-        toplamGosterilebilir: false,
-        gerekce: 'FARKLI_PARA_BIRIMLERI_TEK_TOPLAMDA_BIRLESTIRILEMEZ',
-        mesaj: KARMA_MESAJ,
-        toplamEtiketi: { paraBirimi: 'USD', kaynak: 'DOSYA_PARA_BIRIMI' },
-        alacakParaBirimi: null,
-        paraBirimleri: ['EUR', 'TRY', 'USD'],
-        paraBirimiEksikKalemSayisi: 0,
-        toplamlarParaBirimiBazinda: [
-          { paraBirimi: 'EUR', kalemSayisi: 1, totals: totals('EUR', { principal: 5_000, total: 5_000 }) },
-          { paraBirimi: 'TRY', kalemSayisi: 1, totals: totals('TRY', { principal: 2_000, total: 2_000 }) },
-          { paraBirimi: 'USD', kalemSayisi: 1, totals: totals('USD', { principal: 10_000, total: 10_000 }) },
-        ],
-      };
-      for (const kind of DOCUMENT_KINDS) expect(await statusOf(caseId, kind)).toEqual(expectedStatus);
-      // Blokta çapraz para birimi toplamı yok
-      expect(JSON.stringify(expectedStatus)).not.toContain('17000');
-      expect(JSON.stringify(await statusOf(caseId))).not.toContain('17000');
-
-      const header =
-        'KARMA_PARA_BIRIMI;toplamGosterilebilir=false;etiket=USD;paraBirimleri=EUR,TRY,USD;' +
-        'gerekce=FARKLI_PARA_BIRIMLERI_TEK_TOPLAMDA_BIRLESTIRILEMEZ';
-      const paths = bodyDocumentPaths(caseId);
-      expect(await totalsHeadersOf(paths)).toEqual(paths.map(() => header));
-    });
-
-    it('aynı kalemler, ekleme sırası ters: toplam etiketi dosya para biriminden gelir ("17.000,00 $"), blok AYNI', async () => {
-      const trySon = await openCase('2026/SIRA-TRY', { currency: 'USD', dues: [principal(10_000)] });
-      await addDue(trySon, principal(5_000), 'EUR');
-      await addDue(trySon, principal(2_000), 'TRY');
-      const eurSon = await openCase('2026/SIRA-EUR', { currency: 'USD', dues: [principal(10_000)] });
-      await addDue(eurSon, principal(2_000), 'TRY');
-      await addDue(eurSon, principal(5_000), 'EUR');
-
-      expect(amountLines(await contentOf(trySon, 'odeme-emri')).at(-1)).toBe('TOPLAM          : 17.000,00 $');
-      expect(amountLines(await contentOf(eurSon, 'odeme-emri')).at(-1)).toBe('TOPLAM          : 17.000,00 $');
-      expect(await statusOf(eurSon)).toEqual(await statusOf(trySon));
-      expect((await statusOf(trySon)).toplamGosterilebilir).toBe(false);
-    });
-
-    it('TRY dosya + TRY 2.000 + USD 10.000 + EUR 5.000: belge "17.000,00 TL" yazar; blok bunun geçerli tek tutar olmadığını bildirir', async () => {
-      const caseId = await openCase('2026/KARMA-TRY', { dues: [principal(2_000)] });
-      await addDue(caseId, principal(10_000), 'USD');
-      await addDue(caseId, principal(5_000), 'EUR');
-
-      expect(amountLines(await contentOf(caseId, 'odeme-emri'))).toEqual([
-        '1. Asıl alacak: 2.000,00 TL',
-        '2. USD kalem: 10.000,00 $',
-        '3. EUR kalem: 5.000,00 EUR',
-        'TOPLAM          : 17.000,00 TL',
-      ]);
-      expect(await statusOf(caseId)).toMatchObject({
-        durum: 'KARMA_PARA_BIRIMI',
-        toplamGosterilebilir: false,
-        toplamEtiketi: { paraBirimi: 'TRY', kaynak: 'DOSYA_PARA_BIRIMI' },
-        alacakParaBirimi: null,
-        paraBirimleri: ['EUR', 'TRY', 'USD'],
-        toplamlarParaBirimiBazinda: [
-          { paraBirimi: 'EUR', kalemSayisi: 1, totals: totals('EUR', { principal: 5_000, total: 5_000 }) },
-          { paraBirimi: 'TRY', kalemSayisi: 1, totals: totals('TRY', { principal: 2_000, total: 2_000 }) },
-          { paraBirimi: 'USD', kalemSayisi: 1, totals: totals('USD', { principal: 10_000, total: 10_000 }) },
-        ],
+      // Hata gövdesi: para birimi bazında döküm, çevrilmeden
+      const res = await get(`/template-engine/odeme-emri/case/${caseId}`);
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({
+        code: REJECTION_CODE,
+        message: expect.stringContaining('Tutarlar çevrilmedi ve belge üretilmedi; hiçbir biçimde (PDF, Word, XML, UDF, metin) üretilmez.'),
+        paraBirimiDurumu: expect.objectContaining({
+          durum: 'KARMA_PARA_BIRIMI',
+          gerekce: 'FARKLI_PARA_BIRIMLERI_TEK_TOPLAMDA_BIRLESTIRILEMEZ',
+          toplamEtiketi: { paraBirimi: 'USD', kaynak: 'DOSYA_PARA_BIRIMI' },
+          alacakParaBirimi: null,
+          toplamlarParaBirimiBazinda: [
+            { paraBirimi: 'EUR', kalemSayisi: 1, totals: { principal: 5_000, interest: 0, fees: 0, total: 5_000, currency: 'EUR' } },
+            { paraBirimi: 'TRY', kalemSayisi: 1, totals: { principal: 2_000, interest: 0, fees: 0, total: 2_000, currency: 'TRY' } },
+            { paraBirimi: 'USD', kalemSayisi: 1, totals: { principal: 10_000, interest: 0, fees: 0, total: 10_000, currency: 'USD' } },
+          ],
+        }),
       });
+      expect(res.body.message).toContain('geçici bir korumadır');
     });
 
-    it('aynı kategoride farklı para birimi (USD anapara + USD 250 masraf + EUR 300 masraf): belgede fer\'iler 550, blokta ayrı', async () => {
+    it('TRY dosya + TRY 2.000 + USD 10.000 + EUR 5.000 ve ekleme sırası ters: aynı sonuç (kalem sırası ya da dosya para birimi kapıyı açmaz)', async () => {
+      const tryCase = await openCase('2026/KARMA-TRY', { dues: [principal(2_000)] });
+      await addDue(tryCase, principal(10_000), 'USD');
+      await addDue(tryCase, principal(5_000), 'EUR');
+      const reversed = await openCase('2026/KARMA-SIRA', { currency: 'USD', dues: [principal(10_000)] });
+      await addDue(reversed, principal(2_000), 'TRY');
+      await addDue(reversed, principal(5_000), 'EUR');
+
+      for (const caseId of [tryCase, reversed]) {
+        const res = await get(`/template-engine/takip-talebi/case/${caseId}`);
+        expect(res.status).toBe(400);
+        expect(res.body.paraBirimiDurumu).toMatchObject({ durum: 'KARMA_PARA_BIRIMI', paraBirimleri: ['EUR', 'TRY', 'USD'] });
+      }
+    });
+
+    it('aynı kategoride farklı para birimi (USD 250 + EUR 300 masraf): reddedilir (fer\'iler 550 diye basılmaz)', async () => {
       const caseId = await openCase('2026/KARMA-MASRAF', { currency: 'USD', dues: [principal(10_000), expense(250)] });
       await addDue(caseId, expense(300), 'EUR');
 
-      const xml = String((await getText(`/template-engine/case/${caseId}/xml?type=takip-talebi`)).body);
-      // Karakterizasyon: 250 USD + 300 EUR = 550; toplam 10.550 "USD"
-      expect(xml.replace(/\s+/g, '')).toContain('<Totals><Principal>10000</Principal><Interest>0</Interest><Fees>550</Fees><Total>10550</Total><Currency>USD</Currency></Totals>');
-      expect(await statusOf(caseId)).toMatchObject({
-        durum: 'KARMA_PARA_BIRIMI',
-        toplamGosterilebilir: false,
-        paraBirimleri: ['EUR', 'USD'],
-        toplamlarParaBirimiBazinda: [
-          { paraBirimi: 'EUR', kalemSayisi: 1, totals: totals('EUR', { fees: 300, total: 300 }) },
-          { paraBirimi: 'USD', kalemSayisi: 2, totals: totals('USD', { principal: 10_000, fees: 250, total: 10_250 }) },
-        ],
-      });
+      const res = await getText(`/template-engine/case/${caseId}/xml?type=takip-talebi`);
+
+      expect(res.status).toBe(400);
+      expect(JSON.stringify(res.body)).not.toMatch(/550|10550/);
+      expect(JSON.parse(String(res.body)).paraBirimiDurumu).toMatchObject({ paraBirimleri: ['EUR', 'USD'] });
     });
   });
 
-  it('dosya dövizli, kalem kaydı TRY (eski kayıt): belge satırları "TL", toplam "$" yazmayı sürdürür; blok etiketin kalemlerle uyuşmadığını bildirir; kayıt DEĞİŞTİRİLMEZ', async () => {
+  it('dosya dövizli, kalem kaydı TRY (eski kayıt): icra belgeleri HER yolda ETIKET_UYUSMUYOR ile reddedilir (dilekçe etiketi TL = kalemler TRY → üretilir); kayıt DEĞİŞTİRİLMEZ', async () => {
     const caseId = await openCase('2026/ESKI', { currency: 'USD', dues: [principal(10_000), expense(250)] });
     // Eski dosyadaki durumun kurulumu: kalem para birimi TRY damgalı (dosya açılışı düzeltmesinden önceki kayıt)
     await prisma.claimItem.updateMany({ where: { tenantId, caseId }, data: { currency: 'TRY' } });
@@ -599,112 +546,38 @@ describeWithDisposableDb('Belge şablonu toplamı — para birimi bağlamı (HTT
     const before = await stored();
     expect(before).toHaveLength(2);
 
-    expect(amountLines(await contentOf(caseId, 'odeme-emri'))).toEqual([
-      '1. Asıl alacak: 10.000,00 TL',
-      '2. Masraf: 250,00 TL',
-      'TOPLAM          : 10.250,00 $',
-    ]);
-    expect(await statusOf(caseId)).toEqual({
-      durum: 'ETIKET_UYUSMUYOR',
-      toplamGosterilebilir: false,
-      gerekce: 'TOPLAM_ETIKETI_KALEM_PARA_BIRIMIYLE_UYUSMUYOR',
-      mesaj:
-        'Alacak kalemleri TRY para biriminde kayıtlı; belge toplamı ise dosya para birimiyle (USD) etiketleniyor. Toplam ' +
-        'satırındaki para birimi kalemlerin para birimini göstermiyor. Belge metni değiştirilmedi.',
-      toplamEtiketi: { paraBirimi: 'USD', kaynak: 'DOSYA_PARA_BIRIMI' },
-      alacakParaBirimi: 'TRY',
-      paraBirimleri: ['TRY'],
-      paraBirimiEksikKalemSayisi: 0,
-      toplamlarParaBirimiBazinda: [{ paraBirimi: 'TRY', kalemSayisi: 2, totals: totals('TRY', { principal: 10_000, fees: 250, total: 10_250 }) }],
-    });
-    expect(await totalsHeadersOf([`/template-engine/case/${caseId}/pdf?type=takip-talebi`])).toEqual([
-      'ETIKET_UYUSMUYOR;toplamGosterilebilir=false;etiket=USD;paraBirimleri=TRY;gerekce=TOPLAM_ETIKETI_KALEM_PARA_BIRIMIYLE_UYUSMUYOR',
-    ]);
-    // Belge uçları salt okumadır: geçmiş kayıt düzeltilmedi
+    await expectEveryPathRejected(caseId, 'ETIKET_UYUSMUYOR', ['TRY'], 'Alacak kalemleri TRY para biriminde kayıtlı', 'VALID');
+
+    const res = await get(`/template-engine/odeme-emri/case/${caseId}`);
+    expect(res.body.message).toContain('dosya para birimiyle (USD) etiketlenecek');
+    // Reddetme salt okumadır: geçmiş kayıt düzeltilmedi
     expect(await stored()).toEqual(before);
   });
 
   describe('dava dilekçeleri — tutar sabit "TL" ile yazılır', () => {
-    /** Dilekçe metninde "TL" ile yazılan her tutar (dava değeri + açıklama / istem satırları). */
-    const petitionAmounts = (content: string): string[] => content.match(/\d[\d.]* TL/g) ?? [];
-
-    const petitionOf = async (caseId: string, kind: string) => {
-      const res = await get(`/template-engine/${kind}/case/${caseId}`);
-      expect(res.status).toBe(200);
-      return res.body as { title: string; content: string; paraBirimiDurumu: Record<string, any> };
-    };
-
-    it('TRY dosya: "10.250 TL" geçerli tek tutardır', async () => {
+    it('TRY dosya: üretilir ("10.250 TL" geçerli)', async () => {
       const caseId = await openCase('2026/DILEKCE-TRY', { dues: [principal(10_000), expense(250)] });
-      for (const kind of PETITION_KINDS) {
-        const doc = await petitionOf(caseId, kind);
-        expect(Object.keys(doc)).toEqual(['title', 'content', 'paraBirimiDurumu']);
-        expect(doc.paraBirimiDurumu).toEqual({
-          durum: 'TEK_PARA_BIRIMI',
-          toplamGosterilebilir: true,
-          gerekce: null,
-          mesaj: null,
-          toplamEtiketi: { paraBirimi: 'TRY', kaynak: 'SABIT_TL' },
-          alacakParaBirimi: 'TRY',
-          paraBirimleri: ['TRY'],
-          paraBirimiEksikKalemSayisi: 0,
-          toplamlarParaBirimiBazinda: [{ paraBirimi: 'TRY', kalemSayisi: 2, totals: totals('TRY', { principal: 10_000, fees: 250, total: 10_250 }) }],
-        });
-      }
-      const itiraz = await petitionOf(caseId, 'itirazin-iptali');
-      expect(itiraz.content).toContain('DAVA DEĞERİ     : 10.250 TL');
-      expect(petitionAmounts(itiraz.content)).toEqual(['10.250 TL', '10.250 TL']);
+
+      const doc = await get(`/template-engine/itirazin-iptali/case/${caseId}`);
+
+      expect(doc.status).toBe(200);
+      expect(doc.body.content).toContain('DAVA DEĞERİ     : 10.250 TL');
     });
 
-    it('USD dosya: dilekçe "10.250 TL" yazmayı sürdürür; blok tutarın TL OLMADIĞINI bildirir', async () => {
+    it('USD dosya (tek para birimli bile): dilekçe "10.250 TL" yazacağı için reddedilir; AYNI dosyanın icra belgeleri üretilir', async () => {
       const caseId = await openCase('2026/DILEKCE-USD', { currency: 'USD', dues: [principal(10_000), expense(250)] });
-      const expectedStatus = {
-        durum: 'ETIKET_UYUSMUYOR',
-        toplamGosterilebilir: false,
-        gerekce: 'TOPLAM_ETIKETI_KALEM_PARA_BIRIMIYLE_UYUSMUYOR',
-        mesaj:
-          'Alacak kalemleri USD para biriminde kayıtlı; dilekçe ise tutarı sabit "TL" ile yazıyor. Dilekçedeki para birimi ' +
-          'kalemlerin para birimini göstermiyor. Belge metni değiştirilmedi.',
-        toplamEtiketi: { paraBirimi: 'TRY', kaynak: 'SABIT_TL' },
-        alacakParaBirimi: 'USD',
-        paraBirimleri: ['USD'],
-        paraBirimiEksikKalemSayisi: 0,
-        toplamlarParaBirimiBazinda: [{ paraBirimi: 'USD', kalemSayisi: 2, totals: totals('USD', { principal: 10_000, fees: 250, total: 10_250 }) }],
-      };
-      for (const kind of PETITION_KINDS) expect((await petitionOf(caseId, kind)).paraBirimiDurumu).toEqual(expectedStatus);
-      // Karakterizasyon: kayıt 10.250 USD, dilekçe metni "10.250 TL"
-      expect((await petitionOf(caseId, 'itirazin-iptali')).content).toContain('DAVA DEĞERİ     : 10.250 TL');
-      expect(petitionAmounts((await petitionOf(caseId, 'itirazin-iptali')).content)).toEqual(['10.250 TL', '10.250 TL']);
-      expect(petitionAmounts((await petitionOf(caseId, 'tasarrufun-iptali')).content)).toEqual(['10.250 TL', '10.250 TL', '10.250 TL']);
-      expect(petitionAmounts((await petitionOf(caseId, 'dolandiricilik')).content)).toEqual(['10.250 TL', '10.250 TL']);
 
-      const header = 'ETIKET_UYUSMUYOR;toplamGosterilebilir=false;etiket=TRY;paraBirimleri=USD;gerekce=TOPLAM_ETIKETI_KALEM_PARA_BIRIMIYLE_UYUSMUYOR';
-      const paths = PETITION_KINDS.map((kind) => `/template-engine/${kind}/case/${caseId}/word`);
-      expect(await totalsHeadersOf(paths)).toEqual(paths.map(() => header));
-      // Aynı dosyanın icra belgelerinde toplam dosya para birimiyle etiketlenir → orada geçerli
-      expect(await statusOf(caseId)).toMatchObject({ durum: 'TEK_PARA_BIRIMI', toplamGosterilebilir: true });
-    });
-
-    it('karma dosya: dilekçe "17.000 TL" yazmayı sürdürür; blok KARMA', async () => {
-      const caseId = await openCase('2026/DILEKCE-KARMA', { currency: 'USD', dues: [principal(10_000)] });
-      await addDue(caseId, principal(5_000), 'EUR');
-      await addDue(caseId, principal(2_000), 'TRY');
-
-      const doc = await petitionOf(caseId, 'itirazin-iptali');
-      // Karakterizasyon: 10.000 USD + 5.000 EUR + 2.000 TRY → "17.000 TL"
-      expect(petitionAmounts(doc.content)).toEqual(['17.000 TL', '17.000 TL']);
-      expect(doc.paraBirimiDurumu).toMatchObject({
-        durum: 'KARMA_PARA_BIRIMI',
-        toplamGosterilebilir: false,
-        gerekce: 'FARKLI_PARA_BIRIMLERI_TEK_TOPLAMDA_BIRLESTIRILEMEZ',
-        mesaj:
-          'Dosyada birden fazla para biriminde alacak kalemi var (EUR, TRY, USD). Dilekçe bu tutarları çevirmeden tek sayıda ' +
-          'toplar ve sabit "TL" ile yazar; bu tutar geçerli tek tutar değildir. Belge metni değiştirilmedi; toplamlar para ' +
-          'birimi bazında ayrıca bildirildi.',
-        toplamEtiketi: { paraBirimi: 'TRY', kaynak: 'SABIT_TL' },
-        paraBirimleri: ['EUR', 'TRY', 'USD'],
-      });
-      expect(JSON.stringify(doc.paraBirimiDurumu)).not.toContain('17000');
+      for (const kind of PETITION_KINDS) {
+        for (const suffixPath of ['', '/preview', '/word']) {
+          const res = await callOfficial('GET', `/template-engine/${kind}/case/${caseId}${suffixPath}`);
+          const body = jsonBody(res);
+          expect({ kind, suffixPath, status: res.status, code: body.code }).toEqual({ kind, suffixPath, status: 400, code: REJECTION_CODE });
+          expect(body.paraBirimiDurumu).toMatchObject({ durum: 'ETIKET_UYUSMUYOR', toplamEtiketi: { paraBirimi: 'TRY', kaynak: 'SABIT_TL' }, alacakParaBirimi: 'USD' });
+          expect(body.message).toContain('dilekçe ise tutarı sabit "TL" ile yazıyor');
+        }
+      }
+      expect((await get(`/template-engine/odeme-emri/case/${caseId}`)).status).toBe(200);
+      expect((await getText(`/template-engine/case/${caseId}/xml?type=takip-talebi`)).status).toBe(200);
     });
   });
 
@@ -715,101 +588,67 @@ describeWithDisposableDb('Belge şablonu toplamı — para birimi bağlamı (HTT
     const generatedAudits = (caseId: string) =>
       prisma.auditLog.findMany({ where: { tenantId, action: 'DOCUMENT_GENERATED', metadata: { path: ['caseId'], equals: caseId } }, orderBy: { createdAt: 'asc' } });
 
-    it.each([
-      ['TRY', 'TEK_PARA_BIRIMI;toplamGosterilebilir=true;etiket=TRY;paraBirimleri=TRY'],
-      ['USD', 'TEK_PARA_BIRIMI;toplamGosterilebilir=true;etiket=USD;paraBirimleri=USD'],
-    ])('%s dosya: üretilen belge ve üretim kaydı anahtarı AYNI; başlık ve denetim kaydı toplamın geçerli olduğunu bildirir', async (currency, header) => {
-      const caseId = await openCase(`2026/MERKEZI-${currency}`, { currency, dues: [principal(10_000), expense(250)] });
+    it.each(['TRY', 'USD'])(
+      '%s dosya: üretilen belge, üretim kaydı anahtarı ve denetim kaydı bu değişiklikten önceki ile AYNI; ek başlık / alan yok',
+      async (currency) => {
+        const caseId = await openCase(`2026/MERKEZI-${currency}`, { currency, dues: [principal(10_000), expense(250)] });
 
-      const xml = await postDocument(caseId, 'xml');
-      const docx = await postDocument(caseId, 'docx');
-      const pdf = await postDocument(caseId, 'pdf');
-      expect([xml.status, docx.status, pdf.status]).toEqual([201, 201, 201]);
+        const xml = await postDocument(caseId, 'xml');
+        const docx = await postDocument(caseId, 'docx');
+        const pdf = await postDocument(caseId, 'pdf');
+        expect([xml.status, docx.status, pdf.status]).toEqual([201, 201, 201]);
 
-      // Üretilen belge + üretim kaydının anahtarı (veri parmak izi): bu değişiklikten önceki ile aynı
-      const artifacts = await prisma.documentArtifact.findMany({ where: { tenantId, caseId }, orderBy: { format: 'asc' } });
-      expect(artifacts.map((a) => [a.format, a.status])).toEqual([['DOCX', 'READY'], ['PDF', 'READY'], ['XML', 'READY']]);
-      const produced = {
-        xml: sha256(normalizeXml((xml.body as Buffer).toString('utf8'))),
-        docx: sha256(docxEntries(docx.body as Buffer)),
-        pdf: sha256(pdfContentStreams(pdf.body as Buffer)),
-        dataHash: [...new Set(artifacts.map((a) => a.dataHash))].join(','),
-      };
-      expect(produced).toEqual(GOLDEN[`MERKEZI_${currency}`]);
+        // Üretilen belge + üretim kaydının anahtarı (veri parmak izi): bu değişiklikten önceki ile aynı
+        const artifacts = await prisma.documentArtifact.findMany({ where: { tenantId, caseId }, orderBy: { format: 'asc' } });
+        expect(artifacts.map((a) => [a.format, a.status])).toEqual([['DOCX', 'READY'], ['PDF', 'READY'], ['XML', 'READY']]);
+        const produced = {
+          xml: sha256(normalizeXml((xml.body as Buffer).toString('utf8'))),
+          docx: sha256(docxEntries(docx.body as Buffer)),
+          pdf: sha256(pdfContentStreams(pdf.body as Buffer)),
+          dataHash: [...new Set(artifacts.map((a) => a.dataHash))].join(','),
+        };
+        expect(produced).toEqual(GOLDEN[`MERKEZI_${currency}`]);
 
-      for (const res of [xml, docx, pdf]) {
-        expect(res.headers[TOTALS_HEADER]).toBe(header);
-        // Mevcut başlıklar değişmedi
-        expect(res.headers['x-takip-yolu-secimi']).toBe('ILAMSIZ;basis=NOT_SELECTED;explicit=false');
-        expect(res.headers['x-from-cache']).toBe('false');
-      }
-      const audits = await generatedAudits(caseId);
-      expect(audits).toHaveLength(3);
-      for (const audit of audits) {
-        expect((audit.metadata as Record<string, any>).paraBirimiDurumu).toEqual({
-          durum: 'TEK_PARA_BIRIMI',
-          toplamGosterilebilir: true,
-          gerekce: null,
-          toplamEtiketi: { paraBirimi: currency, kaynak: 'DOSYA_PARA_BIRIMI' },
-          paraBirimleri: [currency],
-        });
-      }
-    });
+        for (const res of [xml, docx, pdf]) {
+          expect(res.headers['x-takip-yolu-secimi']).toBe('ILAMSIZ;basis=NOT_SELECTED;explicit=false');
+          expect(res.headers['x-from-cache']).toBe('false');
+          expect(Object.keys(res.headers).filter((name) => name.includes('para-birimi'))).toEqual([]);
+        }
+        const audits = await generatedAudits(caseId);
+        expect(audits).toHaveLength(3);
+        for (const audit of audits) {
+          expect(audit.metadata).toMatchObject({ caseId, documentType: 'TAKIP_TALEBI', adliyeKabulu: 'DOGRULANMADI' });
+          expect(audit.metadata).not.toHaveProperty('paraBirimiDurumu');
+        }
+      },
+    );
 
-    it('karma dosya: belge yine üretilir (kural owner kararı); başlık ve denetim kaydı toplamın geçerli tek tutar OLMADIĞINI bildirir', async () => {
+    it('karma dosya: üç biçimin HEPSİ 400 (JSON gövde, 500 DEĞİL); üretim kaydı ve denetim kaydı YOK; önbellekten de dönmez', async () => {
       const caseId = await openCase('2026/MERKEZI-KARMA', { currency: 'USD', dues: [principal(10_000)] });
       await addDue(caseId, principal(5_000), 'EUR');
       await addDue(caseId, principal(2_000), 'TRY');
 
-      const xml = await postDocument(caseId, 'xml');
-      expect(xml.status).toBe(201);
-      expect((xml.body as Buffer).toString('utf8').replace(/\s+/g, '')).toContain('<Total>17000</Total><Currency>USD</Currency>');
-      expect(xml.headers[TOTALS_HEADER]).toBe(
-        'KARMA_PARA_BIRIMI;toplamGosterilebilir=false;etiket=USD;paraBirimleri=EUR,TRY,USD;' +
-          'gerekce=FARKLI_PARA_BIRIMLERI_TEK_TOPLAMDA_BIRLESTIRILEMEZ',
-      );
-      const audits = await generatedAudits(caseId);
-      expect(audits).toHaveLength(1);
-      expect((audits[0].metadata as Record<string, any>).paraBirimiDurumu).toEqual({
-        durum: 'KARMA_PARA_BIRIMI',
-        toplamGosterilebilir: false,
-        gerekce: 'FARKLI_PARA_BIRIMLERI_TEK_TOPLAMDA_BIRLESTIRILEMEZ',
-        toplamEtiketi: { paraBirimi: 'USD', kaynak: 'DOSYA_PARA_BIRIMI' },
-        paraBirimleri: ['EUR', 'TRY', 'USD'],
-      });
-      // Mevcut denetim alanları yerinde
-      expect(audits[0].metadata).toMatchObject({ caseId, documentType: 'TAKIP_TALEBI', format: 'XML', adliyeKabulu: 'DOGRULANMADI' });
+      for (const format of ['xml', 'docx', 'pdf']) {
+        const res = await postDocument(caseId, format);
+        const body = jsonBody(res);
+        expect({ format, status: res.status, code: body.code }).toEqual({ format, status: 400, code: REJECTION_CODE });
+        expect(res.headers['content-disposition']).toBeUndefined();
+        expect(res.headers['x-from-cache']).toBeUndefined();
+      }
+      expect(await prisma.documentArtifact.count({ where: { tenantId, caseId } })).toBe(0);
+      expect(await generatedAudits(caseId)).toHaveLength(0);
     });
   });
 
-  it('GET belge uçları salt okumadır ve büro sınırını korur: kayıt yazılmaz; başka büro belgeyi de para birimi durumunu da göremez', async () => {
+  it('GET belge uçları büro sınırını korur: başka büro karma dosyanın belgesini de para birimi dökümünü de GÖRMEZ (404, 400 değil)', async () => {
     const caseId = await openCase('2026/SINIR', { currency: 'USD', dues: [principal(10_000)] });
     await addDue(caseId, principal(5_000), 'EUR');
-    const counts = async () => ({
-      claimItems: await prisma.claimItem.count({ where: { tenantId, caseId } }),
-      dues: await prisma.due.count({ where: { caseId } }),
-      artifacts: await prisma.documentArtifact.count({ where: { tenantId } }),
-      audits: await prisma.auditLog.count({ where: { tenantId } }),
-    });
-    const before = await counts();
-    expect(before.claimItems).toBe(2); // bakıldığının kanıtı: sayaçlar bu dosyanın kayıtlarını görüyor
+    expect((await get(`/template-engine/odeme-emri/case/${caseId}`)).status).toBe(400); // kontrol: kendi bürosu nedeni görüyor
 
-    await fingerprintsOf(caseId); // dosya kaydından üretilen her GET belgesi
-    expect((await statusOf(caseId)).paraBirimleri).toEqual(['EUR', 'USD']); // kontrol: kendi bürosu görüyor
-    expect(await counts()).toEqual(before);
-
-    const paths = [
-      ...DOCUMENT_KINDS.map((kind) => `/template-engine/${kind}/case/${caseId}`),
-      ...PETITION_KINDS.map((kind) => `/template-engine/${kind}/case/${caseId}`),
-      ...bodyDocumentPaths(caseId),
-      ...PETITION_KINDS.map((kind) => `/template-engine/${kind}/case/${caseId}/word`),
-    ];
-    for (const path of paths) {
-      const foreign = await getText(path, otherAdminId);
-      expect({ path, status: foreign.status }).toEqual({ path, status: 404 });
-      expect(foreign.headers[TOTALS_HEADER]).toBeUndefined();
-      expect(String(foreign.body)).not.toMatch(/paraBirimiDurumu|EUR|USD/);
+    for (const [name, method, path] of officialPaths(caseId)) {
+      const foreign = await callOfficial(method, path, otherAdminId);
+      expect({ name, status: foreign.status }).toEqual({ name, status: 404 });
+      expect(JSON.stringify(jsonBody(foreign))).not.toMatch(/paraBirimi|EUR|USD|BELGE_TOPLAMI/);
     }
-    expect(await counts()).toEqual(before);
   });
 });
