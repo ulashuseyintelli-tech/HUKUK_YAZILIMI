@@ -18,6 +18,13 @@
  *           yok; açık portal hesabında koşucu oturumunun 200'ü "ürün bulgusu" DEĞİL; gerçek ürün bulgusu korunur) · Z17/Z18 (Recover adımı ve
  *           kurtarma nedeni birim ölçümü) · C-1 (kanıttaki kurtarma/kapanış metinleri yalnız ölçüleni söyler) · T-9/T-10 (statik: yeniden giriş
  *           yalnız Run'da ve DB'ye yazmaz; makbuz ek dosya yazmalarından ÖNCE).
+ * R03-c   : (owner talimatı: kapanış / Recover doğruluğu) Z19-a hesap HTTP ölçümleri sırasında yeniden açılırsa (P7-C2 PASS, P7-C5 FAIL; sahte API
+ *           `reopen: afterDisable` + guard bayat) 200 "ürün bulgusu" YAZMAZ, portal satırı st2 değerleriyle "yeniden AÇILDI" der · Z19-b makbuz dosyası
+ *           gösterimden sonra YAZILAMAZ hale gelir (yolu klasör olur; uçtan uca, kapatma 500 → çıkış 6): adım uygulanamayan Recover komutunu ÖNERMEZ,
+ *           kanıttaki `receipt` yolunu yazar; o nesneden yazılan dosyayla Recover GERÇEKTEN koşar (kimlik bağı OK, kapanış → çıkış 3). Değişen: Z16-e
+ *           (dayanak "P7-C2 PASS + P7-C5 PASS"), Z18 (ii) (P7-C5 FAIL'de ürün bulgusu satırı YOK) + (v) birim: setup.durum=YARIM_MAKBUZ_DOSYASI_YAZILAMADI
+ *           ve makbuz dosyası durumları; C-1 (ürün bulgusu yalnız P7-C2 + P7-C5 PASS iken). `runScenario` çıkış sonrası kanca (`afterExit`) alır.
+ *           Z15-d (7c taraması): portal hesabı YOKKEN P7-C1 günlük satırı "kapatıldı" demez (Run + Recover günlükleri).
  */
 const { spawn, execFileSync } = require('child_process');
 const fs = require('fs'); const path = require('path'); const os = require('os'); const crypto = require('crypto');
@@ -133,6 +140,7 @@ function runScenario(name, dir, sc, over, hooks = {}) {
     ch.stdout.on('data', onData); ch.stderr.on('data', onData);
     ch.on('close', async (code) => {
       await hookDone;
+      if (hooks.afterExit) await hooks.afterExit();   // R03-c: koşucu çıktıktan SONRA, makbuz okunmadan ÖNCE (ör. testin kurduğu klasörü kaldırmak)
       fs.writeFileSync(path.join(dir, `${name}.log`), log, 'utf8'); artifacts.push(path.join(dir, `${name}.log`), receipt, evid);
       const sec = await ctl('GET', '/__secrets'); Object.values(sec).flat().forEach((s) => secretsSeen.add(s));
       const ev = fs.existsSync(evid) ? JSON.parse(fs.readFileSync(evid, 'utf8')) : null;
@@ -363,6 +371,13 @@ async function withInsertFault(table, column, value, fn) {
         && !!s15c.sentetikTenantDB && s15c.sentetikTenantDB.hedef === 0 && s15c.sentetikTenantDB.yabanci === 0 && !!z15c.ev && z15c.ev.closure && z15c.ev.closure.nothingToClose === true
         && z15c.calls.length === 0 && z15c.ev.recovery && z15c.ev.recovery.gerekli === false && /D7T kasitli yazma hatasi/.test(z15c.ev.fatal || ''),
       `çıkış=${z15c.code} · makbuz=${!!z15c.rc} · tenant=${!!z15c.tenant} · setup=${JSON.stringify(s15c)}`);
+    // R03-c (7c): portal hesabı YOKKEN P7-C1 satırı kapatma İDDİA ETMEZ (Run ve Recover günlükleri; satır açıklaması kanıta değil günlüğe yazılır)
+    const c1Line = (t) => (String(t || '').split(/\r?\n/).find((l) => /\bP7-C1\b/.test(l)) || '');
+    const l15a = c1Line(z15a.log); let l15r = ''; try { l15r = c1Line(fs.readFileSync(path.join(dir, 'z15r-recover-half-setup.log'), 'utf8')); } catch (e) { l15r = ''; }
+    check('Z15-d', 'portal hesabı YOKKEN (Z15-a Run ve Z15-r Recover günlükleri; P7-C1 PASS, disable-user çağrısı 0) satır açıklaması kapatma İDDİA ETMEZ: "portal hesabı YOK (DB\'de ölçüldü) — kapatılacak portal erişimi yok; kapatma çağrısı YAPILMADI"; "kapatıldı" YOK (önceki baytlar "portal erişimi yetkili uçla kapatıldı" yazıyordu)',
+      /portal hesabı YOK \(DB'de ölçüldü\) — kapatılacak portal erişimi yok; kapatma çağrısı YAPILMADI/.test(l15a) && !/kapatıldı/.test(l15a) && /portal hesabı YOK \(DB'de ölçüldü\)/.test(l15r) && !/kapatıldı/.test(l15r)
+        && z15a.v('P7-C1') === 'PASS' && z15a.calls.length === 0 && !!r15 && r15.v('P7-C1') === 'PASS' && !r15.calls.some((c) => c.path === '/api/portal/admin/disable-user'),
+      `Run: ${l15a.trim().slice(0, 150)} · Recover: ${l15r.trim().slice(0, 150)}`);
 
     // ==== R03 (b) — Run'ın KENDİ kapanışında personel oturumu reddi: yalnız 401/403'te BİR KEZ yeniden giriş + TEK yeniden deneme
     const DIS = '/api/portal/admin/disable-user'; const LOGIN = '/api/auth/login';
@@ -396,10 +411,10 @@ async function withInsertFault(table, column, value, fn) {
         && !!z16d.pu && z16d.pu.isActive === true && noFalseFinding(z16d) && portalOpenLine(z16d)
         && nedenOf(z16d).some((n) => /PERSONEL OTURUMU kapanışta reddedildi \(disable-user HTTP 401\); tek yeniden giriş: HTTP 429; tek yeniden deneme: yapılmadı/.test(n)), sum16(z16d));
     const l8 = nedenOf(z8);
-    check('Z16-e', 'GERÇEK ürün bulgusu korunur (Z8 koşumu, guard bayat): DB kapanışı ölçülmüşken (P7-C2/C2V/C5 PASS) koşucu oturumu 200 → productFinding YAZILIR ve dayanağını adlandırır ("(P7-C2 PASS)"); P7-C4L/D gözlemi "DB kapanışı ölçüldükten sonra (P7-C2 PASS) MEVCUT OTURUM KAPANMADI (ürün bulgusu)"; kurtarma nedeni ÜRÜN BULGUSU satırını "Recover düzeltemez" ile yazar, "PORTAL ERİŞİMİ kapandığı doğrulanmadı" YAZMAZ; süre iddiası ("token 7 gün") YOK; çıkış 6',
-      z8.code === 6 && ['P7-C2', 'P7-C2V', 'P7-C5'].every((id) => z8.v(id) === 'PASS') && /\(P7-C2 PASS\)/.test((z8.ev && z8.ev.productFinding) || '')
-        && ['P7-C4L', 'P7-C4D'].every((id) => /DB kapanışı ölçüldükten sonra \(P7-C2 PASS\) MEVCUT OTURUM KAPANMADI \(ürün bulgusu\)/.test(z8.o(id)))
-        && l8.some((n) => /ÜRÜN BULGUSU — DB kapanışı ölçüldükten sonra \(P7-C2 PASS\)/.test(n) && /Recover düzeltemez/.test(n)) && !l8.some((n) => /PORTAL ERİŞİMİ kapandığı doğrulanmadı/.test(n)) && !l8.some((n) => /7 gün/.test(n)),
+    check('Z16-e', 'GERÇEK ürün bulgusu korunur (Z8 koşumu, guard bayat): DB kapanışı HTTP ölçümlerinden önce ve sonra ölçülmüşken (P7-C2/C2V/C5 PASS) koşucu oturumu 200 → productFinding YAZILIR ve dayanağını adlandırır (R03-c: "(P7-C2 PASS + P7-C5 PASS)"); P7-C4L/D gözlemi "… (P7-C2 PASS + P7-C5 PASS) MEVCUT OTURUM KAPANMADI (ürün bulgusu)"; kurtarma nedeni ÜRÜN BULGUSU satırını aynı dayanak + "Recover düzeltemez" ile yazar, "PORTAL ERİŞİMİ kapandığı doğrulanmadı" YAZMAZ; süre iddiası ("token 7 gün") YOK; çıkış 6',
+      z8.code === 6 && ['P7-C2', 'P7-C2V', 'P7-C5'].every((id) => z8.v(id) === 'PASS') && /\(P7-C2 PASS \+ P7-C5 PASS\)/.test((z8.ev && z8.ev.productFinding) || '')
+        && ['P7-C4L', 'P7-C4D'].every((id) => /HTTP ölçümlerinden önce ve sonra ölçülmüşken \(P7-C2 PASS \+ P7-C5 PASS\) MEVCUT OTURUM KAPANMADI \(ürün bulgusu\)/.test(z8.o(id)))
+        && l8.some((n) => /ÜRÜN BULGUSU — DB kapanışı HTTP ölçümlerinden önce ve sonra ölçülmüşken \(P7-C2 PASS \+ P7-C5 PASS\)/.test(n) && /Recover düzeltemez/.test(n)) && !l8.some((n) => /PORTAL ERİŞİMİ kapandığı doğrulanmadı/.test(n)) && !l8.some((n) => /7 gün/.test(n)),
       `çıkış=${z8.code} · bulgu=${JSON.stringify((z8.ev || {}).productFinding || null)} · neden=${l8.join(' | ').slice(0, 220)}`);
     check('Z16-f', 'kapatma ucu iki kez 500 (Z5 koşumu; en çok iki adım, yeniden giriş YOK): disable-user 2, personel girişi 1, staffReauth yok; portal AÇIK (P7-C2 FAIL); "ürün bulgusu" YAZILMAZ; kurtarma nedeninde portal açık satırı iki 500 çağrısıyla',
       z5.code === 6 && nCalls(z5.calls, DIS) === 2 && nCalls(z5.calls, LOGIN) === 1 && !pcOf(z5).staffReauth && z5.v('P7-C2') === 'FAIL' && noFalseFinding(z5) && portalOpenLine(z5) && /kapatma çağrıları: HTTP 500 · HTTP 500/.test(openLineOf(z5)), sum16(z5));
@@ -416,17 +431,61 @@ async function withInsertFault(table, column, value, fn) {
       `fonksiyon=${!!rsf} · hesap yok=${tAbs.slice(0, 150)} · Z5 Recover adımı=${a5.slice(0, 160)}`);
     const R7 = (pairs) => pairs.map(([id, verdict]) => ({ id, verdict }));
     const u1 = raf ? raf({ closure: { ok: true }, results: R7([['P7-C1', 'FAIL'], ['P7-C2', 'FAIL'], ['P7-C2V', 'FAIL'], ['P7-C5', 'FAIL']]), portalClose: { ok: false, portalDbClosed: false, sessionWhileOpen: true, after: { isActive: true, hasPortalAccess: true }, disableCalls: ['HTTP 404'] } }, 'r.json', 'run') : {};
-    const u2 = raf ? raf({ closure: { ok: true }, results: R7([['P7-C1', 'PASS'], ['P7-C2', 'PASS'], ['P7-C2V', 'PASS'], ['P7-C5', 'FAIL'], ['P7-C4L', 'FAIL'], ['P7-C4D', 'FAIL']]), portalClose: { ok: false, portalDbClosed: false, productFinding: 'ÜRÜN BULGUSU: x', after: { isActive: false, hasPortalAccess: false } } }, 'r.json', 'run') : {};
+    // R03-c: (ii) girdisine HTTP ölçümlerinden sonraki DB değeri (afterMeasure: AÇIK) eklendi; beklenti değişti — P7-C5 FAIL iken ürün bulgusu satırı YOK.
+    const u2 = raf ? raf({ closure: { ok: true }, results: R7([['P7-C1', 'PASS'], ['P7-C2', 'PASS'], ['P7-C2V', 'PASS'], ['P7-C5', 'FAIL'], ['P7-C4L', 'FAIL'], ['P7-C4D', 'FAIL']]), portalClose: { ok: false, portalDbClosed: false, productFinding: 'ÜRÜN BULGUSU: x', after: { isActive: false, hasPortalAccess: false }, afterMeasure: { isActive: true, hasPortalAccess: true }, sessionDuringChange: true } }, 'r.json', 'run') : {};
     const u3 = raf ? raf({ closure: { ok: true, nothingToClose: true }, portalClose: { ok: true, nothingCreated: true }, results: [], setup: { asama: 'kurulum', sentetikTenantDB: { hedef: 1, yabanci: 0 } } }, null, 'run') : {};
     const u4 = raf ? raf({ closure: { ok: false }, results: R7([['P7-C1', 'FAIL'], ['P7-C2', 'FAIL']]), portalClose: { ok: false, portalDbClosed: false, after: { isActive: true, hasPortalAccess: true } } }, 'r.json', 'recover') : {};
+    // R03-c (v): makbuz bellekte VAR ama dosyası yazılamadı (setup.durum=YARIM_MAKBUZ_DOSYASI_YAZILAMADI; makbuzDiskte=false) → uygulanamayan komut ÖNERİLMEZ
+    const rfs = typeof EX0.receiptFileState === 'function' ? EX0.receiptFileState : null;
+    const memR7 = { record: EX0.RECEIPT_RECORD, runId: 'abcdef12', tenantId: 't', tenantSlug: 'ah-abcdef12', clientId: 'k', elevUserId: 'u', elevEmail: 'e@ornek.invalid', setupComplete: false };
+    const r18 = path.join(dir, 'z18v'); fs.mkdirSync(r18); const okP7 = path.join(r18, 'var.json'); fs.writeFileSync(okP7, JSON.stringify(memR7, null, 1));
+    const badP7 = path.join(r18, 'bozuk.json'); fs.writeFileSync(badP7, '{"record":"BASKA"}'); const dirP7 = path.join(r18, 'klasor.json'); fs.mkdirSync(dirP7); const goneP7 = path.join(r18, 'yok.json');
+    const halfOut = (p) => ({ receipt: memR7, receiptWriteError: 'EACCES: izin yok', setup: { asama: 'makbuz', durum: 'YARIM_MAKBUZ_DOSYASI_YAZILAMADI', makbuzDosyasi: false }, closure: { ok: false }, portalClose: { ok: true, accountAbsent: true }, results: R7([['P7-C1', 'PASS'], ['U-CLOSE', 'FAIL']]), _p: p });
+    const u5 = raf ? raf(halfOut(goneP7), goneP7, 'run') : {}; const u5d = raf ? raf(halfOut(dirP7), dirP7, 'run') : {}; const u6 = raf ? raf(Object.assign(halfOut(okP7), { receiptWriteError: undefined, setup: { durum: 'TAMAM' } }), okP7, 'run') : {};
+    const st18 = rfs ? [rfs(okP7, memR7), rfs(goneP7, memR7), rfs(dirP7, memR7), rfs(badP7, memR7), rfs(null, memR7)] : [];
+    const noCmd7 = (a) => !String(a.adim || '').includes('-ReceiptFile <makbuz>');
+    const v5 = noCmd7(u5) && /— ama makbuz dosyası YOK \(dosya yok \(ENOENT\) · makbuz yazma hatası: EACCES: izin yok · setup\.durum=YARIM_MAKBUZ_DOSYASI_YAZILAMADI\): bu makbuz yoluyla bloktan Recover BAŞLATILAMAZ/.test(u5.adim || '')
+      && /Kullanılabilir yol: bu kanıttaki `receipt` nesnesi/.test(u5.adim || '') && /AYRI owner onayıyla `-ReceiptFile <o dosya>`/.test(u5.adim || '') && u5.makbuzDiskte === false && u5.makbuzDurumu === 'YOK'
+      && noCmd7(u5d) && /— ama makbuz dosyası OKUNAMIYOR \(dosya okunamadı \(EISDIR\)/.test(u5d.adim || '') && u5d.makbuzDurumu === 'OKUNAMADI'
+      && String(u6.adim || '').includes('-Mode Recover -ReceiptFile <makbuz>') && u6.makbuzDurumu === 'KULLANILABILIR'
+      && st18.map((x) => x.durum).join(',') === 'KULLANILABILIR,YOK,OKUNAMADI,OKUNAMADI,YOL_YOK';
     const n1 = u1.neden || []; const n2 = u2.neden || []; const n3 = u3.neden || [];
     const tag = typeof EX0.closureTag === 'function' ? [EX0.closureTag({ closure: { ok: true }, portalClose: { portalDbClosed: true } }), EX0.closureTag({ closure: { ok: false }, portalClose: { portalDbClosed: false } })] : ['', ''];
-    check('Z18', 'kurtarma nedeni ve adım (birim): (i) portal DB\'de AÇIK → "PORTAL ERİŞİMİ kapandığı doğrulanmadı (P7-C1=FAIL,P7-C2=FAIL,P7-C2V=FAIL,P7-C5=FAIL) — portal hesabı DB\'de hâlâ AÇIK … ürün bulgusu SAYILMADI"; Run adımı "ÖNERİ (yetki DEĞİL)" + "AYRI owner onayıyla"; (ii) ürün bulgusu + HTTP sonrası DB açık (P7-C5 FAIL) → ürün bulgusu satırı VE "PORTAL ERİŞİMİ kapandığı doğrulanmadı (P7-C5=FAIL)" ("hâlâ AÇIK" yok); (iii) makbuz yok + sentetik tenant DB\'de VAR → "KURULUM: makbuz YOK … VAR (hedef=1 · yabancı=0)" + adımda "makbuz YOK: Recover bu kanıtla başlatılamaz"; (iv) Recover adımı "İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR", "BİR KEZ" yok; kapanış özeti ölçülenden (U-CLOSE PASS ↔ DOĞRULANMADI)',
+    check('Z18', 'kurtarma nedeni ve adım (birim): (i) portal DB\'de AÇIK → "PORTAL ERİŞİMİ kapandığı doğrulanmadı (P7-C1=FAIL,P7-C2=FAIL,P7-C2V=FAIL,P7-C5=FAIL) — portal hesabı DB\'de hâlâ AÇIK … ürün bulgusu SAYILMADI"; Run adımı "ÖNERİ (yetki DEĞİL)" + "AYRI owner onayıyla"; (ii) R03-c: kanıtta ürün bulgusu metni olsa da P7-C5 FAIL (HTTP sonrası DB AÇIK) → ürün bulgusu / "Recover düzeltemez" satırı YOK; "PORTAL ERİŞİMİ kapandığı doğrulanmadı (P7-C5=FAIL)" satırı HTTP ölçümlerinden SONRAKİ değerlerle "yeniden AÇILDI … açık erişim kapatılmalıdır" ("hâlâ AÇIK" yok); (iii) makbuz yok + sentetik tenant DB\'de VAR → "KURULUM: makbuz YOK … VAR (hedef=1 · yabancı=0)" + adımda "makbuz YOK: Recover bu kanıtla başlatılamaz"; (iv) Recover adımı "İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR", "BİR KEZ" yok; kapanış özeti ölçülenden (U-CLOSE PASS ↔ DOĞRULANMADI); (v) R03-c: makbuz bellekte VAR ama dosyası yazılamadı (setup.durum=YARIM_MAKBUZ_DOSYASI_YAZILAMADI, makbuzDiskte=false) → adım uygulanamayan `-Mode Recover -ReceiptFile <makbuz>` komutunu ÖNERMEZ; "makbuz dosyası YOK (… yazma hatası … setup.durum=…): bu makbuz yoluyla bloktan Recover BAŞLATILAMAZ" + kanıttaki `receipt` nesnesinden yeni dosya (AYRI owner onayıyla `-ReceiptFile <o dosya>`); yol klasörse "OKUNAMIYOR (EISDIR)"; makbuz okunabiliyorsa komut önerilir; receiptFileState var/yok/klasör/bozuk/yol yok',
       !!raf && n1.some((n) => /^PORTAL ERİŞİMİ kapandığı doğrulanmadı \(P7-C1=FAIL,P7-C2=FAIL,P7-C2V=FAIL,P7-C5=FAIL\) — portal hesabı DB'de hâlâ AÇIK/.test(n) && /ürün bulgusu SAYILMADI/.test(n)) && /^ÖNERİ \(yetki DEĞİL\)/.test(u1.adim || '') && /AYRI owner onayıyla/.test(u1.adim || '')
-        && n2.some((n) => /ÜRÜN BULGUSU/.test(n)) && n2.some((n) => /^PORTAL ERİŞİMİ kapandığı doğrulanmadı \(P7-C5=FAIL\)/.test(n) && !/hâlâ AÇIK/.test(n))
+        && !n2.some((n) => /ÜRÜN BULGUSU|Recover düzeltemez/.test(n)) && n2.some((n) => /^PORTAL ERİŞİMİ kapandığı doğrulanmadı \(P7-C5=FAIL\) — kapatmadan sonra DB'de kapalı ölçüldü \(P7-C2=PASS\) ama hesap ölçüm sırasında yeniden AÇILDI \(P7-C5 FAIL: HTTP ölçümlerinden sonra isActive=true hasPortalAccess=true\): açık erişim kapatılmalıdır/.test(n) && !/hâlâ AÇIK/.test(n))
         && n3.some((n) => /^KURULUM: makbuz YOK \(kurulum aşaması=kurulum\) ama sentetik tenant slug'ı DB'de VAR \(hedef=1 · yabancı=0\)/.test(n)) && /makbuz YOK: Recover bu kanıtla başlatılamaz/.test(u3.adim || '')
-        && /İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR/.test(u4.adim || '') && !/BİR KEZ/.test(u4.adim || '') && /U-CLOSE PASS\); portal DB'de pasif ölçüldü \(P7-C2 PASS\)$/.test(tag[0]) && /DOĞRULANMADI.*DOĞRULANMADI/.test(tag[1]),
-      `fonksiyon=${!!raf} · (i) ${n1.map((n) => n.slice(0, 60)).join(' | ')} · (ii) ${n2.map((n) => n.slice(0, 50)).join(' | ')} · (iii) ${n3.map((n) => n.slice(0, 60)).join(' | ')} · (iv) ${(u4.adim || '').slice(0, 80)} · özet=${tag.join(' / ')}`);
+        && /İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR/.test(u4.adim || '') && !/BİR KEZ/.test(u4.adim || '') && /U-CLOSE PASS\); portal DB'de pasif ölçüldü \(P7-C2 PASS\)$/.test(tag[0]) && /DOĞRULANMADI.*DOĞRULANMADI/.test(tag[1])
+        && !!rfs && v5,
+      `fonksiyon=${!!raf} · (i) ${n1.map((n) => n.slice(0, 60)).join(' | ')} · (ii) ${n2.map((n) => n.slice(0, 160)).join(' | ')} · (iii) ${n3.map((n) => n.slice(0, 60)).join(' | ')} · (iv) ${(u4.adim || '').slice(0, 80)} · özet=${tag.join(' / ')} · (v) durumlar=${st18.map((x) => x.durum).join(',')} yok=${String(u5.adim || '').slice(0, 260)} · klasör=${String(u5d.adim || '').slice(110, 220)} · var=${String(u6.adim || '').slice(0, 120)}`);
+
+    // ==== R03-c — (a) ürün bulgusu yalnız P7-C2 PASS + P7-C5 PASS; (b) makbuz dosyası yazılamaz hale gelirse uygulanamayan Recover komutu önerilmez
+    const z19a = await runScenario('z19a-reopen-during-measure', dir, { guard: 'stale', reopen: 'afterDisable' }, {}, { onDisplay: fullPhone });
+    const n19a = nedenOf(z19a); const line19a = n19a.find((n) => /^PORTAL ERİŞİMİ kapandığı doğrulanmadı \(/.test(n)) || '';
+    check('Z19-a', 'hesap HTTP ölçümleri SIRASINDA yeniden açıldı (sahte API reopen afterDisable + guard bayat; kapatma 201): P7-C2 PASS, P7-C5 FAIL; koşucu oturumu 200 → P7-C4L/D FAIL ama gözlem "ürün bulgusu adayı DEĞİL — hesap ölçüm sırasında yeniden AÇILDI (P7-C5 FAIL: isActive=true hasPortalAccess=true …)"; productFinding YOK; neden ve P7-D9\'da "ÜRÜN BULGUSU" / "Recover düzeltemez" YOK; kurtarma nedenindeki portal satırı P7-C5=FAIL + HTTP ölçümlerinden SONRAKİ değerlerle "yeniden AÇILDI … açık erişim kapatılmalıdır"; DB\'de hesap bağımsız ölçümde AÇIK; çıkış 6',
+      z19a.code === 6 && z19a.v('P7-C2') === 'PASS' && z19a.v('P7-C5') === 'FAIL' && !!z19a.ev && !z19a.ev.productFinding && !pcOf(z19a).productFinding
+        && ['P7-C4L', 'P7-C4D'].every((id) => z19a.v(id) === 'FAIL' && /^HTTP 200 — ürün bulgusu adayı DEĞİL — hesap ölçüm sırasında yeniden AÇILDI \(P7-C5 FAIL: isActive=true hasPortalAccess=true/.test(z19a.o(id)) && !/\(ürün bulgusu\)/.test(z19a.o(id)))
+        && !n19a.some((n) => /ÜRÜN BULGUSU|Recover düzeltemez/.test(n)) && !/ÜRÜN BULGUSU/.test(z19a.o('P7-D9'))
+        && /\(P7-C5=FAIL\)/.test(line19a) && /hesap ölçüm sırasında yeniden AÇILDI \(P7-C5 FAIL: HTTP ölçümlerinden sonra isActive=true hasPortalAccess=true\): açık erişim kapatılmalıdır/.test(line19a) && /ürün bulgusu SAYILMADI/.test(line19a)
+        && !!z19a.pu && z19a.pu.isActive === true && !!z19a.cl && z19a.cl.hasPortalAccess === true,
+      `çıkış=${z19a.code} · C2=${z19a.v('P7-C2')} C5=${z19a.v('P7-C5')} · bulgu=${JSON.stringify((z19a.ev || {}).productFinding || null)} · C4L=${z19a.o('P7-C4L').slice(0, 140)} · portal satırı=${line19a.slice(0, 260)} · DB sonra=${JSON.stringify(z19a.pu)}/${JSON.stringify(z19a.cl)}`);
+
+    // Gösterimden sonra makbuz yolu KLASÖR olur (koşucunun sonraki makbuz yazımı — 2. personel yanıtındaki runnerMessageIds — EISDIR ile başarısız olur);
+    // kapatma 500 → çıkış 6. Klasör, koşucu çıktıktan sonra (afterExit) kaldırılır.
+    const rp19 = path.join(dir, 'z19b-receipt-unwritable-receipt.json');
+    const z19b = await runScenario('z19b-receipt-unwritable', dir, { disable: 'fail' }, {}, {
+      onDisplay: async (rid, sink) => { try { fs.unlinkSync(rp19); fs.mkdirSync(rp19); } catch (e) { /* ölçüm aşağıda */ } return fullPhone(rid, sink); },
+      afterExit: async () => { try { fs.rmdirSync(rp19); } catch (e) { /* ölçüm aşağıda */ } } });
+    const rec19 = (z19b.ev && z19b.ev.recovery) || {}; const ev19r = (z19b.ev && z19b.ev.receipt) || null;
+    let r19 = null; const copy19 = path.join(dir, 'z19b-makbuz-kanittan.json');
+    if (ev19r) { fs.writeFileSync(copy19, JSON.stringify(ev19r, null, 1)); artifacts.push(copy19); r19 = await recover({ runId: z19b.runId, receipt: copy19, rc: ev19r, tenant: z19b.tenant }, dir, 'z19b-recover-from-evidence-receipt', {}); }
+    check('Z19-b', 'makbuz dosyası gösterimden sonra YAZILAMAZ hale geldi (uçtan uca; yol klasör; kapatma 500 → portal AÇIK, çıkış 6): kanıtta receiptWriteError (EISDIR), makbuzDurumu=OKUNAMADI; adım uygulanamayan `-Mode Recover -ReceiptFile <makbuz>` komutunu ÖNERMEZ, "makbuz dosyası OKUNAMIYOR … bloktan Recover BAŞLATILAMAZ" + kanıttaki `receipt` yolunu yazar; kanıttaki `receipt` nesnesi (kayıt türü D-7; runnerMessageIds dahil) değiştirilmeden dosyaya yazılıp Recover\'a verildiğinde Recover GERÇEKTEN koşar: kayıt EXTACC-D7-RECOVER, kimlik bağı OK, disable-user çağrıldı, portal pasif + erişim kapalı, yeni giriş 401, P7-MSG-KEPT makbuzdaki koşucu id\'leriyle PASS, personel pasif, çıkış 3',
+      z19b.code === 6 && !!z19b.ev && z19b.ev.displayed === true && /EISDIR/.test(z19b.ev.receiptWriteError || '') && rec19.gerekli === true && rec19.makbuzDurumu === 'OKUNAMADI' && noCmd7(rec19)
+        && /— ama makbuz dosyası OKUNAMIYOR \(/.test(rec19.adim || '') && /bloktan Recover BAŞLATILAMAZ/.test(rec19.adim || '') && /Kullanılabilir yol: bu kanıttaki `receipt` nesnesi/.test(rec19.adim || '') && /AYRI owner onayıyla `-ReceiptFile <o dosya>`/.test(rec19.adim || '')
+        && !!ev19r && ev19r.record === EX0.RECEIPT_RECORD && Array.isArray(ev19r.runnerMessageIds) && ev19r.runnerMessageIds.length >= 1
+        && !!r19 && r19.code === 3 && !!r19.ev && r19.ev.record === 'EXTACC-D7-RECOVER' && ((r19.ev.portalClose || {}).identity === 'OK') && r19.calls.some((c) => c.path === '/api/portal/admin/disable-user')
+        && !!r19.pu && r19.pu.isActive === false && r19.cl.hasPortalAccess === false && r19.v('P7-C3L') === 'PASS' && r19.v('P7-MSG-KEPT') === 'PASS' && r19.activeUsers === 0,
+      `çıkış=${z19b.code} · yazma hatası=${(z19b.ev || {}).receiptWriteError || '-'} · durum=${rec19.makbuzDurumu} · adım=${String(rec19.adim || '').slice(0, 240)} · kanıtta receipt=${!!ev19r} id=${ev19r && ev19r.runnerMessageIds ? ev19r.runnerMessageIds.length : '-'} · Recover(kanıttaki makbuz)=${r19 ? r19.code : '-'} kimlik=${r19 && r19.ev ? (r19.ev.portalClose || {}).identity : '-'} hesap=${r19 ? JSON.stringify(r19.pu) : '-'} KEPT=${r19 ? r19.v('P7-MSG-KEPT') : '-'}`);
 
     // ---- C-1 (R03 c) — kanıttaki kurtarma/kapanış metinleri YALNIZ ölçüleni söyler: bu öz-testin ürettiği TÜM Run/Recover kanıtları taranır
     let evScanned = 0; let evNeed = 0; const textBad = [];
@@ -449,11 +508,13 @@ async function withInsertFault(table, column, value, fn) {
         if (e.record === 'EXTACC-D7-RECOVER' && e.exitCode === 3 && !a.includes(`P7-C2=${vOf('P7-C2') || 'ÜRETİLMEDİ'} · P7-C5=${vOf('P7-C5') || 'ÜRETİLMEDİ'}`)) textBad.push(`${nm}:Recover 3 adımı kanıttaki verdict'i yazmıyor`);
         if (e.record !== 'EXTACC-D7-RECOVER' && !/AYRI owner onayıyla/.test(a)) textBad.push(`${nm}:Run adımı AYRI owner onayını yazmıyor`);
       }
-      if (e.productFinding && vOf('P7-C2') !== 'PASS') textBad.push(`${nm}:ürün bulgusu P7-C2 PASS olmadan yazıldı`);
+      // R03-c: ürün bulgusu yalnız P7-C2 PASS VE P7-C5 PASS iken (önceki ölçüt yalnız P7-C2'ye bakıyordu)
+      if (e.productFinding && (vOf('P7-C2') !== 'PASS' || vOf('P7-C5') !== 'PASS')) textBad.push(`${nm}:ürün bulgusu P7-C2 + P7-C5 PASS olmadan yazıldı`);
+      if (e.recovery && e.recovery.gerekli && e.record !== 'EXTACC-D7-RECOVER' && e.recovery.makbuzDurumu && e.recovery.makbuzDurumu !== 'KULLANILABILIR' && String(e.recovery.adim || '').includes('-ReceiptFile <makbuz>')) textBad.push(`${nm}:makbuz dosyası ${e.recovery.makbuzDurumu} iken Recover komutu önerildi`);
       if (e.temporaryAccess && typeof e.temporaryAccessClosed !== 'boolean') textBad.push(`${nm}:temporaryAccessClosed ölçülmedi`);
       if (e.record === 'EXTACC-D7-PORTAL-MESSAGES-LIVE-RUN' && !(e.setup && typeof e.setup.durum === 'string')) textBad.push(`${nm}:setup.durum yok`);
     }
-    check('C-1', 'kanıttaki kurtarma/kapanış metinleri yalnız ölçüleni söyler (bu öz-testin TÜM Run/Recover kanıtları): revision=R03; sabit iddia YOK ("sentetik tenant CLOSED", "… kapanışıyla erişilemez", "token 7 gün", "birkaç dakika sonra Recover", "Recover BİR KEZ", "ile BİR KEZ", "kapanışta yeniden kapatıldı", "TEKRARLANMAZ: DB kapalı"); P7-MSG-KEPT kapanış özeti ölçülenden ve U-CLOSE / P7-C2 verdict\'iyle tutarlı; kurtarma gerekliyse adım "ÖNERİ (yetki DEĞİL)" ile başlar — Run adımı AYRI owner onayını, Recover adımı (çıkış 3 dışı) "İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR" kuralını, Recover 3 adımı kanıttaki P7-C2/C5 verdict\'ini yazar; ürün bulgusu yalnız P7-C2 PASS iken; Recover geçici erişimi verdiyse kapanışı ölçülmüş alanla (temporaryAccessClosed); her Run kanıtında setup.durum',
+    check('C-1', 'kanıttaki kurtarma/kapanış metinleri yalnız ölçüleni söyler (bu öz-testin TÜM Run/Recover kanıtları): revision=R03; sabit iddia YOK ("sentetik tenant CLOSED", "… kapanışıyla erişilemez", "token 7 gün", "birkaç dakika sonra Recover", "Recover BİR KEZ", "ile BİR KEZ", "kapanışta yeniden kapatıldı", "TEKRARLANMAZ: DB kapalı"); P7-MSG-KEPT kapanış özeti ölçülenden ve U-CLOSE / P7-C2 verdict\'iyle tutarlı; kurtarma gerekliyse adım "ÖNERİ (yetki DEĞİL)" ile başlar — Run adımı AYRI owner onayını, Recover adımı (çıkış 3 dışı) "İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR" kuralını, Recover 3 adımı kanıttaki P7-C2/C5 verdict\'ini yazar; R03-c: ürün bulgusu yalnız P7-C2 PASS + P7-C5 PASS iken; makbuz dosyası kullanılamıyorken Run adımı Recover komutu önermez; Recover geçici erişimi verdiyse kapanışı ölçülmüş alanla (temporaryAccessClosed); her Run kanıtında setup.durum',
       evScanned >= 24 && evNeed >= 8 && textBad.length === 0, `taranan kanıt=${evScanned} · kurtarma gerekli=${evNeed} · sorun=${textBad.length ? textBad.slice(0, 10).join(', ') : 'yok'}`);
 
     // ---- S-1 SIR SIZINTISI — parolalar, JWT'ler, DB URL, GO, telefon mesajı içeriği, tuzak (başka müvekkil) içeriği (sink dosyaları TARAMA DIŞI)

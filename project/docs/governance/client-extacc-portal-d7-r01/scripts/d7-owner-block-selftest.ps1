@@ -24,6 +24,11 @@
 #          doğrulandı" yok) · O-7 kurulum yarım bilgi satırı (kanıttaki setup) · G-5 kalıntı notu koşucunun YENİ (ölçülen) kapanış özetini anlatır
 #          ("SABİT ifadesidir" artık yok) · G-2 onay metninde "kanıt metnindeki sentetik tenant CLOSED" atfı yok. Eski (origin/main) blok baytlarında
 #          bu ölçütler FAIL verir (negatif kontrol).
+# R03-c  : (owner talimatı: kapanış / Recover doğruluğu) O-6 DEĞİŞTİ — Recover bitiş satırı mevcut oturum reddinin Recover'da HER ZAMAN ölçülemediğini
+#          ve yeni giriş reddinin P7-C3L/D'den okunduğunu kodlardan ÖNCE yazar; 2 ve 1 neyin doğrulandığını adlandırır. O-8 YENİ — Run çıkış 5/6 metni
+#          Recover komutunu yalnız makbuz dosyası okuma kapısını geçiyorsa önerir (yok / bozuk → kanıttaki receipt yolu; kanıtta da yoksa SOMUT ENGEL).
+#          Sahte koşucu Run'da kanıt dizinine makbuz yazar (EXSTUB_NO_RECEIPT / EXSTUB_EV_RECEIPT ile değiştirilir). R03 blok baytlarında (4BAE9DE0…)
+#          O-6, O-8 ve PIN-1 (koşucu pini) FAIL verir (negatif kontrol).
 # KULLANIM: powershell.exe -NoProfile -ExecutionPolicy Bypass -File d7-owner-block-selftest.ps1   (ve pwsh)
 # ÇIKIŞ  : 0 hepsi PASS · 1 en az bir FAIL · 2 ölçülemedi
 $ErrorActionPreference = 'Stop'
@@ -70,7 +75,11 @@ fs.appendFileSync(process.env.EXSTUB_MARKER, JSON.stringify({ mode: process.env.
   go: !!process.env.D7_LIVE_GO_REF, receipt: !!process.env.D7_RECEIPT, display: process.env.D7_DISPLAY || null, slug: process.env.D7_EXPECT_TENANT_SLUG || null,
   sink: process.env.D7_TEST_DISPLAY_SINK || null, base: process.env.D7_EXPECT_BASE_URL || null,
   params: ['D7_WAIT_MS', 'D7_POLL_MS', 'D7_VIEW_MS', 'D7_HTTP_TIMEOUT_MS', 'D7_CALL_TIMEOUT_MS', 'D7_LATE_CREATE_MS'].map((k) => process.env[k] || null) }) + '\n');
+// R03-c: Run modunda koşucu gibi kanıt dizinine makbuz yazar (EXSTUB_NO_RECEIPT=1 → yazmaz · B → bozuk makbuz); kanıtta receipt nesnesi (EXSTUB_EV_RECEIPT=0 → yok)
+if (process.env.D7_MODE === 'run' && process.env.D7_RECEIPT && process.env.EXSTUB_NO_RECEIPT !== '1') fs.writeFileSync(process.env.D7_RECEIPT, process.env.EXSTUB_NO_RECEIPT === 'B' ? '{"record":"BASKA"}'
+  : JSON.stringify({ record: 'EXTACC-D7-SETUP-RECEIPT', runId: String(process.env.D7_RUNID || ''), tenantId: 't', tenantSlug: process.env.D7_EXPECT_TENANT_SLUG || '', clientId: 'k', elevUserId: 'u', elevEmail: 'e@example.invalid' }));
 if (process.env.EXSTUB_WRITE_EVID === '1') fs.writeFileSync(process.env.D7_EVID_FILE, JSON.stringify({ productFinding: process.env.EXSTUB_FINDING || null,
+  receipt: process.env.EXSTUB_EV_RECEIPT === '0' ? undefined : { record: 'EXTACC-D7-SETUP-RECEIPT', runId: String(process.env.D7_RUNID || '') },
   messageResidue: { portalMessages: 5, portalNotifications: 2, deleted: false }, setup: process.env.EXSTUB_SETUP ? JSON.parse(process.env.EXSTUB_SETUP) : undefined,
   results: [{ id: 'P7-WAIT', verdict: process.env.EXSTUB_WAIT || 'PASS' }, { id: 'D7-3B', verdict: 'PASS' }, { id: 'P7-D9', verdict: process.env.EXSTUB_D9 || 'PASS' },
     { id: 'P7-MSG-KEPT', verdict: 'PASS', observed: 'yerinde=4/4 · saklandı: 5 mesaj (koşucu 4 · telefon 1) + 2 bildirim satırı (kapanış, ölçülen: personel pasif + dosyalar CLOSED (U-CLOSE PASS); portal DB\'de pasif ölçüldü (P7-C2 PASS)) — SİLİNMEDİ' }]
@@ -420,17 +429,23 @@ try {
   Check 'O-5' 'parça verdict''i kanıttan (D-7''de P7-D9 PASS iken ölçülmemiş parça olabilir — belge §9): portal hesabı hiç açılmamış (P7-C2..C5 satırı YOK; ör. yarım kurulum) → DB / yeni giriş / mevcut oturum "ÖLÇÜLMEDİ", personel PASS; koşucu oturumu yok (P7-C4L/D UNMEASURED) → yalnız mevcut oturum "ÖLÇÜLMEDİ"; gruptaki tek ölçüt PASS değilse (P7-C2V UNMEASURED) grup "ÖLÇÜLMEDİ"; gruptaki bir ölçüt FAIL ise "FAIL" (yumuşatılmaz); P7-D9 FAIL ise metin DOĞRULANAMADI ve parça listesi YOK; hiçbirinde eski sabit cümle yok' ($cs5a.verified -and (Get-Parts $cs5a.text) -eq 'ÖLÇÜLMEDİ/ÖLÇÜLMEDİ/ÖLÇÜLMEDİ/PASS' -and (Get-Parts $cs5b.text) -eq 'PASS/PASS/ÖLÇÜLMEDİ/PASS' -and (Get-Parts $cs5c.text) -eq 'ÖLÇÜLMEDİ/PASS/PASS/PASS' -and (Get-Parts $cs5d.text) -eq 'PASS/FAIL/ÖLÇÜLMEDİ/PASS' -and -not $cs5e.verified -and $cs5e.text -match 'DOĞRULANAMADI' -and (Get-Parts $cs5e.text) -eq 'YOK/YOK/YOK/YOK' -and $o5Old.Count -eq 0) "hesap yok=$(Get-Parts $cs5a.text) · oturumsuz=$(Get-Parts $cs5b.text) · C2V=$(Get-Parts $cs5c.text) · FAIL=$(Get-Parts $cs5d.text) · D9 FAIL=$(Get-Parts $cs5e.text) · eski cümle=$($o5Old.Count)"
 
   # ---- R03: O-6 — Recover bitiş satırı 0 / 1 / 2 / 3'ü yalnız ölçüleni söyleyerek açıklar (eski "0 kapanış + HTTP reddi doğrulandı" yok)
-  $o6Need = @('0 = FAIL ve ÖLÇÜLEMEYEN satır yok', 'fiilen beklenmez', '3 = portal DB kapanışı ölçüldü ya da portal hesabı yok, FAIL yok, en az bir ölçüt ÖLÇÜLEMEYEN', 'P7-C3L/D satırlarından okunur',
-              '2 = kapanışlar doğrulandı, hazırlık hatası yok, en az bir satır FAIL', 'yalnız P7-MSG-KEPT', '1 = DURDU', 'fatal alanı', 'HTTP reddinin doğrulandığı anlamına GELMEZ')
-  $o6Old = @('0 kapanış + HTTP reddi doğrulandı', '3 DB kapalı ama bazı HTTP kontrolleri ÖLÇÜLEMEDİ')
+  # R03-c (DEĞİŞTİ): mevcut oturum reddinin Recover'da HER ZAMAN ölçülemediği + yeni giriş reddinin P7-C3L/D'den okunduğu kodlardan ÖNCE, genel olarak;
+  #        2 ve 1 neyin doğrulandığını adlandırır (portal DB kapanışı ya da hesap yok + personel/dosya kapanışı); eski "kapanışlar doğrulandı" YOK.
+  $o6Need = @("HER KODDA: mevcut oturum reddi Recover'da ÖLÇÜLEMEZ — HER ZAMAN (P7-C4L/D", 'P7-C3L/D satırlarından okunur', '0 = FAIL ve ÖLÇÜLEMEYEN satır yok', 'fiilen beklenmez',
+              '3 = portal DB kapanışı ölçüldü ya da portal hesabı yok, FAIL yok, en az bir ölçüt ÖLÇÜLEMEYEN; personel/dosya kapanışı doğrulandı',
+              '2 = portal DB kapanışı (ya da portal hesabı yok) ve personel/dosya kapanışı doğrulandı, hazırlık hatası yok, en az bir satır FAIL', 'yalnız P7-MSG-KEPT',
+              '1 = DURDU: portal DB kapanışı (ya da portal hesabı yok) ve personel/dosya kapanışı doğrulandı ama hazırlık adımında hata', 'fatal alanı', 'HTTP reddinin doğrulandığı anlamına GELMEZ',
+              '6 portal DB/HTTP kapanışı doğrulanmadı', '5 personel/dosya kapanışı doğrulanmadı', '4 kimlik reddi', '7 kanıt yok', '91 node başlatılamadı')
+  $o6Old = @('0 kapanış + HTTP reddi doğrulandı', '3 DB kapalı ama bazı HTTP kontrolleri ÖLÇÜLEMEDİ', '2 = kapanışlar doğrulandı', '1 = DURDU: kapanışlar doğrulandı')
   $o6bad = @()
   foreach ($c in 0, 1, 2, 3) {
     $t6 = Get-Flat (Get-HostText { $script:capR = Invoke-Mode 'Recover' $real.Exe $c $true $rcpt @() }); $r6 = $script:capR; $tl6 = Get-Tail $t6 'EXTACC D-7 KURTARMA BİTTİ'
     $m6 = @($o6Need | Where-Object { $tl6 -cnotmatch [regex]::Escape($_) }); $x6 = @($o6Old | Where-Object { $tl6 -cmatch [regex]::Escape($_) })
-    if (-not ($r6.out -eq $c -and $r6.nodeCalls -eq 1 -and $r6.last.mode -eq 'recover' -and $tl6.Length -gt 200 -and $m6.Count -eq 0 -and $x6.Count -eq 0)) { $o6bad += "çıkış ${c}: rc=$($r6.out) node=$($r6.nodeCalls) eksik=$($m6 -join ',') eski=$($x6 -join ',')" }
+    $iGen6 = $tl6.IndexOf('HER KODDA'); $i06 = $tl6.IndexOf('0 = FAIL ve ÖLÇÜLEMEYEN')
+    if (-not ($r6.out -eq $c -and $r6.nodeCalls -eq 1 -and $r6.last.mode -eq 'recover' -and $tl6.Length -gt 200 -and $m6.Count -eq 0 -and $x6.Count -eq 0 -and $iGen6 -ge 0 -and $iGen6 -lt $i06)) { $o6bad += "çıkış ${c}: rc=$($r6.out) node=$($r6.nodeCalls) eksik=$($m6 -join ',') eski=$($x6 -join ',') genel@$iGen6 0@$i06" }
   }
   $o6Src = @($o6Old | Where-Object { $src0 -cmatch [regex]::Escape($_) })
-  Check 'O-6' 'Recover bitiş satırı (owner''a GÖSTERİLEN metin; taklit betik çıkış 0/1/2/3, her biri değişmeden taşınır, tek node çağrısı): 0 = "FAIL ve ÖLÇÜLEMEYEN satır yok" + koşucu mantığında fiilen beklenmez; 3 = portal DB kapanışı ölçüldü ya da hesap yok, FAIL yok, en az bir ölçüt ÖLÇÜLEMEYEN + yeni giriş reddi P7-C3L/D satırlarından okunur; 2 = Recover''da yalnız P7-MSG-KEPT; 1 = DURDU (fatal alanı; HTTP reddinin doğrulandığı anlamına GELMEZ); eski "0 kapanış + HTTP reddi doğrulandı" ve "3 DB kapalı ama bazı HTTP kontrolleri ÖLÇÜLEMEDİ" gösterilen metinde ve blok kaynağında YOK' ($o6bad.Count -eq 0 -and $o6Src.Count -eq 0) "hata=$($o6bad -join ' | ') · kaynakta eski metin=$($o6Src -join ',')"
+  Check 'O-6' 'Recover bitiş satırı (owner''a GÖSTERİLEN metin; taklit betik çıkış 0/1/2/3, her biri değişmeden taşınır, tek node çağrısı): R03-c — kodlardan ÖNCE genel olarak "HER KODDA: mevcut oturum reddi Recover''da ÖLÇÜLEMEZ — HER ZAMAN (P7-C4L/D …)" + yeni giriş reddi P7-C3L/D satırlarından okunur; 0 = "FAIL ve ÖLÇÜLEMEYEN satır yok" + koşucu mantığında fiilen beklenmez; 3 = portal DB kapanışı ölçüldü ya da hesap yok, FAIL yok, en az bir ölçüt ÖLÇÜLEMEYEN, personel/dosya kapanışı doğrulandı; 2 = portal DB kapanışı (ya da hesap yok) ve personel/dosya kapanışı doğrulandı + FAIL (Recover''da yalnız P7-MSG-KEPT); 1 = DURDU: aynı kapanışlar doğrulandı + hazırlık hatası (fatal alanı; HTTP reddinin doğrulandığı anlamına GELMEZ); 6 / 5 / 4 / 7 / 91 açıklamalı; eski "0 kapanış + HTTP reddi doğrulandı", "3 DB kapalı ama bazı HTTP kontrolleri ÖLÇÜLEMEDİ", "2 = kapanışlar doğrulandı", "1 = DURDU: kapanışlar doğrulandı" gösterilen metinde ve blok kaynağında YOK' ($o6bad.Count -eq 0 -and $o6Src.Count -eq 0) "hata=$($o6bad -join ' | ') · kaynakta eski metin=$($o6Src -join ',')"
 
   # ---- R03: O-7 — kurulum yarım bilgi satırı (koşucu kanıtındaki setup; TAMAM iken satır yok)
   $env:EXSTUB_SETUP = '{"asama":"ek-dosya-ayni-tenant","tamamlanan":["izolasyon-sayimi","kurulum","makbuz","ek-dosya-yabanci"],"durum":"YARIM_MAKBUZ_VAR","makbuzDosyasi":true}'
@@ -439,13 +454,32 @@ try {
   $script:goN = 62; $o7tTxt = Get-HostText { $script:capR = Invoke-Mode 'Run' $real.Exe 0 $true }; $o7t = $script:capR; Remove-Item 'Env:EXSTUB_SETUP' -ErrorAction SilentlyContinue
   $o7Lines = @($o7Txt -split "`n" | Where-Object { $_ -cmatch 'KURULUM YARIM KALDI' })
   Check 'O-7' 'Run: kanıttaki setup.durum TAMAM değilse owner''a "KURULUM YARIM KALDI" bilgi satırı durum + son aşama + makbuz dosyası ile gösterilir, kapanış sonucunu yukarıdaki kapanış satırına bağlar ve "Recover yetkisi DEĞİLDİR" der; setup.durum TAMAM iken satır yok; çıkış kodu değişmez (tek node çağrısı)' ($o7.out -eq 1 -and $o7.nodeCalls -eq 1 -and $o7Lines.Count -eq 1 -and $o7Lines[0] -cmatch 'durum=YARIM_MAKBUZ_VAR' -and $o7Lines[0] -cmatch 'son aşama=ek-dosya-ayni-tenant' -and $o7Lines[0] -cmatch 'makbuz dosyası=True' -and $o7Lines[0] -cmatch 'yukarıdaki kapanış satırındadır' -and $o7Lines[0] -cmatch 'Recover yetkisi DEĞİLDİR' -and $o7t.out -eq 0 -and $o7t.nodeCalls -eq 1 -and $o7tTxt -cnotmatch 'KURULUM YARIM KALDI') "yarım: rc=$($o7.out) satır=$($o7Lines.Count) [$(@($o7Lines) -join ' | ')] · TAMAM: rc=$($o7t.out) satır=$(@($o7tTxt -split "`n" | Where-Object { $_ -cmatch 'KURULUM YARIM KALDI' }).Count)"
+
+  # ---- R03-c: O-8 — Run çıkış 5/6 metni Recover komutunu YALNIZ kanıt dizinindeki makbuz dosyası Recover'ın okuma kapısını geçiyorsa önerir
+  #      (koşucu: makbuz bellekte var ama dosyası yazılamadı → setup.durum=YARIM_MAKBUZ_DOSYASI_YAZILAMADI; blok: dosyayı kendisi denetler)
+  $o8 = [ordered]@{}; $script:goN = 30   # 31..34 başka ölçütte kullanılmaz (GO defteri tekrar kullanımı reddeder; GO biçimi iki haneli R\d{2})
+  foreach ($case in @(@('var', '0', '1', 6), @('yok', '1', '1', 6), @('bozuk', 'B', '1', 5), @('yok-kanitta-yok', '1', '0', 6))) {
+    $env:EXSTUB_NO_RECEIPT = $case[1]; $env:EXSTUB_EV_RECEIPT = $case[2]
+    $o8Txt = Get-HostText { $script:capR = Invoke-Mode 'Run' $real.Exe $case[3] $true }; $iEnd8 = $o8Txt.IndexOf('EXTACC D-7 KOŞUM BİTTİ')
+    $o8[$case[0]] = [pscustomobject]@{ tail = $(if ($iEnd8 -ge 0) { Get-Flat $o8Txt.Substring($iEnd8) } else { '' }); r = $script:capR; rc = $case[3] }
+  }
+  Remove-Item 'Env:EXSTUB_NO_RECEIPT', 'Env:EXSTUB_EV_RECEIPT' -ErrorAction SilentlyContinue
+  $cmd8 = '-Mode Recover -ReceiptFile <makbuz>'
+  $o8Var = $o8['var']; $o8Yok = $o8['yok']; $o8Boz = $o8['bozuk']; $o8Eng = $o8['yok-kanitta-yok']
+  $o8Ok = (@($o8.Values | Where-Object { $_.r.out -ne $_.rc -or $_.r.nodeCalls -ne 1 -or $_.r.last.mode -ne 'run' }).Count -eq 0 -and
+           $o8Var.tail.Contains("ÖNERİDİR: $cmd8") -and $o8Var.tail.Contains('Makbuz dosyası: VAR') -and $o8Var.tail -cnotmatch 'BAŞLATILAMAZ' -and
+           -not $o8Yok.tail.Contains($cmd8) -and $o8Yok.tail.Contains('MAKBUZ DOSYASI YOK') -and $o8Yok.tail.Contains('bloktan Recover BAŞLATILAMAZ') -and $o8Yok.tail.Contains('Kullanılabilir yol: d7-evidence.json içindeki receipt nesnesi') -and $o8Yok.tail.Contains('AYRI owner onayıyla, BİR KEZ, -ReceiptFile <o dosya>') -and $o8Yok.tail -cnotmatch 'SOMUT ENGEL' -and
+           -not $o8Boz.tail.Contains($cmd8) -and $o8Boz.tail.Contains('MAKBUZ DOSYASI OKUNAMIYOR') -and $o8Boz.tail.Contains('Kullanılabilir yol:') -and
+           -not $o8Eng.tail.Contains('-ReceiptFile <') -and $o8Eng.tail.Contains('SOMUT ENGEL: kanıtta receipt nesnesi de YOK') -and $o8Eng.tail.Contains('owner/CLIENT') -and
+           @($o8.Values | Where-Object { $_.tail -cnotmatch 'ikinci bir Recover bu paketle TANIMLI DEĞİLDİR \(owner kararı gerektirir\)' -or $_.tail -cmatch $rptRe }).Count -eq 0)
+  Check 'O-8' 'Run çıkış 5/6 metni (GÖSTERİLEN): makbuz dosyası Recover''ın okuma kapısını geçiyorsa (dosya + JSON + kayıt türü + runId) "ÖNERİDİR: -Mode Recover -ReceiptFile <makbuz>" + "Makbuz dosyası: VAR"; makbuz YOK (çıkış 6) ya da bozuk (çıkış 5) → uygulanamayan komut ÖNERİLMEZ, "MAKBUZ DOSYASI YOK|OKUNAMIYOR … bloktan Recover BAŞLATILAMAZ" + kanıttaki receipt nesnesinden yeni dosya yolu (AYRI owner onayıyla, BİR KEZ, -ReceiptFile <o dosya>); kanıtta receipt de yoksa "SOMUT ENGEL" (komut YOK) + owner/CLIENT kararı; dört durumda da "ikinci bir Recover bu paketle TANIMLI DEĞİLDİR (owner kararı gerektirir)" ve tekrar yolu YOK; çıkış kodu değişmeden, tek node çağrısı' $o8Ok "istisna=$(@($o8.Values | ForEach-Object { $_.r.threw } | Where-Object { $_ }) -join ' | ') · var: rc=$($o8Var.r.out) komut=$($o8Var.tail.Contains($cmd8)) · yok: rc=$($o8Yok.r.out) komut=$($o8Yok.tail.Contains($cmd8)) yol=$($o8Yok.tail.Contains('Kullanılabilir yol')) · bozuk: rc=$($o8Boz.r.out) komut=$($o8Boz.tail.Contains($cmd8)) · kanıtta-yok: rc=$($o8Eng.r.out) engel=$($o8Eng.tail.Contains('SOMUT ENGEL'))"
 }
 catch {
   # Beklenmeyen istisna öz-testi SESSİZCE kesmez: FAIL satırı olarak kaydedilir (kalan ölçütler koşulmadı → sonuç PASS olamaz).
   Check 'X-0' 'öz-test beklenmeyen istisna ile yarıda kesildi — kalan ölçütler KOŞULMADI' $false ("istisna=" + $_.Exception.Message + ' · satır=' + $_.InvocationInfo.ScriptLineNumber)
 }
 finally {
-  foreach ($k in 'EXSTUB_RC', 'EXSTUB_WRITE_EVID', 'EXSTUB_MARKER', 'EXSTUB_WAIT', 'EXSTUB_QR_RC', 'EXSTUB_FINDING', 'EXSTUB_D9', 'EXSTUB_EXTRA', 'EXSTUB_SETUP') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
+  foreach ($k in 'EXSTUB_RC', 'EXSTUB_WRITE_EVID', 'EXSTUB_MARKER', 'EXSTUB_WAIT', 'EXSTUB_QR_RC', 'EXSTUB_FINDING', 'EXSTUB_D9', 'EXSTUB_EXTRA', 'EXSTUB_SETUP', 'EXSTUB_NO_RECEIPT', 'EXSTUB_EV_RECEIPT') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
   Clear-SecretEnv
 }
 
