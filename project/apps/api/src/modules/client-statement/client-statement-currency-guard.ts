@@ -37,7 +37,8 @@ export type ClientStatementCurrencySource =
   | 'ClientPayout'
   | 'ClientOffset';
 
-const SOURCE_LABELS: Readonly<Record<ClientStatementCurrencySource, string>> = {
+/** Kaynak etiketleri (ret gerekçesi ve atlanan ekstre görevi aynı metni kullanır). */
+export const CLIENT_STATEMENT_SOURCE_LABELS: Readonly<Record<ClientStatementCurrencySource, string>> = {
   BalanceLedger: 'masraf/avans defteri',
   ExpenseRequest: 'masraf talebi',
   ExpensePayment: 'masraf tahsilatı',
@@ -105,7 +106,7 @@ export function assessClientStatementCurrencies(
  * Reddin kullanıcıya gösterilen gerekçesi. Tutar ve kayıt kimliği taşımaz (ekranda ve günlükte güvenle gösterilebilir).
  */
 export function buildUnsupportedCurrencyMessage(assessment: ClientStatementCurrencyAssessment): string {
-  const where = assessment.sources.map((source) => SOURCE_LABELS[source]).join(', ');
+  const where = assessment.sources.map((source) => CLIENT_STATEMENT_SOURCE_LABELS[source]).join(', ');
   const found =
     assessment.reasonCode === 'NON_TRY_SOURCE'
       ? `TL dışı para biriminde kayıt var (${assessment.currencies.join(', ')})`

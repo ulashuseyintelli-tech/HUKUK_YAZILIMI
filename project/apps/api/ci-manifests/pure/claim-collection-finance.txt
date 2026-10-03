@@ -197,6 +197,13 @@ src/modules/client-statement/client-statement.service.spec.ts
 src/modules/client-statement/__tests__/client-statement-currency-guard.spec.ts
 src/modules/client-statement/__tests__/client-statement-currency-e1.spec.ts
 #
+#   ATLANAN AYLIK EKSTRE — KALICI IZ (owner karari 2026-10-03 "7 — B"): E1 atlamasi (SKIPPED_UNSUPPORTED_CURRENCY) yalniz kosu sonucunda
+#     kaliyordu. Musteri + donem + neden basina TEK kalici gorev (`Task.dedupeKey` UNIQUE; yeni tablo / migration YOK; teslim defteri
+#     KULLANILMAZ: statementId zorunlu FK). Yeniden / es zamanli kosu mukerrer iz, basari veya gonderim uretmez; atlama "gonderildi" sayilmaz;
+#     yazim hatasi gizlenmez (WRITE_FAILED + cron ariza raporu). Saf yardimci + servis (prisma mock); DB yok. Duzeltmesiz aylik kosu
+#     servisiyle 6 birim testi DUSER (RED kanitlandi). Gercek HTTP + disposable DB kabulu db/domain-integration manifestindeki E1 spec'inde.
+src/modules/client-statement/__tests__/client-statement-monthly-skip-trace.spec.ts
+#
 #   ACCOUNTING-JOURNAL surec-ici Nest HTTP smoke spec'leri (owner GO 2026-09-17 "ACCOUNTING-JOURNAL / 4 HTTP SMOKE SPEC'IN CI BAGLAMASI"):
 #     accounting-journal modulunun 18 spec'inin tamami hicbir manifestte degildi; bu 4 HTTP smoke Nest
 #     seviyesinde (Test.createTestingModule + INestApplication + supertest + JWT/Passport; servisler mock,

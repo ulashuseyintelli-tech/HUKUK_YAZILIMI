@@ -252,6 +252,9 @@ src/modules/client-settlement/__tests__/tm47d-happy-path-financial-qa.integratio
 #     E1 (ekstre): TL kaynaklarla gecerli dosya / genel ekstre uretilir; TL disi / bos para birimi kaynakta (acilis devri dahil, dosya para
 #     birimi TL olsa bile) HTTP 400 CLIENT_STATEMENT_UNSUPPORTED_CURRENCY + ekstre / satir / denetim gunlugu / bildirim YAZILMAZ; yenileme
 #     eski ekstreyi degistirmez; buro ve alacakli siniri; aylik kosu "basarisiz" degil nedeniyle atlar.
+#     Atlanan aylik ekstre izi (owner karari 2026-10-03 "7 — B"; ayni spec, +4 senaryo): atlama musteri + donem + neden basina TEK kalici
+#     gorev (`Task.dedupeKey` UNIQUE) birakir; yeniden kosu / es zamanli kosu mukerrer gorev, ekstre, teslim defteri kaydi veya bildirim
+#     uretmez; tamamlanmis gorev dirilmez; TL musteri icin iz yazilmaz; buro izolasyonu. Duzeltmesiz aylik kosu servisiyle 4 senaryo DUSER.
 #     G1 (Genel Cari): sunucu kapsam disi dosya / kaydi bildirir (TAM / KISMI / DISI), TL toplamina doviz eklenmez, gercek sifir ile kapsam
 #     disi ayrilir, #2878 `cases` para birimi korunur, buro / muvekkil / alacakli izolasyonu.
 #     Duzeltmesiz servis kodu ile 26 testin 19'u DUSER (RED kanitlandi); TL gecerli ekstre, buro izolasyonu ve ortak alacakli kontrol testleri
