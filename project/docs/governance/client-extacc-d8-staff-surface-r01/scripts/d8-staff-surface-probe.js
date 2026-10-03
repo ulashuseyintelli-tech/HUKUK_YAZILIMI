@@ -3,8 +3,10 @@
  * EXTACC D-8 R01 — PERSONEL YÜZEYİ DIŞARIDAN KAPALI: makine ölçümü (owner PC'sinden, gerçek alan adı, gerçek TLS).
  *
  * NE ÖLÇER : izin listesi DIŞINDAKİ (yöntem, yol) çiftleri kenardan REDDEDİLİR (403) — personel sayfaları, personel API'si,
- *            /api/portal/admin/*, izinli yollarda yanlış yöntem (POST/PUT/PATCH/DELETE), kodlama/normalizasyon varyantları.
- *            Pozitif kontroller izinli yolların UYGULAMA katmanına ulaştığını gösterir (401 = guard'a ulaştı; 200 = sayfa).
+ *            /api/portal/admin/*, izinli yollarda yanlış yöntem (POST/PUT/PATCH/DELETE), HEAD/OPTIONS (D8-E1; kenar izin
+ *            matcher'ları yöntem duyarlıdır → HEAD/OPTIONS hiçbir kurala uymaz, varsayılan 403), izole provadan taşınan
+ *            18 kodlama/normalizasyon varyantı (D8-E2; HAM yol korunur). Pozitif kontroller izinli yolların UYGULAMA
+ *            katmanına ulaştığını gösterir (401 = guard'a ulaştı; 200 = sayfa).
  * KATMAN   : her 403 için `hints` AYRI alanlarda kaydedilir: bodyEmpty · providerSignature (gövde imzası, bool) ·
  *            edgeHeaderPresent (kenar başlığı varlığı) · serverHeaderValue (yalnız değer adı: 'Caddy' / 'cloudflare' / '') ·
  *            cfMitigatedPresent. Server / sağlayıcı başlıkları ve gövde imzası reddin hangi katmanda üretildiğinin KESİN KANITI
@@ -30,6 +32,12 @@
  *       - GET /api/auth/me · /api/cases · /api/users : 401 (token yok). GET /api/health : R27'de kök ucu yok → 404.
  *       - izinli yolda yanlış yöntem (POST /api/portal/cases, PUT/DELETE messages, …): rota yok → 404 (yazma yok).
  *       - personel sayfaları (/, /auth/login, /dashboard, …): Next sayfa 200/302 (yazma yok) — yüzey dışarıya AÇIK = bulgu.
+ *       - HEAD (D8-E1): personel sayfası → Next 200/3xx gövdesiz; personel API/admin → Express HEAD'i GET işleyicisine
+ *         yönlendirir → JwtAuthGuard 401 (token yok); DB/yazma/audit/giriş sayacı yok.
+ *       - OPTIONS (D8-E1): personel API/admin → Nest enableCors ön uçuşu guard/rota'dan ÖNCE 204 (Content-Length 0; Origin
+ *         başlığı yok → ACAO yansıtılmaz; giriş sayacı/yazma/audit YOK); personel sayfası → Next 405/404 (çalışma zamanıyla doğrulanmadı).
+ *       - 18 kodlama/normalizasyon varyantı (D8-E2): kenar ham yolu normalize etmeden reddederse 403; geçer ve uygulama
+ *         çözerse hedefe göre sayfa 200 / admin 401 / rota yok 404; yazma yok; varyant izin listesini aştı = bulgu.
  * YAPMAZ   : kimlik bilgisi göndermez; forgot-password/reset-password çağırmaz (e-posta); intake POST, belge yükleme, mesaj yazma yok;
  *            DB erişimi yok. Pozitif listedeki POST/DELETE'ler token olmadan guard 401'de durur.
  * KANIT    : `design` alanı (credentialsSent / writesAttempted = false) betik TASARIM BEYANIDIR (ölçüm değil).
@@ -66,6 +74,17 @@ const FX = {
   noRoute: 'uygulamada bu (yöntem, yol) için rota yok → 404; yazma yok; yanlış yöntem geçti = bulgu',
   nextMethod: 'Next sayfa rotasına yazma yöntemi → 404/405; yazma yok; geçti = bulgu',
   notFound: 'Next/Nest 404; yazma yok; izin listesi dışı = bulgu',
+  // D8-E1 — HEAD/OPTIONS. Kenar izin matcher'ları yöntem duyarlıdır (method GET/POST/DELETE); HEAD ve OPTIONS hiçbir izin
+  // kuralına uymaz → varsayılan `respond 403`. "Kenar geçirirse" sonucu kaynak 1b758d29'den türetilir.
+  headPage: 'HEAD personel sayfası: Next App Router HEAD = GET başlıkları (gövde yok) → 200/3xx; personel yüzeyi dışarıya açık = bulgu; yazma yok',
+  headApi: 'HEAD personel API: Express HEAD isteğini GET işleyicisine yönlendirir → global SmokeAuthorizationGuard (Bearer yok → geçer) → JwtAuthGuard 401; gövde yok; DB/yazma/audit/giriş sayacı yok',
+  headAdmin: 'HEAD admin: Express HEAD→GET işleyici → JwtAuthGuard 401 (token yok); gövde yok; yazma/audit yok',
+  optionsPage: 'OPTIONS personel sayfası: Next App Router sayfası yalnız GET/HEAD → 405 (Allow: GET, HEAD) ya da 404 (çalışma zamanıyla doğrulanmadı); yazma yok',
+  optionsApi: 'OPTIONS personel API: Nest enableCors ön uçuşu yönlendirme/guard öncesinde 204 (Content-Length 0); istek Origin başlığı yok → ACAO yansıtılmaz; guard/rota/DTO/giriş sayacı çalışmaz; yazma/audit/hata kaydı yok',
+  optionsAdmin: 'OPTIONS admin: Nest CORS ön uçuşu @deny ve JwtAuthGuard öncesinde 204; admin işleyici çalışmaz; yazma yok',
+  // D8-E2 — izole provadan taşınan 18 kodlama/normalizasyon varyantı (edge-allowlist-probe.js EVASION). Amaç: kenar ham yolu
+  // normalize edip izin listesini aşmaya izin vermiyor mu. Kenar reddederse 403; geçer ve uygulama ham yolu çözerse hedefe göre.
+  evasion: 'kodlama/normalizasyon varyantı: kenar ham yolu normalize etmeden reddederse 403; geçer ve uygulama çözerse hedefe göre personel sayfası 200 / admin JwtAuthGuard 401 / rota yok 404; yazma yok; varyant izin listesini aştı = bulgu',
 };
 // Kenar izin listesi (client-external-access-r01/templates/Caddyfile.template) DIŞI vektörler — hepsi 403 beklenir.
 // [ad, yöntem, HAM yol, kenar geçirirse olası sonuç]
@@ -86,10 +105,9 @@ const DENY = [
   ['portal admin belgeler',       'GET',    '/api/portal/admin/documents/pending',        FX.admin],
   ['portal admin mesajlar',       'GET',    '/api/portal/admin/messages/clients',         FX.admin],
   ['portal admin kök',            'GET',    '/api/portal/admin',                          FX.adminVar],
-  ['portal admin büyük harf',     'GET',    '/api/portal/ADMIN/documents/pending',        FX.adminVar],
-  ['portal admin nokta-segment',  'GET',    '/api/portal/./admin/documents/pending',      FX.adminVar],
   ['portal admin kodlanmış /',    'GET',    '/api/portal%2Fadmin/documents/pending',      FX.adminVar],
   ['portal admin sorgu ile',      'GET',    '/api/portal/admin/documents/pending?x=1',    FX.admin],
+  // (portal admin büyük harf '/ADMIN/' ve nokta-segment '/./admin/' artık D8-E2 kodlama bloğundadır; tekrar istek yok)
   ['intake DELETE',               'DELETE', '/intake/d8probe',                            FX.nextMethod],
   ['intake API DELETE',           'DELETE', '/api/public/intake/d8probe',                 FX.noRoute],
   ['intake API PUT (boş gövde)',  'PUT',    '/api/public/intake/d8probe',                 FX.noRoute],
@@ -107,6 +125,32 @@ const DENY = [
   ['bilinmeyen kök yol',          'GET',    '/robots.txt',                                FX.notFound],
   ['api kök',                     'GET',    '/api',                                       FX.notFound],
   ['api kök slash',               'GET',    '/api/',                                      FX.notFound],
+  // D8-E1 — HEAD / OPTIONS ret vektörleri (üç yüzey: personel sayfası · personel API · admin portal yolu). Gövdesiz.
+  ['HEAD personel sayfası',       'HEAD',   '/',                                          FX.headPage],
+  ['HEAD personel API',           'HEAD',   '/api/auth/me',                               FX.headApi],
+  ['HEAD admin portal yolu',      'HEAD',   '/api/portal/admin/documents/pending',        FX.headAdmin],
+  ['OPTIONS personel sayfası',    'OPTIONS','/',                                          FX.optionsPage],
+  ['OPTIONS personel API',        'OPTIONS','/api/auth/me',                               FX.optionsApi],
+  ['OPTIONS admin portal yolu',   'OPTIONS','/api/portal/admin/documents/pending',        FX.optionsAdmin],
+  // D8-E2 — izole provadan (edge-allowlist-probe.js EVASION) taşınan 18 kodlama/normalizasyon varyantı. HAM yol korunur.
+  ['varyant %61dmin',             'GET',    '/api/portal/%61dmin/documents/pending',      FX.evasion],
+  ['varyant %61dmin POST (boş gövde)', 'POST', '/api/portal/%61dmin/create-user',         FX.evasion],
+  ['varyant admin%2Fdocuments',   'GET',    '/api/portal/admin%2Fdocuments%2Fpending',    FX.evasion],
+  ['varyant DELETE kodlu traversal', 'DELETE', '/api/portal/documents/x%2F..%2Fadmin%2Fdocuments%2Fpending', FX.evasion],
+  ['varyant düz traversal',       'GET',    '/api/portal/cases/../admin/documents/pending', FX.evasion],
+  ['varyant kodlu traversal ..%2Fadmin', 'GET', '/api/portal/documents/..%2Fadmin/documents/pending', FX.evasion],
+  ['varyant çift slash',          'GET',    '//api/portal/admin/documents/pending',       FX.evasion],
+  ['varyant nokta segment',       'GET',    '/api/portal/./admin/documents/pending',      FX.evasion],
+  ['varyant büyük harf /API/',    'GET',    '/API/portal/cases',                          FX.evasion],
+  ['varyant büyük harf /ADMIN/',  'GET',    '/api/portal/ADMIN/documents/pending',        FX.evasion],
+  ['varyant sondaki slash',       'GET',    '/api/portal/cases/',                         FX.evasion],
+  ['varyant noktalı virgül',      'GET',    '/api/portal/cases;x=1',                      FX.evasion],
+  ['varyant web traversal intake', 'GET',   '/intake/abc/../../auth/login',               FX.evasion],
+  ['varyant web traversal _next', 'GET',    '/_next/../auth/login',                       FX.evasion],
+  ['varyant web kodlu traversal', 'GET',    '/_next/%2e%2e/auth/login',                   FX.evasion],
+  ['varyant boş bayt kodlu',      'GET',    '/api/portal/cases%00/admin',                 FX.evasion],
+  ['varyant çift kodlama',        'GET',    '/api/portal/documents/%252e%252e/admin',     FX.evasion],
+  ['varyant unicode slash',       'GET',    '/api/portal/admin%c0%afdocuments/pending',   FX.evasion],
 ];
 // Pozitifler — izinli çiftler uygulamaya ULAŞIR; hiçbiri yazma yapmaz (token yok → guard 401; sayfa GET → 200).
 const ALLOW = [
