@@ -95,11 +95,14 @@ describe('AVUKAT — LawyerService.create transaction sözleşmesi', () => {
     ]);
     const prisma = { $transaction: jest.fn(), lawyer: { findMany: jest.fn() } } as any;
     const auditSvc = audit();
-    const svc = new LawyerService(prisma, auditSvc as any, officeApproval() as any);
+    const approval = officeApproval();
+    const svc = new LawyerService(prisma, auditSvc as any, approval as any);
     const { ctx } = createPartyWriteTxContext(outerTx);
 
-    await svc.create(TENANT, { name: 'Ada', surname: 'Lovelace' }, undefined, undefined, ctx);
+    // B3: ayrıcalıksız pasif kaydın yeniden etkinleşmesi yaşam döngüsü yetkisi ister → yetkili aktör.
+    await svc.create(TENANT, { name: 'Ada', surname: 'Lovelace' }, { userId: 'u-yetkili', role: 'USER' } as any, undefined, ctx);
 
+    expect(approval.isApproverEligible).toHaveBeenCalledWith('u-yetkili', TENANT);
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(outerTx.lawyer.updateMany).toHaveBeenCalled();
     expect(auditSvc.logInTransaction).toHaveBeenCalledWith(outerTx, expect.objectContaining({ action: 'LAWYER_REACTIVATE' }));

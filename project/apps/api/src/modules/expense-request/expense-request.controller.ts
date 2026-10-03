@@ -6,6 +6,7 @@ import { ExpenseNotificationService } from './expense-notification.service';
 import { ExpenseViewService } from './expense-view.service';
 import { ExpenseCalculatorService } from './expense-calculator.service';
 import { AuthGuard } from '@nestjs/passport';
+import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { ExpenseRequestStatus } from '@prisma/client';
 import { Request } from 'express';
 // CPE Integration - Phase 3
@@ -17,7 +18,7 @@ interface AuthRequest extends Request {
 }
 
 @Controller('expense-requests')
-@UseGuards(AuthGuard('jwt'), CpeRequiredGuard)
+@UseGuards(AuthGuard('jwt'), ViewerWriteDenyGuard, CpeRequiredGuard)
 export class ExpenseRequestController {
   constructor(
     private readonly service: ExpenseRequestService,
@@ -237,6 +238,7 @@ export class ExpenseRequestController {
   }
 
   // ==================== GATE ENDPOINT'LERİ ====================
+  // Üç uç da çağıranın bürosuna bağlıdır: başka büronun dosyası, var olmayan dosyayla aynı 404 "Takip bulunamadı" alır.
 
   /**
    * Gate durumu kontrol et
@@ -244,7 +246,7 @@ export class ExpenseRequestController {
    */
   @Get('case/:caseId/gate-status')
   async getGateStatus(@Req() req: AuthRequest, @Param('caseId') caseId: string) {
-    return this.gateService.checkGate(caseId);
+    return this.gateService.checkGate(caseId, req.user.tenantId);
   }
 
   /**
@@ -257,7 +259,7 @@ export class ExpenseRequestController {
     @Param('caseId') caseId: string,
     @Param('actionType') actionType: string,
   ) {
-    const canPerform = await this.gateService.canPerformUyapAction(caseId, actionType);
+    const canPerform = await this.gateService.canPerformUyapAction(caseId, actionType, req.user.tenantId);
     return { canPerform, actionType };
   }
 
@@ -267,7 +269,7 @@ export class ExpenseRequestController {
    */
   @Get('case/:caseId/gate-summary')
   async getGateSummary(@Req() req: AuthRequest, @Param('caseId') caseId: string) {
-    return this.gateService.getGateSummary(caseId);
+    return this.gateService.getGateSummary(caseId, req.user.tenantId);
   }
 
   // ==================== NOTIFICATION ENDPOINT'LERİ ====================
@@ -363,6 +365,7 @@ export class ExpenseRequestController {
    * POST /expense-requests/calculate-preview
    */
   @Post('calculate-preview')
+  @AllowViewerReadOnlyPost() // okuma/hesap: yazma YAPMAZ (kaynaktan dogrulandi)
   async calculatePreview(
     @Req() req: AuthRequest,
     @Body() body: { principalAmount: number; caseType?: string; stageCode?: string },

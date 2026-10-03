@@ -26,6 +26,9 @@ function buildApproval(opts: { eligible?: boolean; requestId?: string } = {}) {
     createPendingRequest: jest.fn().mockResolvedValue({ id: opts.requestId ?? 'appr-1' }),
     approve: jest.fn().mockResolvedValue({}),
     isApproverEligible: jest.fn().mockResolvedValue(opts.eligible ?? true),
+    // B4+B10: transaction içindeki yetkili kontrol (kilit + VIEWER reddi + yüklem) — gerçek davranışı
+    // office-approval-execution-authority spec'leri sınar; burada iş mantığı için geçer.
+    assertApproverExecutionAuthorityInTx: jest.fn().mockResolvedValue(undefined),
     markExecutionSucceeded: jest.fn().mockResolvedValue({}),
   } as any;
 }
@@ -474,5 +477,28 @@ describe('DispositionPostingService FAZ-1b reimbursement', () => {
     const { prisma, tx } = buildPrisma({ disp: DISP_APPROVED, lines: [{ id: 'l1', type: 'OFFSET_CLIENT_ADVANCE', amount: D(100) }] });
     await svc(prisma).post('t1', 'd1', { userId: 'u3' });
     expect(tx.$executeRaw).not.toHaveBeenCalled();
+  });
+});
+
+describe('B4 + B10 — dağıtım post yetkisi transaction içinde, ilk mali yazmadan ÖNCE', () => {
+  it('yetkili kontrol tx içinde ilk yazmadan önce çağrılır', async () => {
+    const { prisma, tx } = buildPrisma({ disp: DISP_APPROVED, lines: [{ id: 'l1', type: 'CLIENT_PAYABLE', amount: D(100), caseClientId: 'cc-A' }] });
+    const approval = buildApproval();
+    await svc(prisma, approval).post('t1', 'd1', { userId: 'u3' });
+    expect(approval.assertApproverExecutionAuthorityInTx).toHaveBeenCalledWith(tx, 'u3', 't1');
+    const authAt = approval.assertApproverExecutionAuthorityInTx.mock.invocationCallOrder[0];
+    expect(authAt).toBeLessThan((tx.collectionDisposition.updateMany as jest.Mock).mock.invocationCallOrder[0]);
+    expect(authAt).toBeLessThan((tx.accountingJournalEntry.create as jest.Mock).mock.invocationCallOrder[0]);
+  });
+
+  it('tx içindeki yetkili kontrol reddederse (ör. arada iptal / VIEWER) ledger, journal ve POSTED yazılmaz', async () => {
+    const { prisma, tx } = buildPrisma({ disp: DISP_APPROVED, lines: [{ id: 'l1', type: 'CLIENT_PAYABLE', amount: D(100), caseClientId: 'cc-A' }] });
+    const approval = buildApproval();
+    approval.assertApproverExecutionAuthorityInTx.mockRejectedValueOnce(new ForbiddenException('iptal edildi'));
+    await expect(svc(prisma, approval).post('t1', 'd1', { userId: 'u3' })).rejects.toThrow(ForbiddenException);
+    expect(tx.balanceLedger.create).not.toHaveBeenCalled();
+    expect(tx.accountingJournalEntry.create).not.toHaveBeenCalled();
+    expect(tx.collectionDisposition.updateMany).not.toHaveBeenCalled();
+    expect(approval.markExecutionSucceeded).not.toHaveBeenCalled();
   });
 });

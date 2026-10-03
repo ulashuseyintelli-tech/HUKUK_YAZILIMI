@@ -106,6 +106,8 @@ function officeHarness(users: Record<string, UserRow>, requests: Row[]) {
     },
   };
   prisma.$transaction = jest.fn(async (fn: (tx: unknown) => unknown) => fn(prisma));
+  // K4-1: karar tx'i aktörün Lawyer → User satırlarını FOR SHARE kilitler (sahte: satır döndürmez).
+  prisma.$queryRaw = jest.fn(async () => []);
   const audit = { log: jest.fn(async (_entry: Record<string, unknown>) => undefined) };
   const domainSync = { syncAfterDecision: jest.fn(async (_tx: unknown, _updated: unknown) => undefined) };
   const svc = new OfficeApprovalService(prisma, audit as never, domainSync as never);
@@ -258,6 +260,7 @@ const fdRequest = (over: Row = {}): Row => ({
 function fdHarness(opts: { version: Row; request: Row; actor: UserRow }) {
   const tx: any = {
     $executeRaw: jest.fn(async () => 1),
+    $queryRaw: jest.fn(async () => []), // B10: aktör satırı FOR SHARE kilidi
     clientFinancialDisclosureVersion: {
       findFirst: jest.fn(async () => ({ ...opts.version })),
       updateMany: jest.fn(async () => ({ count: 1 })),
@@ -282,7 +285,7 @@ function fdHarness(opts: { version: Row; request: Row; actor: UserRow }) {
   return { svc, tx };
 }
 
-describe('3) bağlam ayrımı — okuma ve yürütme bu turda DEĞİŞMEDİ', () => {
+describe('3) bağlam ayrımı — okuma DEĞİŞMEDİ; yürütme B4 (2026-09-27) ile ayrı kilitli yoldan', () => {
   it('OKUMA: isApproverEligible (inbox/detay görünürlüğü ve onu kullanan diğer kapılar) bağlı VIEWER için hâlâ true', async () => {
     const h = officeHarness(
       {
@@ -295,7 +298,7 @@ describe('3) bağlam ayrımı — okuma ve yürütme bu turda DEĞİŞMEDİ', ()
     await expect(h.svc.isApproverEligible('u-vd', TENANT)).resolves.toBe(true);
   });
 
-  it('YÜRÜTME: payout finalize yeniden denetimi (PayoutApprovalPolicy) DEĞİŞMEDİ — rol kapısı yalnız karar metotlarında', async () => {
+  it('DİSPATCHER: PayoutApprovalPolicy.isEligible (generic approve/reject) rol OKUMAZ — DEĞİŞMEDİ; yürütme assertExecutionEligibleInTx ile ayrı', async () => {
     const h = officeHarness({ 'u-vm': { id: 'u-vm', role: 'VIEWER', lawyer: MANAGER } }, []);
     await expect(new PayoutApprovalPolicy(h.prisma).isEligible('u-vm', TENANT)).resolves.toBe(true);
   });
@@ -325,11 +328,29 @@ describe('3) bağlam ayrımı — okuma ve yürütme bu turda DEĞİŞMEDİ', ()
     expect(h.tx.officeApprovalRequest.updateMany).not.toHaveBeenCalled();
   });
 
-  it('YÜRÜTME/KURTARMA DEĞİŞMEDİ: kayıtlı kararı veren kişi kararını bildirime uygular (rol kapısı EKLENMEDİ — açık kalem)', async () => {
+  it('B4 KURTARMA: kurtarma anında VIEWER olan, kayıtlı kararı veren kişi kararını bildirime UYGULAYAMAZ; yazma YOK (açık kalem kapandı)', async () => {
     const h = fdHarness({
       version: fdVersion(),
       request: fdRequest({ status: OfficeApprovalStatus.APPROVED, approverUserId: VIEWER_PARTNER.id, decidedAt: DECIDED_AT }),
       actor: VIEWER_PARTNER,
+    });
+    await expect(
+      h.svc.reconcileConsumedOfficeApproval({
+        tenantId: TENANT,
+        disclosureVersionId: V,
+        actorUserId: VIEWER_PARTNER.id,
+      }),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'DISCLOSURE_APPROVAL_NOT_ELIGIBLE' }) });
+    expect(h.tx.clientFinancialDisclosureVersion.updateMany).not.toHaveBeenCalled();
+    expect(h.tx.officeApprovalRequest.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('B4 KURTARMA: aynı kişi USER iken kayıtlı kararı uygular; aktör satırları kilitlenir (B10); talep yeniden mutate EDİLMEZ', async () => {
+    const asUser = { ...VIEWER_PARTNER, role: 'USER' as const };
+    const h = fdHarness({
+      version: fdVersion(),
+      request: fdRequest({ status: OfficeApprovalStatus.APPROVED, approverUserId: VIEWER_PARTNER.id, decidedAt: DECIDED_AT }),
+      actor: asUser,
     });
     const res = await h.svc.reconcileConsumedOfficeApproval({
       tenantId: TENANT,
@@ -337,6 +358,7 @@ describe('3) bağlam ayrımı — okuma ve yürütme bu turda DEĞİŞMEDİ', ()
       actorUserId: VIEWER_PARTNER.id,
     });
     expect(res).toMatchObject({ replayed: false, status: ClientFinancialDisclosureStatus.OFFICE_APPROVED });
+    expect(h.tx.$queryRaw).toHaveBeenCalledTimes(2); // Lawyer → User FOR SHARE
     expect(h.tx.clientFinancialDisclosureVersion.updateMany).toHaveBeenCalledTimes(1);
     expect(h.tx.officeApprovalRequest.updateMany).not.toHaveBeenCalled(); // talep YENİDEN mutate edilmez
   });

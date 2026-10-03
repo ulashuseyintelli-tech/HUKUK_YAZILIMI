@@ -222,6 +222,14 @@ src/modules/expense-request/expense-calculator.spec.ts
 src/modules/expense-request/expense-payment-reversal-contract.service.spec.ts
 src/modules/expense-request/expense-payment-reversal-runtime.service.spec.ts
 src/modules/expense-request/expense-request.spec.ts
+#   Masraf kapisi (ExpenseGateService) ve paket hesabi (CostPackageService.computeExpenseRequest) — buro (tenant) siniri,
+#     saf birim (DB yok): dosya sahipligi dosya kimligi + cagiranin burosu ile TEK sorguda aranir, bulunamazsa "Takip
+#     bulunamadi" ve talep / paket okunmaz; bos ya da metin olmayan buro / dosya kimliginde sorguya HIC gidilmez (Prisma
+#     tanimsiz suzgeci yok sayar, govdeden gelen nesne suzgec isleci olurdu); talep sorgulari buro suzgeci tasir; paket
+#     cagiranin burosuyla aranir. Gercek HTTP + PostgreSQL kaniti db/core-lifecycle'da (expense-tenant-boundary). Duzeltmesiz
+#     servis koduyla 51 testin 49'u DUSER (RED kanitlandi); gecen 2 test mevcut davranisi sabitler.
+src/modules/expense-request/__tests__/expense-gate-tenant-scope.spec.ts
+src/modules/cost-package/__tests__/cost-package-compute-tenant-scope.spec.ts
 
 # ── TOPLU CI KAPATMA (owner EK TALIMAT 2026-09-18 "TOPLU CI KAPATMA"; olculen main 1736a4e6) ──
 #   apps/api secim disi spec'lerin toplu baglanmasi. Siniflandirma AMPIRIK: her spec DB env

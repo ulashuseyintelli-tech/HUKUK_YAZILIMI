@@ -47,6 +47,7 @@ import { ClientFinancialDisclosureApprovalPolicy } from './client-financial-disc
 import { isValidTckn } from '../../common/identity-validation.util';
 import { assertGenericDecisionAllowed } from './office-approval-domain-ownership';
 import { assertApprovalDecisionRole, isOfficeWriteDeniedForRole } from './office-write-role.policy';
+import { lockAndAssertExecutionRole, lockExecutionActorRows } from './office-approval-execution-authority';
 
 export interface CreatePendingRequestInput {
   tenantId: string;
@@ -146,7 +147,7 @@ export class OfficeApprovalService {
     this.assertStatus(req, OfficeApprovalStatus.PENDING_APPROVAL);
     await this.assertApproveSelfApprovalPolicy(req, approverUserId);
     await this.assertApproverEligibleForRequest(req, approverUserId);
-    return this.commitDecision(id, OfficeApprovalStatus.APPROVED, approverUserId, note ?? null, 'OFFICE_APPROVAL_APPROVED');
+    return this.commitDecision(id, OfficeApprovalStatus.APPROVED, approverUserId, note ?? null, 'OFFICE_APPROVAL_APPROVED', req, 'APPROVE');
   }
 
   /** Approver PENDING talebi REJECTED yapar. Gerekçe (note) ZORUNLU. İç taslak silinmez; dış-etki oluşmaz. */
@@ -157,7 +158,7 @@ export class OfficeApprovalService {
     this.assertStatus(req, OfficeApprovalStatus.PENDING_APPROVAL);
     await this.assertNotSelfApproval(req, approverUserId);
     await this.assertApproverEligibleForRequest(req, approverUserId);
-    return this.commitDecision(id, OfficeApprovalStatus.REJECTED, approverUserId, note, 'OFFICE_APPROVAL_REJECTED');
+    return this.commitDecision(id, OfficeApprovalStatus.REJECTED, approverUserId, note, 'OFFICE_APPROVAL_REJECTED', req, 'NON_APPROVE');
   }
 
   /**
@@ -186,6 +187,8 @@ export class OfficeApprovalService {
       approverUserId,
       note ?? null,
       'OFFICE_APPROVAL_APPROVED_WITH_CHANGES',
+      req,
+      'NON_APPROVE',
       { replacementSavedIntent: replacementSavedIntent as object, replacementPayloadHash },
     );
   }
@@ -208,7 +211,7 @@ export class OfficeApprovalService {
     this.assertStatus(req, OfficeApprovalStatus.PENDING_APPROVAL);
     await this.assertNotSelfApproval(req, approverUserId);
     await this.assertApproverEligibleForRequest(req, approverUserId);
-    return this.commitDecision(id, OfficeApprovalStatus.REVISION_REQUESTED, approverUserId, note, 'OFFICE_APPROVAL_REVISION_REQUESTED');
+    return this.commitDecision(id, OfficeApprovalStatus.REVISION_REQUESTED, approverUserId, note, 'OFFICE_APPROVAL_REVISION_REQUESTED', req, 'NON_APPROVE');
   }
 
   /**
@@ -407,8 +410,12 @@ export class OfficeApprovalService {
    * normalize edilmiş TCKN isValidTckn() ile geçerli. isValidTckn() yalnız boolean döner; normalize edilmiş
    * karşılaştırma anahtarını BURADA ayrıca üretiyoruz.
    */
-  private async resolveSelfApprovalIdentityCandidates(userId: string, tenantId: string): Promise<Set<string>> {
-    const user = await this.prisma.user.findUnique({
+  private async resolveSelfApprovalIdentityCandidates(
+    userId: string,
+    tenantId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<Set<string>> {
+    const user = await db.user.findUnique({
       where: { id: userId },
       select: {
         lawyer: { select: { tenantId: true, tckn: true } },
@@ -431,20 +438,28 @@ export class OfficeApprovalService {
    * bu resolver'daki bir hata/boş küme EN KÖTÜ İHTİMALLE bugünkü davranışa (UserAccount-only) düşer,
    * asla ondan daha gevşek bir sonuç üretmez.
    */
-  private async isSameApprovalIdentity(userIdA: string, userIdB: string, tenantId: string): Promise<boolean> {
+  private async isSameApprovalIdentity(
+    userIdA: string,
+    userIdB: string,
+    tenantId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<boolean> {
     if (userIdA === userIdB) return true;
-    const [candidatesA, candidatesB] = await Promise.all([
-      this.resolveSelfApprovalIdentityCandidates(userIdA, tenantId),
-      this.resolveSelfApprovalIdentityCandidates(userIdB, tenantId),
-    ]);
+    // Sıralı: interaktif transaction istemcisi eşzamanlı sorgu çalıştırmaz.
+    const candidatesA = await this.resolveSelfApprovalIdentityCandidates(userIdA, tenantId, db);
+    const candidatesB = await this.resolveSelfApprovalIdentityCandidates(userIdB, tenantId, db);
     for (const candidate of candidatesA) {
       if (candidatesB.has(candidate)) return true;
     }
     return false;
   }
 
-  private async assertNotSelfApproval(req: OfficeApprovalRequest, approverUserId: string): Promise<void> {
-    if (await this.isSameApprovalIdentity(approverUserId, req.requesterUserId, req.tenantId)) {
+  private async assertNotSelfApproval(
+    req: OfficeApprovalRequest,
+    approverUserId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<void> {
+    if (await this.isSameApprovalIdentity(approverUserId, req.requesterUserId, req.tenantId, db)) {
       throw new BadRequestException('SELF_APPROVAL_FORBIDDEN: Kendi talebinizi onaylayamaz/reddedemezsiniz.');
     }
   }
@@ -454,13 +469,17 @@ export class OfficeApprovalService {
    * kararında, PayoutApprovalPolicy eligible üst-seviye aktör kendi payout talebini onaylayabilir.
    * reject/requestRevision/approveWithChanges bu istisnaya dahil değildir — istisna GENİŞLETİLMEDİ.
    */
-  private async assertApproveSelfApprovalPolicy(req: OfficeApprovalRequest, approverUserId: string): Promise<void> {
-    if (!(await this.isSameApprovalIdentity(approverUserId, req.requesterUserId, req.tenantId))) return;
+  private async assertApproveSelfApprovalPolicy(
+    req: OfficeApprovalRequest,
+    approverUserId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<void> {
+    if (!(await this.isSameApprovalIdentity(approverUserId, req.requesterUserId, req.tenantId, db))) return;
     if (req.actionCode === ActionCode.CLIENT_PAYOUT_POST) {
-      await this.payoutApprovalPolicy.assertEligible(approverUserId, req.tenantId);
+      await this.payoutApprovalPolicy.assertEligible(approverUserId, req.tenantId, db);
       return;
     }
-    await this.assertNotSelfApproval(req, approverUserId);
+    await this.assertNotSelfApproval(req, approverUserId, db);
   }
 
   /**
@@ -473,8 +492,13 @@ export class OfficeApprovalService {
    * ///  - OfficeApprovalService.assertApproverEligible() (karar metodları) · OfficeApprovalController (inbox eligibility + detail visibility).
    * /// </remarks>
    */
-  async isApproverEligible(userId: string, tenantId: string): Promise<boolean> {
-    const user = await this.prisma.user.findUnique({
+  async isApproverEligible(
+    userId: string,
+    tenantId: string,
+    // B10: yürütme transaction'ı yüklemi kilit ALTINDA, kendi client'ıyla değerlendirir. Verilmezse eskisi gibi.
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<boolean> {
+    const user = await db.user.findUnique({
       where: { id: userId },
       include: {
         lawyer: { select: { lawyerRank: true, canApproveOfficeActions: true } },
@@ -490,6 +514,24 @@ export class OfficeApprovalService {
   }
 
   /**
+   * B4 + B10 — `isApproverEligible` yüklemine bağlı MALİ YÜRÜTMENİN yetkili kontrolü: yürütme transaction'ı
+   * içinde, ilk mali yazmadan ÖNCE çağrılır. Aktör satırları kilitlenir (yetki iptaliyle serileşir), VIEWER
+   * reddedilir, yüklem kilit altında yeniden değerlendirilir. Transaction dışındaki erken kontrol UCUZ ERKEN-FAIL
+   * olarak kalır; YETKİLİ karar budur (F04 `assertCollectionConfirmedForUpdate` emsali).
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - DispositionPostingService.post() → POST /collection-dispositions/:id/post ($transaction başı).
+   * /// </remarks>
+   */
+  async assertApproverExecutionAuthorityInTx(tx: Prisma.TransactionClient, userId: string, tenantId: string): Promise<void> {
+    await lockAndAssertExecutionRole(tx, userId);
+    if (!(await this.isApproverEligible(userId, tenantId, tx))) {
+      throw new ForbiddenException('Onay yetkisi yok (PARTNER veya yetkilendirilmiş avukat gerekir)');
+    }
+  }
+
+  /**
    * F01 actor kapısı: Office yönetim mutasyonları ve hassas Office okuması için
    * canonical genel allowlist. Bu, action-specific approval politikalarını
    * genişletmez; approval kararları hâlâ resolveApproverEligible() üzerinden
@@ -502,9 +544,11 @@ export class OfficeApprovalService {
     userId: string,
     tenantId: string,
     targetOfficeId?: string,
-    options?: { write?: boolean },
+    // K4-2..4: `db` verilirse yüklem o transaction istemcisiyle (aktör satırları kilitliyken) değerlendirilir.
+    options?: { write?: boolean; db?: Prisma.TransactionClient },
   ): Promise<boolean> {
-    const user = await this.prisma.user.findUnique({
+    const db = options?.db ?? this.prisma;
+    const user = await db.user.findUnique({
       where: { id: userId },
       select: {
         role: true,
@@ -532,6 +576,16 @@ export class OfficeApprovalService {
     if (user.staffMember) return false;
 
     const linkedOfficeId = user.lawyer?.officeId ?? undefined;
+    // B1 (owner GO 2026-09-27): hedef ofis istemcinin beyanından DEĞİL, doğrulanan kaynaktan gelir. Çağıran
+    // vermezse (F01 guard'ı, liste projeksiyonları) hedef, tenant'ın DB'deki TEK ofisidir (Office.tenantId
+    // @unique; kontrollü yürütme servisindeki sunucu-tarafı çözümle aynı). Böylece cross-office kontrolü rota
+    // kapısında da çalışır; bağlı avukatının officeId'si tenant'ın ofisini göstermeyen aktör elenir.
+    // Tenant ofisi çözülemiyorsa bağ tenant'a ait bir ofisi göstermiyor demektir → fail-closed (kontrollü
+    // yürütmenin OFFICE_CONTEXT_UNRESOLVED emsali).
+    if (linkedOfficeId && !targetOfficeId) {
+      const tenantOfficeId = await this.resolveTenantOfficeId(tenantId, db);
+      if (!tenantOfficeId || tenantOfficeId !== linkedOfficeId) return false;
+    }
     if (targetOfficeId && linkedOfficeId && targetOfficeId !== linkedOfficeId) return false;
 
     // UserRole.ADMIN is the canonical super-admin mapping. No SUPER_ADMIN role
@@ -556,6 +610,42 @@ export class OfficeApprovalService {
   }
 
   /**
+   * K4-2 (owner GO 2026-09-28) — F01 YAZMA yetkisinin yazma transaction'ı İÇİNDEKİ yetkili değerlendirmesi: aktörün
+   * `Lawyer` → `User` satırları `FOR SHARE` kilitlenir (iptal yollarıyla aynı sıra) ve AYNI yüklem (`write: true`)
+   * kilit altında, aynı tx istemcisiyle yeniden sorulur. İptal önce commit ettiyse → false; bu kilit önce alındıysa
+   * iptal (rütbe/delege/ofis değişikliği, pasifleştirme) yazma commit edene kadar bekler.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - CaseService.withCasePermissionGrantAuthority() → PATCH /cases/:id/lawyers/:id, PATCH /cases/:id/staff/:id, POST /cases/:id/lawyers (yetki alanı varsa)
+   * /// </remarks>
+   */
+  async isF01WriteActorAuthorizedInTx(tx: Prisma.TransactionClient, userId: string, tenantId: string): Promise<boolean> {
+    await lockExecutionActorRows(tx, userId);
+    return this.isF01ActorAuthorized(userId, tenantId, undefined, { write: true, db: tx });
+  }
+
+  /**
+   * K4-3/K4-4 (owner GO 2026-09-28) — `isApproverEligible` yüklemine bağlı yetki VERME / erişim açma yazılarının
+   * (portal hesabı, dosya ücret sözleşmesi) transaction İÇİNDEKİ yetkili değerlendirmesi: kilit + AYNI yüklem.
+   * Mali yürütme kontrolü (`assertApproverExecutionAuthorityInTx`) DEĞİLDİR — VIEWER kodu/semantiği eklemez;
+   * yolların mevcut kuralı aynen korunur.
+   */
+  async isApproverEligibleInTx(tx: Prisma.TransactionClient, userId: string, tenantId: string): Promise<boolean> {
+    await lockExecutionActorRows(tx, userId);
+    return this.isApproverEligible(userId, tenantId, tx);
+  }
+
+  /** B1 — tenant'ın tek ofisinin kimliği (Office.tenantId @unique); ofis yoksa undefined (kontrol uygulanamaz). */
+  private async resolveTenantOfficeId(
+    tenantId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<string | undefined> {
+    const office = await db.office.findUnique({ where: { tenantId }, select: { id: true } });
+    return office?.id;
+  }
+
+  /**
    * PAYOUT-APPROVAL-2 (2026-07-04, owner kararı) — eligibility'yi actionCode'a göre dispatch eder.
    * isApproverEligible() KASITLI OLARAK DEĞİŞTİRİLMEDİ: disposition ve her başka actionCode bu
    * metodun eski davranışını AYNEN kullanmaya devam eder (sıfır regresyon). Yalnız CLIENT_PAYOUT_POST
@@ -563,23 +653,31 @@ export class OfficeApprovalService {
    * disposition'a veya başka bir actionCode'a SIZMAZ). Üçüncü bir action-özel policy gerekirse buraya
    * yeni bir dal eklenir — registry ŞİMDİLİK kurulmuyor (YAGNI, tek dal yeterli).
    */
-  private async resolveApproverEligible(req: OfficeApprovalRequest, approverUserId: string): Promise<boolean> {
+  private async resolveApproverEligible(
+    req: OfficeApprovalRequest,
+    approverUserId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<boolean> {
     if (req.actionCode === ActionCode.CLIENT_PAYOUT_POST) {
-      return this.payoutApprovalPolicy.isEligible(approverUserId, req.tenantId);
+      return this.payoutApprovalPolicy.isEligible(approverUserId, req.tenantId, db);
     }
     // CLIENT-P2-U03-TRACK-B-I03 (charter §41, owner kararı PR #1761) — ÜÇÜNCÜ dal. Aynı izolasyon
     // deseni: yalnız bu actionCode disclosure politikasına gider (MANAGER dahil), diğer hiçbir
     // actionCode etkilenmez ve paylaşılan isApproverEligible() DEĞİŞTİRİLMEZ.
     if (req.actionCode === ActionCode.CLIENT_FINANCIAL_DISCLOSURE_APPROVE) {
-      return this.clientFinancialDisclosureApprovalPolicy.isEligible(approverUserId, req.tenantId);
+      return this.clientFinancialDisclosureApprovalPolicy.isEligible(approverUserId, req.tenantId, db);
     }
-    return this.isApproverEligible(approverUserId, req.tenantId);
+    return this.isApproverEligible(approverUserId, req.tenantId, db);
   }
 
   /** Approver yeterliliği — değilse 403. (Predikat resolveApproverEligible'da; karar metodları bunu çağırır.) */
-  private async assertApproverEligibleForRequest(req: OfficeApprovalRequest, approverUserId: string): Promise<void> {
-    await this.assertApprovalDecisionRoleAllowed(approverUserId); // VIEWER ONAY KARARI SINIRI — rütbe/delege denetiminden ÖNCE
-    if (!(await this.resolveApproverEligible(req, approverUserId))) {
+  private async assertApproverEligibleForRequest(
+    req: OfficeApprovalRequest,
+    approverUserId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<void> {
+    await this.assertApprovalDecisionRoleAllowed(approverUserId, db); // VIEWER ONAY KARARI SINIRI — rütbe/delege denetiminden ÖNCE
+    if (!(await this.resolveApproverEligible(req, approverUserId, db))) {
       throw new ForbiddenException('Onay yetkisi yok (aktif, aynı tenant, PARTNER veya yetkilendirilmiş avukat gerekir).');
     }
   }
@@ -591,9 +689,43 @@ export class OfficeApprovalService {
    * approveWithChanges) çağırır ve commitDecision'dan ÖNCE çalışır → ret halinde karar kaydı, domain senkronu ve
    * audit YOK. isApproverEligible() DEĞİŞMEDİ: inbox/detay görünürlüğü ve onu kullanan diğer kapılar aynen kalır.
    */
-  private async assertApprovalDecisionRoleAllowed(approverUserId: string): Promise<void> {
-    const actor = await this.prisma.user.findUnique({ where: { id: approverUserId }, select: { role: true } });
+  private async assertApprovalDecisionRoleAllowed(
+    approverUserId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<void> {
+    const actor = await db.user.findUnique({ where: { id: approverUserId }, select: { role: true } });
     assertApprovalDecisionRole(actor?.role);
+  }
+
+  /**
+   * K4-1 (owner GO 2026-09-28) — karar YETKİSİNİN transaction içindeki yetkili değerlendirmesi.
+   *
+   * Karar metodlarının transaction DIŞINDAKİ kontrolleri ucuz erken-fail olarak kalır; YETKİLİ karar burasıdır:
+   * ilk durum değişikliğinden ve domain senkronundan (tahsilat iptali, ClaimItem yüksek etkili değişiklik, mali
+   * dosya kapama, dağıtım onayı) ÖNCE, aynı transaction'da. Aktörün `Lawyer` → `User` satırları `FOR SHARE`
+   * kilitlenir — iptal yollarıyla AYNI sıra (LawyerService.update delegasyon/rütbe: Lawyer; LawyerService.delete:
+   * önce Lawyer sonra User):
+   *  - iptal ÖNCE commit ettiyse kilitli okuma en son satırı görür → 403, karar/senkron/denetim YOK;
+   *  - karar kilidi ÖNCE aldıysa iptalin UPDATE'i karar commit/rollback olana kadar BEKLER.
+   * Her yolun KENDİ kuralı ayrı ayrı yeniden değerlendirilir: karar rolü sınırı (VIEWER), yol-özel öz-onay kuralı
+   * (approve: CLIENT_PAYOUT_POST istisnası; reject / approveWithChanges / requestRevision: kesin yasak) ve
+   * actionCode'a göre uygunluk (payout / FD / genel). Mali YÜRÜTME kontrolü (`assertApproverExecutionAuthorityInTx`,
+   * `FINANCIAL_EXECUTION_DENIED_VIEWER`) KULLANILMAZ — kararın kuralları farklıdır; yalnız kilit yardımcısı ortaktır.
+   * Durum CAS'ı ve domain senkronunun stale-state kontrolleri aynen korunur.
+   */
+  private async authorizeDecisionInTx(
+    tx: Prisma.TransactionClient,
+    req: OfficeApprovalRequest,
+    approverUserId: string,
+    selfApprovalRule: 'APPROVE' | 'NON_APPROVE',
+  ): Promise<void> {
+    await lockExecutionActorRows(tx, approverUserId);
+    if (selfApprovalRule === 'APPROVE') {
+      await this.assertApproveSelfApprovalPolicy(req, approverUserId, tx);
+    } else {
+      await this.assertNotSelfApproval(req, approverUserId, tx);
+    }
+    await this.assertApproverEligibleForRequest(req, approverUserId, tx);
   }
 
   private async commitDecision(
@@ -602,10 +734,15 @@ export class OfficeApprovalService {
     approverUserId: string,
     note: string | null,
     auditAction: string,
+    // Yetki yalnız talebin DEĞİŞMEZ alanlarına (talep sahibi, actionCode, tenant) dayanır; durum aşağıdaki CAS ile korunur.
+    req: OfficeApprovalRequest,
+    selfApprovalRule: 'APPROVE' | 'NON_APPROVE',
     extra: Record<string, unknown> = {},
   ): Promise<OfficeApprovalRequest> {
     let updated: OfficeApprovalRequest | null = null;
     await this.prisma.$transaction(async (tx) => {
+      // K4-1: yetki kilit ALTINDA ve ilk yazmadan (durum CAS'ı + domain senkronu) ÖNCE.
+      await this.authorizeDecisionInTx(tx, req, approverUserId, selfApprovalRule);
       const res = await tx.officeApprovalRequest.updateMany({
         where: { id, status: OfficeApprovalStatus.PENDING_APPROVAL },
         // NOT: savedIntent (orijinal niyet) burada ASLA guncellenmez; approver degisikligi yalniz extra (replacement*) ile gelir.

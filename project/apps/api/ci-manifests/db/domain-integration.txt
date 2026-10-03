@@ -228,6 +228,13 @@ src/modules/client-notification/__tests__/g4-claim-concurrency.db-gated.integrat
 #   F04 (posting / cancellation / reversal race): gercek PostgreSQL uzerinde iki commit
 #   sirasini bariyerlerle dogrular; kilitli Collection okumasi ve pre-post CAS regresyonu.
 src/modules/client-settlement/__tests__/f04-posting-reversal-race.db-gated.integration.spec.ts
+#   B10-EXECUTION-AUTHORITY-REVOCATION-RACE-R01: yurutme yetkisi (Lawyer->User FOR SHARE) ile gercek
+#     LawyerService.update/delete iptallerinin gercek PostgreSQL'de serilesmesi; kilitsiz mutasyon 3 testi kirar.
+src/modules/office-approval/__tests__/execution-authority-revocation-race.db-gated.integration.spec.ts
+#   K4-1-APPROVAL-DECISION-REVOCATION-RACE-R01 (owner GO 2026-09-28): genel onay kararlari (approve/reject/
+#     requestRevision/approveWithChanges) tx icinde Lawyer->User FOR SHARE + yol-ozel kural; gercek LawyerService
+#     update/delete iptalleriyle serilesme, domain senkronu hatasinda tam geri alma. Tx ici yetki kapatilinca 6 test kirilir.
+src/modules/office-approval/__tests__/approval-decision-revocation-race.db-gated.integration.spec.ts
 #
 #   CLIENT-SETTLEMENT kalan 2 DB-gated spec (owner GO 2026-09-17 "KALAN 2 DB-GATED SPEC / TM47D onarimi + 32/32"):
 #     describeDb + gercek PrismaClient + tm47d-happy-path-seed. tm47d test-kurulum onarimi:
@@ -265,6 +272,7 @@ src/modules/legal-deadline/__tests__/legal-deadline-snapshot-invariant.db-gated.
 src/modules/legal-deadline/__tests__/proceeding-classification.db-gated.integration.spec.ts
 src/modules/legal-deadline/__tests__/service-occurrence-deadline-calculation.db-gated.integration.spec.ts
 src/modules/legal-time-shadow/__tests__/legal-time-shadow.db-gated.integration.spec.ts
+src/modules/portal/__tests__/portal-email-match-d5-diag.db-gated.integration.spec.ts
 src/modules/portal/__tests__/portal-reset-hardening-d5.db-gated.integration.spec.ts
 src/modules/portal/__tests__/portal-reset-tenant-scope.db-gated.integration.spec.ts
 src/modules/portal/__tests__/portal-token-version-revocation.db-gated.integration.spec.ts
@@ -307,6 +315,9 @@ src/common/__tests__/w3-f04-cron-failure-visibility-runtime.db-gated.integration
 src/common/__tests__/w3-f07-cron-overlap-identity-runtime.db-gated.integration.spec.ts
 # OFFICE-P6B-CI-E2E-EXECUTION-OFFICE-R01: dedicated OFFICE A-J Nest HTTP + disposable PostgreSQL E2E.
 src/modules/office/__tests__/office-e2e.db-gated.integration.spec.ts
+# OFFICE-BANK-ACCOUNT: varsayilan hesap yarisi GERCEK PostgreSQL uzerinde - iki ayri baglantidan eszamanli ekle/guncelle,
+# her denemede TEK varsayilan (buro satiri kilidi); duzenle degismeyen alani korur; kiraci siniri.
+src/modules/office/__tests__/office-bank-default-race.db-gated.integration.spec.ts
 # OFFICE-P6B-CI-E2E-EXECUTION-OFFICE-R01: real two-tenant update and mass-assignment persistence boundary.
 src/modules/execution-office/__tests__/execution-office-update-security.db-gated.integration.spec.ts
 # OFFICE-WR01-B02 ASAMA 1-2: effective-dated havuz migration'inin gercek PostgreSQL uzerinde
@@ -354,3 +365,8 @@ src/modules/debtor/__tests__/debtor-cross-case-notification.integration.spec.ts
 src/modules/summary-engine/__tests__/allocation-evidence-qualification.db-gated.integration.spec.ts
 src/modules/summary-engine/__tests__/allocation-representative-replay.db-gated.integration.spec.ts
 src/scripts/__tests__/rcv-ws04-p03-allocation-replay-launch.db-gated.integration.spec.ts
+
+#   K4-2..4-GRANT-AUTHORITY-REVOCATION-RACE-R01 (owner GO 2026-09-28): yetki verme / erisim acma yazilari
+#     (K2 dosya yetkisi, avukat delegasyonu/rutbe, portal hesabi, ucret sozlesmesi) tx icinde Lawyer->User FOR SHARE
+#     + guncel satirdan ayni kural; tx ici yetki kapatilinca 6 test kirilir.
+src/modules/office-approval/__tests__/grant-authority-revocation-race.db-gated.integration.spec.ts

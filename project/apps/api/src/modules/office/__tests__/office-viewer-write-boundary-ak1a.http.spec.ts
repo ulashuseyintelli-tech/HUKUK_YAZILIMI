@@ -85,6 +85,8 @@ const fakePrisma = {
       };
     }),
   },
+  // B1: F01 hedef ofisi verilmezse tenant'ın tek ofisi (Office.tenantId @unique) okunur.
+  office: { findUnique: jest.fn(async () => ({ id: OFFICE })) },
 };
 
 /** Her metodu çağrı sayan servis sahtesi — servisin HİÇ çağrılmadığını kanıtlamak için. */

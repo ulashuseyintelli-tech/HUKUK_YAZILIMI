@@ -99,7 +99,10 @@ export default function ResetPasswordPage() {
               </p>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
+            // Yerel (React dışı) gönderim parolayı ADRESE yazmasın: yöntem POST. Gönder düğmesi token
+            // okunana dek zaten kapalıdır (token yalnız hidrasyondan sonra okunur) → tıklama / Enter ile
+            // hidrasyon öncesi gönderim yok; POST, `form.submit()` gibi programatik gönderimi de kapsar.
+            <form onSubmit={handleSubmit} method="post" className="space-y-4">
               <div>
                 <label htmlFor="password" className="block text-sm font-medium mb-2">
                   Yeni Parola

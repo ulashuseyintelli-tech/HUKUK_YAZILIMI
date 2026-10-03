@@ -675,6 +675,8 @@ describe('ExpenseGateService - Property Tests', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     delete process.env.EXPENSE_REMAINING_GATE_ENABLED;
+    // Kapı büro kapsamlıdır: dosya çağıranın bürosunda bulunur (büro sınırı testleri: __tests__/expense-gate-tenant-scope.spec.ts)
+    mockPrismaService.case.findFirst.mockResolvedValue({ id: 'case-1' });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -710,7 +712,7 @@ describe('ExpenseGateService - Property Tests', () => {
         },
       ]);
 
-      const result = await gateService.checkGate('case-1');
+      const result = await gateService.checkGate('case-1', 'tenant-1');
 
       expect(result.isBlocked).toBe(true);
       expect(result.blockingExpenses).toHaveLength(1);
@@ -729,7 +731,7 @@ describe('ExpenseGateService - Property Tests', () => {
         },
       ]);
 
-      const result = await gateService.checkGate('case-1');
+      const result = await gateService.checkGate('case-1', 'tenant-1');
 
       expect(result.isBlocked).toBe(true);
       expect(result.totalPending).toBe(500);
@@ -741,7 +743,7 @@ describe('ExpenseGateService - Property Tests', () => {
     it('should return blocked=false when all BLOCKING expenses are PAID', async () => {
       mockPrismaService.expenseRequest.findMany.mockResolvedValue([]);
 
-      const result = await gateService.checkGate('case-1');
+      const result = await gateService.checkGate('case-1', 'tenant-1');
 
       expect(result.isBlocked).toBe(false);
       expect(result.blockingExpenses).toHaveLength(0);
@@ -751,7 +753,7 @@ describe('ExpenseGateService - Property Tests', () => {
     it('should return blocked=false when no BLOCKING expenses exist', async () => {
       mockPrismaService.expenseRequest.findMany.mockResolvedValue([]);
 
-      const result = await gateService.checkGate('case-1');
+      const result = await gateService.checkGate('case-1', 'tenant-1');
 
       expect(result.isBlocked).toBe(false);
     });
@@ -761,7 +763,7 @@ describe('ExpenseGateService - Property Tests', () => {
     it('should return true when blocking expenses exist', async () => {
       mockPrismaService.expenseRequest.count.mockResolvedValue(1);
 
-      const result = await gateService.isUyapBlocked('case-1');
+      const result = await gateService.isUyapBlocked('case-1', 'tenant-1');
 
       expect(result).toBe(true);
     });
@@ -769,7 +771,7 @@ describe('ExpenseGateService - Property Tests', () => {
     it('should return false when no blocking expenses exist', async () => {
       mockPrismaService.expenseRequest.count.mockResolvedValue(0);
 
-      const result = await gateService.isUyapBlocked('case-1');
+      const result = await gateService.isUyapBlocked('case-1', 'tenant-1');
 
       expect(result).toBe(false);
     });
@@ -779,7 +781,7 @@ describe('ExpenseGateService - Property Tests', () => {
     it('should allow VIEW actions regardless of gate status', async () => {
       mockPrismaService.expenseRequest.count.mockResolvedValue(1);
 
-      const result = await gateService.canPerformUyapAction('case-1', 'VIEW');
+      const result = await gateService.canPerformUyapAction('case-1', 'VIEW', 'tenant-1');
 
       expect(result).toBe(true);
     });
@@ -787,7 +789,7 @@ describe('ExpenseGateService - Property Tests', () => {
     it('should block SUBMIT actions when gate is blocked', async () => {
       mockPrismaService.expenseRequest.count.mockResolvedValue(1);
 
-      const result = await gateService.canPerformUyapAction('case-1', 'SUBMIT');
+      const result = await gateService.canPerformUyapAction('case-1', 'SUBMIT', 'tenant-1');
 
       expect(result).toBe(false);
     });
@@ -795,7 +797,7 @@ describe('ExpenseGateService - Property Tests', () => {
     it('should allow SUBMIT actions when gate is clear', async () => {
       mockPrismaService.expenseRequest.count.mockResolvedValue(0);
 
-      const result = await gateService.canPerformUyapAction('case-1', 'SUBMIT');
+      const result = await gateService.canPerformUyapAction('case-1', 'SUBMIT', 'tenant-1');
 
       expect(result).toBe(true);
     });
@@ -805,8 +807,8 @@ describe('ExpenseGateService - Property Tests', () => {
     it('flag OFF (default): count-bazli path korunur, computeExpenseRemaining HIC cagrilmaz', async () => {
       mockPrismaService.expenseRequest.count.mockResolvedValue(1);
 
-      const blocked = await gateService.isUyapBlocked('case-1');
-      const canPerform = await gateService.canPerformUyapAction('case-1', 'SUBMIT');
+      const blocked = await gateService.isUyapBlocked('case-1', 'tenant-1');
+      const canPerform = await gateService.canPerformUyapAction('case-1', 'SUBMIT', 'tenant-1');
 
       expect(blocked).toBe(true);
       expect(canPerform).toBe(false);
@@ -821,8 +823,8 @@ describe('ExpenseGateService - Property Tests', () => {
       ]);
       mockClientSettlementReadService.computeExpenseRemaining.mockResolvedValue(new Decimal(0));
 
-      const blocked = await gateService.isUyapBlocked('case-1');
-      const canPerform = await gateService.canPerformUyapAction('case-1', 'SUBMIT');
+      const blocked = await gateService.isUyapBlocked('case-1', 'tenant-1');
+      const canPerform = await gateService.canPerformUyapAction('case-1', 'SUBMIT', 'tenant-1');
 
       expect(blocked).toBe(false);
       expect(canPerform).toBe(true);
@@ -836,8 +838,8 @@ describe('ExpenseGateService - Property Tests', () => {
       ]);
       mockClientSettlementReadService.computeExpenseRemaining.mockResolvedValue(new Decimal(1000));
 
-      const blocked = await gateService.isUyapBlocked('case-1');
-      const canPerform = await gateService.canPerformUyapAction('case-1', 'SUBMIT');
+      const blocked = await gateService.isUyapBlocked('case-1', 'tenant-1');
+      const canPerform = await gateService.canPerformUyapAction('case-1', 'SUBMIT', 'tenant-1');
 
       expect(blocked).toBe(true);
       expect(canPerform).toBe(false);
@@ -850,8 +852,8 @@ describe('ExpenseGateService - Property Tests', () => {
       ]);
       mockClientSettlementReadService.computeExpenseRemaining.mockResolvedValue(new Decimal(0));
 
-      const summary = await gateService.getGateSummary('case-1');
-      const canPerform = await gateService.canPerformUyapAction('case-1', 'SUBMIT');
+      const summary = await gateService.getGateSummary('case-1', 'tenant-1');
+      const canPerform = await gateService.canPerformUyapAction('case-1', 'SUBMIT', 'tenant-1');
 
       expect(summary.canSubmitToUyap).toBe(true);
       expect(canPerform).toBe(true);

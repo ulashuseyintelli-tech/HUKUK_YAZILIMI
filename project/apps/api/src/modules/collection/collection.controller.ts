@@ -16,6 +16,7 @@ import {
   CancelCollectionDto,
 } from "./dto/collection.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { getRequestId } from "../../common/request-id.middleware";
 import {
@@ -24,7 +25,7 @@ import {
 } from "./receipt-object-scope-authorization.service";
 
 @Controller("collections")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class CollectionController {
   constructor(
     private collectionService: CollectionService,

@@ -106,3 +106,35 @@ src/modules/case/__tests__/case-create-inline-party-atomicity.db-gated.integrati
 # Hata enjeksiyonu audit satirini tx icine YAZIP sonra firlatir: avukat satiri ve yazilmis audit satiri
 # birlikte geri alinir. Yamasiz kodda 5 testin 4'u DUSER (RED kanitlandi); no-op iki durumda da gecer.
 src/modules/lawyer/__tests__/lawyer-privileged-update-audit-b11.db-gated.integration.spec.ts
+
+# K2/K3 — OFFICE yetki sertlestirme takip (owner GO 2026-09-28), GERCEK HTTP + disposable PostgreSQL.
+#   K2: dosya avukati/personel YETKI verme-degistirme uclari (PATCH lawyers/staff, POST lawyers canSign)
+#   F01 yonetim kuralina bagli; USER kendine/baskasina canEditFinance/imza/canEdit veremez, mali izin
+#   yetki dagitma izni sayilmaz, baska ofis/tenant yazmasiz reddedilir, yetkili kullanim + ClaimItem
+#   kapisinin uctan uca acilmasi. Yamasiz (kapi devre disi) 11 test DUSER (RED kanitlandi).
+#   K3: insan auto-generate / generate-from-rules uclari ClaimItem insan yazma kapisindan gecer;
+#   yetkisiz/VIEWER/baska tenant yazmasiz ret, yetkili -> FORMATION_CONTEXT_REQUIRED (kalem yazilmaz),
+#   sistem yazicilari ayrik calisir. Yamasiz: yetkisiz USER generate-from-rules 201 ile kalem YAZIYORDU.
+src/modules/case/__tests__/case-permission-grant-authz.db-gated.integration.spec.ts
+src/modules/claim-item/__tests__/claim-item-human-generation-authz.db-gated.integration.spec.ts
+
+# Kaldirilmis ClaimItem uclari hata sozlesmesi (owner GO 2026-09-28, secenek B), GERCEK HTTP + disposable PostgreSQL.
+#   add-interest / recalculate-interest -> kontrollu 410 CLAIM_ITEM_ENDPOINT_REMOVED (yazma yok; kapi sorulmaz);
+#   VIEWER 403 ve kimliksiz 401 410'dan ONCE; gercek AllExceptionsFilter ile 410 ErrorLog'a YAZILMAZ, ayni
+#   kablolamada duz Error (500) YAZILIR (pozitif kontrol). add-expense/add-fee/add-attorney-fee insan kapisi
+#   DEGISMEDI (yetkisiz 403, yetkili FORMATION_CONTEXT_REQUIRED, VIEWER 403). Guvenlik acigi kapatma DEGIL:
+#   iki uc 2026-01-15'ten beri hic yazmiyordu (duz Error -> 500 + ErrorLog gurultusu).
+src/modules/claim-item/__tests__/claim-item-removed-endpoints.db-gated.integration.spec.ts
+
+# Masraf kapisi durum uclari ve paket hesabi — buro (tenant) siniri, GERCEK HTTP + disposable PostgreSQL. Olculen kusur
+#   (main ef16f07f): A burosunun kullanicisi B burosuna ait dosya kimligini vererek POST /cost-packages/compute (dosyanin
+#   anaparasi calcParams.baseValue + tutarlar; B'nin buroya ozel paketi dahil) ve GET /expense-requests/case/:caseId/
+#   gate-status | gate-summary | can-perform/:actionType (kilit durumu, bekleyen tutar, masraf talebi kimlikleri)
+#   yanitlarinda B'nin verisini okuyabiliyordu: dosya yalniz kimligiyle okunuyor, cagiranin burosu sorguya girmiyordu.
+#   Kural: dort uc cagiranin burosuna baglidir; baska buronun dosyasi var olmayan dosyayla AYNI 404 "Takip bulunamadi"
+#   yanitini alir (kapidan muaf islem turu ve cagiranin gonderdigi buro kimligi dahil); talepler ayrica buro suzgeciyle
+#   okunur; govdedeki dosya kimligi suzgec isleci gibi yorumlanmaz. Kendi burosunun dosyasinda dort ucun yaniti ve UYAP
+#   gonderim hazirliginin (POST /cases/:caseId/uyap/prepare) paket hesabi DEGISMEZ. Bu konum bilerek dosya sonu DEGIL:
+#   es zamanli PR'lar sona ekler. Duzeltmesiz servis koduyla 17 testin 8'i DUSER; kendi burosu yanitlarini birebir
+#   sabitleyen 9 test duzeltmesiz kodla da GECER (RED kanitlandi).
+src/modules/expense-request/__tests__/expense-tenant-boundary.http.db-gated.integration.spec.ts

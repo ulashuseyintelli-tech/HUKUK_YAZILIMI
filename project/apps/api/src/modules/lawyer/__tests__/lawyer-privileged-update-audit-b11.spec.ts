@@ -39,8 +39,14 @@ const EXISTING = {
 
 function build(opts: { existing?: Record<string, unknown>; actorUser?: unknown; auditFails?: boolean } = {}) {
   const existing = { ...EXISTING, ...(opts.existing ?? {}) };
+  // K4-2: tx içi yetkili kontrol aktörü kilitli GÜNCEL satırdan okur (ADMIN dahil); aynı sahte kullanıcı deposu.
+  const findActor = jest.fn(async ({ where }: any) =>
+    where.id === ADMIN.userId ? { role: 'ADMIN', tenantId: TENANT, isActive: true, lawyer: null } : (opts.actorUser ?? null),
+  );
   const tx: any = {
     lawyer: { update: jest.fn(async ({ data }: any) => ({ ...existing, ...data })) },
+    user: { findUnique: findActor },
+    $queryRaw: jest.fn(async () => []), // K4-2: aktör Lawyer → User FOR SHARE kilidi
   };
   const prisma: any = {
     lawyer: {
@@ -48,7 +54,7 @@ function build(opts: { existing?: Record<string, unknown>; actorUser?: unknown; 
       findMany: jest.fn().mockResolvedValue([]),
       update: jest.fn(async ({ data }: any) => ({ ...existing, ...data })),
     },
-    user: { findUnique: jest.fn().mockResolvedValue(opts.actorUser ?? null) },
+    user: { findUnique: findActor },
     $transaction: jest.fn(async (cb: any) => cb(tx)),
   };
   const audit: any = {
@@ -136,7 +142,7 @@ describe('B11 — yetkili değişiklik: güncelleme + audit AYNI transaction', (
 
     await h.svc.update(TENANT, LAWYER_ID, { permissionsLocked: true } as never, partner);
 
-    expect(h.prisma.user.findUnique).toHaveBeenCalledTimes(1); // kapı DB'den doğruladı
+    expect(h.prisma.user.findUnique).toHaveBeenCalledTimes(2); // kapı DB'den doğruladı (tx dışı erken + tx içi yetkili, K4-2)
     expect(byAction(h.audit, 'LAWYER_PRIVILEGE_CHANGED')).toEqual([
       expect.objectContaining({ userId: 'partner-b11', metadata: { changedFields: ['permissionsLocked'] } }),
     ]);
