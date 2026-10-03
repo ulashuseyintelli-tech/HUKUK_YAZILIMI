@@ -35,6 +35,10 @@
 #          O-9 o TEK komut Windows PowerShell 5.1 VE PowerShell 7'de koşulur, üretilen dosya bloğun Recover okuma kapısından ve GERÇEK koşucunun
 #          readReceiptForRecover kapısından geçer (m4 kapı kalemi); O-10 ürün bulgusu ADAYI "ADAYIDIR" diye gösterilir (M1). Sahte koşucu kanıta record +
 #          exitCode + recovery.makbuzJson yazar (EXSTUB_STALE / EXSTUB_EV_EXITCODE / EXSTUB_SV / EXSTUB_EXPECT_COPY / EXSTUB_REAL_RUNNER).
+# R03-e  : (R03-d iki bağımsız doğrulaması, B1; D-6 O-17'nin ikizi) O-11 — kanıttaki portalClose.acikErisim (açık portal erişimi, "(Recover kapatabilir)") Run
+#          sonu ekranında ürün bulgusu satırından AYRI "PORTAL ERİŞİMİ: …" satırında gösterilir; bulgu satırı onu içermez. Sahte koşucu EXSTUB_ACIK ile
+#          acikErisim yazar. PIN-1 yeni koşucu pini + $ExpPackage ile. R03-d blok baytlarında (74bcbd22 aynası) O-11 FAIL beklenir (PIN-1 aynada eski koşucu +
+#          eski pinle tutarlı → PASS).
 # KULLANIM: powershell.exe -NoProfile -ExecutionPolicy Bypass -File d7-owner-block-selftest.ps1   (ve pwsh)
 # ÇIKIŞ  : 0 hepsi PASS · 1 en az bir FAIL · 2 ölçülemedi
 $ErrorActionPreference = 'Stop'
@@ -100,7 +104,8 @@ if (process.env.EXSTUB_WRITE_EVID === '1') {
     exitCode: Number(process.env.EXSTUB_EV_EXITCODE !== undefined ? process.env.EXSTUB_EV_EXITCODE : (process.env.EXSTUB_RC || 0)), productFinding: process.env.EXSTUB_FINDING || null,
     receipt: noRc ? undefined : { record: 'EXTACC-D7-SETUP-RECEIPT', runId: String(process.env.D7_RUNID || ''), createdAt: '2026-10-03T20:15:25.123Z' },
     recovery: noRc ? undefined : { gerekli: true, makbuzJson: process.env.EXSTUB_STALE === '1' ? rcptText.replace('"clientId": "k",', '"clientId": "k",\n "runnerMessageIds": [\n  "m1"\n ],') : rcptText },
-    portalClose: process.env.EXSTUB_SV ? { sessionVersion: { sinif: process.env.EXSTUB_SV } } : undefined,
+    portalClose: (process.env.EXSTUB_SV || process.env.EXSTUB_ACIK) ? Object.assign({}, process.env.EXSTUB_SV ? { sessionVersion: { sinif: process.env.EXSTUB_SV } } : {},
+      process.env.EXSTUB_ACIK ? { acikErisim: process.env.EXSTUB_ACIK } : {}) : undefined,   // R03-e: açık portal erişimi (koşucu portalClose.acikErisim)
     messageResidue: { portalMessages: 5, portalNotifications: 2, deleted: false }, setup: process.env.EXSTUB_SETUP ? JSON.parse(process.env.EXSTUB_SETUP) : undefined,
     results: [{ id: 'P7-WAIT', verdict: process.env.EXSTUB_WAIT || 'PASS' }, { id: 'D7-3B', verdict: 'PASS' }, { id: 'P7-D9', verdict: process.env.EXSTUB_D9 || 'PASS' },
       { id: 'P7-MSG-KEPT', verdict: 'PASS', observed: 'yerinde=4/4 · saklandı: 5 mesaj (koşucu 4 · telefon 1) + 2 bildirim satırı (kapanış, ölçülen: personel pasif + dosyalar CLOSED (U-CLOSE PASS); portal DB\'de pasif ölçüldü (P7-C2 PASS)) — SİLİNMEDİ' }]
@@ -553,7 +558,20 @@ try {
   Remove-Item 'Env:EXSTUB_FINDING' -ErrorAction SilentlyContinue; $env:EXSTUB_D9 = 'PASS'
   $o10Ok = ($o10a.out -eq 6 -and $o10aTxt.Contains('ÜRÜN BULGUSU ADAYI: x — bu bir ÜRÜN BULGUSU ADAYIDIR (CLIENT doğrular); kapanış PASS SAYILMAZ') -and -not $o10aTxt.Contains('bu bir ÜRÜN BULGUSUDUR') -and
             $o10b.out -eq 6 -and $o10bTxt.Contains('ÜRÜN BULGUSU: y — bu bir ÜRÜN BULGUSUDUR; kapanış PASS SAYILMAZ') -and -not $o10bTxt.Contains('ADAYIDIR'))
+  # ---- R03-e: O-11 (B1, blok tarafı) — kanıtta portalClose.acikErisim varsa "PORTAL ERİŞİMİ: …" AYRI satırda gösterilir; ürün bulgusu satırı onu İÇERMEZ (birleşik tek satır YOK)
+  $o11Find = 'ÜRÜN BULGUSU ADAYI (T2): eski portal oturumu sürüm reddine rağmen mesaj ucuna erişti (ölçüm); oturum reddi ürün tarafıdır, Recover düzeltemez'
+  $o11Acik = 'portal hesabı açık (HTTP ölçümlerinden sonra isActive=true hasPortalAccess=true sürüm=2) — açık erişim kapatılmalıdır (Recover kapatabilir)'
+  $env:EXSTUB_FINDING = $o11Find; $env:EXSTUB_SV = 'ADAY'; $env:EXSTUB_ACIK = $o11Acik; $env:EXSTUB_D9 = 'FAIL'; $script:goN = 39
+  $o11aTxt = Get-HostText { $script:capR = Invoke-Mode 'Run' $real.Exe 6 $true }; $o11a = $script:capR
+  Remove-Item 'Env:EXSTUB_ACIK' -ErrorAction SilentlyContinue; $script:goN = 40
+  $o11bTxt = Get-HostText { $script:capR = Invoke-Mode 'Run' $real.Exe 6 $true }; $o11b = $script:capR
+  Remove-Item 'Env:EXSTUB_FINDING', 'Env:EXSTUB_SV' -ErrorAction SilentlyContinue; $env:EXSTUB_D9 = 'PASS'
+  $o11aLines = @($o11aTxt -split "`n"); $o11FindL = @($o11aLines | Where-Object { $_.Contains($o11Find) }); $o11AcikL = @($o11aLines | Where-Object { $_ -cmatch '^\s*PORTAL ERİŞİMİ: ' })
+  $o11Ok = ($o11a.out -eq 6 -and $o11FindL.Count -eq 1 -and $o11AcikL.Count -eq 1 -and $o11FindL[0] -ne $o11AcikL[0] -and $o11AcikL[0].Contains("PORTAL ERİŞİMİ: $o11Acik") -and
+            -not $o11FindL[0].Contains('Recover kapatabilir') -and -not $o11FindL[0].Contains('açık erişim') -and -not $o11AcikL[0].Contains('Recover düzeltemez') -and $o11FindL[0].Contains('ADAYIDIR (CLIENT doğrular)') -and
+            $o11b.out -eq 6 -and @($o11bTxt -split "`n" | Where-Object { $_ -cmatch '^\s*PORTAL ERİŞİMİ: ' }).Count -eq 0)
   Check 'O-10' 'ürün bulgusu satırı (GÖSTERİLEN): kanıtta portalClose.sessionVersion.sinif=ADAY ise "… — bu bir ÜRÜN BULGUSU ADAYIDIR (CLIENT doğrular)" ("ÜRÜN BULGUSUDUR" YOK); sınıf yoksa (P7-C2 + P7-C5 PASS iken kesin bulgu) "… — bu bir ÜRÜN BULGUSUDUR" aynen' $o10Ok "aday: rc=$($o10a.out) ADAYIDIR=$($o10aTxt.Contains('ADAYIDIR (CLIENT doğrular)')) · kesin: rc=$($o10b.out) BULGUSUDUR=$($o10bTxt.Contains('bu bir ÜRÜN BULGUSUDUR'))"
+  Check 'O-11' 'R03-e: ürün bulgusu satırı ile açık portal erişimi satırı (GÖSTERİLEN) AYRI — kanıtta portalClose.acikErisim varsa "PORTAL ERİŞİMİ: portal hesabı açık (…) — açık erişim kapatılmalıdır (Recover kapatabilir)" kendi satırında; ürün bulgusu satırı ("… Recover düzeltemez — bu bir ÜRÜN BULGUSU ADAYIDIR …") "Recover kapatabilir" / "açık erişim" İÇERMEZ, açık erişim satırı "Recover düzeltemez" İÇERMEZ; acikErisim yoksa "PORTAL ERİŞİMİ:" satırı YOK; çıkış kodu değişmeden' $o11Ok "açık: rc=$($o11a.out) bulgu satırı=$($o11FindL.Count) erişim satırı=$($o11AcikL.Count) [$(@($o11AcikL) -join ' | ')] · açık yok: rc=$($o11b.out)"
 }
 catch {
   # Beklenmeyen istisna öz-testi SESSİZCE kesmez: FAIL satırı olarak kaydedilir (kalan ölçütler koşulmadı → sonuç PASS olamaz).
@@ -561,7 +579,7 @@ catch {
 }
 finally {
   foreach ($k in 'EXSTUB_RC', 'EXSTUB_WRITE_EVID', 'EXSTUB_MARKER', 'EXSTUB_WAIT', 'EXSTUB_QR_RC', 'EXSTUB_FINDING', 'EXSTUB_D9', 'EXSTUB_EXTRA', 'EXSTUB_SETUP', 'EXSTUB_NO_RECEIPT', 'EXSTUB_EV_RECEIPT',
-             'EXSTUB_STALE', 'EXSTUB_EV_EXITCODE', 'EXSTUB_SV', 'EXSTUB_EXPECT_COPY', 'EXSTUB_REAL_RUNNER') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
+             'EXSTUB_STALE', 'EXSTUB_EV_EXITCODE', 'EXSTUB_SV', 'EXSTUB_EXPECT_COPY', 'EXSTUB_REAL_RUNNER', 'EXSTUB_ACIK') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
   Clear-SecretEnv
 }
 

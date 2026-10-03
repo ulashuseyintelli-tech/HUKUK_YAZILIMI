@@ -29,6 +29,13 @@
  * R03-d     : reopen afterDisable artık ÜRÜN GİBİ sürümü ARTIRIR (HY_WT_R27 portal.service.ts reactivate: tokenVersion increment) — guard normal iken
  *             eski oturum 401 (sürüm farkı), guard stale iken 200 · reopen afterDisableRevert (AYRI test varyantı): yeniden açarken sürümü kapatma
  *             ÖNCESİ değere (oturumun verildiği sürüm) GERİ döndürür — guard normal iken eski oturum 200 alır ("adayı DEĞİL" dalı).
+ * R03-e     : (D-6 R03-e ile aynı) portal token'ı ürün gibi ÜÇ parçalı JWT biçiminde (payload claim adları ürünle aynı: sub · clientId · tenantId · type ·
+ *             tokenVersion; imza sahte) — koşucu tokenVersion claim'ini İMZASIZ okur. portalToken opaque → iki parçalı eski biçim (koşucu claim'i okuyamaz → s1).
+ *             login bumpBeforeSign → İLK portal girişinde token imzalanmadan ÖNCE sürüm +1 (claim ≠ koşucunun girişten önce okuduğu s1).
+ *             pwChange onDisable → İLK disable-user çağrısında, işlemeden ÖNCE sürüm +1, isActive DEĞİŞMEZ ("Şifre Değiştir" taklidi: ürün changePassword
+ *             sürümü artırır) · rowDelete onDisable → disable-user portal kullanıcı SATIRINI siler + erişim bayrağını kapatır, 201 (ürün dışı satır silme) ·
+ *             disable passiveOnly → yalnız isActive=false, sürüm ARTMAZ, hasPortalAccess DEĞİŞMEZ, 201 (ürün dışı kapatma) · reopen afterDisableNoBump →
+ *             yeniden açmada sürüm DEĞİŞMEZ (ürün dışı yeniden açma). Bu varyantlar ürünün kendisi DEĞİLDİR; koşucunun sınıflamasını sınar.
  * KOŞUCU YASAĞI: forgot-password/reset-password/change-password/documents çağrıları FORBIDDEN olarak işaretlenir (500).
  */
 const http = require('http'); const https = require('https'); const fs = require('fs'); const path = require('path'); const crypto = require('crypto');
@@ -43,10 +50,11 @@ const CASE_REF_INVALID = 'Geçersiz dosya referansı';
 const MSG_SELECT = { id: true, content: true, senderType: true, senderName: true, isRead: true, createdAt: true };
 
 const DEFAULT = { create: 'normal', disable: 'normal', guard: 'normal', ext: 'normal', extLogin: 'normal', wrongPw: 'normal', cases: 'normal', send: 'normal', list: 'normal', reply: 'normal', markRead: 'normal', unread: 'normal',
-  staffAuth: 'normal', relogin: 'normal', reopen: 'normal' };
+  staffAuth: 'normal', relogin: 'normal', reopen: 'normal', portalToken: 'jwt', login: 'normal', pwChange: 'normal', rowDelete: 'normal' };
 // R03-c: reopen afterDisable — kapatılan müvekkil (başarılı disable-user) ve yeniden açmanın yapılıp yapılmadığı (tek sefer)
 let reopenClientId = null; let reopenDone = false; let reopenRevertTv = null;   // R03-d: kapatma ÖNCESİ sürüm (afterDisableRevert)
-const REOPEN_MODES = ['afterDisable', 'afterDisableRevert'];
+const REOPEN_MODES = ['afterDisable', 'afterDisableRevert', 'afterDisableNoBump'];
+let loginBumped = false; let pwChanged = false;   // R03-e: tek seferlik varyantlar
 // R03: personel token'ları benzersizdir (sıra no) — yeniden giriş YENİ token verir; `expireOnDisable` ile geçersiz kılınanlar burada tutulur.
 let jwtSeq = 0; let staffExpired = false; const expiredStaffJwts = new Set();
 const HANG = () => new Promise(() => {}); // yanıtsız taklidi: istek asla yanıtlanmaz (istemci zaman aşımı → indeterminate)
@@ -72,8 +80,19 @@ async function staffUser(req) {
   const u = await prisma.user.findUnique({ where: { id: c.uid }, select: { id: true, tenantId: true, isActive: true, tokenVersion: true, name: true } });
   return (!u || !u.isActive || u.tenantId !== c.tid || u.tokenVersion !== c.tv) ? null : u;
 }
+// R03-e: portal token'ı — JWT biçimi (`pfake.<payload>.<imza>`; ürün claim adları) ya da opaque (`pfake.<payload>`; eski kısa adlar) → ortak biçim.
+// Ürün guard'ı gibi: tokenVersion claim'i yoksa 0.
+function portalClaimOf(req) {
+  const h = String(req.headers.authorization || ''); if (!h.startsWith('Bearer pfake.')) return null;
+  const parts = h.slice('Bearer '.length).split('.');
+  try {
+    if (parts.length === 3) { const p = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')); return { sub: p.sub, cid: p.clientId, tid: p.tenantId, type: p.type, tv: p.tokenVersion === undefined ? 0 : p.tokenVersion }; }
+    if (parts.length === 2) return JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+  } catch (e) { return null; }
+  return null;
+}
 async function portalUser(req) {
-  const c = claimOf(req, 'pfake.'); if (!c || c.type !== 'portal') return null;
+  const c = portalClaimOf(req); if (!c || c.type !== 'portal') return null;
   if (scenario.guard === 'stale') return { clientId: c.cid, tenantId: c.tid }; // KUSUR TAKLİDİ — yalnız negatif test
   const u = await prisma.clientPortalUser.findUnique({ where: { id: c.sub }, select: { isActive: true, clientId: true, tokenVersion: true, client: { select: { tenantId: true } } } });
   if (!u || !u.isActive || u.clientId !== c.cid || u.client.tenantId !== c.tid || u.tokenVersion !== c.tv) return null;
@@ -85,7 +104,11 @@ async function portalLogin(body) {
   const u = await prisma.clientPortalUser.findFirst({ where: { email: String(body.email || ''), isActive: true }, select: { id: true, clientId: true, email: true, passwordHash: true, tokenVersion: true, client: { select: { tenantId: true, displayName: true } } } });
   if (!u || (scenario.wrongPw !== 'acceptAny' && !(await bcrypt.compare(String(body.password || ''), u.passwordHash)))) return { status: 401, body: { message: 'Geçersiz e-posta veya şifre' } };
   await prisma.clientPortalUser.update({ where: { id: u.id }, data: { lastLoginAt: new Date(), loginCount: { increment: 1 } } });
-  const token = 'pfake.' + Buffer.from(JSON.stringify({ sub: u.id, cid: u.clientId, tid: u.client.tenantId, tv: u.tokenVersion, type: 'portal' })).toString('base64url');
+  // R03-e: login bumpBeforeSign — İLK portal girişinde token imzalanmadan ÖNCE sürüm +1 (claim ≠ koşucunun girişten önce okuduğu s1)
+  if (scenario.login === 'bumpBeforeSign' && !loginBumped) { loginBumped = true; const b = await prisma.clientPortalUser.update({ where: { id: u.id }, data: { tokenVersion: { increment: 1 } }, select: { tokenVersion: true } }); u.tokenVersion = b.tokenVersion; }
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const token = scenario.portalToken === 'opaque' ? 'pfake.' + b64({ sub: u.id, cid: u.clientId, tid: u.client.tenantId, tv: u.tokenVersion, type: 'portal' })
+    : `pfake.${b64({ sub: u.id, clientId: u.clientId, tenantId: u.client.tenantId, type: 'portal', tokenVersion: u.tokenVersion })}.${crypto.randomBytes(8).toString('hex')}`;
   secrets.portalJwts.push(token);
   return { status: 201, body: { token, user: { id: u.id, email: u.email, clientId: u.clientId, clientName: u.client.displayName } } };
 }
@@ -161,7 +184,7 @@ async function adminClientMessages(u, clientId) {
 async function apiHandler(req, res) {
   const p = new URL(req.url, 'http://127.0.0.1').pathname;
   if (p.startsWith('/__')) {
-    if (req.method === 'POST' && p === '/__scenario') { scenario = Object.assign({}, DEFAULT, await readBody(req)); disableFailed = 0; leakSeeded = new Set(); staffExpired = false; expiredStaffJwts.clear(); reopenClientId = null; reopenDone = false; reopenRevertTv = null; return send(res, 200, scenario); }
+    if (req.method === 'POST' && p === '/__scenario') { scenario = Object.assign({}, DEFAULT, await readBody(req)); disableFailed = 0; leakSeeded = new Set(); staffExpired = false; expiredStaffJwts.clear(); reopenClientId = null; reopenDone = false; reopenRevertTv = null; loginBumped = false; pwChanged = false; return send(res, 200, scenario); }
     if (req.method === 'POST' && p === '/__reset') { calls = []; extCalls = []; for (const k of Object.keys(secrets)) secrets[k] = []; return send(res, 200, { ok: true }); }
     if (p === '/__calls') return send(res, 200, calls);
     if (p === '/__ext') return send(res, 200, extCalls);
@@ -208,12 +231,17 @@ async function apiHandler(req, res) {
   if (req.method === 'POST' && p === '/api/portal/admin/disable-user') {
     // R03: expireOnDisable — İLK kapatma çağrısı anında o ana dek verilmiş tüm personel token'ları geçersizleşir (süre dolumu taklidi; yazma YOK).
     if (scenario.staffAuth === 'expireOnDisable' && !staffExpired) { staffExpired = true; for (const j of secrets.jwts) expiredStaffJwts.add(j); }
+    // R03-e: pwChange onDisable — İLK kapatma çağrısında, işlemeden ÖNCE sürüm +1 (isActive değişmez; "Şifre Değiştir" taklidi — ürün changePassword :587)
+    if (scenario.pwChange === 'onDisable' && !pwChanged) { pwChanged = true; await prisma.clientPortalUser.updateMany({ where: { clientId: body.clientId }, data: { tokenVersion: { increment: 1 } } }); }
     const u = await staffUser(req); if (!u) return send(res, 401, { message: 'Unauthorized' });
     if (scenario.disable === 'forbidden') return send(res, 403, { message: 'Portal erişimi yönetimi için yetki yok' });   // ürün: yazmadan ÖNCE 403
     if (scenario.disable === 'notFound') return send(res, 404, { message: 'Müvekkil bulunamadı' });
     if (scenario.disable === 'fail' || (scenario.disable === 'failOnce' && disableFailed === 0)) { disableFailed++; return send(res, 500, { message: 'Internal server error' }); }
     const client = await prisma.client.findFirst({ where: { id: body.clientId, tenantId: u.tenantId }, select: { id: true } });
     if (!client) return send(res, 404, { message: 'Müvekkil bulunamadı' });
+    // R03-e: ürün DIŞI kapatma taklitleri — rowDelete onDisable (satır silinir + erişim bayrağı kapanır) · disable passiveOnly (yalnız isActive=false; sürüm ARTMAZ)
+    if (scenario.rowDelete === 'onDisable') { await prisma.clientPortalUser.deleteMany({ where: { clientId: body.clientId } }); await prisma.client.update({ where: { id: body.clientId }, data: { hasPortalAccess: false } }); return send(res, 201, { success: true }); }
+    if (scenario.disable === 'passiveOnly') { await prisma.clientPortalUser.updateMany({ where: { clientId: body.clientId }, data: { isActive: false } }); return send(res, 201, { success: true }); }
     if (REOPEN_MODES.includes(scenario.reopen)) { const pre = await prisma.clientPortalUser.findUnique({ where: { clientId: body.clientId }, select: { tokenVersion: true } }); reopenRevertTv = pre ? pre.tokenVersion : null; }
     await prisma.$transaction(async (tx) => {
       await tx.clientPortalUser.updateMany({ where: { clientId: body.clientId }, data: { isActive: false, tokenVersion: { increment: 1 }, resetToken: null, resetTokenExp: null } });
@@ -226,8 +254,9 @@ async function apiHandler(req, res) {
   // R03-d: afterDisable sürümü ÜRÜN GİBİ artırır (reactivate: tokenVersion increment); afterDisableRevert sürümü kapatma ÖNCESİ değere geri döndürür.
   if (REOPEN_MODES.includes(scenario.reopen) && reopenClientId && !reopenDone && req.method === 'GET' && p === '/api/portal/messages') {
     reopenDone = true;
-    const tv = scenario.reopen === 'afterDisableRevert' && Number.isInteger(reopenRevertTv) ? reopenRevertTv : { increment: 1 };
-    await prisma.clientPortalUser.updateMany({ where: { clientId: reopenClientId }, data: { isActive: true, tokenVersion: tv } });
+    // R03-e: afterDisableNoBump — sürüm DEĞİŞMEZ (ürün dışı yeniden açma; ürün yeniden açması :315'te sürümü artırır)
+    const tvData = scenario.reopen === 'afterDisableRevert' && Number.isInteger(reopenRevertTv) ? { tokenVersion: reopenRevertTv } : (scenario.reopen === 'afterDisableNoBump' ? {} : { tokenVersion: { increment: 1 } });
+    await prisma.clientPortalUser.updateMany({ where: { clientId: reopenClientId }, data: Object.assign({ isActive: true }, tvData) });
     await prisma.client.update({ where: { id: reopenClientId }, data: { hasPortalAccess: true } });
   }
   const am = p.match(/^\/api\/portal\/admin\/messages\/([^/]+)$/);
