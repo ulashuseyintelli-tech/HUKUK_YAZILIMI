@@ -1,5 +1,6 @@
 import type { InstrumentChain, ChainAnalysis } from "./instrument-chain";
 import type { CekFormationPreviewRequest, CekFormationPreviewResult } from "./check-penalty-formation";
+import type { CostPackageIncompleteSuggestion } from "./cost-package-suggestion";
 import { createIdempotencyKey } from "./idempotency-key";
 import { buildResponsibilityAtPath, type CombinedResponsibilityResult } from "./responsibility-at";
 import { buildResponsibilityHistoryPath, type ResponsibilityHistoryResult, type ResponsibilityHistoryParams } from "./responsibility-history";
@@ -2588,10 +2589,16 @@ class ApiClient {
     return this.request<any>(`/cost-packages/${code}`);
   }
 
+  /**
+   * `acceptIncomplete`: çağıran, hesaplanamayan kalem içeren (eksik) öneriyi gösterebildiğini beyan eder. Beyan yoksa
+   * sunucu dövizli / karma dosyada eksik öneri döndürmez, gerekçesiyle reddeder (409). Eksik öneride `items` ve
+   * `totalSuggested` yalnız hesaplanabilen kalemleri taşır; eksik kalan `incompleteSuggestion` ile bildirilir.
+   */
   async computeExpenseRequest(caseId: string, packageCode: string, params?: {
     debtorCount?: number;
     tebligatCount?: number;
     principalAmount?: number;
+    acceptIncomplete?: boolean;
   }) {
     return this.request<{
       packageCode: string;
@@ -2607,6 +2614,7 @@ class ApiClient {
       }>;
       totalSuggested: number;
       messageTemplateCode: string | null;
+      incompleteSuggestion?: CostPackageIncompleteSuggestion;
     }>('/cost-packages/compute', {
       method: 'POST',
       body: JSON.stringify({ caseId, packageCode, ...params }),

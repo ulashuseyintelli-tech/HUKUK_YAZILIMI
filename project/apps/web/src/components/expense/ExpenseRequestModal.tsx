@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { X, Plus, Trash2, Send, Loader2, Package, AlertCircle, CheckCircle } from "lucide-react";
 import { api, ExpenseItem } from "@/lib/api";
+import { notCalculableLabels, type CostPackageIncompleteSuggestion } from "@/lib/cost-package-suggestion";
 
 interface ExpenseRequestModalProps {
   isOpen: boolean;
@@ -60,6 +61,8 @@ export function ExpenseRequestModal({
   const [packages, setPackages] = useState<CostPackage[]>([]);
   const [selectedPackage, setSelectedPackage] = useState<string>(initialPackageCode || "");
   const [computedItems, setComputedItems] = useState<ComputedItem[]>([]);
+  // Dövizli / karma dosyada oranlı kalem hesaplanamaz: sunucu o kalem için tutar üretmez ve nedeni bildirir
+  const [incompleteSuggestion, setIncompleteSuggestion] = useState<CostPackageIncompleteSuggestion | null>(null);
   const [loadingPackages, setLoadingPackages] = useState(false);
   const [computingItems, setComputingItems] = useState(false);
 
@@ -124,14 +127,18 @@ export function ExpenseRequestModal({
 
   const computePackageItems = async (packageCode: string) => {
     setComputingItems(true);
+    // Önceki paketin kalemleri ve eksik öneri durumu, yeni paketin sonucu gibi ekranda / kayıtta kalmasın
+    setComputedItems([]);
+    setIncompleteSuggestion(null);
     try {
       console.log('Computing expense for caseId:', caseId, 'packageCode:', packageCode);
-      const result = await api.computeExpenseRequest(caseId, packageCode);
+      const result = await api.computeExpenseRequest(caseId, packageCode, { acceptIncomplete: true });
       console.log('Compute result:', result);
       setComputedItems(result.items.map((item: any) => ({
         ...item,
         wasOverridden: false,
       })));
+      setIncompleteSuggestion(result.incompleteSuggestion ?? null);
     } catch (error: any) {
       console.error("Masraf hesaplanamadı:", error);
       alert(`Masraf hesaplama hatası: ${error.message || 'Bilinmeyen hata'}`);
@@ -183,6 +190,10 @@ export function ExpenseRequestModal({
   const totalSuggested = mode === "package"
     ? computedItems.reduce((sum, item) => sum + item.suggestedAmount, 0)
     : 0;
+
+  // Paket önerisi eksikse (hesaplanamayan kalem var) eldeki kalemlerin toplamı paket toplamı DEĞİLDİR: toplam diye
+  // gösterilmez ve bu paketten talep oluşturulmaz (eksik tutar 0 sayılmaz, kalem sessizce atlanmaz).
+  const packageIncomplete = mode === "package" && incompleteSuggestion !== null;
 
   const handleSubmit = async () => {
     if (mode === "manual" && items.some((item) => !item.description || item.amount <= 0)) {
@@ -243,6 +254,7 @@ export function ExpenseRequestModal({
       // Reset form
       setItems([{ type: "TEBLIGAT_GIDERI", description: "Tebligat gönderim gideri", amount: 0 }]);
       setComputedItems([]);
+      setIncompleteSuggestion(null);
       setSelectedPackage("");
       setNotes("");
       setSendAfterCreate(false);
@@ -343,7 +355,7 @@ export function ExpenseRequestModal({
                   <Loader2 className="h-6 w-6 animate-spin text-amber-500" />
                   <span className="ml-2 text-sm text-gray-500">Hesaplanıyor...</span>
                 </div>
-              ) : computedItems.length > 0 ? (
+              ) : computedItems.length > 0 || incompleteSuggestion ? (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Masraf Kalemleri</label>
                   <div className="space-y-2">
@@ -375,7 +387,40 @@ export function ExpenseRequestModal({
                         )}
                       </div>
                     ))}
+                    {/* Önerisi hesaplanamayan kalemler: tutar alanı YOK (0 yazılmaz); karar ve metin sunucudandır */}
+                    {incompleteSuggestion?.notCalculableItems.map((item) => (
+                      <div
+                        key={`hesaplanamadi-${item.itemCode}`}
+                        data-testid="paket-kalem-hesaplanamadi"
+                        className="flex items-center gap-2 p-2 bg-amber-50 border border-amber-200 rounded-lg"
+                      >
+                        <div className="flex-1">
+                          <div className="text-sm font-medium text-gray-800">{item.label}</div>
+                          <div className="text-xs text-amber-700 flex items-center gap-1">
+                            <AlertCircle className="h-3 w-3" />
+                            Tutar yok — hesaplanamadı (sıfır değildir)
+                          </div>
+                        </div>
+                        <span className="text-xs bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">HESAPLANAMADI</span>
+                      </div>
+                    ))}
                   </div>
+                  {incompleteSuggestion && (
+                    <div
+                      data-testid="paket-oneri-eksik"
+                      className="mt-2 p-3 text-xs text-amber-900 bg-amber-50 border border-amber-300 rounded-lg space-y-1"
+                    >
+                      <div>{incompleteSuggestion.message}</div>
+                      {incompleteSuggestion.requiredInfo.length > 0 && (
+                        <div data-testid="paket-oneri-gereken-bilgi" className="font-medium">
+                          Gereken bilgi: {incompleteSuggestion.requiredInfo.join("; ")}
+                        </div>
+                      )}
+                      <div data-testid="paket-oneri-sonraki-adim">
+                        Öneri eksik olduğu için bu paketten talep oluşturma kapalıdır. Kalemleri elle girmek için “Manuel Giriş”i kullanın.
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : selectedPackage ? (
                 <div className="text-center py-4 text-sm text-gray-500">
@@ -452,14 +497,23 @@ export function ExpenseRequestModal({
           <div className="flex items-center justify-between py-3 px-4 bg-amber-50 rounded-lg border border-amber-200">
             <div>
               <span className="font-medium text-amber-800">Toplam Tutar</span>
-              {mode === "package" && totalSuggested !== totalAmount && (
+              {mode === "package" && !packageIncomplete && totalSuggested !== totalAmount && (
                 <div className="text-xs text-amber-600">
                   Öneri: {totalSuggested.toLocaleString("tr-TR")} ₺
                 </div>
               )}
+              {packageIncomplete && (
+                <div data-testid="masraf-toplam-belirli-kalemler" className="text-xs text-amber-700">
+                  Tutarı belirli kalemler: {totalAmount.toLocaleString("tr-TR")} ₺ ({notCalculableLabels(incompleteSuggestion)} dahil değil)
+                </div>
+              )}
             </div>
             <span className="text-lg font-bold text-amber-900">
-              {totalAmount.toLocaleString("tr-TR")} ₺
+              {packageIncomplete ? (
+                <span data-testid="masraf-toplam-gosterilemez">gösterilemez</span>
+              ) : (
+                <>{totalAmount.toLocaleString("tr-TR")} ₺</>
+              )}
             </span>
           </div>
 
@@ -528,7 +582,7 @@ export function ExpenseRequestModal({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={loading || totalAmount <= 0}
+            disabled={loading || totalAmount <= 0 || packageIncomplete}
             className="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {loading ? (

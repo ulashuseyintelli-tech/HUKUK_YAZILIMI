@@ -20,6 +20,9 @@ function makeService(caseRow: unknown = { id: 'case-1', tenantId: 'tenant-1', pr
   const prisma = {
     case: { findFirst: jest.fn().mockResolvedValue(caseRow), findUnique: jest.fn() },
     costPackage: { findFirst: jest.fn().mockResolvedValue(PACKAGE) },
+    // Oranlı kalemin matrah para birimi okuması (cost-package-basis): dosya TL, kalem yok
+    due: { findMany: jest.fn().mockResolvedValue([]) },
+    claimItem: { findMany: jest.fn().mockResolvedValue([]) },
   };
   return { svc: new CostPackageService(prisma as never), prisma };
 }
