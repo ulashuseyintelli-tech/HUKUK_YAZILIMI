@@ -2,8 +2,36 @@
 
 > **DURUM: HAZIR — CANLIDA KOŞULMADI.** Canlı Run/Recover ve yayın bu paketle yetkilendirilmez.
 > **ÖN KOŞUL:** canlı API dist'i **R27** (`E28A6863CF109A1A3AE1F53E096D5F5C2037E382EF2D8D3EC87FEE3B827E5134`); owner bloğu bu pini doğrular,
-> R26 canlı ile Preflight/Run **DUR** verir. Uygulama sırası: R27 yayınından **sonra** (D-5 ile aynı koşul).
+> R26 canlı ile **her modda** (Preflight, QrTest, Run ve Recover) **DUR** verir — R02-b düzeltmesi: önceki metin yalnız "Preflight/Run" diyordu;
+> kapılar mod dalından önce koşar (§10.1). Uygulama sırası: R27 yayınından **sonra** (D-5 ile aynı koşul).
 > Tanım: `client-extacc-d8-staff-surface-r01` §4 ve §6. İki bağımsız inceleme sonrası düzeltmeler: §8.
+>
+> **R02 (2026-10-01) — yalnız owner bloğu METNİ + blok öz-testi + bu belge.** Koşucu, sahte API, QR betiği ve bloğun pin listesindeki 9 dosya
+> **değişmedi**; paket digest'i aynı (§6). **Owner kuralı (2026-10-01):** Run çıkış 5/6 otomatik Recover yetkisi **değildir**. Run'ın koşucu
+> içindeki kendi kapanış adımları ile ayrıca başlatılan Recover **ayrıdır**; Recover yalnız kanıt incelendikten sonra **ayrı owner onayıyla,
+> bir kez** başlatılır; blok Recover'ı başlatmaz. Değişiklik listesi, mantık eşitliği ölçümü ve test sonuçları: §9. R02'den önce yazılmış
+> sonuç satırları ve kanıt atıfları (§5, §8) olduğu gibi bırakılmıştır; R02 satırları ayrıca eklenmiştir.
+>
+> **R02 ikinci tur (2026-10-01) — inceleme düzeltmeleri, yalnız METİN/BELGE.** Bağımsız incelemenin küçük/nit bulguları kapatıldı (§9 "R02
+> ikinci tur"). Koşucu, sahte API, QR betiği, `d6-selftest.js` ve 9 pinli dosya yine **değişmedi**; paket digest'i aynı. Blok ve blok öz-testi
+> baytları değişti → §6'daki pinler **son baytlara** göre güncellendi; ilk R02 commit'indeki ara değerler "R02 ilk tur" diye korunmuştur.
+> **Owner kuralının ikinci Recover'a uygulanışı:** çıkış 5/6 Recover yetkisi değildir; Recover yalnız kanıt incelendikten sonra ayrı owner
+> onayıyla **bir kez** başlatılır; blok başlatmaz. **İkinci bir Recover bu paketle tanımlı değildir, owner kararı gerektirir** — belge ve blok
+> metni "yeni onayla tekrar edilebilir" türü bir yol tanımlamaz.
+>
+> **R02 tur 4 (2026-10-03) — yalnız `d6-selftest.js` + bu belge.** Koşucu öz-testi artık canlı yayın ağacını **varsaymaz**: Prisma istemcisi ve
+> bcrypt'in yükleneceği kütüphane kökü `D6T_LIB_ROOT` ile verilir (verilmezse betiğin checkout'unun proje kökü denenir); modül yoksa ya da kök
+> canlı yayın ağacına çözülüyorsa test **başlamaz** (§5 "R02 tur 4"). Commit'li dosya **doğrudan** koşuldu: **51/51 PASS**. Koşucu, owner bloğu,
+> blok öz-testi, QR betiği, sahte API ve 9 pinli dosya **değişmedi**; paket digest'i aynı (§6). Önceki turların "koşulamadı" satırları güncel
+> duruma çevrildi, eski metin tarihsel not olarak korundu; ayna kopya sonuçları **tarihsel kanıttır**. Bu tur canlı Run/Recover'ı yetkilendirmez.
+>
+> **R02-b (2026-10-03) — yalnız bu belge.** "Run / normal kapanış / AYRI Recover" sınırları kaynaktan (owner bloğu, koşucu, ortak kütüphaneler)
+> yeniden okunarak **§10**'a yazıldı: kapıların her modda koşması ve Recover'ın kapı bağımlılıkları, Recover'ın canlı yazma kümesi, Recover'ın Run
+> makbuzunu yeniden yazması, kalıntı senaryosunda tek Recover'ın sınırı, Recover'ın 1 ve 2 çıkış kodları, Run kapanışında personel oturumunun
+> yenilenmemesi, onay metni ile kurulumun yazdığı kayıt kümesi arasındaki fark. Owner bloğu, koşucu, iki öz-test, QR betiği, sahte API ve 9 pinli
+> dosya **değişmedi**; §6'daki pinler ve paket digest'i aynıdır. Bu turda hiçbir blok, koşucu ya da öz-test **koşulmadı**; §10'daki kalemler
+> **kaynaktan okundu, canlıda ölçülmedi**. Karar gerektiren konular §10.8'de **açık owner kararı** olarak durur; bu not canlı Run/Recover'ı
+> yetkilendirmez.
 
 ## 1. Ne ölçer ve ne yapmaz
 
@@ -11,7 +39,9 @@ Uçtan uca belge akışı: koşucu (makine ölçümü) **dış HTTPS** uçtan ke
 (içerik sha256) → personel bekleyen liste (yerel, salt okuma) → kapsam dışı belge 404 (indirme + silme) → owner telefondan girip
 listeyi/indirmeyi görür (telefon yüklemesi opsiyonel) → koşucu kendi belgesini **ürün DELETE'i** ile siler → satır + dosya yok → owner
 listeyi yeniler (boş) → kapanış (D-4 R03 kuralları + belge kalıntısı). Koşucu **dosya silmez** (yalnız üç durumlu `stat` yoklaması),
-forgot/reset/change-password, mesaj ve belge onay/ret uçlarını **çağırmaz**; parolaları, token'ları, GO'yu ve DB URL'yi hiçbir kanıta yazmaz.
+forgot/reset/change-password, mesaj ve belge onay/ret uçlarını **çağırmaz**; parolaları, token'ları, GO'yu ve DB URL'yi **kendi** kanıt, makbuz ve
+log dosyalarına yazmaz (ölçüm: öz-test S-1, sahte API'ye karşı). Canlı API uygulama günlüğü ve terminal/işletim sistemi kayıtları bu ölçümün
+**kapsamı dışındadır** (R02; §7).
 
 **D-8 §4'ten sapmalar (iş talimatı gereği; açıkça kaydedilir):**
 - D-8 §4 "D6-1 telefon: yükleme 201 (owner beyanı zorunlu)" der. Bu pakette **makine ölçümü koşucunun kendi yüklemesidir**; telefondan
@@ -29,6 +59,16 @@ bir kısım **yok**. Yalnız `admin/documents/:id/approve|reject` (`reviewDocume
 — paket bu uçları **çağırmaz**. Dolayısıyla D-5'teki alıcı/gönderim owner kararları bu pakette **yoktur** (`plannedRealSends=0`). Depolama:
 `runtimeStoragePaths().bucketDir("PORTAL_DOCUMENTS", tenantId)` → `<HUKUK_DATA_ROOT>/portal-documents/<tenantId>/portal-<zaman>-<rastgele>.pdf`;
 yol DB'de `filePath`. Sentetik PDF ≤ 50 KB, içinde yalnız `D6-<runId>`; dosya adı `d6-<runId>.pdf` (API log satırına kişisel veri girmez).
+
+**R02 — telefon yüklemesi ve kova dizini (kaynak: R27 adayı `1b758d29`; `portal.controller.ts`, `portal.service.ts`,
+`common/storage/runtime-storage-paths.ts`; kaynaktan okundu, canlıda ölçülmedi):**
+- Yükleme günlük satırı (`Portal belgesi yüklendi: <fileName> (Client: <clientId>)`) `file.originalname` değerini **maskesiz** yazar. Koşucunun
+  kendi yüklemesinde bu ad sentetiktir (`d6-<runId>.pdf`). Owner telefondan yükleme yaparsa **seçtiği dosyanın adı** canlı API günlüğüne
+  maskesiz yazılır; bu satır kapanışta silinmez (koşucu ve blok günlükleri değiştirmez, silmez). Dosyanın kendisi canlı belge kovasına
+  yazılır (disk adı `portal-<zaman>-<rastgele><uzantı>`; özgün ad DB satırında ve günlükte); telefondan silinmezse satır + dosya kalır → çıkış 6.
+- `bucketDir` tenant dizinini ilk yüklemede oluşturur (`mkdirSync`); ürün DELETE'i yalnız dosyayı siler (`unlinkSync`). Kapanıştan sonra
+  sentetik tenantın **boş kova dizini** (`<HUKUK_DATA_ROOT>/portal-documents/<tenantId>/`) diskte kalır — **saklandı**; koşucu ve blok dizin silmez.
+Bu iki etki owner'a canlı veri işleme onay metninde gösterilir (blok öz-testi G-2).
 
 ## 2. Ölçütler
 
@@ -57,6 +97,13 @@ Kanıt ayrıca `auditRetained` (tenant audit satır sayısı; **saklandı**, sil
 `olculemez` (EACCES, EPERM, …) ayırır; `olculemez` hiçbir "diskte yok" ölçütünde PASS üretmez. Owner bloğu Preflight'ı `.env`'de
 `HUKUK_DATA_ROOT` varsa `portal-documents` alt dizininin listelenebilirliğini ölçer, okunamıyorsa **DUR** verir.
 
+**İstisna — D6-1D (R02 ikinci tur, bulgu D6-E9; koşucu kaynağından doğrulandı, koşucu değiştirilmedi):** üç durumlu kural ("`olculemez` →
+ÖLÇÜLEMEYEN") D6-5D ve P6-C-DOC için geçerlidir. **D6-1D'de erişim reddi FAIL sayılır**: koşucu `onDisk = (durum === 'var')` kurar ve
+`R.check('D6-1D', … && onDisk)` çağırır; durum `olculemez` ise kontrol `false` olur → **FAIL** (ÖLÇÜLEMEYEN değil; gözlem alanına
+`diskte=olculemez(<kod>)` yazılır). Bu **kapalı yöndür**: D6-1D gösterim kapısındadır, PASS değilse giriş bilgisi gösterilmez ve telefon
+beklenmez. Üç durumlu kuralın istisnasıdır; düzeltme (D6-1D'de `olculemez` → ÖLÇÜLEMEYEN) **sonraki koşucu revizyonunda** yapılır — koşucu
+pinlidir, bu revizyonda değiştirilmedi (§7, §9).
+
 **Kapılar:** D-4/D-5 ortak kapılara ek olarak **izole mod API kapısı** (inceleme R01, bulgu 12): bağlı DB `hukuk_db` değilse `D6_API_BASE`
 127.0.0.1/localhost ve **8080 dışı** açık bir port olmalı; aksi halde çıkış 4 ve hiçbir çağrı yapılmaz (yanlış beyanla izole koşumdan canlı
 API'ye tek giriş denemesi bile gitmez). D-5 koşucusunda bu kapı **yoktur** (ayrı kayıt, §7).
@@ -67,6 +114,13 @@ kalıntısı**) DOĞRULANMADI · 7 KANIT YAZILAMADI (öncelik 6 > 5 > 7 > 1 > 2 
 (ad listeler, yollar makbuza `residueFiles`); owner dosyayı elle sildikten sonra Recover bir kez daha → P6-C-DOC ölçülür; Recover
 ölçülemeyeni 0 yapmaz (C4 → 3). **Recover'ın 0 verebildiği tek yol** portal hesabının hiç açılmamış olduğu erken dönüştür (bu yolda HTTP
 reddi ölçülmez); hesap varken mevcut oturum reddi Recover'da ölçülemez → en iyi 3 (Run kanıtındaki P6-C4 satırlarına bakılır).
+**R02 (ikinci turda yeniden yazıldı):** bu paragraf koşucunun Recover modundaki **davranışını** (öz-testte ölçülen çıkış kodlarını) anlatır;
+owner için bir adım tanımı **değildir** ve bir çıkış kodu Recover'ı **yetkilendirmez**. Recover yalnız kanıt incelendikten sonra **ayrı owner
+onayıyla, bir kez** başlatılır; blok onu kendiliğinden başlatmaz. Yukarıdaki "Recover bir kez daha" ifadesi koşucunun öz-testte ölçülen
+davranışıdır: **ikinci bir Recover bu paketle tanımlı değildir, owner kararı gerektirir** (§4 adım 7, §7).
+**R02-b (2026-10-03):** yukarıdaki "owner dosyayı elle sildikten sonra Recover bir kez daha" akışı **iki** Recover içerir; tek Recover kuralıyla
+birlikte okunduğunda sıra karara bağlanmamıştır — dosya diskte kaldıkça P6-C-DOC FAIL ve çıkış 6'dır (§10.4; **açık owner kararı OK-2**, §10.8).
+Çıkış satırındaki kodlar Run içindir; Recover'ın 1 ve 2 dahil çıkış kodları §10.5'tedir.
 
 ## 3. Owner bloğu (`scripts/d6-owner-live-block.ps1`) — modlar ve sıra
 
@@ -79,15 +133,63 @@ bağımsız pencere teyidi → canlı veri işleme "EVET" (metin: yükleme günl
 → ekran temizliği → owner beyanı (9 soru, ayrı dosya) → manifest · **Recover**: `-ReceiptFile`; kalıntı kararı E/H sorulur; GO sorulmaz.
 Canlı süreler bloğun içinden zorlanır (20 dk bekleme · 5 sn yoklama · 120 sn inceleme · 120 sn geç oluşma · 5 dk kalıntı bekleme).
 
+**R02 — owner'a gösterilen metin (sıra, kapılar ve çıkış kodları değişmedi):** (a) canlı veri işleme onayı ayrıca telefon yüklemesinin
+günlük (dosya adı maskesiz) ve kova etkisini, kapanışta kalan boş kova dizinini ve çıkış 5/6'nın Recover yetkisi olmadığını yazar; (b) koşum
+sonu "kapanış" metni artık koşulsuz "DB + yeni giriş + mevcut oturum reddi …" demez: `P6-D9` PASS ise altı parçanın her biri kanıttaki ölçüt
+verdict'lerinden yazılır. Bloğun bastığı etiketler (birebir): `DB kapalı + sürüm arttı [P6-C2/C2V/C5]`, `yeni giriş reddi, yerel + dış [P6-C3L/D]`,
+`mevcut oturum reddi, koşucunun kendi portal oturumu, yerel + dış [P6-C4L/D]`, `belge kalıntısı yok [P6-C-DOC]`,
+`yabancı satır temiz [P6-FOREIGN-CLEAN]`, `personel/dosya kapanışı [U-CLOSE]`; her etiketin ardından `: PASS`, `: FAIL` ya da `: ÖLÇÜLMEDİ`
+gelir: gruptaki tüm ölçütler PASS ise "PASS", biri FAIL ise "FAIL", aksi halde "ÖLÇÜLMEDİ". Telefondaki oturumun reddini koşucu ölçmez (owner beyanı);
+(c) Run çıkış 5/6, belge kalıntısı ve Recover çıkış 6 satırları Recover talimatı vermez: çıkış kodu Recover yetkisi değildir, blok Recover
+başlatmaz, önce kanıt incelenir, Recover yalnız ayrı owner onayıyla bir kez; kanıttaki kurtarma adımı bir **öneridir**.
+
+**R02 ikinci tur — gösterilen metin (yine sıra, kapılar ve çıkış kodları değişmedi):** (d) onay metni "yalnız … tenantına yazar" iddiasını
+kapsamıyla yazar: koşucu canlı DB'de yalnız bu koşumun **iki** sentetik tenantına (hedef + yabancı) yazar — **kaynaktan okundu**; koşumda
+`U-ISO` yalnız diğer tenantlardaki kullanıcı/müvekkil **sayılarını** ölçer — ve bildirim üreten uçları çağırmaz (**statik ölçüt**: koşucu
+öz-testi T-1); (e) kova dizini metinde tek adla geçer: `portal-documents/<sentetik tenant>/` (üç yerde; `PORTAL_DOCUMENTS/…` yazımı kaldırıldı);
+(f) kapanış satırı "DOĞRULANDI yalnız **bu satırın devamında** PASS yazan parçalar içindir" der (parçalar aynı satırdadır; "aşağıda" değil) ve
+altına şu not basılır: `Not: satır rengi yalnız birleşik ölçütü (P6-D9) gösterir (yeşil = P6-D9 PASS; kırmızı = PASS değil ya da kanıt okunamadı);
+parçaların ayrı sonucu satırın metnindedir.` Renk mantığı değişmedi; (g) Recover çıkış 6 satırı: "Bu çıkış kodu yeni bir Recover için YETKİ
+DEĞİLDİR … İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR; owner kararı gerektirir" — ikinci Recover için yol tanımlanmaz.
+
+**R02-b — kapılar ve Recover (2026-10-03; blok değişmedi, yalnız bu belge):** bu bölümün ilk paragrafı kapıları "Preflight" başlığı altında
+sayar; blokta salt okuma kapıları **mod dalından önce** koşar ve QrTest, Run ile **Recover**'da da aynen aranır (dış zincir yalnız Preflight ve
+Run'da, yerel konsol yalnız QrTest ve Run'da). Recover'ın kapı bağımlılıkları §10.1'de, Recover'ın canlı yazma kümesi §10.2'de, Recover'ın
+bitiş satırında sayılmayan 1 ve 2 çıkış kodları §10.5'tedir. Blok Recover girişinde canlı yazma kümesini owner'a **göstermez** (tek soru
+kalıntı kararıdır); owner bu kümeyi §10.2'den okur.
+
 ## 4. Owner adımları (telefon: Wi-Fi KAPALI, mobil veri, gizli sekme; yalnız ekranda gördüğünüz değerleri kullanın)
 
 1. Bağımsız PowerShell penceresi (uygulama paneli DEĞİL). `-Mode Preflight` → "PREFLIGHT GEÇTİ" değilse durun.
+   **R02 — pencereyi owner doğrudan açar** (Başlat menüsü → Windows PowerShell). Ajan pencereyi PowerShell 7 içinden `Start-Process` ile
+   açarsa çocuk Windows PowerShell 5.1 süreci PS7 modül yolunu (`PSModulePath`) devralır ve `Get-FileHash` **bulunamaz** (2026-10-01'de
+   D-5'te ölçüldü; bu pakette yerel olarak yeniden ölçüldü: `d6-r02\test\ps51-modul-yolu-olcumu.log` — `Start-Process` → `Get-FileHash=False`,
+   doğrudan çağrı → `True`). Bloğun `Sha` fonksiyonu `Get-FileHash` kullanır; bulunamazsa pin kapıları ölçüm yapamaz. Bu yol kullanılacaksa
+   çocuk süreç için modül yolu önce düzeltilmelidir (ölçülen düzeltme: `Start-Process` öncesinde ebeveyn ortamından `PSModulePath`
+   geçici olarak kaldırılır → çocuk kendi varsayılanını kurar → `Get-FileHash=True`).
 2. `-Mode QrTest` → R05 kararındaki public portal adresini yazın (canlı `.env` değeriyle eşleşmeli) → telefonla QR okutun; belgeler/giriş sayfası açılırsa **E**; giriş yapmayın.
 3. `-Mode Run`: pencere teyidi **E**, R05 public portal adresi (https://…), canlı veri işleme **EVET**, GO ref.
 4. Konsol ekranı (1/2): QR'ı okutun, ekrandaki e-posta + parola ile **bir kez** giriş yapın; listede yalnız ekrandaki başlık olmalı; belgeyi indirin (PDF'de koşum kimliği yazar). Telefondan yükleme yapmak isterseniz yapın; koşucu "D6-RESIDUE-WAIT" gösterirse kendi yüklemenizi telefondan **silin**.
+   **R02:** telefondan yüklerseniz seçtiğiniz dosyanın **adı** canlı API günlüğüne maskesiz yazılır (satır kalır) ve dosya canlı belge kovasına
+   yazılır; adında ve içeriğinde kişisel veri **olmayan** bir dosya seçin. Silmezseniz satır + dosya kovada kalır ve koşum 6 ile biter.
 5. Konsol ekranı (2/2): koşucu kendi belgesini sildi — listeyi yenileyin; boş olmalı.
 6. Ekran temizlenince 9 beyan sorusunu yanıtlayın (parola yazmayın). Pencereyi kapatın.
-7. Çıkış 5/6 ise: koşum bitiş ekranındaki "kanıt dizini" satırındaki yolu alın; bu dizinde `d6-setup-receipt.json` dosyası vardır. Yeni bir pencerede `-Mode Recover -ReceiptFile` ve ardından o dosyanın tam yolunu yazın. Kalıntı kararı (E/H) sorulur. Kanıtta "diskte kalan dosya" listelendiyse dosyayı elle silip Recover'ı bir kez daha koşun; "dosya erişimi ÖLÇÜLEMEDİ" yazıyorsa önce belge kovasının okunabilirliğini düzeltin, sonra Recover'ı bir kez daha koşun.
+7. **Çıkış 5/6 Recover yetkisi DEĞİLDİR (R02; owner kuralı 2026-10-01).** Run kendi kapanış adımlarını koşucu **içinde** zaten denemiştir;
+   blok Recover'ı **başlatmaz**. Sıra:
+   - (a) Pencereyi kapatın. Koşum bitiş ekranındaki "kanıt dizini" satırındaki dizinde `d6-evidence.json` (kurtarma/inceleme nedeni ve açık
+     kalan kaynaklar) ile `d6-setup-receipt.json` vardır. Önce **kanıtı inceleyin** ve sonucu CLIENT'a bildirin.
+   - (b) Recover **yalnız ayrı bir owner onayıyla, bir kez** başlatılır: yeni bir pencerede `-Mode Recover -ReceiptFile` ve ardından
+     `d6-setup-receipt.json` dosyasının tam yolu. Kalıntı kararı (E/H) sorulur. Kanıttaki `recovery.adim` metni bir **öneridir**, yetki değildir.
+   - (c) Recover 6 verirse bu çıkış kodu yeni bir Recover için yetki **değildir**; **ikinci bir Recover bu paketle tanımlı değildir, owner
+     kararı gerektirir** (R02 ikinci tur). Kanıtı inceleyin ve sonucu CLIENT'a bildirin. Kanıtta "diskte kalan dosya" listelendiyse dosyayı
+     owner elle siler; "dosya erişimi ÖLÇÜLEMEDİ" yazıyorsa belge kovasının okunabilirliğini owner düzeltir — bunlar yeni bir Recover
+     yetkisi vermez. Recover 3 verirse Recover tekrarlanmaz. Kabul koşumu (Run) tekrarlanmaz.
+   - (d) **R02-b (2026-10-03) — Recover onayından ÖNCE okunacaklar (§10):** Recover canlıya yazar; yazma kümesi §10.2'dedir (blok bunu göstermez).
+     Recover ancak tüm salt okuma kapıları geçerse başlar (§10.1); Run'dan sonra main ilerlemiş, canlı dist ya da `.env` değişmiş ya da API
+     kapalıysa blok 90 ile durur ve Recover başlamaz (**açık owner kararı OK-1**). Recover, Run makbuzunu yeniden yazabilir; Run'ın
+     `SHA256-MANIFEST.txt` dosyasındaki makbuz özeti artık tutmaz (§10.3; **OK-3**). Kalıntı senaryosunda (b)→(c) sırası — önce Recover, sonra
+     dosyanın elle silinmesi — tek Recover ile P6-C-DOC PASS **üretmez**; sıranın nasıl olacağı **açık owner kararıdır** (§10.4; **OK-2**) ve bu
+     belgeyle karara bağlanmaz. Recover 1 ya da 2 ile de bitebilir (§10.5); bu kodlar da yeni bir Recover için yetki değildir.
 
 ## 5. Öz-testler (canlıya dokunmadan; 2026-09-29; disposable DB 127.0.0.1:5448/d5_reset_test, sahte API 8199 / dış 8458)
 
@@ -95,22 +197,78 @@ Canlı süreler bloğun içinden zorlanır (20 dk bekleme · 5 sn yoklama · 120
 |---|---|
 | `d6-selftest.js`: Z1 normal 0 (telefon: liste/indirme sha/silme sonrası boş); Z2 indirme sızıntısı (**200 + içerik**) → D6-4A FAIL "KAPSAM DIŞI BELGEYE ERİŞİLDİ" 2; Z3 silme sızıntısı → D6-4B/4C FAIL 2; Z4 liste sızıntısı → D6-2 FAIL 2; Z5 delete 500 → 6, Recover 6 ("sentetik belge kaldı"), cleanup=1 → satır silindi dosya listelendi 6, dosya elle → Recover 3; Z6 delete dosya bırakıyor → 6; **Z6-b/c/d ACL reddi (gerçek `icacls`: dosya F + dizin RD) → Recover P6-C-DOC ÖLÇÜLEMEYEN 6 ("yok" sayılmadı), ACL geri → FAIL 6, dosya elle → 3**; Z7 upload 500 → 2; Z8 yarım kalma (D6-3 sonrası SIGKILL) → Recover kapatır, belge kaldı 6 → cleanup + dosya → 3; Z9 telefon yüklemesi silindi 0 / silinmedi 6; Z10 kapılar 3/3/4/4/1/4 + **Z10-g/h izole mod API kapısı 4/4**; Z11 create 500 → 6; Z12 guard bayat → ürün bulgusu 6; **Z16-a geç oluşma (late) → hesap kapanışta görüldü ve kapatıldı 2 · Z16-b/c askıda (hold) → 6, sonradan aktif, Recover kapatır 3 · Z16-d Recover beklerken oluşur → 3 · Z16-e Recover bittikten sonra oluşur → 6, ikinci Recover 3**; Z13 konsolsuz 4; Z14 makbuz 1; S-1 sır sızıntısı yok; T/P statik (**P-3 üç durumlu yoklama birimi, P-4 API kapısı birimi**; T-3..T-7 owner bloğunu statik inceler) | **51/51 PASS, çıkış 0** — inceleme düzeltmesi `fix-r01\d6-selftest-fix-run2.log`; orkestratör tekrarı `orkestrator-dogrulama\d6-selftest.txt` 51/51 rc=0; **kapanış düzeltmesi (blok değişti) `kapanis-duzeltme\d6-selftest.log` 51/51, çıkış 0** |
 | `d6-owner-block-selftest.ps1` (AST ile gerçek fonksiyonlar; gerçek node; N; K-1..K-5 + **K-6/K-6b R05 owner girdisi, K-7 adres biçim kapısı, K-8 çözülmemiş adres**; **B-1..B-5 kova okunabilirliği (gerçek ACL reddi)**; R-1..R-9; V-0..V-5; L-1/L-2 7 süre; O-1..**O-5**; Z; Q + **Q-R05**; S-1..S-4 + **S-5 topoloji literali yok**) | inceleme düzeltmesi **58/58** WinPS 5.1.26100 (`fix-r01\d6-block-selftest-winps-fix-final.log`) ve pwsh 7.6.6 (`…-pwsh-fix-final.log`); orkestratör tekrarı 58/58 ×2; **kapanış düzeltmesi (6 yeni test) 64/64 WinPS 5.1 (`kapanis-duzeltme\d6-block-selftest-winps.log`) ve 64/64 pwsh 7.6.6 (`…-pwsh.log`), çıkış 0** — ilk kapanış koşumu 63/64 (K-7: IPv4 adres biçim kapısından geçiyordu → kapı düzeltildi, yeniden koşuldu) |
+| **R02 ilk tur (2026-10-01; ara baytlar — son baytlar bir alttaki satırdadır)** `d6-owner-block-selftest.ps1` (blok `5AEF3893…FA61`, öz-test `810BDEF5…9FB4`; log her koşumda test edilen bloğun sha256'sını yazar). 64 önceki test + 7 yeni: **G-1** kapsamsız mutlak iddia yok + başlık kapsamı adlandırır + geçici parola kanıt dizininde yok · **G-2** gösterilen onay metni (telefon yüklemesi günlük/kova, boş kova dizini, 5/6 Recover yetkisi değil) · **G-3** Recover çıkış 6 yeni Recover yetkisi değil · **G-4** Run çıkış 5/6 metni + tek node çağrısı + çıkış 0'da Recover metni yok · **O-6..O-8** kapanış metni kanıttaki verdict'lerden | **71/71 PASS** Windows PowerShell 5.1.26100 (`d6-r02\test\blok-oz-test-winps51.log`) ve **71/71 PASS** PowerShell 7.6.6 (`d6-r02\test\blok-oz-test-pwsh7.log`), çıkış 0. **Negatif kontrol:** eski blok baytları (`A206E19E…3629`) + yeni öz-test → **64/71**, çıkış 1, FAIL = G-1, G-2, G-3, G-4, O-6, O-7, O-8 (iki sürümde de; `d6-r02\neg\neg-eski-blok-winps51.log`, `…-pwsh7.log`) |
+| **R02 ikinci tur (2026-10-01) — SON BAYTLAR** `d6-owner-block-selftest.ps1` (blok `082527EE…B3E2`, öz-test `34C95DCB…9BAE`). 71 önceki test (G-3 ikinci Recover kuralına göre **yeniden yazıldı**) + 2 yeni: **G-3** Recover çıkış 6 metni yeni bir Recover için yetki değildir, ikinci Recover için yol **tanımlamaz** ("YENİ ve AYRI onayla / sonraki Recover / BİR KEZ / tekrar edilebilir" gösterilen metinde ve kaynakta yok; başlık aynı kuralı yazar) · **G-5** onay metni kapsamı (iki sentetik tenant: kaynaktan + U-ISO yalnız sayı; bildirim: statik ölçüt T-1) + kova dizini tek adla (`portal-documents/<sentetik tenant>/` ×3) · **O-9** kapanış satırı "bu satırın devamında" + altı parça aynı satırda + satır rengi notu (P6-D9 PASS ve FAIL koşumlarında) + renk mantığı aynı | **73/73 PASS** Windows PowerShell 5.1.26100 (`d6-r02\tur2\test\blok-oz-test-winps51.log`) ve **73/73 PASS** PowerShell 7.6.6 (`d6-r02\tur2\test\blok-oz-test-pwsh7.log`), çıkış 0. **Negatif kontrol:** R02 ilk tur blok baytları (`5AEF3893…FA61`) + ikinci tur öz-testi → **70/73**, çıkış 1, FAIL = G-3, G-5, O-9 (iki sürümde de; `d6-r02\tur2\neg\neg-ilk-tur-blok-winps51.log`, `…-pwsh7.log`) |
+| **R02 tur 4 (2026-10-03) — COMMIT'Lİ DOSYA, SON BAYTLAR** `d6-selftest.js` (`5560FAF8…178F`) **doğrudan** (kopya/ayna değil); `D6T_LIB_ROOT` = canlı olmayan R27 aday çalışma ağacı proje kökü; blok `082527EE…B3E2` (değişmedi) | **51/51 PASS**, çıkış 0; T-3..T-7 PASS; test kimlikleri ve sonuçları ikinci tur ayna koşumuyla aynı (51 = 51) (`d6-r02\tur4\test\d6-selftest-commit.log`, `…-status.json`). Kök çözümü, koşum komutu ve negatif ölçümler: aşağıda "R02 tur 4"; koşum tablosu §9 |
+| **R02 ikinci tur** `d6-selftest.js` — ayna kopya, **ikinci tur blok baytlarıyla** (`082527EE…B3E2`) — **tarihsel kanıt** (güncel sonuç: üst satır) | **51/51 PASS**, çıkış 0; T-3..T-7 PASS (`d6-r02\tur2\test\d6-selftest-ayna.log`, `…-status.json`, `…-kurulum.json`: değişen satır 19, aynada farklı dosya 1). Commit'li `d6-selftest.js` baytlarının koşumu **değildir** (aşağıdaki satırdaki neden aynen geçerli) |
+| **R02 ilk tur** `d6-selftest.js` (T-3..T-7 owner bloğunu statik okur) — **tarihsel kanıt** | **GÜNCEL DURUM (tur 4): commit'li dosya artık doğrudan koşulur — 51/51 PASS (iki üst satır).** Tarihsel not (R02 ilk tur metni; o günkü baytlar `E9FB37DC…F2C2` için geçerlidir): Commit'li dosya baytlarıyla doğrudan koşum **KOŞULAMADI**: betik Prisma/bcrypt'i sabit yoldan, canlı yayın ağacının `node_modules` dizininden yükler; R02 iş talimatında canlı yayın ağacına erişim yasaktı. **Ayna koşumu** (yalnız `const REL` satırı canlı olmayan R27 aday çalışma ağacına çevrilmiş kopya; diğer 6 governance betik dizini ve yeni blok baytları aynen): **51/51 PASS**, çıkış 0, T-3..T-7 PASS (`d6-r02\test\d6-selftest-ayna.log`, kurulum farkı `d6-selftest-ayna-kurulum.json`: değişen satır 19, aynada farklı dosya 1). Bu sonuç commit'li `d6-selftest.js` baytlarının koşumu **değildir** |
 
 Öz-testte "telefon" bir istemci taklididir; giriş bilgisini koşucunun **yalnız display=none ve canlı olmayan DB'de** yazdığı test
 dosyasından (`D6_TEST_DISPLAY_SINK`) alır — bu yol kaynakta tek yerde, `if (con)` dalının dışında ve owner bloğunda kurulmaz (T-2, S-4).
 Kanıt: `D:\Development\HUKUK_YAZILIMI\HY_R27_AGENT_EVIDENCE\extacc-d6-package-r01\` (ilk paket), `…\fix-r01\` (inceleme düzeltmeleri),
 `…\orkestrator-dogrulama\` (bağımsız tekrar) ve `…\kapanis-duzeltme\` (kapanış düzeltmesi: blok + blok öz-testi değişti; koşucu değişmedi).
 
-## 6. Pinler (ölçülen değerler, 2026-09-29 kapanış düzeltmesi sonrası)
+**R02 — kanıt atıfları:** yukarıdaki R02 öncesi satırlar **önceki** blok/öz-test baytlarıyla (blok `A206E19E…`, öz-test `4E7ED8D7…`
+ve daha eskileri) koşulmuş logları gösterir. **Son baytlar (R02 ikinci tur: blok `082527EE…`, öz-test `34C95DCB…`) için geçerli tek kanıt
+`D:\Development\HUKUK_YAZILIMI\HY_R27_AGENT_EVIDENCE\d6-r02\tur2\` dizinidir** (`test\` son koşumlar + status dosyaları: komut, çıkış kodu,
+test edilen dosyaların sha256'sı; `neg\` negatif kontroller ve mantık mutantları; `r02-ilk-tur\` ilk R02 commit'indeki baytlar; `STATUS.txt`).
+`d6-r02\` kökündeki `test\`, `neg\` ve `onceki\` dizinleri **R02 ilk tur** baytlarının (blok `5AEF3893…`, öz-test `810BDEF5…`) kanıtıdır.
+Yer düzeltmesi: `fix-r01\` ve `review-r01\` dizinleri `extacc-d6-package-r01\` altındadır; `orkestrator-dogrulama\` ve
+`kapanis-duzeltme\` dizinleri ise `HY_R27_AGENT_EVIDENCE\` kökündedir (üstteki "…\" kısaltması bunu ayırmıyordu).
+**R02 tur 4:** `d6-selftest.js` son baytları (`5560FAF8…178F`) için geçerli kanıt `D:\Development\HUKUK_YAZILIMI\HY_R27_AGENT_EVIDENCE\d6-r02\tur4\`
+dizinidir (`test\`, `neg\`, `neg-baglanti\`, `STATUS.txt`); blok ve blok öz-testi baytları tur 4'te **değişmedi** ve aynı dizinde yeniden koşuldu.
+
+**R02 tur 4 — koşucu öz-testi canlı yayın ağacı bağımlılığı olmadan koşar (2026-10-03; yalnız `d6-selftest.js` + bu belge).** Önceki baytlarda
+(`E9FB37DC…F2C2`) betik Prisma istemcisini ve bcrypt'i sabit yoldan, canlı yayın ağacının `node_modules` dizininden yüklüyordu (`const REL = …`
+satırı); commit'li dosya canlı ağaca dokunmadan koşulamıyordu. Yeni baytlarda (`5560FAF8…178F`):
+- **Kök çözümü.** Kütüphane kökü **`D6T_LIB_ROOT`** ortam değişkeniyle verilir; verilmezse betiğin bulunduğu checkout'un proje kökü denenir
+  (betik konumundan göreli). İki modül dizini (`@prisma/client` 5.22.0 ve `bcrypt` 5.1.1; kökün `node_modules\.pnpm` dizininde) bu kökte aranır.
+  Kök ya da modül yoksa betik **açık mesajla çıkış 2** verir ve test başlamaz; sessizce canlı ağaca **düşmez**.
+- **Canlı ağaç reddi.** Canlı yayın ağacı, owner bloğunun `$Rel` sabitinden okunur (`…\project` ise bir üstü: yayın ağacının tamamı) — betikte
+  canlı yol literali **yoktur**; blok okunamazsa çıkış 2. Yol büyük/küçük harf duyarsız karşılaştırılır ve bileşen bileşen çözülür: yolun kendisi
+  ya da bir bağlantının (junction/symlink) hedefi canlı ağaca çıkıyorsa o ağaca dosya sistemi çağrısı yapılmadan **çıkış 4** ("RED") verilir.
+  Denetim ilk yerel `require`dan (koşucu dahil) **önce** çalışır: izole test canlı ağaçtan modül yüklemez.
+- **Çıktı.** Kullanılan kök çıktının ilk satırına yazılır (`kütüphane kökü: … (kaynak: D6T_LIB_ROOT | bu checkout'un proje kökü; …)`); yerel
+  kullanıcı adı ve kullanıcı profili yolu maskelenir.
+- **Ölçülen şey değişmedi.** Test sayısı 51 = 51; Z / S / T / P ölçütleri (T-3..T-7 statik ölçütleri dahil) aynıdır. Koddaki değişiklik yalnız
+  kök çözümü + ret denetimi + çıktı satırıdır. Koşucu, owner bloğu, blok öz-testi, QR betiği, sahte API ve 9 pinli dosya değişmedi.
+
+Commit'li dosyanın koşum komutu (PowerShell; bağlantı dizgesinin değeri ve parola belgeye **yazılmaz**):
+
+```powershell
+$env:D6T_DB_URL   = '<tek kullanımlık test veritabanının bağlantı dizgesi; hedef bu bölümün başlığındaki disposable DB>'
+$env:D6T_LIB_ROOT = 'D:\Development\HUKUK_YAZILIMI\HY_WT_R27\project'   # Prisma istemcisi + bcrypt kurulu, CANLI OLMAYAN proje kökü
+Set-Location <checkout>\project\docs\governance\client-extacc-portal-d6-r01\scripts
+node d6-selftest.js
+```
+
+Ön koşul: test konteyneri (`d5-reset-pg`) çalışıyor, 8199 ve 8458 portları boş, `openssl` yolda. **Sonuç (2026-10-03, node v24.18.0): 51/51 PASS,
+çıkış 0**; ilk çıktı satırı `kütüphane kökü: D:\Development\HUKUK_YAZILIMI\HY_WT_R27\project (kaynak: D6T_LIB_ROOT; canlı yayın ağacı DEĞİL …)`.
+Üç negatif ölçüm: (a) `D6T_LIB_ROOT` verilmeden ve checkout kökünde modüller yokken → çıkış **2**; (b) kök canlı yayın ağacının altında → çıkış
+**4**, canlı ağaç altında dosya sistemi çağrısı 0 ve modül yükleme 0 (ret `require`dan önce); (c) varolmayan kök → çıkış **2** (ayrıntı: §9
+"R02 tur 4"). **Ayna kopya sonuçları tarihsel kanıttır:** `d6-r02\test\` ve `d6-r02\tur2\test\` altındaki `d6-selftest-ayna.*` dosyaları önceki
+baytların tek satırı değiştirilmiş kopyasının koşumlarıdır; silinmedi ve değiştirilmedi. Güncel sonuç, commit'li dosyanın tur 4 koşumudur.
+
+## 6. Pinler (ölçülen değerler; sha256 ham dosya baytı — 2026-10-03 R02 tur 4 sonrası; tur 4'te değişen tek satır `d6-selftest.js`)
 
 | Dosya | sha256 |
 |---|---|
-| `d6-portal-documents-live-run.js` (koşucu; bloktaki `PkgPins` girdisiyle **eşit**) | `5D74206BAA26FD752FA57C3342698EDD870CA25A8BDB20B9C2213600EDE758DD` |
-| `d6-qr-test.js` (PkgPins) | `C9FC15AADBFDF4AA87702542340EB6A5C68558D3FE6423F06DED8E452D85F418` |
-| `d6-owner-live-block.ps1` (kapanış düzeltmesi: host/kullanıcı yolu literali kaldırıldı, R05 owner girdisi + adres biçim kapısı; önceki `DE3634BE…5321`) | `A206E19E208F791631F94A4A0C1A67D435BA9AC35CD3E71F72164B9185DA3629` |
-| `d6-fake-portal-api.js` | `27D8CBADE5694F398151BBA0CCFB10C0472383CFF1E3DD24DEA49EFDD587953A` |
-| `d6-selftest.js` | `E9FB37DC6D4069682722C4C4ADCCAA1E8F29D771F0E1A8508D3EC1D78686F2C2` |
-| `d6-owner-block-selftest.ps1` (kapanış düzeltmesi: 6 yeni test; önceki `35E82EFC…BD02`) | `4E7ED8D7531CDC49FBDE783B3DAD9C2F9BEB675C1EF30504B09FC0B3E5D15E95` |
+| `d6-portal-documents-live-run.js` (koşucu; bloktaki `PkgPins` girdisiyle **eşit**; R02'de değişmedi) | `5D74206BAA26FD752FA57C3342698EDD870CA25A8BDB20B9C2213600EDE758DD` |
+| `d6-qr-test.js` (PkgPins; R02'de değişmedi) | `C9FC15AADBFDF4AA87702542340EB6A5C68558D3FE6423F06DED8E452D85F418` |
+| `d6-owner-live-block.ps1` (**R02 ikinci tur — son baytlar**: yalnız metin; **R02 ilk tur** ara değeri `5AEF38932FE9458F799349C559649E8AB75A2585C7A403EDB066BC9F58AFFA61` (yalnız metin + kapanış metni ifadesi); R02 öncesi — kapanış düzeltmesi — `A206E19E208F791631F94A4A0C1A67D435BA9AC35CD3E71F72164B9185DA3629`; ondan önceki `DE3634BE…5321`) | `082527EE641565B4E1B1F6ADF9A6EE6935EC796F958430C99CE16E3E28A8B3E2` |
+| `d6-fake-portal-api.js` (R02'de değişmedi) | `27D8CBADE5694F398151BBA0CCFB10C0472383CFF1E3DD24DEA49EFDD587953A` |
+| `d6-selftest.js` (**R02 tur 4 — son baytlar**: yalnız kütüphane kökü çözümü + canlı ağaç ret denetimi + çıktı satırı; ölçülen testler aynı, 51 test; **önceki** değer — R02 ilk ve ikinci turda değişmemişti — `E9FB37DC6D4069682722C4C4ADCCAA1E8F29D771F0E1A8508D3EC1D78686F2C2`). PkgPins'te **değildir** (koşucu bu dosyayı yüklemez); paket digest'i etkilenmez | `5560FAF870B90E03471B973AE2289593354C3D71F62D69D565B71F695603178F` |
+| `d6-owner-block-selftest.ps1` (**R02 ikinci tur — son baytlar**: G-3 yeniden yazıldı + 2 yeni test G-5, O-9 → 73 test; **R02 ilk tur** ara değeri `810BDEF5C7EE4D1F98676C705C1BC9CBF73BDD969A27DA1686B6F70F801F9FB4` (7 yeni test G-1..G-4, O-6..O-8 + gözlem dökümü + test edilen blok sha256 satırı → 71 test); R02 öncesi — kapanış düzeltmesi, 6 yeni test — `4E7ED8D7531CDC49FBDE783B3DAD9C2F9BEB675C1EF30504B09FC0B3E5D15E95`; ondan önceki `35E82EFC…BD02`) | `34C95DCBBB76362AA9D5B683D4990B133C42040ECF6BA63A5AF40B91B9349BAE` |
+
+R02 pin doğrulaması: 9 pinli dosya dosyalardan yeniden hesaplandı, uyuşmazlık 0; paket digest'i yeniden hesap = blok `$ExpPackage`
+(R02 ilk tur: `d6-r02\test\paket-digest-dogrulama.log`; **R02 ikinci tur, son baytlar:** `d6-r02\tur2\test\paket-digest-dogrulama.log`;
+**R02 tur 4** — `d6-selftest.js` değiştikten sonra yeniden: 9 pin, uyuşmazlık 0, digest aynı — `d6-r02\tur4\test\paket-digest-dogrulama.log`).
+
+**Blok revizyonunun ayırt edilmesi (R02 ikinci tur, V-5).** Bloğun kanıta yazdığı `owner-block.json` içindeki `revision` alanı R02 bloğunda da
+**`R01`** yazar: alan Write-Host / yorum / istem metni değildir ve mantık eşitliği gereği **değiştirilmedi** (bu alanı değiştiren kopya
+mantık eşitliği ölçümünde "eşit değil" verir: `d6-r02\tur2\neg\mantik-mutant\m7-revision-alani.ps1`). Bloğun **metin revizyonu yalnız blok
+dosyasının sha256'sı ile** ayırt edilir (yukarıdaki tablo). **Owner koşumdan önce blok dosyasının sha256'sını kaydeder** ve bu tablodaki son
+değerle karşılaştırır; kanıttaki `revision = R01` tek başına hangi blok metninin koşulduğunu göstermez.
 
 Paket digest (blok içinde `$ExpPackage`; 9 pinli dosyanın `yol\0sha\n` sıralı birleşiminin sha256'sı): `7C54C0FC38D85548D0B626A3D60D2CD7DF07080CC13F6C20C682933B1790F057`
 — bağımsız yeniden hesaplama ile **eşit** (`kapanis-duzeltme\pin-dogrulama.txt`: 9 pin, uyuşmazlık 0). `ExpLiveDist` = R27
@@ -124,16 +282,73 @@ i12-live-identity, i13-lib, koşucu) + `d6-qr-test.js`. Koşucu değiştiğinde 
 
 - Sahte API ürünün kendisi değildir: ürünün gerçek multer/kova/`assertContained`/hız sınırı davranışı yalnız canlıda ölçülür. Kova kökü
   (`HUKUK_DATA_ROOT`) görev ortamından geliyorsa Preflight yalnız "env-dosyasinda-yok" notu düşer; koşucu `filePath`'i DB'den alıp `stat` yapar.
-- Telefon yüklemesi opsiyoneldir ve makine ölçümü değildir; silinmezse kalıntı → 6 → Recover'da **owner kararı** (satır Prisma ile; dosya elle).
+- Telefon yüklemesi opsiyoneldir ve makine ölçümü değildir; silinmezse kalıntı → 6 → Recover'da **owner kararı** (satır Prisma ile; dosya elle)
+  (çıkış 6 Recover yetkisi değildir; §4 adım 7).
 - **D6-6 onay/ret bilinçli olarak çağrılmaz** (bildirim satırı + silme kilidi). Onay/ret akışının canlı kabulü istenirse **ayrı paket** — owner kararı.
 - Yabancı sentetik satır ürün ucu dışı (Prisma) yazılır ve silinir; kanıtta açıkça raporlanır. Audit/log kayıtları silinmez ("saklandı").
 - **Makbuz (`d6-setup-receipt.json`) ve kanıt JSON'u canlı belge kovasının MUTLAK yolunu içerir** (`documentFile`, `residueFiles`; Recover'ın
   diskte yoklaması için gerekli). Bu dosyalar repoya/belgeye **kopyalanmaz**, yalnız owner'ın yerel kanıt dizininde kalır.
 - Dosya erişimi `olculemez` ise (kova ACL) Run/Recover PASS vermez (6); kova okunabilirliğini owner düzeltir; Preflight bunu önceden ölçer.
+  (R02-b kapsam notu: Preflight yalnız `portal-documents` **kova kökünün** listelenebilirliğini ölçer; sentetik tenantın alt dizinindeki ya da
+  tek dosyadaki erişim reddini ölçmez — §10.1.)
 - İzole mod API kapısı yalnız D-6'da; D-5 koşucusu aynı sertleştirmeyi taşımaz (ayrı kayıt; bu paket D-5'i değiştirmez).
 - `extacc-qr-test.js` yalnız `/portal/login` kabul eder; D-6 kendi `d6-qr-test.js`'ini kullanır (D-5 bloğunun QrTest modu `/portal/forgot-password`
   ile aynı betiği çağırır → orada çıkış 4 beklenir; ayrı kayıt, bu paket D-5'i değiştirmez).
 - Bu paket H1–H8 sayacını değiştirmez (0/8). Canlı koşum için ayrı owner GO gerekir (`OWNER-GO-CLIENT-EXTACC-D6-YYYYMMDD-RNN`; literal belgeye yazılmaz).
+
+**R02 ile eklenen sınırlar (2026-10-01):**
+- **Recover kuralı (owner, 2026-10-01).** Run çıkış 5/6 otomatik Recover yetkisi **değildir**. Run'ın koşucu içindeki kendi kapanış adımları
+  ile ayrıca başlatılan Recover **ayrıdır**. Recover yalnız kanıt incelendikten sonra **ayrı owner onayıyla, bir kez** başlatılır; blok Recover'ı
+  başlatmaz (blok öz-testi: koşum başına tek node çağrısı — G-3/G-4, R-2). Recover çıkış 6 da yeni bir Recover için yetki değildir;
+  **ikinci bir Recover bu paketle tanımlı değildir, owner kararı gerektirir** (R02 ikinci tur: önceki "sonraki Recover yeni ve ayrı owner
+  onayı ister" cümlesi bir yol tanımladığı için kaldırıldı). Bu paket Recover için bir GO ref'i **sormaz** (blok mantığı R02'de değişmedi);
+  ayrı onayın nasıl kaydedileceği bu paketin dışındadır (owner kararı).
+- **Kanıttaki kurtarma adımı metni değişmedi (koşucu değişikliği gerektirir; R02'de yapılmadı — §9 "kanıttaki kurtarma adımı metni").** Koşucu
+  `d6-evidence.json` içindeki `recovery.neden` / `recovery.adim` alanlarına doğrudan adım yazar (ör. "Owner bloğu `-Mode Recover -ReceiptFile
+  <makbuz>` ile", "Recover BİR KEZ", "Recover BİR KEZ daha"). Bu metinler **öneridir**, yetki değildir ve ikinci bir Recover için yol
+  **tanımlamaz**; blok çıkışında ve §4 adım 7'de böyle okunması yazılıdır. Metnin kendisini düzeltmek koşucu değişikliği + yeni dosya pini +
+  yeni paket digest'i + `d6-selftest.js` koşumu gerektirir (ayrı iş). (R02 ilk turda bu not yanlışlıkla "D6-E9" etiketiyle yazılmıştı; D6-E9
+  aşağıdaki D6-1D kalemidir.)
+- **D6-1D'de erişim reddi FAIL sayılır (bulgu D6-E9; koşucu kaynağından doğrulandı).** Diskteki dosya için `stat` erişim reddi verirse
+  (`olculemez`) D6-5D ve P6-C-DOC ÖLÇÜLEMEYEN verir, **D6-1D ise FAIL** verir (koşucu: `onDisk = durum 'var' ise true`; aksi halde kontrol
+  `false` → FAIL). Kapalı yöndür (gösterim kapısı geçilmez); üç durumlu kuralın istisnasıdır (§2). Düzeltme **sonraki koşucu revizyonunda**;
+  koşucu pinlidir ve R02'de değiştirilmedi.
+- **`owner-block.json` `revision` alanı R02 bloğunda da `R01` yazar** (mantık eşitliği gereği değiştirilmedi); metin revizyonu blok dosyasının
+  sha256'sı ile ayırt edilir; owner koşumdan önce blok sha256'sını kaydeder (§6).
+- **Onay metnindeki kapsam iddiası (R02 ikinci tur).** "Koşucu canlı DB'de yalnız bu koşumun iki sentetik tenantına yazar" cümlesi **kaynaktan
+  okunmuştur** (koşucunun doğrudan Prisma yazmaları makbuzdaki sentetik kimliklere bağlıdır; kurulum `setupI3` hedef + yabancı tenantı yeni
+  oluşturur; kapanış `closeAccess` bu iki tenantla sınırlıdır); canlıda ölçülmedi. Koşumda `U-ISO` yalnız diğer tenantlardaki kullanıcı ve
+  müvekkil **sayılarının** önce/sonra aynı olduğunu ölçer (içerik ya da başka tablo ölçmez). "Bildirim üreten uçları çağırmaz" bir **statik
+  ölçüttür** (koşucu öz-testi T-1: kaynak taraması); canlıda ayrıca ölçülmedi.
+- **Sır iddiasının kapsamı.** "Yazmaz" iddiası yalnız bloğun ve koşucunun **kendi** kanıt/log dosyaları için ve yalnız ölçüldüğü ölçüde geçerlidir:
+  blok öz-testi R-9 + G-1 (kanıt dizini + GO defterinde GO literali, DB URL ve geçici portal parolası yok; geçici node ile), koşucu öz-testi S-1
+  (sahte API'ye karşı). Canlı API uygulama günlüğü, işletim sistemi / terminal kayıtları ve owner'ın beyan sorularına yazdığı yanıt metni
+  **ölçülmedi**.
+- **Telefon yüklemesi.** Dosya adı canlı API günlüğüne maskesiz yazılır ve satır kalır; dosya canlı belge kovasına yazılır (§1 R02 notu).
+  Bu etkiler kaynaktan okunmuştur; canlıda ölçülmedi. Owner'a onay metninde gösterilir.
+- **Boş kova dizini.** Kapanıştan sonra sentetik tenantın boş kova dizini diskte kalır — **saklandı** (koşucu ve blok dizin silmez; §1 R02 notu).
+- **Kapanış metni.** "DOĞRULANDI" yalnız kanıtta PASS yazan parçalar içindir; "mevcut oturum reddi" koşucunun **kendi** portal oturumudur.
+  Telefondaki oturumun reddi makineyle ölçülmez (yalnız yenileme beyanı). **Satır rengi yalnız birleşik ölçütü (P6-D9) gösterir**: yeşil satırda
+  da bir parça "ÖLÇÜLMEDİ" ya da "FAIL" yazabilir; parçaların sonucu satırın metninden okunur (R02 ikinci tur: not owner'a gösterilir; renk
+  mantığı değiştirilmedi).
+- **`d6-selftest.js` — GÜNCEL DURUM (R02 tur 4, 2026-10-03): commit'li dosya canlı yayın ağacına dokunmadan doğrudan koşulur** (kütüphane kökü
+  `D6T_LIB_ROOT` ile; 51/51 PASS; §5 "R02 tur 4"). Kalan sınırlar: (1) canlı ağaç reddi **yol adı** üzerinden çalışır (büyük/küçük harf duyarsız,
+  `.`/`..` çözülmüş, bağlantı hedefleri izlenir); 8.3 kısa ad, `subst` sürücüsü ya da UNC yazımıyla verilen bir canlı yol bu denetimle
+  **yakalanmaz** — ölçülmedi (kanıt sürücüsünde 8.3 kısa ad üretimi yok). (2) Betik yalnız iki modül dizinini çözer; modüllerin geçişli
+  bağımlılıkları kökün `.pnpm` bağlantılarıyla yüklenir — kullanılan kök için ayrıca ölçüldü (bağlantı 4687, kökün dışına çıkan 0), betik bunu
+  kendisi denetlemez. (3) `D6T_LIB_ROOT` verilmeden, modülleri kurulu bir checkout'ta pozitif koşum **ölçülmedi** (bu çalışma ağacında
+  `node_modules` yok; yalnız "modül yok → çıkış 2" yönü ölçüldü). (4) Bağlantı hedefi dalı gerçek canlı ağaca karşı **ölçülmedi** (canlı ağaca
+  bağlantı kurulmaz); kanıt dizininde sahte bir kökle ölçüldü (§9). (5) Owner bloğu dosyası yoksa ya da `$Rel` satırı tek değilse test başlamaz
+  (çıkış 2); önceki baytlarda blok yokken dinamik testler koşar, T-3 "owner bloğu mevcut" FAIL verirdi — commit'li pakette blok vardır.
+  Tarihsel not (R02 ilk/ikinci tur metni; o günkü baytlar `E9FB37DC…F2C2` için geçerlidir): "`d6-selftest.js` R02'de commit'li baytlarıyla
+  koşulamadı (canlı yayın ağacından modül yükler; R02 talimatında o ağaca erişim yasaktı). Ayna koşumu §5'te; sonuç commit'li dosyanın koşumu
+  sayılmaz. Betiğin canlı ağaç bağımlılığı ayrı bir düzeltme konusudur (bu paket değiştirmedi)."
+- **Pencere açma yolu.** Ajanın PowerShell 7'den `Start-Process` ile açtığı Windows PowerShell 5.1 penceresinde `Get-FileHash` bulunamaz
+  (§4 adım 1); blok bu durumu kendisi düzeltmez.
+
+**R02-b ile eklenen sınırlar (2026-10-03):** Run / normal kapanış / ayrı Recover sınırları ve bunlara bağlı **açık owner kararları** (OK-1 … OK-4)
+ayrı bölümdedir: **§10**. Yukarıdaki maddeler olduğu gibi durur; §10 onları kaynağa göre tamamlar (kapılar her modda, Recover'ın yazma kümesi,
+makbuzun yeniden yazılması, kalıntıda sıra, Recover 1/2, personel oturumu, onay metni kapsamı).
 
 ## 8. İnceleme düzeltmeleri (R01, 2026-09-29; iki bağımsız inceleme)
 
@@ -163,3 +378,322 @@ Reddedilen bulgu yok. Düzeltme koşumlarının sonuçları (ölçülen değerle
 | `d6-owner-block-selftest.ps1` (inceleme düzeltmesi sonrası) | **58/58 PASS** WinPS 5.1.26100 · **58/58 PASS** pwsh 7.6.6 | `fix-r01\d6-block-selftest-winps-fix-final.log`, `…-pwsh-fix-final.log`; tekrar `orkestrator-dogrulama\d6-owner-block-selftest.ps1-*.txt` |
 | `d6-selftest.js` (kapanış düzeltmesi; blok değişti, koşucu aynı sha) | **51/51 PASS**, çıkış 0 | `kapanis-duzeltme\d6-selftest.log` |
 | `d6-owner-block-selftest.ps1` (kapanış düzeltmesi, 64 test) | **64/64 PASS** WinPS 5.1.26100 · **64/64 PASS** pwsh 7.6.6 (ilk koşum 63/64: K-7 IPv4 kabulü → kapı düzeltildi) | `kapanis-duzeltme\d6-block-selftest-winps.log`, `…-pwsh.log`, `selftest-summary.txt` |
+
+## 9. R02 düzeltmeleri (2026-10-01; yalnız blok metni + blok öz-testi + bu belge)
+
+Kapsam: koşucu (`d6-portal-documents-live-run.js`), sahte API, `d6-selftest.js`, QR betiği ve bloğun pin listesindeki 9 dosya **değişmedi** →
+paket digest'i aynı (§6). Blok **mantığı** değişmedi; tek istisna D6-E2'deki kapanış metni ifadesidir (aşağıda ölçüldü). R02 hazırlanırken
+canlı ortamda owner bloğu, koşucu, sonda ya da servis/görev komutu koşulmadı; bu revizyon canlı Run/Recover'ı yetkilendirmez.
+
+| # | Bulgu | Karar | Değişiklik |
+|---|---|---|---|
+| D6-E1 | Çıkış 5/6 metinleri doğrudan Recover talimatı veriyordu: blok başlığındaki Recover satırı, Run çıkış 5/6 satırı (`KAPANIŞ DOĞRULANMADI: -Mode Recover …`), belge kalıntısı satırı, Recover çıkış 6 satırı ("Recover BİR KEZ daha koşulur") ve onay metnindeki "(Recover'da owner kararı)" | ÖNEMLİ — **düzeltildi** | Metinler D-5 R04 kalıbına çekildi: Run'ın koşucu içindeki kendi kapanışı ≠ Recover; çıkış kodu Recover yetkisi değil; blok Recover başlatmaz; önce kanıt incelenir; Recover yalnız ayrı owner onayıyla bir kez; kanıttaki adım öneridir. Belge §2, §3, §4 adım 7, §7. Öz-test G-2, G-3, G-4 |
+| D6-E2 | Kapanış "DOĞRULANDI" metni yeni giriş ve mevcut oturum reddini koşulsuz iddia ediyordu; oysa portal hesabı hiç açılmadıysa ya da koşucunun portal oturumu yoksa `P6-D9` PASS olabilir ve bu ölçütler koşulmaz | KÜÇÜK — **düzeltildi** | `Get-ClosureStatus` içindeki `$st.text` ifadesi altı parçayı kanıttaki verdict'lerden kurar (PASS / FAIL / ÖLÇÜLMEDİ); "mevcut oturum" = koşucunun kendi oturumu; telefondaki oturumu koşucu ölçmez. Öz-test O-6, O-7, O-8 |
+| D6-E3 | Onay metni telefon yüklemesinin günlük (dosya adı maskesiz) ve kova etkisini söylemiyordu | KÜÇÜK — **düzeltildi** | Blok onay metni (iki cümle) + §1 R02 notu + §4 adım 4 + §7. Öz-test G-2 |
+| D6-E4 | Kapanışta sentetik tenantın boş kova dizini diskte kalır | KÜÇÜK — **düzeltildi (not: "saklandı")** | Blok başlığı + onay metni + §1 R02 notu + §7. Dizin silinmez; davranış değişmedi |
+| D6-E5 | Blok başlığında kapsamsız mutlak ifade ("… hiçbir dosyaya yazılmaz") | KÜÇÜK — **düzeltildi** | Başlık kapsamı adlandırır (ölçülen dosyalar + ölçüm kaynağı + kapsam dışı); §1 cümlesi ve §7. Öz-test G-1 |
+| D6-E6 | Pencereyi ajan PowerShell 7'den `Start-Process` ile açarsa çocuk Windows PowerShell 5.1'de `Get-FileHash` bulunamaz | KÜÇÜK — **düzeltildi (belge)** | §4 adım 1 + §7; yerel ölçüm `d6-r02\test\ps51-modul-yolu-olcumu.log` |
+| D6-E7 / D6-E8 | Belgedeki öz-test kanıt atıfları son baytlarla koşulan loglara bağlı değildi | NİT — **düzeltildi** | §5 R02 satırları + "R02 — kanıt atıfları" notu; önceki sonuç satırları değiştirilmedi |
+| kanıttaki kurtarma adımı metni (R02 ilk turda "D6-E9" etiketiyle yazılmıştı; etiket ikinci turda düzeltildi — bu kalem D6-E9 **değildir**, ayrı ve geçerli bir sınırdır) | Koşucu kanıttaki `recovery.neden` / `recovery.adim` alanlarına doğrudan Recover adımı yazar | **DÜZELTİLMEDİ** (R02 kapsamı: koşucu değişmez) | §7'ye sınır olarak yazıldı: metinler öneridir, yetki değildir, ikinci Recover için yol tanımlamaz. (İlk tur notu: "Bulgunun metni R02 oturumuna verilmedi … D6-E9 başka bir kalemse o kalem bu notun kapsamında değildir" — D6-E9'un doğru içeriği alttaki satırdadır) |
+| D6-E9 (doğru içerik; R02 ikinci tur) | Koşucuda D6-1D ölçütünde diskteki dosyaya erişim reddi (`olculemez`) ÖLÇÜLEMEYEN yerine **FAIL** üretir; D6-5D ve P6-C-DOC aynı durumda ÖLÇÜLEMEYEN verir ve §2 "`olculemez` → ÖLÇÜLEMEYEN" der | **DÜZELTİLMEDİ** (koşucu pinli; R02 kapsamı: koşucu değişmez) — **sınır notu yazıldı** | Koşucu kaynağından doğrulandı (`d6-portal-documents-live-run.js`, D6-1D bloğu: `onDisk = fst.state === 'var'`; `R.check('D6-1D', …, … && onDisk, …)`; `check` `false` için FAIL üretir; D6-1D gösterim kapısı listesindedir). §2 "İstisna — D6-1D" + §7: erişim reddi D6-1D'de FAIL sayılır (kapalı yön; üç durumlu kuralın istisnası); düzeltme sonraki koşucu revizyonunda |
+
+**Mantık eşitliği — R02 ilk tur (R02 öncesi blok `A206E19E…` → R02 ilk tur bloğu `5AEF3893…`; AST; `d6-r02\test\mantik-esitligi.ps1` →
+`mantik-esitligi.log`; Windows PowerShell 5.1 ve PowerShell 7'de aynı sonuç). İkinci turun ölçümü bu bölümün sonundadır.**
+Yorumlar (39 → 56), `Write-Host` komutları (42 → 52) ve `Read-Answer`/`Read-Host` istem metinleri (15 → 15; değişmedi) çıkarılıp boşluk
+normalize edildiğinde:
+- **Ölçüm A (katı): eşit DEĞİL** — tek fark `Get-ClosureStatus` içindeki `$st.text = …` atamasıdır (ortak ön ek 13250, ortak son ek 6221
+  karakter; farklı orta kısım 108 → 874 karakter).
+- **Ölçüm B (bu tek atama iki dosyada da çıkarılmış): EŞİT** (19313 = 19313 karakter); fonksiyon sayısı 30 = 30.
+- İstisna ifadesinin farkı: eski hali `verified` ise sabit bir cümle döndürüyordu; yeni hali `verified` ise zaten okunmuş kanıt nesnesinin
+  (`$ev.results`) altı ölçüt grubunu dolaşıp cümleyi kurar. `verified` koşulu, `else` dalındaki "DOĞRULANAMADI" cümlesi, dönen diğer alanlar,
+  dosya okuma/yazma, node çağrısı ve çıkış kodları **aynıdır**.
+- Körlük kontrolü: yeni bloğun 4 mantık mutantı (5/6 koşulu, `verified` koşulu, EVET karşılaştırması, `Fail` mesajı) → "eşit değil";
+  yalnız `Write-Host` metni değişen kontrol kopyası → "eşit" (`d6-r02\neg\mantik-mutant\`).
+
+| R02 ilk tur koşumu (ara baytlar: blok `5AEF3893…`, öz-test `810BDEF5…`) | Sonuç | Kanıt (`D:\Development\HUKUK_YAZILIMI\HY_R27_AGENT_EVIDENCE\d6-r02\`) |
+|---|---|---|
+| `Parser::ParseFile` (2 ps1) · BOM · satır sonu · kontrol karakteri | parse hatası 0 (WinPS 5.1 ve pwsh 7) · BOM var · LF (önceki biçim korundu) · kontrol karakteri 0 | `test\parse-winps51.log`, `test\parse-pwsh7.log` |
+| `d6-owner-block-selftest.ps1` | **71/71 PASS** WinPS 5.1.26100 · **71/71 PASS** pwsh 7.6.6, çıkış 0 | `test\blok-oz-test-winps51.log`, `test\blok-oz-test-pwsh7.log` + `…-status.json` |
+| Negatif kontrol: eski blok baytları + yeni öz-test | **64/71**, çıkış 1; FAIL = G-1, G-2, G-3, G-4, O-6, O-7, O-8 (iki sürümde) | `neg\neg-eski-blok-winps51.log`, `neg\neg-eski-blok-pwsh7.log` + `…-status.json` |
+| Mantık eşitliği (AST) | Ölçüm B eşit; Ölçüm A'nın tek farkı kapanış metni ataması (iki sürümde) | `test\mantik-esitligi.log` |
+| Paket digest'i (9 pin, bağımsız yeniden hesap) | uyuşmazlık 0; digest = `$ExpPackage` | `test\paket-digest-dogrulama.log` |
+| `d6-selftest.js` — commit'li baytlar | **GÜNCEL DURUM (tur 4): koşuldu — 51/51 PASS, çıkış 0** (yeni baytlar `5560FAF8…178F`; aşağıda "R02 tur 4"). Tarihsel not (bu turun metni; baytlar `E9FB37DC…F2C2`): **KOŞULAMADI** (canlı yayın ağacından modül yükler; R02 talimatında yasak) | güncel: `tur4\test\d6-selftest-commit.log`; bu turda: — |
+| `d6-selftest.js` — ayna kopya (yalnız `const REL` satırı değişik) | **51/51 PASS**, çıkış 0; T-3..T-7 PASS (commit'li dosyanın koşumu değildir) | `test\d6-selftest-ayna.log`, `test\d6-selftest-ayna-status.json`, `test\d6-selftest-ayna-kurulum.json` |
+
+### R02 ikinci tur — inceleme düzeltmeleri (2026-10-01; yalnız metin/belge)
+
+İlk R02 commit'i (`efcbfe73`) bağımsız incelendi; engelleyici/önemli bulgu yoktu. Bu tur incelemenin küçük/nit bulgularını **yalnız blok
+metni, blok öz-testi ve bu belge** ile kapatır. Koşucu (`.js`), sahte API, QR betiği, `d6-selftest.js` ve 9 pinli dosya **değişmedi**; paket
+digest'i aynı. Canlı ortamda hiçbir owner bloğu, koşucu, sonda ya da servis/görev komutu koşulmadı; bu tur canlı Run/Recover'ı yetkilendirmez.
+
+| # | Bulgu | Karar | Değişiklik |
+|---|---|---|---|
+| V-2 | Onay metnindeki "Koşucu yalnız bu koşumun sentetik tenantlarına yazar ve bildirim üreten uçları çağırmaz." cümlesi kapsamsızdı | NİT — **düzeltildi** | Cümle kapsamıyla yazıldı: canlı DB'de yalnız bu koşumun **iki** sentetik tenantına yazar (kaynaktan okundu; koşumda U-ISO yalnız sayıları ölçer); bildirim üreten uçları çağırmaz (statik ölçüt: koşucu öz-testi T-1). Aynı metnin ilk satırındaki "YALNIZ yeni bir sentetik tenantta" ifadesi de iki tenantla tutarlı yazıldı ("bu koşumun İKİ yeni sentetik tenantında (hedef + yabancı)"). §3(d), §7. Öz-test G-5 |
+| V-3 | Onay metninde kova dizini iki adla geçiyordu (`PORTAL_DOCUMENTS/…` ve `portal-documents/…`) | NİT — **düzeltildi** | Üç yerde de `portal-documents/<sentetik tenant>/`. Öz-test G-5 |
+| V-4 | Kapanış metni "aşağıda PASS yazan parçalar" diyordu; parçalar aynı satırdadır. Satır rengi yalnız birleşik ölçüte bağlıdır | NİT — **düzeltildi (yalnız metin)** | Metin "bu satırın devamında PASS yazan parçalar"; altına "satır rengi yalnız birleşik ölçütü (P6-D9) gösterir" notu. Renk mantığı değişmedi. Öz-test O-9. **Bu, ikinci turda yorum / Write-Host / istem metni dışında değişen tek yerdir** (aşağıdaki ölçüm) |
+| V-5 | `owner-block.json` `revision` alanı R02 bloğunda da `R01` yazar | NİT — **belgelendi** | §6 "Blok revizyonunun ayırt edilmesi" + §7; alan değiştirilmedi (mantık eşitliği) |
+| V-6 | §7'deki "kalıntı → 6 → Recover'da owner kararı" cümlesi yetki sınırını anmıyordu; §3(b) etiketleri bloğun bastığı metinle birebir değildi | NİT — **düzeltildi** | §7 cümlesine "(çıkış 6 Recover yetkisi değildir; §4 adım 7)"; §3(b) etiketleri bloğun bastığı metinle birebir |
+| V-7 | Kanıt dizinindeki `test\run-d6-selftest-ayna.ps1` test DB bağlantı dizgesini dosya içinde kuruyordu | NİT — **düzeltildi (repo dışı)** | Betik bağlantı dizgesini artık **ortamdan** (`D6T_DB_URL`) okur; dosyada yalnız `postgresql://postgres:<maskeli>@…` biçim açıklaması vardır. Kanıt dizininin `SHA256-MANIFEST.txt` dosyası yeniden üretildi. Commit'i etkilemez |
+| İkinci Recover | Blok (başlık + Recover çıkış 6 satırı) ve belge (§2, §4 adım 7, §7) "sonraki Recover yeni ve ayrı owner onayı ister / onayıyla bir kez başlatılır" diyerek ikinci bir Recover için yol tanımlıyordu | KÜÇÜK — **düzeltildi** | Owner kuralı: "bu çıkış kodu yeni bir Recover için yetki değildir; ikinci bir Recover bu paketle tanımlı değildir, owner kararı gerektirir". Recover çıkış 6 satırındaki "önce … düzeltilir" sıralaması da kaldırıldı. Öz-test G-3 (yeniden yazıldı) |
+| D6-E9 | Yukarıdaki tabloda (doğru içerik) | **DÜZELTİLMEDİ** (koşucu pinli) — sınır notu | §2 "İstisna — D6-1D", §7 |
+
+**Mantık eşitliği — R02 ikinci tur (R02 ilk tur bloğu `5AEF3893…` → ikinci tur bloğu `082527EE…`; `d6-r02\tur2\test\mantik-esitligi-tur2.ps1` →
+`mantik-esitligi-tur2.log`; Windows PowerShell 5.1 ve PowerShell 7'de aynı sonuç).** Yorumlar (56 → 62), `Write-Host` komutları (52 → 55) ve
+`Read-Answer`/`Read-Host` istem metinleri (15 → 15; değişmedi) çıkarıldıktan sonra:
+- **Ölçüm A (katı): eşit DEĞİL** (20345 → 20356 karakter). Kalan kod birebir eşit **değildir**; fark aşağıdaki tek dize sabitidir.
+- **Ölçüm T (token):** çıkarılan aralıkların dışında karşılaştırılan token sayısı 3667 = 3667; **farklı token 1**: `Get-ClosureStatus` içindeki
+  `$st.text = …` atamasında tek tırnaklı bir dize sabiti (owner'a gösterilen ve `owner-declaration.json` → `closureShownToOwner` alanına yazılan
+  kapanış metni). Eski: `'… DOĞRULANDI yalnız aşağıda PASS yazan parçalar içindir (kanıttan): '` → yeni:
+  `'… DOĞRULANDI yalnız bu satırın devamında PASS yazan parçalar içindir (kanıttan): '` (V-4).
+- **Ölçüm C (izinli tek fark):** token sayısı eşit + farklı token tam 1 + iki dosyada da tek tırnaklı dize sabiti + iki dosyada da `$st.text`
+  atamasının içinde + fark yalnız `aşağıda PASS yazan` → `bu satırın devamında PASS yazan` → **sağlandı**.
+- İlk tur betiğiyle süreklilik ölçümü (`d6-r02\test\mantik-esitligi.ps1`): Ölçüm B (kapanış metni ataması iki dosyada çıkarılmış) **EŞİT**
+  (19313 = 19313); Ölçüm A'nın farklı orta kısmı 5 → 16 karakter.
+- Sonuç: işleç, koşul, değişken, çağrı, sıra, pin, çıkış kodu ve fonksiyon sayısı (30 = 30) **aynıdır**; değişen tek kod öğesi bir görüntü
+  metni dize sabitinin içeriğidir. "Yorum + Write-Host + istem metni çıkarılınca birebir eşit" ölçütü **bu tek dize sabiti dışında** sağlanır;
+  V-4 düzeltmesi bu sabit değişmeden yapılamaz.
+- Körlük kontrolü (ikinci tur bloğunun 11 kopyası × 2 sürüm = 22 koşum; beklenenle uyuşan 22): 8 mutant → "eşit değil" (5/6 koşulu, `verified`
+  koşulu, EVET karşılaştırması, `Fail` mesajı, kapanış metni atamasında **başka** bir dize sabiti, aynı atamada işleç, `revision` alanı,
+  izinli dize sabitinde fazladan değişiklik); 3 kontrol kopyası (yalnız `Write-Host` metni / yalnız yorum / yalnız istem metni) → "eşit sayılır"
+  (`d6-r02\tur2\neg\mantik-mutant\`).
+
+| R02 ikinci tur koşumu (**son baytlar**: blok `082527EE…B3E2`, öz-test `34C95DCB…9BAE`) | Sonuç | Kanıt (`D:\Development\HUKUK_YAZILIMI\HY_R27_AGENT_EVIDENCE\d6-r02\tur2\`) |
+|---|---|---|
+| `Parser::ParseFile` (2 ps1) · BOM · satır sonu · kontrol karakteri (0x00–0x08, 0x0B, 0x0C, 0x0E–0x1F) | parse hatası 0 (WinPS 5.1 ve pwsh 7) · ps1'lerde UTF-8 BOM var, belgede yok (önceki biçim) · LF (CR 0) · kontrol karakteri 0 | `test\parse-winps51.log`, `test\parse-pwsh7.log` |
+| `d6-owner-block-selftest.ps1` | **73/73 PASS** WinPS 5.1.26100 · **73/73 PASS** pwsh 7.6.6, çıkış 0 | `test\blok-oz-test-winps51.log`, `test\blok-oz-test-pwsh7.log` + `…-status.json` |
+| Negatif kontrol: R02 ilk tur blok baytları + ikinci tur öz-testi | **70/73**, çıkış 1; FAIL = G-3, G-5, O-9 (iki sürümde) | `neg\neg-ilk-tur-blok-winps51.log`, `neg\neg-ilk-tur-blok-pwsh7.log` + `…-status.json` |
+| Mantık eşitliği (AST + token) | Ölçüm A eşit değil; farklı token 1 (kapanış metni dize sabiti); Ölçüm C sağlandı; ilk tur betiğinde Ölçüm B eşit (iki sürümde); körlük kontrolü 22/22 | `test\mantik-esitligi-tur2.log`, `neg\mantik-mutant\` |
+| Paket digest'i (9 pin, bağımsız yeniden hesap) | uyuşmazlık 0; digest = `$ExpPackage` (`7C54C0FC…F057`) | `test\paket-digest-dogrulama.log` |
+| Değişmeyen dosyalar (`git diff` ilk R02 commit'ine göre) | değişen yalnız 3 dosya: blok, blok öz-testi, bu belge; koşucu `5D74206B…`, QR `C9FC15AA…`, sahte API `27D8CBAD…`, `d6-selftest.js` `E9FB37DC…` aynı | `test\degismeyen-dosyalar.log` |
+| `d6-selftest.js` — commit'li baytlar | **GÜNCEL DURUM (tur 4): koşuldu — 51/51 PASS, çıkış 0** (yeni baytlar `5560FAF8…178F`; aşağıda "R02 tur 4"). Tarihsel not (bu turun metni; baytlar `E9FB37DC…F2C2`): **KOŞULAMADI** (canlı yayın ağacından modül yükler; talimatta yasak) | güncel: `..\tur4\test\d6-selftest-commit.log`; bu turda: — |
+| `d6-selftest.js` — ayna kopya (yalnız `const REL` satırı değişik), ikinci tur blok baytlarıyla — **tarihsel kanıt** | **51/51 PASS**, çıkış 0; T-3..T-7 PASS (commit'li dosyanın koşumu değildir) | `test\d6-selftest-ayna.log`, `test\d6-selftest-ayna-status.json`, `test\d6-selftest-ayna-kurulum.json` |
+
+### R02 tur 4 — koşucu öz-testi canlı yayın ağacı bağımlılığı olmadan koşar (2026-10-03; yalnız `d6-selftest.js` + bu belge)
+
+Kapsam: değişen yalnız `scripts/d6-selftest.js` ve bu belgedir. Koşucu (`d6-portal-documents-live-run.js`), owner bloğu, blok öz-testi, QR betiği,
+sahte API ve bloğun pinlediği 9 dosya **değişmedi**; paket digest'i aynı (`7C54C0FC…F057`). Canlı Run kapıları ve pin denetimi değişmedi (bloğa
+dokunulmadı). Canlı ortamda hiçbir owner bloğu, koşucu, sonda ya da servis/görev komutu koşulmadı; canlı yayın ağacı, canlı DB ve canlı günlükler
+okunmadı — canlı ağaç yolu negatif ölçümlerde yalnız **metin** olarak (`D6T_LIB_ROOT` değeri) kullanıldı. Bu tur canlı Run/Recover'ı yetkilendirmez.
+
+| # | Bulgu | Karar | Değişiklik |
+|---|---|---|---|
+| T4-1 | `d6-selftest.js` Prisma istemcisini ve bcrypt'i sabit yoldan, canlı yayın ağacının `node_modules` dizininden yüklüyordu; commit'li dosya canlı ağaca dokunmadan koşulamıyor, sonuç yalnız tek satırı değiştirilmiş ayna kopyayla alınabiliyordu | ÖNEMLİ — **düzeltildi** | Kütüphane kökü `D6T_LIB_ROOT` ile verilir; verilmezse betiğin checkout'unun proje kökü; kök/modül yoksa çıkış 2; kök (ya da bir bağlantı hedefi) canlı yayın ağacına çözülüyorsa çıkış 4 — ilk yerel `require`dan önce; canlı ağaç owner bloğunun `$Rel` sabitinden okunur (betikte canlı yol literali yok); kullanılan kök çıktıya yazılır (kullanıcı adı maskeli). Tasarım ve koşum komutu: §5 "R02 tur 4"; sınırlar: §7 |
+
+| R02 tur 4 koşumu (**son baytlar**: `d6-selftest.js` `5560FAF8…178F`; blok `082527EE…B3E2` ve blok öz-testi `34C95DCB…9BAE` değişmedi) | Sonuç | Kanıt (`D:\Development\HUKUK_YAZILIMI\HY_R27_AGENT_EVIDENCE\d6-r02\tur4\`) |
+|---|---|---|
+| **Commit'li `d6-selftest.js` doğrudan** (kopya/ayna değil); `D6T_LIB_ROOT` = canlı olmayan R27 aday çalışma ağacı proje kökü; test konteyneri + sahte API 8199 / dış 8458 | **51/51 PASS**, çıkış 0; T-3..T-7 PASS; ilk satır `kütüphane kökü: …\HY_WT_R27\project (kaynak: D6T_LIB_ROOT; …)`; test kimlikleri + sonuçları ikinci tur ayna koşumuyla aynı (51 = 51); koşum öncesi/sonrası 6 betiğin sha256'sı eşit | `test\d6-selftest-commit.log`, `test\d6-selftest-commit-status.json` |
+| Negatif (a): `D6T_LIB_ROOT` verilmedi, checkout proje kökünde `node_modules` yok | çıkış **2**; "Prisma istemcisi modülü kütüphane kökünde yok (bu checkout'un proje kökü — D6T_LIB_ROOT verilmedi: …) — test BAŞLAMADI; canlı yayın ağacına DÜŞÜLMEZ" | `neg\neg-a-kok-verilmedi.log` + `…-status.json` |
+| Negatif (b): kök canlı yayın ağacının altında — dört yazım: bloğun `$Rel` değeri · ağacın kökü (`project` üstü) · küçük harf + `/` ayracı + alt dizin · `..` / `.` bileşenli | çıkış **4** "RED: kütüphane kökü canlı yayın ağacına çözülüyor … test BAŞLAMADI" (4/4). Erişim izleyicisiyle (`node -r`; betik baytları aynı): canlı ağaç altında dosya sistemi çağrısı **0**, modül yükleme **0**, modül çözümleme **0**, `require.cache` içinde canlı ağaçtan dosya **0**; önbellekte yalnız 2 dosya (izleyici + öz-test) → koşucu dahi yüklenmeden çıkıldı (ret `require`dan önce) | `neg\neg-b1-…` … `neg\neg-b4-…` (`.log`, `-status.json`, `-status-izleyici.json`) |
+| İzleyici körlük kontrolü (pozitif kontrol): (a) koşumu, izleyici ön eki = gerçekten dokunulan checkout proje kökü | ön ek altında dosya sistemi çağrısı **7**, modül yükleme 1 → izleyici kör değil (b ölçümlerinde gözlenen toplam fs çağrısı 4, modül yükleme 6) | `neg\neg-a-izleyici-pozitif-kontrol-*` |
+| Negatif (c): varolmayan kök | çıkış **2**; "kütüphane kökü dizini yok ya da erişilemiyor (… · ilk eksik bileşen: …)" | `neg\neg-c-varolmayan-kok.log` + `…-status.json` |
+| Bağlantı (junction) dalı — **ayna**: `d6-selftest.js` baytları commit'li dosyayla **aynı** (`5560FAF8…`), yalnız owner bloğu **kopyasında** `$Rel` kanıt dizinindeki sahte bir "canlı" köke çevrildi (sahte kökte iki modül dizini kurulu: ret çalışmasaydı modül çözülürdü) | düz yazım → **4**; kök = sahte köke junction → **4**; kök gerçek dizin, `node_modules` = sahte köke junction → **4**; üçünde de sahte kök altında dosya sistemi çağrısı **0**. Kontrol: canlı olmayan boş dizine junction → **2** (bağlantı izlendi, çözülen yol yazıldı; 4 değil). Kontrol (commit'li dosya + gerçek blok): aynı sahte dizin canlı sayılmaz → kök kabul edildi ("kütüphane kökü: …" satırı). Blok dosyası olmayan dizin → **2** ("canlı yayın ağacının kökü owner bloğundan okunamadı"). Koşum sonrası kanıt dizininde kalan junction 0 | `neg-baglanti\` (`j0` … `j5`, `ayna-kurulum.json`) |
+| Kütüphane kökü bağlantı taraması (R27 aday çalışma ağacı; salt okuma) | `node_modules` bağlantı değil; incelenen bağlantı **4687**; hedefi kökün dışına çıkan **0**; canlı ağaca çıkan **0** | `test\kutuphane-koku-baglanti-taramasi.log` |
+| `d6-owner-block-selftest.ps1` (blok ve blok öz-testi baytları değişmedi; koşum öncesi/sonrası sha256 eşit) | **73/73 PASS** Windows PowerShell 5.1.26100 · **73/73 PASS** PowerShell 7.6.6, çıkış 0 | `test\blok-oz-test-winps51.log`, `test\blok-oz-test-pwsh7.log` + `…-status.json` |
+| Paket digest'i (9 pin, bağımsız yeniden hesap) · `node --check` / parse / BOM / satır sonu | uyuşmazlık 0; digest = `$ExpPackage` (`7C54C0FC…F057`) · `d6-selftest.js` `node --check` 0, LF (CR 0), BOM yok (önceki biçim); 2 ps1 parse hatası 0 | `test\paket-digest-dogrulama.log`, `test\parse-bom-satir-sonu.log` |
+| Değişen dosyalar (`git diff --name-only` ikinci tur commit'ine `c6d3ff60` göre) | yalnız 2 dosya: `d6-selftest.js`, bu belge; koşucu `5D74206B…`, QR `C9FC15AA…`, sahte API `27D8CBAD…`, blok `082527EE…`, blok öz-testi `34C95DCB…` aynı | `test\degismeyen-dosyalar.log` |
+
+İlk (b3) denemesi ölçüm betiğinin hatasıydı, betiğin değil: sürücü küçük harfe çevirmeyi Türkçe kültürle yaptı (`I` → `ı`), verilen yol canlı
+ağaç değil başka (varolmayan) bir ad oldu ve betik doğru olarak "kütüphane kökü dizini yok" (çıkış 2) dedi; canlı ağaç altında dosya sistemi
+çağrısı yine 0'dı. Sürücü kültürden bağımsız çevirmeye düzeltildi ve (b3) yeniden ölçüldü (çıkış 4). İlk kayıt silinmedi:
+`neg\ilk-kosum-b3-tr-kultur\`.
+
+## 10. R02-b ek sınırlar — Run / normal kapanış / AYRI Recover (2026-10-03; yalnız bu belge)
+
+Kapsam: değişen **yalnız bu belgedir**. Owner bloğu, koşucu, iki öz-test, QR betiği, sahte API ve bloğun pinlediği 9 dosya **değişmedi**; §6'daki
+pinler ve paket digest'i aynıdır. Bu bölümdeki her kalem **kaynaktan okunmuştur**; satır numaraları dal ucu `cefe2663`'teki dosyalara göredir ve
+okunan baytlar §6 / bloktaki pinlerle eşit ölçülmüştür (blok `082527EE…B3E2`, koşucu `5D74206B…58DD`, `i13-lib.js` `59BA7360…D385`, `i3-lib.js`
+`56F3788E…74A3`, `i12-live-identity.js` `9516E462…774F`, `h5-url-live-run.js` `F2D0975D…C359`). Kalemler **canlıda ölçülmedi**; bu turda hiçbir
+blok, koşucu ya da öz-test **koşulmadı**, canlı ortama ve canlı `.env`'e dokunulmadı. Bu bölüm canlı Run/Recover'ı yetkilendirmez; karar
+gerektiren konular §10.8'de **açık owner kararı** olarak yazılıdır ve bu belgeyle karara bağlanmaz.
+
+Üç ayrı işlem (terimler): **Run** = tek seferlik kabul koşumu (GO ile). **Normal kapanış** = Run'ın koşucu **içindeki** `finally` bloğu (koşucu
+satır 406–428; sıra: konsol temizliği → portal kapanışı + belge kalıntısı → yabancı satır temizliği → personel/dosya kapanışı → U-CLOSE → audit
+sayımı → P6-D9 → U-ISO → özet → kurtarma önerisi → çıkış kodu → kanıt); Run'ın parçasıdır, ayrı onay istemez. **Recover** = owner'ın ayrıca
+başlattığı, canlıya **yeniden yazan** ayrı işlem (koşucu satır 431–470); çıkış kodu onu yetkilendirmez (§4 adım 7).
+
+### 10.1 Kapılar her modda koşar; Recover'ın kapı bağımlılıkları (düzeltme)
+
+- **Düzeltilen iddia.** Belge başlığı "R26 canlı ile Preflight/Run DUR verir" diyordu; eksikti. Blok akışında `Invoke-ReadOnlyGates` mod dalından
+  **önce** çağrılır (blok satır 453–467): Preflight, QrTest, Run ve **Recover**'ın dördünde de aynı salt okuma kapıları koşar. Biri tutmazsa blok
+  **çıkış 90** ile durur (satır 469–472) ve o mod başlamaz. Başlık ve §3 buna göre düzeltildi (R02-b notları).
+- **Kapılar (blok satır 129–171):** Node ortam değişkenleri (`NODE_OPTIONS`, `NODE_TLS_REJECT_UNAUTHORIZED`, `NODE_EXTRA_CA_CERTS`) tanımsız ·
+  `git fetch` + ana checkout HEAD = origin/main · takipli kirli dosya yok · 9 dosya pini + paket digest'i · canlı API dist pini (R27) · canlı
+  `.env` pini · public portal adresi biçimi · `HUKUK_DATA_ROOT` `.env`'de tanımlıysa dizin var; `portal-documents` kova kökü **varsa** listelenebilir (henüz yoksa yalnız not, DUR değil) ·
+  8080'de **tam bir** dinleyici (canlı API ayakta) · başka kabul süreci çalışmıyor (D-4 / D-5 / D-6 / D-7 / D-8 koşucuları dahil: D-6 ile D-7 aynı
+  anda koşamaz) · başlatıcı günlüğünde DB kimliği · `node` çözülebilir.
+- **Moda özgü ek kapılar.** Dış zincir (`Assert-ExternalChain`) yalnız Preflight ve Run'da (satır 459, 332); yerel konsol (`Assert-LocalConsole`)
+  yalnız QrTest ve Run'da (satır 434, 333) aranır. **Recover'da ikisi de aranmaz** (satır 405–430): zincir bozukken dış adresten yeni giriş reddi
+  (P6-C3D) ölçülemeyen kalabilir (yanıt yok / 503 / 429); dış uçtan 401 dışında **başka** bir yanıt gelirse P6-C3D FAIL olur ve Recover çıkış 6
+  verir (koşucu satır 219, 231, 237). Dış uçların zincir bozukken ne döndürdüğü canlıda ölçülmedi.
+- **Recover'a etkisi (D-7 paket belgesindeki K-4'ün D-6 karşılığı).** Run ile Recover arasında şunlardan biri olursa blok 90 ile durur, Recover
+  **başlamaz**, koşucu çağrılmaz ve canlıya hiçbir şey yazılmaz: (i) main ilerlemiş ve ana checkout senkron değil (blok yalnız `git fetch` yapar;
+  senkronlama bloğun dışındadır); (ii) ana checkout'ta takipli dosya kirli; (iii) pinli 9 dosyadan biri main'de değişmiş; (iv) canlı dist
+  değişmiş (yeni yayın ya da geri dönüş); (v) canlı `.env` değişmiş; (vi) canlı API kapalı ya da 8080'de birden çok dinleyici var; (vii) başka bir
+  kabul koşucusu çalışıyor (ör. D-7, ya da asılı kalmış bir D-6 koşucusu); (viii) `portal-documents` kova kökü var ama listelenemiyor. Bu durumda kapanış bu
+  bloktan tamamlanamaz → **açık owner kararı OK-1** (§10.8). Yayın planı ile D-6 koşum sırası bu yüzden birlikte kararlaştırılır.
+- **Koşucunun Recover'daki kendi kapıları** (koşucu satır 432–439, 448–450): TLS doğrulaması açık, beklenen DB = bağlı DB, API adresi beyanı,
+  origin biçimi, `D6_RECOVER_CONFIRM`, makbuz okunabilir + biçimi + runId eşleşmesi, kimlik bağı (makbuz ↔ tenant kimliği / slug / runId;
+  `i12-live-identity.js` satır 34–63), portal hâlâ açıksa makbuzdaki personel kullanıcısının varlığı. Biri tutmazsa canlı DB'ye **yazılmadan**
+  durulur (çoğunda çıkış 4). Koşucu dist/`.env` pini ölçmez — ama bloksuz koşum bu paketle yetkilendirilmez.
+- **Kova kapısının kapsamı.** `Test-BucketReadable` yalnız `portal-documents` **kova kökünün** listelenebilirliğini ölçer (blok satır 197–203);
+  sentetik tenantın alt dizinindeki ya da tek dosyadaki erişim reddini ölçmez. O durum ancak koşucunun üç durumlu yoklamasında `olculemez` olarak
+  görünür (§2). §7'deki "Preflight bunu önceden ölçer" cümlesi bu kapsamla okunur (kaynaktan okundu; canlıda ölçülmedi).
+
+### 10.2 Recover canlıya ne yazar — Run'ın kendi kapanışından AYRI bir canlı yazma işlemi
+
+Recover kabul ölçütlerini koşmaz; yalnız kapanışı yeniden dener ve **canlıya yazar**. Bu küme belgede listelenmiyordu (yalnız satır silme
+anlatılıyordu) ve blok Recover girişinde owner'a **gösterilmez** (blok satır 405–430: tek soru kalıntı kararıdır). Yazma kümesi (koşucu
+`recoverMode` satır 431–470, `closePortal` 172–235, `documentResidue` 140–159, `foreignCleanup` 161–169; `i13-lib.js` `closeAccess` 46–59;
+öz-testte sahte API'ye karşı Z5 / Z8 / Z16 senaryolarında koşulur, canlıda koşulmadı):
+
+1. **Portal hâlâ açıksa** (hesap aktif ya da müvekkil erişim bayrağı açık; koşucu satır 450, geç oluşmada 196): makbuzdaki sentetik personel
+   (elev1) **geçici olarak yeniden aktifleştirilir ve parola özeti yeniden yazılır** (`User.isActive=true` + yeni `passwordHash`; satır 447; parola
+   bloğun o Recover koşumu için ürettiği rastgele değerdir — blok satır 212–213); o personelle yerel API'de oturum açılır ve yetkili uç çağrılır
+   (`POST /portal/admin/disable-user`, en çok 2 deneme; satır 195–203). Ürün tarafı (R27 adayı `1b758d29`, `portal.service.ts`
+   `disablePortalUser`): portal hesabı pasif + sürüm artışı + bekleyen sıfırlama alanları temizlenir, müvekkil portal erişimi kapalı, **kapatma
+   audit satırı** (aktör: sentetik personel).
+2. **Portal DB'de kapalı durumdaysa** (1. adımla ya da önceden; satır 216, 458): pasif portal hesabına **yalnız ölçüm için yeni rastgele parola
+   özeti** yazılır (`ClientPortalUser.passwordHash`; hesap pasif kalır) ve bu parolayla yerel + dış adresten giriş **denenir** (401 beklenir;
+   P6-C3L / P6-C3D; satır 217–220).
+3. **Owner kalıntı sorusuna E dediyse ve satır varsa:** sentetik müvekkilin **tüm** `PortalDocument` satırları Prisma ile silinir (satır 144–148;
+   koşucunun kendi belgesi ile telefondan yüklenenler ayrılmaz). **Dosyalar silinmez**: koşucuda dosya ya da dizin silen çağrı yoktur; kalan
+   dosyalar kanıtta adlarıyla listelenir. H denirse satır da silinmez.
+4. **Sentetik yabancı satır** (makbuzda `foreignDocumentId` varsa) Prisma ile silinir (satır 161–169, 459) — P6-FOREIGN-CLEAN.
+5. **Personel/dosya kapanışı (`closeAccess`; satır 460):** iki sentetik tenantın TÜM kullanıcıları pasif + `tokenVersion` artışı (**her çağrıda
+   yeniden artar**: Run'ın normal kapanışında artmış sürümler Recover'da bir kez daha artar), ACTIVE dosyalar CLOSED. 1. adımda aktifleştirilen
+   personel burada yeniden pasifleştirilir; bu adım doğrulanmazsa personel **aktif kalmış olabilir** (çıkış 5; portal da doğrulanmadıysa 6).
+6. **Yerel dosyalar:** Run makbuzu yeniden yazılabilir (§10.3); makbuzun yanında yeni bir `recover-<zaman>-<id>` kanıt dizini oluşur
+   (`d6-evidence.json`, `d6-recover.log`, `SHA256-MANIFEST.txt`; blok satır 411–421).
+
+Recover'ın **yazmadıkları**: GO defteri değişmez ve GO sorulmaz; `Tenant` satırına yazma yoktur; audit ve günlük satırları silinmez; diskteki
+dosyalar ve kova dizini silinmez. Kimlik bağı doğrulanmazsa koşucu canlı DB'ye yazmadan durur (çıkış 4; satır 448). Recover **U-ISO, P6-D9 ve
+kabul ölçütlerini (D6-\*) üretmez**; mevcut oturum reddi (P6-C4L / P6-C4D) Recover'da hep ÖLÇÜLEMEYEN kalır (koşumun portal oturumu saklanmaz;
+satır 457). Canlı API uygulama günlüğüne düşen satırlar (personel / portal giriş denemeleri) bu paketle ölçülmez; ürünün giriş uçlarının kendi
+yazmaları bu turda kaynaktan okunmadı.
+
+**"Recover BİR KEZ" kuralı kodla zorlanmaz.** Blok Recover'da GO sormaz, defter tutmaz ve aynı makbuzla ikinci bir Recover'ı engellemez; koşucu
+da engellemez. İkinci bir Recover yukarıdaki yazmaları **yeniden** yapar (kullanıcı sürümleri yeniden artar, pasif portal hesabına yeniden
+ölçüm parolası özeti yazılır). Kural owner disiplinidir (§4 adım 7, §7); ikinci bir Recover bu paketle tanımlı değildir, owner kararı gerektirir.
+
+### 10.3 Recover Run makbuzunu yeniden yazabilir — Run manifestindeki makbuz özeti tutmaz
+
+Recover, `-ReceiptFile` ile verilen makbuzu **yerinde** yeniden yazar: bilinen bir dosya yolu varsa (makbuzdaki `documentFile`, önceki
+`residueFiles` ya da o an DB'de kalan satırların yolları) makbuza `residueFiles` alanı eklenip dosya yeniden kaydedilir (koşucu satır 452–454;
+yazılamazsa yalnız kanıta `receiptWriteError` düşer, Recover sürer). Run yükleme adımına ulaşıp DB satırını gördüyse `documentFile` makbuzda
+vardır; yani bu durumda **ilk** Recover makbuzun baytlarını değiştirir. Run'ın `SHA256-MANIFEST.txt` dosyası kanıt dizinindeki tüm dosyaları —
+makbuz dahil — Run sonunda özetlemiştir (blok satır 239–242, 379). Sonuç: **Recover'dan sonra Run manifestindeki `d6-setup-receipt.json` özeti
+dosyayla tutmaz**; bu, kanıtın bozulduğunu değil Recover'ın makbuzu yeniden yazdığını gösterir. Run manifestinin diğer satırları etkilenmez
+(Recover kanıtı ayrı `recover-*` alt dizinine yazılır; Run manifesti yalnız üst düzey dosyaları kapsar). Makbuz başka bir yoldan (kopya) verilirse
+yeniden yazılan ve yanına `recover-*` dizini açılan o kopyadır. Recover'dan önce Run kanıtının nasıl sabitleneceği **açık owner kararıdır**
+(OK-3). Makbuza `residueFiles` yazıldığı koşucu öz-testinde ölçülür (Z5-b); Run manifestindeki makbuz özetinin Recover'dan sonra tutmadığı ise
+öz-testte **ölçülmez** (kaynaktan okundu) ve canlıda ölçülmedi.
+
+### 10.4 Kalıntı senaryosunda tek Recover'ın sınırı (çelişki kaydı)
+
+Belge kalıntısı (P6-C-DOC) "bu müvekkilin `PortalDocument` satırı 0 **ve** bilinen dosyalar diskte yok" ister (koşucu satır 140–159). Recover'da
+owner E dese ve satırlar silinse bile **dosya diskte durdukça P6-C-DOC FAIL**'dir; erişim reddinde ÖLÇÜLEMEYEN'dir. İki durumda da portal
+kapanışı "DB kapalı" sayılmaz (satır 230) ve Recover **çıkış 6** verir (satır 237). Koşucu ve blok dosya silmez.
+
+Belgedeki çelişki: §2 çıkış paragrafı ve koşucunun kanıt metni (`recovery.adim`, satır 466–468: "… elle silindikten sonra Recover BİR KEZ daha")
+"Recover → dosyayı elle sil → Recover bir kez daha" akışını anlatır; öz-test Z5 / Z6 / Z8 de bu zinciri ölçer (üçünde de üç Recover). Aynı belge
+ikinci bir Recover'ı "bu paketle tanımlı değil" sayar; §4 adım 7(c) ise dosyanın Recover 6'dan **sonra** elle silinmesini anlatır. Bu sırayla
+**tek** Recover hiçbir zaman P6-C-DOC PASS üretmez: dosyanın yokluğu makineyle ölçülmeden kalır. Tek Recover ile ölçülmüş temiz kalıntı ancak
+dosya Recover'dan **önce** yoksa (ve kalan satır varsa aynı Recover'da E ile siliniyorsa) çıkar. Aynı şey "dosya erişimi ÖLÇÜLEMEDİ" durumu için geçerlidir
+(kova okunabilirliği Recover'dan önce düzelmemişse sonuç yine 6'dır).
+
+Hangi sıranın uygulanacağı **AÇIK OWNER KARARIDIR (OK-2, §10.8)**; bu belge ikisinden birini seçmez. Karara yardımcı kaynak bilgisi:
+- Run kanıtı kalan dosyaları yalnız **adlarıyla** listeler (`portalClose.docResidue.filesLeftOnDisk`); mutlak yol yalnız koşucunun kendi belgesi
+  için vardır: Run makbuzunda ve Run kanıtının `receipt` alanında (`documentFile`). Telefondan yüklenen dosyanın mutlak yolu Run makbuzunda da
+  kanıtında da yoktur; ilk Recover onu makbuza `residueFiles` olarak yazar (satır 454). Ürün aynı tenantın yüklemelerini aynı kova dizinine yazar (§1; kaynaktan okundu, canlıda ölçülmedi).
+- Dosya, satırı durduğu halde elle silinirse satır Recover'da E ile silinene kadar dosyasız kalır; canlı diskte elle silme bu paketin bir adımı
+  değildir, owner'ın kendi işlemidir.
+
+### 10.5 Recover çıkış kodları — 1 ve 2 dahil
+
+Bloğun Recover bitiş satırı (blok satır 422) 0 / 3 / 6 / 5 / 4 / 7 / 91 kodlarını açıklar; **1 ve 2'yi saymaz**. Koşucunun Recover çıkış kodu
+(`recoverExitCode`, koşucu satır 237) şu öncelikle kurulur: **6 > 5 > 1 > 2 > 3 > 0**; kanıt yazılamazsa 7 (5 / 6 korunur; `h5-url-live-run.js`
+satır 199–207). Blok node kodunu değiştirmeden taşır.
+
+| Kod | Recover'da anlamı (kaynaktan okundu; canlıda ölçülmedi) |
+|---|---|
+| 90 | Blok kapıda durdu: salt okuma kapısı, `-ReceiptFile` eksik, makbuz biçimi tanınmadı ya da kalıntı yanıtı E/H değil. Bu nedenlerde koşucu çağrılmadı; canlıya yazılmadı (§10.1). **İstisna:** node 0 döndükten sonra blokta beklenmeyen bir hata olursa (ör. manifest yazılamadı) blok yine 90 verir (blok satır 471); bu durumda koşucu **çağrılmıştır** — `recover-*` dizininde `d6-evidence.json` varlığına bakılır |
+| 4 | Koşucu kapısı: DB / API / origin beyanı, makbuz okunamadı ya da alanı eksik, runId eşleşmiyor, kimlik bağı doğrulanmadı, portal açık ama makbuzdaki personel yok. Canlı DB'ye yazılmadı |
+| 6 | Portal DB kapanışı doğrulanmadı (P6-C2 / P6-C5 PASS değil ya da P6-C2V FAIL), **belge kalıntısı** (P6-C-DOC PASS değil — §10.4), yeni giriş reddi FAIL (P6-C3L/D), geç oluşma dışlanamadı ya da portal kapanış adımı hata ile kesildi |
+| 5 | 6 koşulları oluşmadı; personel/dosya kapanışı (`closeAccess`) doğrulanmadı — geçici aktifleştirilen personel aktif kalmış olabilir (§10.2 adım 5) |
+| **1** | **DURDU — beklenmeyen hata.** İki yol: (a) koşucu başlangıç adımlarında (portal durumu okuması, geçici personel oturumu) bir hata yakaladı (`out.fatal`; satır 448–450) ve 6 / 5 koşulları **oluşmadı** — yani portal DB kapanışı ve personel/dosya kapanışı kanıtta ok görünür ama koşum hatalıdır; (b) koşucu kanıt yazmadan düştü (yakalanmamış hata; Node'un bu durumdaki çıkış kodu ölçülmedi) — bu durumda `d6-evidence.json` **yoktur** ve kapanış durumu bu koşumdan okunamaz (blok yalnız "0 + kanıt yok"u 7'ye çevirir; satır 231–235). Hangisi olduğu kanıt dosyasının varlığından ve `fatal` alanından ayrılır |
+| **2** | **FAIL — kapanış ok, en az bir ölçüt FAIL.** Recover'da üretilen ölçütlerden 6 ya da 5'e düşmeden FAIL kalabilen tek ölçüt **P6-FOREIGN-CLEAN**'dir (yabancı sentetik müvekkilde satır kaldı; satır 161–169) — diğer FAIL'ler 6 ya da 5 üretir. (Koşucunun kapı düzeyindeki 2'si — zorunlu ortam eksik, satır 435 — blok ortamı her zaman kurduğu için bloktan beklenmez) |
+| 3 | En iyi olağan sonuç: FAIL yok, en az bir ölçüt ÖLÇÜLEMEYEN. Hesap varken P6-C4L/D hep ölçülemeyendir. **Dikkat:** blok satırı "3 = DB kapalı + yeni giriş reddi" der; yeni giriş reddi yanıt yok / 503 / 429 nedeniyle ÖLÇÜLEMEYEN kaldığında da çıkış 3'tür (satır 219, 231, 237) — yeni giriş reddinin gerçekten ölçülüp ölçülmediği P6-C3L / P6-C3D satırlarından okunur. P6-C2V referans sürüm yokken ölçülemeyen kalabilir |
+| 0 | Yalnız portal hesabı hiç açılmamışsa + kalıntı yoksa (HTTP reddi ölçülmez; §2) |
+| 7 / 91 | Kanıt yazılamadı ya da node 0 döndü ama kanıt yok · node başlatılamadı / kod alınamadı |
+
+Recover'ın **hiçbir** çıkış kodu (1 ve 2 dahil) yeni bir Recover için yetki değildir; blok 1 ve 2 için ek yönlendirme satırı basmaz (yalnız 3 ve
+6 için basar; satır 423–427). Sonuç kanıtla birlikte CLIENT'a bildirilir; ikinci bir Recover bu paketle tanımlı değildir (§4 adım 7).
+
+### 10.6 Run'ın normal kapanışında personel oturumu yenilenmez
+
+Run'ın kapanış çağrısı (`POST /portal/admin/disable-user`) koşumun başında, kurulumdan hemen sonra alınan personel (elev1) token'ını kullanır
+(koşucu satır 283). Run'ın `closePortal` çağrısına oturum yenileyici (`sessionProvider`) **verilmez** (satır 409–411); yeniden oturum açma yalnız
+Recover'da vardır (satır 447, 455). Token kapanış anında geçersizse yetkili uç isteği 4xx ile reddeder; koşucu 4xx yanıtta ikinci denemeyi yapmaz
+(satır 202), **portal erişimi açık kalır** (P6-C2 FAIL) ve koşum **çıkış 6** ile biter. Yabancı satır temizliği ve personel/dosya kapanışı yine
+denenir (satır 414–415): personel pasifleşir ama portal hesabı açık kalmış olur. Token alındıktan sonra koşum şu süreleri bekleyebilir: telefon
+girişi en çok 20 dk + inceleme 120 sn + telefon yüklemesi için kalıntı beklemesi en çok 5 dk + ikinci inceleme 120 sn (≈ 29 dk) ve aradaki HTTP
+çağrıları. Personel token süresi kaynakta `JWT_EXPIRES_IN` ile belirlenir (R27 adayı `1b758d29`, `auth.module.ts`: kaynak varsayılanı `7d`);
+**canlıdaki değer ve canlıdaki token süresi ölçülmedi** (canlı `.env` bu turda okunmadı). Bu yoldan gelen çıkış 6 da Recover yetkisi değildir
+(§4 adım 7). Kaynaktan okundu; canlıda ölçülmedi.
+
+### 10.7 Onay metni ile kurulumun yazdığı kayıt kümesi (sınır notu; blok metni DEĞİŞTİRİLMEDİ)
+
+**Blok metni şunu der** (canlı veri işleme onayı; blok satır 247–250): canlı DB'de bu koşumun iki yeni sentetik tenantında "sentetik kullanıcılar,
+müvekkil, dosya, borçlu", sentetik müvekkile ait bir portal hesabı, bir `PortalDocument` satırı + kovada bir dosya ve yabancı sentetik müvekkil
+için dosyasız bir satır yazılacaktır.
+
+**Kurulum şunu yazar** (`setupI3`, `i3-lib.js` satır 153–291; tek transaction; koşucu satır 277) — kaynaktan sayılan doğrudan `create` çağrısı
+**27 satır**:
+
+| Tenant | Kayıt | Adet |
+|---|---|---|
+| hedef + yabancı | `Tenant` | 2 |
+| hedef | `User` (hepsi `.invalid` adresli; kurulumda aktif, kapanışta pasif) | 9 |
+| hedef | `Lawyer` profili (üç kullanıcı için) | 3 |
+| hedef | `StaffMember` profili (beş kullanıcı için) | 5 |
+| hedef | `PermissionGrant` (bir kullanıcı için) | 1 |
+| hedef | `Client` (portal hesabının açıldığı müvekkil + ikinci müvekkil) | 2 |
+| hedef | `Case` + `CaseClient` bağı | 1 + 1 |
+| hedef | `Debtor` + `CaseDebtor` bağı | 1 + 1 |
+| yabancı | `Client` | 1 |
+
+Fark: metin "müvekkil" der (tekil), kurulum hedefte **iki**, yabancıda **bir** müvekkil yazar; kullanıcı sayısı (9) ile bunlara bağlı avukat /
+personel profili ve yetki kaydı satırları, dosya–müvekkil ve dosya–borçlu bağ satırları metinde sayılmaz. Metnin doğru olan kısmı: tenant sayısı
+(iki) ve kapsam (yalnız bu koşumun sentetik tenantları). Kurulum dışındaki yazmalar (portal hesabı ve belge satırı ürün ucuyla, yabancı belge
+satırı Prisma ile, portal aç/kapa audit satırları) metinde vardır; portal girişlerinin hesabın giriş sayacını işlediği (koşucu telefon girişini bu
+sayaçtan algılar; satır 377) metinde anılmaz. **Kapanışta bu satırların hiçbiri silinmez**: `closeAccess` yalnız kullanıcıları pasifleştirir ve
+dosyayı CLOSED yapar (`i13-lib.js` satır 46–59); iki sentetik tenant ve kayıtları canlı DB'de kalır — **saklandı**. Owner "EVET" yazarken onay
+metninin bu eksiklerini bu nottan bilir; metnin kendisini düzeltmek blok dosyasını (ve §6'daki blok sha256'sını) değiştirir → OK-4.
+
+### 10.8 Açık owner kararları (bu belgeyle karara bağlanmaz)
+
+- **OK-1 — Recover ve kapı bağımlılıkları (D-7 paket belgesindeki K-4'ün D-6 karşılığı).** Run 5/6 ile bittikten sonra bir kapı tutmuyorsa
+  (§10.1: main ilerlemiş, canlı dist ya da `.env` değişmiş, API kapalı …) Recover bu bloktan çalışmaz. Seçenekler: (a) kapı koşulunu geri
+  getirip (ör. ana checkout'u senkronlamak; canlı dist'i R27'ye geri almak; API'yi ayağa kaldırmak) Recover'ı bu blokla koşmak; (b) yeni pinli bir
+  blok revizyonu hazırlatıp Recover'ı onunla koşmak; (c) CLIENT kararıyla kapanışı ayrı bir yolla doğrulamak. Bu paket hiçbirini kendiliğinden
+  yapmaz. Yeni bir yayının D-6 koşumuna göre sırası da bu karara bağlıdır.
+- **OK-2 — Kalıntı senaryosunda sıra (§10.4).** İki seçenek: **(A)** kalan dosya(lar) Recover'dan **önce** owner tarafından elle silinir (erişim
+  reddinde kova okunabilirliği Recover'dan önce düzeltilir), sonra tek Recover koşulur; **(B)** önce tek Recover koşulur (çıkış 6 beklenir), dosya
+  sonra elle silinir ve dosyanın yokluğunun makineyle ölçülmesi için **ikinci bir Recover'a ayrı owner kararı** verilir — verilmezse bu ölçüm
+  yapılmaz ve kalıntının temizliği owner beyanı olarak kalır. Bu belge A ile B arasında seçim yapmaz; §4 adım 7(c)'deki mevcut sıra karar
+  verilene kadar olduğu gibi durur.
+- **OK-3 — Recover öncesi Run kanıtının sabitlenmesi (§10.3).** Recover Run makbuzunu yeniden yazabildiği için Run manifestindeki makbuz özeti
+  Recover'dan sonra tutmaz. Recover'dan önce Run kanıt dizininin (en azından makbuzun ve `SHA256-MANIFEST.txt` dosyasının) özetinin ya da
+  kopyasının ayrıca kaydedilip kaydedilmeyeceği, yoksa farkın bu notla açıklanmış sayılıp sayılmayacağı owner / CLIENT kararıdır.
+- **OK-4 — Blok metnindeki eksikler.** Üç yerde blok metni kaynağın gerisindedir ve bu turda **değiştirilmedi**: Recover girişinde canlı yazma
+  kümesi gösterilmez (§10.2); Recover bitiş satırı 1 ve 2 kodlarını saymaz ve 3'ü "yeni giriş reddi" ile birlikte anlatır (§10.5); onay metni
+  kurulumun kayıt kümesini eksik sayar (§10.7). Bunların bir sonraki blok revizyonunda (yalnız metin; blok sha256'sı ve blok öz-testi değişir)
+  düzeltilmesi mi, yoksa bu belge notlarıyla kabul edilmesi mi gerektiği owner kararıdır.
+- Önceden açık olan kararlar aynen durur: ikinci bir Recover'a izin ve Recover için ayrı onayın nasıl kaydedileceği (§7 "Recover kuralı").
+
+**Korunan sınır notu:** `d6-selftest.js` kütüphane kökü denetiminin 8.3 kısa ad, `subst` sürücüsü ve UNC yazımıyla verilen canlı yolu
+yakalamadığına ilişkin not §7'de olduğu gibi durur; bu tur ona dokunmadı.
+
+**Blok öz-testi — belgenin son hâliyle (2026-10-03, tur 5):** R02-b ekleri ve bağımsız doğrulama düzeltmelerinden sonra `d6-owner-block-selftest.ps1`
+yeniden koşuldu: 73/73 Windows PowerShell 5.1 ve 73/73 PowerShell 7, çıkış 0; blok, blok öz-testi ve koşucu öz-testi özetleri koşum öncesi/sonrası aynı.
+Bağımsız doğrulama (salt okuma) bu bölümde altı küçük düzeltme istedi; altısı da uygulandı. Blok, koşucu ve pinli dosyalar değişmedi.
