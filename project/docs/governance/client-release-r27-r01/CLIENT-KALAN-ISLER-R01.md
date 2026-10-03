@@ -90,7 +90,7 @@ Ayrıntı: `client-extacc-portal-d5-r01/D5-RUN-00C96BD5-TAKIP-20261002.md` ve pa
 | Adım | İçerik | Durum | Yetki |
 |---|---|---|---|
 | 1 Teşhis | §3.1 — kök neden **UNKNOWN**; dört aday kayıtlı. Güncel veritabanından geçmiş eşleşme türetilmez. Okunmamış iki kaynak (kenar günlüğü, sağlayıcı kayıtları) owner erişimi ister | **bu çalışmanın erişebildiği kaynaklarla tamam**; kök neden açık | okunmamış kaynakların okunması (isteğe bağlı) |
-| 2 Yama | #2884 (A1'i kapatır; A2/A3 için teşhis satırı). Durum §9 | açık; merge edilmedi; yeni uç — CI ölçümü §10 | merge onayı |
+| 2 Yama | #2884 (A1'i kapatır; A2/A3 için teşhis satırı). Durum §9 | açık; merge edilmedi; CI 10/10 (§10) | merge onayı |
 | 2b Web tarafı (A2) | sıfırlama sayfasında erken doldurulan alanın boş gitmesi: düzeltme seçenekleri ayrı ölçüm kaydındadır; bu çalışmada kod değişmedi | **karar bekliyor** | §11 KR-3 |
 | 3a Aday kapsamı | Ölçüm [Ö, `git merge-tree`, salt okuma]: #2884 canlı kaynağa **tek başına** taşınırsa portal servisinde 2 çakışma bölümü çıkar (hesap açmadaki işlem içi yetki satırları canlıda yok — #2825). İşlem içi yetki satırlarını içeren aday taslağı (#2895) üstünde servis ve testler **otomatik birleşir**; yalnız CI manifestinde tek satır elle çözülür. Sonuç: #2884 ya o adaya eklenir ya da hesap açma ayağı elle uyarlanır | ölçüldü; **karar bekliyor** | aday kapsamı kararı (yayın planı owner'da) |
 | 3b Ön koşul | canlı veritabanı kodlaması UTF8 | **ölçüldü** (§1) | — |
@@ -295,7 +295,7 @@ Bu çalışma açık bulguları topluca kapatmadı.
 
 | PR | İçerik | Uç | Yerel doğrulama | Durum |
 |---|---|---|---|---|
-| #2884 | portal e-posta eşleşmesi, teşhis satırları ve hesap açma çakışma kuralı. Dış yanıtlar, şema, kayıtlı adres biçimi değişmez; migration yok. Ayrıntı PR'da ve kısıtlı kayıtta | `7bdcc533` | yeni birim + gerçek Postgres 86/86 (Türkçe yerel ayarlı veritabanında ve bağlantı havuzu 3 ile de); mutasyon 34/34 + hedefli 12/12 + 5/5; `pure/client-portal` 150 suite / 2229 test; `pure/architecture-guards` 78 / 1359. Bağımsız inceleme önceki ucun (`4d16ba6a`) CI'da **kırmızı** olduğunu buldu (eşzamanlılık testi koşucunun bağlantı havuzuna sığmıyordu; ürün davranışı değil) — test düzeltildi | açık; merge edilmedi; yeni uç — CI ölçümü §10 |
+| #2884 | portal e-posta eşleşmesi, teşhis satırları ve hesap açma çakışma kuralı. Dış yanıtlar, şema, kayıtlı adres biçimi değişmez; migration yok. Ayrıntı PR'da ve kısıtlı kayıtta | `7bdcc533` | yeni birim + gerçek Postgres 86/86 (Türkçe yerel ayarlı veritabanında ve bağlantı havuzu 3 ile de); mutasyon 34/34 + hedefli 12/12 + 5/5; `pure/client-portal` 150 suite / 2229 test; `pure/architecture-guards` 78 / 1359. Bağımsız inceleme önceki ucun (`4d16ba6a`) CI'da **kırmızı** olduğunu buldu (eşzamanlılık testi koşucunun bağlantı havuzuna sığmıyordu; ürün davranışı değil) — test düzeltildi | açık; merge edilmedi; CI 10/10 (§10) |
 | #2880 | D-6 owner bloğu R02 + koşucu öz-testinin canlı ağaç bağımlılığının giderilmesi + belgede Run / kapanış / Recover sınırları. Koşucu ve pinli dosyalar değişmedi | `357027bb` | blok öz-testi 73/73 ×2 kabuk (belgenin son hâliyle); koşucu öz-testi commit'teki dosyayla 51/51; negatif kontroller; bağımsız doğrulama (altı küçük düzeltme uygulandı) | açık; merge edilmedi |
 | #2882 | D-7 owner bloğu R02 + koşucu öz-testinin canlı ağaç bağımlılığının giderilmesi + belgede sınırlar. Koşucu ve pinli dosyalar değişmedi | `4d368a8f` | blok öz-testi 64/64 ×2 kabuk (belgenin son hâliyle); koşucu öz-testi commit'teki dosyayla 41/41; negatif kontroller 7/7; bağımsız doğrulama (bir major + beş küçük düzeltme uygulandı) | açık; merge edilmedi |
 | bu PR (#2885) | D-5 koşum kaydı ve takip kaydı, bu tablo, H3/H6/H8 beyan taslakları, bayat satır düzeltmeleri (yalnız belge) | — | bağımsız inceleme (beş major + on dört küçük bulgu; hepsi bu metinde ele alındı) | açık; merge edilmedi |
@@ -307,13 +307,13 @@ Bu çalışma açık bulguları topluca kapatmadı.
 | Ölçüt | Durum |
 |---|---|
 | D-5 teşhisi kanıtın taşıdığı düzeyde yazıldı | karşılandı (§3.1); kök neden UNKNOWN, dört aday kayıtlı |
-| Dört PR'ın CI'ı | **ölçüm 2026-10-02 22:03Z — tamamlanmadı**: #2880 (`357027bb`) 8 denetim başarılı, 1 koşuyor · #2882 (`4d368a8f`) 8 başarılı, 1 koşuyor · #2884 (`7bdcc533`) 6 başarılı, 2 koşuyor; önceki ucu `4d16ba6a` **kırmızıydı** (yukarıda) · #2885 önceki ucunda 10/10 başarılıydı, bu commit'in CI'ı push'tan sonra koşar. Bu satır bir an ölçümüdür; kesin durum PR sayfalarındadır ve teslim raporunda yeniden ölçülür |
+| Dört PR'ın CI'ı | **karşılandı — ölçüm 2026-10-03 07:12Z**: #2880 (`357027bb`), #2882 (`4d368a8f`), #2884 (`7bdcc533`) ve #2885 (`88348662`) 10/10 başarılı, birleştirilebilir. #2884'te `db/domain-integration`, `pure/architecture-guards` ve `pure/client-portal` adımlarının bu uçta koştuğu ayrıca doğrulandı (önceki uç `4d16ba6a` kırmızıydı; test düzeltildi). Bu satırı taşıyan commit'in kendi CI'ı push'tan sonra koşar |
 | D-6 / D-7 doğrulaması teslim edilen dosyalarla tekrarlanabilir | karşılandı (§4.1) |
 | #2884 açık soruları | kanıtlandı ya da yamalandı; kalan riskler kısıtlı kayıtta kimlikleriyle duruyor; **ürün politikası kararı açık** (§11 KR-4) |
 | D-5 koşumu `00c96bd5` kanıt bütünlüğü | **AÇIK — tamamlanamaz**: manifest yok; pencere kapandı; iki owner beyanı eksik (§3.2) |
 | Canlı kabul | **eksik**: D-5, D-6, D-7, D-8 (kısmi), birleşik D-9; H1–H8 0/8 |
 
-**Hüküm: HAZIRLIK GO-COMPLETE DEĞİL.** Açık maddeler: (1) D-5 koşumu `00c96bd5` kanıt bütünlüğü — manifest yok ve bu koşum için üretilemez; iki owner beyanı eksik · (2) CI ölçümü bu belge yazılırken tamamlanmamıştı. Teslim dosyalarının doğrulaması (D-6 / D-7 öz-testleri, #2884 testleri) yerelde tamamdır.
+**Hüküm: HAZIRLIK GO-COMPLETE DEĞİL.** Açık madde: D-5 koşumu `00c96bd5` kanıt bütünlüğü — manifest yok ve bu koşum için üretilemez; iki owner beyanı eksik. CI (dört PR) ve teslim dosyalarının doğrulaması (D-6 / D-7 öz-testleri, #2884 testleri) tamamdır.
 
 **CLIENT GENEL KABUL TAMAMLANMADI** (canlı kabul eksik: D-5, D-6, D-7, D-8, birleşik D-9; hizmet kabulü 0/8).
 
