@@ -606,4 +606,143 @@ describeWithDisposableDb('Ekstre kaynak para birimi sınırı (HTTP + disposable
       expect(res.body.result.failed).toBe(0);
     });
   });
+
+  /**
+   * ATLANAN AYLIK EKSTRE — KALICI İZ (owner kararı 2026-10-03, "7 — B"): E1 atlaması müvekkil + dönem + neden başına TEK kalıcı
+   * görev bırakır (`Task.dedupeKey` UNIQUE; yeni tablo yok). Yeniden koşu / eşzamanlı koşu mükerrer iz, başarı veya gönderim
+   * üretmez; atlama "gönderildi" sayılmaz (teslim defterine kayıt yazılmaz).
+   */
+  describe('atlanan aylık ekstrenin kalıcı izi (görev; DB tekilliği)', () => {
+    const runMonthly = (user: TenantFixture = t1) =>
+      http().post('/client-statements/monthly-delivery/run-now').set('x-test-user-id', user.userId).send({});
+    const target = (res: request.Response, clientId: string) =>
+      (res.body.result.targets as { clientId: string; outcome: string; reason?: string; skipTrace?: string; statementSource: string }[]).find(
+        (x) => x.clientId === clientId,
+      )!;
+    const skipTasks = (tenantId: string, clientId: string) =>
+      prisma.task.findMany({ where: { tenantId, clientId, dedupeKey: { startsWith: 'MONTHLY_STATEMENT_SKIPPED:' } } });
+
+    /** USD kaynaklı ve e-postası olan müvekkil (önceki ay içinde USD ödeme). */
+    async function usdClient(label: string, tenant: TenantFixture = t1) {
+      const f = await setup(label, 'TRY', tenant);
+      const period = resolvePreviousMonthPeriod(new Date());
+      const inPrevMonth = new Date(period.periodStart.getTime() + 6 * 24 * 3600 * 1000);
+      await prisma.client.update({ where: { id: f.clientId }, data: { email: `iz-${next()}@example.test` } });
+      await addPayout(prisma, {
+        tenantId: tenant.tenantId,
+        caseId: f.caseId,
+        caseClientId: f.caseClientId,
+        userId: tenant.userId,
+        amount: 7,
+        currency: 'USD',
+        paidAt: inPrevMonth,
+        key: next(),
+      });
+      return { ...f, periodKey: period.periodKey };
+    }
+
+    beforeAll(() => {
+      process.env.CLIENT_STATEMENT_MONTHLY_DELIVERY = 'true';
+    });
+
+    it('atlama: müvekkil + dönem + neden başına TEK kalıcı görev; sonuç skipTrace CREATED; belge / defter / bildirim yazılmaz', async () => {
+      const f = await usdClient('iz-ilk');
+      const before = await statementDocumentCounts(prisma, t1.tenantId);
+
+      const res = await runMonthly();
+
+      expect(res.status).toBe(201);
+      expect(target(res, f.clientId)).toMatchObject({
+        outcome: 'SKIPPED_UNSUPPORTED_CURRENCY',
+        statementSource: 'NONE',
+        reason: 'NON_TRY_SOURCE',
+        skipTrace: 'CREATED',
+      });
+      const tasks = await skipTasks(t1.tenantId, f.clientId);
+      expect(tasks).toHaveLength(1);
+      expect(tasks[0]).toMatchObject({
+        tenantId: t1.tenantId,
+        clientId: f.clientId,
+        caseId: null,
+        status: 'PENDING',
+        createdById: null,
+        dedupeKey: `MONTHLY_STATEMENT_SKIPPED:${t1.tenantId}:${f.clientId}:${f.periodKey}:NON_TRY_SOURCE`,
+      });
+      expect(tasks[0].title).toContain(f.periodKey);
+      expect(tasks[0].description).toContain('TL dışı para biriminde kayıt var (USD)');
+      expect(tasks[0].description).toContain('müvekkile ödeme');
+      expect(tasks[0].description).toContain('ÜRETİLMEDİ ve GÖNDERİLMEDİ');
+      // atlama "gönderildi" sayılmaz: bu müvekkil için ekstre, teslim defteri kaydı ya da bildirim yok
+      expect(await prisma.clientStatement.count({ where: { tenantId: t1.tenantId, clientId: f.clientId } })).toBe(0);
+      expect(await prisma.clientStatementDeliveryLedger.count({ where: { tenantId: t1.tenantId, clientId: f.clientId } })).toBe(0);
+      expect((await statementDocumentCounts(prisma, t1.tenantId)).notifications).toBe(before.notifications);
+    });
+
+    it('YENİDEN KOŞU: ikinci koşu mükerrer görev / ekstre / defter kaydı üretmez (ALREADY_RECORDED); tamamlanmış görev diriltilmez', async () => {
+      const f = await usdClient('iz-tekrar');
+      await runMonthly();
+      expect(await skipTasks(t1.tenantId, f.clientId)).toHaveLength(1);
+
+      const second = await runMonthly();
+
+      expect(target(second, f.clientId)).toMatchObject({ outcome: 'SKIPPED_UNSUPPORTED_CURRENCY', skipTrace: 'ALREADY_RECORDED', statementSource: 'NONE' });
+      expect(await skipTasks(t1.tenantId, f.clientId)).toHaveLength(1);
+      expect(await prisma.clientStatement.count({ where: { tenantId: t1.tenantId, clientId: f.clientId } })).toBe(0);
+      expect(await prisma.clientStatementDeliveryLedger.count({ where: { tenantId: t1.tenantId, clientId: f.clientId } })).toBe(0);
+
+      // görev tamamlandı (personel ilgilendi) → yeniden koşu yine mükerrer görev açmaz, eskisini diriltmez
+      await prisma.task.updateMany({
+        where: { tenantId: t1.tenantId, clientId: f.clientId },
+        data: { status: 'COMPLETED', completedAt: new Date() },
+      });
+      const third = await runMonthly();
+      expect(target(third, f.clientId).skipTrace).toBe('ALREADY_RECORDED');
+      const tasks = await skipTasks(t1.tenantId, f.clientId);
+      expect(tasks).toHaveLength(1);
+      expect(tasks[0].status).toBe('COMPLETED');
+    });
+
+    it('EŞZAMANLI koşular: iki istek birlikte atlasa da DB tekilliği tek kalıcı iz bırakır', async () => {
+      const f = await usdClient('iz-es');
+
+      const [a, b] = await Promise.all([runMonthly(), runMonthly()]);
+
+      expect(a.status).toBe(201);
+      expect(b.status).toBe(201);
+      expect(await skipTasks(t1.tenantId, f.clientId)).toHaveLength(1);
+      const traces = [target(a, f.clientId).skipTrace, target(b, f.clientId).skipTrace].sort();
+      expect(traces).toEqual(['ALREADY_RECORDED', 'CREATED']);
+      expect(await prisma.clientStatement.count({ where: { tenantId: t1.tenantId, clientId: f.clientId } })).toBe(0);
+    });
+
+    it('TL kaynaklı müvekkil için atlama izi YAZILMAZ; başka büronun koşusu bu büronun izini etkilemez (büro izolasyonu)', async () => {
+      const tl = await setup('iz-tl');
+      const period = resolvePreviousMonthPeriod(new Date());
+      await prisma.client.update({ where: { id: tl.clientId }, data: { email: `iz-${next()}@example.test` } });
+      await addLedgerRow(prisma, {
+        tenantId: t1.tenantId,
+        caseId: tl.caseId,
+        amount: 11,
+        currency: 'TRY',
+        createdAt: new Date(period.periodStart.getTime() + 3 * 24 * 3600 * 1000),
+      });
+      const own = await usdClient('iz-izo-a');
+      const other = await usdClient('iz-izo-b', t2);
+      await runMonthly(); // t1
+      const t1TasksBefore = await skipTasks(t1.tenantId, own.clientId);
+
+      const t2Run = await runMonthly(t2);
+
+      expect(t2Run.status).toBe(201);
+      expect((t2Run.body.result.targets as { clientId: string }[]).some((x) => x.clientId === own.clientId)).toBe(false);
+      expect(target(t2Run, other.clientId)).toMatchObject({ outcome: 'SKIPPED_UNSUPPORTED_CURRENCY', skipTrace: 'CREATED' });
+      expect(await skipTasks(t1.tenantId, tl.clientId)).toHaveLength(0);
+      expect(await skipTasks(t1.tenantId, own.clientId)).toHaveLength(t1TasksBefore.length);
+      const t2Tasks = await skipTasks(t2.tenantId, other.clientId);
+      expect(t2Tasks).toHaveLength(1);
+      expect(t2Tasks[0].tenantId).toBe(t2.tenantId);
+      // büroya kapalı: t1'in görev sorgusu t2 müvekkilini göstermez
+      expect(await skipTasks(t1.tenantId, other.clientId)).toHaveLength(0);
+    });
+  });
 });

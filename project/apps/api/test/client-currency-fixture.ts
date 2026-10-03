@@ -252,6 +252,7 @@ export async function cleanupTenant(prisma: Db, tenantId: string): Promise<void>
   await swallow(prisma.clientStatementDeliveryLedger.deleteMany({ where: { tenantId } }));
   await swallow(prisma.clientStatement.deleteMany({ where: { tenantId } }));
   await swallow(prisma.clientNotification.deleteMany({ where: { tenantId } }));
+  await swallow(prisma.task.deleteMany({ where: { tenantId } }));
   await swallow(prisma.auditLog.deleteMany({ where: { tenantId } }));
   await swallow(prisma.balanceLedger.deleteMany({ where: { tenantId } }));
   await swallow(prisma.caseBalance.deleteMany({ where: { tenantId } }));

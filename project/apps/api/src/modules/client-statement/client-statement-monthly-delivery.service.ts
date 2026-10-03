@@ -6,7 +6,11 @@ import { OfficeService } from '@/modules/office/office.service';
 import { ACTIVE_TENANT_WHERE } from '@/modules/tenant/tenant-lifecycle';
 import { resolveSchedulerTimezone } from '../../common/scheduler-timezone';
 import { ClientStatementService } from './client-statement.service';
-import { CLIENT_STATEMENT_UNSUPPORTED_CURRENCY_CODE } from './client-statement-currency-guard';
+import {
+  CLIENT_STATEMENT_UNSUPPORTED_CURRENCY_CODE,
+  type ClientStatementCurrencySource,
+} from './client-statement-currency-guard';
+import { buildMonthlyStatementSkipTask, type MonthlyStatementSkipTraceResult } from './client-statement-monthly-skip-trace';
 import { ClientStatementPdfService } from './client-statement-pdf.service';
 import { resolveClientSafeFileReferences } from './client-statement-file-reference';
 import { buildClientStatementRender } from './client-statement-render.mapper';
@@ -91,6 +95,8 @@ export interface MonthlyDeliveryTargetResult {
   /** Üretim kararı: yeni ekstre mi, aynı dönemde zaten ACTIVE olan mı, hiç üretilmedi mi. */
   statementSource: 'GENERATED' | 'REUSED' | 'NONE';
   reason?: string;
+  /** Yalnız SKIPPED_UNSUPPORTED_CURRENCY: atlamanın kalıcı izi (görev) yazıldı mı? Atlama hiçbir koşulda "gönderildi" sayılmaz. */
+  skipTrace?: MonthlyStatementSkipTraceResult;
 }
 
 export interface MonthlyDeliveryRunResult {
@@ -279,11 +285,14 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
       }
       // E1: para birimi sınırı ihlali — ekstre üretilmedi ve hiçbir kayıt yazılmadı; "başarısız" değil, nedeniyle atlandı.
       if (error?.response?.code === CLIENT_STATEMENT_UNSUPPORTED_CURRENCY_CODE) {
+        const reason = String(error.response.reasonCode ?? CLIENT_STATEMENT_UNSUPPORTED_CURRENCY_CODE);
         return {
           ...base,
           outcome: 'SKIPPED_UNSUPPORTED_CURRENCY',
           statementSource: 'NONE',
-          reason: String(error.response.reasonCode ?? CLIENT_STATEMENT_UNSUPPORTED_CURRENCY_CODE),
+          reason,
+          // Kalıcı iz: atlama yalnız koşu sonucunda kalmaz; müvekkil + dönem + neden başına TEK görev yazılır (yeniden koşu mükerrer üretmez).
+          skipTrace: await this.recordSkippedStatementTrace(client, period.periodKey, reason, error.response),
         };
       }
       this.logger.warn(`Aylık ekstre üretilemedi (${client.tenantId}/${client.id}): ${error?.message || error}`);
@@ -402,6 +411,50 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
       this.logger.warn(`Aylık ekstre teslim edilemedi (${client.tenantId}/${client.id}): ${error?.message || error}`);
       await this.recordDeliveryFailure(client.tenantId, dedupeKey, reservation, error?.message, now);
       return { ...base, outcome: 'FAILED', statementSource, reason: 'delivery-error' };
+    }
+  }
+
+  /**
+   * E1 atlamasının KALICI izi: (büro, müvekkil, dönem, neden) başına tek görev. `Task.dedupeKey` UNIQUE olduğundan ikinci yazım
+   * P2002 alır → `ALREADY_RECORDED` (mükerrer iz yok; eşzamanlı koşular da tek kayıt bırakır). Yazım hatası GİZLENMEZ:
+   * `WRITE_FAILED` döner, günlüğe yazılır ve cron arıza raporuna (kanonik W3-F04) düşer. Atlama "gönderildi" sayılmaz ve
+   * teslim defterine (statementId zorunlu FK) HİÇBİR kayıt yazılmaz.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - processClient() → statements.createClientLevel E1 ile reddedildiğinde (SKIPPED_UNSUPPORTED_CURRENCY)
+   * </remarks>
+   */
+  private async recordSkippedStatementTrace(
+    client: ClientRow,
+    periodKey: string,
+    reasonCode: string,
+    response: { currencies?: unknown; sources?: unknown },
+  ): Promise<MonthlyStatementSkipTraceResult> {
+    const data = buildMonthlyStatementSkipTask({
+      tenantId: client.tenantId,
+      clientId: client.id,
+      clientName: this.resolveClientName(client),
+      periodKey,
+      reasonCode,
+      currencies: Array.isArray(response?.currencies) ? (response.currencies as string[]) : [],
+      sources: Array.isArray(response?.sources) ? (response.sources as ClientStatementCurrencySource[]) : [],
+    });
+    try {
+      await this.prisma.task.create({ data });
+      return 'CREATED';
+    } catch (error: any) {
+      if (error?.code === 'P2002') return 'ALREADY_RECORDED';
+      const detail = truncateLedgerError(error?.message);
+      this.logger.error(`Atlanan aylık ekstre izi yazılamadı (${client.tenantId}/${client.id}/${periodKey}): ${detail}`);
+      if (this.errorReporter) {
+        reportCronJobFailure(this.errorReporter, CLIENT_STATEMENT_MONTHLY_JOB_ID, new Error(detail), {
+          tenantId: client.tenantId,
+          reasonCode: 'STATEMENT_SKIP_TRACE_WRITE_FAILED',
+          metadata: { periodKey },
+        });
+      }
+      return 'WRITE_FAILED';
     }
   }
 
