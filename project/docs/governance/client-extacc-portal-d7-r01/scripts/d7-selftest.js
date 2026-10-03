@@ -6,6 +6,8 @@
  * sayfasını/listesini açar, mark-read çağırır (web sayfası gibi), bir mesaj gönderir ve 2. personel yanıtını bekler.
  *
  * KULLANIM: node d7-selftest.js   (D7T_DB_URL ya da %TEMP%\d67-test-pg.url → 127.0.0.1:5449/d67_test ŞART)
+ *           D7T_LIB_ROOT = bağımlılıkları kurulu, canlı OLMAYAN bir checkout'un proje kökü (Prisma istemcisi + bcrypt buradan yüklenir).
+ *           Verilmezse bu betiğin bulunduğu checkout'un proje kökü denenir. Canlı yayın ağacı REDDEDİLİR; modül yoksa test başlamaz (çıkış 2).
  * ÇIKIŞ   : 0 hepsi PASS · 1 FAIL var · 2 ölçülemedi
  * SINIR   : sahte API ürünün kendisi değildir; ürünün gerçek mesaj/bildirim/guard davranışı canlı koşumda ölçülür.
  */
@@ -16,9 +18,31 @@ const HERE = __dirname; const GOV = path.resolve(HERE, '..', '..');
 const RUN = path.join(HERE, process.env.D7_T_RUN_OVERRIDE ? path.basename(process.env.D7_T_RUN_OVERRIDE) : 'd7-portal-messages-live-run.js');
 const FAKE = path.join(HERE, 'd7-fake-portal-api.js');
 const WRAPPER = path.join(HERE, 'd7-owner-live-block.ps1');
-const REL = 'C:\\Development\\HUKUK_YAZILIMI\\HY_W4_RELEASE23\\project';
+// KÜTÜPHANE KÖKÜ (Prisma istemcisi + bcrypt): canlı yayın ağacı VARSAYILMAZ. D7T_LIB_ROOT verilirse o; verilmezse bu betiğin bulunduğu
+// checkout'un proje kökü (betik konumundan göreli). Kök canlı yayın ağacının altındaysa test KOŞMAZ — ret, kökte hiçbir dosya yoklanmadan /
+// yüklenmeden ÖNCE, yalnız yol karşılaştırmasıyla yapılır; kök bağlantı (junction/symlink) üzerinden canlı ağaca çözülüyorsa da KOŞMAZ.
+// Modül bulunamazsa açık hatayla DURUR; sessizce canlı ağaca DÜŞMEZ. Canlı ağaç yolu burada literal DEĞİLDİR: owner bloğunun `$Rel` sabitinden
+// okunur (blok yalnız METİN olarak okunur, çalıştırılmaz); okunamazsa ret denetimi yapılamayacağı için test başlamaz.
+const maskUser = (s) => { const u = process.env.USERNAME || ''; const t = String(s).replace(/([\\/]Users[\\/])[^\\/]+/gi, '$1<kullanici>'); return u.length >= 3 ? t.replace(new RegExp(u.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '<kullanici>') : t; };
+const libStop = (msg) => { console.log(`OLCULEMEDI: ${msg} — test BAŞLAMADI`); process.exit(2); };
+const LIVE_TREE = (() => {
+  let m = null; try { m = fs.readFileSync(WRAPPER, 'utf8').match(/^\$Rel\s*=\s*'([A-Za-z]:\\[^'\r\n]+)'/m); } catch (e) { m = null; }
+  if (!m) return null; const p = path.resolve(m[1]); return path.basename(p).toLowerCase() === 'project' ? path.dirname(p) : p;
+})();
+const underLive = (p) => (path.resolve(p).toLowerCase() + path.sep).startsWith(LIVE_TREE.toLowerCase() + path.sep);
+const realOf = (p) => { try { return fs.realpathSync.native(p); } catch (e) { return null; } };
+const LIB_SRC = process.env.D7T_LIB_ROOT ? 'D7T_LIB_ROOT' : 'betik konumu: checkout proje kökü';
+const REL = path.resolve(process.env.D7T_LIB_ROOT || path.join(HERE, '..', '..', '..', '..'));
 const PRISMA_ROOT = path.join(REL, 'node_modules', '.pnpm', '@prisma+client@5.22.0_prisma@5.22.0', 'node_modules', '@prisma', 'client');
 const BCRYPT = path.join(REL, 'node_modules', '.pnpm', 'bcrypt@5.1.1', 'node_modules', 'bcrypt');
+const LIB_HINT = 'D7T_LIB_ROOT ile bağımlılıkları kurulu, canlı OLMAYAN bir checkout proje kökü verin';
+if (!LIVE_TREE) libStop('canlı yayın ağacı yolu owner bloğundan ($Rel) okunamadı; kütüphane kökü ret denetimi yapılamıyor');
+if (underLive(REL)) libStop(`kütüphane kökü canlı yayın ağacının altında: ${maskUser(REL)} (${LIB_SRC}) — izole test canlı ağaçtan modül YÜKLEMEZ (kökte hiçbir dosya yoklanmadı/yüklenmedi); ${LIB_HINT}`);
+if (!fs.existsSync(REL)) libStop(`kütüphane kökü yok: ${maskUser(REL)} (${LIB_SRC}); ${LIB_HINT} (canlı yayın ağacına DÜŞÜLMEZ)`);
+const libMissing = [['@prisma/client', PRISMA_ROOT], ['bcrypt', BCRYPT]].filter(([, p]) => !fs.existsSync(path.join(p, 'package.json'))).map(([n]) => n);
+if (libMissing.length) libStop(`kütüphane kökünde modül bulunamadı: ${libMissing.join(', ')} · kök=${maskUser(REL)} (${LIB_SRC}); ${LIB_HINT} (canlı yayın ağacına DÜŞÜLMEZ)`);
+if ([REL, PRISMA_ROOT, BCRYPT].map(realOf).some((p) => !p || underLive(p))) libStop(`kütüphane kökü bağlantı üzerinden canlı yayın ağacına çözülüyor ya da gerçek yolu okunamadı: ${maskUser(REL)} (${LIB_SRC}) — modül YÜKLENMEDİ; ${LIB_HINT}`);
+console.log(`kütüphane kökü: ${maskUser(REL)} (kaynak: ${LIB_SRC}; canlı yayın ağacı DEĞİL; Prisma istemcisi + bcrypt buradan yüklenir)`);
 const API_PORT = 8200; const EXT_PORT = 8459;
 const API = `http://127.0.0.1:${API_PORT}/api`; const EXT = `https://localhost:${EXT_PORT}`;
 const PHONE_UA = 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/129 Mobile Safari/537.36';
