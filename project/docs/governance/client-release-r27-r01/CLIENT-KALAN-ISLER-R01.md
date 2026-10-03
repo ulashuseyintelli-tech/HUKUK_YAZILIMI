@@ -156,20 +156,27 @@ merge edilince 73/73 ve 64/64 olur ve o satırlar ayrıca güncellenir (D-7'nin 
 
 ## 5. D-8 sondası — 46 isteğin kapsamı, yan etkiler, kapsam boşluklarının kabule etkisi (**çalıştırılmadı**)
 
-Sonda `client-extacc-d8-staff-surface-r01/scripts/d8-staff-surface-probe.js` (pin `D5FA37D1…579B`; belge ve blok pini ile eşit [Ö]).
-Durum açmaz: sentetik veri, hesap, token, veritabanı erişimi yoktur; kapanış/Recover gerekmez; yeniden koşulabilir.
+Sonda `client-extacc-d8-staff-surface-r01/scripts/d8-staff-surface-probe.js` (pin `E150EEDA…514C`; belge ve blok pini ile eşit [Ö];
+R04 D8-E1/E2 ile değişti — önceki `D5FA37D1…579B`). Durum açmaz: sentetik veri, hesap, token, veritabanı erişimi yoktur;
+kapanış/Recover gerekmez; yeniden koşulabilir.
 
-**İstekler: 46, sıralı, tekrar denemesiz, istek başına 15 sn.** 37 ret vektörü (403 beklenir) + 9 pozitif (3 sayfa 200, 6 API 401).
+**İstekler: 68, sıralı, tekrar denemesiz, istek başına 15 sn.** 59 ret vektörü (403 beklenir) + 9 pozitif (3 sayfa 200, 6 API 401).
+R04'te eklenenler: **D8-E1** HEAD + OPTIONS üç yüzeyde (personel sayfası, personel API, admin portal yolu) = 6 vektör;
+**D8-E2** izole provadan 18 kodlama/normalizasyon varyantı (2'si — büyük harf `ADMIN` ve nokta-segment `./admin` — eski 4 varyanttan
+devralındı, mükerrer istek yok). Ret 37→59, toplam 46→68.
 
 | Yöntem | Toplam | Ret vektörü | Pozitif |
 |---|---|---|---|
-| GET | 27 | 21 | 6 |
-| POST | 10 | 8 | 2 |
+| GET | 41 | 35 | 6 |
+| POST | 11 | 9 | 2 |
 | PUT | 3 | 3 | 0 |
 | PATCH | 1 | 1 | 0 |
-| DELETE | 5 | 4 | 1 |
+| DELETE | 6 | 5 | 1 |
+| HEAD | 3 | 3 | 0 |
+| OPTIONS | 3 | 3 | 0 |
 
-Gövde: POST / PUT / PATCH'te boş JSON `{}` (14 istek); GET ve DELETE gövdesiz (32). Kimlik başlığı **yok**. Tek origin.
+Gövde: POST / PUT / PATCH'te boş JSON `{}` (15 istek); GET / DELETE / HEAD / OPTIONS gövdesiz (53). Kimlik başlığı **yok**. Tek origin.
+Tekrar denemesiz, istek başına 15 sn (değişmedi).
 
 | # | Yöntem · yol | Beklenen | Kenar geçirirse uygulamada ne olur (kaynak `1b758d29`) |
 |---|---|---|---|
@@ -182,21 +189,26 @@ Gövde: POST / PUT / PATCH'te boş JSON `{}` (14 istek); GET ve DELETE gövdesiz
 | 11 | GET `/api/health` | 403 | 404 |
 | 12–13 | POST `/api/portal/admin/create-user` · `disable-user` `{}` | 403 | 401; yazma yok |
 | 14–15 | GET `/api/portal/admin/documents/pending` · `messages/clients` | 403 | 401 |
-| 16 | GET `/api/portal/admin` | 403 | 404 |
-| 17–20 | GET admin yol varyantları (büyük harf · nokta segmenti · kodlanmış eğik çizgi · sorgu) | 403 | 401 ya da 404 (çalışma zamanında ölçülmedi); yazma yok |
-| 21 | DELETE `/intake/d8probe` (web) | 403 | sonuç ölçülmedi; rota işleyicisi yok |
-| 22–24 | DELETE · PUT · PATCH `/api/public/intake/d8probe` | 403 | 404 |
-| 25 | GET `/api/portal/login` | 403 | 404; portal giriş sayacına dokunmaz |
-| 26–31 | izinli portal yollarında yanlış yöntem | 403 | 404 |
-| 32, 34 | POST `/portal/profile` · `/portal/login` (web) | 403 | sonuç ölçülmedi; yazma yok |
-| 33 | GET `/api/portal/change-password` | 403 | 404 |
-| 35–37 | GET `/robots.txt` · `/api` · `/api/` | 403 | 404 |
-| 38–40 | GET `/portal/login` · `/portal/forgot-password` · `/portal/reset-password` | **200** | web sayfası; sıfırlama isteği **gönderilmez**; yazma yok |
-| 41–43 | GET `/api/portal/cases` · `documents` · `messages` | **401** | guard ilk kontrolde durur; DB okuması bile yok |
-| 44–46 | POST `messages` `{}` · DELETE `documents/d8probe` · POST `change-password` `{}` | **401** | guard işleyiciden önce durur; yazma yok |
+| 16–18 | GET admin yol varyantları (`/api/portal/admin` kök · `%2F`-önek · `?x=1` sorgu) | 403 | normalize sonucu admin rotası (401) veya 404 (çalışma zamanında ölçülmedi); yazma yok |
+| 19 | DELETE `/intake/d8probe` (web) | 403 | sonuç ölçülmedi; rota işleyicisi yok |
+| 20–22 | DELETE · PUT · PATCH `/api/public/intake/d8probe` | 403 | 404 |
+| 23 | GET `/api/portal/login` | 403 | 404; portal giriş sayacına dokunmaz |
+| 24–29 | izinli portal yollarında yanlış yöntem | 403 | 404 |
+| 30, 32 | POST `/portal/profile` · `/portal/login` (web) | 403 | sonuç ölçülmedi; yazma yok |
+| 31 | GET `/api/portal/change-password` | 403 | 404 |
+| 33–35 | GET `/robots.txt` · `/api` · `/api/` | 403 | 404 |
+| **36–38** | **D8-E1 HEAD** `/` · `/api/auth/me` · `/api/portal/admin/documents/pending` | 403 | kenar matcher'ı yöntem duyarlı → HEAD varsayılan 403. Geçerse: sayfa → Next HEAD=GET başlıkları (gövde yok) 200/3xx; API/admin → Express HEAD→GET işleyici → `JwtAuthGuard` 401; DB/yazma/audit/**giriş sayacı yok** |
+| **39–41** | **D8-E1 OPTIONS** `/` · `/api/auth/me` · `/api/portal/admin/documents/pending` | 403 | geçerse: API/admin → Nest `enableCors` ön uçuşu guard/rota öncesinde **204** (Origin başlığı yok → ACAO yok; DTO/giriş sayacı çalışmaz; yazma/audit/hata kaydı **yok**); sayfa → Next 405/404 (ölçülmedi) |
+| **42–59** | **D8-E2** izole provadan 18 kodlama/normalizasyon varyantı (16 GET + 1 POST `{}` + 1 DELETE): yüzde-kodlama · kodlanmış/düz traversal · çift slash · nokta-segment · büyük harf · sondaki slash · noktalı virgül · boş bayt · çift kodlama · geçersiz unicode | 403 | kenar ham yolu **temizler** (yüzde-çöz + `.`/`..`/`//`) → izin listesini aşmaz. Geçer ve uygulama çözerse: admin → `JwtAuthGuard` 401 / rota yok → 404 / personel sayfası → 200; yazma yok |
+| 60–62 | GET `/portal/login` · `/portal/forgot-password` · `/portal/reset-password` | **200** | web sayfası; sıfırlama isteği **gönderilmez**; yazma yok |
+| 63–65 | GET `/api/portal/cases` · `documents` · `messages` | **401** | guard ilk kontrolde durur; DB okuması bile yok |
+| 66–68 | POST `messages` `{}` · DELETE `documents/d8probe` · POST `change-password` `{}` | **401** | guard işleyiciden önce durur; yazma yok |
 
 Bilinçli dışarıda bırakılanlar: portal giriş/sıfırlama POST'ları, intake POST, belge yükleme. Telefon adımı ayrı: 5 GET, mobil veri,
-owner beyanı.
+owner beyanı. **D8-E1/E2 yan etki:** yeni 24 vektör (6 HEAD/OPTIONS + 18 varyant) beklenen 403'te uygulamaya ULAŞMAZ; kenar geçirse bile
+yazma/audit/hız sınırı sayacı üretmez — HEAD/OPTIONS GET-ish yüzeyde guard 401 ya da CORS 204; OPTIONS giriş sayacını (login) tetiklemez
+(CORS ön uçuşu guard'tan önce 204, DTO çalışmaz). HEAD yanıtı **gövdesizdir** → sağlayıcı imzası ve `suspectAppOrigin403` HEAD'te okunamaz;
+katman yine `unknown`.
 
 **Yan etkiler.** Beklenen durumda ret vektörleri uygulamaya ulaşmaz. Uygulamaya ulaşan 9 pozitif istek yalnız bellek içi istek
 kimliği ve metrik sayacı üretir; DB yazımı, audit, hız sınırı sayacı, hesap kilidi, hata kaydı yoktur. Tek olası iz vektör 06'dır.
@@ -211,21 +223,21 @@ beyanıdır.
 
 | Kimlik | Boşluk | Karar verilmezse kabul ne söyleyebilir | Seçenekler |
 |---|---|---|---|
-| D8-E1 | HEAD / OPTIONS vektörü yok | "personel yüzeyi **beş yöntemde** (GET/POST/PUT/PATCH/DELETE) kapalı". HEAD ve OPTIONS için hüküm **verilemez** | iki vektör ekle (pin + öz-test + belge birlikte) / "yöntem kapsamı = 5 yöntem" diye kayda geç |
-| D8-E2 | yol kodlama varyantı canlı listede 4, izole provada 18 | "ölçülen **dört** varyantta kapalı". "Kodlama varyantlarına karşı kapalı" genellemesi **yapılamaz** | 18 vektörü taşı / mevcut 4 ile yetin ve sınırı yaz |
-| D8-E3 | tek ana makine adı; tünele bağlı diğer adlar kapsam dışı | kabul **yalnız birincil ad** içindir. "Dışarıdan kapalı" genellemesi diğer adlar için **yapılamaz** | her ad için ayrı koşum (adlar public belgeye yazılmaz) / "kapsam = yalnız birincil ad" kararı |
+| D8-E1 | ~~HEAD / OPTIONS vektörü yok~~ → **R04'te eklendi** (hazır, canlıda koşulmadı) | HEAD ve OPTIONS artık üç yüzeyde (sayfa/API/admin) sondada; 403 beklenir, kenar geçirirse etki §5 tabloda | **sonda revizyonu seçildi**: 6 vektör eklendi, pin + öz-test + belge birlikte güncellendi (öz-test 17/17); AÇIK: owner GO + canlı koşum |
+| D8-E2 | ~~yol kodlama varyantı canlı listede 4, izole provada 18~~ → **R04'te 18'in tamamı eklendi** (hazır, canlıda koşulmadı) | 18 varyant sondada; öz-test sağlıklı kenarda hepsi 403, bozuk kenarda normalize-olan sızar | **18 vektör taşındı**; pin + öz-test + belge birlikte güncellendi; AÇIK: owner GO + canlı koşum |
+| D8-E3 | tek ana makine adı; tünele bağlı diğer adlar kapsam dışı | kabul **yalnız birincil ad** içindir. "Dışarıdan kapalı" genellemesi diğer adlar için **yapılamaz** | her ad için ayrı `--origin` koşumu (adlar public belgeye yazılmaz; parametre eklenmez — belge §1b) / "kapsam = yalnız birincil ad" kararı — **owner kararı** |
 
-Üç boşluk "sınır kaydıyla kabul" yolunda D-8'i **dar kabul** yapar (yöntem, varyant ve ad kapsamı beyanla sınırlı); sonda
-revizyonu yolunda pin, öz-test ve belge birlikte değişir ve koşum ondan sonra yapılır. SEC-API-BIND-01 açıkken D-8 sonucu ayrıca
-"dışarıdan erişilemez" diye genellenmez (§8).
+D8-E1/E2 **sonda revizyonu yoluyla** kapatıldı (pin `E150EEDA…514C`, öz-test 17/17, canlı koşum owner GO'suna bağlı); D8-E3 hâlâ
+**owner kapsam kararı** (ad başına koşum / yalnız birincil ad). "Sınır kaydıyla dar kabul" yolu yalnız E3 için geçerli kalır.
+SEC-API-BIND-01 açıkken D-8 sonucu ayrıca "dışarıdan erişilemez" diye genellenmez (§8).
 
 Diğer sınırlar (minor; koşumu engellemez; kimlikler bu belgede tanımlıdır): uygulama katmanını ayırt eden başlık kanıta alınmıyor
 (D8-E4) · 403 dışı kenar hataları "bulgu" diye sınıflanır, dış zincir ön ölçümü yok (D8-E5) · canlı kenar yapılandırmasının
 şablonla eşitliği ölçülmüyor (D8-E6) · dış ağdan makine koşumu yok (D8-E7) · blok kanıtı mühürlemiyor (D8-E8) · telefon beyanı
 için dosya şablonu yok (D8-E11).
 
-Kanıt kabul kontrol listesi (koşulduğunda): satır 46 (37 + 9) · kimlik başlıklı istek 0 · boş olmayan gövde 0 · boş JSON gövde 14,
-gövdesiz 32 · ölçülemeyen 0 · bulgu listesi boş. 403 dışı ret bulgusu kısıtlı kayda alınır; public PR'a ayrıntı yazılmaz.
+Kanıt kabul kontrol listesi (koşulduğunda): satır 68 (59 + 9) · kimlik başlıklı istek 0 · boş olmayan gövde 0 · boş JSON gövde 15,
+gövdesiz 53 (GET/DELETE/HEAD/OPTIONS) · ölçülemeyen 0 · bulgu listesi boş. 403 dışı ret bulgusu kısıtlı kayda alınır; public PR'a ayrıntı yazılmaz.
 
 ## 6. D-9 — her koşumun kapanışı ayrı değerlendirilir
 
