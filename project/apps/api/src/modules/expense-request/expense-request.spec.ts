@@ -10,6 +10,8 @@ import { NotificationDispatcherService } from '@/modules/client-notification/not
 import { OfficeService } from '@/modules/office/office.service';
 import { TariffService } from '@/modules/tariff/tariff.service';
 import { Decimal } from '@prisma/client/runtime/library';
+import { Prisma } from '@prisma/client';
+import { stageExpenseRequestFingerprint } from './stage-expense-idempotency';
 
 const CREATED_AT = new Date('2026-07-01T10:00:00.000Z');
 const PAYMENT_CREATED_AT = new Date('2026-07-01T11:00:00.000Z');
@@ -657,6 +659,176 @@ describe('ExpenseRequestService - Property Tests', () => {
       expect(error.getResponse()).toMatchObject({ code: 'OPENING_EXPENSE_FX_BASIS_POLICY_MISSING', notCalculableItems: [{ itemCode: 'PESIN_HARC', label: 'Peşin Harç' }] });
 
       expectNothingWritten();
+    });
+  });
+
+  describe('Aşama masraf seti — istek anahtarı (idempotency)', () => {
+    const tryCase = { ...mockCase, currency: 'TRY', claimItems: [{ itemType: 'PRINCIPAL', amount: new Decimal(100000), currency: 'TRY' }] };
+    const fingerprintOf = (caseId: string, stageCode: string) => stageExpenseRequestFingerprint({ caseId, stageCode });
+    const existingRow = (overrides: Record<string, unknown> = {}) => ({
+      ...mockExpenseRequest,
+      id: 'keyed-1',
+      stageCode: 'SEIZURE',
+      status: 'PENDING',
+      idempotencyKey: 'key-1',
+      requestFingerprint: fingerprintOf('case-1', 'SEIZURE'),
+      ...overrides,
+    });
+    const expectNothingWritten = () => {
+      expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+      expect(mockPrismaService.expenseRequest.create).not.toHaveBeenCalled();
+      expect(mockPrismaService.expenseRequestItem.create).not.toHaveBeenCalled();
+      expect(mockPrismaService.expenseAuditLog.create).not.toHaveBeenCalled();
+      expect(mockJournalWriter.write).not.toHaveBeenCalled();
+    };
+
+    it('aynı büro + anahtar + aynı içerik: mevcut talep tekrar olarak döner; işlem, kilit, talep, kalem, denetim ve günlük yazımı YOK', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue(tryCase);
+      mockPrismaService.expenseRequest.findFirst.mockResolvedValue(existingRow());
+
+      const result = await service.createStageExpenseSet('case-1', 'SEIZURE', 'tenant-1', 'user-1', { idempotencyKey: 'key-1' });
+
+      expect(result).toEqual(expect.objectContaining({ id: 'keyed-1', idempotentReplay: true }));
+      expect(mockPrismaService.expenseRequest.findFirst).toHaveBeenCalledWith({ where: { tenantId: 'tenant-1', idempotencyKey: 'key-1' } });
+      expect(mockPrismaService.$executeRaw).not.toHaveBeenCalled();
+      expectNothingWritten();
+    });
+
+    it('dosya denetimi tekrarda da çalışır: başka büronun / var olmayan dosya anahtar aranmadan 404', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue(null);
+
+      await expect(service.createStageExpenseSet('case-x', 'SEIZURE', 'tenant-1', 'user-1', { idempotencyKey: 'key-1' })).rejects.toThrow('Takip bulunamadı');
+
+      expect(mockPrismaService.case.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'case-x', tenantId: 'tenant-1' } }));
+      expect(mockPrismaService.expenseRequest.findFirst).not.toHaveBeenCalled();
+      expectNothingWritten();
+    });
+
+    it('aynı anahtar farklı içerik (başka aşama): 409 IDEMPOTENCY_KEY_CONFLICT, yazım yok', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue(tryCase);
+      mockPrismaService.expenseRequest.findFirst.mockResolvedValue(existingRow());
+
+      const error = await service.createStageExpenseSet('case-1', 'SALE', 'tenant-1', 'user-1', { idempotencyKey: 'key-1' }).catch((caught) => caught);
+
+      expect(error?.getStatus?.()).toBe(409);
+      expect(error.getResponse()).toEqual({ code: 'IDEMPOTENCY_KEY_CONFLICT', message: expect.stringContaining('farklı içerikle') });
+      expectNothingWritten();
+    });
+
+    it('iptal edilmiş talebin anahtarı: 409 IDEMPOTENCY_KEY_CANCELLED, yazım yok', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue(tryCase);
+      mockPrismaService.expenseRequest.findFirst.mockResolvedValue(existingRow({ status: 'CANCELLED' }));
+
+      const error = await service.createStageExpenseSet('case-1', 'SEIZURE', 'tenant-1', 'user-1', { idempotencyKey: 'key-1' }).catch((caught) => caught);
+
+      expect(error?.getStatus?.()).toBe(409);
+      expect(error.getResponse()).toMatchObject({ code: 'IDEMPOTENCY_KEY_CANCELLED' });
+      expectNothingWritten();
+    });
+
+    it('yeni anahtar: büro+anahtar kilidi alınır, kilit altında yeniden okunur, sonra anahtar ve parmak iziyle yazılır; yanıt idempotentReplay false', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue(tryCase);
+      mockPrismaService.expenseRequest.findFirst.mockResolvedValue(null);
+      mockPrismaService.expenseRequest.create.mockResolvedValue({ ...mockExpenseRequest, id: 'keyed-new', stageCode: 'SEIZURE', totalAmount: new Decimal(790) });
+
+      const result = await service.createStageExpenseSet('case-1', 'SEIZURE', 'tenant-1', 'user-1', { idempotencyKey: '  key-new  ' });
+
+      expect(result).toEqual(expect.objectContaining({ id: 'keyed-new', idempotentReplay: false }));
+      const [strings, lockKey] = mockPrismaService.$executeRaw.mock.calls[0];
+      expect(strings.join('?')).toBe('SELECT pg_advisory_xact_lock(hashtextextended(?, 0))');
+      expect(lockKey).toBe('expense-request-stage-key:tenant-1:key-new');
+      const where = { tenantId: 'tenant-1', idempotencyKey: 'key-new' };
+      expect(mockPrismaService.expenseRequest.findFirst.mock.calls.map(([args]: [any]) => args.where)).toEqual([where, where]);
+      const [preCheckOrder, reCheckOrder] = mockPrismaService.expenseRequest.findFirst.mock.invocationCallOrder;
+      const lockOrder = mockPrismaService.$executeRaw.mock.invocationCallOrder[0];
+      const createOrder = mockPrismaService.expenseRequest.create.mock.invocationCallOrder[0];
+      expect(preCheckOrder).toBeLessThan(lockOrder);
+      expect(lockOrder).toBeLessThan(reCheckOrder);
+      expect(reCheckOrder).toBeLessThan(createOrder);
+      expect(mockPrismaService.expenseRequest.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ idempotencyKey: 'key-new', requestFingerprint: fingerprintOf('case-1', 'SEIZURE'), stageCode: 'SEIZURE', totalAmount: 790 }),
+        }),
+      );
+    });
+
+    it('kilit beklenirken başka istek aynı anahtarı yazmışsa: tekrar olarak döner; ikinci talep, kalem, denetim ve günlük yazılmaz', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue(tryCase);
+      mockPrismaService.expenseRequest.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(existingRow({ id: 'keyed-race' }));
+
+      const result = await service.createStageExpenseSet('case-1', 'SEIZURE', 'tenant-1', 'user-1', { idempotencyKey: 'key-1' });
+
+      expect(result).toEqual(expect.objectContaining({ id: 'keyed-race', idempotentReplay: true }));
+      expect(mockPrismaService.$executeRaw).toHaveBeenCalledTimes(1);
+      expect(mockPrismaService.expenseRequest.create).not.toHaveBeenCalled();
+      expect(mockPrismaService.expenseRequestItem.create).not.toHaveBeenCalled();
+      expect(mockPrismaService.expenseAuditLog.create).not.toHaveBeenCalled();
+      expect(mockJournalWriter.write).not.toHaveBeenCalled();
+    });
+
+    it('benzersiz indeks son savunma: yazım P2002 verirse kazanan satır yeniden okunur ve tekrar olarak döner', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue(tryCase);
+      mockPrismaService.expenseRequest.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(existingRow({ id: 'keyed-winner' }));
+      mockPrismaService.expenseRequest.create.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: 'test' }));
+
+      const result = await service.createStageExpenseSet('case-1', 'SEIZURE', 'tenant-1', 'user-1', { idempotencyKey: 'key-1' });
+
+      expect(result).toEqual(expect.objectContaining({ id: 'keyed-winner', idempotentReplay: true }));
+    });
+
+    it('anahtarsız çağrı (iş akışı yolu dahil): kilit YOK, anahtar alanları yazılmaz, yanıtta idempotentReplay alanı yok (koruma DIŞI, bugünkü davranış)', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue(tryCase);
+      mockPrismaService.expenseRequest.create.mockResolvedValue({ ...mockExpenseRequest, id: 'keyless-1', stageCode: 'SEIZURE', totalAmount: new Decimal(790) });
+
+      const result = await service.createStageExpenseSet('case-1', 'SEIZURE', 'tenant-1', 'user-1');
+
+      expect(result).not.toHaveProperty('idempotentReplay');
+      expect(mockPrismaService.$executeRaw).not.toHaveBeenCalled();
+      expect(mockPrismaService.expenseRequest.findFirst).not.toHaveBeenCalled();
+      const data = mockPrismaService.expenseRequest.create.mock.calls[0][0].data;
+      expect(data).not.toHaveProperty('idempotencyKey');
+      expect(data).not.toHaveProperty('requestFingerprint');
+    });
+
+    it.each([['boş', ''], ['uzun', 'x'.repeat(129)], ['izinsiz karakter', 'a b'], ['metin değil', 42]])(
+      'geçersiz anahtar (%s): 400 IDEMPOTENCY_KEY_INVALID; dosya bile okunmaz',
+      async (_title, value) => {
+        const error = await service.createStageExpenseSet('case-1', 'SEIZURE', 'tenant-1', 'user-1', { idempotencyKey: value }).catch((caught) => caught);
+
+        expect(error?.getStatus?.()).toBe(400);
+        expect(error.getResponse()).toMatchObject({ code: 'IDEMPOTENCY_KEY_INVALID' });
+        expect(mockPrismaService.case.findFirst).not.toHaveBeenCalled();
+        expectNothingWritten();
+      },
+    );
+
+    it('OPENING + anahtar: açılış işlevine devredilmez, 400 IDEMPOTENCY_KEY_UNSUPPORTED_FOR_OPENING', async () => {
+      const opening = jest.spyOn(service, 'createOpeningExpenseSet').mockResolvedValue({ id: 'must-not-run' } as never);
+
+      const error = await service.createStageExpenseSet('case-1', 'OPENING', 'tenant-1', 'user-1', { idempotencyKey: 'key-1' }).catch((caught) => caught);
+
+      expect(error?.getStatus?.()).toBe(400);
+      expect(error.getResponse()).toMatchObject({ code: 'IDEMPOTENCY_KEY_UNSUPPORTED_FOR_OPENING' });
+      expect(opening).not.toHaveBeenCalled();
+      expectNothingWritten();
+    });
+
+    it('dövizli dosyada anahtarlı çağrı: oranlı kalem gerekçesiyle 409 (anahtar kaydı bırakmaz); mevcut anahtarlı satır varsa matrah denetimi tekrarlanmadan özgün sonuç döner', async () => {
+      const usdCase = { ...mockCase, currency: 'USD', claimItems: [{ itemType: 'PRINCIPAL', amount: new Decimal(100000), currency: 'USD' }] };
+      mockPrismaService.case.findFirst.mockResolvedValue(usdCase);
+      mockPrismaService.expenseRequest.findFirst.mockResolvedValue(null);
+
+      const rejected = await service.createStageExpenseSet('case-1', 'SEIZURE', 'tenant-1', 'user-1', { idempotencyKey: 'key-usd' }).catch((caught) => caught);
+      expect(rejected?.getStatus?.()).toBe(409);
+      expect(rejected.getResponse()).toMatchObject({ code: 'STAGE_EXPENSE_FX_BASIS_POLICY_MISSING' });
+      expectNothingWritten();
+
+      mockPrismaService.expenseRequest.findFirst.mockResolvedValue(existingRow({ id: 'keyed-usd' }));
+      const replayed = await service.createStageExpenseSet('case-1', 'SEIZURE', 'tenant-1', 'user-1', { idempotencyKey: 'key-usd' });
+      expect(replayed).toEqual(expect.objectContaining({ id: 'keyed-usd', idempotentReplay: true }));
     });
   });
 

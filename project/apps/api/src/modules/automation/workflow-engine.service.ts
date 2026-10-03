@@ -334,6 +334,9 @@ export class WorkflowEngine {
     this.logger.log(`Case ${caseId} stage updated to ${newStage}`);
 
     // Aşama değişikliğinde otomatik masraf seti oluştur (arka planda)
+    // NOT: bu çağrı istek anahtarı (idempotencyKey) GÖNDERMEZ → aşama masraf seti mükerrer korumasının DIŞINDADIR
+    // (aynı aşama değişimi tekrar işlenirse ikinci talep yazılabilir); anahtarlı koruma yalnız POST .../stage/:stageCode
+    // çağıranlarındadır. Bu yolun mükerrer kuralı ayrı owner kararıdır.
     const expenseStageCode = STAGE_TO_EXPENSE_CODE[newStage];
     if (expenseStageCode && caseData?.tenantId && caseData?.clientId) {
       this.expenseRequestService

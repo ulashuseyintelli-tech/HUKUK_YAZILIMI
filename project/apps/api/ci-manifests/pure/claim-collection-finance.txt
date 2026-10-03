@@ -382,3 +382,5 @@ src/modules/expense-request/__tests__/stage-expense-basis.spec.ts
 #   Dovizli alacakta harc / vekalet ucreti kurali (tutar ve kur) owner karari.
 src/modules/fee-engine/__tests__/fee-preview-currency.spec.ts
 src/modules/fee-engine/__tests__/fee-preview-currency.http.spec.ts
+# Asama masraf seti ISTEK ANAHTARI saf kararlari (anahtar dogrulama, parmak izi, tekrar / cakisma / iptal karari).
+src/modules/expense-request/__tests__/stage-expense-idempotency.spec.ts

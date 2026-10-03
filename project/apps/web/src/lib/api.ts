@@ -2406,10 +2406,16 @@ class ApiClient {
 
   /**
    * Aşama bazlı masraf seti oluştur
+   *
+   * `idempotencyKey` ZORUNLUDUR ve KULLANICI İŞLEMİ başına bir kez üretilir (`createIdempotencyKey('stage-expense')`):
+   * çift tıklama / yeniden deneme AYNI anahtarı, meşru yeni işlem (ikinci haciz masrafı gibi) YENİ anahtarı gönderir.
+   * Sunucu aynı büro + anahtar + aynı içerikte yeni talep yazmaz, mevcut talebi `idempotentReplay: true` ile döndürür;
+   * aynı anahtar farklı dosya / aşamayla gelirse 409. OPENING aşaması anahtar kabul etmez (açılış ucu kullanılır).
    */
-  async createStageExpenses(caseId: string, stageCode: string) {
+  async createStageExpenses(caseId: string, stageCode: string, idempotencyKey: string) {
     return this.request<any>(`/expense-requests/case/${caseId}/stage/${stageCode}`, {
       method: 'POST',
+      body: JSON.stringify({ idempotencyKey }),
     });
   }
 
