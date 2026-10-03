@@ -348,6 +348,11 @@ src/modules/office/__tests__/office-settings-update-semantics.spec.ts
 #   (D) .http: gercek guard + ValidationPipe + controller + servis zincirinde 7 ucun her biri (gecerli / yasak alan / rol / kiraci).
 src/modules/office/__tests__/office-write-body-boundary.spec.ts
 src/modules/office/__tests__/office-write-body-boundary.http.spec.ts
+# OFFICE-BANK-ACCOUNT - banka hesabi uclari (owner karari 2026-10-03, madde 6) - SAF, DB YOK:
+#   Gercek guard + global ValidationPipe + controller + servis zincirinde (sahte prisma): govde siniri (5 alan; officeId/id/
+#   tenantId/iliski 400), maskeli/bos/null IBAN 400, Duzenle mevcut hesabi gunceller (degismeyen alan yazilmaz),
+#   varsayilan yazan yollar buro satiri kilidi ile tek islemde (ilk ifade = kilit), okuma yuzeyi B (kimlik+varsayilan+MASKELI IBAN).
+src/modules/office/__tests__/office-bank-account.http.spec.ts
 
 # VIEWER ONAY KARARI SINIRI (owner GO 2026-09-10, AK-1a eki) - SAF, DB YOK:
 #   (A) office-approval-viewer-decision-boundary.http: GERCEK Nest HTTP pipeline (gercek controller + gercek
