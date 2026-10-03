@@ -313,7 +313,7 @@ describe('ClaimItemService.getClaimSummary — mevcut alanlar ve para birimi ba�
     OTHER: 'Diğer',
   };
 
-  describe('mevcut alanlar DEĞİŞMEDİ (karakterizasyon — düzeltmesiz servis koduyla da geçer)', () => {
+  describe('mevcut alanlar DEĞİŞMEDİ (karakterizasyon — sorgu sırası iddiaları hariç düzeltmesiz servis koduyla da geçer)', () => {
     it.each(['TRY', 'USD'])('%s dosya, her türden kalem: currency / items / totals / calculationDate', async (currency) => {
       const { service, findMany } = makeService(HER_TURDEN.map((row) => satir(row.itemType, row.amount, currency)));
 
@@ -321,7 +321,7 @@ describe('ClaimItemService.getClaimSummary — mevcut alanlar ve para birimi ba�
 
       expect(findMany).toHaveBeenCalledWith({
         where: { tenantId: 'tenant-1', caseId: 'case-1', status: 'ACTIVE' },
-        orderBy: { sortOrder: 'asc' },
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
       });
       expect(summary.caseId).toBe('case-1');
       expect(summary.currency).toBe(currency);
@@ -330,6 +330,16 @@ describe('ClaimItemService.getClaimSummary — mevcut alanlar ve para birimi ba�
       expect(summary.items).toEqual(
         HER_TURDEN.map((row) => ({ type: row.itemType, label: ETIKETLER[row.itemType], amount: row.amount, count: 1 })),
       );
+    });
+
+    it('kalem sırası BELİRLEYİCİ: sorgu sortOrder → createdAt → id ile sıralanır (dosya açılışında tüm kalemler sortOrder=0; tek anahtar eşitlikte plana bağlıdır)', async () => {
+      const { service, findMany } = makeService([satir('PRINCIPAL', 10_000, 'TRY'), satir('EXPENSE', 250, 'TRY')]);
+
+      await service.getClaimSummary('tenant-1', 'case-1', '2026-03-01');
+
+      expect(findMany).toHaveBeenCalledTimes(1);
+      const [args] = findMany.mock.calls[0] as unknown as [{ orderBy: Array<Record<string, string>> }];
+      expect(args.orderBy).toEqual([{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }]);
     });
 
     it('kalemsiz dosya: currency "TRY", items boş, toplamlar 0', async () => {
