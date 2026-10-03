@@ -2,6 +2,7 @@ import { Controller, Post, Body, Res, Get, Param, HttpStatus, UseGuards } from '
 import { Response } from 'express';
 import { PdfService } from './pdf.service';
 import { TemplateEngineService } from '../template-engine/template-engine.service';
+import { formatTemplateTotalsCurrencyHeader, TEMPLATE_TOTALS_CURRENCY_HEADER } from '../template-engine/template-totals-currency';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
@@ -37,6 +38,10 @@ export class PdfController {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="takip-talebi-${caseId}.pdf"`,
         'Content-Length': pdfBuffer.length,
+        // Basılan toplam geçerli tek tutar mı (belge gövdesi değişmez; yalnız bildirilir)
+        ...(document.paraBirimiDurumu
+          ? { [TEMPLATE_TOTALS_CURRENCY_HEADER]: formatTemplateTotalsCurrencyHeader(document.paraBirimiDurumu) }
+          : {}),
       });
 
       res.status(HttpStatus.OK).send(pdfBuffer);

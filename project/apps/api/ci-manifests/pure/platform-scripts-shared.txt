@@ -886,3 +886,13 @@ src/tests/trust-proxy.spec.ts
 #   eski P05C-P02 adiminda DB'li link spec'iyle ayni surecte kosuyordu. Kardes policy-engine
 #   spec'leri bu manifestte.
 src/modules/policy-engine/__tests__/kvkk-compliance.spec.ts
+
+# Belge sablonu toplami para birimi baglami — saf yardimci + servis baglantisi (DB yok; cevirme ve capraz para birimi
+#   toplami YOK): belgeye giren kalemler tek para biriminde ve toplam etiketi ayni ise basilan toplam gecerli; birden fazla
+#   para birimi, etiketle uyusmayan tek para birimi (dosya dovizli + kalem TRY; dava dilekcesinde sabit "TL") ya da para
+#   birimi kayitli olmayan kalem varsa gecerli DEGIL, toplamlar para birimi bazinda. Belge verisi / metin / XML / UDF
+#   govdesi ve uretim kaydi veri parmak izi durumu TASIMAZ (durum belgenin YANINDA doner). Baslik degeri yalniz ASCII
+#   kod. Karma dosyada belgenin nasil yazilacagi owner / hukuki karar. Duzeltmesiz servis koduyla 52 testin 5'i DUSER
+#   (servis baglantisi; saf yardimci testleri ve belge govdesi karakterizasyonu gecer). Kardes template-engine spec'leri
+#   bu manifestte.
+src/modules/template-engine/__tests__/template-totals-currency.spec.ts
