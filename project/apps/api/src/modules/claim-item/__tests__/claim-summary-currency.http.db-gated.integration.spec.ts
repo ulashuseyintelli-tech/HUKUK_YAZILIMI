@@ -358,6 +358,60 @@ describeWithDisposableDb('Alacak özeti para birimi bağlamı (HTTP + disposable
     });
   });
 
+  describe('kalem sırası BELİRLEYİCİ — sortOrder, ardından oluşturulma zamanı, ardından kimlik', () => {
+    // Dosya açılışında kalemlerin hepsi sortOrder=0 taşır; tek anahtarlı sıralama eşitlikte plana / yığın yerleşimine
+    // bağlıydı (aynı sorgu + aynı veri, farklı plan → farklı sıra). `items` ve `currency` bu sırayı izler.
+    const setKeys = (caseId: string, itemType: string, data: { sortOrder?: number; createdAt?: Date }) =>
+      prisma.claimItem.updateMany({ where: { tenantId, caseId, itemType: itemType as never }, data });
+    const typesOf = (summary: Record<string, any>) => (summary.items as Array<{ type: string }>).map((item) => item.type);
+
+    it('açılışta kalemlerin sortOrder değeri eşittir (sıralamanın dayandığı koşul)', async () => {
+      const caseId = await openCase('sira-esit', { currency: 'TRY', dues: [principal(10_000), expense(250)] });
+
+      const sortOrders = (await prisma.claimItem.findMany({ where: { tenantId, caseId }, select: { sortOrder: true } })).map(
+        (row) => row.sortOrder,
+      );
+
+      expect(sortOrders).toEqual([0, 0]);
+    });
+
+    it('eşit sortOrder: oluşturulma zamanı sıralar — EXPENSE daha eski ise önce gelir', async () => {
+      const caseId = await openCase('sira-zaman', { currency: 'TRY', dues: [principal(10_000), expense(250)] });
+      await setKeys(caseId, 'EXPENSE', { createdAt: new Date('2026-01-01T00:00:00.000Z') });
+      await setKeys(caseId, 'PRINCIPAL', { createdAt: new Date('2026-01-02T00:00:00.000Z') });
+
+      const summary = await summaryOf(caseId);
+
+      expect(typesOf(summary)).toEqual(['EXPENSE', 'PRINCIPAL']);
+    });
+
+    it('sortOrder önce gelir: daha küçük sortOrder daha geç oluşturulmuş olsa da öne geçer', async () => {
+      const caseId = await openCase('sira-sortorder', { currency: 'TRY', dues: [principal(10_000), expense(250)] });
+      await setKeys(caseId, 'PRINCIPAL', { sortOrder: 2, createdAt: new Date('2026-01-01T00:00:00.000Z') });
+      await setKeys(caseId, 'EXPENSE', { sortOrder: 1, createdAt: new Date('2026-01-02T00:00:00.000Z') });
+
+      const summary = await summaryOf(caseId);
+
+      expect(typesOf(summary)).toEqual(['EXPENSE', 'PRINCIPAL']);
+    });
+
+    it('eşit sortOrder ve eşit oluşturulma zamanı: kimlik sıralar ve tekrarlı isteklerde sıra değişmez', async () => {
+      const caseId = await openCase('sira-kimlik', { currency: 'TRY', dues: [principal(10_000), expense(250)] });
+      const sameInstant = new Date('2026-01-01T00:00:00.000Z');
+      await setKeys(caseId, 'PRINCIPAL', { createdAt: sameInstant });
+      await setKeys(caseId, 'EXPENSE', { createdAt: sameInstant });
+      const byId = await prisma.claimItem.findMany({
+        where: { tenantId, caseId },
+        select: { itemType: true },
+        orderBy: { id: 'asc' },
+      });
+
+      for (let call = 0; call < 3; call++) {
+        expect(typesOf(await summaryOf(caseId))).toEqual(byId.map((row) => row.itemType));
+      }
+    });
+  });
+
   it('özet salt okumadır ve büro sınırını korur: kalem kayıtları değişmez; başka büro bu dosyanın tutarını ve para birimini görmez', async () => {
     const caseId = await openCase('sinir', { currency: 'USD', dues: [principal(10_000)] });
     await addDue(caseId, principal(5_000), 'EUR');

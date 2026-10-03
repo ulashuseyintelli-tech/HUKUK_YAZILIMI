@@ -647,10 +647,13 @@ export class ClaimItemService {
   async getClaimSummary(tenantId: string, caseId: string, calculationDate?: string): Promise<ClaimSummary> {
     const calcDate = calculationDate ? new Date(calculationDate) : new Date();
 
-    // Aktif alacak kalemlerini getir
+    // Aktif alacak kalemlerini getir.
+    // Sıra BELİRLEYİCİDİR: dosya açılışında kalemlerin hepsi sortOrder=0 taşır; tek anahtarlı sıralama eşitlikte
+    // plana / yığın yerleşimine bağlı kalır (aynı veri, farklı plan → farklı sıra). `items` (türün ilk görünme sırası) ve
+    // `currency` (son kalemin para birimi) bu sırayı izler. Emsal: template-engine.service.ts (sortOrder, createdAt, id).
     const items = await (this.prisma as any).claimItem.findMany({
       where: { tenantId, caseId, status: 'ACTIVE' },
-      orderBy: { sortOrder: 'asc' },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
     });
 
     // Türlere göre grupla
