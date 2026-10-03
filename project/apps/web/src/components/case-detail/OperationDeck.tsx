@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { collectionFinanceTotalCurrencies, splitCollectionFinanceTotals } from "@/lib/collection-allocation-hold";
+import { resolveFinanceSourceView, type FinanceSourceStatus } from "@/lib/operation-deck-finance-sources";
 import { recordCurrencySuffix } from "@/lib/record-currency-display";
+import { FinanceSourceListNotice, FinanceSourceRefreshNote } from "./FinanceSourceNotice";
 import {
   FileText, ListTodo, Receipt, Database, FolderOpen, MessageSquare,
   ChevronDown, Plus, AlertTriangle, Clock, Zap, User, Check, X,
@@ -240,6 +242,16 @@ interface OperationDeckProps {
   financeItems?: FinanceItem[];
   /** Dosyanın para birimi — tahsilat yokken "Tahsilat" kartındaki 0 tutarının etiketi */
   caseCurrency?: string | null;
+  // Gerçek kaynağa BAĞLI iki alanın okuma durumu (FinanceSourceStatus). Verilmezse NOT_CONNECTED sayılır. Tutar ve
+  // "kayıt yok" beyanı yalnız veri VARKEN yazılır: READY, ya da son başarılı veri + yenileme notu (REFRESHING /
+  // REFRESH_FAILED). İlk okuma bitmeden (LOADING) ya da okuma düştüğünde (ERROR) sıfır / boş liste yazılmaz.
+  /** "Tahsilat" kartı ve "Son İşlemler"deki tahsilat satırları (satırlar financeItems içinde gelir). */
+  collectionsSource?: FinanceSourceStatus;
+  /** "Masraf Talebi" kartı ve "Masraf Talepleri" bölümü (satırlar financeItems içinde gelir). */
+  expenseRequestsSource?: FinanceSourceStatus;
+  /** Finans sekmesindeki "Tekrar dene": ilgili kaynağı YENİDEN OKUR; yazma işlemi tetiklemez. */
+  onRetryCollections?: () => void;
+  onRetryExpenseRequests?: () => void;
   // Aşağıdaki dört alanın veri kaynağı durumu (OperationDeckSourceStatus). Verilmezse NOT_CONNECTED sayılır ve
   // alan sayı / "kayıt yok" yerine "henüz bağlanmadı" yazar. Değer yalnız durum READY iken okunur.
   /** "Yapılan Masraf" kartı ve "Son İşlemler"deki MASRAF_YAPILAN satırları (satırlar financeItems içinde gelir). */
@@ -432,6 +444,10 @@ export function OperationDeck({
   tasks = [],
   financeItems = [],
   caseCurrency,
+  collectionsSource,
+  expenseRequestsSource,
+  onRetryCollections,
+  onRetryExpenseRequests,
   actualExpenseSource = "NOT_CONNECTED",
   uyapQueriesSource = "NOT_CONNECTED",
   uyapQueries,
@@ -930,6 +946,15 @@ export function OperationDeck({
   const collectionTotalsMixed =
     !collectionTotalCurrencies.allocated || (collectionTotals.heldCount > 0 && !collectionTotalCurrencies.held);
 
+  // Bağlı kaynaklar (tahsilat, masraf talebi): okunmamış / okunamamış kaynak sıfır ya da "kayıt yok" DEĞİLDİR. Tutar ve
+  // satırlar yalnız veri varken yazılır; son başarılı veri ekranda kalıyorsa yenileme durumu yanında yazılır.
+  const collectionsView = resolveFinanceSourceView(collectionsSource);
+  const expenseRequestsView = resolveFinanceSourceView(expenseRequestsSource);
+  const expenseRequestItems = expenseRequestsView.hasData ? financeItems.filter(f => f.type === "MASRAF_TALEP") : [];
+  const shownRecentFinanceItems = collectionsView.hasData
+    ? recentFinanceItems
+    : recentFinanceItems.filter(f => f.type !== "TAHSILAT");
+
   // Group tasks by category
   const nextMove = tasks.find(t => t.category === "SONRAKI_HAMLE" && t.status === "BEKLIYOR");
   const timeBoundTasks = tasks.filter(t => t.category === "SURE_BAGLI" && t.status === "BEKLIYOR");
@@ -1143,7 +1168,20 @@ export function OperationDeck({
             <div className="p-4 space-y-4">
               {/* Özet Kartları */}
               <div className="grid grid-cols-4 gap-3">
-                {/* Tahsilat kaydın kendi para birimiyle yazılır; karma tahsilatta toplam yerine nedeni yazılır */}
+                {/* Tahsilat: kaynak okunmadan / okunamamışken sayı yazılmaz (okunmamış tahsilat sıfır değildir) */}
+                {collectionsView.unavailable !== null ? (
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                    <p className="text-[10px] text-slate-600 uppercase tracking-wide">Tahsilat</p>
+                    <p
+                      className="text-xs leading-snug text-slate-500"
+                      data-testid="finance-collection-source-unavailable"
+                      data-source-status={collectionsView.status}
+                    >
+                      {UNAVAILABLE_CARD_TEXT[collectionsView.unavailable]}
+                    </p>
+                  </div>
+                ) : (
+                /* Tahsilat kaydın kendi para birimiyle yazılır; karma tahsilatta toplam yerine nedeni yazılır */
                 <div
                   className="p-3 rounded-lg bg-emerald-50 border border-emerald-200"
                   title={collectionTotalsMixed ? MIXED_COLLECTION_CURRENCY_REASON : undefined}
@@ -1170,7 +1208,10 @@ export function OperationDeck({
                       Mahsubu bekleyen (farklı para birimleri): gösterilemez (borçtan düşülmedi)
                     </p>
                   ))}
+                  {/* Son başarılı veri ekrandaysa güncel / hatasızmış gibi sunulmaz */}
+                  <FinanceSourceRefreshNote view={collectionsView} testId="finance-collection-refresh" />
                 </div>
+                )}
                 {/* Yapılan masraf: kaynak READY değilken sayı yazılmaz (bağlanmamış alan sıfır değildir) */}
                 {actualExpenseUnavailable === null ? (
                   <div className="p-3 rounded-lg bg-red-50 border border-red-200">
@@ -1191,15 +1232,30 @@ export function OperationDeck({
                     </p>
                   </div>
                 )}
+                {/* Masraf talebi: kaynak okunmadan / okunamamışken sayı yazılmaz (okunmamış masraf talebi sıfır değildir) */}
+                {expenseRequestsView.unavailable !== null ? (
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                    <p className="text-[10px] text-slate-600 uppercase tracking-wide">Masraf Talebi</p>
+                    <p
+                      className="text-xs leading-snug text-slate-500"
+                      data-testid="finance-expense-request-source-unavailable"
+                      data-source-status={expenseRequestsView.status}
+                    >
+                      {UNAVAILABLE_CARD_TEXT[expenseRequestsView.unavailable]}
+                    </p>
+                  </div>
+                ) : (
                 <div className="p-3 rounded-lg bg-amber-50 border border-amber-200">
                   <p className="text-[10px] text-amber-600 uppercase tracking-wide">Masraf Talebi</p>
-                  <p className="text-lg font-bold text-amber-700">
-                    {formatTL(financeItems.filter(f => f.type === "MASRAF_TALEP").reduce((s, f) => s + f.amount, 0))}
+                  <p className="text-lg font-bold text-amber-700" data-testid="finance-expense-request-total">
+                    {formatTL(expenseRequestItems.reduce((s, f) => s + f.amount, 0))}
                   </p>
                   <p className="text-[9px] text-amber-500">
-                    Ödenen: {formatTL(financeItems.filter(f => f.type === "MASRAF_TALEP").reduce((s, f) => s + (f.paidAmount || 0), 0))}
+                    Ödenen: {formatTL(expenseRequestItems.reduce((s, f) => s + (f.paidAmount || 0), 0))}
                   </p>
+                  <FinanceSourceRefreshNote view={expenseRequestsView} testId="finance-expense-request-refresh" />
                 </div>
+                )}
                 {/* Müvekkil bakiyesi: kaynak READY değilken sayı ve olumlu / olumsuz renk yazılmaz */}
                 <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
                   <p className="text-[10px] text-slate-600 uppercase tracking-wide">Müvekkil Bakiye</p>
@@ -1222,12 +1278,13 @@ export function OperationDeck({
                 </div>
               </div>
 
-              {/* Masraf Talepleri (Expense Requests) */}
-              {financeItems.filter(f => f.type === "MASRAF_TALEP").length > 0 && (
+              {/* Masraf Talepleri (Expense Requests): kaynak okunmadıkça bölüm "talep yok" gibi gizlenmez, durumu yazılır */}
+              {(expenseRequestItems.length > 0 || expenseRequestsView.status !== "READY") && (
                 <div>
                   <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Masraf Talepleri</p>
+                  {expenseRequestItems.length > 0 && (
                   <div className="space-y-2 max-h-[150px] overflow-y-auto">
-                    {financeItems.filter(f => f.type === "MASRAF_TALEP").map(item => (
+                    {expenseRequestItems.map(item => (
                       <div key={item.id} className={`p-3 rounded-lg border ${
                         item.status === 'PAID' ? 'border-emerald-200 bg-emerald-50/50' :
                         item.status === 'PARTIAL' ? 'border-amber-200 bg-amber-50/50' :
@@ -1271,6 +1328,14 @@ export function OperationDeck({
                       </div>
                     ))}
                   </div>
+                  )}
+                  <FinanceSourceListNotice
+                    source="expenseRequests"
+                    view={expenseRequestsView}
+                    onRetry={onRetryExpenseRequests}
+                    testId="finance-expense-requests-notice"
+                    retryTestId="finance-expense-requests-retry"
+                  />
                 </div>
               )}
 
@@ -1278,7 +1343,7 @@ export function OperationDeck({
               <div>
                 <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Son İşlemler</p>
                 <div className="space-y-1 max-h-[200px] overflow-y-auto">
-                  {recentFinanceItems.slice(0, 10).map(item => (
+                  {shownRecentFinanceItems.slice(0, 10).map(item => (
                     <div key={item.id} className="flex items-center justify-between py-2 px-3 rounded bg-slate-50 text-sm">
                       <div className="flex items-center gap-2">
                         <span className={`w-2 h-2 rounded-full ${
@@ -1301,13 +1366,21 @@ export function OperationDeck({
                       </div>
                     </div>
                   ))}
-                  {/* Masraf hareketleri bağlı değilken boş liste yalnız tahsilat için konuşur ("işlem yok" denmez) */}
-                  {recentFinanceItems.length === 0 && (
+                  {/* Masraf hareketleri bağlı değilken boş liste yalnız tahsilat için konuşur ("işlem yok" denmez).
+                      Tahsilatlar okunmamış / okunamamışken "tahsilat yok" da denmez: durumu aşağıda yazılır. */}
+                  {shownRecentFinanceItems.length === 0 && collectionsView.hasData && (
                     <p className="text-center py-4 text-slate-400 text-sm">
                       {actualExpenseReady ? "Henüz işlem yok" : "Henüz tahsilat yok"}
                     </p>
                   )}
                 </div>
+                <FinanceSourceListNotice
+                  source="collections"
+                  view={collectionsView}
+                  onRetry={onRetryCollections}
+                  testId="finance-recent-collections-notice"
+                  retryTestId="finance-collections-retry"
+                />
                 {actualExpenseUnavailable !== null && (
                   <p
                     className="mt-2 text-[11px] leading-snug text-slate-500"
