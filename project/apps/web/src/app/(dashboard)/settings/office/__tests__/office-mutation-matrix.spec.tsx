@@ -286,18 +286,21 @@ describe('handleSaveBankAccount', () => {
     expect(d.getByRole('button', { name: 'Banka hesap listesini yenile' })).toBeTruthy();
   });
 
-  it('update → PUT /office/bank-accounts/:id; MASKELI IBAN payload’dan CIKARILIR (omit regresyonu)', async () => {
+  it('update → PUT /office/bank-accounts/:id; YALNIZ değişen alan gider, MASKELI IBAN payload’a GIRMEZ (omit regresyonu)', async () => {
     mocked.put.mockResolvedValueOnce({ data: {} });
     await renderSection('bank', DEL_BANK);
     fireEvent.click(within(drawer()).getByRole('button', { name: 'Düzenle' }));
     const kaydet = await screen.findByRole('button', { name: 'Kaydet' });
-    // Prefill maskeli IBAN ('TR33***41326') ile gelir; kullanici dokunmaz.
+    const form = kaydet.closest('form') as HTMLFormElement;
+    // [0]=Banka [1]=Sube [2]=IBAN (maskeli prefill) [3]=Hesap Sahibi [4]=checkbox
+    const inputs = form.querySelectorAll('input');
+    fireEvent.change(inputs[3], { target: { value: 'Yeni Sahip' } });
     fireEvent.click(kaydet);
     await waitFor(() => expect(mocked.put).toHaveBeenCalledTimes(1));
     const [url, payload] = mocked.put.mock.calls[0] as [string, Record<string, unknown>];
     expect(url).toBe('/office/bank-accounts/b1');
-    expect('iban' in payload).toBe(false); // maskeli deger gercek IBAN'i EZEMEZ
-    expect(payload.bankName).toBe('Ziraat');
+    expect(payload).toEqual({ accountName: 'Yeni Sahip' }); // iban YOK (maskeli değer gerçek IBAN'ı EZEMEZ), değişmeyen alan YOK
+    expect(mocked.post).not.toHaveBeenCalled();
   });
 });
 

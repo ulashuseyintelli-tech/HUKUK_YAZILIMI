@@ -7,6 +7,7 @@ import { Scale } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import { PasswordInput } from "@/components/ui/PasswordInput";
+import { useHydrated } from "@/lib/use-hydrated";
 
 const REMEMBERED_LOGIN_KEY = "rememberedLogin";
 
@@ -30,6 +31,7 @@ export default function LoginPage() {
 
 function LoginForm() {
   const { login } = useAuth();
+  const hydrated = useHydrated();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
@@ -131,7 +133,10 @@ function LoginForm() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Yerel (React dışı) gönderim alanları ADRESE yazmasın: yöntem POST → alanlar gövdeye gider.
+              Ölçülen kusur: `method` yokken hidrasyon öncesi gönderim `?tenantSlug=…&email=…&password=…`
+              üretiyordu. Normal akış değişmez: `onSubmit` preventDefault eder, istek API'ye JSON gider. */}
+          <form onSubmit={handleSubmit} method="post" className="space-y-4">
             <div>
               <label htmlFor="tenantSlug" className="block text-sm font-medium mb-2">
                 Kurum
@@ -206,9 +211,10 @@ function LoginForm() {
               )}
             </div>
 
+            {/* React devralana dek kapalı: işleyicisi bağlanmamış form tıklama / Enter ile gönderilemez. */}
             <button
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || !hydrated}
               className="w-full bg-primary text-primary-foreground py-2 rounded-lg font-medium hover:bg-primary/90 disabled:opacity-50"
             >
               {isLoading ? "Giriş yapılıyor..." : "Giriş Yap"}

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 import ResetPasswordPage from "@/app/auth/reset-password/page";
 
 const resetPasswordMock = vi.fn().mockResolvedValue({ ok: true });
@@ -37,6 +38,21 @@ describe("ResetPasswordPage — OFFICE-AUTH-P02", () => {
 
   it("[1] URL'deki token api.resetPassword'a doğru şekilde iletilir", async () => {
     render(<ResetPasswordPage />);
+    fillPasswords("brand-new-password-2026", "brand-new-password-2026");
+    fireEvent.click(screen.getByRole("button", { name: /Parolayı Güncelle/i }));
+
+    await waitFor(() =>
+      expect(resetPasswordMock).toHaveBeenCalledWith("raw-test-token", "brand-new-password-2026", "brand-new-password-2026")
+    );
+  });
+
+  it("[1s] F1: React StrictMode altında (etki iki kez çalışır) token kaybolmaz — api.resetPassword token ile çağrılır, adres temizlenir", async () => {
+    render(
+      <StrictMode>
+        <ResetPasswordPage />
+      </StrictMode>,
+    );
+    await waitFor(() => expect(window.location.hash).toBe(""));
     fillPasswords("brand-new-password-2026", "brand-new-password-2026");
     fireEvent.click(screen.getByRole("button", { name: /Parolayı Güncelle/i }));
 

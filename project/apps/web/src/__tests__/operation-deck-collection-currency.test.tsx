@@ -37,7 +37,11 @@ const tahsilat = (id: string, amount: number, currency?: string | null, extra: P
   ...extra,
 });
 
-/** `extra`: senaryonun gerektirdiği ek girdiler (ör. yapılan masraf kaynağının bağlı olduğu durum). */
+/**
+ * `extra`: senaryonun gerektirdiği ek girdiler (ör. yapılan masraf kaynağının bağlı olduğu durum).
+ * Tahsilat ve masraf talebi kaynakları OKUNMUŞ (READY) verilir: bu dosya para birimi gösterimini ölçer; okunmamış /
+ * okunamamış kaynağın gösterimi `operation-deck-finance-source-status.test.tsx` içindedir.
+ */
 function openFinance(
   financeItems: Item[],
   caseCurrency?: string | null,
@@ -47,6 +51,8 @@ function openFinance(
     <OperationDeck
       caseId="case-1"
       financeItems={financeItems}
+      collectionsSource="READY"
+      expenseRequestsSource="READY"
       {...(caseCurrency === undefined ? {} : { caseCurrency })}
       {...extra}
     />,

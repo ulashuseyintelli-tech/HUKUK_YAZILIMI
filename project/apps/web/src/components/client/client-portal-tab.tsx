@@ -19,6 +19,7 @@
 import { useState, type FormEvent } from 'react';
 import { CheckCircle2, Circle } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useHydrated } from '@/lib/use-hydrated';
 
 export interface ClientPortalTabProps {
   clientId: string;
@@ -42,6 +43,7 @@ function formatDateTime(value: string | null): string {
 
 export function ClientPortalTab({ clientId, hasPortalAccess, portalUser, onChanged }: ClientPortalTabProps) {
   const active = !!hasPortalAccess;
+  const hydrated = useHydrated();
   const [email, setEmail] = useState(portalUser?.email ?? '');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -136,7 +138,9 @@ export function ClientPortalTab({ clientId, hasPortalAccess, portalUser, onChang
           {busy ? 'Kaldırılıyor...' : 'Portal Erişimini Kaldır'}
         </button>
       ) : (
-        <form onSubmit={handleEnable} className="space-y-3 rounded-lg border border-dashed p-4">
+        // Yerel (React dışı) gönderim parolayı ADRESE yazmasın: yöntem POST; düğme React devralana dek
+        // kapalı (bkz. lib/use-hydrated.ts). Normal akış değişmez: `onSubmit` preventDefault eder.
+        <form onSubmit={handleEnable} method="post" className="space-y-3 rounded-lg border border-dashed p-4">
           <p className="text-sm text-gray-600">
             Bu müvekkil için portal hesabı oluşturun. Müvekkil bu bilgilerle portala giriş yapabilecek.
           </p>
@@ -161,7 +165,7 @@ export function ClientPortalTab({ clientId, hasPortalAccess, portalUser, onChang
           </label>
           <button
             type="submit"
-            disabled={busy}
+            disabled={busy || !hydrated}
             className="rounded-md bg-blue-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-60"
           >
             {busy ? 'Oluşturuluyor...' : 'Portal Erişimini Aç'}

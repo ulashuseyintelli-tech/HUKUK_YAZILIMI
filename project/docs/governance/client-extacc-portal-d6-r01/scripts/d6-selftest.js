@@ -6,7 +6,8 @@
  * kendi belgesini yükler ve siler, koşucu silmesinden sonra listeyi yeniden okur.
  *
  * KULLANIM: node d6-selftest.js   (D6T_DB_URL → 127.0.0.1:5448/d5_reset_test ŞART; sahte API 8199 / dış 8458)
- * ÇIKIŞ   : 0 hepsi PASS · 1 FAIL var · 2 ölçülemedi
+ *           D6T_LIB_ROOT → Prisma istemcisi + bcrypt kurulu, CANLI OLMAYAN bir proje kökü (verilmezse bu betiğin checkout'unun proje kökü)
+ * ÇIKIŞ   : 0 hepsi PASS · 1 FAIL var · 2 ölçülemedi (kütüphane kökü / modül yok dahil) · 4 kütüphane kökü canlı yayın ağacına çözülüyor (RED)
  * SINIR   : sahte API ürünün kendisi değildir; ürünün gerçek multipart/kova/hız sınırı davranışı canlı koşumda ölçülür.
  */
 const { spawn, execFileSync } = require('child_process');
@@ -16,9 +17,47 @@ const HERE = __dirname; const GOV = path.resolve(HERE, '..', '..');
 const RUN = path.join(HERE, 'd6-portal-documents-live-run.js');
 const FAKE = path.join(HERE, 'd6-fake-portal-api.js');
 const WRAPPER = path.join(HERE, 'd6-owner-live-block.ps1');
-const REL = 'C:\\Development\\HUKUK_YAZILIMI\\HY_W4_RELEASE23\\project';
-const PRISMA_ROOT = path.join(REL, 'node_modules', '.pnpm', '@prisma+client@5.22.0_prisma@5.22.0', 'node_modules', '@prisma', 'client');
-const BCRYPT = path.join(REL, 'node_modules', '.pnpm', 'bcrypt@5.1.1', 'node_modules', 'bcrypt');
+// KÜTÜPHANE KÖKÜ (Prisma istemcisi + bcrypt) — izole test canlı yayın ağacından modül YÜKLEMEZ. Kök D6T_LIB_ROOT ile verilir; verilmezse bu
+// betiğin checkout'unun proje kökü denenir; modül yoksa test DURUR (canlı ağaca DÜŞÜLMEZ). Canlı ağaç = owner bloğunun `$Rel` sabiti (tek
+// kaynak; bu dosyada canlı yol literali yoktur). Yol bileşen bileşen çözülür: yolun kendisi ya da bir bağlantının (junction/symlink) hedefi
+// canlı ağaca çıkıyorsa o ağaca DOKUNULMADAN (stat/readlink/require yok) çıkış 4. Bu bölüm ilk yerel `require`dan ÖNCE çalışır.
+const LIB_SUB = { 'Prisma istemcisi': ['node_modules', '.pnpm', '@prisma+client@5.22.0_prisma@5.22.0', 'node_modules', '@prisma', 'client'], bcrypt: ['node_modules', '.pnpm', 'bcrypt@5.1.1', 'node_modules', 'bcrypt'] };
+const maskUser = (s) => { let t = String(s).replace(/([A-Za-z]:[\\/]Users[\\/])[^\\/\s"']+/gi, '$1<kullanici>'); const u = process.env.USERNAME || ''; if (u.length >= 3) t = t.replace(new RegExp(u.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '<kullanici>'); return t; };
+const libStop = (code, msg) => { console.log(msg); process.exit(code); };
+const underDir = (p, base) => { const a = path.resolve(p).toLowerCase(); const b = path.resolve(base).toLowerCase().replace(/[\\/]+$/, ''); return a === b || a.startsWith(b + path.sep); };
+function liveTree() { // owner bloğunun `$Rel` sabiti; `…\project` ise bir üstü (yayın ağacının tamamı). Okunamazsa null → test DURUR
+  let w; try { w = fs.readFileSync(WRAPPER, 'utf8'); } catch (e) { return null; }
+  const m = [...w.matchAll(/^\$Rel\s*=\s*'([A-Za-z]:\\[^'\r\n]+)'/gm)]; if (m.length !== 1) return null;
+  const rel = path.resolve(m[0][1]); return path.basename(rel).toLowerCase() === 'project' ? path.dirname(rel) : rel;
+}
+function resolveLib(p, live, depth = 0) { // → { real } | { live } | { missing }; canlı ağaç denetimi her adımda dosya sistemi çağrısından ÖNCE
+  const abs = path.resolve(p); if (underDir(abs, live)) return { live: abs }; if (depth > 16) return { missing: abs };
+  const root = path.parse(abs).root; const parts = abs.slice(root.length).split(path.sep).filter(Boolean); let cur = root;
+  for (let i = 0; i < parts.length; i++) {
+    const next = path.join(cur, parts[i]); let st; try { st = fs.lstatSync(next); } catch (e) { return { missing: next }; }
+    if (st.isSymbolicLink()) return resolveLib(path.join(path.resolve(cur, fs.readlinkSync(next)), ...parts.slice(i + 1)), live, depth + 1);
+    cur = next;
+  }
+  return { real: cur };
+}
+const LIVE_TREE = liveTree();
+if (!LIVE_TREE) libStop(2, 'OLCULEMEDI: canlı yayın ağacının kökü owner bloğundan (`$Rel`) okunamadı — canlı ağaç ret denetimi yapılamıyor; test BAŞLAMADI');
+const LIB_SRC = process.env.D6T_LIB_ROOT ? 'D6T_LIB_ROOT' : 'bu checkout\'un proje kökü — D6T_LIB_ROOT verilmedi';
+const LIB_GIVEN = path.resolve(process.env.D6T_LIB_ROOT || path.join(GOV, '..', '..'));
+const LIB_HINT = 'D6T_LIB_ROOT ile Prisma istemcisi + bcrypt kurulu, CANLI OLMAYAN bir proje kökü verin';
+const libRed = () => libStop(4, `RED: kütüphane kökü canlı yayın ağacına çözülüyor (${LIB_SRC}: ${maskUser(LIB_GIVEN)}) — izole test canlı ağaçtan modül YÜKLEMEZ; test BAŞLAMADI. ${LIB_HINT}.`);
+const libRoot = resolveLib(LIB_GIVEN, LIVE_TREE);
+if (libRoot.live) libRed();
+if (libRoot.missing) libStop(2, `OLCULEMEDI: kütüphane kökü dizini yok ya da erişilemiyor (${LIB_SRC}: ${maskUser(LIB_GIVEN)} · ilk eksik bileşen: ${maskUser(libRoot.missing)}) — test BAŞLAMADI; canlı yayın ağacına DÜŞÜLMEZ. ${LIB_HINT}.`);
+const LIB_ROOT = libRoot.real; const libDir = {};
+for (const [name, sub] of Object.entries(LIB_SUB)) {
+  const r = resolveLib(path.join(LIB_ROOT, ...sub), LIVE_TREE); if (r.live) libRed();
+  let found = !r.missing; if (found) { try { require.resolve(r.real); } catch (e) { found = false; } }
+  if (!found) libStop(2, `OLCULEMEDI: ${name} modülü kütüphane kökünde yok (${LIB_SRC}: ${maskUser(LIB_ROOT)} · aranan: ${sub.join('/')}) — test BAŞLAMADI; canlı yayın ağacına DÜŞÜLMEZ. ${LIB_HINT}.`);
+  libDir[name] = r.real;
+}
+const PRISMA_ROOT = libDir['Prisma istemcisi']; const BCRYPT = libDir.bcrypt;
+console.log(`kütüphane kökü: ${maskUser(LIB_ROOT)} (kaynak: ${LIB_SRC}; canlı yayın ağacı DEĞİL — Prisma istemcisi + bcrypt buradan yüklenir)`);
 const API_PORT = 8199; const EXT_PORT = 8458;
 const API = `http://127.0.0.1:${API_PORT}/api`; const EXT = `https://localhost:${EXT_PORT}`;
 const PHONE_UA = 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/129 Mobile Safari/537.36';

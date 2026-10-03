@@ -9,6 +9,7 @@
  */
 
 import { apiClient } from './client';
+import type { ParaBirimiDurumu } from '@/hooks/useCaseCalculation';
 
 // ============================================
 // TYPES
@@ -86,7 +87,17 @@ export interface FeePreviewRequest {
   principalAmount: number;
   caseType?: string;
   debtorCount?: number;
+  /** Alacak kaleminin para birimi; gönderilirse yanıt `paraBirimiDurumu` kararını taşır (sayılar değişmez) */
+  currency?: string;
+  /** Dosya para birimi (kalemden farklı olabilir) */
+  caseCurrency?: string;
 }
+
+/**
+ * Önizleme tutarlarının para birimi bağlamı (sunucu: buildFeePreviewCurrencyStatus). Dosya hesap özetindeki
+ * `paraBirimiDurumu` ile aynı sözleşmedir; tutar listeleri yoktur. İstemci çevirme ya da hesap YAPMAZ, bu karara göre gösterir.
+ */
+export type FeePreviewParaBirimiDurumu = Omit<ParaBirimiDurumu, 'asilAlacakParaBirimiBazinda' | 'tahsilatParaBirimiBazinda'>;
 
 export interface FeePreviewResponse {
   success: boolean;
@@ -102,6 +113,8 @@ export interface FeePreviewResponse {
       tebligatGideri: number;
       vekaletPulu: number;
     };
+    /** Yalnız istek `currency` taşıyorsa ve sunucu kararı destekliyorsa gelir (eski sunucu yanıtında bulunmaz) */
+    paraBirimiDurumu?: FeePreviewParaBirimiDurumu;
   };
   error?: {
     code: 'INVALID_INPUT' | 'SERVICE_UNAVAILABLE';
