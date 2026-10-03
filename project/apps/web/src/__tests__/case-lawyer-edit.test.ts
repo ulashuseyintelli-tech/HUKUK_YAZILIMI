@@ -14,12 +14,18 @@ import {
   CASE_PERMISSION_GRANT_FORBIDDEN,
   type CaseLawyerEditState,
 } from '@/lib/case-lawyer-edit';
-import { caseLawyerPermissionsForDisplay } from '@/lib/case-lawyer-permissions';
-
-const { permissions: STORED } = caseLawyerPermissionsForDisplay(
-  { canEditCase: true, canGenerateDocs: true, canSyncUYAP: false, canViewFinance: true, canEditFinance: false, canChangeStatus: false, canEditParties: false },
-  true,
-);
+// A adayı (R27) uyarlaması: `caseLawyerPermissionsForDisplay` (K3 kararı A) R27'de yok; çekmecenin açılış durumu
+// doğrudan yazılır (main'deki testte aynı değerler o yardımcıdan üretiliyor).
+const STORED: CaseLawyerEditState['permissions'] = {
+  canEditCase: true,
+  canGenerateDocs: true,
+  canSyncUYAP: false,
+  canViewFinance: true,
+  canEditFinance: false,
+  canChangeStatus: false,
+  canEditParties: false,
+  receivesNotifications: true,
+};
 const INITIAL: CaseLawyerEditState = { caseRole: 'ASSIGNED', canSign: false, permissions: STORED };
 const edit = (over: Partial<CaseLawyerEditState>, perms: Partial<CaseLawyerEditState['permissions']> = {}): CaseLawyerEditState => ({
   ...INITIAL,

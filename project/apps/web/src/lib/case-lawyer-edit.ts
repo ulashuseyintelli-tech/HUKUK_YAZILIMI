@@ -10,10 +10,23 @@
  */
 
 import type { ApiHttpError } from '@/lib/api-error';
-import {
-  CASE_LAWYER_PERMISSION_DISPLAY_KEYS,
-  type CaseLawyerDisplayPermissions,
-} from '@/lib/case-lawyer-permissions';
+
+// A adayı (R27) uyarlaması: main'deki `@/lib/case-lawyer-permissions` (K3 kararı A, d71333d6) R27'de yok ve adaya
+// alınmadı. Yedi yetki anahtarı ile çekmece biçimi burada tanımlanır; R27 çekmecesinin `lawyerPermissions` durumuyla
+// aynı biçimdir. Gönderilen gövde ve karşılaştırma kuralı main ile aynıdır.
+const CASE_LAWYER_PERMISSION_DISPLAY_KEYS = [
+  'canEditCase',
+  'canGenerateDocs',
+  'canSyncUYAP',
+  'canViewFinance',
+  'canEditFinance',
+  'canChangeStatus',
+  'canEditParties',
+] as const;
+
+type CaseLawyerDisplayPermissions = Record<(typeof CASE_LAWYER_PERMISSION_DISPLAY_KEYS)[number], boolean> & {
+  receivesNotifications: boolean;
+};
 
 export type CaseLawyerCaseRole = 'RESPONSIBLE' | 'ASSIGNED' | 'ASSISTANT' | 'INTERN';
 
