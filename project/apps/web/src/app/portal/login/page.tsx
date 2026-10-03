@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Scale, Loader2, Mail, Lock, Eye, EyeOff } from "lucide-react";
 // CLIENT-REMEDIATION-CLOSEOUT-R01: module-level `NEXT_PUBLIC_API_URL || "http://localhost:8080"
@@ -8,22 +8,46 @@ import { Scale, Loader2, Mail, Lock, Eye, EyeOff } from "lucide-react";
 // düşüyordu. Base URL artık canonical config katmanından gelir (dev fallback yalnız orada,
 // production'da fail-fast). CLIENT-CONFIG-P01 ile aynı sözleşme.
 import { portalApiUrl } from "@/lib/config/portal-api-url";
+import { portalEmailInputProblem, readPortalEmailField } from "@/lib/portal-credential-input";
 import { useHydrated } from "@/lib/use-hydrated";
 
 
 export default function PortalLoginPage() {
   const router = useRouter();
   const hydrated = useHydrated();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  // PORTAL-RESET-FORM-01: e-posta ve parola alanları KONTROLSÜZDÜR; değerler gönderim anında alanların
+  // kendisinden okunur. Ölçülen kusur (üretim derlemesi): alanlar `useState` ile kontrollüyken sayfa React
+  // tarafından devralınmadan önce yazılan / yapıştırılan / otomatik doldurulan değerler ekranda görünüyor ama
+  // duruma girmiyordu; 2026-10-02'de gönderimde `{ email: "", password: "" }` gidiyordu, #2894 sonrası
+  // (2026-10-03) devralmadan hemen sonraki çizim iki alanı da siliyordu.
+  // Alanlara `name` bilerek verilmez: yerel (React dışı) gönderim bugünkü gibi alanları taşımaz.
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  // Tek kullanıcı gönderimi tek istek: yanıt beklenirken gelen ikinci gönderim olayı yok sayılır. Durum
+  // (`loading`) bir sonraki çizime kadar eski kalabildiği için kilit ref'tedir. Başarıda sayfa ayrıldığı için
+  // kilit açılmaz; hata yanıtında açılır (kullanıcı yeniden deneyebilir).
+  const inFlightRef = useRef(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (inFlightRef.current) return;
+
+    const email = readPortalEmailField(emailRef.current);
+    // Parola olduğu gibi okunur (kırpılmaz).
+    const password = passwordRef.current?.value ?? "";
+    const problem = portalEmailInputProblem(email) ?? (password ? null : "Şifrenizi girin.");
+    if (problem) {
+      setError(problem);
+      return;
+    }
+
+    inFlightRef.current = true;
     setError("");
     setLoading(true);
+    let succeeded = false;
 
     try {
       const res = await fetch(portalApiUrl("/api/portal/login"), {
@@ -40,11 +64,15 @@ export default function PortalLoginPage() {
 
       localStorage.setItem("portal_token", data.token);
       localStorage.setItem("portal_user", JSON.stringify(data.user));
+      succeeded = true;
       router.push("/portal");
     } catch (err: any) {
       setError(err.message || "Giriş yapılamadı");
     } finally {
-      setLoading(false);
+      if (!succeeded) {
+        inFlightRef.current = false;
+        setLoading(false);
+      }
     }
   };
 
@@ -74,9 +102,8 @@ export default function PortalLoginPage() {
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
               <input
+                ref={emailRef}
                 type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
                 placeholder="ornek@email.com"
                 className="w-full pl-10 pr-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 required
@@ -89,9 +116,8 @@ export default function PortalLoginPage() {
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
               <input
+                ref={passwordRef}
                 type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 className="w-full pl-10 pr-10 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 required
