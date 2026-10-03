@@ -15,6 +15,9 @@ import { PortalService } from '../portal.service';
 
 function build(over: any = {}) {
   const tx = {
+    // D5-DIAG-R01: yazımdan önce transaction içinde adres kilidi + çakışma ölçümü (bu dosyada çakışma yok).
+    $executeRaw: jest.fn().mockResolvedValue(0),
+    $queryRaw: jest.fn().mockResolvedValue([]),
     client: {
       findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'c1', hasPortalAccess: false, portalUserId: null }),
       update: jest.fn().mockImplementation((a: any) => Promise.resolve({ id: a.where.id, ...a.data })),
@@ -33,6 +36,8 @@ function build(over: any = {}) {
       ...over.clientPortalUser,
     },
     $transaction: jest.fn().mockImplementation(async (cb: any) => cb(tx)),
+    // D5-DIAG-R01: hesap açma çakışma kapısının biçim farkı sorgusu; bu dosyada başka müvekkilde aynı adres yok.
+    $queryRaw: jest.fn().mockResolvedValue([]),
   };
   if (over.client) Object.assign(prisma.client, over.client);
   const audit = { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn() };
