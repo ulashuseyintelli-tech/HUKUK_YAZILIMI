@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { collectionFinanceTotalCurrencies, splitCollectionFinanceTotals } from "@/lib/collection-allocation-hold";
+import { resolveFinanceSourceView, type FinanceSourceStatus } from "@/lib/operation-deck-finance-sources";
 import { recordCurrencySuffix } from "@/lib/record-currency-display";
+import { FinanceSourceListNotice, FinanceSourceRefreshNote } from "./FinanceSourceNotice";
 import {
   FileText, ListTodo, Receipt, Database, FolderOpen, MessageSquare,
   ChevronDown, Plus, AlertTriangle, Clock, Zap, User, Check, X,
@@ -174,6 +176,28 @@ interface RelatedCase {
   debtorName?: string;
 }
 
+/**
+ * Bir alanın veri kaynağı durumu. Kaynak READY değilken alana sayı ya da "kayıt yok" beyanı YAZILMAZ:
+ * bağlanmamış (ya da henüz okunmamış / okunamamış) alan sıfır ya da boş DEĞİLDİR.
+ *  - NOT_CONNECTED: alan henüz hiçbir veri kaynağına bağlı değil (varsayılan — güvenli taraf)
+ *  - LOADING / ERROR: kaynak bağlı ama değer henüz okunmadı / okunamadı
+ *  - READY: değer kaynaktan okundu; sıfır ve boş liste GERÇEK sıfır / gerçek "kayıt yok"tur
+ */
+export type OperationDeckSourceStatus = "NOT_CONNECTED" | "LOADING" | "ERROR" | "READY";
+type UnavailableSourceStatus = Exclude<OperationDeckSourceStatus, "READY">;
+
+const KNOWN_SOURCE_STATUSES: readonly string[] = ["NOT_CONNECTED", "LOADING", "ERROR", "READY"];
+
+/**
+ * Bileşene verilen kaynak durumunu çözümler (izin listesi). Durum verilmemişse (`undefined` / `null`) alan bağlanmamıştır:
+ * NOT_CONNECTED. Tanınmayan / geçersiz bir değer READY SAYILMAZ ve "bağlanmadı" da denmez: kaynak bağlı ama durumu
+ * anlaşılamıyor — ERROR ("okunamadı"). İkisinde de sayı ve "kayıt yok" beyanı yazılmaz.
+ */
+function resolveSourceStatus(raw: unknown): OperationDeckSourceStatus {
+  if (raw === undefined || raw === null) return "NOT_CONNECTED";
+  return KNOWN_SOURCE_STATUSES.includes(raw as string) ? (raw as OperationDeckSourceStatus) : "ERROR";
+}
+
 
 // S8-B FAZ-2 — CaseFeeAgreement (akdi ücret sözleşmesi). Backend otoritesi; FE HESAPLAMAZ.
 interface CaseFeeAgreementSummary {
@@ -218,8 +242,28 @@ interface OperationDeckProps {
   financeItems?: FinanceItem[];
   /** Dosyanın para birimi — tahsilat yokken "Tahsilat" kartındaki 0 tutarının etiketi */
   caseCurrency?: string | null;
+  // Gerçek kaynağa BAĞLI iki alanın okuma durumu (FinanceSourceStatus). Verilmezse NOT_CONNECTED sayılır. Tutar ve
+  // "kayıt yok" beyanı yalnız veri VARKEN yazılır: READY, ya da son başarılı veri + yenileme notu (REFRESHING /
+  // REFRESH_FAILED). İlk okuma bitmeden (LOADING) ya da okuma düştüğünde (ERROR) sıfır / boş liste yazılmaz.
+  /** "Tahsilat" kartı ve "Son İşlemler"deki tahsilat satırları (satırlar financeItems içinde gelir). */
+  collectionsSource?: FinanceSourceStatus;
+  /** "Masraf Talebi" kartı ve "Masraf Talepleri" bölümü (satırlar financeItems içinde gelir). */
+  expenseRequestsSource?: FinanceSourceStatus;
+  /** Finans sekmesindeki "Tekrar dene": ilgili kaynağı YENİDEN OKUR; yazma işlemi tetiklemez. */
+  onRetryCollections?: () => void;
+  onRetryExpenseRequests?: () => void;
+  // Aşağıdaki dört alanın veri kaynağı durumu (OperationDeckSourceStatus). Verilmezse NOT_CONNECTED sayılır ve
+  // alan sayı / "kayıt yok" yerine "henüz bağlanmadı" yazar. Değer yalnız durum READY iken okunur.
+  /** "Yapılan Masraf" kartı ve "Son İşlemler"deki MASRAF_YAPILAN satırları (satırlar financeItems içinde gelir). */
+  actualExpenseSource?: OperationDeckSourceStatus;
+  /** "UYAP Sorgu" sekmesindeki sorgu geçmişi. */
+  uyapQueriesSource?: OperationDeckSourceStatus;
   uyapQueries?: UyapQuery[];
+  /** "İlişkili" sekmesindeki dosya listesi. */
+  relatedCasesSource?: OperationDeckSourceStatus;
   relatedCases?: RelatedCase[];
+  /** "Müvekkil Bakiye" kartı. Hangi tutarın (avans, ödenecek, masraf talebi) gösterileceğini bileşen SEÇMEZ. */
+  clientBalanceSource?: OperationDeckSourceStatus;
   clientBalance?: number;
   onAddNote?: () => void;
   onAddIcraNote?: () => void;
@@ -260,6 +304,33 @@ const formatCollectionAmount = (n: number, currency?: string | null) =>
   n.toLocaleString("tr-TR", { minimumFractionDigits: 0 }) + recordCurrencySuffix(currency);
 const MIXED_COLLECTION_CURRENCY_REASON =
   "Tahsilatlar birden fazla para biriminde; tutarlar çevrilmez ve tek toplamda birleştirilmez.";
+// Kaynağı READY olmayan alanın metni: sayı ya da "kayıt yok" beyanı DEĞİLDİR.
+const UNAVAILABLE_CARD_TEXT: Record<UnavailableSourceStatus, string> = {
+  NOT_CONNECTED: "Bu bilgi henüz bu ekrana bağlanmadı",
+  LOADING: "Yükleniyor…",
+  ERROR: "Bu bilgi okunamadı",
+};
+const UNAVAILABLE_ACTUAL_EXPENSE_ROWS_TEXT: Record<UnavailableSourceStatus, string> = {
+  NOT_CONNECTED: "Yapılan masraf hareketleri henüz bu ekrana bağlanmadı; bu liste yalnız tahsilatları gösterir.",
+  LOADING: "Yapılan masraf hareketleri yükleniyor; bu liste şimdilik yalnız tahsilatları gösterir.",
+  ERROR: "Yapılan masraf hareketleri okunamadı; bu liste yalnız tahsilatları gösterir.",
+};
+const UNAVAILABLE_UYAP_QUERIES_TEXT: Record<UnavailableSourceStatus, { main: string; note?: string }> = {
+  NOT_CONNECTED: {
+    main: "UYAP sorgu kayıtlarının bu ekrana bağlantısı henüz hazır değil.",
+    note: "Bu, sorgu yapılmadığı anlamına gelmez.",
+  },
+  LOADING: { main: "UYAP sorgu kayıtları yükleniyor…" },
+  ERROR: { main: "UYAP sorgu kayıtları okunamadı.", note: "Bu, sorgu yapılmadığı anlamına gelmez." },
+};
+const UNAVAILABLE_RELATED_CASES_TEXT: Record<UnavailableSourceStatus, { main: string; note?: string }> = {
+  NOT_CONNECTED: {
+    main: "İlişkili dosyaların bu ekrana bağlantısı henüz hazır değil.",
+    note: "Bu, ilişkili dosya bulunmadığı anlamına gelmez.",
+  },
+  LOADING: { main: "İlişkili dosyalar yükleniyor…" },
+  ERROR: { main: "İlişkili dosyalar okunamadı.", note: "Bu, ilişkili dosya bulunmadığı anlamına gelmez." },
+};
 const distributionBucketOptions: Array<{ type: DispositionPostingLineType; label: string; description: string }> = [
   { type: "CLIENT_PAYABLE", label: "Müvekkile Ödenecek", description: "Müvekkil payı" },
   { type: "CLIENT_EXPENSE_REIMBURSEMENT", label: "Müvekkil Masraf İadesi", description: "Müvekkile iade edilecek masraf" },
@@ -373,9 +444,17 @@ export function OperationDeck({
   tasks = [],
   financeItems = [],
   caseCurrency,
-  uyapQueries = [],
-  relatedCases = [],
-  clientBalance = 0,
+  collectionsSource,
+  expenseRequestsSource,
+  onRetryCollections,
+  onRetryExpenseRequests,
+  actualExpenseSource = "NOT_CONNECTED",
+  uyapQueriesSource = "NOT_CONNECTED",
+  uyapQueries,
+  relatedCasesSource = "NOT_CONNECTED",
+  relatedCases,
+  clientBalanceSource = "NOT_CONNECTED",
+  clientBalance,
   onAddNote,
   onAddIcraNote,
   onAddClientRequest,
@@ -818,8 +897,47 @@ export function OperationDeck({
   // Counts for badges
   const pendingTasks = tasks.filter(t => t.status === "BEKLIYOR").length;
   const highPriorityTasks = tasks.filter(t => t.priority === "HIGH" && t.status === "BEKLIYOR").length;
-  const pendingQueries = uyapQueries.filter(q => q.status === "BEKLIYOR").length;
+  // Kaynağı bağlı olmayan alan sıfır ya da "kayıt yok" DEĞİLDİR: değer ve sayaç yalnız kaynak READY iken okunur.
+  // `...Unavailable` null ise kaynak READY'dir; değilse gösterilecek durumdur.
+  // READY denmiş ama değer kullanılamıyorsa (liste dizi değil, tutar sonlu sayı değil) sıfır / "kayıt yok" YAZILMAZ: "okunamadı".
+  const actualExpenseResolved = resolveSourceStatus(actualExpenseSource);
+  const actualExpenseAmountsValid = financeItems
+    .filter(f => f.type === "MASRAF_YAPILAN")
+    .every(f => typeof f.amount === "number" && Number.isFinite(f.amount));
+  const actualExpenseEffective: OperationDeckSourceStatus =
+    actualExpenseResolved === "READY" && !actualExpenseAmountsValid ? "ERROR" : actualExpenseResolved;
+  const actualExpenseUnavailable: UnavailableSourceStatus | null =
+    actualExpenseEffective === "READY" ? null : actualExpenseEffective;
+  const uyapQueriesResolved = resolveSourceStatus(uyapQueriesSource);
+  const uyapQueriesEffective: OperationDeckSourceStatus =
+    uyapQueriesResolved === "READY" && !Array.isArray(uyapQueries) ? "ERROR" : uyapQueriesResolved;
+  const uyapQueriesUnavailable: UnavailableSourceStatus | null =
+    uyapQueriesEffective === "READY" ? null : uyapQueriesEffective;
+  const relatedCasesResolved = resolveSourceStatus(relatedCasesSource);
+  const relatedCasesEffective: OperationDeckSourceStatus =
+    relatedCasesResolved === "READY" && !Array.isArray(relatedCases) ? "ERROR" : relatedCasesResolved;
+  const relatedCasesUnavailable: UnavailableSourceStatus | null =
+    relatedCasesEffective === "READY" ? null : relatedCasesEffective;
+  const actualExpenseReady = actualExpenseUnavailable === null;
+  const uyapQueriesReady = uyapQueriesUnavailable === null;
+  const relatedCasesReady = relatedCasesUnavailable === null;
+  const clientBalanceResolved = resolveSourceStatus(clientBalanceSource);
+  const clientBalanceValue =
+    clientBalanceResolved === "READY" && typeof clientBalance === "number" && Number.isFinite(clientBalance)
+      ? (Object.is(clientBalance, -0) ? 0 : clientBalance) // -0 "−0 ₺" diye yazılmaz
+      : null;
+  // Değer yazılamadığında gösterilecek durum. READY denmiş ama geçerli sayı gelmemişse sıfır YAZILMAZ: "okunamadı".
+  const clientBalanceUnavailable: UnavailableSourceStatus =
+    clientBalanceResolved === "READY" ? "ERROR" : clientBalanceResolved;
+  // Listeler yalnız kaynak READY ve değer gerçekten dizi iken okunur (aksi halde yukarıda "okunamadı" olur).
+  const uyapQueryList: UyapQuery[] = uyapQueriesReady ? (uyapQueries as UyapQuery[]) : [];
+  const relatedCaseList: RelatedCase[] = relatedCasesReady ? (relatedCases as RelatedCase[]) : [];
+  const pendingQueries = uyapQueryList.filter(q => q.status === "BEKLIYOR").length;
   const pendingRequests = muvekkilTalepleri.filter(r => r.status === "BEKLIYOR").length;
+  // "Son İşlemler": tahsilatlar ve — yalnız kaynağı READY ise — yapılan masraf satırları (masraf talepleri ayrı bölümde).
+  const recentFinanceItems = financeItems.filter(
+    f => f.type === "TAHSILAT" || (f.type === "MASRAF_YAPILAN" && actualExpenseReady),
+  );
 
   // Finans kartı: tahsilat toplamları ve para birimleri. Para birimi null ise o toplam birden fazla para birimindedir
   // ve YAZILMAZ (REC-ALLOC-008: farklı para birimleri tek sayıda toplanmaz, tutar çevrilmez).
@@ -827,6 +945,15 @@ export function OperationDeck({
   const collectionTotalCurrencies = collectionFinanceTotalCurrencies(financeItems, caseCurrency);
   const collectionTotalsMixed =
     !collectionTotalCurrencies.allocated || (collectionTotals.heldCount > 0 && !collectionTotalCurrencies.held);
+
+  // Bağlı kaynaklar (tahsilat, masraf talebi): okunmamış / okunamamış kaynak sıfır ya da "kayıt yok" DEĞİLDİR. Tutar ve
+  // satırlar yalnız veri varken yazılır; son başarılı veri ekranda kalıyorsa yenileme durumu yanında yazılır.
+  const collectionsView = resolveFinanceSourceView(collectionsSource);
+  const expenseRequestsView = resolveFinanceSourceView(expenseRequestsSource);
+  const expenseRequestItems = expenseRequestsView.hasData ? financeItems.filter(f => f.type === "MASRAF_TALEP") : [];
+  const shownRecentFinanceItems = collectionsView.hasData
+    ? recentFinanceItems
+    : recentFinanceItems.filter(f => f.type !== "TAHSILAT");
 
   // Group tasks by category
   const nextMove = tasks.find(t => t.category === "SONRAKI_HAMLE" && t.status === "BEKLIYOR");
@@ -842,7 +969,7 @@ export function OperationDeck({
           const isActive = activePanel === panel.id;
           const count = panel.id === "tasks" ? pendingTasks : 
                         panel.id === "uyap" ? pendingQueries :
-                        panel.id === "related" ? relatedCases.length :
+                        panel.id === "related" ? relatedCaseList.length :
                         panel.id === "icra-notes" ? icraNotlar.length :
                         panel.id === "client-requests" ? muvekkilTalepleri.length :
                         panel.id === "accounting" ? muhasebeKayitlari.length : 0;
@@ -1041,7 +1168,20 @@ export function OperationDeck({
             <div className="p-4 space-y-4">
               {/* Özet Kartları */}
               <div className="grid grid-cols-4 gap-3">
-                {/* Tahsilat kaydın kendi para birimiyle yazılır; karma tahsilatta toplam yerine nedeni yazılır */}
+                {/* Tahsilat: kaynak okunmadan / okunamamışken sayı yazılmaz (okunmamış tahsilat sıfır değildir) */}
+                {collectionsView.unavailable !== null ? (
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                    <p className="text-[10px] text-slate-600 uppercase tracking-wide">Tahsilat</p>
+                    <p
+                      className="text-xs leading-snug text-slate-500"
+                      data-testid="finance-collection-source-unavailable"
+                      data-source-status={collectionsView.status}
+                    >
+                      {UNAVAILABLE_CARD_TEXT[collectionsView.unavailable]}
+                    </p>
+                  </div>
+                ) : (
+                /* Tahsilat kaydın kendi para birimiyle yazılır; karma tahsilatta toplam yerine nedeni yazılır */
                 <div
                   className="p-3 rounded-lg bg-emerald-50 border border-emerald-200"
                   title={collectionTotalsMixed ? MIXED_COLLECTION_CURRENCY_REASON : undefined}
@@ -1068,36 +1208,83 @@ export function OperationDeck({
                       Mahsubu bekleyen (farklı para birimleri): gösterilemez (borçtan düşülmedi)
                     </p>
                   ))}
+                  {/* Son başarılı veri ekrandaysa güncel / hatasızmış gibi sunulmaz */}
+                  <FinanceSourceRefreshNote view={collectionsView} testId="finance-collection-refresh" />
                 </div>
-                <div className="p-3 rounded-lg bg-red-50 border border-red-200">
-                  <p className="text-[10px] text-red-600 uppercase tracking-wide">Yapılan Masraf</p>
-                  <p className="text-lg font-bold text-red-700">
-                    {formatTL(financeItems.filter(f => f.type === "MASRAF_YAPILAN").reduce((s, f) => s + f.amount, 0))}
-                  </p>
-                </div>
+                )}
+                {/* Yapılan masraf: kaynak READY değilken sayı yazılmaz (bağlanmamış alan sıfır değildir) */}
+                {actualExpenseUnavailable === null ? (
+                  <div className="p-3 rounded-lg bg-red-50 border border-red-200">
+                    <p className="text-[10px] text-red-600 uppercase tracking-wide">Yapılan Masraf</p>
+                    <p className="text-lg font-bold text-red-700" data-testid="finance-actual-expense-total">
+                      {formatTL(financeItems.filter(f => f.type === "MASRAF_YAPILAN").reduce((s, f) => s + f.amount, 0))}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                    <p className="text-[10px] text-slate-600 uppercase tracking-wide">Yapılan Masraf</p>
+                    <p
+                      className="text-xs leading-snug text-slate-500"
+                      data-testid="finance-actual-expense-unavailable"
+                      data-source-status={actualExpenseUnavailable}
+                    >
+                      {UNAVAILABLE_CARD_TEXT[actualExpenseUnavailable]}
+                    </p>
+                  </div>
+                )}
+                {/* Masraf talebi: kaynak okunmadan / okunamamışken sayı yazılmaz (okunmamış masraf talebi sıfır değildir) */}
+                {expenseRequestsView.unavailable !== null ? (
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                    <p className="text-[10px] text-slate-600 uppercase tracking-wide">Masraf Talebi</p>
+                    <p
+                      className="text-xs leading-snug text-slate-500"
+                      data-testid="finance-expense-request-source-unavailable"
+                      data-source-status={expenseRequestsView.status}
+                    >
+                      {UNAVAILABLE_CARD_TEXT[expenseRequestsView.unavailable]}
+                    </p>
+                  </div>
+                ) : (
                 <div className="p-3 rounded-lg bg-amber-50 border border-amber-200">
                   <p className="text-[10px] text-amber-600 uppercase tracking-wide">Masraf Talebi</p>
-                  <p className="text-lg font-bold text-amber-700">
-                    {formatTL(financeItems.filter(f => f.type === "MASRAF_TALEP").reduce((s, f) => s + f.amount, 0))}
+                  <p className="text-lg font-bold text-amber-700" data-testid="finance-expense-request-total">
+                    {formatTL(expenseRequestItems.reduce((s, f) => s + f.amount, 0))}
                   </p>
                   <p className="text-[9px] text-amber-500">
-                    Ödenen: {formatTL(financeItems.filter(f => f.type === "MASRAF_TALEP").reduce((s, f) => s + (f.paidAmount || 0), 0))}
+                    Ödenen: {formatTL(expenseRequestItems.reduce((s, f) => s + (f.paidAmount || 0), 0))}
                   </p>
+                  <FinanceSourceRefreshNote view={expenseRequestsView} testId="finance-expense-request-refresh" />
                 </div>
+                )}
+                {/* Müvekkil bakiyesi: kaynak READY değilken sayı ve olumlu / olumsuz renk yazılmaz */}
                 <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
                   <p className="text-[10px] text-slate-600 uppercase tracking-wide">Müvekkil Bakiye</p>
-                  <p className={`text-lg font-bold ${clientBalance >= 0 ? "text-emerald-700" : "text-red-700"}`}>
-                    {formatTL(clientBalance)}
-                  </p>
+                  {clientBalanceValue !== null ? (
+                    <p
+                      className={`text-lg font-bold ${clientBalanceValue >= 0 ? "text-emerald-700" : "text-red-700"}`}
+                      data-testid="finance-client-balance"
+                    >
+                      {formatTL(clientBalanceValue)}
+                    </p>
+                  ) : (
+                    <p
+                      className="text-xs leading-snug text-slate-500"
+                      data-testid="finance-client-balance-unavailable"
+                      data-source-status={clientBalanceUnavailable}
+                    >
+                      {UNAVAILABLE_CARD_TEXT[clientBalanceUnavailable]}
+                    </p>
+                  )}
                 </div>
               </div>
 
-              {/* Masraf Talepleri (Expense Requests) */}
-              {financeItems.filter(f => f.type === "MASRAF_TALEP").length > 0 && (
+              {/* Masraf Talepleri (Expense Requests): kaynak okunmadıkça bölüm "talep yok" gibi gizlenmez, durumu yazılır */}
+              {(expenseRequestItems.length > 0 || expenseRequestsView.status !== "READY") && (
                 <div>
                   <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Masraf Talepleri</p>
+                  {expenseRequestItems.length > 0 && (
                   <div className="space-y-2 max-h-[150px] overflow-y-auto">
-                    {financeItems.filter(f => f.type === "MASRAF_TALEP").map(item => (
+                    {expenseRequestItems.map(item => (
                       <div key={item.id} className={`p-3 rounded-lg border ${
                         item.status === 'PAID' ? 'border-emerald-200 bg-emerald-50/50' :
                         item.status === 'PARTIAL' ? 'border-amber-200 bg-amber-50/50' :
@@ -1141,6 +1328,14 @@ export function OperationDeck({
                       </div>
                     ))}
                   </div>
+                  )}
+                  <FinanceSourceListNotice
+                    source="expenseRequests"
+                    view={expenseRequestsView}
+                    onRetry={onRetryExpenseRequests}
+                    testId="finance-expense-requests-notice"
+                    retryTestId="finance-expense-requests-retry"
+                  />
                 </div>
               )}
 
@@ -1148,7 +1343,7 @@ export function OperationDeck({
               <div>
                 <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Son İşlemler</p>
                 <div className="space-y-1 max-h-[200px] overflow-y-auto">
-                  {financeItems.filter(f => f.type !== "MASRAF_TALEP").slice(0, 10).map(item => (
+                  {shownRecentFinanceItems.slice(0, 10).map(item => (
                     <div key={item.id} className="flex items-center justify-between py-2 px-3 rounded bg-slate-50 text-sm">
                       <div className="flex items-center gap-2">
                         <span className={`w-2 h-2 rounded-full ${
@@ -1171,10 +1366,30 @@ export function OperationDeck({
                       </div>
                     </div>
                   ))}
-                  {financeItems.filter(f => f.type !== "MASRAF_TALEP").length === 0 && (
-                    <p className="text-center py-4 text-slate-400 text-sm">Henüz işlem yok</p>
+                  {/* Masraf hareketleri bağlı değilken boş liste yalnız tahsilat için konuşur ("işlem yok" denmez).
+                      Tahsilatlar okunmamış / okunamamışken "tahsilat yok" da denmez: durumu aşağıda yazılır. */}
+                  {shownRecentFinanceItems.length === 0 && collectionsView.hasData && (
+                    <p className="text-center py-4 text-slate-400 text-sm">
+                      {actualExpenseReady ? "Henüz işlem yok" : "Henüz tahsilat yok"}
+                    </p>
                   )}
                 </div>
+                <FinanceSourceListNotice
+                  source="collections"
+                  view={collectionsView}
+                  onRetry={onRetryCollections}
+                  testId="finance-recent-collections-notice"
+                  retryTestId="finance-collections-retry"
+                />
+                {actualExpenseUnavailable !== null && (
+                  <p
+                    className="mt-2 text-[11px] leading-snug text-slate-500"
+                    data-testid="finance-recent-actual-expense-unavailable"
+                    data-source-status={actualExpenseUnavailable}
+                  >
+                    {UNAVAILABLE_ACTUAL_EXPENSE_ROWS_TEXT[actualExpenseUnavailable]}
+                  </p>
+                )}
               </div>
             </div>
           )}
@@ -1184,14 +1399,15 @@ export function OperationDeck({
           ═══════════════════════════════════════════════════════════════════ */}
           {activePanel === "uyap" && (
             <div className="p-4 space-y-4">
-              {/* Hızlı Sorgu Butonları */}
+              {/* Hızlı Sorgu: yalnız sorguyu başlatan bir işleyici bağlıysa çizilir — işlem yapmayan düğme gösterilmez */}
+              {onRunQuery && (
               <div>
                 <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Hızlı Sorgu</p>
                 <div className="flex flex-wrap gap-2">
                   {["SGK", "TAPU", "ARAC", "BANKA", "MERNIS"].map(type => (
                     <button
                       key={type}
-                      onClick={() => onRunQuery?.(type)}
+                      onClick={() => onRunQuery(type)}
                       className="px-3 py-1.5 rounded border border-blue-200 bg-blue-50 text-blue-700 text-xs font-medium hover:bg-blue-100"
                     >
                       {queryTypeLabels[type] || type}
@@ -1199,12 +1415,25 @@ export function OperationDeck({
                   ))}
                 </div>
               </div>
+              )}
 
-              {/* Sorgu Geçmişi */}
+              {/* Sorgu Geçmişi: kayıtlar okunmadıkça "sorgu yapılmamış" denmez */}
               <div>
                 <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Sorgu Geçmişi</p>
+                {uyapQueriesUnavailable !== null ? (
+                  <div
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-center"
+                    data-testid="uyap-queries-unavailable"
+                    data-source-status={uyapQueriesUnavailable}
+                  >
+                    <p className="text-sm text-slate-600">{UNAVAILABLE_UYAP_QUERIES_TEXT[uyapQueriesUnavailable].main}</p>
+                    {UNAVAILABLE_UYAP_QUERIES_TEXT[uyapQueriesUnavailable].note && (
+                      <p className="mt-1 text-[11px] text-slate-500">{UNAVAILABLE_UYAP_QUERIES_TEXT[uyapQueriesUnavailable].note}</p>
+                    )}
+                  </div>
+                ) : (
                 <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                  {uyapQueries.map(query => (
+                  {uyapQueryList.map(query => (
                     <div key={query.id} className="flex items-center justify-between p-2 rounded border border-slate-200 bg-white">
                       <div>
                         <p className="text-sm text-slate-700">{queryTypeLabels[query.queryType] || query.queryType}</p>
@@ -1214,9 +1443,9 @@ export function OperationDeck({
                         <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${statusColors[query.status]}`}>
                           {query.status === "TAMAMLANDI" ? "Tamamlandı" : query.status === "BEKLIYOR" ? "Bekliyor" : "Hata"}
                         </span>
-                        {query.canRepeat && (
+                        {query.canRepeat && onRunQuery && (
                           <button
-                            onClick={() => onRunQuery?.(query.queryType)}
+                            onClick={() => onRunQuery(query.queryType)}
                             className="p-1 hover:bg-slate-100 rounded"
                             title="Tekrar Sorgula"
                           >
@@ -1226,10 +1455,11 @@ export function OperationDeck({
                       </div>
                     </div>
                   ))}
-                  {uyapQueries.length === 0 && (
+                  {uyapQueryList.length === 0 && (
                     <p className="text-center py-4 text-slate-400 text-sm">Henüz sorgu yapılmamış</p>
                   )}
                 </div>
+                )}
               </div>
             </div>
           )}
@@ -1240,8 +1470,21 @@ export function OperationDeck({
           ═══════════════════════════════════════════════════════════════════ */}
           {activePanel === "related" && (
             <div className="p-4">
+              {/* İlişkili dosyalar okunmadıkça "ilişkili dosya yok" denmez */}
+              {relatedCasesUnavailable !== null ? (
+                <div
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-4 text-center"
+                  data-testid="related-cases-unavailable"
+                  data-source-status={relatedCasesUnavailable}
+                >
+                  <p className="text-sm text-slate-600">{UNAVAILABLE_RELATED_CASES_TEXT[relatedCasesUnavailable].main}</p>
+                  {UNAVAILABLE_RELATED_CASES_TEXT[relatedCasesUnavailable].note && (
+                    <p className="mt-1 text-[11px] text-slate-500">{UNAVAILABLE_RELATED_CASES_TEXT[relatedCasesUnavailable].note}</p>
+                  )}
+                </div>
+              ) : (
               <div className="space-y-2 max-h-[250px] overflow-y-auto">
-                {relatedCases.map(rc => (
+                {relatedCaseList.map(rc => (
                   <a
                     key={rc.id}
                     href={`/cases/${rc.id}`}
@@ -1266,13 +1509,14 @@ export function OperationDeck({
                     </div>
                   </a>
                 ))}
-                {relatedCases.length === 0 && (
+                {relatedCaseList.length === 0 && (
                   <div className="text-center py-6 text-slate-400">
                     <FolderOpen className="w-8 h-8 mx-auto mb-2 opacity-50" />
                     <p className="text-sm">İlişkili dosya yok</p>
                   </div>
                 )}
               </div>
+              )}
             </div>
           )}
 

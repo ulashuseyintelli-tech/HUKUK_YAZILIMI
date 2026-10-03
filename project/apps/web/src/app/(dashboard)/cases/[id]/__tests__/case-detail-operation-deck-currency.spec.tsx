@@ -291,7 +291,8 @@ describe('USD dosya — Finans sekmesi tahsilatı kendi para birimiyle yazar', (
 
     const finance = readFinanceTab();
     expect(finance.total).toBe('0 EUR');
-    expect(finance.rows).toEqual(['Henüz işlem yok']);
+    // Masraf hareketleri bu ekrana bağlı değilken boş liste yalnız tahsilat için konuşur
+    expect(finance.rows).toEqual(['Henüz tahsilat yok']);
   });
 });
 

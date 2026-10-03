@@ -465,14 +465,78 @@ describe("Hesap Özeti — açılış masraf talebi uyarısı (dövizli / karma 
   it.each([
     ["TL dosya", { paraBirimiDurumu: tlDurumu }],
     ["eski sunucu yanıtı (karar bloğu yok)", {}],
-  ])("%s: durum ucu HİÇ sorgulanmaz ve uyarı yoktur (gösterim aynen)", async (_baslik, ozet) => {
-    // Sorgulansaydı uyarı çıkardı: yanıt bilerek "hesaplanamaz" verilir
+  ])("%s: durum ucu sorgulanır (e-posta sonucu için) ama 'otomatik oluşturulmadı' uyarısı ÇİZİLMEZ (gösterim aynen)", async (_baslik, ozet) => {
+    // Sunucu bilerek "hesaplanamaz" yanıtı verir: bu uyarı yalnız para birimi kısıtlı dosyada çizilir
     const view = await gosterUcaGore(ozet, talepYokHesaplanamaz);
 
+    await vi.waitFor(() => expect(istenenUclar()).toContain(DURUM_UCU));
     await Promise.resolve();
-    expect(istenenUclar().length).toBeGreaterThan(0); // bakıldığının kanıtı: özet ucu istendi
-    expect(istenenUclar().every((url) => url.startsWith("/cases/case-1/calculation-summary"))).toBe(true);
     expect(screen.queryByTestId("acilis-masraf-talebi-uyari")).toBeNull();
+    expect(screen.queryByTestId("acilis-masraf-eposta-uyari")).toBeNull();
     expect(satirlar(view.container)["Peşin Harç"]).toBe("120,00 ₺");
+  });
+});
+
+describe("Hesap Özeti — açılış masraf e-postası gönderilemedi uyarısı (her dosya)", () => {
+  beforeEach(() => {
+    apiGet.mockReset();
+  });
+
+  const DURUM_UCU = "/expense-requests/case/case-1/opening-status";
+  const EPOSTA_NEDENI =
+    "Büroda varsayılan banka hesabı tanımlı değil; ödeme yapılacak hesap bildirilemediği için masraf e-postası gönderilmedi. Bu e-posta kendiliğinden yeniden gönderilmez.";
+  /** TL dosya: açılış talebi var, otomatik hesap yapılabiliyor (sunucu sözleşmesiyle aynı biçim). */
+  const talepVar = { caseId: "case-1", clientAssigned: true, openingRequestExists: true, activeExpenseRequestCount: 1, automaticCalculation: { calculable: true } };
+  const epostaGonderilemedi = {
+    ...talepVar,
+    openingRequestEmail: {
+      status: "NOT_SENT",
+      reasonCode: "PAYMENT_ACCOUNT_MISSING",
+      message: EPOSTA_NEDENI,
+      requiredInfo: ["Büro Ayarları → Banka Hesapları: tek bir varsayılan hesap"],
+      attemptedAt: "2026-10-01T20:09:04.000Z",
+    },
+  };
+
+  async function gosterUcaGore(ozet: Partial<CaseCalculationResult>, durum: unknown) {
+    apiGet.mockImplementation(async (url: string) => ({ data: url === DURUM_UCU ? durum : { ...olculenSayilar, ...ozet } }));
+    const view = render(<HesapOzetiPanel caseId="case-1" calculationDate="2026-03-01" debtorCount={1} />);
+    await screen.findByText("TOPLAM BORÇ");
+    await vi.waitFor(() => expect(apiGet.mock.calls.map(([url]) => String(url))).toContain(DURUM_UCU));
+    return view;
+  }
+
+  it("TL dosyada e-posta gönderilemediyse: sunucunun nedeni ve gereken bilgi panelde kalıcı olarak görünür; tutar satırları aynen", async () => {
+    const view = await gosterUcaGore({ paraBirimiDurumu: tlDurumu }, epostaGonderilemedi);
+
+    expect(await screen.findByTestId("acilis-masraf-eposta-uyari")).toHaveTextContent(EPOSTA_NEDENI);
+    expect(screen.getByTestId("acilis-masraf-eposta-gereken-bilgi")).toHaveTextContent(
+      "Gereken bilgi: Büro Ayarları → Banka Hesapları: tek bir varsayılan hesap",
+    );
+    expect(screen.queryByTestId("acilis-masraf-talebi-uyari")).toBeNull();
+    expect(satirlar(view.container)).toMatchObject({ "Peşin Harç": "120,00 ₺", "İCRA MASRAFLARI": "1.431,10 ₺", "TOPLAM BORÇ": "20.431,10 ₺" });
+  });
+
+  it("e-posta gönderildiyse ya da hiç istenmediyse (alan yok): panelin içeriği durum sorgusu olmadan çizilenle birebir aynıdır", async () => {
+    const sorgulu = await gosterUcaGore({ paraBirimiDurumu: tlDurumu }, talepVar);
+    await Promise.resolve();
+    const sorguluHtml = sorgulu.container.innerHTML;
+    sorgulu.unmount();
+
+    // Karşılaştırma tabanı: durum ucu boş yanıt verir (hiçbir uyarı kararı yok)
+    const taban = await gosterUcaGore({ paraBirimiDurumu: tlDurumu }, null);
+    await Promise.resolve();
+
+    expect(sorguluHtml).toBe(taban.container.innerHTML);
+    expect(screen.queryByTestId("acilis-masraf-eposta-uyari")).toBeNull();
+    expect(screen.queryByTestId("acilis-masraf-talebi-durum-okunamadi")).toBeNull();
+  });
+
+  it("dövizli dosyada da e-posta uyarısı sunucu bildirirse görünür (geçmiş açılış talebi)", async () => {
+    await gosterUcaGore({ paraBirimiDurumu: dovizDurumu("USD") }, { ...epostaGonderilemedi, automaticCalculation: { calculable: false, message: "x", requiredInfo: [] } });
+
+    expect(await screen.findByTestId("acilis-masraf-eposta-uyari")).toHaveTextContent(EPOSTA_NEDENI);
+    // Talep var: "otomatik oluşturulmadı" uyarısı çizilmez
+    expect(screen.queryByTestId("acilis-masraf-talebi-uyari")).toBeNull();
   });
 });

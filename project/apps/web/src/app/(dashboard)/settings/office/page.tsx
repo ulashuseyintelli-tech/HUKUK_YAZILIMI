@@ -5,6 +5,7 @@ import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { Building2, Users, Plus, Pencil, Trash2, Check, X, Star, CreditCard, Loader2, Mail, MessageSquare, GripVertical, Clock, ChevronRight, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api";
 import { sanitizeLawyerIbanPayload } from "@/lib/lawyer-iban-payload";
+import { buildBankAccountCreatePayload, buildBankAccountUpdatePayload } from "@/lib/bank-account-payload";
 import { buildLawyerUpdatePayload } from "@/lib/lawyer-update-payload";
 import { ActionError } from "@/components/ui/action-error";
 import { toActionErrorMessage } from "@/lib/action-error";
@@ -20,7 +21,11 @@ import {
   type LawyerDefaultPermissionsStatus,
 } from "@/lib/lawyer-default-permissions-status";
 
-interface BankAccount { id: string; bankName: string; branchName?: string; iban: string; accountName?: string; isDefault: boolean; }
+// Okuma yüzeyi (owner kararı 2026-10-03, madde 6): hesap kimliği + varsayılan bilgisi + MASKELİ IBAN. Banka adı / şube /
+// hesap sahibi okuma yüzeyinde YOKTUR (undefined = bilinmiyor, boş değil).
+interface BankAccount { id: string; officeId?: string; bankName?: string; branchName?: string | null; iban?: string; accountName?: string | null; isDefault: boolean; }
+/** Satır başlığı: banka adı bilinmiyorsa maskeli IBAN, o da yoksa genel ad. */
+const bankAccountTitle = (acc: Pick<BankAccount, "bankName" | "iban">): string => acc.bankName || acc.iban || "Banka hesabı";
 interface Lawyer { 
   id: string; 
   name: string; 
@@ -77,6 +82,58 @@ const TITLE_OPTIONS = [
 const OFFICE_SECTIONS = ["office", "bank", "lawyers", "staff", "smtp", "sms", "greeting", "escalation"] as const;
 type OfficeSection = (typeof OFFICE_SECTIONS)[number];
 
+// OFF-INV-09 (deny ≠ empty): sayfanın her bağımsız okuması AYRI izlenir.
+//  - loading: ilk okuma sürüyor (ya da "Tekrar dene" sürüyor)
+//  - ready  : okuma BAŞARILI — boş sonuç da buna dahildir ("Hesap yok" gerçek bir durumdur)
+//  - denied : sunucu 403 verdi (okuma yetkisi yok) — "boş kayıt" DEĞİLDİR
+//  - error  : yetki dışı hata (ağ, 5xx...) — geçicidir, "Tekrar dene" sunulur
+// Yazma yüzeyleri (Ekle / Düzenle / Kaydet) yalnız ilgili okuma `ready` iken açıktır: okunamayan alanın
+// form ön-değeri ("", 587...) kayıtlı ayar sanılıp sunucuya geri YAZILAMAZ.
+type ReadKey = "office" | "staff" | "smtp" | "sms" | "greeting" | "escalation";
+type ReadState = "loading" | "ready" | "denied" | "error";
+const INITIAL_READ_STATE: Record<ReadKey, ReadState> = {
+  office: "loading", staff: "loading", smtp: "loading", sms: "loading", greeting: "loading", escalation: "loading",
+};
+// Çekmece bölümü → onu besleyen okuma. bank / lawyers aynı `GET /office` yanıtından gelir.
+const SECTION_READ_KEY: Record<OfficeSection, ReadKey> = {
+  office: "office", bank: "office", lawyers: "office", staff: "staff",
+  smtp: "smtp", sms: "sms", greeting: "greeting", escalation: "escalation",
+};
+const isDeniedError = (e: unknown): boolean => {
+  const err = e as { status?: number; response?: { status?: number } } | null | undefined;
+  return err?.status === 403 || err?.response?.status === 403;
+};
+
+/** Okunamayan bölümün yerine geçer: yetki reddi ile geçici hata AYRI metin taşır; yalnız geçici hatada "Tekrar dene" vardır. */
+function ReadNotice({ state, onRetry, className = "" }: { state: ReadState; onRetry: () => void; className?: string }) {
+  if (state === "ready") return null;
+  if (state === "loading") {
+    return <p role="status" data-testid="read-loading" className={`text-[13px] text-stone-500 ${className}`}>Yükleniyor…</p>;
+  }
+  if (state === "denied") {
+    return <p role="status" data-testid="read-denied" className={`text-[13px] text-stone-600 ${className}`}>Bu bilgiyi görüntüleme yetkiniz yok.</p>;
+  }
+  return (
+    <div role="alert" data-testid="read-error" className={`flex items-start gap-2 text-[13px] text-red-800 ${className}`}>
+      <span className="flex-1">Bu bilgi şu an okunamadı. Kayıtlı ayarlarınız değişmedi.</span>
+      <button type="button" onClick={onRetry} className="shrink-0 rounded border border-red-300 px-1.5 py-0.5 text-[12px] font-medium hover:bg-red-100">Tekrar dene</button>
+    </div>
+  );
+}
+
+/** Okuması `ready` olmayan özet kartı: tıklanamaz (düzenleme yüzeyi açılmaz), durum metni gösterir. */
+function BlockedCard({ icon, title, borderClass, iconBgClass, state, onRetry }: { icon: React.ReactNode; title: string; borderClass: string; iconBgClass: string; state: ReadState; onRetry: () => void }) {
+  return (
+    <div className={`flex-1 min-w-0 text-left bg-white border ${borderClass} rounded-xl overflow-hidden`} data-testid="blocked-card">
+      <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-stone-200 bg-stone-50/60">
+        <span className={`inline-flex items-center justify-center w-7 h-7 rounded-lg ${iconBgClass}`}>{icon}</span>
+        <span className="text-[14px] font-semibold text-gray-800">{title}</span>
+      </div>
+      <div className="px-4 py-3"><ReadNotice state={state} onRetry={onRetry} /></div>
+    </div>
+  );
+}
+
 export default function OfficeSettingsPage() {
   return (
     <Suspense fallback={<div className="flex items-center justify-center h-full"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>}>
@@ -89,6 +146,35 @@ function OfficeSettingsInner() {
   const [office, setOffice] = useState<Office | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Bölüm bazlı okuma durumu. Ref, state güncellenmeden hemen önce tetiklenen yazma işleyicilerinin de
+  // en güncel durumu görmesi içindir; render'ı ref değil state sürer.
+  const [readState, setReadStateMap] = useState<Record<ReadKey, ReadState>>(INITIAL_READ_STATE);
+  const readStateRef = useRef<Record<ReadKey, ReadState>>(INITIAL_READ_STATE);
+  const readTokenRef = useRef<Record<ReadKey, number>>({ office: 0, staff: 0, smtp: 0, sms: 0, greeting: 0, escalation: 0 });
+  const pageMountedRef = useRef(true);
+  useEffect(() => {
+    pageMountedRef.current = true;
+    return () => { pageMountedRef.current = false; };
+  }, []);
+  const setRead = (key: ReadKey, next: ReadState) => {
+    readStateRef.current = { ...readStateRef.current, [key]: next };
+    setReadStateMap(readStateRef.current);
+  };
+  // Yeni (ilk ya da "Tekrar dene") okuma başlatır; eski bir okumanın geç gelen yanıtı bu belirteçle elenir.
+  const beginRead = (key: ReadKey): number => {
+    const token = ++readTokenRef.current[key];
+    setRead(key, "loading");
+    return token;
+  };
+  const isCurrentRead = (key: ReadKey, token: number) => pageMountedRef.current && readTokenRef.current[key] === token;
+  const writeBlocked = (key: ReadKey) => readStateRef.current[key] !== "ready";
+  const failRead = (key: ReadKey, token: number, e: unknown, message: string) => {
+    if (!isCurrentRead(key, token)) return;
+    const denied = isDeniedError(e);
+    setRead(key, denied ? "denied" : "error");
+    // 403 bölümün kendi "yetkiniz yok" durumuyla anlatılır; ham sunucu kodu bantta gösterilmez.
+    if (!denied) setLoadError(toActionErrorMessage(e, message));
+  };
   // PR-2A1: islem turune gore AYRI hata/stale yuzeyleri — genel band hangi islemin
   // basarisiz oldugunu belirsizlestirirdi.
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -123,6 +209,11 @@ function OfficeSettingsInner() {
   const [staffUpdateReview, setStaffUpdateReview] = useState<{ candidates: { id: string; name: string }[]; data: any } | null>(null);
   const [officeForm, setOfficeForm] = useState({ name: "", address: "", city: "", district: "", postalCode: "", phone: "", fax: "", email: "", website: "", barAssociation: "", vergiNo: "", vergiDairesi: "", mersisNo: "", kepAddress: "" });
   const [officeInitial, setOfficeInitial] = useState({ name: "", address: "", city: "", district: "", postalCode: "", phone: "", fax: "", email: "", website: "", barAssociation: "", vergiNo: "", vergiDairesi: "", mersisNo: "", kepAddress: "" });
+  // Geç gelen okuma yanıtı kullanıcının kaydedilmemiş büro düzenlemesini ezmesin diye son değerler ref'te tutulur.
+  const officeFormRef = useRef(officeForm);
+  const officeInitialRef = useRef(officeInitial);
+  officeFormRef.current = officeForm;
+  officeInitialRef.current = officeInitial;
   const [smtpForm, setSmtpForm] = useState<SmtpSettings>({ smtpHost: "", smtpPort: 587, smtpUser: "", smtpPass: "", smtpSecure: false, smtpFromName: "", smtpFromEmail: "" });
   const [smsForm, setSmsForm] = useState({ smsProvider: "", smsApiKey: "", smsApiSecret: "", smsSender: "" });
   const [greetingForm, setGreetingForm] = useState({ autoGreetingEnabled: true, autoGreetingTime: "09:00" });
@@ -205,11 +296,40 @@ function OfficeSettingsInner() {
     }
   }, [loadTodayGreetings]);
 
-  useEffect(() => { loadOffice(); loadStaff(); }, []);
+  // İlk yükleme: bağımsız okumalar AYRI çalışır; biri (örn. GET /office → 403) düşse diğerleri durmaz ve
+  // her biri kendi durumunu taşır. Sayfa yükleme göstergesi hepsi sonuçlanana kadar sürer.
+  useEffect(() => { loadAll(); }, []);
 
-  const loadStaff = async (opts?: { propagateError?: boolean }) => {
+  const loadAll = async () => {
+    try {
+      await Promise.all([
+        loadOffice({ initial: true }),
+        loadStaff({ initial: true }),
+        loadSmtp(),
+        loadSms(),
+        loadGreeting(),
+        loadEscalation(),
+      ]);
+    } finally { setLoading(false); }
+  };
+
+  const retryRead = (key: ReadKey) => {
+    setLoadError(null);
+    switch (key) {
+      case "office": return loadOffice({ initial: true });
+      case "staff": return loadStaff({ initial: true });
+      case "smtp": return loadSmtp();
+      case "sms": return loadSms();
+      case "greeting": return loadGreeting();
+      case "escalation": return loadEscalation();
+    }
+  };
+
+  const loadStaff = async (opts?: { propagateError?: boolean; initial?: boolean }) => {
+    const token = opts?.initial ? beginRead("staff") : 0;
     try {
       const res = await api.get("/staff");
+      if (opts?.initial && !isCurrentRead("staff", token)) return; // bayat / unmount: geç yanıt ezmez
       console.log('Staff API yanıtı:', res.data);
       // isDefaultForNewCases alanı undefined ise false olarak ayarla
       const staffData = (res.data?.data || []).map((s: any) => ({
@@ -218,19 +338,28 @@ function OfficeSettingsInner() {
       }));
       console.log('İşlenmiş staff verisi:', staffData.map((s: any) => ({ id: s.id, name: s.firstName, isDefault: s.isDefaultForNewCases })));
       setStaffList([...staffData]); // Yeni array referansı oluştur
+      if (opts?.initial) setRead("staff", "ready");
     } catch (e) {
       // PR-2A1 DEPENDENCY_FIXED: okuma hatasi YUTULMAZ; bos liste gibi gosterilmez.
-      setLoadError(toActionErrorMessage(e, "Personel listesi yüklenemedi."));
+      if (opts?.initial) {
+        failRead("staff", token, e, "Personel listesi yüklenemedi.");
+      } else {
+        setLoadError(toActionErrorMessage(e, "Personel listesi yüklenemedi."));
+      }
       if (opts?.propagateError) throw e;
     }
   };
 
-  const loadOffice = async (opts?: { propagateError?: boolean }) => {
-    // F-B01-03: her (yeniden) yüklemede alıcı-listesi bayrakları SIFIRLANIR; yükleme başarısız olursa veya yanıt
-    // liste alanı taşımazsa gizli alanlar eski state'ten payload'a GİRMEZ (yalnız taze yanıtta gelen liste kaydedilir).
-    setEscalationRecipientsLoaded({ manager: false, founder: false, teamLead: false });
+  // `GET /office` yanıtı: büro bilgileri + banka hesapları + avukatlar. YALNIZ bunları besler; SMTP / SMS / tebrik /
+  // eskalasyon artık AYRI okumalardır (aşağıda) — mutation sonrası yenileme (`propagateError`) onların formlarını
+  // yeniden doldurup kullanıcının kaydedilmemiş düzenlemesini EZMEZ.
+  // `initial`: ilk yükleme ya da "Tekrar dene" — bölüm durumunu (ready / denied / error) yönetir. Yenilemede durum
+  // DEĞİŞMEZ: kesinleşmiş bir yazmadan sonra yenileme düşerse mevcut veri "okunamadı"ya çevrilmez (bayat bandı çalışır).
+  const loadOffice = async (opts?: { propagateError?: boolean; initial?: boolean }) => {
+    const token = opts?.initial ? beginRead("office") : 0;
     try {
       const res = await api.get("/office");
+      if (opts?.initial && !isCurrentRead("office", token)) return; // bayat / unmount: geç yanıt ezmez
       setOffice(res.data);
       // K3-L KP-9: varsayılan yetki durumu. Okunamazsa sayfa aynen çalışır; durum "bilinmiyor" kalır (rozet gösterilmez).
       try {
@@ -247,10 +376,28 @@ function OfficeSettingsInner() {
         vergiNo: res.data?.vergiNo || "", vergiDairesi: res.data?.vergiDairesi || "",
         mersisNo: res.data?.mersisNo || "", kepAddress: res.data?.kepAddress || "",
       };
-      setOfficeForm(officeInit);
+      // Kullanıcı büro formunu düzenlemişse (form ≠ son yüklenen/kaydedilen değer) geç gelen yanıt onu EZMEZ.
+      if (JSON.stringify(officeFormRef.current) === JSON.stringify(officeInitialRef.current)) setOfficeForm(officeInit);
       setOfficeInitial(officeInit);
-      // SMTP ayarlarını yükle
+      if (opts?.initial) setRead("office", "ready");
+    } catch (e) {
+      // PR-2A1 DEPENDENCY_FIXED: okuma hatasi YUTULMAZ; mutation refresh'i olarak
+      // cagrildiginda propagate edilir (aksi halde SUCCESS_STALE hic calismaz).
+      if (opts?.initial) {
+        failRead("office", token, e, "Büro bilgileri yüklenemedi.");
+      } else {
+        setLoadError(toActionErrorMessage(e, "Büro bilgileri yüklenemedi."));
+      }
+      if (opts?.propagateError) throw e;
+    }
+  };
+
+  // SMTP ayarları — ayrı okuma. Okunamadıysa form ön-değeri ("", 587...) kayıtlı ayar gibi gösterilmez ve KAYDEDİLEMEZ.
+  const loadSmtp = async () => {
+    const token = beginRead("smtp");
+    try {
       const smtpRes = await api.get("/office/smtp-settings");
+      if (!isCurrentRead("smtp", token)) return;
       setSmtpForm({
         smtpHost: smtpRes.data?.smtpHost || "",
         smtpPort: smtpRes.data?.smtpPort || 587,
@@ -260,25 +407,55 @@ function OfficeSettingsInner() {
         smtpFromName: smtpRes.data?.smtpFromName || "",
         smtpFromEmail: smtpRes.data?.smtpFromEmail || "",
       });
-      // SMS ayarlarını yükle
+      setRead("smtp", "ready");
+    } catch (e) {
+      failRead("smtp", token, e, "Büro bilgileri yüklenemedi.");
+    }
+  };
+
+  const loadSms = async () => {
+    const token = beginRead("sms");
+    try {
       const smsRes = await api.get("/office/sms-settings");
+      if (!isCurrentRead("sms", token)) return;
       setSmsForm({
         smsProvider: smsRes.data?.smsProvider || "",
         smsApiKey: "", // Gösterilmez
         smsApiSecret: "", // Gösterilmez
         smsSender: smsRes.data?.smsSender || "",
       });
-      // Otomatik tebrik ayarlarını yükle
+      setRead("sms", "ready");
+    } catch (e) {
+      failRead("sms", token, e, "Büro bilgileri yüklenemedi.");
+    }
+  };
+
+  const loadGreeting = async () => {
+    const token = beginRead("greeting");
+    try {
       const greetingRes = await api.get("/office/greeting-settings");
+      if (!isCurrentRead("greeting", token)) return;
       setGreetingForm({
         autoGreetingEnabled: greetingRes.data?.autoGreetingEnabled ?? true,
         autoGreetingTime: greetingRes.data?.autoGreetingTime || "09:00",
       });
+      setRead("greeting", "ready");
       // ACT-12: bugün gönderilecek tebrikler (önizleme) — WSMR-A4-AB-13: ayrı
-      // fonksiyona çıkarıldı, hata artık görünür (bkz. loadTodayGreetings).
+      // fonksiyona çıkarıldı, hata artık görünür (bkz. loadTodayGreetings). Yalnız tebrik ayarı okunabildiyse sorulur.
       loadTodayGreetings();
-      // Görev & eskalasyon ayarlarını yükle
+    } catch (e) {
+      failRead("greeting", token, e, "Büro bilgileri yüklenemedi.");
+    }
+  };
+
+  const loadEscalation = async () => {
+    // F-B01-03: her (yeniden) yüklemede alıcı-listesi bayrakları SIFIRLANIR; yükleme başarısız olursa veya yanıt
+    // liste alanı taşımazsa gizli alanlar eski state'ten payload'a GİRMEZ (yalnız taze yanıtta gelen liste kaydedilir).
+    setEscalationRecipientsLoaded({ manager: false, founder: false, teamLead: false });
+    const token = beginRead("escalation");
+    try {
       const escRes = await api.get("/office/escalation-settings");
+      if (!isCurrentRead("escalation", token)) return;
       const escData = escRes.data ?? {};
       setEscalationRecipientsLoaded({
         manager: Array.isArray(escData.escalationManagerLawyerIds),
@@ -299,13 +476,10 @@ function OfficeSettingsInner() {
         caseTaskTeamLeadDays: escRes.data?.caseTaskTeamLeadDays ?? 2,
         caseTaskManagerDays: escRes.data?.caseTaskManagerDays ?? 3,
       });
+      setRead("escalation", "ready");
     } catch (e) {
-      // PR-2A1 DEPENDENCY_FIXED: okuma hatasi YUTULMAZ; mutation refresh'i olarak
-      // cagrildiginda propagate edilir (aksi halde SUCCESS_STALE hic calismaz).
-      setLoadError(toActionErrorMessage(e, "Büro bilgileri yüklenemedi."));
-      if (opts?.propagateError) throw e;
+      failRead("escalation", token, e, "Büro bilgileri yüklenemedi.");
     }
-    finally { setLoading(false); }
   };
 
   const showSaved = () => { setSaved(true); setTimeout(() => setSaved(false), 2000); };
@@ -325,6 +499,7 @@ function OfficeSettingsInner() {
   };
 
   const handleSaveOffice = async () => {
+    if (writeBlocked("office")) return; // okuma başarılı değilse form ön-değeri sunucuya YAZILMAZ
     setSaving(true);
     setOfficeStatus(null); // yeni denemede önceki (özellikle error) temizlenir
     try {
@@ -343,6 +518,7 @@ function OfficeSettingsInner() {
   };
 
   const handleSaveSmtp = async () => {
+    if (writeBlocked("smtp")) return; // boş görünen alan "mevcut ayarı sil" niyeti DEĞİLDİR
     setSaving(true);
     try {
       const dataToSend = { ...smtpForm };
@@ -354,6 +530,7 @@ function OfficeSettingsInner() {
   };
 
   const handleSaveSms = async () => {
+    if (writeBlocked("sms")) return;
     setSaving(true);
     try {
       const dataToSend = { ...smsForm };
@@ -366,6 +543,7 @@ function OfficeSettingsInner() {
   };
 
   const handleSaveGreeting = async () => {
+    if (writeBlocked("greeting")) return;
     setSaving(true);
     try {
       await api.put("/office/greeting-settings", greetingForm);
@@ -389,6 +567,7 @@ function OfficeSettingsInner() {
   };
 
   const handleSaveEscalation = async () => {
+    if (writeBlocked("escalation")) return;
     setSaving(true);
     setEscalationStatus(null);
     try {
@@ -446,6 +625,7 @@ function OfficeSettingsInner() {
 
   // PR-U1: confirmSimilarNameUpdate=true → "Benzerliğe rağmen güncelle" (isim review'ını bilinçli geç).
   const submitLawyer = async (data: any, confirmSimilarNameUpdate: boolean) => {
+    if (writeBlocked("office")) return;
     setSaving(true);
     try {
       // PR-1 IBAN SÖZLEŞMESİ: backend (lawyer.service.ts CANDIDATE-H1) `iban` alanını
@@ -561,10 +741,25 @@ function OfficeSettingsInner() {
   };
 
   const handleSaveBankAccount = async (data: any) => {
-    // PR-1 IBAN sözleşmesi banka hesapları için de geçerlidir: boş/whitespace/maskeli
-    // IBAN `""` olarak GÖNDERİLMEZ — alan payload'dan tamamen çıkarılır (mevcut değer
-    // korunur), doluysa normalize edilir. Aynı sanitizer yeniden kullanılır.
-    const payload = sanitizeLawyerIbanPayload(data);
+    if (writeBlocked("office")) return;
+    // Düzenle MEVCUT hesabı günceller, YENİ hesap oluşturmaz: düzenleme kipinde kimlik yoksa istek ÇIKMAZ
+    // (eski kusur: kimliksiz satırda kaydet oluşturma dalına düşüp görünmez bir hesap daha ekliyordu).
+    if (editingBank && !editingBank.id) {
+      setBankActionError("Hesap kimliği okunamadı. Kayıt YAPILMADI; sayfayı yenileyip tekrar deneyin.");
+      return;
+    }
+    // PR-1 IBAN sözleşmesi: boş / maskeli IBAN GÖNDERİLMEZ. Düzenlemede YALNIZ değişen alan gider (okuma yüzeyi banka adı /
+    // şube / hesap sahibini bilmez; boş = değişmedi) — tam form gönderimi kayıtlı şube ve hesap sahibini siliyordu.
+    const payload = editingBank
+      ? buildBankAccountUpdatePayload(editingBank, data)
+      : buildBankAccountCreatePayload(data);
+    if (editingBank && Object.keys(payload).length === 0) {
+      // Değişen alan yok: sunucuya gidecek bir şey yok.
+      setShowBankModal(false);
+      setEditingBank(null);
+      setBankActionError(null);
+      return;
+    }
     const targetId = editingBank?.id ?? null;
     // Kilit işlem kapsamına göre: update → kararlı hesap kimliği, create → ofis yüzeyi.
     const lockKey = targetId ? `office:bank-account:save:${targetId}` : "office:bank-account:create";
@@ -633,6 +828,7 @@ function OfficeSettingsInner() {
   // PR-S/PR-U3: benzer-isim review. create: forceCreate ("Ayrı kişi olarak kaydet").
   // update: confirmSimilarNameUpdate ("Benzerliğe rağmen güncelle").
   const submitStaff = async (data: any, opts: { forceCreate?: boolean; confirmSimilarNameUpdate?: boolean } = {}) => {
+    if (writeBlocked("staff")) return;
     setSaving(true);
     try {
       if (editingStaff?.id) await api.put(`/staff/${editingStaff.id}`, { ...data, confirmSimilarNameUpdate: opts.confirmSimilarNameUpdate });
@@ -752,6 +948,9 @@ function OfficeSettingsInner() {
             <div className="flex-1 min-w-0 bg-blue-50/30 border border-slate-200 border-t-[3px] border-t-blue-500 rounded-2xl p-4 shadow-sm">
               <p className="flex items-center gap-2 text-[12px] font-semibold tracking-wide text-blue-800 mb-3"><span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500" />BÜRO &amp; BANKA</p>
               <div className="flex gap-4">
+                {readState.office !== "ready" ? (
+                  <BlockedCard icon={<Building2 className="h-4 w-4 text-blue-600" />} title="Büro Bilgileri" borderClass="border-blue-200" iconBgClass="bg-blue-100/70" state={readState.office} onRetry={() => retryRead("office")} />
+                ) : (
                 <button onClick={() => goSection("office")} className="group flex-1 min-w-0 text-left bg-white border border-blue-200 rounded-xl overflow-hidden hover:border-blue-400 hover:shadow-md transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
                   <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-stone-200 bg-stone-50/60">
                     <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-blue-100/70"><Building2 className="h-4 w-4 text-blue-600" /></span>
@@ -769,23 +968,28 @@ function OfficeSettingsInner() {
                     <span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-blue-700">Düzenle <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition" /></span>
                   </div>
                 </button>
+                )}
                 <div className="flex-1 min-w-0 bg-white border border-blue-200 rounded-xl overflow-hidden flex flex-col">
                   <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-stone-200 bg-stone-50/60">
                     <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-blue-100/70"><CreditCard className="h-4 w-4 text-blue-600" /></span>
                     <span className="text-[14px] font-semibold text-gray-800">Banka Hesapları</span>
-                    {(office?.bankAccounts?.length ?? 0) > 0 && <span className="text-[11px] text-stone-600 bg-stone-100 rounded-full px-2 py-0.5">{office?.bankAccounts?.length}</span>}
-                    <button onClick={() => { setEditingBank(null); setShowBankModal(true); }} className="ml-auto inline-flex items-center gap-1 text-[13px] font-medium text-blue-700"><Plus className="h-3.5 w-3.5" />Ekle</button>
+                    {readState.office === "ready" && (office?.bankAccounts?.length ?? 0) > 0 && <span className="text-[11px] text-stone-600 bg-stone-100 rounded-full px-2 py-0.5">{office?.bankAccounts?.length}</span>}
+                    <button onClick={() => { setEditingBank(null); setShowBankModal(true); }} disabled={readState.office !== "ready"} className="ml-auto inline-flex items-center gap-1 text-[13px] font-medium text-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"><Plus className="h-3.5 w-3.5" />Ekle</button>
                   </div>
+                  {readState.office !== "ready" ? (
+                  <div className="flex-1 px-4 py-3"><ReadNotice state={readState.office} onRetry={() => retryRead("office")} /></div>
+                  ) : (
                   <button onClick={() => goSection("bank")} className="flex-1 text-left px-4 py-3 hover:bg-blue-50/40 transition cursor-pointer">
                     {office?.bankAccounts?.[0]
                       ? <div className="space-y-1.5">
-                          <div className="flex items-center gap-1.5 text-[13px] font-medium text-gray-900"><Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" />{office.bankAccounts[0].bankName}</div>
-                          <div className="text-[12px] text-stone-500 font-mono">IBAN ···{office.bankAccounts[0].iban?.slice(-6)}</div>
+                          <div className="flex items-center gap-1.5 text-[13px] font-medium text-gray-900">{office.bankAccounts[0].isDefault && <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" />}{office.bankAccounts[0].bankName || "Banka hesabı"}</div>
+                          <div className="text-[12px] text-stone-500 font-mono">IBAN {office.bankAccounts[0].iban ?? "—"}</div>
                           <div className="text-[12px] text-stone-500">{office.bankAccounts.length} hesap</div>
                         </div>
                       : <span className="text-[13px] text-stone-400">Hesap yok</span>}
                   </button>
-                  <button onClick={() => goSection("bank")} className="group flex items-center justify-between px-4 py-2.5 border-t border-stone-200 bg-stone-50/40 text-left"><span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-blue-700">Ayrıntıları aç <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition" /></span></button>
+                  )}
+                  <button onClick={() => goSection("bank")} disabled={readState.office !== "ready"} className="group flex items-center justify-between px-4 py-2.5 border-t border-stone-200 bg-stone-50/40 text-left disabled:opacity-40 disabled:cursor-not-allowed"><span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-blue-700">Ayrıntıları aç <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition" /></span></button>
                 </div>
               </div>
             </div>
@@ -793,6 +997,9 @@ function OfficeSettingsInner() {
             <div className="flex-1 min-w-0 bg-teal-50/30 border border-slate-200 border-t-[3px] border-t-teal-500 rounded-2xl p-4 shadow-sm">
               <p className="flex items-center gap-2 text-[12px] font-semibold tracking-wide text-teal-800 mb-3"><span className="inline-block w-1.5 h-1.5 rounded-full bg-teal-500" />BİLDİRİM KANALLARI</p>
               <div className="flex gap-4">
+                {readState.smtp !== "ready" ? (
+                  <BlockedCard icon={<Mail className="h-4 w-4 text-teal-600" />} title="SMTP" borderClass="border-teal-200" iconBgClass="bg-teal-100/70" state={readState.smtp} onRetry={() => retryRead("smtp")} />
+                ) : (
                 <button onClick={() => goSection("smtp")} className="group flex-1 min-w-0 text-left bg-white border border-teal-200 rounded-xl overflow-hidden hover:border-teal-400 hover:shadow-md transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300">
                   <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-stone-200 bg-stone-50/60">
                     <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-teal-100/70"><Mail className="h-4 w-4 text-teal-600" /></span>
@@ -805,6 +1012,10 @@ function OfficeSettingsInner() {
                   </div>
                   <div className="flex items-center justify-end px-4 py-2.5 border-t border-stone-200 bg-stone-50/40"><span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-teal-700">Düzenle · Test et <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition" /></span></div>
                 </button>
+                )}
+                {readState.sms !== "ready" ? (
+                  <BlockedCard icon={<MessageSquare className="h-4 w-4 text-teal-600" />} title="SMS" borderClass="border-teal-200" iconBgClass="bg-teal-100/70" state={readState.sms} onRetry={() => retryRead("sms")} />
+                ) : (
                 <button onClick={() => goSection("sms")} className="group flex-1 min-w-0 text-left bg-white border border-teal-200 rounded-xl overflow-hidden hover:border-teal-400 hover:shadow-md transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300">
                   <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-stone-200 bg-stone-50/60">
                     <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-teal-100/70"><MessageSquare className="h-4 w-4 text-teal-600" /></span>
@@ -817,6 +1028,7 @@ function OfficeSettingsInner() {
                   </div>
                   <div className="flex items-center justify-end px-4 py-2.5 border-t border-stone-200 bg-stone-50/40"><span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-teal-700">Düzenle · Test et <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition" /></span></div>
                 </button>
+                )}
               </div>
             </div>
           </div>
@@ -828,40 +1040,45 @@ function OfficeSettingsInner() {
                 <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-stone-200 bg-stone-50/60">
                   <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-indigo-100/70"><Users className="h-4 w-4 text-indigo-600" /></span>
                   <span className="text-[14px] font-semibold text-gray-800">Avukatlar</span>
-                  {lawyers.length > 0 && <span className="text-[11px] text-stone-600 bg-stone-100 rounded-full px-2 py-0.5">{lawyers.length}</span>}
-                  <button onClick={() => { setEditingLawyer(null); setShowLawyerModal(true); }} className="ml-auto inline-flex items-center gap-1 text-[13px] font-medium text-indigo-700"><Plus className="h-3.5 w-3.5" />Ekle</button>
+                  {readState.office === "ready" && lawyers.length > 0 && <span className="text-[11px] text-stone-600 bg-stone-100 rounded-full px-2 py-0.5">{lawyers.length}</span>}
+                  <button onClick={() => { setEditingLawyer(null); setShowLawyerModal(true); }} disabled={readState.office !== "ready"} className="ml-auto inline-flex items-center gap-1 text-[13px] font-medium text-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"><Plus className="h-3.5 w-3.5" />Ekle</button>
                 </div>
-                {lawyerDist && <div className="px-4 py-2 text-[12px] text-stone-500 border-b border-stone-100">{lawyerDist}</div>}
+                {readState.office === "ready" && lawyerDist && <div className="px-4 py-2 text-[12px] text-stone-500 border-b border-stone-100">{lawyerDist}</div>}
                 <div className="max-h-[300px] overflow-auto">
-                  {lawyers.map((l) => { const rl = lawyerRankLabel(l); return (
+                  {readState.office !== "ready" && <div className="px-4 py-6"><ReadNotice state={readState.office} onRetry={() => retryRead("office")} /></div>}
+                  {readState.office === "ready" && lawyers.map((l) => { const rl = lawyerRankLabel(l); return (
                     <button key={l.id} onClick={() => { setEditingLawyer(l); setShowLawyerModal(true); }} className="w-full text-left flex items-center gap-2 px-4 py-2 border-b border-stone-100 hover:bg-indigo-50/40 transition">
                       <span className="text-[13px] font-medium text-gray-900 truncate flex-1">{(l as any).title || "Av."} {l.name} {l.surname}</span>
                       <span className={`text-[11px] font-medium rounded-full px-2 py-0.5 ${roleBadgeClass(rl)}`}>{rl}</span>
                     </button>
                   ); })}
-                  {lawyers.length === 0 && <p className="text-[13px] text-stone-400 text-center py-6">Avukat yok</p>}
+                  {readState.office === "ready" && lawyers.length === 0 && <p className="text-[13px] text-stone-400 text-center py-6">Avukat yok</p>}
                 </div>
-                <button onClick={() => goSection("lawyers")} className="group flex items-center justify-between text-left px-4 py-2.5 border-t border-stone-200 bg-stone-50/40"><span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-indigo-700">Ayrıntıları aç <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition" /></span></button>
+                <button onClick={() => goSection("lawyers")} disabled={readState.office !== "ready"} className="group flex items-center justify-between text-left px-4 py-2.5 border-t border-stone-200 bg-stone-50/40 disabled:opacity-40 disabled:cursor-not-allowed"><span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-indigo-700">Ayrıntıları aç <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition" /></span></button>
               </div>
               <div className="flex-1 min-w-0 bg-white border border-indigo-200 rounded-xl overflow-hidden flex flex-col">
                 <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-stone-200 bg-stone-50/60">
                   <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-indigo-100/70"><Users className="h-4 w-4 text-indigo-600" /></span>
                   <span className="text-[14px] font-semibold text-gray-800">Personel</span>
-                  {staffList.length > 0 && <span className="text-[11px] text-stone-600 bg-stone-100 rounded-full px-2 py-0.5">{staffList.length}</span>}
-                  <button onClick={() => { setEditingStaff(null); setShowStaffModal(true); }} className="ml-auto inline-flex items-center gap-1 text-[13px] font-medium text-indigo-700"><Plus className="h-3.5 w-3.5" />Ekle</button>
+                  {readState.staff === "ready" && staffList.length > 0 && <span className="text-[11px] text-stone-600 bg-stone-100 rounded-full px-2 py-0.5">{staffList.length}</span>}
+                  <button onClick={() => { setEditingStaff(null); setShowStaffModal(true); }} disabled={readState.staff !== "ready"} className="ml-auto inline-flex items-center gap-1 text-[13px] font-medium text-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"><Plus className="h-3.5 w-3.5" />Ekle</button>
                 </div>
-                {staffDist && <div className="px-4 py-2 text-[12px] text-stone-500 border-b border-stone-100">{staffDist}</div>}
+                {readState.staff === "ready" && staffDist && <div className="px-4 py-2 text-[12px] text-stone-500 border-b border-stone-100">{staffDist}</div>}
                 <div className="max-h-[300px] overflow-auto">
-                  {staffList.map((s) => { const rl = getStaffTypeLabel(s.staffType); return (
+                  {readState.staff !== "ready" && <div className="px-4 py-6"><ReadNotice state={readState.staff} onRetry={() => retryRead("staff")} /></div>}
+                  {readState.staff === "ready" && staffList.map((s) => { const rl = getStaffTypeLabel(s.staffType); return (
                     <button key={s.id} onClick={() => { setEditingStaff(s); setShowStaffModal(true); }} className="w-full text-left flex items-center gap-2 px-4 py-2 border-b border-stone-100 hover:bg-indigo-50/40 transition">
                       <span className="text-[13px] font-medium text-gray-900 truncate flex-1">{s.firstName} {s.lastName}</span>
                       <span className={`text-[11px] font-medium rounded-full px-2 py-0.5 ${roleBadgeClass(rl)}`}>{rl}</span>
                     </button>
                   ); })}
-                  {staffList.length === 0 && <p className="text-[13px] text-stone-400 text-center py-6">Personel yok</p>}
+                  {readState.staff === "ready" && staffList.length === 0 && <p className="text-[13px] text-stone-400 text-center py-6">Personel yok</p>}
                 </div>
-                <button onClick={() => goSection("staff")} className="group flex items-center justify-between text-left px-4 py-2.5 border-t border-stone-200 bg-stone-50/40"><span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-indigo-700">Ayrıntıları aç <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition" /></span></button>
+                <button onClick={() => goSection("staff")} disabled={readState.staff !== "ready"} className="group flex items-center justify-between text-left px-4 py-2.5 border-t border-stone-200 bg-stone-50/40 disabled:opacity-40 disabled:cursor-not-allowed"><span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-indigo-700">Ayrıntıları aç <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition" /></span></button>
               </div>
+              {readState.escalation !== "ready" ? (
+                <BlockedCard icon={<Clock className="h-4 w-4 text-indigo-600" />} title="Görev & Eskalasyon" borderClass="border-indigo-200" iconBgClass="bg-indigo-100/70" state={readState.escalation} onRetry={() => retryRead("escalation")} />
+              ) : (
               <button onClick={() => goSection("escalation")} className="group flex-1 min-w-0 text-left bg-white border border-indigo-200 rounded-xl overflow-hidden hover:border-indigo-400 hover:shadow-md transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 flex flex-col">
                 <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-stone-200 bg-stone-50/60">
                   <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-indigo-100/70"><Clock className="h-4 w-4 text-indigo-600" /></span>
@@ -877,6 +1094,7 @@ function OfficeSettingsInner() {
                 </div>
                 <div className="flex items-center justify-end px-4 py-2.5 border-t border-stone-200 bg-stone-50/40"><span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-indigo-700">Görev ağacını aç <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition" /></span></div>
               </button>
+              )}
             </div>
           </div>
         </div>
@@ -885,6 +1103,13 @@ function OfficeSettingsInner() {
       {/* A-3a: aktif bölüm → sağ drawer (içerik = mevcut bölüm, A-2 workbench karakteri) */}
       {drawerSection && (
         <SettingsDrawer title={DRAWER_TITLE[drawerSection]} onClose={closeDrawer}>
+        {/* Bu bölümü besleyen okuma `ready` değilse (yükleniyor / yetki yok / hata) form ve Ekle / Kaydet HİÇ çizilmez:
+            ön-değerler kayıtlı ayar gibi görünmez ve sunucuya geri yazılamaz. Derin bağlantı (?section=smtp) için de geçerlidir. */}
+        {readState[SECTION_READ_KEY[drawerSection]] !== "ready" ? (
+          <div className="px-5 py-6">
+            <ReadNotice state={readState[SECTION_READ_KEY[drawerSection]]} onRetry={() => retryRead(SECTION_READ_KEY[drawerSection])} />
+          </div>
+        ) : (<>
         {drawerSection === "office" && (
         <div className="h-full flex flex-col bg-white">
           <WorkbenchHeader
@@ -986,13 +1211,13 @@ function OfficeSettingsInner() {
                     <div className="flex items-center gap-2 min-w-0">
                       {acc.isDefault && <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500 shrink-0" />}
                       <div className="min-w-0">
-                        <p className="text-[13px] font-semibold text-gray-900 truncate">{acc.bankName}</p>
+                        <p className="text-[13px] font-semibold text-gray-900 truncate">{acc.bankName || "Banka hesabı"}</p>
                         <p className="text-[11px] text-gray-500 font-mono truncate">{acc.iban}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       <button onClick={() => { setEditingBank(acc); setShowBankModal(true); }} className="p-1.5 hover:bg-blue-100 rounded-md" title="Düzenle"><Pencil className="h-3.5 w-3.5 text-gray-500" /></button>
-                      <button type="button" onClick={() => handleDeleteBankAccount(acc.id)} disabled={staleLockedIds.includes(`bank:${acc.id}`)} aria-label={`${acc.bankName} banka hesabını sil`} className="p-1.5 hover:bg-red-100 rounded-md disabled:opacity-40" title="Sil"><Trash2 className="h-3.5 w-3.5 text-red-500" /></button>
+                      <button type="button" onClick={() => handleDeleteBankAccount(acc.id)} disabled={staleLockedIds.includes(`bank:${acc.id}`)} aria-label={`${bankAccountTitle(acc)} banka hesabını sil`} className="p-1.5 hover:bg-red-100 rounded-md disabled:opacity-40" title="Sil"><Trash2 className="h-3.5 w-3.5 text-red-500" /></button>
                     </div>
                   </div>
                 ))}
@@ -1491,6 +1716,7 @@ function OfficeSettingsInner() {
           </div>
         </div>
         )}
+        </>)}
         </SettingsDrawer>
       )}
 
@@ -1868,13 +2094,15 @@ function LawyerModal({ lawyer, permissionStatus = null, onSave, onClose, saving 
 }
 
 // Banka Modal
-function BankModal({ account, onSave, onClose, saving, errorMessage }: { account: any; onSave: (data: any) => void; onClose: () => void; saving: boolean; errorMessage?: string | null }) {
+function BankModal({ account, onSave, onClose, saving, errorMessage }: { account: BankAccount | null; onSave: (data: any) => void; onClose: () => void; saving: boolean; errorMessage?: string | null }) {
   const [form, setForm] = useState({
     bankName: account?.bankName || "", branchName: account?.branchName || "",
     iban: account?.iban || "", accountName: account?.accountName || "", isDefault: account?.isDefault || false,
   });
 
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave(form); };
+  // Bilinmeyen (okuma yüzeyinde olmayan) alan düzenlemede yer tutucuyla gösterilir; boş bırakmak değeri silmez.
+  const editHint = account ? "Değiştirmek için yazın" : undefined;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -1887,11 +2115,12 @@ function BankModal({ account, onSave, onClose, saving, errorMessage }: { account
           {/* PR-2A1: kaydetme hatasi MODAL ICINDE gorunur; modal acik ve form korunur. */}
           <ActionError message={errorMessage} />
           <div className="grid grid-cols-2 gap-2">
-            <div><label>Banka *</label><input value={form.bankName} onChange={e => setForm({...form, bankName: e.target.value})} required className="w-full border rounded px-2 py-1" /></div>
-            <div><label>Şube</label><input value={form.branchName} onChange={e => setForm({...form, branchName: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
+            <div><label>{account ? "Banka" : "Banka *"}</label><input value={form.bankName} onChange={e => setForm({...form, bankName: e.target.value})} required={!account} placeholder={editHint} className="w-full border rounded px-2 py-1" /></div>
+            <div><label>Şube</label><input value={form.branchName} onChange={e => setForm({...form, branchName: e.target.value})} placeholder={editHint} className="w-full border rounded px-2 py-1" /></div>
           </div>
-          <div><label>IBAN *</label><input value={form.iban} onChange={e => setForm({...form, iban: e.target.value.toUpperCase().replace(/\s/g, "")})} required className="w-full border rounded px-2 py-1 font-mono" /></div>
-          <div><label>Hesap Sahibi</label><input value={form.accountName} onChange={e => setForm({...form, accountName: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
+          <div><label>{account ? "IBAN" : "IBAN *"}</label><input value={form.iban} onChange={e => setForm({...form, iban: e.target.value.toUpperCase().replace(/\s/g, "")})} required={!account} className="w-full border rounded px-2 py-1 font-mono" /></div>
+          <div><label>Hesap Sahibi</label><input value={form.accountName} onChange={e => setForm({...form, accountName: e.target.value})} placeholder={editHint} className="w-full border rounded px-2 py-1" /></div>
+          {account && <p data-testid="bank-edit-hint" className="text-[11px] text-gray-500">Boş bıraktığınız alanlar değişmez. IBAN maskeli gösterilir; değiştirmek için tam IBAN girin.</p>}
           <label className="flex items-center gap-1"><input type="checkbox" checked={form.isDefault} onChange={e => setForm({...form, isDefault: e.target.checked})} />Varsayılan hesap</label>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="px-3 py-1 border rounded">İptal</button>

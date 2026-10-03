@@ -37,12 +37,24 @@ const tahsilat = (id: string, amount: number, currency?: string | null, extra: P
   ...extra,
 });
 
-function openFinance(financeItems: Item[], caseCurrency?: string | null) {
+/**
+ * `extra`: senaryonun gerektirdiği ek girdiler (ör. yapılan masraf kaynağının bağlı olduğu durum).
+ * Tahsilat ve masraf talebi kaynakları OKUNMUŞ (READY) verilir: bu dosya para birimi gösterimini ölçer; okunmamış /
+ * okunamamış kaynağın gösterimi `operation-deck-finance-source-status.test.tsx` içindedir.
+ */
+function openFinance(
+  financeItems: Item[],
+  caseCurrency?: string | null,
+  extra: Partial<React.ComponentProps<typeof OperationDeck>> = {},
+) {
   render(
     <OperationDeck
       caseId="case-1"
       financeItems={financeItems}
+      collectionsSource="READY"
+      expenseRequestsSource="READY"
       {...(caseCurrency === undefined ? {} : { caseCurrency })}
+      {...extra}
     />,
   );
   fireEvent.click(screen.getByRole("button", { name: /Finans/ }));
@@ -107,7 +119,8 @@ describe("Finans sekmesi — tahsilat tutarı kaydın kendi para birimiyle", () 
 
     expect(total()).toBe("0 EUR");
     expect(screen.queryByTestId("finance-collection-held")).toBeNull();
-    expect(screen.getByText("Henüz işlem yok")).toBeInTheDocument();
+    // Masraf hareketleri bu ekrana bağlı değilken boş liste yalnız tahsilat için konuşur
+    expect(screen.getByText("Henüz tahsilat yok")).toBeInTheDocument();
   });
 
   it("yalnız bekleyen tahsilat varken mahsup edilmiş toplam (0) dosyanın para birimiyle yazılır", () => {
@@ -185,6 +198,9 @@ describe("Finans sekmesi — farklı para birimleri tek toplamda birleştirilmez
 });
 
 describe("Finans sekmesi — masraf tutarları TL tarifesindendir (etiket değişmez)", () => {
+  // Yapılan masraf satırları yalnız kaynağı bağlıyken (READY) yazılır; bu senaryolarda kaynak bağlıdır.
+  const ACTUAL_EXPENSE_CONNECTED = { actualExpenseSource: "READY" as const };
+
   it("USD dosyada yapılan masraf ve masraf talebi '₺' ile yazılır; tahsilat USD ile", () => {
     openFinance(
       [
@@ -193,11 +209,17 @@ describe("Finans sekmesi — masraf tutarları TL tarifesindendir (etiket deği�
         { id: "t1", type: "MASRAF_TALEP", amount: 500, date: "2026-03-03", description: "Açılış masrafı", paidAmount: 200 },
       ],
       "USD",
+      ACTUAL_EXPENSE_CONNECTED,
     );
 
     expect(total()).toBe("1.000 USD");
     const cards = Array.from(collectionCard().parentElement?.children ?? []).map((card) => norm(card.textContent));
-    expect(cards).toEqual(["Tahsilat1.000 USD", "Yapılan Masraf300 ₺", "Masraf Talebi500 ₺Ödenen: 200 ₺", "Müvekkil Bakiye0 ₺"]);
+    expect(cards).toEqual([
+      "Tahsilat1.000 USD",
+      "Yapılan Masraf300 ₺",
+      "Masraf Talebi500 ₺Ödenen: 200 ₺",
+      "Müvekkil BakiyeBu bilgi henüz bu ekrana bağlanmadı",
+    ]);
     expect(recentRows()).toEqual(["Tahsilat c1 | +1.000 USD", "Tebligat gideri | -300 ₺"]);
   });
 
@@ -208,6 +230,7 @@ describe("Finans sekmesi — masraf tutarları TL tarifesindendir (etiket deği�
         { id: "m1", type: "MASRAF_YAPILAN", amount: 300, date: "2026-03-02", description: "Tebligat gideri", currency: "EUR" },
       ],
       "USD",
+      ACTUAL_EXPENSE_CONNECTED,
     );
 
     expect(total()).toBe("1.000 USD");
@@ -222,7 +245,14 @@ describe("Finans sekmesi — TL dosyada gösterim DEĞİŞMEDİ (düzeltme önce
     expect(total()).toBe("1.000 ₺");
     expect(recentRows()).toEqual(["Tahsilat c1 | +1.000 ₺"]);
     const cards = Array.from(collectionCard().parentElement?.children ?? []).map((card) => norm(card.textContent));
-    expect(cards).toEqual(["Tahsilat1.000 ₺", "Yapılan Masraf0 ₺", "Masraf Talebi0 ₺Ödenen: 0 ₺", "Müvekkil Bakiye0 ₺"]);
+    // Tahsilat ve Masraf Talebi kartları önceki metinle aynı. Veri kaynağına bağlı olmayan iki kart artık "0 ₺" yazmaz
+    // (bkz. operation-deck-unconnected-sources.test.tsx).
+    expect(cards).toEqual([
+      "Tahsilat1.000 ₺",
+      "Yapılan MasrafBu bilgi henüz bu ekrana bağlanmadı",
+      "Masraf Talebi0 ₺Ödenen: 0 ₺",
+      "Müvekkil BakiyeBu bilgi henüz bu ekrana bağlanmadı",
+    ]);
   });
 
   it("bekleyen TRY tahsilat: önceki metinle aynı", () => {

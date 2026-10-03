@@ -6,6 +6,8 @@
  * widen a projection without an owner decision.
  */
 
+import { maskIban } from '../../common/pii-mask.util';
+
 export type F01ProjectionAccess = 'PUBLIC_S0_ONLY' | 'AUTHORIZED_S0_S1';
 
 const OFFICE_S0_FIELDS = new Set([
@@ -57,7 +59,13 @@ const OFFICE_S1_FIELDS = new Set([
   'updatedAt',
 ]);
 
-const BANK_ACCOUNT_S1_FIELDS = new Set(['officeId']);
+/**
+ * Banka hesabı (owner kararı 2026-10-03, madde 6 — okuma yüzeyi B): yetkili aktöre hesap KİMLİĞİ + varsayılan
+ * bilgisi + MASKELİ IBAN. Banka adı / şube / hesap sahibi / tam IBAN bu yüzeyde YOKTUR; yeni geniş rol yetkisi
+ * YOKTUR (yetkili küme zaten F01 okuma aktörleridir; yetkisiz aktöre banka hesabı alanı HİÇ dönmez).
+ * Maskeli IBAN okuma değeridir: yazma uçları maskeli / boş IBAN'ı REDDEDER (dto/office-bank-account.dto.ts).
+ */
+const BANK_ACCOUNT_S1_FIELDS = new Set(['officeId', 'id', 'isDefault']);
 
 const LAWYER_S0_FIELDS = new Set(['barNumber', 'barCity', 'tbbNo', 'barName']);
 
@@ -146,9 +154,14 @@ export function projectF01Office<T extends Record<string, unknown>>(
     out.lawyers = row.lawyers.map((lawyer) => projectF01Lawyer(lawyer, access));
   }
   if (Array.isArray(row.bankAccounts)) {
-    out.bankAccounts = row.bankAccounts.map((account) =>
-      projectFields(account, new Set(), BANK_ACCOUNT_S1_FIELDS, access),
-    );
+    out.bankAccounts = row.bankAccounts.map((account) => {
+      const projected = projectFields(account, new Set(), BANK_ACCOUNT_S1_FIELDS, access) as Record<string, unknown>;
+      // Maskeleme projeksiyonun parçasıdır: ham IBAN bu fonksiyondan ASLA çıkmaz.
+      if (access === 'AUTHORIZED_S0_S1' && typeof account.iban === 'string') {
+        projected.iban = maskIban(account.iban);
+      }
+      return projected;
+    });
   }
   return out;
 }

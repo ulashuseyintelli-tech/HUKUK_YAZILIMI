@@ -186,6 +186,17 @@ src/modules/client-statement/__tests__/w4-cron-packaging-and-boot.spec.ts
 src/modules/client-statement/client-statement-monthly-delivery-manual.controller.spec.ts
 src/modules/client-statement/client-statement.service.spec.ts
 #
+#   E1 — MUVEKKIL EKSTRESI KAYNAK PARA BIRIMI SINIRI (owner GO 2026-10-02 "G1 + E1"; Genel Cari + ekstre dar eki):
+#     Ekstre ureticileri kaynak satirlarin para birimine bakmadan topluyor ve belgeyi sabit TL damgaliyordu (380 TL avans + 700 USD
+#     alacak + 300 USD mahsup -> "Kapanis 1.380,00"). Kural: ekstreye girecek kaynaklardan biri TL disi / belirlenemeyen para birimindeyse
+#     uretim (dosya + genel + yenileme + aylik kosu) HICBIR kalici kayit yazilmadan acik kodla reddedilir; denetim Case.currency'ye degil
+#     kaynak satirlara bakar. Saf siniflandirma + servis (prisma mock) + aylik kosu atlamasi; DB yok. Duzeltmesiz servis kodu ile yeni
+#     testlerden 25'i DUSER (RED kanitlandi: 24 E1 servis testi + 1 aylik kosu testi); mevcut ekstre spec'leri duzeltmeli kodla gecer
+#     (yalniz sahte prisma modellerine groupBy eklendi). Gercek HTTP + disposable DB kabulu db/domain-integration manifestinde.
+#     Dovizli ekstre, para birimi basina ayri ekstre, kur ve cevirme owner kararidir ve HALA ACIKTIR.
+src/modules/client-statement/__tests__/client-statement-currency-guard.spec.ts
+src/modules/client-statement/__tests__/client-statement-currency-e1.spec.ts
+#
 #   ACCOUNTING-JOURNAL surec-ici Nest HTTP smoke spec'leri (owner GO 2026-09-17 "ACCOUNTING-JOURNAL / 4 HTTP SMOKE SPEC'IN CI BAGLAMASI"):
 #     accounting-journal modulunun 18 spec'inin tamami hicbir manifestte degildi; bu 4 HTTP smoke Nest
 #     seviyesinde (Test.createTestingModule + INestApplication + supertest + JWT/Passport; servisler mock,
@@ -234,6 +245,14 @@ src/modules/expense-request/expense-calculator.spec.ts
 src/modules/expense-request/expense-payment-reversal-contract.service.spec.ts
 src/modules/expense-request/expense-payment-reversal-runtime.service.spec.ts
 src/modules/expense-request/expense-request.spec.ts
+#   Masraf kapisi (ExpenseGateService) ve paket hesabi (CostPackageService.computeExpenseRequest) — buro (tenant) siniri,
+#     saf birim (DB yok): dosya sahipligi dosya kimligi + cagiranin burosu ile TEK sorguda aranir, bulunamazsa "Takip
+#     bulunamadi" ve talep / paket okunmaz; bos ya da metin olmayan buro / dosya kimliginde sorguya HIC gidilmez (Prisma
+#     tanimsiz suzgeci yok sayar, govdeden gelen nesne suzgec isleci olurdu); talep sorgulari buro suzgeci tasir; paket
+#     cagiranin burosuyla aranir. Gercek HTTP + PostgreSQL kaniti db/core-lifecycle'da (expense-tenant-boundary). Duzeltmesiz
+#     servis koduyla 51 testin 49'u DUSER (RED kanitlandi); gecen 2 test mevcut davranisi sabitler.
+src/modules/expense-request/__tests__/expense-gate-tenant-scope.spec.ts
+src/modules/cost-package/__tests__/cost-package-compute-tenant-scope.spec.ts
 
 # ── TOPLU CI KAPATMA (owner EK TALIMAT 2026-09-18 "TOPLU CI KAPATMA"; olculen main 1736a4e6) ──
 #   apps/api secim disi spec'lerin toplu baglanmasi. Siniflandirma AMPIRIK: her spec DB env
@@ -315,9 +334,33 @@ src/modules/case/__tests__/case-calculation-summary-currency.spec.ts
 #   matrahi olusturan anapara kalemleri TL degilse HESAPLANAMAZ; tutar, kur ya da toplam uretilmez, neden ve gereken bilgi
 #   bildirilir. Dovizli takipte pesin harcin hangi tutar ve kur uzerinden hesaplanacagi owner karari.
 src/modules/expense-request/__tests__/opening-expense-basis.spec.ts
+# Acilis masraf talebi — istenen masraf e-postasi GONDERILEMEDI sonucu, saf karar + servis (DB ve SMTP yok). Olculen kusur
+#   (main 6681b1d5): e-posta gonderilemediginde talep PENDING kaliyor, kullaniciya hicbir sey gosterilmiyor, gunluk "Masraf
+#   talebi maili gonderildi" yaziyordu. Owner karari (2026-10-01): neden kullaniciya gosterilir (acilis yaniti, dosya sayfasi,
+#   gorev). Bu test nedenin NASIL adlandirildigini sabitler: kapali kapi / dagitim basarisizligi kaydindan guvenli neden kodu
+#   (ham saglayici metni OKUNMAZ / YAZILMAZ; taninmayan kayit tahmin edilmez), her neden icin cumle + gereken bilgi + gorev
+#   basligi, teslimi belirsiz nedenlerde "gonderilmedi" DENMEZ, talep basina TEK takip gorevi, durum ucunda eklemeli alan
+#   yalniz gonderilmemis talebin SON denemesi basarisizsa. E-postanin gonderilme kurallari (owner sozlesmesi W4) DEGISMEZ.
+src/modules/expense-request/__tests__/opening-expense-email-outcome.spec.ts
+# Dosya acilisi — otomatik acilis masraf akisinin SONUCU (birim; DB ve SMTP yok). E-posta istenmediyse akis ve gunluk
+#   bugunku gibi kalir, sonuc uretilmez. Istendi ve gonderildiyse sonuc uretilmez, gunluk bugunku iki satiri yazar.
+#   Gonderilemediyse neden son deneme kaydindan okunur, takip gorevi yazilir, gunluk "GONDERILEMEDI (neden: <kod>)" yazar ve
+#   "gonderildi" YAZMAZ. Talep olusturulamadiysa e-posta denenmez ve bu bildirilir. Akis hicbir dalda firlatmaz (dosya
+#   acilisi bozulmaz). Yanit e-posta denemesini en cok 10 sn bekler; sure dolarsa "sonuc henuz belli degil" doner ve
+#   zamanlayici birakilmaz.
+src/modules/case/__tests__/case-open-expense-email-outcome.spec.ts
 # Alacak ozeti (GET /claim-items/case/:caseId/summary) para birimi baglami — saf yardimci + servis (DB yok; cevirme ve capraz
 #   para birimi toplami YOK): etkin kalemler tek para birimindeyse tek toplam gecerli; birden fazla para birimi ya da para
 #   birimi kayitli olmayan kalem varsa tek toplam GOSTERILEMEZ, toplamlar para birimi bazinda. Yanitin mevcut alanlari
 #   (currency / items / totals) DEGISMEZ: her kalem turu icin karakterizasyon duzeltmesiz servis koduyla da gecer; blok
 #   iddialari duzeltmesiz kodla DUSER (RED kanitlandi). Kalem basina para birimi kurali ve kur owner karari.
 src/modules/claim-item/__tests__/claim-summary-currency.spec.ts
+# Masraf onizlemesi (POST /fee-engine/preview) para birimi baglami — sihirbaz alacak kalemi formundaki "Hesap Ozeti" TL
+#   tarifesi tutarlarini kalemin para birimi simgesiyle basiyor, doviz anaparayla tek toplamda birlestiriyordu (olculdu;
+#   istek para birimi tasimiyordu, yanit USD / EUR / TRY icin ayni). Saf yardimci + gercek Nest HTTP (DB yok; hesap ve
+#   cevirme YOK): istek `currency` tasirsa yanit eklemeli `data.paraBirimiDurumu` kararini tasir (kural dosya hesap
+#   ozetiyle AYNI yardimcidan). Mevcut sayisal alanlar ve para birimi gondermeyen cagiranin yaniti DEGISMEZ:
+#   karakterizasyon duzeltmesiz denetleyiciyle de gecer; karar iddialari duzeltmesiz kodla DUSER (RED kanitlandi).
+#   Dovizli alacakta harc / vekalet ucreti kurali (tutar ve kur) owner karari.
+src/modules/fee-engine/__tests__/fee-preview-currency.spec.ts
+src/modules/fee-engine/__tests__/fee-preview-currency.http.spec.ts

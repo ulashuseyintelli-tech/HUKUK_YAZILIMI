@@ -20,6 +20,14 @@ import {
 
 import { findExpenseCatalogEntry } from './expense-item-catalog';
 import {
+  buildOpeningExpenseEmailNotSentStatus,
+  describeOpeningExpenseEmailFailure,
+  EXPENSE_EMAIL_ATTEMPT_ACTIONS,
+  openingExpenseEmailReasonOfAuditDetails,
+  OpeningExpenseEmailFailure,
+  OpeningExpenseEmailReasonCode,
+} from './opening-expense-email-outcome';
+import {
   evaluateOpeningExpenseBasis,
   openingExpenseBasisInputOfCase,
   OpeningExpenseAutomationStatus,
@@ -630,6 +638,8 @@ export class ExpenseRequestService {
   /**
    * Otomatik açılış masraf setinin durumu: talep var mı, yoksa otomatik hesap yapılabiliyor mu? SALT OKUMA.
    * Dövizli / karma dosyada otomatik talep oluşturulmaz; neden ve tamamlanması gereken bilgi buradan okunur.
+   * Açılış talebi oluşmuş ama istenen masraf e-postası gönderilememişse (talep hâlâ PENDING) neden `openingRequestEmail`
+   * alanında bildirilir; e-posta gönderildiyse ya da hiç istenmediyse alan yoktur.
    *
    * <remarks>
    * Çağrıldığı yerler:
@@ -646,14 +656,36 @@ export class ExpenseRequestService {
       throw new NotFoundException('Takip bulunamadı');
     }
 
-    const [automaticCalculation, openingRequest, activeExpenseRequestCount] = await Promise.all([
+    const [automaticCalculation, openingRequest, activeExpenseRequestCount, unsentOpeningRequest] = await Promise.all([
       this.evaluateOpeningExpenseBasisForCase(caseId, tenantId),
       this.prisma.expenseRequest.findFirst({
         where: { caseId, tenantId, stageCode: 'OPENING', status: { not: 'CANCELLED' } },
         select: { id: true },
       }),
       this.prisma.expenseRequest.count({ where: { caseId, tenantId, status: { not: 'CANCELLED' } } }),
+      // Gönderilmemiş (PENDING) açılış talebinin SON e-posta denemesi; e-posta hiç istenmediyse deneme kaydı yoktur.
+      this.prisma.expenseRequest.findFirst({
+        where: { caseId, tenantId, stageCode: 'OPENING', status: 'PENDING' },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          auditLogs: {
+            where: { action: { in: [...EXPENSE_EMAIL_ATTEMPT_ACTIONS] } },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: { action: true, details: true, createdAt: true },
+          },
+        },
+      }),
     ]);
+
+    const lastEmailAttempt = unsentOpeningRequest?.auditLogs?.[0];
+    const openingRequestEmail =
+      lastEmailAttempt?.action === 'EMAIL_FAILED'
+        ? buildOpeningExpenseEmailNotSentStatus(
+            describeOpeningExpenseEmailFailure(openingExpenseEmailReasonOfAuditDetails(lastEmailAttempt.details)),
+            lastEmailAttempt.createdAt,
+          )
+        : undefined;
 
     return {
       caseId,
@@ -661,7 +693,74 @@ export class ExpenseRequestService {
       openingRequestExists: !!openingRequest,
       activeExpenseRequestCount,
       automaticCalculation,
+      // Eklemeli alan: yalnız e-posta denemesi başarısız olmuş ve talep hâlâ gönderilmemişse yanıtta yer alır
+      ...(openingRequestEmail ? { openingRequestEmail } : {}),
     };
+  }
+
+  /**
+   * Açılış masraf talebinin istenen e-postası GÖNDERİLEMEDİ: nedeni son e-posta denemesinin denetim kaydından çözer
+   * (dosya sayfasının okuduğu kayıtla aynı) ve talep başına TEK takip görevi yazar. Görev yazımı en-iyi-çabadır:
+   * yazılamazsa neden yine döner, akış bozulmaz. Talep durumunu, denetim kaydını ve e-posta gönderimini DEĞİŞTİRMEZ.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseService.create() → POST /cases ("Oluştur ve Masraf Maili Gönder"; e-posta denemesi başarısız olduğunda)
+   * </remarks>
+   */
+  async recordOpeningExpenseEmailNotSent(
+    tenantId: string,
+    requestId: string,
+    fallbackReason: OpeningExpenseEmailReasonCode = 'DELIVERY_NOT_CONFIRMED',
+  ): Promise<OpeningExpenseEmailFailure> {
+    const request = await this.prisma.expenseRequest.findFirst({
+      where: { id: requestId, tenantId },
+      select: {
+        id: true,
+        caseId: true,
+        totalAmount: true,
+        case: { select: { fileNumber: true } },
+        auditLogs: {
+          where: { action: { in: [...EXPENSE_EMAIL_ATTEMPT_ACTIONS] } },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { action: true, details: true },
+        },
+      },
+    });
+
+    const lastEmailAttempt = request?.auditLogs?.[0];
+    const failure = describeOpeningExpenseEmailFailure(
+      lastEmailAttempt?.action === 'EMAIL_FAILED' ? openingExpenseEmailReasonOfAuditDetails(lastEmailAttempt.details) : fallbackReason,
+    );
+    if (!request) return failure;
+
+    const formattedTotal = request.totalAmount
+      .toNumber()
+      .toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const requiredInfo = failure.requiredInfo.length > 0 ? `\n\nGereken bilgi: ${failure.requiredInfo.join('; ')}` : '';
+    try {
+      await this.prisma.task.create({
+        data: {
+          tenantId,
+          caseId: request.caseId,
+          title: `${failure.taskTitle} - ${request.case.fileNumber}`,
+          description: `${formattedTotal} TL tutarındaki açılış masraf talebi için müvekkile masraf e-postası istenmişti.\n\n${failure.message}${requiredInfo}`,
+          status: 'PENDING',
+          priority: 'MEDIUM',
+          // Talep başına tek görev: aynı talep için ikinci kayıt benzersizlik kısıtına takılır
+          dedupeKey: `EXPENSE_EMAIL_NOT_SENT:${request.id}`,
+          createdById: null,
+        },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        // Bu talep için görev zaten var (ör. aynı talepte ikinci başarısız deneme) — mükerrer görev yazılmaz
+        return failure;
+      }
+      this.logger.warn(`Masraf e-postası takip görevi yazılamadı (requestId=${requestId}): ${(error as Error)?.message ?? error}`);
+    }
+    return failure;
   }
 
   /**
@@ -670,7 +769,8 @@ export class ExpenseRequestService {
    *
    * <remarks>
    * Çağrıldığı yerler:
-   * - CaseService.create() → POST /cases (müvekkilli dosya; peşin harç matrahı TL ise, arka planda)
+   * - CaseService.runOpeningExpenseAutomation() ← CaseService.create() → POST /cases (müvekkilli dosya; peşin harç matrahı
+   *   TL ise; masraf e-postası istenmediyse arka planda, istendiyse yanıt sonucu en çok 10 sn bekler)
    * - ExpenseRequestController.createOpeningExpenses() → POST /expense-requests/case/:caseId/opening
    * </remarks>
    */

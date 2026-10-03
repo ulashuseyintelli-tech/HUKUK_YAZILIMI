@@ -202,7 +202,7 @@ Tekrarlanmayacaklar: İ16'nın 12 canlı ölçütü, izolasyon ölçütleri, H5-
 | **D-4** Portal girişi dış cihazdan çalışır | Owner + koşucu | Giriş 200; yanlış parola 401 |
 | **D-5** Portal parola sıfırlama uçtan uca | Owner + koşucu | Bağlantı `PUBLIC_PORTAL_BASE_URL` ile üretilir, fragment'ta token, sıfırlama 200 |
 | **D-6** Belge akışı: yükleme, indirme, silme | Owner + koşucu | multipart POST, GET download, **DELETE** çalışır |
-| **D-7** Mesaj akışı: gönderme ve okuma | Owner + koşucu | POST/GET 200; kapsam dışı 404 |
+| **D-7** Mesaj akışı: gönderme ve okuma | Owner + koşucu | POST/GET 200; kapsam dışı 404 *(2026-10-01 notu: ürün kapsam dışı dosya referansında **400** döner; paket 400 ölçer — tanım eşlemesi `client-extacc-d8-staff-surface-r01` §5)* |
 | **D-8** Personel yüzeyi dışarıdan **kapalı** | Owner + koşucu | `/`, `/auth/login`, `/api/auth/me`, `/api/portal/admin/*` → kenar reddi |
 | **D-9** Erişim kapanışı | Koşucu | Sentetik kullanıcılar pasif, Case CLOSED, bağlantı iptali sonrası public uç kapalı |
 
@@ -602,6 +602,9 @@ Ertelenmiş parola kurtarma kararı ise **personel** yüzeyine aittir. İkisi ay
 2. Portal uçlarının izin listesinde olması, **hizmetin canlıda etkin ya da kabul edilmiş olduğu anlamına
    gelmez.** Ölçülen durum: `PUBLIC_PORTAL_BASE_URL` canlıda tanımsızdır (H5 ile aynı sınıf), portal sıfırlama
    akışı yalnız **izole provada** (§10, D-5) çalıştı, **hizmet kabulü 0/8**'dir ve bu paket onu değiştirmez.
+   *(Güncelleme 2026-10-01: yukarıdaki "tanımsızdır" ölçümü 2026-09-25 tarihlidir ve bayattır — değer bugün canlı `.env`'de
+   mevcuttur: 2026-10-01 D-5 Preflight'ı değeri canlı `.env`'den okudu ve biçim kapısından geçirdi. D-5 canlıda bir kez koşuldu
+   (runId `00c96bd5`, çıkış 3 — kabul değil; `client-extacc-portal-d5-r01` §8). Hizmet kabulü yine 0/8'dir.)*
 3. Kapalı bir özellik bu çalışma kapsamında **açılmamıştır**. Kenar yalnız hangi uçların dışarıdan
    **erişilebilir** olacağını belirler; bir ucun etkin olup olmadığını ürün kodu ve `.env` belirler.
 

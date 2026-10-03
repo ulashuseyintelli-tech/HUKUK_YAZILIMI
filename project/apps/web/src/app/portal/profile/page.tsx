@@ -7,9 +7,11 @@ import { User, Mail, Lock, Loader2, CheckCircle, Eye, EyeOff } from "lucide-reac
 // düşüyordu. Base URL artık canonical config katmanından gelir (dev fallback yalnız orada,
 // production'da fail-fast). CLIENT-CONFIG-P01 ile aynı sözleşme.
 import { portalApiUrl } from "@/lib/config/portal-api-url";
+import { useHydrated } from "@/lib/use-hydrated";
 
 
 export default function PortalProfilePage() {
+  const hydrated = useHydrated();
   const [user, setUser] = useState<any>(null);
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -113,7 +115,9 @@ export default function PortalProfilePage() {
           </div>
         )}
 
-        <form onSubmit={handleChangePassword} className="space-y-4">
+        {/* Yerel (React dışı) gönderim parolaları ADRESE yazmasın: yöntem POST; düğme React devralana dek
+            kapalı (bkz. lib/use-hydrated.ts). Normal akış değişmez: `onSubmit` preventDefault eder. */}
+        <form onSubmit={handleChangePassword} method="post" className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1">Mevcut Şifre</label>
             <div className="relative">
@@ -168,7 +172,7 @@ export default function PortalProfilePage() {
 
           <button
             type="submit"
-            disabled={saving}
+            disabled={saving || !hydrated}
             className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {saving ? (

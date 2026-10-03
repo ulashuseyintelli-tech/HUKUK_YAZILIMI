@@ -5,7 +5,7 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
-import { StaffType } from "@prisma/client";
+import { Prisma, StaffType } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { withPublicLawyers } from "../lawyer/lawyer-public-projection";
 import { OfficeApprovalService } from "../office-approval/office-approval.service";
@@ -17,11 +17,39 @@ import {
 } from "./office-credential-encryption.util";
 import { OfficeWorkPoolMutationService } from "./work-pool/office-work-pool.mutation.service";
 import {
+  OFFICE_ESCALATION_FIELDS,
+  OFFICE_ESCALATION_POOL_FIELDS,
+  OFFICE_GREETING_FIELDS,
+  OFFICE_IIK78_FIELDS,
+  OFFICE_POA_EXPIRY_FIELDS,
+  OFFICE_PROFILE_FIELDS,
+  OFFICE_SMS_FIELDS,
+  OFFICE_SMTP_FIELDS,
+  UpdateEscalationSettingsDto,
+  UpdateGreetingSettingsDto,
+  UpdateIik78SettingsDto,
+  UpdateOfficeDto,
+  UpdatePoaExpirySettingsDto,
+  UpdateSmsSettingsDto,
+  UpdateSmtpSettingsDto,
+  pickOfficeFields,
+} from "./dto/office-settings.dto";
+import {
+  CreateOfficeBankAccountDto,
+  UpdateOfficeBankAccountDto,
+  isRealIbanValue,
+  pickBankAccountFields,
+} from "./dto/office-bank-account.dto";
+import {
   OfficeWorkPoolTargetStates,
   OfficeWorkPoolUnknownMemberError,
   OfficeWorkPoolUnknownStateError,
   OFFICE_WORK_POOL_KINDS,
 } from "./work-pool/office-work-pool.mutation-contract";
+
+/** Banka hesabı IBAN ret mesajı (avukat güncellemesindeki sözleşmeyle aynı: boş / maskeli / null kabul edilmez). */
+const BANK_IBAN_REJECT_MESSAGE =
+  "IBAN için geçerli tam değer girin. Boş, boşluk, maskeli veya null değer kabul edilmez; değiştirmek istemiyorsanız alanı göndermeyin.";
 
 @Injectable()
 export class OfficeService {
@@ -237,27 +265,13 @@ export class OfficeService {
   // Büro bilgilerini güncelle
   async update(
     tenantId: string,
-    data: {
-      name?: string;
-      address?: string;
-      city?: string;
-      district?: string;
-      postalCode?: string;
-      phone?: string;
-      fax?: string;
-      email?: string;
-      website?: string;
-      barAssociation?: string;
-      vergiNo?: string;
-      vergiDairesi?: string;
-      mersisNo?: string;
-      kepAddress?: string;
-      defaultExecutionOfficeId?: string;
-    },
+    body: UpdateOfficeDto,
     userId?: string,
     actor?: { userId?: string; role?: string },
   ) {
     const office = await this.getOrCreate(tenantId);
+    // Yazma sınırı: yalnız büro PROFİL alanları (kimlik bilgisi / kiracı / havuz sütunları YOK).
+    const data = pickOfficeFields(body, OFFICE_PROFILE_FIELDS);
 
     const updated = await this.prisma.office.update({
       where: { id: office.id },
@@ -277,78 +291,107 @@ export class OfficeService {
     return this.projectForActor(tenantId, withPublicLawyers(updated), actor);
   }
 
+  /**
+   * OFFICE-BANK-ACCOUNT — varsayılan hesabı yazan TÜM yolların (ekle / güncelle) ortak eşzamanlılık kuralı.
+   *
+   * ÖLÇÜLEN: "önce diğerlerini kaldır, sonra yaz" iki ayrı ifadeydi; iki eşzamanlı çağrı birbirinin
+   * temizliğini görmeden yazıp İKİ varsayılan bırakıyordu (ekleme 10/10, güncelleme 10/10). Düz
+   * `$transaction` (READ COMMITTED) bunu KAPATMIYOR (10/10). Büro satırı kilidi kapatıyor (0/10):
+   * `Office.tenantId @unique` olduğundan tenant başına TAM BİR satır vardır — doğal serialization noktası;
+   * emsal: office-work-pool.mutation.service.ts (işlemin İLK ifadesi `SELECT … FROM "Office" … FOR UPDATE`).
+   * Şema / göç değişmez; ikinci çağrı hata almaz, sıraya girer.
+   *
+   * @remarks Çağrıldığı yerler: addBankAccount · updateBankAccount (POST /office/bank-accounts,
+   * PUT /office/bank-accounts/:id). deleteBankAccount varsayılan YAZMAZ (silme varsayılanı devretmez — bugünkü davranış).
+   */
+  private async withOfficeBankLock<T>(
+    officeId: string,
+    fn: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Office" WHERE "id" = ${officeId} FOR UPDATE`;
+      return fn(tx);
+    });
+  }
+
+  /** Banka hesabı yanıtı: yetkili aktöre kimlik + varsayılan bilgisi + MASKELİ IBAN (bkz. office-f01-projection). */
+  private async projectBankAccount(
+    tenantId: string,
+    officeId: string,
+    account: Record<string, unknown>,
+    actor?: { userId?: string; role?: string },
+  ) {
+    const projected = await this.projectForActor(tenantId, { id: officeId, bankAccounts: [account] }, actor);
+    const bankAccounts = projected.bankAccounts as Record<string, unknown>[] | undefined;
+    return bankAccounts?.[0] ?? projected;
+  }
+
   // Banka hesabı ekle
   async addBankAccount(
     tenantId: string,
-    data: {
-      bankName: string;
-      branchName?: string;
-      iban: string;
-      accountName?: string;
-      isDefault?: boolean;
-    },
+    data: CreateOfficeBankAccountDto,
     actor?: { userId?: string; role?: string },
   ) {
+    // HTTP dışı çağıranlar da aynı çalışma zamanı sözleşmesine uyar (gövde yayılımı YOK, IBAN kapısı).
+    const fields = pickBankAccountFields(data as unknown as Record<string, unknown>);
+    if (!isRealIbanValue(fields.iban)) throw new BadRequestException(BANK_IBAN_REJECT_MESSAGE);
+    if (typeof fields.bankName !== "string") throw new BadRequestException("Banka adı zorunludur.");
+
     const office = await this.getOrCreate(tenantId);
 
-    // Eğer varsayılan olarak işaretlendiyse, diğerlerini kaldır
-    if (data.isDefault) {
-      await this.prisma.officeBankAccount.updateMany({
-        where: { officeId: office.id },
-        data: { isDefault: false },
+    const created = await this.withOfficeBankLock(office.id, async (tx) => {
+      // Eğer varsayılan olarak işaretlendiyse, diğerlerini kaldır (kilit altında → tek varsayılan kalır)
+      if (fields.isDefault === true) {
+        await tx.officeBankAccount.updateMany({
+          where: { officeId: office.id },
+          data: { isDefault: false },
+        });
+      }
+      return tx.officeBankAccount.create({
+        // `officeId` her zaman sunucudan; alan haritası dışındaki hiçbir anahtar buraya ulaşamaz.
+        data: { officeId: office.id, ...(fields as { bankName: string; iban: string }) },
       });
-    }
-
-    const created = await this.prisma.officeBankAccount.create({
-      data: {
-        officeId: office.id,
-        ...data,
-      },
     });
-    const projected = await this.projectForActor(tenantId, { id: office.id, bankAccounts: [created] }, actor);
-    const bankAccounts = projected.bankAccounts as Record<string, unknown>[] | undefined;
-    return bankAccounts?.[0] ?? projected;
+    return this.projectBankAccount(tenantId, office.id, created, actor);
   }
 
   // Banka hesabı güncelle
   async updateBankAccount(
     tenantId: string,
     accountId: string,
-    data: {
-      bankName?: string;
-      branchName?: string;
-      iban?: string;
-      accountName?: string;
-      isDefault?: boolean;
-    },
+    data: UpdateOfficeBankAccountDto,
     actor?: { userId?: string; role?: string },
   ) {
+    const fields = pickBankAccountFields(data as unknown as Record<string, unknown>);
+    if (fields.iban !== undefined && !isRealIbanValue(fields.iban)) throw new BadRequestException(BANK_IBAN_REJECT_MESSAGE);
+
     const office = await this.getOrCreate(tenantId);
 
-    // Hesabın bu büroya ait olduğunu kontrol et
-    const account = await this.prisma.officeBankAccount.findFirst({
-      where: { id: accountId, officeId: office.id },
-    });
-
-    if (!account) {
-      throw new NotFoundException("Banka hesabı bulunamadı");
-    }
-
-    // Eğer varsayılan olarak işaretlendiyse, diğerlerini kaldır
-    if (data.isDefault) {
-      await this.prisma.officeBankAccount.updateMany({
-        where: { officeId: office.id, id: { not: accountId } },
-        data: { isDefault: false },
+    const updated = await this.withOfficeBankLock(office.id, async (tx) => {
+      // Hesabın bu büroya ait olduğunu kilit ALTINDA kontrol et
+      const account = await tx.officeBankAccount.findFirst({
+        where: { id: accountId, officeId: office.id },
       });
-    }
 
-    const updated = await this.prisma.officeBankAccount.update({
-      where: { id: accountId },
-      data,
+      if (!account) {
+        throw new NotFoundException("Banka hesabı bulunamadı");
+      }
+
+      // Eğer varsayılan olarak işaretlendiyse, diğerlerini kaldır
+      if (fields.isDefault === true) {
+        await tx.officeBankAccount.updateMany({
+          where: { officeId: office.id, id: { not: accountId } },
+          data: { isDefault: false },
+        });
+      }
+
+      // Gönderilmeyen alan (undefined) YAZILMAZ: değişmeyen hassas alanlar (şube, hesap sahibi, IBAN) korunur.
+      return tx.officeBankAccount.update({
+        where: { id: accountId },
+        data: fields,
+      });
     });
-    const projected = await this.projectForActor(tenantId, { id: office.id, bankAccounts: [updated] }, actor);
-    const bankAccounts = projected.bankAccounts as Record<string, unknown>[] | undefined;
-    return bankAccounts?.[0] ?? projected;
+    return this.projectBankAccount(tenantId, office.id, updated, actor);
   }
 
   // Banka hesabı sil
@@ -370,27 +413,18 @@ export class OfficeService {
     const deleted = await this.prisma.officeBankAccount.delete({
       where: { id: accountId },
     });
-    const projected = await this.projectForActor(tenantId, { id: office.id, bankAccounts: [deleted] }, actor);
-    const bankAccounts = projected.bankAccounts as Record<string, unknown>[] | undefined;
-    return bankAccounts?.[0] ?? projected;
+    return this.projectBankAccount(tenantId, office.id, deleted, actor);
   }
 
   // SMTP ayarlarını güncelle
   async updateSmtpSettings(
     tenantId: string,
-    data: {
-      smtpHost?: string;
-      smtpPort?: number;
-      smtpUser?: string;
-      smtpPass?: string;
-      smtpSecure?: boolean;
-      smtpFromName?: string;
-      smtpFromEmail?: string;
-    },
+    body: UpdateSmtpSettingsDto,
     userId?: string,
     actor?: { userId?: string; role?: string },
   ) {
     const office = await this.getOrCreate(tenantId);
+    const data = pickOfficeFields(body, OFFICE_SMTP_FIELDS);
 
     // ACT-02: yeni parola gönderildiyse at-rest şifrele (boş string/undefined dokunulmaz sayılır).
     const toPersist = { ...data };
@@ -424,16 +458,12 @@ export class OfficeService {
   // SMS ayarlarını güncelle
   async updateSmsSettings(
     tenantId: string,
-    data: {
-      smsProvider?: string;
-      smsApiKey?: string;
-      smsApiSecret?: string;
-      smsSender?: string;
-    },
+    body: UpdateSmsSettingsDto,
     userId?: string,
     actor?: { userId?: string; role?: string },
   ) {
     const office = await this.getOrCreate(tenantId);
+    const data = pickOfficeFields(body, OFFICE_SMS_FIELDS);
 
     // ACT-02: yeni API key/secret gönderildiyse at-rest şifrele.
     const toPersist = { ...data };
@@ -499,14 +529,12 @@ export class OfficeService {
   // Otomatik tebrik ayarlarını güncelle
   async updateGreetingSettings(
     tenantId: string,
-    data: {
-      autoGreetingEnabled?: boolean;
-      autoGreetingTime?: string;
-    },
+    body: UpdateGreetingSettingsDto,
     userId?: string,
     actor?: { userId?: string; role?: string },
   ) {
     const office = await this.getOrCreate(tenantId);
+    const data = pickOfficeFields(body, OFFICE_GREETING_FIELDS);
 
     const updated = await this.prisma.office.update({
       where: { id: office.id },
@@ -528,14 +556,12 @@ export class OfficeService {
   // İİK 78 ayarlarını güncelle
   async updateIik78Settings(
     tenantId: string,
-    data: {
-      inactivityThresholdDays?: number;
-      inactivityWarningDays?: number;
-    },
+    body: UpdateIik78SettingsDto,
     userId?: string,
     actor?: { userId?: string; role?: string },
   ) {
     const office = await this.getOrCreate(tenantId);
+    const data = pickOfficeFields(body, OFFICE_IIK78_FIELDS);
 
     const updated = await this.prisma.office.update({
       where: { id: office.id },
@@ -559,15 +585,12 @@ export class OfficeService {
   // ACT-07: Vekalet Süresi Uyarısı büro-geneli ayarlarını güncelle
   async updatePoaExpirySettings(
     tenantId: string,
-    data: {
-      poaExpiryNotificationEnabled?: boolean;
-      poaExpiryThresholdDays?: number;
-      poaExpiryRecipientLawyerIds?: string[];
-    },
+    body: UpdatePoaExpirySettingsDto,
     userId?: string,
     actor?: { userId?: string; role?: string },
   ) {
     const office = await this.getOrCreate(tenantId);
+    const data = pickOfficeFields(body, OFFICE_POA_EXPIRY_FIELDS);
 
     const updated = await this.prisma.office.update({
       where: { id: office.id },
@@ -599,25 +622,12 @@ export class OfficeService {
 
   async updateEscalationSettings(
     tenantId: string,
-    data: {
-      escalationManagerLawyerIds?: string[];
-      escalationFounderLawyerIds?: string[];
-      opReminderDays?: number;
-      opFounderDays?: number;
-      opRepeatMonths?: number;
-      opEmailEnabled?: boolean;
-      opSmsEnabled?: boolean;
-      opStaffTypes?: StaffType[];
-      // D-G5: dosya görevi (case-task) eskalasyon ayarları
-      escalationTeamLeadLawyerIds?: string[];
-      caseTaskOwnerDays?: number;
-      caseTaskTeamLeadDays?: number;
-      caseTaskManagerDays?: number;
-    },
+    body: UpdateEscalationSettingsDto,
     userId?: string,
     actor?: { userId?: string; role?: string },
   ) {
     const office = await this.getOrCreate(tenantId);
+    const data = pickOfficeFields(body, OFFICE_ESCALATION_FIELDS);
 
     // ── OFFICE-WR01-B02 AŞAMA 4 — DUAL-WRITE (§9.2 AŞAMA 4, §9.4) ────────────────────────
     // API sözleşmesi DEĞİŞMEZ: route, gövde şekli, authorization, response şekli ve admin
@@ -628,7 +638,18 @@ export class OfficeService {
     // Bu servis AYRICA transaction AÇMAZ (§11.5.7 madde 1): kilit alma, effectiveAt üretimi,
     // fark hesabı ve iki yazma primitive'in içindedir. İç içe transaction, Office kilidinin
     // transaction'ın İLK DB ifadesi olduğu garantisini bozardı.
-    const { escalationManagerLawyerIds, escalationFounderLawyerIds, opStaffTypes, ...rest } = data;
+    const { escalationManagerLawyerIds, escalationFounderLawyerIds, opStaffTypes } = data as {
+      escalationManagerLawyerIds?: string[];
+      escalationFounderLawyerIds?: string[];
+      opStaffTypes?: StaffType[];
+    };
+    // Havuz DIŞI eskalasyon alanları (harita - havuz alanları); havuz kolonları buradan GEÇEMEZ.
+    const rest = pickOfficeFields(
+      data,
+      OFFICE_ESCALATION_FIELDS.filter(
+        (field) => !(OFFICE_ESCALATION_POOL_FIELDS as readonly string[]).includes(field),
+      ),
+    );
 
     // `undefined` = UNCHANGED. Gövdede olmayan bir havuz "boş hedef" SAYILMAZ — bu, allowlist
     // projeksiyonu + tam-form POST vakasının (§11.4, PR-1.5) mutation tarafındaki eşdeğeri

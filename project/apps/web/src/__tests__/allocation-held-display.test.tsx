@@ -108,6 +108,7 @@ describe("K3-L D1 — mahsubu bekleyen tahsilat gösterimi", () => {
       render(
         <OperationDeck
           caseId="case-1"
+          collectionsSource="READY"
           financeItems={[
             { id: "c1", type: "TAHSILAT", amount: 500, date: "2026-09-20" },
             { id: "c2", type: "TAHSILAT", amount: 1500, date: "2026-09-20", allocationHeld: true },
@@ -128,6 +129,7 @@ describe("K3-L D1 — mahsubu bekleyen tahsilat gösterimi", () => {
       render(
         <OperationDeck
           caseId="case-1"
+          collectionsSource="READY"
           financeItems={[
             { id: "c1", type: "TAHSILAT", amount: 500, date: "2026-09-20" },
             { id: "c2", type: "TAHSILAT", amount: 1500, date: "2026-09-20" },

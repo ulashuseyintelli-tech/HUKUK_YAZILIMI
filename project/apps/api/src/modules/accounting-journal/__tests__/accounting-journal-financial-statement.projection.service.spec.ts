@@ -20,8 +20,16 @@ const request: FinancialStatementReadRequest = {
 
 function prismaMock() {
   return {
+    // Varsayılan: müvekkilin dosya bağı çözülemedi → süzgeç yalnız `clientId` dalıyla kurulur.
+    caseClient: {
+      findMany: jest.fn().mockResolvedValue([]),
+      create: jest.fn(),
+      update: jest.fn(),
+    },
     accountingJournalLine: {
       findMany: jest.fn(),
+      // Açılış (dönem öncesi net toplam): varsayılan "dönem öncesi satır yok".
+      groupBy: jest.fn().mockResolvedValue([]),
       create: jest.fn(),
       createMany: jest.fn(),
       update: jest.fn(),
@@ -69,19 +77,33 @@ function statementLine(overrides: Record<string, unknown> = {}) {
 describe('ACCT-5B Financial Statement projection service', () => {
   it('reads only persisted journal lines within tenant, period, currency, and client-case scope', async () => {
     const prisma = prismaMock();
+    prisma.caseClient.findMany.mockResolvedValue([{ id: 'case-client-1' }]);
     prisma.accountingJournalLine.findMany.mockResolvedValue([]);
     const service = new AccountingJournalFinancialStatementProjectionService(prisma as any);
 
     await service.getClientCaseStatement(request);
 
+    // Müvekkilin bu dosyadaki CaseClient kaydı kiracı + dosya + müvekkil ile çözülür.
+    expect(prisma.caseClient.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.caseClient.findMany).toHaveBeenCalledWith({
+      where: {
+        caseId: 'case-1',
+        clientId: 'client-1',
+        id: 'case-client-1',
+        client: { tenantId: 'tenant-1' },
+      },
+      select: { id: true },
+    });
     expect(prisma.accountingJournalLine.findMany).toHaveBeenCalledWith({
       where: {
         tenantId: 'tenant-1',
         accountCode: 'CLIENT_PAYABLE',
         currency: 'TRY',
         caseId: 'case-1',
-        clientId: 'client-1',
-        caseClientId: 'case-client-1',
+        OR: [
+          { clientId: 'client-1', caseClientId: 'case-client-1' },
+          { clientId: null, caseClientId: { in: ['case-client-1'] } },
+        ],
         journalEntry: {
           tenantId: 'tenant-1',
           postedAt: {
@@ -113,16 +135,222 @@ describe('ACCT-5B Financial Statement projection service', () => {
         { lineNo: 'asc' },
       ],
     });
+    // Açılış: AYNI kapsam, dönem başlangıcından ÖNCE (`lt from`); dönem sorgusu `gte from` → boşluk / çift sayım yok.
+    expect(prisma.accountingJournalLine.groupBy).toHaveBeenCalledTimes(1);
+    expect(prisma.accountingJournalLine.groupBy).toHaveBeenCalledWith({
+      by: ['direction'],
+      where: {
+        tenantId: 'tenant-1',
+        accountCode: 'CLIENT_PAYABLE',
+        currency: 'TRY',
+        caseId: 'case-1',
+        OR: [
+          { clientId: 'client-1', caseClientId: 'case-client-1' },
+          { clientId: null, caseClientId: { in: ['case-client-1'] } },
+        ],
+        journalEntry: {
+          tenantId: 'tenant-1',
+          postedAt: { lt: new Date('2026-06-01T00:00:00.000Z') },
+        },
+      },
+      _sum: { amount: true },
+      _count: { _all: true },
+    });
+  });
+
+  describe('açılış devri — dönem öncesi satırlar (owner kararı 2026-10-02, O1)', () => {
+    const group = (direction: 'CREDIT' | 'DEBIT', sum: string | null, count: number) => ({
+      direction,
+      _sum: { amount: sum === null ? null : new Prisma.Decimal(sum) },
+      _count: { _all: count },
+    });
+
+    it('açılış = dönem öncesi ALACAK − BORÇ; kapanış = açılış + dönem net hareketi', async () => {
+      const prisma = prismaMock();
+      prisma.caseClient.findMany.mockResolvedValue([{ id: 'case-client-1' }]);
+      prisma.accountingJournalLine.groupBy.mockResolvedValue([group('CREDIT', '1500.00', 1), group('DEBIT', '300.00', 1)]);
+      prisma.accountingJournalLine.findMany.mockResolvedValue([statementLine({ amount: new Prisma.Decimal('100.00') })]);
+      const service = new AccountingJournalFinancialStatementProjectionService(prisma as any);
+
+      const report = await service.getClientCaseStatement(request);
+
+      expect(report.opening).toEqual({ amount: '1200.00', currency: 'TRY' });
+      expect(report.movements).toHaveLength(1);
+      expect(report.closing).toEqual({ amount: '1300.00', currency: 'TRY' });
+    });
+
+    it('dönem öncesi net borç açılışı eksiye çevirir (işaret korunur)', async () => {
+      const prisma = prismaMock();
+      prisma.accountingJournalLine.groupBy.mockResolvedValue([group('CREDIT', '100.00', 1), group('DEBIT', '300.00', 1)]);
+      prisma.accountingJournalLine.findMany.mockResolvedValue([]);
+      const service = new AccountingJournalFinancialStatementProjectionService(prisma as any);
+
+      const report = await service.getClientCaseStatement(request);
+
+      expect(report.opening.amount).toBe('-200.00');
+      expect(report.closing.amount).toBe('-200.00');
+    });
+
+    it('yalnız tek yönlü dönem öncesi satır (yalnız BORÇ) ve boş toplam (null) güvenle işlenir', async () => {
+      const prisma = prismaMock();
+      prisma.accountingJournalLine.groupBy.mockResolvedValue([group('DEBIT', '75.50', 1), group('CREDIT', null, 0)]);
+      prisma.accountingJournalLine.findMany.mockResolvedValue([]);
+      const service = new AccountingJournalFinancialStatementProjectionService(prisma as any);
+
+      const report = await service.getClientCaseStatement(request);
+
+      expect(report.opening.amount).toBe('-75.50');
+    });
+
+    it('dönemde hareket yok ama dönem öncesi satır var → açılış = kapanış ve defter kanıtı vardır (uyarı yok)', async () => {
+      const prisma = prismaMock();
+      prisma.accountingJournalLine.groupBy.mockResolvedValue([group('CREDIT', '1200.00', 2)]);
+      prisma.accountingJournalLine.findMany.mockResolvedValue([]);
+      const service = new AccountingJournalFinancialStatementProjectionService(prisma as any);
+
+      const report = await service.getClientCaseStatement(request);
+
+      expect(report.movements).toEqual([]);
+      expect(report.opening.amount).toBe('1200.00');
+      expect(report.closing.amount).toBe('1200.00');
+      expect(report.reconciliation.status).toBe('READY');
+      expect(report.reconciliation.trialBalanceEvidenceStatus).toBe('BALANCED');
+      expect(report.reconciliation.warnings.map((warning) => warning.code)).not.toContain('TRIAL_BALANCE_REQUIRED');
+    });
+
+    it('kapsamda hiç satır yoksa açılış 0.00 kalır ve "defter kanıtı gerekli" uyarısı korunur', async () => {
+      const prisma = prismaMock();
+      prisma.accountingJournalLine.groupBy.mockResolvedValue([]);
+      prisma.accountingJournalLine.findMany.mockResolvedValue([]);
+      const service = new AccountingJournalFinancialStatementProjectionService(prisma as any);
+
+      const report = await service.getClientCaseStatement(request);
+
+      expect(report.opening.amount).toBe('0.00');
+      expect(report.closing.amount).toBe('0.00');
+      expect(report.reconciliation.status).toBe('TRIAL_BALANCE_REQUIRED');
+      expect(report.reconciliation.trialBalanceEvidenceStatus).toBe('NO_LINES');
+      expect(report.reconciliation.warnings.map((warning) => warning.code)).toContain('TRIAL_BALANCE_REQUIRED');
+    });
+
+    it('açılış sorgusu ile dönem sorgusu AYNI kapsamı kullanır (yalnız tarih koşulu farklıdır)', async () => {
+      const prisma = prismaMock();
+      prisma.caseClient.findMany.mockResolvedValue([{ id: 'case-client-1' }]);
+      prisma.accountingJournalLine.findMany.mockResolvedValue([]);
+      const service = new AccountingJournalFinancialStatementProjectionService(prisma as any);
+
+      await service.getClientCaseStatement({ ...request, currency: 'USD' });
+
+      const periodWhere = prisma.accountingJournalLine.findMany.mock.calls[0][0].where;
+      const openingWhere = prisma.accountingJournalLine.groupBy.mock.calls[0][0].where;
+      const { journalEntry: periodEntry, ...periodScope } = periodWhere;
+      const { journalEntry: openingEntry, ...openingScope } = openingWhere;
+      expect(openingScope).toEqual(periodScope);
+      expect(openingScope.currency).toBe('USD');
+      expect(openingEntry.tenantId).toBe(periodEntry.tenantId);
+      expect(Object.keys(openingEntry.postedAt)).toEqual(['lt']);
+      expect(Object.keys(periodEntry.postedAt)).toEqual(['gte', 'lte']);
+    });
+
+    it('başlangıç > bitiş ya da geçersiz tarih DB okumasından önce reddedilir (sessizce başka aralığa çevrilmez)', async () => {
+      const prisma = prismaMock();
+      const service = new AccountingJournalFinancialStatementProjectionService(prisma as any);
+
+      await expect(
+        service.getClientCaseStatement({
+          ...request,
+          period: { ...request.period, from: '2026-06-30T00:00:00.000Z', to: '2026-06-01T00:00:00.000Z' },
+        }),
+      ).rejects.toThrow('Financial statement period.from must be before period.to.');
+      await expect(
+        service.getClientCaseStatement({ ...request, period: { ...request.period, from: 'gecersiz' } }),
+      ).rejects.toThrow('Invalid financial statement period.from.');
+      expect(prisma.accountingJournalLine.groupBy).not.toHaveBeenCalled();
+      expect(prisma.accountingJournalLine.findMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('müvekkil kapsamı — `clientId` taşımayan günlük satırları (owner kararı 2026-10-01, S1)', () => {
+    it('müvekkilin CaseClient kaydı çözülemezse `clientId`siz satır dalı KURULMAZ; süzgeç yalnız `clientId` dalıdır', async () => {
+      const prisma = prismaMock();
+      // Yabancı / başka müvekkile ait caseClientId: arama boş döner.
+      prisma.caseClient.findMany.mockResolvedValue([]);
+      prisma.accountingJournalLine.findMany.mockResolvedValue([]);
+      const service = new AccountingJournalFinancialStatementProjectionService(prisma as any);
+
+      await service.getClientCaseStatement(request);
+
+      const where = prisma.accountingJournalLine.findMany.mock.calls[0][0].where;
+      expect(where.OR).toBeUndefined();
+      expect(where).toEqual(
+        expect.objectContaining({
+          tenantId: 'tenant-1',
+          caseId: 'case-1',
+          clientId: 'client-1',
+          caseClientId: 'case-client-1',
+        }),
+      );
+    });
+
+    it('istekte caseClientId yoksa CaseClient kaydını dosya + müvekkilden çözer ve `clientId`siz satırları ona bağlar', async () => {
+      const prisma = prismaMock();
+      prisma.caseClient.findMany.mockResolvedValue([{ id: 'case-client-1' }]);
+      prisma.accountingJournalLine.findMany.mockResolvedValue([]);
+      const service = new AccountingJournalFinancialStatementProjectionService(prisma as any);
+
+      await service.getClientCaseStatement({ ...request, scope: { ...request.scope, caseClientId: null } });
+
+      expect(prisma.caseClient.findMany).toHaveBeenCalledWith({
+        where: { caseId: 'case-1', clientId: 'client-1', client: { tenantId: 'tenant-1' } },
+        select: { id: true },
+      });
+      const where = prisma.accountingJournalLine.findMany.mock.calls[0][0].where;
+      expect(where.clientId).toBeUndefined();
+      expect(where.OR).toEqual([
+        { clientId: 'client-1' },
+        { clientId: null, caseClientId: { in: ['case-client-1'] } },
+      ]);
+    });
+
+    it('`clientId`siz ödeme satırını kapanışa katar; `clientId` dolu satırın yanıttaki müvekkili değişmez', async () => {
+      const prisma = prismaMock();
+      prisma.caseClient.findMany.mockResolvedValue([{ id: 'case-client-1' }]);
+      prisma.accountingJournalLine.findMany.mockResolvedValue([
+        statementLine({ amount: new Prisma.Decimal('1500.00') }),
+        statementLine({
+          lineNo: 1,
+          direction: 'DEBIT',
+          amount: new Prisma.Decimal('300.00'),
+          clientId: null,
+          journalEntry: {
+            sourceType: 'CLIENT_PAYOUT',
+            sourceAction: 'recorded',
+            postedAt: new Date('2026-06-20T08:00:00.000Z'),
+          },
+        }),
+      ]);
+      const service = new AccountingJournalFinancialStatementProjectionService(prisma as any);
+
+      const report = await service.getClientCaseStatement(request);
+
+      expect(report.movements.map((movement) => [movement.direction, movement.amount, movement.clientId, movement.source.displayRef])).toEqual([
+        ['CREDIT', '1500.00', 'client-1', 'COLLECTION_DISPOSITION_LINE:posted'],
+        ['DEBIT', '300.00', 'client-1', 'CLIENT_PAYOUT:recorded'],
+      ]);
+      expect(report.closing).toEqual({ amount: '1200.00', currency: 'TRY' });
+    });
   });
 
   it('projects CLIENT_CASE_STATEMENT as a reporting statement surface, not Trial Balance diagnostics', async () => {
     const prisma = prismaMock();
     prisma.accountingJournalLine.findMany.mockResolvedValue([
       statementLine(),
+      // Gerçek ödeme yazıcısının ürettiği biçim: `clientId` YOK, `caseClientId` VAR (client-payout.service.ts).
       statementLine({
         lineNo: 2,
         direction: 'DEBIT',
         amount: new Prisma.Decimal('50.00'),
+        clientId: null,
         journalEntry: {
           sourceType: 'CLIENT_PAYOUT',
           sourceAction: 'recorded',
@@ -166,6 +394,9 @@ describe('ACCT-5B Financial Statement projection service', () => {
           statementDate: '2026-06-20T08:00:00.000Z',
           direction: 'DEBIT',
           amount: '50.00',
+          // `clientId`'siz satır müvekkilin CaseClient kaydı üzerinden kapsama girer → yanıtta istekteki müvekkil yazılır.
+          clientId: 'client-1',
+          caseClientId: 'case-client-1',
           source: {
             sourceType: 'CLIENT_PAYOUT',
             sourceAction: 'recorded',
@@ -218,6 +449,9 @@ describe('ACCT-5B Financial Statement projection service', () => {
 
     await service.getClientCaseStatement(request);
 
+    // CaseClient yalnız OKUNUR (müvekkil kapsamının çözülmesi); yazılmaz.
+    expect(prisma.caseClient.create).not.toHaveBeenCalled();
+    expect(prisma.caseClient.update).not.toHaveBeenCalled();
     expect(prisma.accountingJournalLine.create).not.toHaveBeenCalled();
     expect(prisma.accountingJournalLine.createMany).not.toHaveBeenCalled();
     expect(prisma.accountingJournalLine.update).not.toHaveBeenCalled();
@@ -248,5 +482,7 @@ describe('ACCT-5B Financial Statement projection service', () => {
       }),
     ).rejects.toThrow('Financial statement period must use postedAt date basis.');
     expect(prisma.accountingJournalLine.findMany).not.toHaveBeenCalled();
+    expect(prisma.accountingJournalLine.groupBy).not.toHaveBeenCalled();
+    expect(prisma.caseClient.findMany).not.toHaveBeenCalled();
   });
 });

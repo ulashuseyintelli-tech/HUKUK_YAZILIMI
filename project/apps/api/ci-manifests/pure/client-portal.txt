@@ -326,6 +326,9 @@ src/modules/portal/__tests__/portal-public-base-url.spec.ts
 #   D5-SEC-R01 portal parola sifirlama sertlestirmesi — API tarafi parola politikasi (DTO + servis; mevcut MinLength(8)),
 #     pasif hesapta sifirlama reddi (atomik WHERE isActive), controller govdeleri DTO (Object degil).
 src/modules/portal/__tests__/portal-reset-hardening-d5.spec.ts
+#   D5-DIAG-R01 portal e-posta bicim farki (harf/bosluk) eslesmesi + sifirlama talebi teshis gunluk satirlari;
+#     hesap acma cakisma kapisi ayni karsilastirmayla. SAF birim testi (sahte depo).
+src/modules/portal/__tests__/portal-email-match-d5-diag.spec.ts
 #   D5-SEC-R02 (owner karari 2026-09-28) portal profil parola degistirme de en az 8 (yeni parola); mevcut parolalarla giris etkilenmez.
 src/modules/portal/__tests__/portal-change-password-policy-r02.spec.ts
 #
@@ -420,6 +423,11 @@ src/modules/client-settlement/__tests__/client-payout-manual-reversal.service.sp
 #     KAPSAM DISI (burada DEGIL): 2 Nest HTTP smoke + 2 DB-gated client-settlement spec'i.
 src/modules/client-settlement/__tests__/accounting-ledger-dry-run.service.spec.ts
 src/modules/client-settlement/__tests__/case-fee-agreement.controller.spec.ts
+#   G1 — Genel Cari para birimi kapsami (owner GO 2026-10-02 "G1 + E1"): ozet yaniti eklemeli `paraBirimiDurumu` + dosya satiri
+#     `paraBirimiKapsami` (TAM / KISMI / DISI) bildirir; masraf talebi ve avans bakiyesi yalniz istenen para biriminde toplanir; kapsam disi
+#     kayit gercek sifirdan ayrilir; cevirme / birlesik bakiye YOK. Saf siniflandirma + servis (prisma mock). Duzeltmesiz servis kodu ile
+#     yeni G1 servis testleri DUSER (RED kanitlandi: 9/9). Gercek HTTP + disposable DB kabulu db/domain-integration manifestinde.
+src/modules/client-settlement/__tests__/client-accounting-currency-scope.spec.ts
 src/modules/client-settlement/__tests__/client-accounting-journal-movements-reader.service.spec.ts
 src/modules/client-settlement/__tests__/client-accounting-journal-summary-reader.service.spec.ts
 src/modules/client-settlement/__tests__/client-accounting-movements-read.service.spec.ts

@@ -14,6 +14,9 @@ import { PortalService } from "../portal.service";
 
 function buildTx(over: any = {}) {
   return {
+    // D5-DIAG-R01: yazımdan önce transaction içinde adres kilidi + çakışma ölçümü (bu dosyada çakışma yok).
+    $executeRaw: jest.fn().mockResolvedValue(0),
+    $queryRaw: jest.fn().mockResolvedValue([]),
     client: {
       findUniqueOrThrow: jest.fn().mockResolvedValue(over.beforeClient ?? { id: "c1", hasPortalAccess: false, portalUserId: null }),
       update: jest.fn().mockImplementation((a: any) => Promise.resolve({ id: a.where.id, ...a.data })),
@@ -37,6 +40,8 @@ function buildService(over: any = {}) {
     },
     client: { findFirst: jest.fn().mockResolvedValue(over.clientFindFirstResult ?? null) },
     $transaction: jest.fn().mockImplementation(async (cb: any) => cb(tx)),
+    // D5-DIAG-R01: hesap açma çakışma kapısının biçim farkı sorgusu; bu dosyada başka müvekkilde aynı adres yok.
+    $queryRaw: jest.fn().mockResolvedValue([]),
   };
   const jwtService: any = { sign: jest.fn().mockReturnValue("SIGNED.JWT.TOKEN") };
   const audit: any = { log: jest.fn().mockResolvedValue(undefined), logInTransaction: jest.fn().mockResolvedValue(undefined) };
