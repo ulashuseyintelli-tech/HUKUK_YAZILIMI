@@ -234,3 +234,18 @@ src/modules/expense-request/__tests__/expense-tenant-boundary.http.db-gated.inte
 #   alanlar 17.000 dondurmeyi surdurur" iddiasi bugunku davranisi sabitler. Duzeltmesiz servis koduyla 10 testin 10'u
 #   DUSER (RED kanitlandi; her testte mevcut alan iddialari duzeltmesiz kodla gecer).
 src/modules/claim-item/__tests__/claim-summary-currency.http.db-gated.integration.spec.ts
+
+# Belge sablonu toplami para birimi baglami (template-engine dosya-kaydi uclari + GET /pdf/takip-talebi), GERCEK HTTP +
+#   disposable PostgreSQL. Olculen kusur (main 6681b1d5): belge toplami kalem tutarlarini para birimine bakmadan topluyor
+#   ve DOSYA para birimiyle etiketliyor; USD dosyada 10.000 USD + 5.000 EUR + 2.000 TRY -> takip talebi / odeme emri /
+#   icra emri / Word / PDF "17.000,00 $", XML Total 17000 Currency USD; ayni kalemler TRY dosyada "17.000,00 TL"; kalemleri
+#   TRY kayitli USD dosyada satirlar TL, toplam "$"; dava dilekceleri tutari sabit "TL" yaziyor (USD dosyada "10.250 TL").
+#   Politika gerektirmeyen kisim: belge CIKTISI DEGISMEZ (tek para birimli TL / dovizli dosya ve karma dosya icin 71 parmak
+#   izi duzeltmesiz kodla uretildi: metin, XML, UDF, Word girdileri, PDF icerik akislari, dilekceler, uretim kaydi veri
+#   parmak izi); eklemeli olarak JSON yanitta `paraBirimiDurumu`, belge govdeli yanitta `X-Belge-Toplam-Para-Birimi`
+#   basligi, DOCUMENT_GENERATED denetim kaydinda ozet. Tutar CEVRILMEZ, bloka capraz toplam girmez; yalniz belgeye giren
+#   (iptal / feragat disi) kalemler; GET uclari salt okuma; baska buro 404. Karma dosyada belgenin uretilip uretilmeyecegi
+#   ve toplamin nasil yazilacagi owner / hukuki karar — "belge 17.000,00 $ yazmayi surdurur" iddialari bugunku davranisi
+#   sabitler. Duzeltmesiz servis / denetleyici koduyla 15 testin 15'i DUSER (RED kanitlandi; her testte parmak izi
+#   iddialari duzeltmesiz kodla gecer, eklemeli blok / baslik iddialari duser).
+src/modules/template-engine/__tests__/template-totals-currency.http.db-gated.integration.spec.ts
