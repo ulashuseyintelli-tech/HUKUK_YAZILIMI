@@ -13,9 +13,17 @@
  *             cases normal|leak · upload normal|fail (500, dosya yok) · list normal|leak (tenant'ın tüm belgeleri) ·
  *             download normal|leak (clientId kapsamı yok) · delete normal|fail (500)|noUnlink (satır silinir, dosya KALIR)|leak (kapsam yok) ·
  *             pending normal|fail
+ * R03 senaryoları: staffAuth normal|expireOnDisable (ilk disable-user çağrısında o ana dek verilmiş TÜM personel token'ları geçersiz olur →
+ *             401; yeni giriş yeni token verir — token süresinin kapanış sırasında dolması taklidi) · disable forbidden (her çağrı 403; ürün:
+ *             yetki reddi yazmadan önce döner) | notFound (her çağrı 404) · upload denyUntilNext (dosya yazılır + satır; ardından dosya F +
+ *             dizin RD ACL REDDİ; bir sonraki indirme/silme isteğinde reddi kaldırır) | noFile (satır yazılır, dosya YAZILMAZ — doğrulanmış yokluk)
+ *             · delete failDeny (500; satır + dosya KALIR ve dosya F + dizin RD REDDİ) | noUnlinkDeny (satır silinir, dosya KALIR ve REDDİ).
+ *             ACL reddi bu sürecin kullanıcısına (USERNAME) gerçek `icacls` ile yazılır; YALNIZ /__lift (ve denyUntilNext'te bir sonraki
+ *             indirme/silme isteği) kaldırır — /__reset ve /__scenario kaldırmaz (aynı ret altında Recover ölçülebilsin).
  * KOŞUCU YASAĞI: forgot/reset/change-password, messages, admin approve/reject çağrıları FORBIDDEN işaretlenir (500).
  */
 const http = require('http'); const https = require('https'); const fs = require('fs'); const path = require('path'); const crypto = require('crypto');
+const { execFileSync } = require('child_process');
 
 const { PrismaClient } = require(path.join(process.env.D6F_PRISMA_ROOT));
 const bcrypt = require(process.env.D6F_BCRYPT);
@@ -27,11 +35,18 @@ const DATA_ROOT = process.env.D6F_DATA_ROOT;
 const ALLOWED_EXT = ['.pdf', '.jpg', '.jpeg', '.png', '.doc', '.docx']; const MAX_UPLOAD = 10 * 1024 * 1024;
 const DOC_SELECT = { id: true, type: true, title: true, description: true, fileName: true, fileSize: true, mimeType: true, status: true, createdAt: true }; // PORTAL_DOCUMENT_CLIENT_SELECT
 
-const DEFAULT = { create: 'normal', disable: 'normal', guard: 'normal', ext: 'normal', extLogin: 'normal', cases: 'normal', upload: 'normal', list: 'normal', download: 'normal', delete: 'normal', pending: 'normal' };
+const DEFAULT = { create: 'normal', disable: 'normal', guard: 'normal', ext: 'normal', extLogin: 'normal', cases: 'normal', upload: 'normal', list: 'normal', download: 'normal', delete: 'normal', pending: 'normal', staffAuth: 'normal' };
 const LATE_CREATE_MS = 3000; const heldCreates = [];
 let scenario = Object.assign({}, DEFAULT); let disableFailed = 0;
 let calls = []; let extCalls = [];
 const secrets = { jwts: [], portalJwts: [], portalPasswords: [], loginPasswords: [] };
+// R03: personel token'ları benzersizdir (sıra no) — yeniden giriş YENİ token verir; `expireOnDisable` ile geçersiz kılınanlar burada tutulur.
+let jwtSeq = 0; let staffExpired = false; const expiredStaffJwts = new Set();
+// R03: gerçek ACL reddi (icacls) — kaldırılacak dizin/dosya listesi. Kaldırma sırası: dizin, sonra dosya (öz-testteki Z6-b ile aynı).
+const ACL_USER = process.env.USERNAME || ''; let denied = []; let liftOnNextDocRequest = false;
+const icacls = (args) => { try { execFileSync('icacls', args, { stdio: 'ignore', windowsHide: true }); return true; } catch (e) { return false; } };
+function denyFile(file) { const dir = path.dirname(file); const ok = !!ACL_USER && icacls([file, '/deny', `${ACL_USER}:(F)`]) && icacls([dir, '/deny', `${ACL_USER}:(RD)`]); denied.push({ file, dir }); return ok; }
+function liftAll() { let n = 0; for (const d of denied) { icacls([d.dir, '/remove:d', ACL_USER]); icacls([d.file, '/remove:d', ACL_USER]); n++; } denied = []; liftOnNextDocRequest = false; return n; }
 
 function send(res, status, obj, extraHeaders) {
   const body = obj === undefined ? '' : (Buffer.isBuffer(obj) ? obj : (typeof obj === 'string' ? obj : JSON.stringify(obj)));
@@ -64,6 +79,7 @@ function parseMultipart(buf, contentType) {
 }
 const claimOf = (req, prefix) => { const h = String(req.headers.authorization || ''); if (!h.startsWith(`Bearer ${prefix}`)) return null; try { return JSON.parse(Buffer.from(h.slice(`Bearer ${prefix}`.length), 'base64url').toString('utf8')); } catch (e) { return null; } };
 async function staffUser(req) {
+  if (expiredStaffJwts.has(String(req.headers.authorization || '').replace(/^Bearer /, ''))) return null;   // R03: süresi dolmuş token taklidi
   const c = claimOf(req, 'fake.'); if (!c) return null;
   const u = await prisma.user.findUnique({ where: { id: c.uid }, select: { id: true, tenantId: true, isActive: true, tokenVersion: true } });
   return (!u || !u.isActive || u.tenantId !== c.tid || u.tokenVersion !== c.tv) ? null : u;
@@ -106,11 +122,14 @@ async function uploadDoc(req) {
   if (scenario.upload === 'fail') return { status: 500, body: { message: 'Internal server error' } };
   let caseId; if (mp.fields.caseId) { const found = await prisma.case.findFirst({ where: { id: mp.fields.caseId, tenantId: pu.tenantId, showToClient: true, OR: [{ clientId: pu.clientId }, { caseClients: { some: { clientId: pu.clientId } } }] }, select: { id: true } }); if (!found) return { status: 400, body: { message: 'PORTAL_CASE_REFERENCE_INVALID' } }; caseId = found.id; }
   const name = `portal-${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(mp.file.originalname).toLowerCase()}`; const target = path.join(bucketDir(pu.tenantId), name);
-  fs.writeFileSync(target, mp.file.data);
+  if (scenario.upload !== 'noFile') fs.writeFileSync(target, mp.file.data);   // noFile: KUSUR TAKLİDİ — satır var, dosya YOK (doğrulanmış yokluk)
   const doc = await prisma.portalDocument.create({ data: { clientId: pu.clientId, tenantId: pu.tenantId, caseId, type: mp.fields.type || 'DIGER', title: mp.fields.title || mp.file.originalname, description: mp.fields.description, fileName: mp.file.originalname, filePath: target, fileSize: mp.file.data.length, mimeType: mp.file.mimetype }, select: DOC_SELECT });
+  // denyUntilNext: yanıt dönmeden ÖNCE dosya + dizin ACL reddi — koşucunun D6-1D stat'ı reddi görür; bir sonraki indirme/silme isteği kaldırır.
+  if (scenario.upload === 'denyUntilNext') { denyFile(target); liftOnNextDocRequest = true; }
   return { status: 201, body: doc };
 }
 async function downloadDoc(req, id) {
+  if (liftOnNextDocRequest) liftAll();
   const pu = await portalUser(req); if (!pu) return { status: 401, body: { message: 'Unauthorized' } };
   const doc = await prisma.portalDocument.findFirst({ where: scenario.download === 'leak' ? { id } : { id, clientId: pu.clientId } });
   if (!doc) return { status: 404, body: { message: 'Belge bulunamadı' } };
@@ -121,12 +140,18 @@ async function downloadDoc(req, id) {
   return { status: 200, body: fs.readFileSync(doc.filePath), headers: { 'content-type': 'application/pdf', 'content-disposition': `attachment; filename="${doc.fileName}"` } };
 }
 async function deleteDoc(req, id) {
+  if (liftOnNextDocRequest) liftAll();
   const pu = await portalUser(req); if (!pu) return { status: 401, body: { message: 'Unauthorized' } };
   if (scenario.delete === 'fail') return { status: 500, body: { message: 'Internal server error' } };
   const doc = await prisma.portalDocument.findFirst({ where: scenario.delete === 'leak' ? { id } : { id, clientId: pu.clientId } });
   if (!doc) return { status: 404, body: { message: 'Belge bulunamadı' } };
+  // failDeny: KUSUR + DEPOLAMA ERİŞİM REDDİ — 500, satır ve dosya KALIR, dosya + dizin okunamaz (doğrulanmış satır kalıntısı + erişim hatası birlikte)
+  // ACL reddi YALNIZ bu sürecin geçici kovasındaki dosyaya yazılır (contained) — test dışına asla.
+  if (scenario.delete === 'failDeny') { if (doc.filePath && contained(pu.tenantId, doc.filePath) && fs.existsSync(doc.filePath)) denyFile(doc.filePath); return { status: 500, body: { message: 'Internal server error' } }; }
   if (doc.status !== 'PENDING') return { status: 400, body: { message: 'Onaylanmış veya reddedilmiş belgeler silinemez' } };
   await prisma.portalDocument.delete({ where: { id } });
+  // noUnlinkDeny: satır silinir, dosya KALIR ve okunamaz (yalnız erişim hatası; doğrulanmış kalıntı YOK)
+  if (scenario.delete === 'noUnlinkDeny') { if (doc.filePath && contained(pu.tenantId, doc.filePath) && fs.existsSync(doc.filePath)) denyFile(doc.filePath); return { status: 200, body: { success: true } }; }
   if (scenario.delete !== 'noUnlink' && doc.filePath && contained(pu.tenantId, doc.filePath) && fs.existsSync(doc.filePath)) fs.unlinkSync(doc.filePath); // noUnlink: KUSUR — dosya kalır
   return { status: 200, body: { success: true } };
 }
@@ -149,8 +174,10 @@ const reply = (res, r) => send(res, r.status, r.body, r.headers);
 async function apiHandler(req, res) {
   const p = new URL(req.url, 'http://127.0.0.1').pathname;
   if (p.startsWith('/__')) {
-    if (req.method === 'POST' && p === '/__scenario') { scenario = Object.assign({}, DEFAULT, await readBody(req)); disableFailed = 0; return send(res, 200, scenario); }
+    if (req.method === 'POST' && p === '/__scenario') { scenario = Object.assign({}, DEFAULT, await readBody(req)); disableFailed = 0; staffExpired = false; expiredStaffJwts.clear(); liftOnNextDocRequest = false; return send(res, 200, scenario); }
     if (req.method === 'POST' && p === '/__reset') { calls = []; extCalls = []; for (const k of Object.keys(secrets)) secrets[k] = []; return send(res, 200, { ok: true }); }
+    // ACL reddi YALNIZ açıkça kaldırılır (/__lift) ya da denyUntilNext'te bir sonraki belge isteğinde — böylece aynı ret altında Recover koşulabilir.
+    if (req.method === 'POST' && p === '/__lift') return send(res, 200, { lifted: liftAll() });
     if (p === '/__calls') return send(res, 200, calls);
     if (p === '/__ext') return send(res, 200, extCalls);
     if (p === '/__secrets') return send(res, 200, secrets);
@@ -165,7 +192,7 @@ async function apiHandler(req, res) {
     const t = await prisma.tenant.findFirst({ where: { slug: body.tenantSlug }, select: { id: true } });
     const u = t ? await prisma.user.findFirst({ where: { tenantId: t.id, email: body.email }, select: { id: true, tenantId: true, isActive: true, tokenVersion: true, passwordHash: true } }) : null;
     if (!u || !u.isActive || !u.passwordHash || !(await bcrypt.compare(String(body.password || ''), u.passwordHash))) return send(res, 401, { message: 'Unauthorized' });
-    const jwt = 'fake.' + Buffer.from(JSON.stringify({ uid: u.id, tid: u.tenantId, tv: u.tokenVersion })).toString('base64url');
+    const jwt = 'fake.' + Buffer.from(JSON.stringify({ uid: u.id, tid: u.tenantId, tv: u.tokenVersion, n: ++jwtSeq })).toString('base64url');
     secrets.jwts.push(jwt); return send(res, 201, { access_token: jwt });
   }
   if (req.method === 'POST' && p === '/api/portal/admin/create-user') {
@@ -189,7 +216,11 @@ async function apiHandler(req, res) {
     const pu = await write(); return send(res, 201, { id: pu.id, email: pu.email, clientId: pu.clientId });
   }
   if (req.method === 'POST' && p === '/api/portal/admin/disable-user') {
+    // R03: expireOnDisable — İLK kapatma çağrısı anında o ana dek verilmiş tüm personel token'ları geçersizleşir (süre dolumu taklidi; yazma YOK).
+    if (scenario.staffAuth === 'expireOnDisable' && !staffExpired) { staffExpired = true; for (const j of secrets.jwts) expiredStaffJwts.add(j); }
     const u = await staffUser(req); if (!u) return send(res, 401, { message: 'Unauthorized' });
+    if (scenario.disable === 'forbidden') return send(res, 403, { message: 'Portal erişimi yönetimi için yetki yok' });   // ürün: yazmadan ÖNCE 403
+    if (scenario.disable === 'notFound') return send(res, 404, { message: 'Müvekkil bulunamadı' });
     if (scenario.disable === 'fail' || (scenario.disable === 'failOnce' && disableFailed === 0)) { disableFailed++; return send(res, 500, { message: 'Internal server error' }); }
     const client = await prisma.client.findFirst({ where: { id: body.clientId, tenantId: u.tenantId }, select: { id: true } });
     if (!client) return send(res, 404, { message: 'Müvekkil bulunamadı' });

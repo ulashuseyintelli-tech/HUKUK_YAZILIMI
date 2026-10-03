@@ -5,10 +5,15 @@
  * test dosyasından (D6_TEST_DISPLAY_SINK; yalnız disposable DB'de) alır, dış uçtan girer, listeyi/indirmeyi görür, isteğe bağlı
  * kendi belgesini yükler ve siler, koşucu silmesinden sonra listeyi yeniden okur.
  *
- * KULLANIM: node d6-selftest.js   (D6T_DB_URL → 127.0.0.1:5448/d5_reset_test ŞART; sahte API 8199 / dış 8458)
+ * KULLANIM: node d6-selftest.js   (D6T_DB_URL → 127.0.0.1:<5432 DIŞI port>/<ad>_test ŞART — R03: port sabit değil, kendi tek kullanımlık
+ *           konteyneriniz; `hukuk_db` ve 5432 REDDEDİLİR; sahte API 8199 / dış 8458)
  *           D6T_LIB_ROOT → Prisma istemcisi + bcrypt kurulu, CANLI OLMAYAN bir proje kökü (verilmezse bu betiğin checkout'unun proje kökü)
  * ÇIKIŞ   : 0 hepsi PASS · 1 FAIL var · 2 ölçülemedi (kütüphane kökü / modül yok dahil) · 4 kütüphane kökü canlı yayın ağacına çözülüyor (RED)
  * SINIR   : sahte API ürünün kendisi değildir; ürünün gerçek multipart/kova/hız sınırı davranışı canlı koşumda ölçülür.
+ * R03     : Z17 (D6-1D erişim reddi ≠ doğrulanmış yokluk) · Z18 (kapanışta doğrulanmış kalıntı ≠ depolama erişim hatası; ikisi birlikte; aynı ret
+ *           altında Recover adımı) · Z19 (kapanışta personel oturumu reddi: 401 → tek yeniden giriş + tek yeniden deneme; 403 → döngü yok;
+ *           404 → yeniden giriş yok) · C-1 (kanıttaki kurtarma/kapanış metinleri yalnız ölçüleni söyler) · T-8 (yeniden giriş yalnız Run'da,
+ *           DB'ye yazmaz). ACL reddi gerçek `icacls` ile (Windows).
  */
 const { spawn, execFileSync } = require('child_process');
 const fs = require('fs'); const path = require('path'); const os = require('os'); const crypto = require('crypto');
@@ -68,9 +73,14 @@ const rows = []; const check = (id, desc, ok, obs) => rows.push({ id, sonuc: ok 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms)); const hex8 = () => crypto.randomBytes(4).toString('hex');
 const sha256 = (b) => crypto.createHash('sha256').update(b).digest('hex');
 
+// R03: disposable DB kendi tek kullanımlık konteynerinden gelir (port sabit DEĞİL). Kapı: yalnız 127.0.0.1 · port var ve 5432 DEĞİL · veritabanı
+// adı `_test` ile biter ve `hukuk_db` DEĞİL. Koşucuya beklenen DB adı bu addan verilir (D6_EXPECT_DB).
+let DB_NAME = null;
 function dbUrl() {
   const u = process.env.D6T_DB_URL || ''; let p; try { p = new URL(u); } catch (e) { return null; }
-  return (p.hostname === '127.0.0.1' && p.port === '5448' && p.pathname === '/d5_reset_test') ? u : null;
+  let name = ''; try { name = decodeURIComponent(p.pathname.replace(/^\//, '')); } catch (e) { return null; }
+  if (p.hostname !== '127.0.0.1' || !p.port || p.port === '5432' || !/^[a-z0-9_]+_test$/.test(name) || name === 'hukuk_db') return null;
+  DB_NAME = name; return u;
 }
 async function ctl(method, p, body) { const r = await fetch(`http://127.0.0.1:${API_PORT}${p}`, { method, headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }); return r.json(); }
 let DBURL; let certFile; let prisma; let dataRoot; const artifacts = []; const secretsSeen = new Set(); const sinks = new Set();
@@ -113,7 +123,7 @@ function runScenario(name, dir, sc, over, hooks = {}) {
     const receipt = path.join(dir, `${name}-receipt.json`); const evid = path.join(dir, `${name}-evidence.json`); const sink = path.join(dir, `${name}-display.sink`); sinks.add(sink);
     const env = Object.assign({}, process.env, {
       AH_DATABASE_URL: DBURL, AH_PRISMA_ROOT: PRISMA_ROOT, AH_BCRYPT_PATH: BCRYPT, NODE_EXTRA_CA_CERTS: certFile,
-      D6_MODE: 'run', D6_LIVE_CONFIRM: '1', D6_LIVE_GO_REF: go, D6_RUNID: runId, D6_EXPECT_DB: 'd5_reset_test',
+      D6_MODE: 'run', D6_LIVE_CONFIRM: '1', D6_LIVE_GO_REF: go, D6_RUNID: runId, D6_EXPECT_DB: DB_NAME,
       D6_EXPECT_TENANT_SLUG: `ah-${runId}`, D6_API_BASE: API, D6_EXPECT_API: API, D6_EXPECT_BASE_URL: EXT,
       D6_LIVE_LOGIN_PW: pw, D6_RECEIPT: receipt, D6_EVID_FILE: evid, D6_DISPLAY: 'none', D6_TEST_DISPLAY_SINK: sink,
       D6_WAIT_MS: '15000', D6_POLL_MS: '300', D6_VIEW_MS: '800', D6_HTTP_TIMEOUT_MS: '5000', D6_CALL_TIMEOUT_MS: '8000', D6_LATE_CREATE_MS: '6000', D6_RESIDUE_WAIT_MS: '5000',
@@ -152,7 +162,7 @@ async function recover(prev, dir, name, sc, envOver, during) {
   await ctl('POST', '/__reset'); await ctl('POST', '/__scenario', sc || {});
   const pw = 'D6R!' + crypto.randomBytes(12).toString('base64url'); const evid = path.join(dir, `${name}-evidence.json`); secretsSeen.add(pw);
   const env = Object.assign({}, process.env, { AH_DATABASE_URL: DBURL, AH_PRISMA_ROOT: PRISMA_ROOT, AH_BCRYPT_PATH: BCRYPT, NODE_EXTRA_CA_CERTS: certFile,
-    D6_MODE: 'recover', D6_RECOVER_CONFIRM: '1', D6_RUNID: prev.runId, D6_EXPECT_DB: 'd5_reset_test', D6_API_BASE: API, D6_EXPECT_API: API,
+    D6_MODE: 'recover', D6_RECOVER_CONFIRM: '1', D6_RUNID: prev.runId, D6_EXPECT_DB: DB_NAME, D6_API_BASE: API, D6_EXPECT_API: API,
     D6_EXPECT_BASE_URL: EXT, D6_LIVE_LOGIN_PW: pw, D6_RECEIPT: prev.receipt, D6_EVID_FILE: evid, D6_DISPLAY: 'none', D6_HTTP_TIMEOUT_MS: '5000', D6_CALL_TIMEOUT_MS: '8000',
     D6_POLL_MS: '300', D6_LATE_CREATE_MS: '6000' }, envOver || {});
   // `during`: Recover süreci ÇALIŞIRKEN paralel iş (ör. askıdaki hesap oluşturmayı serbest bırakmak) — D-4 kalıbı
@@ -178,7 +188,8 @@ const CLOSE_NO_S = CLOSE.filter((id) => id !== 'P6-C4L' && id !== 'P6-C4D' && id
 
 (async () => {
   DBURL = dbUrl();
-  if (!DBURL) { console.log('OLCULEMEDI: disposable DB (D6T_DB_URL → 127.0.0.1:5448/d5_reset_test) yok — test BAŞLAMADI'); process.exit(2); }
+  if (!DBURL) { console.log('OLCULEMEDI: disposable DB (D6T_DB_URL → 127.0.0.1:<5432 dışı port>/<ad>_test; hukuk_db değil) yok — test BAŞLAMADI'); process.exit(2); }
+  console.log(`disposable DB: 127.0.0.1:${new URL(DBURL).port}/${DB_NAME}`);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'd6-selftest-')); dataRoot = path.join(dir, 'data'); fs.mkdirSync(dataRoot);
   certFile = path.join(dir, 'cert.pem'); const keyFile = path.join(dir, 'key.pem');
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', keyFile, '-out', certFile, '-days', '1', '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1'], { stdio: 'ignore' });
@@ -334,9 +345,74 @@ const CLOSE_NO_S = CLOSE.filter((id) => id !== 'P6-C4L' && id !== 'P6-C4D' && id
         && rel16e.released === 1 && acct16e && acct16e.isActive === true && r16e2.code === 3 && r16e2.pu.isActive === false && r16e2.cl.hasPortalAccess === false && r16e2.activeUsers === 0,
       `Recover1=${r16e.code} · sonradan aktif=${acct16e && acct16e.isActive} · Recover2=${r16e2.code} · hesap=${JSON.stringify(r16e2.pu)}`);
 
+    // ==== R03 (b) — DEPOLAMA ERİŞİM HATASI ≠ DOĞRULANMIŞ YOKLUK / KALINTI (gerçek ACL reddi: dosya F + dizin RD; sahte API kendi kullanıcısına yazar)
+    const nCalls = (cl, p) => cl.filter((c) => c.path === p).length;
+    const nedenOf = (z) => ((z.ev && z.ev.recovery && z.ev.recovery.neden) || []);
+    const z17a = await runScenario('z17a-d1d-storage-denied', dir, { upload: 'denyUntilNext' }, {}, shouldNot);
+    const lift17a = await ctl('POST', '/__lift');
+    check('Z17-a', '(ii) yükleme sonrası dosya/dizin erişimi REDDEDİLİYOR (bir sonraki belge isteğinde kalkar): D6-1D ÖLÇÜLEMEYEN (FAIL DEĞİL) + ayrı neden "depolama erişimi ÖLÇÜLEMEDİ (EPERM|EACCES)", kanıtta upload.disk.state=olculemez; gösterim kapısı KAPALI kaldı (giriş bilgisi gösterilmedi); koşucu kendi belgesini sildi, kapanış doğrulandı (D6-5D, P6-C-DOC, P6-D9 PASS); FAIL yok; çıkış 3 (önceki baytlarda D6-1D FAIL → 2)',
+      z17a.code === 3 && z17a.v('D6-1D') === 'UNMEASURED' && /depolama erişimi ÖLÇÜLEMEDİ \((EPERM|EACCES)\)/.test(z17a.o('D6-1D')) && !!(z17a.ev && z17a.ev.upload && z17a.ev.upload.disk) && z17a.ev.upload.disk.state === 'olculemez'
+        && z17a.ev.displayed === false && z17a.phone.length === 0 && z17a.v('D6-1') === 'PASS' && z17a.v('D6-3') === 'PASS' && z17a.v('D6-5D') === 'PASS' && z17a.v('P6-C-DOC') === 'PASS' && z17a.v('P6-D9') === 'PASS' && z17a.ev.fail === 0 && z17a.docs.length === 0,
+      `çıkış=${z17a.code} · D6-1D=${z17a.v('D6-1D')} ${z17a.o('D6-1D').slice(-160)} · disk=${JSON.stringify(((z17a.ev || {}).upload || {}).disk)} · FAIL=${(z17a.ev || {}).fail} · kalkan ret=${lift17a.lifted}`);
+    const z17b = await runScenario('z17b-d1d-file-missing', dir, { upload: 'noFile' }, {}, shouldNot);
+    check('Z17-b', '(karşı durum) yükleme 201 + satır var ama dosya diskte DOĞRULANMIŞ olarak YOK (ENOENT): D6-1D FAIL ("diskte=yok(ENOENT)", erişim nedeni YOK), gösterim YOK, çıkış 2 — erişim reddi (Z17-a: ÖLÇÜLEMEYEN, çıkış 3) ile çıkış kodu ve kanıt AYRIDIR',
+      z17b.code === 2 && z17b.v('D6-1D') === 'FAIL' && /diskte=yok\(ENOENT\)/.test(z17b.o('D6-1D')) && !/erişimi ÖLÇÜLEMEDİ/.test(z17b.o('D6-1D')) && z17b.ev.displayed === false && z17a.code !== z17b.code,
+      `çıkış=${z17b.code} (Z17-a=${z17a.code}) · D6-1D=${z17b.v('D6-1D')} ${z17b.o('D6-1D').slice(-80)}`);
+
+    const z18a = await runScenario('z18a-residue-file-stays', dir, { delete: 'noUnlink' }, {}, { onDisplay: (s) => phoneFlow(s) });
+    const dr18a = ((z18a.ev || {}).portalClose || {}).docResidue || {};
+    check('Z18-a', '(i) kapanışta dosya GERÇEKTEN duruyor (stat var; erişim hatası yok): P6-C-DOC FAIL + "DOĞRULANMIŞ KALINTI", docResidue.durum=DOGRULANMIS_KALINTI, diskte kalan=1, erişim hatası=0; D6-5D FAIL; kurtarma nedeni kalıntıyı yazar, "depolama erişimi" YAZMAZ; çıkış 6',
+      z18a.code === 6 && z18a.v('P6-C-DOC') === 'FAIL' && /DOĞRULANMIŞ KALINTI/.test(z18a.o('P6-C-DOC')) && dr18a.durum === 'DOGRULANMIS_KALINTI' && (dr18a.filesLeftOnDisk || []).length === 1 && (dr18a.filesAccessError || []).length === 0
+        && z18a.v('D6-5D') === 'FAIL' && nedenOf(z18a).some((n) => /BELGE: sentetik belge KALDI — DOĞRULANMIŞ KALINTI/.test(n)) && !nedenOf(z18a).some((n) => /depolama erişimi/.test(n)),
+      `çıkış=${z18a.code} · C-DOC=${z18a.v('P6-C-DOC')} · durum=${dr18a.durum} · neden=${nedenOf(z18a).join(' | ').slice(0, 200)}`);
+    try { fs.unlinkSync(z18a.rc.documentFile); } catch (e) { /* test temizliği */ }
+    const z18b = await runScenario('z18b-residue-dir-denied', dir, { delete: 'noUnlinkDeny' }, {}, { onDisplay: (s) => phoneFlow(s) });
+    const st18b = z18b.rc && z18b.rc.documentFile ? EX.fileState(z18b.rc.documentFile) : { state: 'yok' };   // ret hâlâ yerinde: bağımsız ölçüm
+    const lift18b = await ctl('POST', '/__lift');
+    const dr18b = ((z18b.ev || {}).portalClose || {}).docResidue || {};
+    check('Z18-b', '(ii) kapanışta dizin/dosya erişimi REDDEDİLİYOR (satır 0; dosyanın durumu bilinemiyor): P6-C-DOC ÖLÇÜLEMEYEN (FAIL DEĞİL) + "depolama erişimi ÖLÇÜLEMEDİ", durum=ERISIM_OLCULEMEDI, erişim hatası=1, diskte kalan=0; D6-5D ÖLÇÜLEMEYEN; kurtarma nedeni erişimi yazar, "sentetik belge KALDI" YAZMAZ; çıkış 6 — (i) ile kanıt AYRI (çıkış kodu ikisinde de 6: kapanış ikisinde de doğrulanmadı)',
+      st18b.state === 'olculemez' && lift18b.lifted === 1 && z18b.code === 6 && z18b.v('P6-C-DOC') === 'UNMEASURED' && /depolama erişimi ÖLÇÜLEMEDİ/.test(z18b.o('P6-C-DOC')) && dr18b.durum === 'ERISIM_OLCULEMEDI'
+        && (dr18b.filesAccessError || []).length === 1 && (dr18b.filesLeftOnDisk || []).length === 0 && z18b.v('D6-5D') === 'UNMEASURED' && nedenOf(z18b).some((n) => /BELGE: depolama erişimi ÖLÇÜLEMEDİ/.test(n)) && !nedenOf(z18b).some((n) => /sentetik belge KALDI/.test(n)),
+      `ret=${st18b.state} kalkan=${lift18b.lifted} · çıkış=${z18b.code} · C-DOC=${z18b.v('P6-C-DOC')} · durum=${dr18b.durum} · neden=${nedenOf(z18b).join(' | ').slice(0, 200)}`);
+    try { fs.unlinkSync(z18b.rc.documentFile); } catch (e) { /* test temizliği */ }
+    const z18c = await runScenario('z18c-residue-row-and-denied', dir, { delete: 'failDeny' }, {}, { onDisplay: (s) => phoneFlow(s) });
+    const dr18c = ((z18c.ev || {}).portalClose || {}).docResidue || {};
+    check('Z18-c', '(i)+(ii) BİRLİKTE: satır KALDI (doğrulanmış) + dosya erişimi reddediliyor → D6-5D FAIL ("DOĞRULANMIŞ KALINTI (satır)" + ayrıca erişim) ve P6-C-DOC FAIL (ÖLÇÜLEMEYEN\'e İNMEDİ), durum=DOGRULANMIS_KALINTI, satır=1, erişim hatası=1 ayrıca listelendi; kurtarma nedeni İKİ AYRI satır (kalıntı + depolama erişimi); çıkış 6',
+      z18c.code === 6 && z18c.v('D6-5') === 'FAIL' && z18c.v('D6-5D') === 'FAIL' && /DOĞRULANMIŞ KALINTI \(satır\)/.test(z18c.o('D6-5D')) && /depolama erişimi ÖLÇÜLEMEDİ/.test(z18c.o('D6-5D'))
+        && z18c.v('P6-C-DOC') === 'FAIL' && /depolama erişimi ÖLÇÜLEMEDİ/.test(z18c.o('P6-C-DOC')) && dr18c.durum === 'DOGRULANMIS_KALINTI' && dr18c.rows === 1 && (dr18c.filesAccessError || []).length === 1
+        && nedenOf(z18c).some((n) => /BELGE: sentetik belge KALDI — DOĞRULANMIŞ KALINTI/.test(n)) && nedenOf(z18c).some((n) => /BELGE: depolama erişimi ÖLÇÜLEMEDİ/.test(n)),
+      `çıkış=${z18c.code} · D6-5D=${z18c.v('D6-5D')} · C-DOC=${z18c.v('P6-C-DOC')} · durum=${dr18c.durum} satır=${dr18c.rows} erişim=${(dr18c.filesAccessError || []).length} · neden=${nedenOf(z18c).length}`);
+    const r18d = await recover(z18c, dir, 'z18d-recover-row-and-denied', {});   // ret HÂLÂ yerinde (/__lift çağrılmadı); kalıntı kararı H
+    const lift18d = await ctl('POST', '/__lift');
+    const adim18d = (r18d.ev && r18d.ev.recovery && r18d.ev.recovery.adim) || '';
+    check('Z18-d', 'aynı ret altında Recover (kalıntı kararı H): P6-C-DOC FAIL (satır=1 doğrulanmış; ÖLÇÜLEMEYEN\'e inmedi) + erişim hatası ayrıca; adım ÖNERİDİR ve kalan satırı VE kova okunabilirliğini AYRI yazar; "Recover BİR KEZ daha" YOK, "İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR" VAR; çıkış 6',
+      r18d.code === 6 && r18d.v('P6-C-DOC') === 'FAIL' && /^ÖNERİ \(yetki DEĞİL\)/.test(adim18d) && /kalan belge satırı=1/.test(adim18d) && /okunabilirliği/.test(adim18d) && !/BİR KEZ daha/.test(adim18d) && /İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR/.test(adim18d) && lift18d.lifted >= 1,
+      `çıkış=${r18d.code} · C-DOC=${r18d.v('P6-C-DOC')} · kalkan ret=${lift18d.lifted} · adım=${adim18d.slice(0, 220)}`);
+    await prisma.portalDocument.deleteMany({ where: { clientId: z18c.rc.clientId } }); try { fs.unlinkSync(z18c.rc.documentFile); } catch (e) { /* test temizliği */ }
+
+    // ==== R03 (a) — Run'ın KENDİ kapanışında personel oturumu reddi: yalnız 401/403'te BİR KEZ yeniden giriş + TEK yeniden deneme
+    const DIS = '/api/portal/admin/disable-user'; const LOGIN = '/api/auth/login';
+    const z19a = await runScenario('z19a-staff-token-expired-on-close', dir, { staffAuth: 'expireOnDisable' }, {}, { onDisplay: (s) => phoneFlow(s) });
+    const sr19a = ((z19a.ev || {}).portalClose || {}).staffReauth || {};
+    check('Z19-a', 'personel token\'ı kapanış anında geçersiz (ilk disable-user 401): koşucu BİR KEZ yeniden giriş yapar (aynı sentetik personel), kapatmayı BİR KEZ yeniden dener (201) → portal kapandı (P6-C1/C2/C2V/C5 PASS), P6-D9 PASS, çıkış 0 (6 DEĞİL); disable-user 2 çağrı, personel girişi 2 (koşum başı + yenileme); kanıtta staffReauth 401 → giriş 201 → yeniden deneme 201; personel yine pasif',
+      z19a.code === 0 && ['P6-C1', 'P6-C2', 'P6-C2V', 'P6-C5', 'P6-D9', 'U-CLOSE'].every((id) => z19a.v(id) === 'PASS') && !!z19a.pu && z19a.pu.isActive === false && z19a.cl.hasPortalAccess === false
+        && nCalls(z19a.calls, DIS) === 2 && nCalls(z19a.calls, LOGIN) === 2 && sr19a.neden === 'disable-user HTTP 401' && sr19a.giris === 'HTTP 201' && sr19a.yenidenDeneme === 'HTTP 201'
+        && /YENİLENDİ/.test(z19a.o('P6-C1')) && (z19a.ev.calledEndpoints || []).some((c) => /auth\/login \(kapanış/.test(c)) && z19a.activeUsers === 0,
+      `çıkış=${z19a.code} · disable=${nCalls(z19a.calls, DIS)} · giriş=${nCalls(z19a.calls, LOGIN)} · staffReauth=${JSON.stringify(sr19a)} · C1=${z19a.o('P6-C1').slice(-120)}`);
+    const z19b = await runScenario('z19b-staff-forbidden-on-close', dir, { disable: 'forbidden' }, {}, { onDisplay: (s) => phoneFlow(s) });
+    const sr19b = ((z19b.ev || {}).portalClose || {}).staffReauth || {};
+    check('Z19-b', 'kapatma ucu her çağrıda 403 (yetki reddi): yeniden giriş BİR KEZ, yeniden deneme BİR KEZ, sonra DURUR (döngü yok) → disable-user tam 2, personel girişi tam 2; portal AÇIK kaldı (P6-C2 FAIL), çıkış 6; staffReauth 403 → 201 → 403; kurtarma nedeni personel oturumu reddini yazar; personel/dosya kapanışı yine yapıldı (U-CLOSE PASS)',
+      z19b.code === 6 && nCalls(z19b.calls, DIS) === 2 && nCalls(z19b.calls, LOGIN) === 2 && sr19b.neden === 'disable-user HTTP 403' && sr19b.giris === 'HTTP 201' && sr19b.yenidenDeneme === 'HTTP 403'
+        && z19b.v('P6-C2') === 'FAIL' && z19b.v('U-CLOSE') === 'PASS' && !!z19b.pu && z19b.pu.isActive === true && nedenOf(z19b).some((n) => /PERSONEL OTURUMU kapanışta reddedildi \(disable-user HTTP 403\)/.test(n)),
+      `çıkış=${z19b.code} · disable=${nCalls(z19b.calls, DIS)} · giriş=${nCalls(z19b.calls, LOGIN)} · staffReauth=${JSON.stringify(sr19b)}`);
+    const z19c = await runScenario('z19c-disable-notfound', dir, { disable: 'notFound' }, {}, { onDisplay: (s) => phoneFlow(s) });
+    check('Z19-c', 'kapatma ucu 404 (kimlik dışı 4xx): yeniden giriş YOK, yeniden deneme YOK → disable-user 1, personel girişi 1, staffReauth yok, P6-C2 FAIL, çıkış 6',
+      z19c.code === 6 && nCalls(z19c.calls, DIS) === 1 && nCalls(z19c.calls, LOGIN) === 1 && !((z19c.ev || {}).portalClose || {}).staffReauth && z19c.v('P6-C2') === 'FAIL',
+      `çıkış=${z19c.code} · disable=${nCalls(z19c.calls, DIS)} · giriş=${nCalls(z19c.calls, LOGIN)}`);
+
     // ---- Z13 KONSOLSUZ conout → yazmadan 4
     const rid13 = hex8(); const pw13 = 'D6T!' + crypto.randomBytes(12).toString('base64url'); secretsSeen.add(pw13);
-    const env13 = Object.assign({}, process.env, { AH_DATABASE_URL: DBURL, AH_PRISMA_ROOT: PRISMA_ROOT, AH_BCRYPT_PATH: BCRYPT, NODE_EXTRA_CA_CERTS: certFile, D6_MODE: 'run', D6_LIVE_CONFIRM: '1', D6_LIVE_GO_REF: 'OWNER-GO-CLIENT-EXTACC-D6-20000101-R99', D6_RUNID: rid13, D6_EXPECT_DB: 'd5_reset_test',
+    const env13 = Object.assign({}, process.env, { AH_DATABASE_URL: DBURL, AH_PRISMA_ROOT: PRISMA_ROOT, AH_BCRYPT_PATH: BCRYPT, NODE_EXTRA_CA_CERTS: certFile, D6_MODE: 'run', D6_LIVE_CONFIRM: '1', D6_LIVE_GO_REF: 'OWNER-GO-CLIENT-EXTACC-D6-20000101-R99', D6_RUNID: rid13, D6_EXPECT_DB: DB_NAME,
       D6_EXPECT_TENANT_SLUG: `ah-${rid13}`, D6_API_BASE: API, D6_EXPECT_API: API, D6_EXPECT_BASE_URL: EXT, D6_LIVE_LOGIN_PW: pw13, D6_RECEIPT: path.join(dir, 'z13-receipt.json'), D6_EVID_FILE: path.join(dir, 'z13-evidence.json'), D6_DISPLAY: 'conout', D6_TEST_DISPLAY_SINK: path.join(dir, 'z13.sink') });
     const r13 = await new Promise((res) => { const c = spawn(process.execPath, [RUN], { env: env13, detached: true, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }); let l = ''; c.stdout.on('data', (d) => { l += d; }); c.stderr.on('data', (d) => { l += d; }); c.on('close', (x) => res({ code: x, log: l })); });
     fs.writeFileSync(path.join(dir, 'z13.log'), r13.log, 'utf8'); artifacts.push(path.join(dir, 'z13.log'));
@@ -344,6 +420,28 @@ const CLOSE_NO_S = CLOSE.filter((id) => id !== 'P6-C4L' && id !== 'P6-C4D' && id
     // ---- Z14 MAKBUZ YAZILAMIYOR → API çağrısı yok, çıkış 1
     const z14 = await runScenario('z14-receipt-fail', dir, {}, { D6_RECEIPT: path.join(dir, 'yok', 'alt', 'r.json') });
     check('Z14', 'makbuz yazılamazsa login/create-user/yükleme 0, kurulum kapatıldı, çıkış 1', z14.code === 1 && !z14.calls.some((c) => /auth\/login|create-user/.test(c.path)) && z14.ext.length === 0 && z14.activeUsers === 0, `çıkış=${z14.code}`);
+
+    // ---- C-1 (R03 c) — kanıttaki kurtarma/kapanış metinleri YALNIZ ölçüleni söyler: bu öz-testin ürettiği TÜM Run/Recover kanıtları taranır
+    let evScanned = 0; let evNeed = 0; const textBad = [];
+    const fixedClaims = [/BİR KEZ daha/, /token 7 gün/, /birkaç dakika sonra Recover/, /Recover BİR KEZ/, /kapanışta yeniden kapatıldı/, /fark portal hesabı aç\/kapa kaynaklıdır/];
+    for (const f of new Set(artifacts)) {
+      if (!/-evidence\.json$/.test(f) || !fs.existsSync(f)) continue; const nm = path.basename(f); let e;
+      try { e = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (x) { textBad.push(`${nm}:okunamadı`); continue; }
+      evScanned++;
+      if (e.revision !== 'R03') textBad.push(`${nm}:revision=${e.revision}`);
+      const txt = JSON.stringify({ recovery: e.recovery || null, temporaryAccess: e.temporaryAccess || null, audit: e.auditRetained || null, note: ((e.portalClose || {}).docResidue || {}).note || null });
+      for (const re of fixedClaims) if (re.test(txt)) textBad.push(`${nm}:${re.source}`);
+      if (e.recovery && e.recovery.gerekli) {
+        evNeed++; const a = e.recovery.adim || '';
+        if (!/^ÖNERİ \(yetki DEĞİL\)/.test(a)) textBad.push(`${nm}:adım ÖNERİ değil`);
+        if (e.record === 'EXTACC-D6-RECOVER' && e.exitCode !== 3 && !/İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR/.test(a)) textBad.push(`${nm}:Recover adımı ikinci Recover kuralını yazmıyor`);
+        if (e.record !== 'EXTACC-D6-RECOVER' && !/AYRI owner onayıyla/.test(a)) textBad.push(`${nm}:Run adımı AYRI owner onayını yazmıyor`);
+      }
+      if (e.temporaryAccess && typeof e.temporaryAccessClosed !== 'boolean') textBad.push(`${nm}:temporaryAccessClosed ölçülmedi`);
+      if (e.record === 'EXTACC-D6-PORTAL-DOCUMENTS-LIVE-RUN' && e.auditRetained && e.auditRetained.before !== null && e.auditRetained.before !== undefined && typeof e.auditRetained.delta !== 'number') textBad.push(`${nm}:audit farkı ölçülmedi`);
+    }
+    check('C-1', 'kanıttaki kurtarma/kapanış metinleri yalnız ölçüleni söyler (tüm Run/Recover kanıtları): revision=R03; sabit iddia YOK ("BİR KEZ daha", "token 7 gün", "birkaç dakika sonra Recover", "Recover BİR KEZ", "kapanışta yeniden kapatıldı", "fark … kaynaklıdır"); kurtarma gerekliyse adım "ÖNERİ (yetki DEĞİL)" ile başlar — Run adımı AYRI owner onayını, Recover adımı (çıkış 3 dışı) "İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR" kuralını yazar; Recover geçici erişimi verdiyse kapanışı ölçülmüş alanla (temporaryAccessClosed) yazılır; Run audit farkı sayı olarak ölçülür',
+      evScanned >= 30 && evNeed >= 15 && textBad.length === 0, `taranan kanıt=${evScanned} · kurtarma gerekli=${evNeed} · sorun=${textBad.length ? textBad.slice(0, 10).join(', ') : 'yok'}`);
 
     // ---- S-1 SIR SIZINTISI — portal parolaları, ölçüm parolaları, personel parolası, JWT'ler, DB URL, GO (sink dosyaları TARAMA DIŞI)
     let scanned = 0; const leaks = [];
@@ -354,13 +452,19 @@ const CLOSE_NO_S = CLOSE.filter((id) => id !== 'P6-C4L' && id !== 'P6-C4D' && id
     }
     const nPw = [...secretsSeen].filter((s) => /^D6p!/.test(String(s))).length; const nJwt = [...secretsSeen].filter((s) => /^p?fake\./.test(String(s))).length;
     check('S-1', 'portal parolası · Recover ölçüm parolası · personel parolası · JWT · DB URL · GO hiçbir log/makbuz/kanıtta YOK', scanned > 40 && leaks.length === 0 && nPw >= 8 && nJwt >= 10, `taranan=${scanned} · aranan=${secretsSeen.size} (portal parola ${nPw} · jwt ${nJwt}) · sızıntı=${leaks.length ? leaks.join(',') : 'yok'}`);
-  } finally { fake.kill(); await prisma.$disconnect().catch(() => {}); }
+  } finally { try { await ctl('POST', '/__lift'); } catch (e) { /* sahte API kapanmış olabilir */ } fake.kill(); await prisma.$disconnect().catch(() => {}); }
 
   // ---- STATİK
   const src = fs.readFileSync(RUN, 'utf8').split('\n').filter((l) => !/^\s*(\*|\/\/)/.test(l)).join('\n');
   const srcNoList = src.replace(/FORBIDDEN = \[[^\]]*\]/, '');
   check('T-1', 'koşucu kaynağında forgot/reset/change-password, messages, admin approve/reject çağrısı YOK; koşucu dosya silmez (unlink/rm yok); Prisma delete yalnız PortalDocument (yabancı/kalıntı temizliği)',
     !EX.FORBIDDEN.some((re) => re.test(srcNoList)) && !/unlinkSync|rmSync|\.unlink\(|\.rm\(/.test(src) && (src.match(/prisma\.\w+\.delete(Many)?\(/g) || []).every((m) => /portalDocument/.test(m)), `delete çağrıları=${(src.match(/prisma\.\w+\.delete(Many)?\(/g) || []).join(',')}`);
+  // T-8 (R03 a): personel yeniden girişi YALNIZ Run'ın kendi kapanışında; Recover'ın oturum açma yolu değişmedi; yeniden giriş DB'ye yazmaz.
+  const runSrc = src.slice(src.indexOf('async function runMode'), src.indexOf('async function recoverMode')); const recSrc = src.slice(src.indexOf('async function recoverMode'));
+  const iRe = runSrc.indexOf('const staffReauth ='); const reauthFn = iRe >= 0 ? runSrc.slice(iRe, runSrc.indexOf('} : null;', iRe)) : '';
+  check('T-8', 'personel yeniden girişi yalnız Run kapanışında: Run\'ın closePortal çağrısına `staffReauth` verilir, Recover vermez; yeniden giriş fonksiyonu yalnız makbuzdaki personelle L.AH.login çağırır ve DB\'ye yazmaz (prisma çağrısı yok); closePortal yeniden girişi yalnız 401/403\'te ve bir kez yapar',
+    reauthFn.length > 0 && /L\.AH\.login\(base, receipt\.elevEmail, pw, receipt\.tenantSlug\)/.test(reauthFn) && !/prisma\./.test(reauthFn) && /closePortal\([^)]*\{ session, staffReauth,/.test(runSrc) && !/staffReauth/.test(recSrc)
+      && /\(r\.status === 401 \|\| r\.status === 403\) && o\.staffReauth && !res\.staffReauth/.test(src), `fonksiyon=${reauthFn.length} karakter · Recover'da staffReauth=${/staffReauth/.test(recSrc)}`);
   const sinkLines = src.split('\n').filter((l) => /D6_TEST_DISPLAY_SINK/.test(l));
   check('T-2', 'gösterimsiz test dosyası (sink) kaynakta TEK yerde ve yalnız `display === \'none\'` koşuluyla (konsol varken asla)', sinkLines.length === 1 && /g\.display === 'none' && process\.env\.D6_TEST_DISPLAY_SINK/.test(sinkLines[0]) && /if \(con\) return DISPLAY\.show/.test(sinkLines[0]), `satır=${sinkLines.length}`);
   const liveEnv = { AH_DATABASE_URL: 'postgresql://u:p@127.0.0.1:5432/hukuk_db', D6_EXPECT_DB: 'hukuk_db', D6_WAIT_MS: '1', D6_POLL_MS: '1', D6_VIEW_MS: '1', D6_HTTP_TIMEOUT_MS: '1', D6_CALL_TIMEOUT_MS: '1', D6_LATE_CREATE_MS: '1', D6_RESIDUE_WAIT_MS: '1' };

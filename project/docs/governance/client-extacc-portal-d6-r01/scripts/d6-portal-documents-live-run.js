@@ -23,6 +23,12 @@
  * YAPMAZ : forgot/reset/change-password · mesaj · admin approve/reject · dosya silme (yalnız ürün DELETE'i) · 503 teşhisi.
  * ÇIKIŞ  : 0 PASS · 2 FAIL · 3 ÖLÇÜLEMEYEN · 1 DURDU · 4 KİMLİK/HEDEF REDDİ · 7 KANIT YAZILAMADI · 5 PERSONEL/DOSYA KAPANIŞI ·
  *          6 PORTAL KAPANIŞI (erişim ya da belge kalıntısı) DOĞRULANMADI (öncelik 6 > 5 > 7 > 1 > 2 > 3 > 0).
+ * R03    : (a) Run'ın KENDİ kapanışında personel oturumu yetkili uçta 401/403 ile reddedilirse koşucu makbuzdaki sentetik personelle BİR KEZ
+ *          yeniden giriş yapar (koşum başında kullandığı aynı kimlik bilgisi; DB'ye yazmaz) ve kapatma çağrısını BİR KEZ yeniden dener;
+ *          başka 4xx'te yeniden giriş YOK. Recover'ın oturum açma yolu değişmedi. (b) Depolama erişim hatası ('olculemez') ile DOĞRULANMIŞ
+ *          kalıntı ayrılır: erişim reddi ÖLÇÜLEMEYEN + ayrı neden (D6-1D dahil — önceki baytlarda FAIL'di); doğrulanmış kalıntı (satır ya da
+ *          stat 'var') erişim hatası yanında da FAIL'dir ve gizlenmez; kanıtta `docResidue.durum` + ayrı kurtarma satırları. (c) Kanıttaki
+ *          kurtarma / kapanış metinleri yalnız ölçüleni söyler; adım metni ÖNERİDİR, ikinci Recover için yol tanımlamaz.
  */
 const fs = require('fs'); const crypto = require('crypto'); const path = require('path');
 const H5 = require('../../client-h5-intake-url-r01/scripts/h5-url-live-run');
@@ -138,12 +144,12 @@ async function httpRaw(method, url, { token, contentType, body, timeoutMs = 3000
  * Koşucu dosya SİLMEZ. `cleanup` (Recover, owner kararı) satırları Prisma ile siler; dosyalar listelenir, silinmez.
  */
 async function documentResidue(R, prisma, receipt, knownFiles, cleanup) {
-  const res = { rowsBefore: null, rows: null, rowsDeletedByPrisma: 0, filesLeftOnDisk: [], filesAccessError: [], cleanupRequested: !!cleanup };
-  let rows; try { rows = await docRows(prisma, receipt.clientId); } catch (e) { R.unmeasured('P6-C-DOC', 'belge kalıntısı', `okunamadı: ${errText(e, 120)}`); res.error = errText(e, 120); return res; }
+  const res = { rowsBefore: null, rows: null, rowsDeletedByPrisma: 0, filesLeftOnDisk: [], filesAccessError: [], cleanupRequested: !!cleanup, durum: null };
+  let rows; try { rows = await docRows(prisma, receipt.clientId); } catch (e) { R.unmeasured('P6-C-DOC', 'belge kalıntısı', `okunamadı: ${errText(e, 120)}`); res.error = errText(e, 120); res.durum = 'OLCULEMEDI_DB'; return res; }
   res.rowsBefore = rows.length; const known = new Set([...(knownFiles || []), ...rows.map((r) => r.filePath)].filter(Boolean));
   if (cleanup && rows.length) {
     const d = await prisma.portalDocument.deleteMany({ where: { clientId: receipt.clientId } }); res.rowsDeletedByPrisma = d.count;
-    res.note = 'OWNER KARARI: kalan belge satırları Prisma ile silindi (ürün ucu dışı); dosyalar diskte BIRAKILDI — elle silinir';
+    res.note = `OWNER KARARI: Prisma deleteMany ${d.count} belge satırı sildi (ürün ucu dışı); koşucu dosya silmez — dosyaların durumu aşağıdaki yoklamadadır`;
     rows = await docRows(prisma, receipt.clientId);
   }
   res.rows = rows.length; res.knownFilesChecked = known.size;
@@ -152,9 +158,15 @@ async function documentResidue(R, prisma, receipt, knownFiles, cleanup) {
   res.filesAccessError = states.filter((s) => s.state === 'olculemez').map((s) => `${path.basename(s.p)}:${s.code}`);
   const desc = 'belge kalıntısı YOK: bu müvekkilin PortalDocument satırı 0 · bilinen dosyalar diskte yok (üç durumlu yoklama; koşucu dosya silmez)';
   const obs = `satır=${res.rows}${res.rowsDeletedByPrisma ? ` (Prisma ile silinen ${res.rowsDeletedByPrisma})` : ''} · kontrol edilen dosya=${known.size} · diskte kalan=${res.filesLeftOnDisk.length}`;
-  // Erişim reddi "yok" SAYILMAZ: PASS verilmez, ÖLÇÜLEMEYEN yazılır (kova okunabilirliği owner tarafından düzeltilir; Preflight de ölçer).
-  if (res.filesAccessError.length) R.unmeasured('P6-C-DOC', desc, `${obs} · dosya erişimi ÖLÇÜLEMEDİ (${res.filesAccessError.join(',')}) — "yok" sayılmadı`);
-  else R.check('P6-C-DOC', desc, rows.length === 0 && res.filesLeftOnDisk.length === 0, `${obs}${rows.length ? ' · SENTETİK BELGE KALDI (ürün DELETE\'i personel oturumuyla yapılamaz)' : ''}`);
+  // R03 — DOĞRULANMIŞ KALINTI ile DEPOLAMA ERİŞİM HATASI AYRI: kalan satır (DB) ya da stat 'var' dosya doğrulanmış kalıntıdır → FAIL; bir başka
+  // dosyadaki erişim reddi onu ÖLÇÜLEMEYEN'e indirip GİZLEMEZ (önceki baytlarda erişim hatası varken kalıntı da ÖLÇÜLEMEYEN yazılıyordu).
+  // Doğrulanmış kalıntı YOKSA erişim reddi ÖLÇÜLEMEYEN'dir: "var" da "yok" da sayılmaz (kova okunabilirliği owner tarafından düzeltilir).
+  const verified = rows.length > 0 || res.filesLeftOnDisk.length > 0;
+  const access = res.filesAccessError.length ? ` · depolama erişimi ÖLÇÜLEMEDİ (${res.filesAccessError.join(',')}) — bu dosyalar kalıntı SAYILMADI, "yok" da SAYILMADI` : '';
+  res.durum = verified ? 'DOGRULANMIS_KALINTI' : (res.filesAccessError.length ? 'ERISIM_OLCULEMEDI' : 'YOK');
+  if (verified) R.check('P6-C-DOC', desc, false, `${obs} · DOĞRULANMIŞ KALINTI${rows.length ? ' · SENTETİK BELGE KALDI (ürün DELETE\'i personel oturumuyla yapılamaz)' : ''}${res.filesLeftOnDisk.length ? ' · diskte dosya VAR (stat)' : ''}${access}`);
+  else if (res.filesAccessError.length) R.unmeasured('P6-C-DOC', desc, `${obs}${access}; doğrulanmış kalıntı yok ama kalıntı yokluğu da DOĞRULANMADI`);
+  else R.check('P6-C-DOC', desc, true, obs);
   return res;
 }
 /** Sentetik yabancı belge satırı (D6-4 için Prisma ile yazıldı) Prisma ile temizlenir — AÇIKÇA raporlanır. */
@@ -171,7 +183,7 @@ async function foreignCleanup(R, prisma, receipt) {
 /** PORTAL ERİŞİM KAPANIŞI — D-4 R03 ile aynı kurallar + belge kalıntısı. */
 async function closePortal(R, prisma, base, origin, receipt, P, opts) {
   const o = opts || {}; const v = (id) => (R.rows.find((r) => r.id === id) || {}).verdict;
-  const res = { ok: false, dbClosed: false, httpVerified: false, httpFailed: false, identity: null, disableCalls: [], productFinding: null, lateCreate: null, docResidue: null };
+  const res = { ok: false, dbClosed: false, httpVerified: false, httpFailed: false, identity: null, disableCalls: [], staffReauth: null, productFinding: null, lateCreate: null, docResidue: null };
   const ident = await assertReceiptIdentity(prisma, receipt); res.identity = ident.ok ? 'OK' : ident.reason;
   if (!ident.ok) { res.note = 'kimlik bağı DOĞRULANMADI — hiçbir yazma yapılmadı'; R.check('P6-C1', 'portal erişimi yetkili uçla kapatıldı', false, res.note); return res; }
   let st0 = await portalState(prisma, receipt.clientId);
@@ -191,12 +203,25 @@ async function closePortal(R, prisma, base, origin, receipt, P, opts) {
     res.docResidue = await documentResidue(R, prisma, receipt, o.knownFiles, o.residueCleanup); res.ok = res.ok && v('P6-C-DOC') === 'PASS'; res.dbClosed = res.ok; return res;
   }
   let disabledNow = false;
+  const httpOf = (r) => (r.indeterminate ? 'belirsiz' : `HTTP ${r.status}`);
+  const callDisable = async () => { const r = await L.AH.httpJson('POST', `${base}/portal/admin/disable-user`, { token: o.session.token, body: { clientId: receipt.clientId }, timeoutMs: P.D6_CALL_TIMEOUT_MS }); res.disableCalls.push(httpOf(r)); return r; };
   if (st0.isActive || st0.hasPortalAccess) {
     for (let i = 0; i < 2; i++) {
       if ((!o.session || !o.session.token) && o.sessionProvider) { try { o.session = await o.sessionProvider(); res.disableCalls.push('personel oturumu kapatma için açıldı'); } catch (e) { res.disableCalls.push(`personel oturumu açılamadı: ${errText(e, 100)}`); } }
       if (!o.session || !o.session.token) { res.disableCalls.push('personel oturumu YOK'); break; }
-      const r = await L.AH.httpJson('POST', `${base}/portal/admin/disable-user`, { token: o.session.token, body: { clientId: receipt.clientId }, timeoutMs: P.D6_CALL_TIMEOUT_MS });
-      res.disableCalls.push(r.indeterminate ? 'belirsiz' : `HTTP ${r.status}`);
+      let r = await callDisable();
+      // R03 (a): personel oturumu yetkili uçta REDDEDİLDİ (401/403; ürün: JwtAuthGuard 401 · yetki 403 — ikisi de yazmadan önce döner) →
+      // DB hâlâ açıksa BİR KEZ yeniden giriş (`staffReauth`, yalnız Run verir) + aynı adımda TEK yeniden deneme. Başka 4xx'te yeniden giriş YOK;
+      // ikinci 401/403'te yeniden giriş YOK. 5xx / belirsiz için en çok iki adım kuralı değişmedi. Sonuç kanıtta `staffReauth` (yalnız HTTP kodu).
+      if (!r.indeterminate && (r.status === 401 || r.status === 403) && o.staffReauth && !res.staffReauth) {
+        const pre = await portalState(prisma, receipt.clientId);
+        if (!pre.isActive && !pre.hasPortalAccess) { res.disableCalls.push('DB: kapalı görüldü'); break; }
+        res.staffReauth = { neden: `disable-user HTTP ${r.status}`, giris: null, yenidenDeneme: null };
+        let s = null; try { s = await o.staffReauth(); } catch (e) { res.staffReauth.hata = errText(e, 100); }
+        res.staffReauth.giris = s ? httpOf(s) : 'yapılamadı';
+        if (s && s.ok && s.token) { o.session = s; res.disableCalls.push('personel oturumu YENİLENDİ (tek yeniden giriş)'); r = await callDisable(); res.staffReauth.yenidenDeneme = httpOf(r); }
+        else res.disableCalls.push(`personel yeniden girişi başarısız (${res.staffReauth.giris}) — yeniden deneme YAPILMADI`);
+      }
       if (!r.indeterminate && r.status >= 200 && r.status < 300) { disabledNow = true; break; }
       const now = await portalState(prisma, receipt.clientId); if (!now.isActive && !now.hasPortalAccess) { res.disableCalls.push('DB: kapalı görüldü'); break; }
       if (!r.indeterminate && r.status < 500) break;
@@ -235,20 +260,33 @@ async function closePortal(R, prisma, base, origin, receipt, P, opts) {
 }
 function exitCodeOf(out, s) { if (!(out.portalClose && out.portalClose.ok)) return 6; if (!(out.closure && out.closure.ok)) return 5; if (out.fatal) return 1; if (s.fail > 0) return 2; if (s.unmeasured > 0) return 3; return 0; }
 function recoverExitCode(out, s) { const pc = out.portalClose || {}; if (!pc.dbClosed || pc.httpFailed || pc.productFinding || pc.lateCreateRisk) return 6; if (!(out.closure && out.closure.ok)) return 5; if (out.fatal) return 1; if (s.fail > 0) return 2; if (s.unmeasured > 0) return 3; return 0; }
-function recoveryAdvice(out, receiptPath) {
+/**
+ * KURTARMA / İNCELEME NEDENİ (R03): `neden` satırları yalnız ÖLÇÜLENİ yazar (sabit "doğrulandı" / süre iddiası yok); doğrulanmış belge
+ * kalıntısı ile depolama erişim hatası AYRI satırdır ve biri diğerini gizlemez. `adim` bir ÖNERİDİR, yetki değildir: Run'da çıkış kodu
+ * Recover yetkisi değildir (Recover yalnız kanıt incelendikten sonra AYRI owner onayıyla); Recover'da İKİNCİ bir Recover için yol TANIMLAMAZ.
+ */
+function recoveryAdvice(out, receiptPath, mode) {
   const need = []; const pc = out.portalClose || {}; const dr = pc.docResidue || {};
+  const residue = (dr.rows > 0) || (dr.filesLeftOnDisk || []).length > 0; const access = (dr.filesAccessError || []).length > 0;
+  const notPass = (ids) => (out.results || []).filter((r) => ids.includes(r.id) && r.verdict !== 'PASS').map((r) => `${r.id}=${r.verdict}`);
   if (!pc.ok) {
-    if (pc.productFinding) need.push('PORTAL: mevcut oturum kapanmadı (ÜRÜN BULGUSU — Recover düzeltemez; token 7 gün geçerli)');
-    else if (pc.lateCreateRisk) need.push('PORTAL: oluşturma belirsiz (geç oluşma DIŞLANAMADI), hesap görülmedi — birkaç dakika sonra Recover BİR KEZ');
-    else if ((dr.filesAccessError || []).length) need.push(`BELGE: diskteki dosya erişimi ÖLÇÜLEMEDİ (${dr.filesAccessError.join(',')}) — kalıntı "yok" SAYILMADI; belge kovası (HUKUK_DATA_ROOT/portal-documents) okunabilirliği düzeltildikten sonra Recover BİR KEZ`);
-    else if (dr.rows > 0 || (dr.filesLeftOnDisk || []).length) need.push(`BELGE: sentetik belge KALDI (satır=${dr.rows} · diskte dosya=${(dr.filesLeftOnDisk || []).length}) — ürün DELETE'i personel oturumuyla yapılamaz; Recover'da D6_RESIDUE_CLEANUP=1 (owner kararı) satırları Prisma ile siler, dosyalar elle silinir`);
-    else if (pc.dbClosed) need.push(`PORTAL: DB kapalı ama HTTP reddi doğrulanmadı (ölçülemeyen: ${(pc.httpUnmeasured || []).join(',') || '-'})`);
-    else need.push('PORTAL ERİŞİMİ kapandığı doğrulanmadı');
+    if (pc.productFinding) need.push('PORTAL: mevcut oturum kapanmadı (ÜRÜN BULGUSU — Recover düzeltemez; portal oturumunun geçerlilik süresi bu koşumda ÖLÇÜLMEDİ)');
+    else if (pc.lateCreateRisk) need.push('PORTAL: oluşturma belirsiz (geç oluşma DIŞLANAMADI), hesap kapanış penceresinde görülmedi — hesap sonradan oluşmuş olabilir');
+    else if (!residue && !access) {
+      if (pc.dbClosed) need.push(`PORTAL: DB kapalı ama HTTP reddi doğrulanmadı (${notPass(['P6-C3L', 'P6-C3D', 'P6-C4L', 'P6-C4D']).join(',') || '-'})`);
+      else need.push(`PORTAL ERİŞİMİ kapandığı doğrulanmadı (${notPass(['P6-C1', 'P6-C2', 'P6-C2V', 'P6-C5']).join(',') || 'ölçüt satırı yok'})${(pc.disableCalls || []).length ? ` · kapatma çağrıları: ${pc.disableCalls.join(' · ')}` : ''}${pc.reason ? ` · hata: ${pc.reason}` : ''}`);
+    }
+    if (residue) need.push(`BELGE: sentetik belge KALDI — DOĞRULANMIŞ KALINTI (satır=${dr.rows} · diskte dosya VAR=${(dr.filesLeftOnDisk || []).length}) — ürün DELETE'i personel oturumuyla yapılamaz; Recover'da D6_RESIDUE_CLEANUP=1 (owner kararı) satırları Prisma ile siler, dosyalar elle silinir`);
+    if (access) need.push(`BELGE: depolama erişimi ÖLÇÜLEMEDİ (${dr.filesAccessError.join(',')}) — bu dosyalar kalıntı SAYILMADI, "yok" da SAYILMADI; belge kovasının (HUKUK_DATA_ROOT/portal-documents) okunabilirliği owner tarafından düzeltilmeden kalıntı yokluğu ölçülemez`);
+    if (pc.staffReauth) need.push(`PERSONEL OTURUMU kapanışta reddedildi (${pc.staffReauth.neden}); tek yeniden giriş: ${pc.staffReauth.giris}; tek yeniden deneme: ${pc.staffReauth.yenidenDeneme || 'yapılmadı'}`);
   }
   if (!(out.closure && out.closure.ok)) need.push('PERSONEL/DOSYA KAPANIŞI doğrulanmadı');
   if (!need.length) return { gerekli: false };
   let onDisk = false; try { onDisk = !!receiptPath && fs.existsSync(receiptPath); } catch (e) { onDisk = false; }
-  return { gerekli: true, neden: need, makbuz: receiptPath || null, makbuzDiskte: onDisk, adim: 'Owner bloğu `-Mode Recover -ReceiptFile <makbuz>` ile; kabul ölçütleri tekrarlanmaz. Belge kalıntısı için owner kararı sorulur.' };
+  const adim = mode === 'recover'
+    ? 'ÖNERİ (yetki DEĞİL): kanıt incelenir ve sonuç CLIENT\'a bildirilir. Bu çıkış kodu yeni bir Recover için yetki değildir; İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR, owner kararı gerektirir.'
+    : 'ÖNERİ (yetki DEĞİL): çıkış kodu Recover yetkisi değildir; önce kanıt incelenir. Recover yalnız AYRI owner onayıyla başlatılır (owner bloğu `-Mode Recover -ReceiptFile <makbuz>`); kabul ölçütleri tekrarlanmaz; belge kalıntısı için owner kararı Recover girişinde sorulur.';
+  return { gerekli: true, neden: need, makbuz: receiptPath || null, makbuzDiskte: onDisk, adim };
 }
 
 // ------------------------------------------------------------------ RUN
@@ -267,7 +305,7 @@ async function runMode() {
   const portalPw = 'D6p!' + crypto.randomBytes(12).toString('base64url'); addSecret(portalPw);
   const portalEmail = `portal-d6-${runId}@ah-harness.invalid`; const fileNumber = `I3-${runId}`;
   const pdf = buildPdf(runId); const pdfSha = sha256(pdf); const docFileName = `d6-${runId}.pdf`; const docTitle = `D6-${runId}`;
-  const out = { record: 'EXTACC-D6-PORTAL-DOCUMENTS-LIVE-RUN', revision: 'R01', runId, apiBase: base, expectedOrigin: origin, params: P, calledEndpoints: [], upload: { fileName: docFileName, bytes: pdf.length, sha256: pdfSha, title: docTitle } };
+  const out = { record: 'EXTACC-D6-PORTAL-DOCUMENTS-LIVE-RUN', revision: 'R03', runId, apiBase: base, expectedOrigin: origin, params: P, calledEndpoints: [], upload: { fileName: docFileName, bytes: pdf.length, sha256: pdfSha, title: docTitle } };
   const call = (m, p) => out.calledEndpoints.push(`${m} ${p.replace(base, '<API>').replace(origin, '<DIŞ>')}`);
   let receipt = null; let fatal = null; let session = null; let portalToken = null; let stopped = null; let displayed = false; let createOutcome = null; let issuedVersion = null;
   let docId = null; let docPath = null; const knownFiles = [];
@@ -326,11 +364,16 @@ async function runMode() {
       else R.check('D6-1', 'koşucunun DIŞ HTTPS multipart yüklemesi 201 + yanıtta belge id/title/fileName/status=PENDING', up.status === 201 && !!docId && upBody.title === docTitle && upBody.fileName === docFileName && upBody.status === 'PENDING', `HTTP ${up.status} · id=${docId ? 'var' : 'yok'}`);
       const rows = await docRows(prisma, st.clientId); const row = docId ? rows.find((r) => r.id === docId) : (rows.length === 1 ? rows[0] : null);
       if (row) { docId = docId || row.id; docPath = row.filePath; knownFiles.push(docPath); receipt.documentId = docId; receipt.documentFile = docPath; saveReceipt(null); }
-      const fst = row ? fileState(row.filePath) : { state: 'yok', code: null }; const onDisk = fst.state === 'var';
-      const rowOk = !!row; // clientId kapsamı: satır `where clientId` ile sorgulandı
-      R.check('D6-1D', 'DB: PortalDocument satırı — clientId (sorgu) · tenantId · caseId · fileName · fileSize=bayt · mimeType=application/pdf · status=PENDING · filePath diskte VAR (stat)',
-        rowOk && rows.length === 1 && row.tenantId === st.tenantId && row.caseId === st.caseId && row.fileName === docFileName && row.fileSize === pdf.length && row.mimeType === 'application/pdf' && row.status === 'PENDING' && onDisk,
-        row ? `satır=${rows.length} tenant=${row.tenantId === st.tenantId} case=${row.caseId === st.caseId} ad=${row.fileName === docFileName} boyut=${row.fileSize}/${pdf.length} mime=${row.mimeType} durum=${row.status} diskte=${fst.state}${fst.code ? '(' + fst.code + ')' : ''} dosya=${path.basename(row.filePath)}` : `satır YOK (toplam ${rows.length})`);
+      const fst = row ? fileState(row.filePath) : { state: 'yok', code: null }; out.upload.disk = { state: fst.state, code: fst.code };
+      // clientId kapsamı: satır `where clientId` ile sorgulandı
+      const rowFieldsOk = !!row && rows.length === 1 && row.tenantId === st.tenantId && row.caseId === st.caseId && row.fileName === docFileName && row.fileSize === pdf.length && row.mimeType === 'application/pdf' && row.status === 'PENDING';
+      const d1dDesc = 'DB: PortalDocument satırı — clientId (sorgu) · tenantId · caseId · fileName · fileSize=bayt · mimeType=application/pdf · status=PENDING · filePath diskte VAR (stat)';
+      const d1dObs = row ? `satır=${rows.length} tenant=${row.tenantId === st.tenantId} case=${row.caseId === st.caseId} ad=${row.fileName === docFileName} boyut=${row.fileSize}/${pdf.length} mime=${row.mimeType} durum=${row.status} diskte=${fst.state}${fst.code ? '(' + fst.code + ')' : ''} dosya=${path.basename(row.filePath)}` : `satır YOK (toplam ${rows.length})`;
+      // R03 (b): satır alanları doğru ve dosya yoklaması 'olculemez' (erişim reddi) ise D6-1D ÖLÇÜLEMEYEN'dir (önceki baytlarda FAIL'di): dosya
+      // "var" da "yok" da sayılmaz. Gösterim kapısı PASS istediği için kapı yine KAPALI kalır (giriş bilgisi gösterilmez). Satır alanı yanlışsa ya da
+      // dosya doğrulanmış olarak YOKSA (ENOENT/ENOTDIR) FAIL kalır.
+      if (rowFieldsOk && fst.state === 'olculemez') R.unmeasured('D6-1D', d1dDesc, `${d1dObs} · depolama erişimi ÖLÇÜLEMEDİ (${fst.code}) — dosyanın varlığı ÖLÇÜLMEDİ ("var" ya da "yok" SAYILMADI; FAIL değil); gösterim kapısı PASS ister → giriş bilgisi gösterilmez`);
+      else R.check('D6-1D', d1dDesc, rowFieldsOk && fst.state === 'var', d1dObs);
       if (!docId) stopped = 'yükleme sonucu belge yok — liste/indirme/silme ÖLÇÜLEMEZ, giriş bilgisi GÖSTERİLMEDİ';
     }
     // ---- D6-2 LİSTE · D6-3 İNDİRME · D6-6 PERSONEL BEKLEYEN · D6-4 KAPSAM DIŞI
@@ -394,8 +437,13 @@ async function runMode() {
       if (dx.indeterminate || dx.status === 503) R.unmeasured('D6-5', 'koşucu belgesi DIŞ DELETE 200', dx.indeterminate ? 'yanıt yok' : 'HTTP 503 — neden UNKNOWN');
       else R.check('D6-5', 'koşucu belgesi DIŞ HTTPS DELETE 200 (ürün ucu; koşucu dosya silmez)', dx.status === 200, `HTTP ${dx.status}`);
       const left = await prisma.portalDocument.count({ where: { id: docId } }); const fsd = fileState(docPath);
-      if (fsd.state === 'olculemez') R.unmeasured('D6-5D', 'DB satırı YOK + diskte dosya YOK (üç durumlu yoklama)', `satır=${left} · dosya erişimi ÖLÇÜLEMEDİ (${fsd.code}) — "yok" sayılmadı`);
-      else R.check('D6-5D', 'DB satırı YOK + diskte dosya YOK (üç durumlu yoklama; erişim reddi "yok" sayılmaz)', left === 0 && fsd.state === 'yok', `satır=${left} diskte=${fsd.state === 'var'}`);
+      const d5dDesc = 'DB satırı YOK + diskte dosya YOK (üç durumlu yoklama; erişim reddi "yok" sayılmaz)';
+      const d5dObs = `satır=${left} · diskte=${fsd.state}${fsd.code ? '(' + fsd.code + ')' : ''}`;
+      // R03 (b): kalan satır ya da stat 'var' dosya DOĞRULANMIŞ kalıntıdır → FAIL (dosya erişim reddi bunu ÖLÇÜLEMEYEN'e indirmez; önceki
+      // baytlarda satır kalmışken dosya 'olculemez' ise ÖLÇÜLEMEYEN yazılıyordu). Doğrulanmış kalıntı yoksa erişim reddi ÖLÇÜLEMEYEN'dir.
+      if (left > 0 || fsd.state === 'var') R.check('D6-5D', d5dDesc, false, `${d5dObs} · DOĞRULANMIŞ KALINTI${left > 0 ? ' (satır)' : ''}${fsd.state === 'var' ? ' (dosya)' : ''}${fsd.state === 'olculemez' ? ` · ayrıca depolama erişimi ÖLÇÜLEMEDİ (${fsd.code})` : ''}`);
+      else if (fsd.state === 'olculemez') R.unmeasured('D6-5D', d5dDesc, `${d5dObs} · depolama erişimi ÖLÇÜLEMEDİ (${fsd.code}) — dosya "yok" sayılmadı; satır 0`);
+      else R.check('D6-5D', d5dDesc, true, d5dObs);
       const l2 = await L.AH.httpJson('GET', `${origin}/api/portal/documents`, { token: portalToken, timeoutMs: P.D6_HTTP_TIMEOUT_MS });
       if (l2.indeterminate || l2.status === 503) R.unmeasured('D6-5L', 'silme sonrası dış liste', l2.indeterminate ? 'yanıt yok' : 'HTTP 503');
       else R.check('D6-5L', 'silme sonrası DIŞ liste 200 ve bu belge yok', l2.status === 200 && Array.isArray(l2.body) && !l2.body.some((d) => d && d.id === docId), `HTTP ${l2.status} · kayıt=${Array.isArray(l2.body) ? l2.body.length : '-'}`);
@@ -405,8 +453,15 @@ async function runMode() {
   } catch (e) { fatal = errText(e, 300); }
   finally {
     if (con) { try { await DISPLAY.clear(con); } catch (e) { out.displayClearError = errText(e, 120); } DISPLAY.close(con); }
+    // R03 (a): personel oturumu kapanışta 401/403 ile reddedilirse BİR KEZ yeniden giriş — koşum başındaki AYNI kimlik bilgisi (makbuzdaki sentetik
+    // personel e-postası + tenant slug'ı + bu koşumun parolası); DB'ye yazmaz (parola / isActive DEĞİŞMEZ; Recover'ın geçici erişim yolu KULLANILMAZ).
+    // Yalnız koşumda bir personel oturumu alınmışsa verilir; yeni token sır listesine eklenir.
+    const staffReauth = (session && session.token && receipt) ? async () => {
+      call('POST', `${base}/auth/login (kapanış: personel oturumu yenileme)`);
+      const s = await L.AH.login(base, receipt.elevEmail, pw, receipt.tenantSlug); if (s && s.token) addSecret(s.token); return s;
+    } : null;
     try {
-      out.portalClose = receipt ? await closePortal(R, prisma, base, origin, receipt, P, { session, creds: createOutcome ? { email: portalEmail, password: portalPw } : null, portalToken, issuedVersion, knownFiles,
+      out.portalClose = receipt ? await closePortal(R, prisma, base, origin, receipt, P, { session, staffReauth, creds: createOutcome ? { email: portalEmail, password: portalPw } : null, portalToken, issuedVersion, knownFiles,
         sessionRequired: !!portalToken || displayed, createUncertain: createOutcome === 'attempted' || createOutcome === 'uncertain',
         noSessionWhy: displayed ? 'gösterim yapıldı ama koşucu oturumu yok — mevcut oturum ölçülemez' : 'koşumda portal oturumu alınmadı — mevcut oturum ölçülemez' }) : { ok: true, nothingCreated: true };
       out.createOutcome = createOutcome;
@@ -414,7 +469,7 @@ async function runMode() {
     if (receipt) { try { out.foreignCleanup = await foreignCleanup(R, prisma, receipt); } catch (e) { out.foreignCleanup = { error: errText(e, 160) }; } }
     try { out.closure = receipt ? await closeAccess(prisma, receipt) : { ok: true, nothingToClose: true }; } catch (e) { out.closure = { ok: false, reason: errText(e, 200) }; }
     if (receipt) R.check('U-CLOSE', 'personel kullanıcıları pasif (tokenVersion++) + Case CLOSED', !!(out.closure && out.closure.ok), JSON.stringify(out.closure || {}));
-    if (receipt) { try { const a = await prisma.auditLog.count({ where: { tenantId: receipt.tenantId } }); out.auditRetained = { tenantAuditRows: a, before: out.auditBefore ?? null, note: 'audit/log kayıtları SAKLANDI (silinmedi); belge uçları audit yazmaz — fark portal hesabı aç/kapa kaynaklıdır' }; } catch (e) { out.auditRetained = { error: errText(e, 120) }; } }
+    if (receipt) { try { const a = await prisma.auditLog.count({ where: { tenantId: receipt.tenantId } }); const b0 = out.auditBefore ?? null; out.auditRetained = { tenantAuditRows: a, before: b0, delta: b0 === null ? null : a - b0, note: 'audit/log kayıtları SAKLANDI (koşucu audit silmez — statik ölçüt T-1); fark (sonra − önce) ÖLÇÜLDÜ, kaynağı satır satır ÖLÇÜLMEDİ (kaynaktan okunan: portal hesabı aç/kapa audit yazar; belge uçları ve personel girişi audit yazmaz)' }; } catch (e) { out.auditRetained = { error: errText(e, 120) }; } }
     if (receipt) R.check('P6-D9', 'PORTAL kapanışı birleşik: DB kapalı + gerekli HTTP reddi + belge kalıntısı YOK + yabancı satır temiz + personel/dosya kapanışı',
       !!(out.portalClose && out.portalClose.ok) && !!(out.closure && out.closure.ok) && v('P6-FOREIGN-CLEAN') === 'PASS', `portal=${!!(out.portalClose && out.portalClose.ok)} personel=${!!(out.closure && out.closure.ok)} yabancı=${v('P6-FOREIGN-CLEAN')}${out.portalClose && out.portalClose.productFinding ? ' · ' + out.portalClose.productFinding : ''}`);
     out.productFinding = out.portalClose ? out.portalClose.productFinding || null : null; out.forbiddenEndpointCalled = out.calledEndpoints.some((c) => FORBIDDEN.some((re) => re.test(c)));
@@ -422,7 +477,7 @@ async function runMode() {
       if (after && b) R.check('U-ISO', 'bu koşumun iki sentetik tenantı DIŞINDAKİ tenantlarda kullanıcı/müvekkil SAYILARI önce/sonra aynı (yalnız sayı)', after.digest === b.digest, `önce=${b.digest}/${b.tenants} sonra=${after.digest}/${after.tenants}`); else R.unmeasured('U-ISO', 'sayım dağılımı', 'ölçülemedi'); } catch (e) { R.unmeasured('U-ISO', 'sayım dağılımı', `okunamadı: ${errText(e, 120)}`); }
     const s = R.summary(`EXTACC D-6 PORTAL BELGE AKIŞI (runId=${runId})`);
     out.fatal = fatal; out.stopped = stopped; out.displayed = displayed; out.pass = s.pass; out.fail = s.fail; out.unmeasured = s.unmeasured;
-    out.results = R.rows.map((r) => ({ id: r.id, verdict: r.verdict, observed: r.observed })); out.recovery = recoveryAdvice(out, receipt ? receiptPath : null);
+    out.results = R.rows.map((r) => ({ id: r.id, verdict: r.verdict, observed: r.observed })); out.recovery = recoveryAdvice(out, receipt ? receiptPath : null, 'run');
     if (out.recovery.gerekli) console.error(`KURTARMA/İNCELEME GEREKLİ: ${out.recovery.neden.join(' · ')}`);
     out.exitCode = exitCodeOf(out, s); out.exitCode = writeEvidenceOrDemote(evid, out); await prisma.$disconnect().catch(() => {}); process.exitCode = out.exitCode;
   }
@@ -438,19 +493,19 @@ async function recoverMode() {
   if (!receipt || receipt.record !== RECEIPT_RECORD || !receipt.elevUserId || !receipt.elevEmail) { console.error('REDDEDİLDİ: makbuz biçimi/alanları eksik'); process.exit(4); }
   if (process.env.D6_RUNID && String(process.env.D6_RUNID).toLowerCase() !== String(receipt.runId).toLowerCase()) { console.error('REDDEDİLDİ: runId makbuzla eşleşmiyor'); process.exit(4); }
   const R = new L.Results(); const prisma = L.AH.loadPrisma(); const bcrypt = require(process.env.AH_BCRYPT_PATH);
-  const out = { record: 'EXTACC-D6-RECOVER', revision: 'R01', runId: receipt.runId, note: 'kabul ölçütleri KOŞULMADI; yalnız kapanış', residueCleanupRequested: process.env.D6_RESIDUE_CLEANUP === '1' };
+  const out = { record: 'EXTACC-D6-RECOVER', revision: 'R03', runId: receipt.runId, note: 'kabul ölçütleri KOŞULMADI; yalnız kapanış', residueCleanupRequested: process.env.D6_RESIDUE_CLEANUP === '1' };
   let session = null; let before = null;
   const createUncertain = !!receipt.createAttemptedAt && receipt.createOutcome !== 'ok' && receipt.createOutcome !== 'rejected';
   out.createEvidence = { attemptedAt: receipt.createAttemptedAt || null, outcome: receipt.createOutcome || null, uncertain: createUncertain };
   out.uploadEvidence = { attemptedAt: receipt.uploadAttemptedAt || null, outcome: receipt.uploadOutcome || null, documentId: receipt.documentId ? 'var' : null };
   const elevOf = () => prisma.user.findFirst({ where: { id: receipt.elevUserId, tenantId: receipt.tenantId, email: receipt.elevEmail }, select: { id: true } });
-  const openStaffSession = async () => { if (session && session.token) return session; const elev = await elevOf(); if (!elev) throw new Error('makbuzdaki kullanıcı sentetik tenantta yok'); await prisma.user.update({ where: { id: elev.id }, data: { passwordHash: await bcrypt.hash(pw, 10), isActive: true } }); out.temporaryAccess = 'sentetik personele geçici erişim; kapanışta yeniden kapatıldı'; session = await L.AH.login(base, receipt.elevEmail, pw, receipt.tenantSlug); if (session && session.token) addSecret(session.token); return session; };
+  const openStaffSession = async () => { if (session && session.token) return session; const elev = await elevOf(); if (!elev) throw new Error('makbuzdaki kullanıcı sentetik tenantta yok'); await prisma.user.update({ where: { id: elev.id }, data: { passwordHash: await bcrypt.hash(pw, 10), isActive: true } }); out.temporaryAccess = 'sentetik personele geçici erişim verildi (isActive=true + yeni parola özeti); yeniden kapatılması U-CLOSE satırında ölçülür (temporaryAccessClosed)'; session = await L.AH.login(base, receipt.elevEmail, pw, receipt.tenantSlug); if (session && session.token) addSecret(session.token); return session; };
   try { const ident = await assertReceiptIdentity(prisma, receipt); if (!ident.ok) { console.error(`REDDEDİLDİ: kimlik bağı doğrulanmadı (${ident.reason}) — HİÇBİR yazma yapılmadı`); await prisma.$disconnect().catch(() => {}); process.exit(4); }
     before = await portalState(prisma, receipt.clientId);
     if (before.exists && (before.isActive || before.hasPortalAccess)) { if (!(await elevOf())) { console.error('REDDEDİLDİ: makbuzdaki kullanıcı yok — yazma yapılmadı'); await prisma.$disconnect().catch(() => {}); process.exit(4); } await openStaffSession(); } } catch (e) { out.fatal = errText(e, 200); }
   const issued = Number.isInteger(receipt.portalIssuedTokenVersion) ? receipt.portalIssuedTokenVersion : null; out.versionEvidence = { issuedFromReceipt: issued, beforeRecover: before ? before.tokenVersion : null };
   const knownFiles = [receipt.documentFile, ...(Array.isArray(receipt.residueFiles) ? receipt.residueFiles : [])].filter(Boolean);
-  // Kalan satırların dosya yolları makbuza yazılır: Prisma temizliğinden sonra da (bir sonraki Recover) diskte kontrol edilebilsin.
+  // Kalan satırların dosya yolları makbuza yazılır: Prisma temizliğinden sonra da diskte kontrol edilebilsin (yeniden ölçüm owner kararına bağlıdır).
   try { const rows = await docRows(prisma, receipt.clientId); const paths = [...new Set([...knownFiles, ...rows.map((r) => r.filePath)])]; if (paths.length) { receipt.residueFiles = paths; try { writeJson(receiptPath, receipt); } catch (e) { out.receiptWriteError = errText(e, 120); } } for (const p of paths) if (!knownFiles.includes(p)) knownFiles.push(p); } catch (e) { out.residueReadError = errText(e, 120); }
   try { out.portalClose = await closePortal(R, prisma, base, origin, receipt, P, { session, sessionProvider: openStaffSession, issuedVersion: issued, sessionRequired: true, createUncertain, knownFiles, residueCleanup: process.env.D6_RESIDUE_CLEANUP === '1',
     absentNote: receipt.createAttemptedAt ? `Recover anında portal hesabı YOK (oluşturma sonucu kesin: ${receipt.createOutcome})` : 'portal hesabı yok; makbuzda oluşturma denemesi kaydı yok',
@@ -459,13 +514,23 @@ async function recoverMode() {
   try { out.foreignCleanup = await foreignCleanup(R, prisma, receipt); } catch (e) { out.foreignCleanup = { error: errText(e, 160) }; }
   try { out.closure = await closeAccess(prisma, receipt); } catch (e) { out.closure = { ok: false, reason: errText(e, 200) }; }
   R.check('U-CLOSE', 'personel kullanıcıları pasif + Case CLOSED', !!(out.closure && out.closure.ok), JSON.stringify(out.closure || {}));
-  try { out.auditRetained = { tenantAuditRows: await prisma.auditLog.count({ where: { tenantId: receipt.tenantId } }), note: 'audit/log kayıtları SAKLANDI (silinmedi)' }; } catch (e) { out.auditRetained = { error: errText(e, 120) }; }
+  if (out.temporaryAccess) out.temporaryAccessClosed = !!(out.closure && out.closure.ok);   // ölçülen: U-CLOSE ile aynı kaynak
+  try { out.auditRetained = { tenantAuditRows: await prisma.auditLog.count({ where: { tenantId: receipt.tenantId } }), note: 'audit/log kayıtları SAKLANDI (koşucu audit silmez — statik ölçüt T-1)' }; } catch (e) { out.auditRetained = { error: errText(e, 120) }; }
   const s = R.summary(`EXTACC D-6 KURTARMA (runId=${receipt.runId})`); out.results = R.rows.map((r) => ({ id: r.id, verdict: r.verdict, observed: r.observed }));
-  out.exitCode = recoverExitCode(out, s); out.recovery = recoveryAdvice(out, receiptPath);
+  out.exitCode = recoverExitCode(out, s); out.recovery = recoveryAdvice(out, receiptPath, 'recover');
+  // R03 (c): adım metni ÖNERİDİR ve yalnız ölçüleni söyler; İKİNCİ bir Recover için yol TANIMLAMAZ (önceki baytlar "Recover BİR KEZ daha" diyordu).
+  // Doğrulanmış kalıntı ile depolama erişim hatası AYRI cümlelerdir (önceki baytlarda erişim hatası kalıntı cümlesini gizliyordu).
   const dres = (out.portalClose && out.portalClose.docResidue) || {};
-  if (out.recovery.gerekli && out.exitCode === 3) out.recovery.adim = 'Recover TEKRARLANMAZ: DB kapalı; ölçülemeyen satırlar Run kanıtıyla değerlendirilir.';
-  else if (out.recovery.gerekli && (dres.filesAccessError || []).length) out.recovery.adim = 'Belge kovasının okunabilirliği (ACL) OWNER tarafından düzeltilir; sonra Recover BİR KEZ daha (satır silme kararı yeniden sorulur; dosya erişimi "yok" sayılmadı).';
-  else if (out.recovery.gerekli && (dres.filesLeftOnDisk || []).length && dres.rows === 0) out.recovery.adim = 'Satırlar temiz; diskte kalan dosya(lar) OWNER tarafından elle silindikten sonra Recover BİR KEZ daha (makbuzdaki residueFiles yeniden ölçülür).';
+  const resV = (dres.rows > 0) || (dres.filesLeftOnDisk || []).length > 0; const accE = (dres.filesAccessError || []).length > 0;
+  const noSecond = ' Bu çıkış kodu yeni bir Recover için yetki değildir; İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR, owner kararı gerektirir.';
+  if (out.recovery.gerekli && out.exitCode === 3) out.recovery.adim = 'ÖNERİ (yetki DEĞİL): Recover TEKRARLANMAZ — DB kapalı (P6-C2/C5 PASS); ölçülemeyen satırlar Run kanıtıyla değerlendirilir.';
+  else if (out.recovery.gerekli && (resV || accE)) {
+    const parts = [];
+    if (dres.rows > 0) parts.push(`kalan belge satırı=${dres.rows} (ölçüldü) — satırların silinmesi owner kararıdır (D6_RESIDUE_CLEANUP)`);
+    if ((dres.filesLeftOnDisk || []).length) parts.push(`satır=${dres.rows} (ölçüldü); diskte kalan dosya(lar) VAR (stat: ${dres.filesLeftOnDisk.join(',')}) — OWNER tarafından elle silinir; dosya elle silindikten sonra yokluğu bu Recover'da ÖLÇÜLMEDİ`);
+    if (accE) parts.push(`depolama erişimi ÖLÇÜLEMEDİ (${dres.filesAccessError.join(',')}) — belge kovasının okunabilirliği (ACL) OWNER tarafından düzeltilir; bu dosyaların yokluğu bu Recover'da ÖLÇÜLMEDİ`);
+    out.recovery.adim = `ÖNERİ (yetki DEĞİL): ${parts.join(' · ')}.${noSecond}`;
+  }
   out.exitCode = writeEvidenceOrDemote(evid, out); await prisma.$disconnect().catch(() => {}); process.exitCode = out.exitCode;
 }
 if (require.main === module) { const mode = String(process.env.D6_MODE || 'run').toLowerCase(); if (mode === 'run') runMode(); else if (mode === 'recover') recoverMode(); else { console.error(`REDDEDİLDİ: bilinmeyen D6_MODE '${mode}'`); process.exit(1); } }

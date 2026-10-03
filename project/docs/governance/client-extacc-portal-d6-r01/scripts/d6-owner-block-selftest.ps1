@@ -16,6 +16,10 @@
 #          G-5 onay metni kapsamı (iki sentetik tenant: kaynaktan + U-ISO yalnız sayı; bildirim: statik ölçüt T-1) ve kova dizini TEK adla
 #          (portal-documents/<sentetik tenant>/); O-9 kapanış satırı "bu satırın devamında" + parçalar aynı satırda + satır rengi notu.
 #          R02 ilk tur blok baytlarında (5AEF3893…) G-3, G-5, O-9 FAIL verir (negatif kontrol).
+# R03    : PIN-1 bloğun PkgPins değerleri bu checkout'taki 9 dosyanın GERÇEK sha256'sına ve $ExpPackage yeniden hesaplanan paket digest'ine
+#          eşit (koşucu değişince pin + digest birlikte güncellenmezse FAIL); O-10 Recover bitiş satırı 3'ü "yeni giriş reddi" diye iddia
+#          etmez (P6-C3L/D satırlarına yönlendirir) ve 6'da kalıntının DOĞRULANDI / ÖLÇÜLEMEDİ ayrımını kanıttaki P6-C-DOC + docResidue.durum'a
+#          bağlar. R02 ikinci tur blok baytlarında (082527EE…) PIN-1 ve O-10 FAIL verir (negatif kontrol).
 # KULLANIM: powershell.exe -NoProfile -ExecutionPolicy Bypass -File d6-owner-block-selftest.ps1   (ve pwsh)
 # ÇIKIŞ  : 0 hepsi PASS · 1 en az bir FAIL · 2 ölçülemedi
 $ErrorActionPreference = 'Stop'
@@ -33,6 +37,12 @@ if ($secAssign.Count -ne 1) { Write-Host 'OLCULEMEDI: $SecretEnv ataması buluna
 $lpAssign = @($ast.FindAll({ param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$LiveParams' }, $false))
 if ($lpAssign.Count -ne 1) { Write-Host 'OLCULEMEDI: $LiveParams ataması bulunamadı'; exit 2 }
 . ([scriptblock]::Create($lpAssign[0].Extent.Text))
+# R03 (PIN-1): bloğun pin tablosu ve paket digest'i AST'den okunur (akış ÇALIŞMAZ); karşılaştırma bu checkout'un governance dizinindeki dosyalarla.
+$pinAssign = @($ast.FindAll({ param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$PkgPins' }, $false))
+$pkgAssign = @($ast.FindAll({ param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$ExpPackage' }, $false))
+if ($pinAssign.Count -ne 1 -or $pkgAssign.Count -ne 1) { Write-Host 'OLCULEMEDI: $PkgPins / $ExpPackage ataması bulunamadı'; exit 2 }
+. ([scriptblock]::Create($pinAssign[0].Extent.Text)); . ([scriptblock]::Create($pkgAssign[0].Extent.Text))
+$GovReal = (Resolve-Path -LiteralPath (Join-Path $here '..\..')).Path
 $need = 'Get-ClosureStatus', 'Invoke-RunMode', 'Invoke-RecoverMode', 'Invoke-QrTestMode', 'Assert-ExternalChain', 'Get-ExternalChainState', 'Invoke-Node', 'Complete-NodeRc', 'Resolve-NodeExe', 'Assert-FreshEvidence', 'Set-RunEnv',
         'Clear-SecretEnv', 'Read-GoRef', 'Read-Answer', 'Invoke-RepoGit', 'Assert-LocalConsole', 'Confirm-LiveDataProcessing', 'Read-ResidueDecision', 'Write-OwnerDeclaration', 'EnvValue', 'Test-BucketReadable',
         'Assert-PortalBaseUrl', 'Confirm-PortalBaseUrlR05'
@@ -368,6 +378,25 @@ try {
   $o9fMain = @($o9fTxt -split "`n" | Where-Object { $_ -cmatch '^Koşum bitti\.' }); $o9fNote = @($o9fTxt -split "`n" | Where-Object { $_ -cmatch $noteRe })
   $o9Color = ([regex]::Matches($declBody, '-ForegroundColor \$c\b')).Count -eq 1 -and $declBody.Contains('$c = if ($closure -and $closure.verified) { ''Green'' } else { ''Red'' }')
   Check 'O-9' 'kapanış satırı (ikinci tur): DOĞRULANDI metni "bu satırın devamında PASS yazan parçalar" der ("aşağıda PASS yazan" gösterilen metinde ve kaynakta YOK); altı parça gerçekten "Koşum bitti." satırının İÇİNDEDİR (tek satır); "satır rengi yalnız birleşik ölçütü (P6-D9) gösterir" notu P6-D9 PASS ve FAIL koşumlarında owner''a gösterilir; renk mantığı değişmedi (tek `-ForegroundColor $c`, `$c` yalnız $closure.verified''a bağlı)' ($cs6.text -cmatch 'DOĞRULANDI yalnız bu satırın devamında PASS yazan parçalar içindir' -and $cs6.text -cnotmatch 'aşağıda PASS yazan' -and $src0 -cnotmatch 'aşağıda PASS yazan' -and $o9Main.Count -eq 1 -and (Get-Parts $o9Main[0]) -eq 'PASS/PASS/PASS/PASS/PASS/PASS' -and $o9Main[0].Contains($shown6) -and $o9Note.Count -eq 1 -and $o9f.out -eq 6 -and $o9fMain.Count -eq 1 -and $o9fMain[0] -cmatch 'DOĞRULANAMADI' -and $o9fNote.Count -eq 1 -and $o9Color) "PASS koşumu: satır=$($o9Main.Count) parçalar=$(if ($o9Main.Count -eq 1) { Get-Parts $o9Main[0] } else { 'YOK' }) not=$($o9Note.Count) · FAIL koşumu: rc=$($o9f.out) satır=$($o9fMain.Count) not=$($o9fNote.Count) · renk mantığı aynı=$o9Color"
+
+  # ---- R03: PIN-1 — bloğun pinleri bu checkout'taki GERÇEK dosya baytlarına eşit (Invoke-ReadOnlyGates ile aynı Sha + Digest yöntemi; canlı kapı KOŞULMAZ)
+  $pinBad = @(); $pk1 = [System.Collections.Generic.List[string]]::new(); $pinN = 0
+  foreach ($f in $PkgPins.Keys) {
+    $p = Join-Path $GovReal $f
+    if (-not (Test-Path -LiteralPath $p -PathType Leaf)) { $pinBad += "YOK:$f"; continue }
+    $h = Sha $p; $pinN++
+    if ($h -ne $PkgPins[$f]) { $pinBad += "$(Split-Path -Leaf $f)=$($h.Substring(0, 8))≠$($PkgPins[$f].Substring(0, 8))" }
+    $pk1.Add(($f -replace '\\', '/') + [char]0 + $h + "`n")
+  }
+  $dig1 = Digest $pk1
+  Check 'PIN-1' 'bloğun PkgPins tablosundaki 9 dosyanın pini bu checkout''taki GERÇEK sha256''ya ve $ExpPackage yeniden hesaplanan paket digest''ine EŞİT (koşucu değişince pin + digest birlikte güncellenir; aksi halde canlı Preflight DUR verirdi)' ($PkgPins.Count -eq 9 -and $pinN -eq 9 -and $pinBad.Count -eq 0 -and $dig1 -eq $ExpPackage) "dosya=$pinN/$($PkgPins.Count) · uyuşmayan=$(if ($pinBad.Count) { $pinBad -join ',' } else { 'yok' }) · digest=$($dig1.Substring(0, 16)) beklenen=$($ExpPackage.Substring(0, 16))"
+
+  # ---- R03: O-10 — Recover bitiş satırı yalnız ölçüleni söyler: 3 "yeni giriş reddi" İDDİASI değildir; 6'da kalıntı DOĞRULANDI / ÖLÇÜLEMEDİ ayrımı kanıta bağlı
+  $o10Need = @('3 = DB kapalı, FAIL yok, en az bir ölçüt ÖLÇÜLEMEYEN', 'P6-C3L/D satırlarından okunur', 'belge kalıntısı DOĞRULANDI / ÖLÇÜLEMEDİ', 'docResidue.durum')
+  $o10Miss = @(foreach ($t in @($g3Txt, $g3zTxt)) { $o10Need | Where-Object { $t -cnotmatch [regex]::Escape($_) } })
+  $o10Old = @(@($g3Txt, $g3zTxt, $src0) | Where-Object { $_ -cmatch [regex]::Escape('3 = DB kapalı + yeni giriş reddi') })
+  $o10Six = ($g3Txt -cmatch [regex]::Escape('"depolama erişimi ÖLÇÜLEMEDİ" ise belge kovasının okunabilirliğini owner düzeltir') -and $g3Txt -cmatch 'DOĞRULANMIŞ KALINTI')
+  Check 'O-10' 'Recover bitiş satırı (çıkış 6 ve 0 koşumlarında GÖSTERİLEN metin): "3 = DB kapalı + yeni giriş reddi" İDDİASI YOK (gösterilen metinde ve kaynakta); 3 = "DB kapalı, FAIL yok, en az bir ölçüt ÖLÇÜLEMEYEN" + yeni giriş reddi P6-C3L/D satırlarından okunur; 6''da belge kalıntısı "DOĞRULANDI / ÖLÇÜLEMEDİ" ayrımı kanıttaki P6-C-DOC + docResidue.durum''a bağlı; çıkış 6 yönlendirmesi koşucunun "depolama erişimi ÖLÇÜLEMEDİ" metniyle ve DOĞRULANMIŞ KALINTI ile ayrılır' ($o10Miss.Count -eq 0 -and $o10Old.Count -eq 0 -and $o10Six) "eksik=$($o10Miss -join ',') · eski iddia=$($o10Old.Count) · 6 yönlendirmesi=$o10Six"
 }
 finally {
   foreach ($k in 'EXSTUB_RC', 'EXSTUB_WRITE_EVID', 'EXSTUB_MARKER', 'EXSTUB_WAIT', 'EXSTUB_QR_RC', 'EXSTUB_FINDING', 'EXSTUB_D9', 'EXSTUB_DOC', 'EXSTUB_EXTRA') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
