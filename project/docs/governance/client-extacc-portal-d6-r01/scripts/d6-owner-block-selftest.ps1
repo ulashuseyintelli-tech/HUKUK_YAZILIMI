@@ -28,6 +28,12 @@
 #          kapısını geçiyorsa önerir (yok / bozuk → kanıttaki receipt yolu; kanıtta da yoksa SOMUT ENGEL); O-5 değişti ("hiç açılmamıştı" çıkarımı yok).
 #          Sahte koşucu Run'da kanıt dizinine makbuz yazar (EXSTUB_NO_RECEIPT / EXSTUB_EV_RECEIPT ile değiştirilir). R03-b blok baytlarında
 #          (7B43591A…) O-5, O-12, O-13 ve PIN-1 (koşucu pini) FAIL verir (negatif kontrol).
+# R03-d  : (R03-c bağımsız doğrulaması) O-12 genişledi — "1 + kanıt yok" ve "kanıttaki exitCode ≠ süreç kodu" varyantlarında Recover bitiş satırı kırmızı
+#          "KAPANIŞ DOĞRULANMADI — …" der ve kod açıklamalarını (0/1/2/3) YAZMAZ (M2); O-14 Recover 3 metni ölçülenle (m3); O-13 değişti — makbuz yok /
+#          bozuk / BAYAT (yeni durum, m7) iken diskteki dosya önerilmez, kanıttaki makbuzJson'dan yeni dosya yazan TEK komut somut yollarla gösterilir (m4);
+#          O-15 o TEK komut Windows PowerShell 5.1 VE PowerShell 7'de koşulur, üretilen dosya bloğun Recover okuma kapısından ve GERÇEK koşucunun
+#          readReceiptForRecover kapısından geçer (m4 kapı kalemi); O-16 ürün bulgusu ADAYI "ADAYIDIR" diye gösterilir (M1). Sahte koşucu kanıta record +
+#          exitCode + recovery.makbuzJson yazar (EXSTUB_STALE / EXSTUB_EV_EXITCODE / EXSTUB_SV / EXSTUB_EXPECT_COPY / EXSTUB_REAL_RUNNER).
 # KULLANIM: powershell.exe -NoProfile -ExecutionPolicy Bypass -File d6-owner-block-selftest.ps1   (ve pwsh)
 # ÇIKIŞ  : 0 hepsi PASS · 1 en az bir FAIL · 2 ölçülemedi
 $ErrorActionPreference = 'Stop'
@@ -69,19 +75,35 @@ $script:LastNodeRc = $null
 $marker = Join-Path $T 'node-calls.txt'
 [IO.File]::WriteAllText((Join-Path $Sc 'd6-portal-documents-live-run.js'), @'
 const fs = require('fs');
+// R03-d: Recover modunda GERÇEK koşucunun makbuz okuma kapısı (readReceiptForRecover) bu sahte koşucunun aldığı makbuz dosyasıyla koşulur (EXSTUB_REAL_RUNNER).
+let rgate = null;
+if (process.env.D6_MODE === 'recover' && process.env.EXSTUB_REAL_RUNNER) {
+  try { const RR = require(process.env.EXSTUB_REAL_RUNNER); rgate = typeof RR.readReceiptForRecover === 'function' ? (RR.readReceiptForRecover(process.env.D6_RECEIPT).ok ? 'ok' : 'red') : 'fonksiyon-yok'; }
+  catch (e) { rgate = 'hata:' + String(e && e.message).slice(0, 80); }
+}
 fs.appendFileSync(process.env.EXSTUB_MARKER, JSON.stringify({ mode: process.env.D6_MODE || null, db: !!process.env.AH_DATABASE_URL,
   go: !!process.env.D6_LIVE_GO_REF, receipt: !!process.env.D6_RECEIPT, display: process.env.D6_DISPLAY || null, slug: process.env.D6_EXPECT_TENANT_SLUG || null,
   residue: process.env.D6_RESIDUE_CLEANUP || null, sink: process.env.D6_TEST_DISPLAY_SINK || null, base: process.env.D6_EXPECT_BASE_URL || null,
-  pw: process.env.D6_LIVE_LOGIN_PW || null,
+  pw: process.env.D6_LIVE_LOGIN_PW || null, rgate, receiptPath: process.env.D6_RECEIPT || null,
   params: ['D6_WAIT_MS', 'D6_POLL_MS', 'D6_VIEW_MS', 'D6_HTTP_TIMEOUT_MS', 'D6_CALL_TIMEOUT_MS', 'D6_LATE_CREATE_MS', 'D6_RESIDUE_WAIT_MS'].map((k) => process.env[k] || null) }) + '\n');
 // R03-c: Run modunda koşucu gibi kanıt dizinine makbuz yazar (EXSTUB_NO_RECEIPT=1 → yazmaz · B → bozuk makbuz); kanıtta receipt nesnesi (EXSTUB_EV_RECEIPT=0 → yok)
-if (process.env.D6_MODE === 'run' && process.env.D6_RECEIPT && process.env.EXSTUB_NO_RECEIPT !== '1') fs.writeFileSync(process.env.D6_RECEIPT, process.env.EXSTUB_NO_RECEIPT === 'B' ? '{"record":"BASKA"}'
-  : JSON.stringify({ record: 'EXTACC-D6-SETUP-RECEIPT', runId: String(process.env.D6_RUNID || ''), tenantId: 't', tenantSlug: process.env.D6_EXPECT_TENANT_SLUG || '', clientId: 'k', elevUserId: 'u', elevEmail: 'e@example.invalid' }));
-if (process.env.EXSTUB_WRITE_EVID === '1') fs.writeFileSync(process.env.D6_EVID_FILE, JSON.stringify({ productFinding: process.env.EXSTUB_FINDING || null,
-  receipt: process.env.EXSTUB_EV_RECEIPT === '0' ? undefined : { record: 'EXTACC-D6-SETUP-RECEIPT', runId: String(process.env.D6_RUNID || '') },
-  portalClose: process.env.EXSTUB_DOCDURUM ? { docResidue: { durum: process.env.EXSTUB_DOCDURUM } } : undefined,
-  results:[{ id: 'P6-WAIT', verdict: process.env.EXSTUB_WAIT || 'PASS' }, { id: 'P6-C-DOC', verdict: process.env.EXSTUB_DOC || 'PASS' }, { id: 'D6-1', verdict: 'PASS' }, { id: 'P6-PHONE-DOC', verdict: 'PASS' }, { id: 'P6-D9', verdict: process.env.EXSTUB_D9 || 'PASS' }]
-    .concat(JSON.parse(process.env.EXSTUB_EXTRA || '[]')) }));
+// R03-d: makbuz metni koşucunun writeJson'u gibi girintili (1); tarih biçimli alan (createdAt) ve ASCII dışı karakter içerir. Kanıtta recovery.makbuzJson = bu metin
+// (EXSTUB_STALE=1 → kanıttaki metin diskteki dosyadan FARKLI: bayat makbuz). Kanıtta record + exitCode (EXSTUB_EV_EXITCODE ile farklı verilebilir).
+const rcptText = JSON.stringify({ record: 'EXTACC-D6-SETUP-RECEIPT', runId: String(process.env.D6_RUNID || ''), tenantId: 't', tenantSlug: process.env.D6_EXPECT_TENANT_SLUG || '', clientId: 'k',
+  elevUserId: 'u', elevEmail: 'e@example.invalid', createdAt: '2026-10-03T20:15:25.123Z', residueFiles: ['D:\\veri\\portal-documents\\t\\çğış-İÖÜ.pdf'] }, null, 1);
+if (process.env.D6_MODE === 'run' && process.env.D6_RECEIPT && process.env.EXSTUB_NO_RECEIPT !== '1') fs.writeFileSync(process.env.D6_RECEIPT, process.env.EXSTUB_NO_RECEIPT === 'B' ? '{"record":"BASKA"}' : rcptText);
+if (process.env.EXSTUB_EXPECT_COPY) fs.writeFileSync(process.env.EXSTUB_EXPECT_COPY, rcptText);
+if (process.env.EXSTUB_WRITE_EVID === '1') {
+  const pc = Object.assign({}, process.env.EXSTUB_DOCDURUM ? { docResidue: { durum: process.env.EXSTUB_DOCDURUM } } : {}, process.env.EXSTUB_SV ? { sessionVersion: { sinif: process.env.EXSTUB_SV } } : {});
+  const noRc = process.env.EXSTUB_EV_RECEIPT === '0';
+  fs.writeFileSync(process.env.D6_EVID_FILE, JSON.stringify({ record: process.env.D6_MODE === 'recover' ? 'EXTACC-D6-RECOVER' : 'EXTACC-D6-PORTAL-DOCUMENTS-LIVE-RUN',
+    exitCode: Number(process.env.EXSTUB_EV_EXITCODE !== undefined ? process.env.EXSTUB_EV_EXITCODE : (process.env.EXSTUB_RC || 0)), productFinding: process.env.EXSTUB_FINDING || null,
+    receipt: noRc ? undefined : { record: 'EXTACC-D6-SETUP-RECEIPT', runId: String(process.env.D6_RUNID || ''), createdAt: '2026-10-03T20:15:25.123Z' },
+    recovery: noRc ? undefined : { gerekli: true, makbuzJson: process.env.EXSTUB_STALE === '1' ? rcptText.replace('"clientId": "k",', '"clientId": "k",\n "documentId": "d",') : rcptText },
+    portalClose: Object.keys(pc).length ? pc : undefined,
+    results:[{ id: 'P6-WAIT', verdict: process.env.EXSTUB_WAIT || 'PASS' }, { id: 'P6-C-DOC', verdict: process.env.EXSTUB_DOC || 'PASS' }, { id: 'D6-1', verdict: 'PASS' }, { id: 'P6-PHONE-DOC', verdict: 'PASS' }, { id: 'P6-D9', verdict: process.env.EXSTUB_D9 || 'PASS' }]
+      .concat(JSON.parse(process.env.EXSTUB_EXTRA || '[]')) }));
+}
 process.exit(Number(process.env.EXSTUB_RC || 0));
 '@)
 [IO.File]::WriteAllText((Join-Path $Sc 'd6-qr-test.js'), "if ((process.env.EXA_QRTEST_URL || '') !== 'https://example.invalid/portal/documents') process.exit(4); process.exit(Number(process.env.EXSTUB_QR_RC || 0));`n")
@@ -433,11 +455,19 @@ try {
 
   # ---- R03-c: O-12 — Recover bitiş satırı (GÖSTERİLEN metin; çıkış 0/1/2/3/6): her kod yalnız ölçülenle açıklanır (1 ve 2 dahil); mevcut oturum reddinin
   #      Recover'da HER ZAMAN ölçülemediği ve yeni giriş reddinin P6-C3L/D satırlarından okunduğu kodlardan ÖNCE, genel olarak yazılır.
+  # R03-d (M2): kanıtsız çıkışlar AYRI ölçülür (aşağıda) — buradaki beş koşum sahte koşucunun kanıt yazdığı (record + exitCode = çıkış) durumlardır.
   $o12 = [ordered]@{}
   foreach ($c in 0, 1, 2, 3, 6) {
     $o12Txt = Get-HostText { $script:capR = Invoke-Mode 'Recover' $real.Exe $c $true $rcpt @('H') }
     $o12["$c"] = [pscustomobject]@{ lines = @($o12Txt -split "`n" | Where-Object { $_ -cmatch 'KURTARMA BİTTİ' }); r = $script:capR }
   }
+  # R03-d (M2): "1 + kanıt yok" (koşucu yakalanmamış hatayla kanıt yazmadan 1 — bağımsız doğrulamada ölçüldü) · "3 + kanıttaki exitCode 1" (kod farklı)
+  $o12nTxt = Get-HostText { $script:capR = Invoke-Mode 'Recover' $real.Exe 1 $false $rcpt @('H') }; $o12n = $script:capR
+  $env:EXSTUB_EV_EXITCODE = '1'; $o12kTxt = Get-HostText { $script:capR = Invoke-Mode 'Recover' $real.Exe 3 $true $rcpt @('H') }; $o12k = $script:capR; Remove-Item 'Env:EXSTUB_EV_EXITCODE' -ErrorAction SilentlyContinue
+  $o12nLine = @($o12nTxt -split "`n" | Where-Object { $_ -cmatch 'KURTARMA BİTTİ' }); $o12kLine = @($o12kTxt -split "`n" | Where-Object { $_ -cmatch 'KURTARMA BİTTİ' })
+  $legendRe = '0 = Recover anında|aynı kapanışlar doğrulandı|3 = DB kapalı'
+  $o12NoEv = ($o12n.out -eq 1 -and $o12n.nodeCalls -eq 1 -and $o12nLine.Count -eq 1 -and $o12nLine[0].Contains('KAPANIŞ DOĞRULANMADI — kanıt yok; koşucu yakalanmamış hatayla bitti, hiçbir kapanış ölçülmedi') -and $o12nLine[0] -cnotmatch $legendRe -and
+              $o12nTxt.Contains('İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR') -and $o12k.out -eq 3 -and $o12kLine.Count -eq 1 -and $o12kLine[0].Contains('KAPANIŞ DOĞRULANMADI — kanıttaki exitCode (1) süreç çıkış koduyla (3) EŞİT DEĞİL') -and $o12kLine[0] -cnotmatch $legendRe)
   $o12Need = @("HER KODDA: mevcut oturum reddi Recover'da ÖLÇÜLEMEZ — HER ZAMAN (P6-C4L/D", 'P6-C3L/D satırlarından okunur', "0 = Recover anında portal hesabı DB'de YOK (ölçüldü)", 'HTTP reddi ÖLÇÜLMEDİ (hesap yok)',
                '3 = DB kapalı, FAIL yok, en az bir ölçüt ÖLÇÜLEMEYEN', '2 = aynı kapanışlar doğrulandı, en az bir satır FAIL', 'yalnız P6-FOREIGN-CLEAN üretir', '1 = DURDU: aynı kapanışlar doğrulandı ama Recover''ın hazırlık adımında hata (kanıttaki fatal alanı',
                '6 portal DB/HTTP kapanışı doğrulanmadı', '5 personel/dosya kapanışı doğrulanmadı', '4 kimlik reddi', '7 kanıt yok', '91 node başlatılamadı')
@@ -447,27 +477,87 @@ try {
     $miss = @($o12Need | Where-Object { $l -cnotmatch [regex]::Escape($_) }); $iGen = $l.IndexOf('HER KODDA'); $i0 = $l.IndexOf('0 = Recover anında')
     if (-not ($x.r.out -eq [int]$k -and $x.r.nodeCalls -eq 1 -and @($x.lines).Count -eq 1 -and $miss.Count -eq 0 -and $iGen -ge 0 -and $iGen -lt $i0 -and $l -cnotmatch 'hiç açılmamıştı')) { $o12Bad += "çıkış ${k}: rc=$($x.r.out) satır=$(@($x.lines).Count) eksik=$($miss -join ' | ')" }
   }
-  Check 'O-12' 'Recover bitiş satırı (GÖSTERİLEN metin; Recover çıkış 0, 1, 2, 3, 6 koşumları): kodlardan ÖNCE genel olarak "HER KODDA: mevcut oturum reddi Recover''da ÖLÇÜLEMEZ — HER ZAMAN (P6-C4L/D …)" + yeni giriş reddi P6-C3L/D satırlarından okunur; 0 = "Recover anında portal hesabı DB''de YOK (ölçüldü)" ("hiç açılmamıştı" YOK) + HTTP reddi ÖLÇÜLMEDİ; 3 = DB kapalı, FAIL yok, ÖLÇÜLEMEYEN var; 2 = aynı kapanışlar doğrulandı + FAIL (kaynaktan: yalnız P6-FOREIGN-CLEAN); 1 = DURDU + hazırlık hatası (fatal); 6 / 5 / 4 / 7 / 91 açıklamalı; çıkış kodu değişmeden, tek node çağrısı' ($o12Bad.Count -eq 0) "hata=$(if ($o12Bad.Count) { $o12Bad -join ' || ' } else { 'yok' }) · koşum=$($o12.Keys -join ',')"
+  Check 'O-12' 'Recover bitiş satırı (GÖSTERİLEN metin; kanıtlı Recover çıkış 0, 1, 2, 3, 6 koşumları): kodlardan ÖNCE genel olarak "HER KODDA: mevcut oturum reddi Recover''da ÖLÇÜLEMEZ — HER ZAMAN (P6-C4L/D …)" + yeni giriş reddi P6-C3L/D satırlarından okunur; 0 = "Recover anında portal hesabı DB''de YOK (ölçüldü)" ("hiç açılmamıştı" YOK) + HTTP reddi ÖLÇÜLMEDİ; 3 = DB kapalı, FAIL yok, ÖLÇÜLEMEYEN var; 2 = aynı kapanışlar doğrulandı + FAIL (kaynaktan: yalnız P6-FOREIGN-CLEAN); 1 = DURDU + hazırlık hatası (fatal); 6 / 5 / 4 / 7 / 91 açıklamalı; çıkış kodu değişmeden, tek node çağrısı · R03-d (M2): "1 + kanıt yok" → kırmızı "KAPANIŞ DOĞRULANMADI — kanıt yok; koşucu yakalanmamış hatayla bitti, hiçbir kapanış ölçülmedi" ve kod açıklamaları (0 / "aynı kapanışlar doğrulandı" / 3) YAZILMAZ + ikinci Recover tanımlı değil; kanıttaki exitCode süreç kodundan farklıysa (3 vs 1) "KAPANIŞ DOĞRULANMADI — kanıttaki exitCode (1) süreç çıkış koduyla (3) EŞİT DEĞİL", açıklama yok' ($o12Bad.Count -eq 0 -and $o12NoEv) "hata=$(if ($o12Bad.Count) { $o12Bad -join ' || ' } else { 'yok' }) · koşum=$($o12.Keys -join ',') · 1+kanıt yok: rc=$($o12n.out) satır=[$(@($o12nLine) -join ' | ')] · kod farklı: rc=$($o12k.out) satır=[$(@($o12kLine) -join ' | ')]"
+
+  # ---- R03-d: O-14 (m3) — Recover 3'ün metni ölçülenle: P6-C2 / P6-C5 ve P6-C-DOC ölçüldü; P6-C2V yalnız "FAIL değil" (ÖLÇÜLEMEYEN olabilir); eski "(P6-C2/C2V/C5) … ölçüldü" YOK
+  $l3 = if (@($o12['3'].lines).Count -eq 1) { [string]$o12['3'].lines[0] } else { '' }
+  $o14Old = 'portal DB kapanışı (P6-C2/C2V/C5) ve belge kalıntısı yokluğu (P6-C-DOC) ölçüldü'
+  $o14New = $l3.Contains('P6-C2V FAIL değil (ÖLÇÜLEMEYEN olabilir'); $o14OldSrc = $src0.Contains($o14Old)
+  Check 'O-14' 'Recover 3 metni (GÖSTERİLEN, kanıtlı çıkış 3) ölçülenle: "P6-C2 / P6-C5 ve P6-C-DOC ölçüldü; P6-C2V FAIL değil (ÖLÇÜLEMEYEN olabilir — kanıttaki satır)"; eski "portal DB kapanışı (P6-C2/C2V/C5) … ölçüldü" iddiası gösterilen metinde ve kaynakta YOK; 2 ve 1 "aynı kapanışlar" atfıyla bu metne bağlı' ($l3.Contains('3 = DB kapalı, FAIL yok, en az bir ölçüt ÖLÇÜLEMEYEN — P6-C2 / P6-C5 ve P6-C-DOC ölçüldü; P6-C2V FAIL değil (ÖLÇÜLEMEYEN olabilir — kanıttaki satır)') -and -not $l3.Contains($o14Old) -and -not $src0.Contains($o14Old) -and $l3.Contains('2 = aynı kapanışlar doğrulandı')) "3 satırı=$($l3.Length) karakter · yeni metin=$o14New · eski kaynakta=$o14OldSrc"
 
   # ---- R03-c: O-13 — Run çıkış 5/6 metni Recover komutunu YALNIZ kanıt dizinindeki makbuz dosyası Recover'ın okuma kapısını geçiyorsa önerir
-  $o13 = [ordered]@{}; $script:goN = 30   # 31..34 başka ölçütte kullanılmaz (GO defteri tekrar kullanımı reddeder; GO biçimi iki haneli R\d{2})
-  foreach ($case in @(@('var', '0', '1', 6), @('yok', '1', '1', 6), @('bozuk', 'B', '1', 5), @('yok-kanitta-yok', '1', '0', 6))) {
-    $env:EXSTUB_NO_RECEIPT = $case[1]; $env:EXSTUB_EV_RECEIPT = $case[2]
+  # R03-d: m4 (kanıttaki makbuzJson → yeni dosya: TEK komut) + m7 (BAYAT makbuz önerilmez) ile beklentiler değişti; 'bayat' durumu eklendi.
+  $o13 = [ordered]@{}; $script:goN = 30   # 31..35 başka ölçütte kullanılmaz (GO defteri tekrar kullanımı reddeder; GO biçimi iki haneli R\d{2})
+  foreach ($case in @(@('var', '0', '1', 6, '0'), @('yok', '1', '1', 6, '0'), @('bozuk', 'B', '1', 5, '0'), @('yok-kanitta-yok', '1', '0', 6, '0'), @('bayat', '0', '1', 6, '1'))) {
+    $env:EXSTUB_NO_RECEIPT = $case[1]; $env:EXSTUB_EV_RECEIPT = $case[2]; $env:EXSTUB_STALE = $case[4]
     $o13Txt = Get-HostText { $script:capR = Invoke-Mode 'Run' $real.Exe $case[3] $true }; $iEnd = $o13Txt.IndexOf('Koşum bitti.')
-    $o13[$case[0]] = [pscustomobject]@{ tail = $(if ($iEnd -ge 0) { $o13Txt.Substring($iEnd) } else { '' }); r = $script:capR; rc = $case[3] }
+    $o13[$case[0]] = [pscustomobject]@{ tail = $(if ($iEnd -ge 0) { $o13Txt.Substring($iEnd) } else { '' }); r = $script:capR; rc = $case[3]; ev = (Last-EvDir).FullName }
   }
-  Remove-Item 'Env:EXSTUB_NO_RECEIPT', 'Env:EXSTUB_EV_RECEIPT' -ErrorAction SilentlyContinue
+  Remove-Item 'Env:EXSTUB_NO_RECEIPT', 'Env:EXSTUB_EV_RECEIPT', 'Env:EXSTUB_STALE' -ErrorAction SilentlyContinue
   $cmd13 = '-Mode Recover -ReceiptFile <makbuz>'
-  $o13Var = $o13['var']; $o13Yok = $o13['yok']; $o13Boz = $o13['bozuk']; $o13Eng = $o13['yok-kanitta-yok']
+  $o13Var = $o13['var']; $o13Yok = $o13['yok']; $o13Boz = $o13['bozuk']; $o13Eng = $o13['yok-kanitta-yok']; $o13Bay = $o13['bayat']
+  # Kanıttaki makbuzJson yolu: GÖSTERİLEN TEK komut + -ReceiptFile '<kanıt dizini>\d6-setup-receipt-kanittan.json' (somut yol; yer tutucu değil)
+  $pathOf = { param($x) [string]$x.ev }
+  $cmdOk = { param($x) $e = (Join-Path (& $pathOf $x) 'd6-evidence.json').Replace("'", "''"); $n = (Join-Path (& $pathOf $x) 'd6-setup-receipt-kanittan.json').Replace("'", "''")
+             $x.tail.Contains("(Get-Content -Raw -Encoding UTF8 -LiteralPath '$e' | ConvertFrom-Json).recovery.makbuzJson | Set-Content -Encoding UTF8 -NoNewline -LiteralPath '$n'") -and $x.tail.Contains("-Mode Recover -ReceiptFile '$n'") -and $x.tail.Contains('AYRI owner onayıyla, BİR KEZ') }
   $o13Ok = (@($o13.Values | Where-Object { $_.r.out -ne $_.rc -or $_.r.nodeCalls -ne 1 -or $_.r.last.mode -ne 'run' }).Count -eq 0 -and
-            $o13Var.tail.Contains("ÖNERİDİR: $cmd13") -and $o13Var.tail.Contains('Makbuz dosyası: VAR') -and $o13Var.tail -cnotmatch 'BAŞLATILAMAZ' -and
-            -not $o13Yok.tail.Contains($cmd13) -and $o13Yok.tail.Contains('MAKBUZ DOSYASI YOK') -and $o13Yok.tail.Contains('bloktan Recover BAŞLATILAMAZ') -and $o13Yok.tail.Contains('Kullanılabilir yol: d6-evidence.json içindeki receipt nesnesi') -and $o13Yok.tail.Contains('AYRI owner onayıyla, BİR KEZ, -ReceiptFile <o dosya>') -and $o13Yok.tail -cnotmatch 'SOMUT ENGEL' -and
-            -not $o13Boz.tail.Contains($cmd13) -and $o13Boz.tail.Contains('MAKBUZ DOSYASI OKUNAMIYOR') -and $o13Boz.tail.Contains('Kullanılabilir yol:') -and
-            -not $o13Eng.tail.Contains('-ReceiptFile <') -and $o13Eng.tail.Contains('SOMUT ENGEL: kanıtta receipt nesnesi de YOK') -and $o13Eng.tail.Contains('owner/CLIENT'))
-  Check 'O-13' 'Run çıkış 5/6 metni (GÖSTERİLEN): makbuz dosyası Recover''ın okuma kapısını geçiyorsa (dosya + JSON + kayıt türü + runId) "ÖNERİDİR: -Mode Recover -ReceiptFile <makbuz>" + "Makbuz dosyası: VAR"; makbuz YOK (çıkış 6) ya da bozuk (çıkış 5) → uygulanamayan komut ÖNERİLMEZ, "MAKBUZ DOSYASI YOK|OKUNAMIYOR … bloktan Recover BAŞLATILAMAZ" + kanıttaki receipt nesnesinden yeni dosya yolu (AYRI owner onayıyla, BİR KEZ, -ReceiptFile <o dosya>); kanıtta receipt de yoksa "SOMUT ENGEL" (komut YOK) + owner/CLIENT kararı; çıkış kodu değişmeden, tek node çağrısı' $o13Ok "istisna=$(@($o13.Values | ForEach-Object { $_.r.threw } | Where-Object { $_ }) -join ' | ') · var: rc=$($o13Var.r.out) komut=$($o13Var.tail.Contains($cmd13)) · yok: rc=$($o13Yok.r.out) komut=$($o13Yok.tail.Contains($cmd13)) yol=$($o13Yok.tail.Contains('Kullanılabilir yol')) · bozuk: rc=$($o13Boz.r.out) komut=$($o13Boz.tail.Contains($cmd13)) · kanıtta-yok: rc=$($o13Eng.r.out) engel=$($o13Eng.tail.Contains('SOMUT ENGEL'))"
+            $o13Var.tail.Contains("ÖNERİDİR: $cmd13") -and $o13Var.tail.Contains('Makbuz dosyası: VAR — kanıttaki son makbuz metniyle (recovery.makbuzJson) EŞİT') -and $o13Var.tail.Contains("Recover'da DB'de doğrular") -and $o13Var.tail -cnotmatch 'BAŞLATILAMAZ' -and -not $o13Var.tail.Contains('makbuzJson | Set-Content') -and
+            -not $o13Yok.tail.Contains($cmd13) -and $o13Yok.tail.Contains('MAKBUZ DOSYASI YOK') -and $o13Yok.tail.Contains('bloktan Recover BAŞLATILAMAZ') -and (& $cmdOk $o13Yok) -and $o13Yok.tail -cnotmatch 'SOMUT ENGEL' -and
+            -not $o13Boz.tail.Contains($cmd13) -and $o13Boz.tail.Contains('MAKBUZ DOSYASI OKUNAMIYOR') -and (& $cmdOk $o13Boz) -and
+            -not $o13Eng.tail.Contains('-ReceiptFile <') -and -not $o13Eng.tail.Contains("-ReceiptFile '") -and -not $o13Eng.tail.Contains('makbuzJson | Set-Content') -and $o13Eng.tail.Contains('SOMUT ENGEL: kanıtta makbuz metni (recovery.makbuzJson) YOK') -and $o13Eng.tail.Contains('owner/CLIENT') -and
+            -not $o13Bay.tail.Contains($cmd13) -and -not $o13Bay.tail.Contains('Makbuz dosyası: VAR') -and $o13Bay.tail.Contains('MAKBUZ DOSYASI BAYAT (kanıttaki son makbuz metniyle — recovery.makbuzJson — EŞİT DEĞİL') -and $o13Bay.tail.Contains('eksik kapanış') -and $o13Bay.tail.Contains('bu dosyayla Recover ÖNERİLMEZ') -and (& $cmdOk $o13Bay))
+  Check 'O-13' 'Run çıkış 5/6 metni (GÖSTERİLEN): makbuz dosyası okuma kapısını geçiyor VE kanıttaki son makbuz metniyle (recovery.makbuzJson) EŞİTSE "ÖNERİDİR: -Mode Recover -ReceiptFile <makbuz>" + "Makbuz dosyası: VAR — … EŞİT"; R03-d: makbuz YOK (6) / bozuk (5) / BAYAT (6; m7) → diskteki dosya ÖNERİLMEZ (bayatta neden: "EŞİT DEĞİL … eksik kapanış") ve kanıttaki makbuzJson''dan yeni dosya yazan TEK komut SOMUT yollarla + "-Mode Recover -ReceiptFile ''<kanıt dizini>\d6-setup-receipt-kanittan.json''" (AYRI owner onayıyla, BİR KEZ); kanıtta makbuz metni yoksa "SOMUT ENGEL" (komut YOK) + owner/CLIENT; çıkış kodu değişmeden, tek node çağrısı' $o13Ok "istisna=$(@($o13.Values | ForEach-Object { $_.r.threw } | Where-Object { $_ }) -join ' | ') · var: rc=$($o13Var.r.out) komut=$($o13Var.tail.Contains($cmd13)) · yok: rc=$($o13Yok.r.out) komut=$($o13Yok.tail.Contains($cmd13)) tek komut=$(& $cmdOk $o13Yok) · bozuk: rc=$($o13Boz.r.out) tek komut=$(& $cmdOk $o13Boz) · kanıtta-yok: rc=$($o13Eng.r.out) engel=$($o13Eng.tail.Contains('SOMUT ENGEL')) · bayat: rc=$($o13Bay.r.out) disk önerisi=$($o13Bay.tail.Contains($cmd13)) BAYAT=$($o13Bay.tail.Contains('MAKBUZ DOSYASI BAYAT')) tek komut=$(& $cmdOk $o13Bay)"
+
+  # ---- R03-d: O-15 (m4 kapı kalemi) — bloğun GÖSTERDİĞİ TEK komut Windows PowerShell 5.1 VE PowerShell 7'de GERÇEKTEN koşulur; üretilen dosya bloğun Recover
+  #      okuma kapısından (Get-ReceiptFileState + Invoke-RecoverMode okuma kısmı) VE GERÇEK koşucunun Recover kapısından (readReceiptForRecover; BOM atılır) geçer.
+  #      PowerShell 7'nin ConvertFrom-Json'u tarih biçimli dizgeleri DateTime'a çevirir (kanıttaki receipt.createdAt — gözlem); makbuzJson DİZGE alanı birebir kalmalı.
+  function Invoke-ShellCmd([string]$shell, [string]$cmd) {
+    $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd)); $saved = $env:PSModulePath; $oldE = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    try {
+      $exe = if ($shell -eq 'ps51') { $env:PSModulePath = $null; Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe' } else { [string](@(Get-Command pwsh -CommandType Application -ErrorAction SilentlyContinue) | Select-Object -First 1).Source }
+      if (-not $exe -or -not (Test-Path -LiteralPath $exe -PathType Leaf)) { return [pscustomobject]@{ rc = -1; out = "kabuk yok: $shell" } }
+      $o = & $exe -NoProfile -NonInteractive -EncodedCommand $enc 2>&1; return [pscustomobject]@{ rc = $LASTEXITCODE; out = (($o | ForEach-Object { [string]$_ }) -join ' ') }
+    } finally { $env:PSModulePath = $saved; $ErrorActionPreference = $oldE }
+  }
+  $expCopy = Join-Path $T 'o15-beklenen-makbuz.txt'; $env:EXSTUB_EXPECT_COPY = $expCopy; $env:EXSTUB_NO_RECEIPT = '1'; $env:EXSTUB_EV_RECEIPT = '1'; $script:goN = 36
+  $o15Txt = Get-HostText { $script:capR = Invoke-Mode 'Run' $real.Exe 6 $true }; $o15Run = $script:capR; $o15Ev = (Last-EvDir).FullName
+  Remove-Item 'Env:EXSTUB_EXPECT_COPY', 'Env:EXSTUB_NO_RECEIPT', 'Env:EXSTUB_EV_RECEIPT' -ErrorAction SilentlyContinue
+  $o15Cmd = @($o15Txt -split "`n" | Where-Object { $_ -cmatch '^\s+\(Get-Content -Raw -Encoding UTF8 -LiteralPath ' } | ForEach-Object { $_.Trim() })
+  $o15Exp = if (Test-Path -LiteralPath $expCopy) { [IO.File]::ReadAllText($expCopy, [Text.UTF8Encoding]::new($false)) } else { $null }
+  $o15New = Join-Path $o15Ev 'd6-setup-receipt-kanittan.json'; $o15Res = [ordered]@{}
+  $env:EXSTUB_REAL_RUNNER = Join-Path $here 'd6-portal-documents-live-run.js'
+  foreach ($sh in 'ps51', 'ps7') {
+    if (Test-Path -LiteralPath $o15New) { Remove-Item -LiteralPath $o15New -Force }
+    $x = if ($o15Cmd.Count -eq 1) { Invoke-ShellCmd $sh $o15Cmd[0] } else { [pscustomobject]@{ rc = -2; out = "komut satırı sayısı $($o15Cmd.Count)" } }
+    $dst = Join-Path $o15Ev "d6-setup-receipt-kanittan-$sh.json"; $bytes = $null; $txt = $null
+    if (Test-Path -LiteralPath $o15New -PathType Leaf) { Move-Item -LiteralPath $o15New -Destination $dst -Force; $bytes = [IO.File]::ReadAllBytes($dst); $txt = [IO.File]::ReadAllText($dst, [Text.UTF8Encoding]::new($false)) }
+    $bom = ($null -ne $bytes -and $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+    $dateType = (Invoke-ShellCmd $sh ("(Get-Content -Raw -Encoding UTF8 -LiteralPath '{0}' | ConvertFrom-Json).receipt.createdAt.GetType().Name" -f (Join-Path $o15Ev 'd6-evidence.json').Replace("'", "''"))).out.Trim()
+    $gs1 = if ($bytes) { Get-ReceiptFileState $dst } else { $null }; $gs2 = if ($bytes) { Get-ReceiptFileState $dst $o15Exp } else { $null }
+    $rv = if ($bytes) { Invoke-Mode 'Recover' $real.Exe 0 $true $dst @('H') } else { $null }
+    $o15Res[$sh] = [pscustomobject]@{ rc = $x.rc; out = $x.out; bom = $bom; same = ($null -ne $txt -and $null -ne $o15Exp -and $txt -ceq $o15Exp); gate1 = ($gs1 -and $gs1.usable); gate2 = ($gs2 -and $gs2.usable)
+                                      recThrew = $(if ($rv) { $rv.threw } else { 'koşulmadı' }); recNode = $(if ($rv) { $rv.nodeCalls } else { 0 }); rgate = $(if ($rv -and $rv.last) { $rv.last.rgate } else { $null }); recPath = $(if ($rv -and $rv.last) { $rv.last.receiptPath } else { $null }); dateType = $dateType }
+  }
+  Remove-Item 'Env:EXSTUB_REAL_RUNNER' -ErrorAction SilentlyContinue
+  $p51 = $o15Res['ps51']; $p7 = $o15Res['ps7']
+  $o15Ok = ($o15Run.out -eq 6 -and $o15Cmd.Count -eq 1 -and $null -ne $o15Exp -and $o15Exp.Contains('"createdAt": "2026-10-03T20:15:25.123Z"') -and
+            $p51.rc -eq 0 -and $p51.bom -and $p51.same -and $p51.gate1 -and $p51.gate2 -and -not $p51.recThrew -and $p51.recNode -eq 1 -and $p51.rgate -eq 'ok' -and $p51.recPath -eq (Join-Path $o15Ev 'd6-setup-receipt-kanittan-ps51.json') -and
+            $p7.rc -eq 0 -and -not $p7.bom -and $p7.same -and $p7.gate1 -and $p7.gate2 -and -not $p7.recThrew -and $p7.recNode -eq 1 -and $p7.rgate -eq 'ok')
+  Check 'O-15' 'kanıttaki makbuzJson → yeni makbuz: bloğun GÖSTERDİĞİ TEK komut Windows PowerShell 5.1 ve PowerShell 7''de koşuldu (çıkış 0); 5.1 dosyası UTF-8 BOM''lu, 7 dosyası BOM''suz; iki dosyanın metni (BOM hariç) sahte koşucunun yazdığı makbuz metnine BİREBİR eşit (tarih biçimli createdAt + ASCII dışı karakter dahil — dizge alanı tarih dönüşümüne UĞRAMADI); iki dosya bloğun Recover okuma kapısından geçer (Get-ReceiptFileState; makbuzJson eşitliği dahil) ve Invoke-RecoverMode okuma kısmı DUR vermeden koşucuyu bu dosyayla çağırır; GERÇEK koşucunun Recover okuma kapısı (readReceiptForRecover, BOM atılır) iki dosyada "ok"' $o15Ok "Run rc=$($o15Run.out) komut satırı=$($o15Cmd.Count) · ps51: rc=$($p51.rc) BOM=$($p51.bom) birebir=$($p51.same) blok kapısı=$($p51.gate1)/$($p51.gate2) Recover istisna=[$($p51.recThrew)] node=$($p51.recNode) koşucu kapısı=$($p51.rgate) receipt.createdAt türü=$($p51.dateType) çıktı=[$($p51.out)] · ps7: rc=$($p7.rc) BOM=$($p7.bom) birebir=$($p7.same) blok kapısı=$($p7.gate1)/$($p7.gate2) Recover istisna=[$($p7.recThrew)] node=$($p7.recNode) koşucu kapısı=$($p7.rgate) receipt.createdAt türü=$($p7.dateType) çıktı=[$($p7.out)]"
+
+  # ---- R03-d: O-16 (M1, blok tarafı) — ürün bulgusu ADAYI (kanıtta portalClose.sessionVersion.sinif=ADAY) "ADAYIDIR (CLIENT doğrular)" diye gösterilir; kesin bulgu metni korunur
+  $env:EXSTUB_FINDING = 'ÜRÜN BULGUSU ADAYI: x'; $env:EXSTUB_SV = 'ADAY'; $env:EXSTUB_D9 = 'FAIL'; $script:goN = 37
+  $o16aTxt = Get-HostText { $script:capR = Invoke-Mode 'Run' $real.Exe 6 $true }; $o16a = $script:capR
+  $env:EXSTUB_FINDING = 'ÜRÜN BULGUSU: y'; Remove-Item 'Env:EXSTUB_SV' -ErrorAction SilentlyContinue; $script:goN = 38
+  $o16bTxt = Get-HostText { $script:capR = Invoke-Mode 'Run' $real.Exe 6 $true }; $o16b = $script:capR
+  Remove-Item 'Env:EXSTUB_FINDING' -ErrorAction SilentlyContinue; $env:EXSTUB_D9 = 'PASS'
+  $o16Ok = ($o16a.out -eq 6 -and $o16aTxt.Contains('ÜRÜN BULGUSU ADAYI: x — bu bir ÜRÜN BULGUSU ADAYIDIR (CLIENT doğrular); kapanış PASS SAYILMAZ') -and -not $o16aTxt.Contains('bu bir ÜRÜN BULGUSUDUR') -and
+            $o16b.out -eq 6 -and $o16bTxt.Contains('ÜRÜN BULGUSU: y — bu bir ÜRÜN BULGUSUDUR; kapanış PASS SAYILMAZ') -and -not $o16bTxt.Contains('ADAYIDIR'))
+  Check 'O-16' 'ürün bulgusu satırı (GÖSTERİLEN): kanıtta portalClose.sessionVersion.sinif=ADAY ise "… — bu bir ÜRÜN BULGUSU ADAYIDIR (CLIENT doğrular)" ("ÜRÜN BULGUSUDUR" YOK); sınıf yoksa (P6-C2 + P6-C5 PASS iken kesin bulgu) "… — bu bir ÜRÜN BULGUSUDUR" aynen; kanıt -Encoding UTF8 ile okunur (WinPS 5.1''de Türkçe metin bozulmadan gösterilir)' $o16Ok "aday: rc=$($o16a.out) ADAYIDIR=$($o16aTxt.Contains('ADAYIDIR (CLIENT doğrular)')) · kesin: rc=$($o16b.out) BULGUSUDUR=$($o16bTxt.Contains('bu bir ÜRÜN BULGUSUDUR'))"
 }
 finally {
-  foreach ($k in 'EXSTUB_RC', 'EXSTUB_WRITE_EVID', 'EXSTUB_MARKER', 'EXSTUB_WAIT', 'EXSTUB_QR_RC', 'EXSTUB_FINDING', 'EXSTUB_D9', 'EXSTUB_DOC', 'EXSTUB_EXTRA', 'EXSTUB_DOCDURUM', 'EXSTUB_NO_RECEIPT', 'EXSTUB_EV_RECEIPT') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
+  foreach ($k in 'EXSTUB_RC', 'EXSTUB_WRITE_EVID', 'EXSTUB_MARKER', 'EXSTUB_WAIT', 'EXSTUB_QR_RC', 'EXSTUB_FINDING', 'EXSTUB_D9', 'EXSTUB_DOC', 'EXSTUB_EXTRA', 'EXSTUB_DOCDURUM', 'EXSTUB_NO_RECEIPT', 'EXSTUB_EV_RECEIPT',
+             'EXSTUB_STALE', 'EXSTUB_EV_EXITCODE', 'EXSTUB_SV', 'EXSTUB_EXPECT_COPY', 'EXSTUB_REAL_RUNNER') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
   Clear-SecretEnv
 }
 
