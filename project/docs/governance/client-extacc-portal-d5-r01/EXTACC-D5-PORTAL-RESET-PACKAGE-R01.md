@@ -1,6 +1,6 @@
 # EXTACC D-5 — PORTAL PAROLA SIFIRLAMA CANLI KABUL PAKETİ (R01)
 
-> **DURUM (2026-10-01; güncelleme 2026-10-02): CANLIDA BİR KEZ KOŞULDU — runId `00c96bd5`, çıkış 3 = ÖLÇÜLEMEYEN; D-5 KABULÜ TAMAMLANMADI; kanıt paketi manifestsiz, TAMAMLANMADI (§8, takip kaydı `D5-RUN-00C96BD5-TAKIP-20261002.md`).** Aşağıdaki "CANLIDA KOŞULMADI" ifadeleri koşum ÖNCESİ revizyon notlarıdır. Gerçek e-posta gönderim denemesi, canlı Run/Recover ve yayın bu paketle yetkilendirilmez;
+> **DURUM (2026-10-01; güncelleme 2026-10-02): CANLIDA BİR KEZ KOŞULDU — runId `00c96bd5`, çıkış 3 = ÖLÇÜLEMEYEN; D-5 KABULÜ TAMAMLANMADI; kanıt paketi manifestsiz, TAMAMLANMADI (§8, takip kayıtları `D5-RUN-00C96BD5-TAKIP-20261002.md` ve `D5-RUN-00C96BD5-TAKIP-20261003.md`).** Aşağıdaki "CANLIDA KOŞULMADI" ifadeleri koşum ÖNCESİ revizyon notlarıdır. Gerçek e-posta gönderim denemesi, canlı Run/Recover ve yayın bu paketle yetkilendirilmez;
 > yeni deneme için yeni GO, alıcı adresi ve tek gönderim onayı gerekir (§8.7). Run modunda koşucu yalnız owner GO
 > ile ve yalnız bloğun kurduğu `D5_API_BASE`/`D5_EXPECT_BASE_URL` uçlarına istek yapar (create-user/login/disable-user + `.invalid`
 > adresle bir `forgot-password`, T-1); e-postayı koşucu/blok göndermez, ürün gönderim dener (§7).
@@ -324,7 +324,9 @@ Beş dosyada üç kodlamayla sır taraması: gerçek e-posta adresi 0 · GO lite
 **Eksik ve artık blok tarafından üretilemez:** `owner-declaration.json`, `d5-combined-verdict.json`, `SHA256-MANIFEST.txt`. Blok bu üç
 dosyayı koşum sonunda, owner 9 beyan sorusunu yanıtladıktan sonra yazar. Sorular yanıtlanmadan pencere kapandı: 2026-10-02 ölçümünde
 pencere süreci yoktu ve makine 2026-10-02 02:56'da (TSİ) yeniden başlamıştı. Bu dosyalar **üretilmiş gibi gösterilmez**; yeni Run
-başlatılmadı. Manifest olmadığı için bu koşumun kanıt paketi **tamamlanmış sayılmaz**. Takip kaydı: `D5-RUN-00C96BD5-TAKIP-20261002.md`.
+başlatılmadı. Manifest olmadığı için bu koşumun kanıt paketi **tamamlanmış sayılmaz**. Takip kayıtları: `D5-RUN-00C96BD5-TAKIP-20261002.md`
+ve `D5-RUN-00C96BD5-TAKIP-20261003.md` (2026-10-03: iki eksik beyan sonradan alındı, beş dosyanın özet envanteri koşum sonu
+değerleriyle aynı, dokuz sorunun açık beyan / çıkarım ayrımı; koşum D-5 yeniden kabulü ve birleşik D-9 için yeterli sayılmaz).
 
 Owner beyanı (2026-10-01; çalışma oturumunda iletildi; blok dosyası **değildir**) [O]: telefonda ilk QR üzerinden sıfırlama formu
 **bir kez** gönderildi; genel "e-posta gönderildi — bu adresle kayıtlı hesap varsa…" ekranı çıktı; posta kutusu ve istenmeyen klasörü
@@ -370,18 +372,19 @@ kaynak `1b758d29`. Güncel DB'den geçmiş eşleşme ya da token geçmişi çık
 
 Canlı ürün bu sessiz dallarda iz bırakmadığı için aynı deneme canlı R27 üzerinde tekrarlanırsa neden yine ölçülemeyebilir.
 
-### 8.6 Ürün düzeltmesi (ayrı PR #2884; **merge edilmedi, canlıda değil**)
+### 8.6 Ürün düzeltmesi (#2884; `main`'de `be08dbe9`, **canlıda değil**)
 
 #2884 kaynakta doğrulanan bir kusur **sınıfını** kapatır (adres yalnız harf büyüklüğü ya da baş/son boşlukla farklı yazılınca hesabın
 bulunamaması) ve sessiz dalları adres, token ve bağlantı içermeyen teşhis günlük satırlarıyla ölçülebilir yapar. **Bu koşumun nedeninin
 o kusur olduğu kanıtlanmadı**; dolayısıyla #2884'ün bu koşumdaki sonucu gidereceği de kanıtlanmış değildir. Yeni denemede e-posta yine
-ulaşmazsa, yamanın eklediği teşhis satırları API tarafındaki dalı (hesap yok · belirsiz · büro erişime kapalı · hesap talep sırasında
-kapandı · alan metin değil · token üretildi) ayırt eder; talep API'ye hiç ulaşmıyorsa hiçbir satır oluşmaz ve bu da ayırt edici bir
-ölçüm olur. PR'ın içeriği ve doğrulaması kendi açıklamasındadır. İlgili kısıtlı kayıt: SEC-PORTAL-REQ-01 (ayrıntı public repoya
+ulaşmazsa, istek API'ye ulaştığında yamanın eklediği teşhis satırları hangi dalın çalıştığını gösterir (hesap yok · e-posta alanı boş ·
+belirsiz · büro erişime kapalı · hesap talep sırasında kapandı · alan metin değil · token üretildi). Bu uçtan uca izleme **değildir**:
+günlük kapsamı ve kayıt mekanizması doğrulanmadan bir satırın **yokluğu** "talep API'ye ulaşmadı" anlamına gelmez — UNKNOWN kalır.
+Web tarafındaki erken doldurma kusuru (A2) ayrıca PORTAL-RESET-FORM-01 ile düzeltildi (#2900, `main`'de, canlıda değil). PR'ın içeriği ve doğrulaması kendi açıklamasındadır. İlgili kısıtlı kayıt: SEC-PORTAL-REQ-01 (ayrıntı public repoya
 yazılmaz). Düzeltme canlıya alınana kadar canlı davranış değişmez.
 
 ### 8.7 Yeni deneme
 
 Bu koşum tekrarlanmaz ve otomatik ikinci Run yoktur. Yeni deneme için kesin işlem ve yetki listesi tek karar paketindedir:
-`client-release-r27-r01/CLIENT-KALAN-ISLER-R01.md` §3.3 ve §11 KR-2. Her yolda yeni GO, alıcı adresi (yalnız konsol), tek gönderim onayı ve
+`client-release-r27-r01/CLIENT-KALAN-ISLER-R01.md` §3.3 (doğrulanmış aday → onaylı yayın → pin → yeni D-5 GO'su). Her yolda yeni GO, alıcı adresi (yalnız konsol), tek gönderim onayı ve
 ezme kararı gerekir.

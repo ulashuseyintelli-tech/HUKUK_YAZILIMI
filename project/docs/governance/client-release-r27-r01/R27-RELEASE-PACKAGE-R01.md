@@ -55,8 +55,8 @@
 |---|---|---|
 | D-1 / D-2 / D-3 | **Kabul (intake kapsamı)** | EXTACC runId `cff5c692` (#2815 paketi kaydı) |
 | D-4 | **Kabul (dar)** | runId `e34b7e6d` 21/21, kayıt #2826 |
-| D-5 | **ÖLÇÜLEMEYEN — kabul tamamlanmadı (2026-10-01)**: tek canlı koşum runId `00c96bd5`, çıkış 3, 21 PASS / 0 FAIL / 8 ÖLÇÜLEMEYEN; bu koşumun kapanışı üç ayrı görünümdedir — kapanış PASS · özgün oturum reddi PASS · sıfırlama sonrası 8 ölçüt ÖLÇÜLEMEYEN (P5-C4L/C4D dahil); **kanıt paketi manifestsiz, tamamlanmadı** (beyan penceresi kapandı; 2026-10-02 güncellemesi); kök neden kanıtlanmadı; kayıt ve teşhis `client-extacc-portal-d5-r01` §8 ve takip kaydı. Paket: koşucu öz-testi 41/41 · QR öz-testi 23/23 · blok R04 94/94 ×2 kabuk | yeni deneme: `CLIENT-KALAN-ISLER-R01.md` §3.3 ve §11 KR-2 (yeni GO + alıcı + tek gönderim onayı); owner kararları §10 |
-| D-6 / D-7 | **Ölçülmedi** — koşucu + sahte API + öz-test + owner bloğu + blok öz-testi **HAZIR** (`client-extacc-portal-d6-r01`: koşucu öz-testi 51/51, blok 64/64 WinPS 5.1 + pwsh 7 · `client-extacc-portal-d7-r01`: koşucu öz-testi 41/41, blok 58/58 ×2 kabuk; son dosya baytlarıyla §13), canlıda koşulmadı | ÖN KOŞUL: canlı dist R27 (bloklar R27 pinli, R26 ile DUR); owner kararları §10; tanım eşlemesi `client-extacc-d8-staff-surface-r01` §4/§5 |
+| D-5 | **ÖLÇÜLEMEYEN — kabul tamamlanmadı (2026-10-01)**: tek canlı koşum runId `00c96bd5`, çıkış 3, 21 PASS / 0 FAIL / 8 ÖLÇÜLEMEYEN; bu koşumun kapanışı üç ayrı görünümdedir — kapanış PASS · özgün oturum reddi PASS · sıfırlama sonrası 8 ölçüt ÖLÇÜLEMEYEN (P5-C4L/C4D dahil); **kanıt paketi manifestsiz, tamamlanmadı** (beyan penceresi kapandı; 2026-10-02 güncellemesi); kök neden kanıtlanmadı; kayıt ve teşhis `client-extacc-portal-d5-r01` §8 ve takip kaydı. Paket: koşucu öz-testi 41/41 · QR öz-testi 23/23 · blok R04 94/94 ×2 kabuk | yeni deneme: `CLIENT-KALAN-ISLER-R01.md` §3.3 (yeni D-5 GO'su doğrulanmış aday ve onaylı yayından sonra) (yeni GO + alıcı + tek gönderim onayı); owner kararları §10 |
+| D-6 / D-7 | **Ölçülmedi** — koşucu + sahte API + öz-test + owner bloğu + blok öz-testi **HAZIR** (`client-extacc-portal-d6-r01`: koşucu öz-testi 51/51, blok 73/73 WinPS 5.1 + pwsh 7 · `client-extacc-portal-d7-r01`: koşucu öz-testi 41/41, blok 64/64 ×2 kabuk; R02 blokları `main`'de — #2880, #2882; 2026-10-03 güncellemesi), canlıda koşulmadı | ÖN KOŞUL: canlı dist R27 (bloklar R27 pinli, R26 ile DUR); owner kararları §10; tanım eşlemesi `client-extacc-d8-staff-surface-r01` §4/§5 |
 | D-8 | **Kısmi** — owner telefonu 5 GET 403 (27.09 21:14–21:15; katman ölçülmedi); makine sondası HAZIR (bu paket) | sonda canlıda koşulmadı; diğer yöntem/yollar açık |
 | D-9 (intake) | Kabul (`cff5c692`) | — |
 | D-9 (portal, D-4) | Kabul (`e34b7e6d`) | — |
@@ -86,7 +86,7 @@ türetimsiz "N ölçüt" ifadesi kullanılmaz). Sayaç (x/y) CLIENT programını
 | SEC-API-BIND-01 | AÇIK — kısıtlı kayıt | Yayın kapsamı dışı; yayın değiştirmez |
 | SEC-MAIL-LOG-01 | AÇIK — kısıtlı kayıt | D-5 canlı koşumunda alıcı adresi canlı API uygulama günlüğüne (kaynaktan doğrulandı) ve sağlayıcı kayıtlarına (ölçülmedi) düşebilir; ayrım D-5 onay metninde (R04); ayrıntı kısıtlı kayıtta |
 | SEC-PORTAL-ADMIN-MSG-01 | **AÇIK** — kısıtlı kayıt; ayrıntı public repoya YAZILMAZ | **Karar özeti:** owner koşullu risk kabulüyle R27 yayınlandı (2026-09-30); önkoşul ölçümleri ve gerekçe kısıtlı kayıtta. Kayıt **giderilmedi**; ürün düzeltmesi ayrı iş + owner kararı (§10 K-11) |
-| SEC-PORTAL-REQ-01 (2026-10-01) | **AÇIK** — kısıtlı kayıt; ayrıntı public repoya YAZILMAZ | Yayından SONRA kaydedildi; R27 yayını için verilen risk kabulünün kapsamında **değildir**. Etkilediği adım: portal giriş ve sıfırlama talebi uçları, D-5 yeni denemesi. Düzeltme ayrı PR'da (`CLIENT-KALAN-ISLER-R01.md` §9); merge edilmedi, canlıda değil |
+| SEC-PORTAL-REQ-01 (2026-10-01) | **AÇIK** — kısıtlı kayıt; ayrıntı public repoya YAZILMAZ | Yayından SONRA kaydedildi; R27 yayını için verilen risk kabulünün kapsamında **değildir**. Etkilediği adım: portal giriş ve sıfırlama talebi uçları, D-5 yeni denemesi. Düzeltme `main`'de (#2884 `be08dbe9`; `CLIENT-KALAN-ISLER-R01.md` §9), yayın adayında; canlıda değil |
 | ClaimItem ACCRUES kullanıcı yolu (OFFICE authz notu) | AÇIK, ayrı iş | Adayda yok |
 | #2830 eski PR gövdesi / commit `02276b68` geçmişi | owner kararı bekliyor (§10) | — |
 
@@ -98,7 +98,7 @@ türetimsiz "N ölçüt" ifadesi kullanılmaz). Sayaç (x/y) CLIENT programını
 | `r27-dar-kabul.js` (B2, HTTP salt okuma) | Evet (öz-test 7/7) | DK-7 R26/R27 ayırt edici |
 | D-5 koşucu + sahte API + öz-test + QR betiği + owner bloğu + blok öz-testi | Evet (koşucu öz-testi 41/41 · QR öz-testi 23/23 · blok öz-testi 90/90 ×2 kabuk) | canlı dist pini **R27**; QR `/portal/forgot-password` (yanlış yol reddedilir); dış origin canlı `.env` + owner R05 teyidi |
 | D-8 sondası + öz-test | Evet (15/15) | canlıda koşulmadı; katman kanıt yoksa UNKNOWN |
-| D-6/D-7 koşucu + sahte API + öz-test + owner bloğu + blok öz-testi | **Evet** (D-6 51/51 · blok 64/64 ×2 kabuk; D-7 41/41 · blok 58/58 ×2 kabuk) | canlı dist pini R27; W2 sonrası koşum |
+| D-6/D-7 koşucu + sahte API + öz-test + owner bloğu + blok öz-testi | **Evet** (D-6 51/51 · blok 73/73 ×2 kabuk; D-7 41/41 · blok 64/64 ×2 kabuk; 2026-10-03 güncellemesi) | canlı dist pini R27; W2 sonrası koşum |
 | Pin güncelleme PR'ı (D-4/EXTACC/H5/C4 blokları `ExpLiveDist` → R27) | **#2838 MERGED `59620165`** (2026-09-30, B1 + B2 PASS sonrası) | §9 |
 | Yayın öncesi: bu paketin PR'ı merge + main senkron | — | owner blokları `main` checkout'undan pin okur |
 
@@ -555,9 +555,9 @@ Simülatör `.next` ACL kalıtımını ve gerçek görev/Http gecikmelerini öl�
 | W0 | R03/R03-b dar düzeltme PR'ı (#2849) | (a) harness 26/26 iki kabuk · (b) canlı salt-okuma SelfTest · (c) owner incelemesi + merge · (d) kısıtlı önkoşullar | **TAMAM** — (a) WinPS 5.1 26/26 + PS7 26/26 (ilk V1 kaydı FAIL korunur; birleşik inceleme) · (b) V2 PASS (A/B negatif kontrolleri koşulmadı) · (c) MERGED `32927399` · (d) kısıtlı kayıtta; ayrıntı `record/R27-LIVE-RECORD-R01.md` §3 |
 | W2 | R27 yayını B0→B2 | W0 + W1 + owner GO Y1 | **TAMAM** — B0 PASS · B1 `YAYIN PASS` 18:03:46Z · B2 8/8 (`record/R27-LIVE-RECORD-R01.md`) |
 | W3 | Pin güncelleme PR'ı (#2838) | W2 (canlı dist R27) | **TAMAM** — MERGED `59620165` (B1 + B2 PASS sonrası) |
-| W4 | D-5 canlı kabul | W2, W3 + §10 D-5 kararları + GO | **AÇIK** — bir kez koşuldu (runId `00c96bd5`, 2026-10-01): çıkış 3 ÖLÇÜLEMEYEN, kabul değil; yeni deneme `CLIENT-KALAN-ISLER-R01.md` §3.3 ve §11 KR-2 |
+| W4 | D-5 canlı kabul | W2, W3 + §10 D-5 kararları + GO | **AÇIK** — bir kez koşuldu (runId `00c96bd5`, 2026-10-01): çıkış 3 ÖLÇÜLEMEYEN, kabul değil; yeni deneme `CLIENT-KALAN-ISLER-R01.md` §3.3 (yeni D-5 GO'su doğrulanmış aday ve onaylı yayından sonra) |
 | W5 | D-8 makine sondası + telefon | W2 (R26'da da koşabilir) | sonda hazır (öz-test 15/15) |
-| W6 | D-6 / D-7 canlı koşumu | W2 + ayrı GO'lar | paketler hazır (D-6 51/51 · blok 64/64; D-7 41/41 · blok 58/58) |
+| W6 | D-6 / D-7 canlı koşumu | W2 + ayrı GO'lar | paketler hazır (D-6 51/51 · blok 73/73; D-7 41/41 · blok 64/64; 2026-10-03 güncellemesi); kapanış düzeltmeleri `CLIENT-KALAN-ISLER-R01.md` §4.4 |
 | W7 | Birleşik D-9 | W4–W6 | tanım hazır |
 | W8 | K3/OFFICE kapsamı + 3 migration (ayrı aday) | owner kararı (§10) | ertelendi; disposable migration provası yapılmadı |
 | W9 | SEC-* kayıtlarının ürün düzeltmeleri | owner kararı (§10) | açık; bu paket hiçbirini gidermez |
