@@ -50,6 +50,15 @@
 > satırı kanıttaki P6-C-DOC verdict'ine ve `docResidue.durum` alanına bağlandı (yalnız metin). Çıkış kodları değişmedi (OK-5 açık kalır).
 > Ayrıntı, ölçümler ve negatif kontroller: **§12**; pinler: **§6**. Canlı Run/Recover koşulmadı, owner bloğu çalıştırılmadı; bu not canlı
 > Run/Recover'ı yetkilendirmez.
+>
+> **R03-c (2026-10-03) — kapanış / Recover doğruluğu (owner talimatı madde 2; koşucu DEĞİŞTİ; pinler ve paket digest'i YENİ).** (a) Koşucu
+> oturumunun 200 dönmesi artık **yalnız P6-C2 PASS ve P6-C5 PASS** iken ürün bulgusudur: hesap HTTP ölçümleri sırasında yeniden açılırsa (P6-C5
+> FAIL) gözlem "ürün bulgusu adayı DEĞİL — hesap ölçüm sırasında yeniden AÇILDI" der, "Recover düzeltemez" yazılmaz ve kurtarma nedenindeki portal
+> satırı HTTP ölçümlerinden sonraki değerleri yazar. (b) Bloğun Recover bitiş satırı her kodu (1 ve 2 dahil) yalnız ölçülenle açıklar; mevcut
+> oturum reddinin Recover'da **her zaman** ölçülemediği kodlardan önce yazılır; 0 artık "hiç açılmamıştı" demez. (c) Makbuz dosyası yazılamamış
+> ya da bulunamıyorsa kanıttaki kurtarma adımı ve bloğun Run sonu metni uygulanamayan `-Mode Recover -ReceiptFile <makbuz>` önerisini **yazmaz**;
+> kanıttaki `receipt` nesnesinden yeni makbuz dosyası yolu (öz-testte uçtan uca ölçüldü) ya da kanıtta da yoksa **somut engel** yazılır. Çıkış
+> kodları değişmedi. Ayrıntı ve ölçümler: **§13**; pinler: **§6**. Canlı Run/Recover koşulmadı; bu not canlı Run/Recover'ı yetkilendirmez.
 
 ## 1. Ne ölçer ve ne yapmaz
 
@@ -179,7 +188,8 @@ DEĞİLDİR … İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR; owner kara
 sayar; blokta salt okuma kapıları **mod dalından önce** koşar ve QrTest, Run ile **Recover**'da da aynen aranır (dış zincir yalnız Preflight ve
 Run'da, yerel konsol yalnız QrTest ve Run'da). Recover'ın kapı bağımlılıkları §10.1'de, Recover'ın canlı yazma kümesi §10.2'de, Recover'ın
 bitiş satırında sayılmayan 1 ve 2 çıkış kodları §10.5'tedir. Blok Recover girişinde canlı yazma kümesini owner'a **göstermez** (tek soru
-kalıntı kararıdır); owner bu kümeyi §10.2'den okur.
+kalıntı kararıdır); owner bu kümeyi §10.2'den okur. **R03-c:** Recover bitiş satırı artık 1 ve 2'yi de sayar ve mevcut oturum reddinin Recover'da
+her zaman ölçülemediğini kodlardan önce yazar; Run çıkış 5/6 metni Recover komutunu yalnız makbuz dosyası okunabiliyorsa önerir (§13).
 
 ## 4. Owner adımları (telefon: Wi-Fi KAPALI, mobil veri, gizli sekme; yalnız ekranda gördüğünüz değerleri kullanın)
 
@@ -278,16 +288,20 @@ bu addan verilir. R03 koşumları ajanın kendi tek kullanımlık konteynerinde 
 "R02 tur 4"). **Ayna kopya sonuçları tarihsel kanıttır:** `d6-r02\test\` ve `d6-r02\tur2\test\` altındaki `d6-selftest-ayna.*` dosyaları önceki
 baytların tek satırı değiştirilmiş kopyasının koşumlarıdır; silinmedi ve değiştirilmedi. Güncel sonuç, commit'li dosyanın tur 4 koşumudur.
 
-## 6. Pinler (ölçülen değerler; sha256 ham dosya baytı — 2026-10-03 **R03-b** sonrası; R03-b'de değişen: koşucu, sahte API, koşucu öz-testi, blok, blok öz-testi, paket digest'i)
+## 6. Pinler (ölçülen değerler; sha256 ham dosya baytı — 2026-10-03 **R03-c** sonrası; R03-c'de değişen: koşucu, sahte API, koşucu öz-testi, blok, blok öz-testi, paket digest'i)
 
 | Dosya | sha256 |
 |---|---|
-| `d6-portal-documents-live-run.js` (koşucu; bloktaki `PkgPins` girdisiyle **eşit**; **R03-b — son baytlar** (§12); **R03** değeri `7BB52D994DA5AB19009097DF6227F79E5C72E8FC1434EDBF29FACEC65F875C0F`; R02 ve öncesi — R01 kapanış düzeltmesinden beri — `5D74206BAA26FD752FA57C3342698EDD870CA25A8BDB20B9C2213600EDE758DD`) | `46AB88957A4F8C239EE8525D80A19D39A6E22706B31F4D9AC93EFF4FF590C3F7` |
-| `d6-qr-test.js` (PkgPins; R02, R03 ve R03-b'de değişmedi) | `C9FC15AADBFDF4AA87702542340EB6A5C68558D3FE6423F06DED8E452D85F418` |
-| `d6-owner-live-block.ps1` (**R03-b — son baytlar**: PkgPins'te koşucu pini + `$ExpPackage` + yalnız Run'daki BELGE KALINTISI METNİ (kanıttaki P6-C-DOC verdict'i + `docResidue.durum`) + başlık notu; kapılar, sıra, çıkış kodları değişmedi; **R03** değeri `76018BA78B50E81B6774675799D56B5CFB099E567DD96B41CE5D080F4D9DDF68`; **R02 ikinci tur** değeri `082527EE641565B4E1B1F6ADF9A6EE6935EC796F958430C99CE16E3E28A8B3E2`; **R02 ilk tur** ara değeri `5AEF38932FE9458F799349C559649E8AB75A2585C7A403EDB066BC9F58AFFA61` (yalnız metin + kapanış metni ifadesi); R02 öncesi — kapanış düzeltmesi — `A206E19E208F791631F94A4A0C1A67D435BA9AC35CD3E71F72164B9185DA3629`; ondan önceki `DE3634BE…5321`) | `7B43591AED43C478AE97BB830F7CA8F9A0B6CE8881857DFFBA72C5681DF983C2` |
-| `d6-fake-portal-api.js` (**R03-b — son baytlar**: `relogin normal\|reject\|rateLimit` senaryosu (§12.4); **R03** değeri `FC06C8CC911F4285CE765952D38FD4BB52E497F0FACAFB77C70333F29CC12054` (benzersiz personel token'ı + R03 senaryoları (§11.4) + ACL reddi yalnız sürecin geçici kovasındaki dosyaya); R03 ara değeri (kova sınırı denetimi öncesi; ilk koşum ve ilk negatif kontrol) `4A5103842EFF905EDB93128BD9C11F2EEE078C581190FF7A159D633AEB5F2BFC`; R02 ve öncesi `27D8CBADE5694F398151BBA0CCFB10C0472383CFF1E3DD24DEA49EFDD587953A`). PkgPins'te **değildir** | `A863011C9C9B34F978D29B02ED5F8CEF280C9E6D0E261DE99AF1D3B0CA72166C` |
-| `d6-selftest.js` (**R03-b — son baytlar**: Z20-a..h → 70 test; **R03** değeri `2B0003CBB63B8FDB4C13B0D016A19CA794DC1F3E096D78FFACDFC37A5D4904E2` (Z17, Z18, Z19, C-1, T-8 → 62 test + DB kapısı kendi konteyner için genelleştirildi); **R02 tur 4** değeri `5560FAF870B90E03471B973AE2289593354C3D71F62D69D565B71F695603178F` (51 test); ondan önceki — R02 ilk ve ikinci turda değişmemişti — `E9FB37DC6D4069682722C4C4ADCCAA1E8F29D771F0E1A8508D3EC1D78686F2C2`). PkgPins'te **değildir** (koşucu bu dosyayı yüklemez); paket digest'i etkilenmez | `DF54415700010B377F0210EA4E42C66413E238AA59315DDC8C4E18A48AD6E99F` |
-| `d6-owner-block-selftest.ps1` (**R03-b — son baytlar**: 1 yeni test O-11 → 76 test + sahte kanıta `portalClose.docResidue.durum`; **R03** değeri `AC8F06EFDB3A54266F104110EB2054F036361B86C35B333A94BD5E9C5F596581` (2 yeni test PIN-1, O-10 → 75 test); **R02 ikinci tur** değeri `34C95DCBBB76362AA9D5B683D4990B133C42040ECF6BA63A5AF40B91B9349BAE` (G-3 yeniden yazıldı + G-5, O-9 → 73 test); **R02 ilk tur** ara değeri `810BDEF5C7EE4D1F98676C705C1BC9CBF73BDD969A27DA1686B6F70F801F9FB4` (71 test); R02 öncesi — kapanış düzeltmesi, 6 yeni test — `4E7ED8D7531CDC49FBDE783B3DAD9C2F9BEB675C1EF30504B09FC0B3E5D15E95`; ondan önceki `35E82EFC…BD02`) | `02650A8B3490B80C2B898AE730C26C8C9FF8B184CE04CB2383573426338EB2F5` |
+| `d6-portal-documents-live-run.js` (koşucu; bloktaki `PkgPins` girdisiyle **eşit**; **R03-c — son baytlar** (§13); **R03-b** değeri `46AB88957A4F8C239EE8525D80A19D39A6E22706B31F4D9AC93EFF4FF590C3F7`; **R03** değeri `7BB52D994DA5AB19009097DF6227F79E5C72E8FC1434EDBF29FACEC65F875C0F`; R02 ve öncesi — R01 kapanış düzeltmesinden beri — `5D74206BAA26FD752FA57C3342698EDD870CA25A8BDB20B9C2213600EDE758DD`) | `9FA67CAE821A41B5A8A68071B4338F38216F4ACAC180244FE9236DE5DC51EFD8` |
+| `d6-qr-test.js` (PkgPins; R02, R03, R03-b ve R03-c'de değişmedi) | `C9FC15AADBFDF4AA87702542340EB6A5C68558D3FE6423F06DED8E452D85F418` |
+| `d6-owner-live-block.ps1` (**R03-c — son baytlar**: PkgPins'te koşucu pini + `$ExpPackage` + yalnız METİN — Recover bitiş satırı (1 ve 2 dahil; mevcut oturum reddi her zaman ölçülemez) ve Run çıkış 5/6 metni (`Get-ReceiptFileState`: Recover komutu yalnız makbuz dosyası okunabiliyorsa) + başlık notu; kapılar, sıra, Recover okuma kapısı, çıkış kodları değişmedi; **R03-b** değeri `7B43591AED43C478AE97BB830F7CA8F9A0B6CE8881857DFFBA72C5681DF983C2` (Run'daki BELGE KALINTISI METNİ); **R03** değeri `76018BA78B50E81B6774675799D56B5CFB099E567DD96B41CE5D080F4D9DDF68`; **R02 ikinci tur** değeri `082527EE641565B4E1B1F6ADF9A6EE6935EC796F958430C99CE16E3E28A8B3E2`; **R02 ilk tur** ara değeri `5AEF38932FE9458F799349C559649E8AB75A2585C7A403EDB066BC9F58AFFA61` (yalnız metin + kapanış metni ifadesi); R02 öncesi — kapanış düzeltmesi — `A206E19E208F791631F94A4A0C1A67D435BA9AC35CD3E71F72164B9185DA3629`; ondan önceki `DE3634BE…5321`) | `A40842067065DC9E02AA079E6645E5EAAB7C0A97221DA82B5C6ACCE7BE5AE34E` |
+| `d6-fake-portal-api.js` (**R03-c — son baytlar**: `reopen normal\|afterDisable` senaryosu (§13); **R03-b** değeri `A863011C9C9B34F978D29B02ED5F8CEF280C9E6D0E261DE99AF1D3B0CA72166C` (`relogin normal\|reject\|rateLimit` senaryosu, §12.4); **R03** değeri `FC06C8CC911F4285CE765952D38FD4BB52E497F0FACAFB77C70333F29CC12054` (benzersiz personel token'ı + R03 senaryoları (§11.4) + ACL reddi yalnız sürecin geçici kovasındaki dosyaya); R03 ara değeri (kova sınırı denetimi öncesi; ilk koşum ve ilk negatif kontrol) `4A5103842EFF905EDB93128BD9C11F2EEE078C581190FF7A159D633AEB5F2BFC`; R02 ve öncesi `27D8CBADE5694F398151BBA0CCFB10C0472383CFF1E3DD24DEA49EFDD587953A`). PkgPins'te **değildir** | `3CF7AD13A2DEE52893015434E2FAF4091682DB57A18E0D7BD2212947C493D520` |
+| `d6-selftest.js` (**R03-c — son baytlar**: Z21-a..c yeni + Z20-e, Z20-h değişti → 73 test; **R03-b** değeri `DF54415700010B377F0210EA4E42C66413E238AA59315DDC8C4E18A48AD6E99F` (Z20-a..h → 70 test); **R03** değeri `2B0003CBB63B8FDB4C13B0D016A19CA794DC1F3E096D78FFACDFC37A5D4904E2` (Z17, Z18, Z19, C-1, T-8 → 62 test + DB kapısı kendi konteyner için genelleştirildi); **R02 tur 4** değeri `5560FAF870B90E03471B973AE2289593354C3D71F62D69D565B71F695603178F` (51 test); ondan önceki — R02 ilk ve ikinci turda değişmemişti — `E9FB37DC6D4069682722C4C4ADCCAA1E8F29D771F0E1A8508D3EC1D78686F2C2`). PkgPins'te **değildir** (koşucu bu dosyayı yüklemez); paket digest'i etkilenmez | `6D7BD64FB3CE2409AA0F12719696EC03E0D76D30A57FB346413423C34A34385C` |
+| `d6-owner-block-selftest.ps1` (**R03-c — son baytlar**: O-12, O-13 yeni + O-5 değişti → 78 test; sahte koşucu Run'da makbuz yazar; O-10 döngü değişkeni `$t` → `$o10t` (geçici dizin değişkenini eziyordu; ölçüt mantığı aynı); **R03-b** değeri `02650A8B3490B80C2B898AE730C26C8C9FF8B184CE04CB2383573426338EB2F5` (O-11 → 76 test + sahte kanıta `portalClose.docResidue.durum`); **R03** değeri `AC8F06EFDB3A54266F104110EB2054F036361B86C35B333A94BD5E9C5F596581` (2 yeni test PIN-1, O-10 → 75 test); **R02 ikinci tur** değeri `34C95DCBBB76362AA9D5B683D4990B133C42040ECF6BA63A5AF40B91B9349BAE` (G-3 yeniden yazıldı + G-5, O-9 → 73 test); **R02 ilk tur** ara değeri `810BDEF5C7EE4D1F98676C705C1BC9CBF73BDD969A27DA1686B6F70F801F9FB4` (71 test); R02 öncesi — kapanış düzeltmesi, 6 yeni test — `4E7ED8D7531CDC49FBDE783B3DAD9C2F9BEB675C1EF30504B09FC0B3E5D15E95`; ondan önceki `35E82EFC…BD02`) | `636F006812E43192265E417E6E5CAA72B80047D036C19F8A1D95263BFA68EF55` |
+
+**R03-c pin doğrulaması:** 9 pinli dosya bu dalın dosyalarından yeniden hesaplandı → uyuşmazlık 0; paket digest'i yeniden hesap = bloğun yeni
+`$ExpPackage` değeri `B9D9AD68…1BD5` (`r04\recover-dogrulugu\d6\test\pin-dogrulama-yeni.log`). Blok öz-testinin **PIN-1** ölçütü aynı eşitliği
+her koşumda ölçer (R03-c koşumları: 9/9, digest `B9D9AD68…` = `$ExpPackage`).
 
 **R03-b pin doğrulaması:** 9 pinli dosya bu dalın dosyalarından yeniden hesaplandı → uyuşmazlık 0; paket digest'i yeniden hesap = bloğun yeni
 `$ExpPackage` değeri `BD8D8744…D6E1` (`r04\d6-closure-r03b\test\pin-dogrulama-yeni.log`). Yöntem doğrulaması: aynı betik R03 baytlarında
@@ -309,7 +323,8 @@ mantık eşitliği ölçümünde "eşit değil" verir: `d6-r02\tur2\neg\mantik-m
 dosyasının sha256'sı ile** ayırt edilir (yukarıdaki tablo). **Owner koşumdan önce blok dosyasının sha256'sını kaydeder** ve bu tablodaki son
 değerle karşılaştırır; kanıttaki `revision = R01` tek başına hangi blok metninin koşulduğunu göstermez.
 
-Paket digest (blok içinde `$ExpPackage`; 9 pinli dosyanın `yol\0sha\n` sıralı birleşiminin sha256'sı) — **R03-b:** `BD8D87441734CCE5BAD076BCEEF2CF346779EF441DAD0DFF0E395D6AE804D6E1`
+Paket digest (blok içinde `$ExpPackage`; 9 pinli dosyanın `yol\0sha\n` sıralı birleşiminin sha256'sı) — **R03-c:** `B9D9AD682377B202374B41A8FF48832FA8830ECF80F34DDEA9707DAFFA541BD5`
+(koşucu pini yine değiştiği için). **R03-b:** `BD8D87441734CCE5BAD076BCEEF2CF346779EF441DAD0DFF0E395D6AE804D6E1`
 (koşucu pini yine değiştiği için). **R03:** `39507F282C1CDBA2A8FE9DF45693125FE9F9CA1A7ECA83029690D968A7029D5B` (koşucu pini değiştiği için). R02 ve öncesi: `7C54C0FC38D85548D0B626A3D60D2CD7DF07080CC13F6C20C682933B1790F057`
 — bağımsız yeniden hesaplama ile **eşit** (`kapanis-duzeltme\pin-dogrulama.txt`: 9 pin, uyuşmazlık 0). `ExpLiveDist` = R27
 `E28A6863CF109A1A3AE1F53E096D5F5C2037E382EF2D8D3EC87FEE3B827E5134`; `ExpEnvSha` EXTACC bloğuyla aynı. Blok dosyasının kendisi PkgPins'te
@@ -318,7 +333,8 @@ Paket digest (blok içinde `$ExpPackage`; 9 pinli dosyanın `yol\0sha\n` sıral�
 yazar (Run ve Recover kayıtları; önceki baytlarda `R01`). Bloğun `owner-block.json` `revision` alanı yine `R01`'dir (değiştirilmedi); blok
 metin revizyonu blok dosyasının sha256'sıyla ayırt edilir (yukarıdaki tablo). **R03-b:** koşucunun `revision` alanı **`R03` kalır** (öz-test C-1
 bu değeri ölçer; alan değiştirilmedi) — R03 ile R03-b koşucusu kanıtta koşucu dosyasının sha256'sıyla ayırt edilir: Run'ın `owner-block.json`
-dosyasındaki `packageDigest` alanı (R03-b `BD8D8744…`, R03 `39507F28…`) ve Preflight çıktısındaki `paket=` değeri.
+dosyasındaki `packageDigest` alanı (R03-b `BD8D8744…`, R03 `39507F28…`) ve Preflight çıktısındaki `paket=` değeri. **R03-c:** `revision` alanı
+yine **`R03`** (değiştirilmedi); R03-c koşucusu `packageDigest` `B9D9AD68…` ile ayırt edilir.
 
 PkgPins = koşucunun gerçek require ağacı (reqtree ile ölçüldü: ah-lib, i3-lib, extacc-display, qrcode vendor, h5-url-live-run,
 i12-live-identity, i13-lib, koşucu) + `d6-qr-test.js`. Koşucu değiştiğinde pin ve paket digest'i `d6_pins.py` yöntemiyle yeniden hesaplanır.
@@ -677,6 +693,10 @@ satır 199–207). Blok node kodunu değiştirmeden taşır.
 
 Recover'ın **hiçbir** çıkış kodu (1 ve 2 dahil) yeni bir Recover için yetki değildir; blok 1 ve 2 için ek yönlendirme satırı basmaz (yalnız 3 ve
 6 için basar; satır 423–427). Sonuç kanıtla birlikte CLIENT'a bildirilir; ikinci bir Recover bu paketle tanımlı değildir (§4 adım 7).
+**R03-c — DEĞİŞTİ (§13):** yukarıdaki tablo R02-b'de kaynaktan yazılmıştı; bloğun Recover bitiş satırı artık bu tabloyla uyumludur: 1 ve 2'yi sayar
+(2 = kaynaktan yalnız P6-FOREIGN-CLEAN), 0'ı "Recover anında portal hesabı DB'de YOK (ölçüldü)" diye yazar ("hiç açılmamıştı" çıkarımı kaldırıldı)
+ve "mevcut oturum reddi Recover'da ÖLÇÜLEMEZ — HER ZAMAN (P6-C4L/D …)" + "yeni giriş reddi P6-C3L/D satırlarından okunur" cümlelerini kodlardan
+önce, her kod için geçerli olarak yazar. Ek yönlendirme satırları (3 ve 6) değişmedi.
 
 ### 10.6 Run'ın normal kapanışında personel oturumu yenilenmez
 
@@ -745,6 +765,8 @@ metninin bu eksiklerini bu nottan bilir; metnin kendisini düzeltmek blok dosyas
   **R03:** owner'ın R03 talimatı ("sabit doğrulandı türü metin kaldıysa düzelt") üzerine OK-4'ün **yalnız** "Recover bitiş satırı 3'ü yeni giriş
   reddi ile birlikte anlatır" kalemi düzeltildi (§11.3; blok öz-testi O-10). OK-4'ün diğer kalemleri — Recover girişinde canlı yazma kümesinin
   gösterilmemesi, bitiş satırının 1 ve 2 kodlarını saymaması, onay metninin kurulumun kayıt kümesini eksik sayması — **AÇIK kalır**.
+  **R03-c:** owner talimatı madde 2 üzerine "bitiş satırının 1 ve 2 kodlarını saymaması" kalemi de düzeltildi (§13; blok öz-testi O-12). OK-4'ün
+  kalan iki kalemi — Recover girişinde canlı yazma kümesinin gösterilmemesi ve onay metninin kurulumun kayıt kümesini eksik sayması — **AÇIK kalır**.
 - Önceden açık olan kararlar aynen durur: ikinci bir Recover'a izin ve Recover için ayrı onayın nasıl kaydedileceği (§7 "Recover kuralı").
 - **OK-5 (R03, yeni) — kalıntı bağlamında ayrı çıkış kodu.** Kapanışta doğrulanmış kalıntı (P6-C-DOC FAIL) ile yalnız depolama erişim hatası
   (P6-C-DOC ÖLÇÜLEMEYEN) **ikisi de çıkış 6** verir: iki durumda da kapanış doğrulanmamıştır. Ayrım kanıttadır (§11.2). Yalnız erişim hatası
@@ -998,4 +1020,99 @@ Yeni ölçütler (sahte API'ye karşı; koşucu öz-testi):
 - **Ölçülmeyenler:** canlı etki yalnız kaynaktan okundu (yeniden girişin DB yazmaması, hız sınırı sayacı, günlük; ürünün gerçek JWT süresi / yetki
   reddi / kova ACL davranışı); sahte API ürünün kendisi değildir; `OLCULEMEDI_DB` dalı yalnız birim ölçümüyle (Z20-h) sınandı — gerçek bir DB okuma
   hatası senaryosu koşulmadı; P6-C2 PASS iken P6-C5 FAIL dalı (HTTP ölçümü sırasında hesabın yeniden açılması) yalnız birim ölçümüyle sınandı.
+- Bu revizyon canlı Run/Recover'ı yetkilendirmez; canlı koşum için ayrı owner GO gerekir (§7).
+- **R03-c notu:** bu bölümün "P6-C2 PASS iken P6-C5 FAIL dalı yalnız birim ölçümüyle sınandı" satırı R03-b içindir; R03-c'de bu dal **değişti** ve
+  sahte API'ye karşı uçtan uca ölçüldü (§13, Z21-a).
+
+## 13. R03-c — kapanış / Recover doğruluğu (2026-10-03; owner talimatı madde 2)
+
+Kapsam: owner talimatı madde 2 — "kapanış veya Recover hakkında kanıtın desteklemediği başarı ifadesi bulunmasın; ölçülemeyen mevcut oturum
+reddi açıkça belirtilsin; makbuz yazılamadığında uygulanamayacak bir Recover komutu önerilmesin, gerçekten kullanılabilir kurtarma yolu ya da
+somut engel gösterilsin". Önceki bağımsız doğrulamanın açık bıraktığı üç madde **kaynakta doğrulandı** (R03-b baytları `0f6a0b2c`) ve dar
+düzeltildi. Canlı Run/Recover **koşulmadı**, owner bloğu **çalıştırılmadı** (yalnız blok öz-testi); canlı ağaç, canlı DB, canlı `.env`, canlı
+API/portlar kullanılmadı. Çıkış kodu fonksiyonları ve öncelik (6 > 5 > 7 > 1 > 2 > 3 > 0) **değişmedi**; kanıttaki `revision` alanı `R03` kalır.
+
+### 13.1 Kaynakta doğrulanan açıklar (R03-b baytları)
+
+| No | Açık (R03-b) | Etki |
+|---|---|---|
+| 6a | `closePortal`: koşucu oturumunun 200'ü yalnız `flags` (P6-C2 PASS) ile ürün bulgusu sayılıyordu; P6-C5 (HTTP ölçümlerinden **sonraki** DB) oturum yargısından **sonra** okunuyordu. Hesap P6-C2 ile P6-C5 arasında yeniden açılırsa (P6-C5 FAIL) 200 yine "ÜRÜN BULGUSU … Recover düzeltemez" yazılıyor, portal satırı açık hesabın değerlerini göstermiyordu (portal satırı `after` = kapatma sonrası kapalı değerlere bakıyordu) | ölçülmemiş ürün bulgusu iddiası; açık kalan hesap kurtarma nedeninde görünmüyordu (negatif kontrolde ölçüldü) |
+| 6b | Bloğun Recover bitiş satırı 1 ve 2 kodlarını saymıyordu; "mevcut oturum reddi Recover'da ÖLÇÜLEMEZ" yalnız 3'ün açıklamasındaydı; 0 "portal hesabı hiç açılmamıştı" diyordu (ölçülen: Recover anında hesap DB'de yok) | kodların bir kısmı açıklamasız; 0 metni ölçülenden güçlü |
+| 6c | Run'ın kurtarma adımı (`recoveryAdvice`) yalnız makbuz **yolu** var mı diye bakıp `-Mode Recover -ReceiptFile <makbuz>` öneriyordu; makbuz dosyası yazılamamış / silinmişse (`makbuzDiskte=false`) de aynı komut yazılıyordu. Bloğun Run 5/6 metni dosyaya hiç bakmadan aynı komutu öneriyordu. Makbuz kurulumdan hemen sonra yazılır (`saveReceipt` — ilk yazma hatası fatal; sonraki yazma hataları `receiptWriteError` + diskte eski makbuz) | uygulanamayan Recover komutu önerisi |
+
+**Recover makbuzu nasıl okur (kaynaktan):** blok `-ReceiptFile` yolunda dosya var + JSON + `record = EXTACC-D6-SETUP-RECEIPT` + `runId` 8 hex; koşucu
+dosyayı okur, `record` + `elevUserId` + `elevEmail` + `runId` eşleşmesi + DB'de kimlik bağı (`assertReceiptIdentity`; doğrulanmazsa yazmadan çıkış 4).
+Run kanıtındaki `receipt` alanı koşucunun bellekteki makbuz nesnesidir (`out.receipt = receipt`; kanıt yazılırken serileştirilir; parola / token
+içermez). Dolayısıyla makbuz dosyası yoksa kanıttaki `receipt` nesnesinden yazılan yeni bir dosya Recover'ın iki kapısını da geçebilir — bu yol
+öz-testte **uçtan uca ölçüldü** (Z21-c). Kanıtta da makbuz yoksa Recover başlatılamaz (somut engel).
+
+### 13.2 Değişiklik
+
+- **Koşucu (6a):** P6-C5'in DB okuması oturum yargısından **önce** yapılır (satırlar yine C4L, C4D, C5 sırasıyla); 200 → `productFinding` yalnız
+  **P6-C2 PASS + P6-C5 PASS** iken ("… DB kapanışı HTTP ölçümlerinden önce ve sonra ölçülmüşken (P6-C2 PASS + P6-C5 PASS) …"). P6-C2 PASS, P6-C5 FAIL
+  → P6-C4L/D FAIL + "ürün bulgusu adayı DEĞİL — hesap ölçüm sırasında yeniden AÇILDI (P6-C5 FAIL: isActive=… hasPortalAccess=… sürüm a→b) — oturumun
+  erişmesi bu durumda ürün bulgusu SAYILMADI" (hesap kapalı ama sürüm değiştiyse "DB durumu ölçüm sırasında DEĞİŞTİ"). `recoveryAdvice`: ürün bulgusu
+  satırı ("Recover düzeltemez") yalnız P6-C2 PASS + P6-C5 PASS iken; portal satırı kapatma sonrası kapalı, HTTP sonrası açık ölçüldüyse `afterMeasure`
+  (st2) değerleriyle "kapatmadan sonra DB'de kapalı ölçüldü (P6-C2=PASS) ama hesap ölçüm sırasında yeniden AÇILDI (P6-C5 FAIL: HTTP ölçümlerinden sonra
+  isActive=… hasPortalAccess=…): açık erişim kapatılmalıdır" yazar.
+- **Koşucu (6c):** yeni `receiptFileState` (salt okuma: dosya var + JSON + kayıt türü + runId + personel alanları; bellekteki makbuzla eşitlik). Run
+  adımı: makbuz kullanılabilirse komut önerilir (diskteki makbuz bellektekinden farklıysa "FARKLI" + yazma hatası notu); dosya yok / okunamıyorsa
+  komut **önerilmez**: "makbuz dosyası YOK|OKUNAMIYOR (neden · yazma hatası): bu makbuz yoluyla bloktan Recover BAŞLATILAMAZ … Kullanılabilir yol: bu
+  kanıttaki `receipt` nesnesi … yeni bir JSON dosyasına yazılır ve Recover yalnız AYRI owner onayıyla `-ReceiptFile <o dosya>` ile başlatılır";
+  kanıtta makbuz da yoksa "SOMUT ENGEL: Recover makbuz ister, bu paketle Recover başlatılamaz; … karar owner/CLIENT'a aittir". Kanıtta yeni alan
+  `recovery.makbuzDurumu` (`KULLANILABILIR` · `YOK` · `OKUNAMADI` · `YOL_YOK`); `makbuzDiskte` (dosya var mı) aynen.
+- **Blok (6b, yalnız METİN):** Recover bitiş satırı: "HER KODDA: mevcut oturum reddi Recover'da ÖLÇÜLEMEZ — HER ZAMAN (P6-C4L/D; …); yeni giriş
+  reddinin ölçülüp ölçülmediği kanıttaki P6-C3L/D satırlarından okunur · 0 = Recover anında portal hesabı DB'de YOK (ölçüldü) + … HTTP reddi
+  ÖLÇÜLMEDİ (hesap yok) · 3 = DB kapalı, FAIL yok, en az bir ölçüt ÖLÇÜLEMEYEN — … · 2 = aynı kapanışlar doğrulandı, en az bir satır FAIL (kaynaktan
+  okundu: Recover'da bunu yalnız P6-FOREIGN-CLEAN üretir …) · 1 = DURDU: … hazırlık adımında hata (kanıttaki fatal alanı …) · 6 · 5 · 4 · 7 · 91".
+- **Blok (6c, yalnız METİN):** yeni `Get-ReceiptFileState` (Recover okuma kapısıyla aynı denetim; salt okuma). Run çıkış 5/6: makbuz okunabiliyorsa
+  önceki öneri + "Makbuz dosyası: VAR"; değilse "MAKBUZ DOSYASI YOK|OKUNAMIYOR …: bu makbuzla bloktan Recover BAŞLATILAMAZ" + kanıttaki receipt yolu
+  (AYRI owner onayıyla, BİR KEZ, `-ReceiptFile <o dosya>`) ya da kanıtta da yoksa "SOMUT ENGEL" (kırmızı). `PkgPins` koşucu pini + `$ExpPackage`.
+  Kapılar, sıra, Recover okuma kapısı, node çağrısı, çıkış kodları değişmedi; `owner-block.json` `revision` alanı `R01`.
+- **Sahte API:** `reopen normal|afterDisable` senaryosu (başarılı kapatmadan sonraki ilk yerel belge listesi isteğinde hesap DB'de yeniden açılır).
+
+### 13.3 Öz-testler, negatif kontroller (ölçülen)
+
+Kanıt kökü: `D:\Development\HUKUK_YAZILIMI\HY_R27_AGENT_EVIDENCE\r04\recover-dogrulugu\d6\` (`test\`, `neg\`, `onceki\`). Koşucu öz-testi ajanın **kendi**
+tek kullanımlık konteynerinde (`postgres:16-alpine`, loopback, 5432 dışı port, `_test` adlı veritabanı; şema `D6T_LIB_ROOT`'taki üretilmiş Prisma
+istemcisinin şemasından `prisma db push`; iş sonunda kaldırıldı); `D6T_LIB_ROOT` = canlı olmayan R27 aday çalışma ağacı proje kökü; sahte API
+8199 / dış 8458. Negatif kontroller `git archive 0f6a0b2c` aynasında (çalışma ağacı bozulmadı).
+
+| Koşum | Sonuç | Kanıt |
+|---|---|---|
+| `d6-selftest.js` — **SON BAYTLAR** (koşucu `9FA67CAE…`, sahte API `3CF7AD13…`, öz-test `6D7BD64F…`, blok `A4084206…`; 6 betiğin sha256'sı koşum öncesi = sonrası) | **73/73 PASS**, çıkış 0 (yeni 3: Z21-a..c; değişen 2: Z20-e, Z20-h; önceki 68 aynen; C-1: 44 kanıt, 33'ünde kurtarma gerekli, sorun yok; S-1: 127 dosya, sızıntı yok) | `test\d6-selftest-son.log`, `test\son-kosum-sha.txt`; ara koşumlar `test\d6-selftest-ilk*.log` |
+| `d6-owner-block-selftest.ps1` — **SON BAYTLAR** (blok `A4084206…`, öz-test `636F0068…`) | **78/78 PASS** Windows PowerShell 5.1.26100 · **78/78 PASS** PowerShell 7.6.6, çıkış 0 (PIN-1: 9/9, digest `B9D9AD68…` = `$ExpPackage`) | `test\blok-oz-test-winps51.log`, `test\blok-oz-test-pwsh7.log`; ara koşumlar `test\blok-oz-test-ilk*.log` |
+| **Negatif — koşucu:** R03-b baytları (`0f6a0b2c` aynası: koşucu `46AB8895…`, blok `7B43591A…`) + R03-c öz-test / sahte API | **68/73**, çıkış 1 — FAIL = tam olarak yeni / değişen 5 kalem (Z20-e, Z20-h, Z21-a, Z21-b, Z21-c). Eski davranış ölçüldü: hesap ölçüm sırasında yeniden açılmışken (P6-C2 PASS, P6-C5 FAIL; DB'de açık) `productFinding` + "… Recover düzeltemez"; portal satırı açık değerleri yazmıyor; makbuz dosyası yokken adım `-Mode Recover -ReceiptFile <makbuz>` öneriyor; `receiptFileState` yok. Kanıttaki `receipt` nesnesinden yazılan dosyayla Recover eski baytlarda da kimlik bağını geçti (yol koşucu değişikliğine bağlı değildir) | `neg\neg-eski-kosucu.log`, `neg\neg-eski-kosucu-gozlem.txt`, `neg\ayna-kurulum.txt` |
+| **Negatif — blok:** aynı ayna (R03-b bloğu) + R03-c blok öz-testi | **75/78**, çıkış 1 — FAIL = **O-5**, **O-12**, **O-13** (iki kabukta da; PIN-1 aynada eski koşucu + eski pinle tutarlı → PASS) | `neg\neg-eski-blok-winps51.log`, `neg\neg-eski-blok-pwsh7.log` |
+| Pin hesabı | 9 pin uyuşmazlık 0, digest `B9D9AD68…` = `$ExpPackage` | `test\pin-dogrulama-yeni.log` |
+| Ayrıştırma | iki ps1: parse hatası 0 (WinPS 5.1 ve pwsh 7); `node --check` (koşucu, sahte API, öz-test) 0 | `test\parse-iki-kabuk.log` |
+
+Yeni / değişen ölçütler:
+- **Z21-a** (yeni senaryo `guard: stale` + `reopen: afterDisable`): kapatma 201 → P6-C2 PASS; hesap HTTP ölçümleri sırasında yeniden açıldı → P6-C5 FAIL;
+  oturum 200 → P6-C4L/D FAIL + "ürün bulgusu adayı DEĞİL — hesap ölçüm sırasında yeniden AÇILDI (P6-C5 FAIL: isActive=true hasPortalAccess=true …)";
+  `productFinding` yok; neden ve P6-D9'da "ÜRÜN BULGUSU" / "Recover düzeltemez" yok; portal satırı HTTP sonrası değerlerle; DB'de hesap açık; çıkış 6.
+- **Z21-b** (birim): `receiptFileState` altı durum (var · yok · klasör · bozuk · yol yok · başka runId) + Run adımının yedi girdisi (kullanılabilir · eski
+  makbuz + yazma hatası · yok · klasör · bozuk · kanıtta makbuz yok · Recover modu).
+- **Z21-c** (uçtan uca): gösterimden sonra makbuz dosyası silinir, ürün DELETE'i dosyayı bırakır → çıkış 6; kanıtta `makbuzDurumu=YOK`, adım komut
+  önermez + kanıttaki `receipt` yolu; o nesne değiştirilmeden dosyaya yazılıp Recover'a verilir → kayıt `EXTACC-D6-RECOVER`, kimlik bağı OK,
+  P6-C2/C3L PASS, kalan dosya P6-C-DOC FAIL, personel pasif, çıkış 6.
+- **Z20-e** (değişti): gerçek ürün bulgusunun dayanağı "(P6-C2 PASS + P6-C5 PASS)". **Z20-h (iii)** (değişti): P6-C5 FAIL iken ürün bulgusu satırı
+  yok; portal satırı "yeniden AÇILDI" + HTTP sonrası değerler.
+- **O-12** (blok, yeni): Recover çıkış 0, 1, 2, 3, 6 koşumlarında gösterilen bitiş satırı — genel cümle kodlardan önce; tüm kodlar açıklamalı; "hiç
+  açılmamıştı" yok. **O-13** (blok, yeni): Run çıkış 5/6 metni dört makbuz durumunda (var · yok · bozuk · kanıtta da yok). **O-5** (değişti): 0
+  metni ölçülenle.
+
+### 13.4 Sınır durumu
+
+- **Kapalı:** 6a (P6-C5 FAIL'de yanlış ürün bulgusu / "Recover düzeltemez"), 6b (Recover bitiş satırında 1 / 2 ve mevcut oturum reddinin genel
+  ölçülemezliği; 0'ın çıkarımı), 6c (makbuz dosyası yokken uygulanamayan Recover komutu — kanıtta ve blokta), OK-4'ün "1 ve 2'yi saymama" kalemi.
+- **Açık / owner kararı:** OK-1, OK-2, OK-3 aynen; OK-4'ün kalan iki kalemi; OK-5; OK-6. Kanıttaki `receipt` nesnesinden makbuz dosyası yazmak
+  (6c kullanılabilir yolu) Recover'dan önceki bir dosya işlemidir: kim yazar ve Run kanıt dizini dışında mı yazılır — owner / CLIENT kararıdır;
+  bu paket onu kendiliğinden yapmaz.
+- **Ölçülmeyenler:** canlıda hiçbiri koşulmadı; sahte API ürünün kendisi değildir (hesabın ölçüm sırasında yeniden açılması sahte API'nin dış
+  müdahale taklididir; ürünün bunu kendiliğinden yapıp yapmadığı ölçülmedi). Makbuz dosyasının kaybı öz-testte **silme** ile üretildi; gerçek bir
+  yazma hatası (izin / disk) uçtan uca koşulmadı — yazma hatası metni birim ölçümüyle (Z21-b) sınandı. Bloğun Recover okuma kapısı kanıttaki
+  `receipt` kopyasıyla ayrıca koşulmadı (kapı yalnız dosya + JSON + kayıt türü + runId biçimine bakar — kaynaktan; koşucunun kapısı ve kimlik
+  bağı Z21-c'de koşuldu). Mevcut oturum reddi Recover'da yapısal olarak ölçülemez (koşumun portal oturumu saklanmaz); Run kanıtındaki P6-C4 satırları
+  tek kaynaktır.
 - Bu revizyon canlı Run/Recover'ı yetkilendirmez; canlı koşum için ayrı owner GO gerekir (§7).

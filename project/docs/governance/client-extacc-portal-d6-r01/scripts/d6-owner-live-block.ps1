@@ -35,6 +35,13 @@
 #          Koşucu R03: Run'ın kendi kapanışında personel oturumu 401/403 ile reddedilirse tek yeniden giriş + tek yeniden deneme (Recover DEĞİL).
 # R03-b  : (2026-10-03) koşucu yine değişti → koşucu pini + $ExpPackage güncellendi. Blokta yalnız METİN: Run'daki BELGE KALINTISI satırı kanıttaki
 #          P6-C-DOC verdict'ine ve docResidue.durum alanına bağlandı (DOĞRULANDI ↔ ÖLÇÜLEMEDİ ayrı). Kapılar, sıra, çıkış kodları DEĞİŞMEDİ.
+# R03-c  : (2026-10-03; owner talimatı: kapanış / Recover doğruluğu) koşucu yine değişti → koşucu pini + $ExpPackage güncellendi. Blokta yalnız METİN:
+#          (a) Recover bitiş satırı her kodu yalnız ölçülenle açıklar (1 ve 2 dahil); mevcut oturum reddinin (P6-C4L/D) Recover'da HER ZAMAN
+#          ölçülemediği ve yeni giriş reddinin P6-C3L/D satırlarından okunduğu kodlardan ÖNCE genel olarak yazılır; 0 artık "hiç açılmamıştı"
+#          demez (ölçülen: Recover anında hesap DB'de yok). (b) Run çıkış 5/6 metni `-Mode Recover -ReceiptFile <makbuz>` önerisini YALNIZ kanıt
+#          dizinindeki makbuz dosyası Recover'ın okuma kapısını geçiyorsa yazar (Get-ReceiptFileState: dosya + JSON + kayıt türü + runId); yoksa
+#          uygulanamayan komut yerine kanıttaki receipt nesnesinden yeni makbuz dosyası yolu ya da (kanıtta da yoksa) SOMUT ENGEL yazılır.
+#          Kapılar, sıra, Recover okuma kapısı, çıkış kodları DEĞİŞMEDİ.
 # TOPOLOJİ: public portal adresi canlı .env'den okunur ve owner'ın konsola yazdığı R05 adresiyle doğrulanır; kanıt kökü $env:USERPROFILE'a görelidir
 #          (bu dosyada canlı alan adı / yerel kullanıcı yolu literali yoktur). Canlı kök ($Rel) tek yerde tanımlıdır.
 # ÇIKIŞ  : node kodu değiştirilmeden taşınır · 90 kapıda durdu · 91 node başlatılamadı / kod alınamadı · 7 kanıt yok.
@@ -61,7 +68,7 @@ $ExpEnvSha   = '5C776BBEEE018EA5CC8192378D42D742FD4ABC1B6D0E9A3EA671CF463206908D
 $ExpBaseUrl  = $null   # R05 public portal adresi: canlı .env PUBLIC_PORTAL_BASE_URL'den okunur (Invoke-ReadOnlyGates, biçim kapısı) ve Run/QrTest'te owner'ın konsola yazdığı R05 adresiyle birebir doğrulanır (Confirm-PortalBaseUrlR05). Public repoya host literali YAZILMAZ.
 # Koşucunun YÜKLEDİĞİ tüm governance dosyaları + QR denemesi (require ağacı ölçüldü).
 $PkgPins = [ordered]@{
-  'client-extacc-portal-d6-r01\scripts\d6-portal-documents-live-run.js'               = '46AB88957A4F8C239EE8525D80A19D39A6E22706B31F4D9AC93EFF4FF590C3F7'
+  'client-extacc-portal-d6-r01\scripts\d6-portal-documents-live-run.js'               = '9FA67CAE821A41B5A8A68071B4338F38216F4ACAC180244FE9236DE5DC51EFD8'
   'client-extacc-portal-d6-r01\scripts\d6-qr-test.js'                                 = 'C9FC15AADBFDF4AA87702542340EB6A5C68558D3FE6423F06DED8E452D85F418'
   'client-extacc-intake-chain-r01\scripts\extacc-display.js'                          = 'F257188DF66C429472C214D38D965C1E6F5A2EA490D348369AC68C5DC6F26867'
   'client-extacc-intake-chain-r01\scripts\vendor\qrcode-generator-1.4.4\qrcode.js'    = '18AE399F81182BC9DE916E9C77B195DF20CC58D6F2D55A62B085A299F1BF1780'
@@ -71,7 +78,7 @@ $PkgPins = [ordered]@{
   'client-acceptance-runners-i3-r01\scripts\i3-lib.js'                                = '56F3788E9F84746CFFEE384D8C18B9B9A28130CC8E2285F9570AB69CC6EE74A3'
   'client-acceptance-harness-r01\scripts\ah-lib.js'                                   = 'DF882DB7F33A667092F126F01E518C1A8292C8C0B3C4C039BF73D71F3ACCBFD7'
 }
-$ExpPackage = 'BD8D87441734CCE5BAD076BCEEF2CF346779EF441DAD0DFF0E395D6AE804D6E1'
+$ExpPackage = 'B9D9AD682377B202374B41A8FF48832FA8830ECF80F34DDEA9707DAFFA541BD5'
 $SecretEnv  = @('AH_DATABASE_URL', 'AH_PRISMA_ROOT', 'AH_BCRYPT_PATH', 'D6_LIVE_CONFIRM', 'D6_RECOVER_CONFIRM', 'D6_LIVE_GO_REF',
                 'D6_RUNID', 'D6_MODE', 'D6_EXPECT_DB', 'D6_EXPECT_TENANT_SLUG', 'D6_API_BASE', 'D6_EXPECT_API',
                 'D6_EXPECT_BASE_URL', 'D6_LIVE_LOGIN_PW', 'D6_RECEIPT', 'D6_EVID_FILE', 'D6_DISPLAY', 'EXA_QRTEST_URL',
@@ -271,6 +278,15 @@ function Confirm-LiveDataProcessing {
   $a = Read-Answer 'Bu işlemeyi onaylıyor musunuz? Onay için büyük harfle EVET yazın'
   if ($a -cne 'EVET') { Fail 'canlı veri işleme onaylanmadı — koşum başlamadı' }
 }
+# R03-c: Run sonu metni Recover komutunu YALNIZ makbuz dosyası Recover'ın okuma kapısını geçiyorsa önerir — Invoke-RecoverMode ile aynı denetim
+# (dosya var + JSON + kayıt türü + runId biçimi). Kimlik bağı (DB) koşucunun Recover'ında ölçülür; burada ölçülmez. Salt okuma; dosyaya yazmaz.
+function Get-ReceiptFileState([string]$path) {
+  if (-not $path -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return [pscustomobject]@{ usable = $false; why = 'YOK' } }
+  $j = $null
+  try { $j = Get-Content -Raw -Encoding UTF8 -LiteralPath $path | ConvertFrom-Json } catch { return [pscustomobject]@{ usable = $false; why = 'OKUNAMIYOR (okunamadı / JSON değil)' } }
+  if (-not $j -or $j.record -ne 'EXTACC-D6-SETUP-RECEIPT' -or [string]$j.runId -notmatch '^[0-9a-f]{8}$') { return [pscustomobject]@{ usable = $false; why = 'OKUNAMIYOR (kayıt türü / runId tanınmadı)' } }
+  return [pscustomobject]@{ usable = $true; why = 'VAR' }
+}
 function Read-ResidueDecision {
   $a = Read-Answer 'Kalan sentetik belge SATIRLARI Prisma ile silinsin mi? (dosyalar SİLİNMEZ, listelenir) (E = evet · H = hayır)'
   if ($a -ceq 'E') { return '1' } elseif ($a -ceq 'H') { return '0' }
@@ -278,9 +294,10 @@ function Read-ResidueDecision {
 }
 # Kapanış durumu kanıttan okunur; metin KOŞULSUZ "kapatıldı" demez.
 function Get-ClosureStatus([string]$evidFile, [object]$rc) {
-  $st = [ordered]@{ verified = $false; text = ''; finding = $null; waitVerdict = $null; docVerdict = $null; docDurum = $null; docText = ''; phoneDocVerdict = $null; uploadVerdict = $null }
+  $st = [ordered]@{ verified = $false; text = ''; finding = $null; waitVerdict = $null; docVerdict = $null; docDurum = $null; docText = ''; phoneDocVerdict = $null; uploadVerdict = $null; receiptInEvidence = $false }
   try {
     $ev = Get-Content -Raw -LiteralPath $evidFile | ConvertFrom-Json
+    $st.receiptInEvidence = [bool]($ev.receipt -and $ev.receipt.record -eq 'EXTACC-D6-SETUP-RECEIPT')   # R03-c: makbuz dosyası yoksa kullanılabilir yolun kaynağı
     $d9 = ($ev.results | Where-Object { $_.id -eq 'P6-D9' }).verdict
     $st.waitVerdict = ($ev.results | Where-Object { $_.id -eq 'P6-WAIT' }).verdict
     $st.docVerdict = ($ev.results | Where-Object { $_.id -eq 'P6-C-DOC' }).verdict
@@ -409,7 +426,20 @@ function Invoke-RunMode($g) {
   if ($rc -eq 5 -or $rc -eq 6) {
     Write-Host '  KAPANIŞ DOĞRULANMADI: Run kendi kapanış adımlarını koşucu İÇİNDE denedi; bu çıkış kodu Recover YETKİSİ DEĞİLDİR ve bu blok Recover BAŞLATMAZ.' -ForegroundColor Yellow
     Write-Host '  Önce kanıtı inceleyin (d6-evidence.json: kurtarma/inceleme nedeni ve açık kalan kaynaklar) ve sonucu CLIENT''a bildirin. Kanıttaki kurtarma adımı' -ForegroundColor Yellow
-    Write-Host '  bir ÖNERİDİR: -Mode Recover -ReceiptFile <makbuz> yalnız AYRI owner onayıyla, BİR KEZ (ürün bulgusu varsa Recover onu DÜZELTMEZ). Kabulü TEKRARLAMAYIN.' -ForegroundColor Yellow
+    # R03-c: Recover komutu yalnız makbuz dosyası Recover'ın okuma kapısını geçiyorsa önerilir (uygulanamayan komut önerilmez).
+    $rs = Get-ReceiptFileState (Join-Path $EvDir 'd6-setup-receipt.json')
+    if ($rs.usable) {
+      Write-Host '  bir ÖNERİDİR: -Mode Recover -ReceiptFile <makbuz> yalnız AYRI owner onayıyla, BİR KEZ (ürün bulgusu varsa Recover onu DÜZELTMEZ). Kabulü TEKRARLAMAYIN.' -ForegroundColor Yellow
+      Write-Host '  Makbuz dosyası: VAR (kanıt dizinindeki d6-setup-receipt.json; kayıt türü + runId okundu — kimlik bağını koşucu Recover''da DB''de doğrular).' -ForegroundColor Yellow
+    } else {
+      Write-Host ("  bir ÖNERİDİR — ama MAKBUZ DOSYASI {0} (kanıt dizinindeki d6-setup-receipt.json): bu makbuzla bloktan Recover BAŞLATILAMAZ (Recover makbuzu dosyadan okur; -ReceiptFile mevcut bir makbuz dosyası ister)." -f $rs.why) -ForegroundColor Yellow
+      if ($closure.receiptInEvidence) {
+        Write-Host '  Kullanılabilir yol: d6-evidence.json içindeki receipt nesnesi (makbuzun koşucu belleğindeki son hali; parola/token içermez) değiştirilmeden yazılabilir bir dizinde yeni bir JSON dosyasına yazılır;' -ForegroundColor Yellow
+        Write-Host '  Recover yalnız kanıt incelendikten sonra AYRI owner onayıyla, BİR KEZ, -ReceiptFile <o dosya> ile başlatılır (koşucu makbuzu kayıt türü, runId ve DB kimlik bağıyla doğrular; doğrulanmazsa yazmadan çıkış 4). Kabulü TEKRARLAMAYIN.' -ForegroundColor Yellow
+      } else {
+        Write-Host '  SOMUT ENGEL: kanıtta receipt nesnesi de YOK (ya da kanıt okunamadı) — bu paketle Recover BAŞLATILAMAZ; makbuzsuz kapanış yolu tanımlı değildir. Açık kalan sentetik kaynaklar için karar owner/CLIENT''a aittir: kanıt dizinini ve d6-run.log''u CLIENT''a iletin.' -ForegroundColor Red
+      }
+    }
   }
   Write-Host "  kanıt dizini: $EvDir"
   Write-Host '  Bu pencereyi ŞİMDİ kapatın (kaydırma arabelleği). GO ref ve parola bildirmeyin.'
@@ -434,7 +464,8 @@ function Invoke-RecoverMode($g, [string]$receiptPath) {
     $rc = Complete-NodeRc $rc $evid
   }
   finally { Clear-SecretEnv; Write-Manifest $EvDir }
-  Write-Host "EXTACC D-6 KURTARMA BİTTİ - RUNID=$($rcpt.runId) · çıkış=$rc (0 = portal hesabı hiç açılmamıştı + kalıntı yok (HTTP reddi ÖLÇÜLMEDİ) · 3 = DB kapalı, FAIL yok, en az bir ölçüt ÖLÇÜLEMEYEN — yeni giriş reddinin ölçülüp ölçülmediği kanıttaki P6-C3L/D satırlarından okunur; mevcut oturum reddi Recover'da ÖLÇÜLEMEZ (Run kanıtındaki P6-C4 satırlarına bakın; PASS SAYILMAZ) · 6 portal DB/HTTP kapanışı doğrulanmadı ya da belge kalıntısı DOĞRULANDI / ÖLÇÜLEMEDİ (hangisi: kanıttaki P6-C-DOC satırı ve docResidue.durum) · 5 personel/dosya · 4 kimlik reddi · 7 kanıt yok · 91 node başlatılamadı)" -ForegroundColor $(if ($rc -eq 0) { 'Green' } else { 'Yellow' })
+  # R03-c: her kod yalnız ölçüleni söyler (1 ve 2 dahil); mevcut oturum reddinin Recover'da HER ZAMAN ölçülemediği kodlardan ÖNCE, genel olarak yazılır.
+  Write-Host "EXTACC D-6 KURTARMA BİTTİ - RUNID=$($rcpt.runId) · çıkış=$rc (HER KODDA: mevcut oturum reddi Recover'da ÖLÇÜLEMEZ — HER ZAMAN (P6-C4L/D; koşumun portal oturumu saklanmaz; Run kanıtındaki P6-C4 satırlarına bakın; PASS SAYILMAZ); yeni giriş reddinin ölçülüp ölçülmediği kanıttaki P6-C3L/D satırlarından okunur · 0 = Recover anında portal hesabı DB'de YOK (ölçüldü) + belge kalıntısı yok + yabancı satır temiz + personel/dosya kapalı; HTTP reddi ÖLÇÜLMEDİ (hesap yok) · 3 = DB kapalı, FAIL yok, en az bir ölçüt ÖLÇÜLEMEYEN — portal DB kapanışı (P6-C2/C2V/C5) ve belge kalıntısı yokluğu (P6-C-DOC) ölçüldü ya da portal hesabı yok; personel/dosya kapalı · 2 = aynı kapanışlar doğrulandı, en az bir satır FAIL (kaynaktan okundu: Recover'da bunu yalnız P6-FOREIGN-CLEAN üretir — yabancı sentetik satır kaldı) · 1 = DURDU: aynı kapanışlar doğrulandı ama Recover'ın hazırlık adımında hata (kanıttaki fatal alanı; diğer satırlar kanıtta ayrıca okunur) · 6 portal DB/HTTP kapanışı doğrulanmadı ya da belge kalıntısı DOĞRULANDI / ÖLÇÜLEMEDİ (hangisi: kanıttaki P6-C-DOC satırı ve docResidue.durum) · 5 personel/dosya kapanışı doğrulanmadı · 4 kimlik reddi (yazma yok) · 7 kanıt yok · 91 node başlatılamadı)" -ForegroundColor $(if ($rc -eq 0) { 'Green' } else { 'Yellow' })
   if ($rc -eq 3) { Write-Host '  Recover TEKRARLANMAZ; ölçülemeyen satırlar Run kanıtıyla birlikte CLIENT tarafından değerlendirilir.' -ForegroundColor Yellow }
   if ($rc -eq 6) {
     Write-Host '  Kanıttaki P6-C-DOC satırına bakın: diskte kalan dosya listelendiyse (DOĞRULANMIŞ KALINTI) OWNER elle siler; "depolama erişimi ÖLÇÜLEMEDİ" ise belge kovasının okunabilirliğini owner düzeltir (ikisi kanıtta AYRI satırdır).' -ForegroundColor Yellow

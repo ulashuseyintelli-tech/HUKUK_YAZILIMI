@@ -18,6 +18,11 @@
  *           "ürün bulgusu" YAZMAZ ve kurtarma nedeninde portal açık satırı VAR (Z20-a..d); gerçek ürün bulgusu (DB kapalı ölçülmüşken 200) yine yazılır
  *           (Z20-e); kalıntı + portal açık birlikte → iki satır (Z20-f); Recover çıkış 3 adımı kanıttaki verdict'lerden (portal hesabı yokken P6-C2/C5
  *           PASS iddiası yok) (Z20-g); kurtarma nedeni birim ölçümü — portal satırı kalıntı / erişim hatası / ürün bulgusundan bağımsız (Z20-h).
+ * R03-c   : (owner talimatı: kapanış / Recover doğruluğu) Z21-a hesap HTTP ölçümleri sırasında yeniden açılırsa (P6-C2 PASS, P6-C5 FAIL; sahte API
+ *           `reopen: afterDisable` + guard bayat) 200 "ürün bulgusu" YAZMAZ, portal satırı st2 değerleriyle "yeniden AÇILDI" der · Z21-b makbuz dosyası
+ *           durumu (birim: var / eski / yok / klasör / bozuk / kanıtta makbuz yok) → Run adımı uygulanamayan Recover komutunu önermez · Z21-c makbuz
+ *           koşum ortasında kaybolur (uçtan uca): adım "makbuz dosyası YOK" + kanıttaki `receipt` yolu; o nesneden yazılan dosyayla Recover GERÇEKTEN
+ *           koşar (kimlik bağı OK). Değişen: Z20-e (ürün bulgusu dayanağı "P6-C2 PASS + P6-C5 PASS"), Z20-h (iii) (P6-C5 FAIL'de ürün bulgusu satırı YOK).
  */
 const { spawn, execFileSync } = require('child_process');
 const fs = require('fs'); const path = require('path'); const os = require('os'); const crypto = require('crypto');
@@ -439,10 +444,10 @@ const CLOSE_NO_S = CLOSE.filter((id) => id !== 'P6-C4L' && id !== 'P6-C4D' && id
         && noFalseFinding(z20d) && portalOpenLine(z20d) && /kapatma çağrıları: HTTP 500 · HTTP 500/.test(openLineOf(z20d)),
       `disable=${nCalls(z20d.calls, DIS)} · çağrılar=${JSON.stringify(pcOf(z20d).disableCalls || null)} · ${sum20(z20d)}`);
     const l12 = nedenOf(z12);
-    check('Z20-e', 'GERÇEK ürün bulgusu korunur (Z12 koşumu, guard bayat): DB kapanışı ölçülmüşken (P6-C2/C2V/C5 PASS) koşucu oturumu 200 → productFinding YAZILIR ve ölçülen dayanağını adlandırır ("(P6-C2 PASS)"); P6-C4L/D FAIL "DB kapanışı ölçüldükten sonra (P6-C2 PASS) MEVCUT OTURUM KAPANMADI (ürün bulgusu)"; kurtarma nedeni ÜRÜN BULGUSU satırını "Recover düzeltemez" ile yazar, "PORTAL ERİŞİMİ kapandığı doğrulanmadı" YAZMAZ; çıkış 6',
-      z12.code === 6 && ['P6-C2', 'P6-C2V', 'P6-C5'].every((id) => z12.v(id) === 'PASS') && /\(P6-C2 PASS\)/.test((z12.ev && z12.ev.productFinding) || '')
-        && ['P6-C4L', 'P6-C4D'].every((id) => /DB kapanışı ölçüldükten sonra \(P6-C2 PASS\) MEVCUT OTURUM KAPANMADI \(ürün bulgusu\)/.test(z12.o(id)))
-        && l12.some((n) => /ÜRÜN BULGUSU — DB kapanışı ölçüldükten sonra \(P6-C2 PASS\)/.test(n) && /Recover düzeltemez/.test(n)) && !l12.some((n) => /PORTAL ERİŞİMİ kapandığı doğrulanmadı/.test(n)),
+    check('Z20-e', 'GERÇEK ürün bulgusu korunur (Z12 koşumu, guard bayat): DB kapanışı HTTP ölçümlerinden önce ve sonra ölçülmüşken (P6-C2/C2V/C5 PASS) koşucu oturumu 200 → productFinding YAZILIR ve ölçülen dayanağını adlandırır (R03-c: "(P6-C2 PASS + P6-C5 PASS)"); P6-C4L/D FAIL "… (P6-C2 PASS + P6-C5 PASS) MEVCUT OTURUM KAPANMADI (ürün bulgusu)"; kurtarma nedeni ÜRÜN BULGUSU satırını aynı dayanak + "Recover düzeltemez" ile yazar, "PORTAL ERİŞİMİ kapandığı doğrulanmadı" YAZMAZ; çıkış 6',
+      z12.code === 6 && ['P6-C2', 'P6-C2V', 'P6-C5'].every((id) => z12.v(id) === 'PASS') && /\(P6-C2 PASS \+ P6-C5 PASS\)/.test((z12.ev && z12.ev.productFinding) || '')
+        && ['P6-C4L', 'P6-C4D'].every((id) => /HTTP ölçümlerinden önce ve sonra ölçülmüşken \(P6-C2 PASS \+ P6-C5 PASS\) MEVCUT OTURUM KAPANMADI \(ürün bulgusu\)/.test(z12.o(id)))
+        && l12.some((n) => /ÜRÜN BULGUSU — DB kapanışı HTTP ölçümlerinden önce ve sonra ölçülmüşken \(P6-C2 PASS \+ P6-C5 PASS\)/.test(n) && /Recover düzeltemez/.test(n)) && !l12.some((n) => /PORTAL ERİŞİMİ kapandığı doğrulanmadı/.test(n)),
       `çıkış=${z12.code} · bulgu=${JSON.stringify((z12.ev || {}).productFinding || null)} · C4L=${z12.o('P6-C4L').slice(0, 110)} · neden=${l12.join(' | ').slice(0, 220)}`);
     const z20f = await runScenario('z20f-residue-and-portal-open', dir, { delete: 'fail', disable: 'notFound' }, {}, { onDisplay: (s) => phoneFlow(s) });
     const dr20f = pcOf(z20f).docResidue || {};
@@ -468,13 +473,59 @@ const CLOSE_NO_S = CLOSE.filter((id) => id !== 'P6-C4L' && id !== 'P6-C4D' && id
     const R6 = (pairs) => pairs.map(([id, verdict]) => ({ id, verdict }));
     const u1 = raf ? raf({ closure: { ok: true }, results: R6([['P6-C1', 'FAIL'], ['P6-C2', 'FAIL'], ['P6-C2V', 'FAIL'], ['P6-C5', 'FAIL']]), portalClose: { ok: false, portalDbClosed: false, after: { isActive: true, hasPortalAccess: true }, docResidue: { durum: 'ERISIM_OLCULEMEDI', rows: 0, filesLeftOnDisk: [], filesAccessError: ['a.pdf:EPERM'] } } }, null, 'run') : {};
     const u2 = raf ? raf({ closure: { ok: true }, results: R6([['P6-C1', 'PASS'], ['P6-C2', 'PASS'], ['P6-C2V', 'PASS'], ['P6-C5', 'PASS'], ['P6-C3L', 'PASS'], ['P6-C3D', 'PASS'], ['P6-C4L', 'PASS'], ['P6-C4D', 'PASS'], ['P6-C-DOC', 'UNMEASURED']]), portalClose: { ok: false, portalDbClosed: true, docResidue: { durum: 'OLCULEMEDI_DB', rows: null, filesLeftOnDisk: [], filesAccessError: [], error: 'okuma hatası' } } }, null, 'run') : {};
-    const u3 = raf ? raf({ closure: { ok: true }, results: R6([['P6-C1', 'PASS'], ['P6-C2', 'PASS'], ['P6-C2V', 'PASS'], ['P6-C5', 'FAIL'], ['P6-C4L', 'FAIL'], ['P6-C4D', 'FAIL']]), portalClose: { ok: false, portalDbClosed: false, productFinding: 'ÜRÜN BULGUSU: x', after: { isActive: false, hasPortalAccess: false }, docResidue: doc0 } }, null, 'run') : {};
+    // R03-c: (iii) girdisine HTTP ölçümlerinden sonraki DB değeri (afterMeasure: AÇIK) eklendi; beklenti değişti — P6-C5 FAIL iken ürün bulgusu satırı YOK.
+    const u3 = raf ? raf({ closure: { ok: true }, results: R6([['P6-C1', 'PASS'], ['P6-C2', 'PASS'], ['P6-C2V', 'PASS'], ['P6-C5', 'FAIL'], ['P6-C4L', 'FAIL'], ['P6-C4D', 'FAIL']]), portalClose: { ok: false, portalDbClosed: false, productFinding: 'ÜRÜN BULGUSU: x', after: { isActive: false, hasPortalAccess: false }, afterMeasure: { isActive: true, hasPortalAccess: true }, sessionDuringChange: true, docResidue: doc0 } }, null, 'run') : {};
     const n1 = u1.neden || []; const n2 = u2.neden || []; const n3 = u3.neden || [];
-    check('Z20-h', 'kurtarma nedeni (birim): (i) portal DB\'de AÇIK + depolama erişim hatası → portal açık satırı ("P6-C1=FAIL,P6-C2=FAIL,P6-C2V=FAIL,P6-C5=FAIL — portal hesabı DB\'de hâlâ AÇIK") VE "BELGE: depolama erişimi ÖLÇÜLEMEDİ" ikisi de; (ii) portal DB\'de kapalı + belge satırları DB\'den okunamadı → "BELGE: belge kalıntısı ÖLÇÜLEMEDİ …" satırı, "PORTAL ERİŞİMİ" satırı YOK (önceki baytlar bu durumda portal kapanmadı derdi); (iii) ürün bulgusu + HTTP sonrası DB açık (P6-C5 FAIL) → ürün bulgusu satırı VE "PORTAL ERİŞİMİ kapandığı doğrulanmadı (P6-C5=FAIL)" ikisi de ("hâlâ AÇIK" YOK: kapanış anındaki DB kapalıydı)',
+    check('Z20-h', 'kurtarma nedeni (birim): (i) portal DB\'de AÇIK + depolama erişim hatası → portal açık satırı ("P6-C1=FAIL,P6-C2=FAIL,P6-C2V=FAIL,P6-C5=FAIL — portal hesabı DB\'de hâlâ AÇIK") VE "BELGE: depolama erişimi ÖLÇÜLEMEDİ" ikisi de; (ii) portal DB\'de kapalı + belge satırları DB\'den okunamadı → "BELGE: belge kalıntısı ÖLÇÜLEMEDİ …" satırı, "PORTAL ERİŞİMİ" satırı YOK (önceki baytlar bu durumda portal kapanmadı derdi); (iii) R03-c: kanıtta ürün bulgusu metni olsa da P6-C5 FAIL (HTTP sonrası DB AÇIK) → ürün bulgusu / "Recover düzeltemez" satırı YOK; "PORTAL ERİŞİMİ kapandığı doğrulanmadı (P6-C5=FAIL)" satırı HTTP ölçümlerinden SONRAKİ değerlerle "yeniden AÇILDI … açık erişim kapatılmalıdır" der ("hâlâ AÇIK" YOK: kapanış anındaki DB kapalıydı)',
       !!raf && n1.some((n) => /^PORTAL ERİŞİMİ kapandığı doğrulanmadı \(P6-C1=FAIL,P6-C2=FAIL,P6-C2V=FAIL,P6-C5=FAIL\) — portal hesabı DB'de hâlâ AÇIK/.test(n)) && n1.some((n) => /^BELGE: depolama erişimi ÖLÇÜLEMEDİ/.test(n))
         && n2.some((n) => /^BELGE: belge kalıntısı ÖLÇÜLEMEDİ — bu müvekkilin belge satırları DB'den okunamadı \(okuma hatası\)/.test(n)) && !n2.some((n) => /PORTAL ERİŞİMİ|^PORTAL:/.test(n))
-        && n3.some((n) => /ÜRÜN BULGUSU/.test(n)) && n3.some((n) => /^PORTAL ERİŞİMİ kapandığı doğrulanmadı \(P6-C5=FAIL\)/.test(n) && !/hâlâ AÇIK/.test(n)),
-      `fonksiyon=${!!raf} · (i) ${n1.map((n) => n.slice(0, 70)).join(' | ')} · (ii) ${n2.map((n) => n.slice(0, 70)).join(' | ')} · (iii) ${n3.map((n) => n.slice(0, 60)).join(' | ')}`);
+        && !n3.some((n) => /ÜRÜN BULGUSU|Recover düzeltemez/.test(n)) && n3.some((n) => /^PORTAL ERİŞİMİ kapandığı doğrulanmadı \(P6-C5=FAIL\) — kapatmadan sonra DB'de kapalı ölçüldü \(P6-C2=PASS\) ama hesap ölçüm sırasında yeniden AÇILDI \(P6-C5 FAIL: HTTP ölçümlerinden sonra isActive=true hasPortalAccess=true\): açık erişim kapatılmalıdır/.test(n) && !/hâlâ AÇIK/.test(n)),
+      `fonksiyon=${!!raf} · (i) ${n1.map((n) => n.slice(0, 70)).join(' | ')} · (ii) ${n2.map((n) => n.slice(0, 70)).join(' | ')} · (iii) ${n3.map((n) => n.slice(0, 160)).join(' | ')}`);
+
+    // ==== R03-c — (a) ürün bulgusu yalnız P6-C2 PASS + P6-C5 PASS; (b) makbuz dosyası yazılamaz / bulunamazsa uygulanamayan Recover komutu önerilmez
+    const z21a = await runScenario('z21a-reopen-during-measure', dir, { guard: 'stale', reopen: 'afterDisable' }, {}, { onDisplay: (s) => phoneFlow(s) });
+    const n21a = nedenOf(z21a); const line21a = n21a.find((n) => /^PORTAL ERİŞİMİ kapandığı doğrulanmadı \(/.test(n)) || '';
+    check('Z21-a', 'hesap HTTP ölçümleri SIRASINDA yeniden açıldı (sahte API reopen afterDisable + guard bayat; kapatma 201): P6-C2 PASS, P6-C5 FAIL; koşucu oturumu 200 → P6-C4L/D FAIL ama gözlem "ürün bulgusu adayı DEĞİL — hesap ölçüm sırasında yeniden AÇILDI (P6-C5 FAIL: isActive=true hasPortalAccess=true …)"; productFinding YOK; neden ve P6-D9\'da "ÜRÜN BULGUSU" / "Recover düzeltemez" YOK; kurtarma nedenindeki portal satırı P6-C5=FAIL + HTTP ölçümlerinden SONRAKİ değerlerle "yeniden AÇILDI … açık erişim kapatılmalıdır"; DB\'de hesap bağımsız ölçümde AÇIK; çıkış 6',
+      z21a.code === 6 && z21a.v('P6-C2') === 'PASS' && z21a.v('P6-C5') === 'FAIL' && !!z21a.ev && !z21a.ev.productFinding && !pcOf(z21a).productFinding
+        && ['P6-C4L', 'P6-C4D'].every((id) => z21a.v(id) === 'FAIL' && /^HTTP 200 — ürün bulgusu adayı DEĞİL — hesap ölçüm sırasında yeniden AÇILDI \(P6-C5 FAIL: isActive=true hasPortalAccess=true/.test(z21a.o(id)) && !/\(ürün bulgusu\)/.test(z21a.o(id)))
+        && !n21a.some((n) => /ÜRÜN BULGUSU|Recover düzeltemez/.test(n)) && !/ÜRÜN BULGUSU/.test(z21a.o('P6-D9'))
+        && /\(P6-C5=FAIL\)/.test(line21a) && /hesap ölçüm sırasında yeniden AÇILDI \(P6-C5 FAIL: HTTP ölçümlerinden sonra isActive=true hasPortalAccess=true\): açık erişim kapatılmalıdır/.test(line21a) && /ürün bulgusu SAYILMADI/.test(line21a)
+        && !!z21a.pu && z21a.pu.isActive === true && !!z21a.cl && z21a.cl.hasPortalAccess === true,
+      `çıkış=${z21a.code} · C2=${z21a.v('P6-C2')} C5=${z21a.v('P6-C5')} · bulgu=${JSON.stringify((z21a.ev || {}).productFinding || null)} · C4L=${z21a.o('P6-C4L').slice(0, 140)} · portal satırı=${line21a.slice(0, 260)} · DB sonra=${JSON.stringify(z21a.pu)}/${JSON.stringify(z21a.cl)}`);
+
+    const rfs = typeof EX.receiptFileState === 'function' ? EX.receiptFileState : null;
+    const memR = { record: EX.RECEIPT_RECORD, runId: 'abcdef12', tenantId: 't', tenantSlug: 'ah-abcdef12', clientId: 'k', elevUserId: 'u', elevEmail: 'e@ornek.invalid' };
+    const rDir = path.join(dir, 'z21b'); fs.mkdirSync(rDir);
+    const okP = path.join(rDir, 'var.json'); fs.writeFileSync(okP, JSON.stringify(memR, null, 1));
+    const badP = path.join(rDir, 'bozuk.json'); fs.writeFileSync(badP, '{"record":"BASKA"}');
+    const dirP = path.join(rDir, 'klasor.json'); fs.mkdirSync(dirP); const goneP = path.join(rDir, 'yok.json');
+    const out21 = (extra) => Object.assign({ closure: { ok: false }, results: [], portalClose: { ok: true } }, extra || {});
+    const adimOf = (o, p, m) => { try { return raf ? (raf(o, p, m) || {}) : {}; } catch (e) { return { adim: `HATA ${e.message}` }; } };
+    const aOk = adimOf(out21({ receipt: memR }), okP, 'run'); const aStale = adimOf(out21({ receipt: Object.assign({}, memR, { createOutcome: 'ok' }), receiptWriteError: 'EACCES: izin yok' }), okP, 'run');
+    const aGone = adimOf(out21({ receipt: memR, receiptWriteError: 'ENOENT: yazılamadı' }), goneP, 'run'); const aDir = adimOf(out21({ receipt: memR }), dirP, 'run'); const aBad = adimOf(out21({ receipt: memR }), badP, 'run');
+    const aNone = adimOf(out21({}), null, 'run'); const aRec = adimOf(out21({}), goneP, 'recover');
+    const noCmd = (a) => !String(a.adim || '').includes('-ReceiptFile <makbuz>');
+    const altPath = (a) => /— ama makbuz dosyası (YOK|OKUNAMIYOR) \(/.test(a.adim || '') && /bloktan Recover BAŞLATILAMAZ/.test(a.adim || '') && /Kullanılabilir yol: bu kanıttaki `receipt` nesnesi/.test(a.adim || '') && /AYRI owner onayıyla `-ReceiptFile <o dosya>`/.test(a.adim || '') && /^ÖNERİ \(yetki DEĞİL\)/.test(a.adim || '');
+    const st21 = rfs ? [rfs(okP, memR), rfs(goneP, memR), rfs(dirP, memR), rfs(badP, memR), rfs(null, memR), rfs(okP, Object.assign({}, memR, { runId: '00000000' }))] : [];
+    check('Z21-b', 'makbuz dosyası durumu (birim): receiptFileState var → KULLANILABILIR (güncel) · yok → YOK · klasör → OKUNAMADI · bozuk / kayıt türü yanlış → OKUNAMADI · yol yok → YOL_YOK · başka runId → OKUNAMADI; Run adımı: makbuz kullanılabilir → `-Mode Recover -ReceiptFile <makbuz>` önerilir; diskteki makbuz bellektekinden farklıysa ("FARKLI" + yazma hatası) yine önerilir; makbuz YOK / klasör / bozuk → uygulanamayan komut ÖNERİLMEZ, "makbuz dosyası YOK|OKUNAMIYOR … bloktan Recover BAŞLATILAMAZ" + kanıttaki `receipt` nesnesinden yeni dosya yolu (AYRI owner onayıyla `-ReceiptFile <o dosya>`) + yazma hatası metni; kanıtta makbuz da yoksa "SOMUT ENGEL" (komut yok); Recover adımı komut önermez',
+      !!rfs && st21.map((x) => x.durum).join(',') === 'KULLANILABILIR,YOK,OKUNAMADI,OKUNAMADI,YOL_YOK,OKUNAMADI' && st21[0].guncel === true
+        && String(aOk.adim || '').includes('-Mode Recover -ReceiptFile <makbuz>') && aOk.makbuzDurumu === 'KULLANILABILIR' && !/FARKLI/.test(aOk.adim || '')
+        && String(aStale.adim || '').includes('-ReceiptFile <makbuz>') && /FARKLI/.test(aStale.adim || '') && /EACCES: izin yok/.test(aStale.adim || '')
+        && [aGone, aDir, aBad].every((a) => noCmd(a) && altPath(a)) && /ENOENT: yazılamadı/.test(aGone.adim || '') && aGone.makbuzDurumu === 'YOK' && aDir.makbuzDurumu === 'OKUNAMADI' && aGone.makbuzDiskte === false
+        && noCmd(aNone) && !/-ReceiptFile/.test(aNone.adim || '') && /SOMUT ENGEL/.test(aNone.adim || '') && noCmd(aRec) && /İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR/.test(aRec.adim || ''),
+      `fonksiyon=${!!rfs} · durumlar=${st21.map((x) => x.durum).join(',')} · var=${String(aOk.adim || '').slice(0, 90)} · yok=${String(aGone.adim || '').slice(0, 200)} · makbuzsuz=${String(aNone.adim || '').slice(0, 140)}`);
+
+    // Gösterimden sonra makbuz dosyası silinir (koşucu gösterimden sonra makbuza yazmaz); ürün DELETE'i dosyayı bırakır (noUnlink) → kapanış kalıntı → çıkış 6.
+    const z21c = await runScenario('z21c-receipt-lost-mid-run', dir, { delete: 'noUnlink' }, {}, { onDisplay: async (s) => { try { fs.unlinkSync(path.join(dir, 'z21c-receipt-lost-mid-run-receipt.json')); } catch (e) { /* ölçüm aşağıda */ } return phoneFlow(s); } });
+    const rec21 = (z21c.ev && z21c.ev.recovery) || {}; const ev21r = (z21c.ev && z21c.ev.receipt) || null;
+    let r21c = null; const copyP = path.join(dir, 'z21c-makbuz-kanittan.json');
+    if (ev21r) { fs.writeFileSync(copyP, JSON.stringify(ev21r, null, 1)); artifacts.push(copyP); r21c = await recover({ runId: z21c.runId, receipt: copyP, tenant: z21c.tenant }, dir, 'z21c-recover-from-evidence-receipt', {}); }
+    check('Z21-c', 'makbuz dosyası koşum ORTASINDA (gösterimden sonra) kayboldu (uçtan uca; ürün DELETE\'i dosyayı bırakıyor → kalıntı, çıkış 6): gösterim yapıldı; kanıtta makbuzDurumu=YOK, makbuzDiskte=false; adım uygulanamayan `-Mode Recover -ReceiptFile <makbuz>` komutunu ÖNERMEZ, "makbuz dosyası YOK … bloktan Recover BAŞLATILAMAZ" + kanıttaki `receipt` yolunu yazar; kanıttaki `receipt` nesnesi (kayıt türü D-6) değiştirilmeden dosyaya yazılıp Recover\'a verildiğinde Recover GERÇEKTEN koşar: kimlik bağı OK (çıkış 4 DEĞİL), kayıt EXTACC-D6-RECOVER, P6-C2/C3L PASS, diskte kalan dosya P6-C-DOC FAIL olarak ölçülür (çıkış 6), personel pasif',
+      z21c.code === 6 && !!z21c.ev && z21c.ev.displayed === true && !z21c.rc && rec21.gerekli === true && rec21.makbuzDurumu === 'YOK' && rec21.makbuzDiskte === false && noCmd(rec21) && altPath(rec21)
+        && !!ev21r && ev21r.record === EX.RECEIPT_RECORD && !!r21c && r21c.code === 6 && !!r21c.ev && r21c.ev.record === 'EXTACC-D6-RECOVER' && ((r21c.ev.portalClose || {}).identity === 'OK')
+        && r21c.v('P6-C2') === 'PASS' && r21c.v('P6-C3L') === 'PASS' && r21c.v('P6-C-DOC') === 'FAIL' && r21c.activeUsers === 0,
+      `çıkış=${z21c.code} · makbuz dosyası=${z21c.rc ? 'VAR' : 'YOK'} · durum=${rec21.makbuzDurumu} diskte=${rec21.makbuzDiskte} · adım=${String(rec21.adim || '').slice(0, 220)} · kanıtta receipt=${!!ev21r} · Recover(kanıttaki makbuz)=${r21c ? r21c.code : '-'} kimlik=${r21c && r21c.ev ? (r21c.ev.portalClose || {}).identity : '-'} C-DOC=${r21c ? r21c.v('P6-C-DOC') : '-'}`);
+    if (z21c.tenant && ev21r) { const left = await prisma.portalDocument.findMany({ where: { clientId: ev21r.clientId }, select: { filePath: true } }); for (const f of [ev21r.documentFile, ...left.map((d) => d.filePath)].filter(Boolean)) { try { fs.unlinkSync(f); } catch (e) { /* test temizliği */ } } await prisma.portalDocument.deleteMany({ where: { clientId: ev21r.clientId } }); }
 
     // ---- Z13 KONSOLSUZ conout → yazmadan 4
     const rid13 = hex8(); const pw13 = 'D6T!' + crypto.randomBytes(12).toString('base64url'); secretsSeen.add(pw13);

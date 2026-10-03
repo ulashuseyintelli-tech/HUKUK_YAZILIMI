@@ -34,6 +34,13 @@
  *          `productFinding` YAZILMAZ. Kurtarma nedeninde portal erişim satırı ürün bulgusu / kalıntı / erişim hatası satırlarından BAĞIMSIZ yazılır
  *          (`portalDbClosed` belge kalıntısından ayrı); belge satırları DB'den okunamadıysa ayrı satır. Recover çıkış 3 adımı kanıttaki verdict'lerden
  *          kurulur (sabit "P6-C2/C5 PASS" iddiası yok). Çıkış kodu fonksiyonları ve öncelik DEĞİŞMEDİ.
+ * R03-c  : (owner talimatı: kapanış / Recover doğruluğu) (a) koşucu oturumunun 200 dönmesi YALNIZ P6-C2 PASS VE P6-C5 PASS iken ürün bulgusudur:
+ *          P6-C5 (HTTP ölçümlerinden SONRA DB) oturum yargısından ÖNCE okunur (satır sırası aynı); hesap bu aralıkta yeniden açıldıysa / DB durumu
+ *          değiştiyse (P6-C5 FAIL) gözlem "ürün bulgusu adayı DEĞİL — hesap ölçüm sırasında yeniden AÇILDI (P6-C5 FAIL …)" der, `productFinding`
+ *          YAZILMAZ ve kurtarma nedenindeki portal satırı HTTP ölçümlerinden sonraki değerleri (st2) yazar; "Recover düzeltemez" yalnız gerçek ürün
+ *          bulgusunda. (b) Run'ın kurtarma adımı Recover komutunu YALNIZ makbuz dosyası Recover'ın okuma kapısını geçiyorsa önerir (`receiptFileState`:
+ *          dosya var + JSON + kayıt türü + runId + personel alanları); dosya yoksa / okunamıyorsa adım uygulanamayan komutu ÖNERMEZ, kanıttaki
+ *          `receipt` nesnesinden yeni makbuz dosyası yolunu (AYRI owner onayıyla) ya da kanıtta makbuz da yoksa SOMUT ENGELİ yazar. Çıkış kodları DEĞİŞMEDİ.
  */
 const fs = require('fs'); const crypto = require('crypto'); const path = require('path');
 const H5 = require('../../client-h5-intake-url-r01/scripts/h5-url-live-run');
@@ -252,19 +259,26 @@ async function closePortal(R, prisma, base, origin, receipt, P, opts) {
   // Mevcut oturum: belge listesi ucu (bu paketin korumalı ucu) yerel + dış
   const el = o.portalToken ? await L.AH.httpJson('GET', `${base}/portal/documents`, { token: o.portalToken, timeoutMs: tmo }) : null;
   const ed = o.portalToken ? await L.AH.httpJson('GET', `${origin}/api/portal/documents`, { token: o.portalToken, timeoutMs: tmo }) : null;
-  // R03-b: koşucu oturumunun 200 dönmesi YALNIZ DB kapanışı ölçülmüşken (P6-C2 PASS = `flags`: pasif + erişim kapalı) ÜRÜN BULGUSUDUR. DB'de portal
-  // hâlâ açıksa (kapatma yapılmadı / tamamlanmadı) 200 hesap açıkken beklenen davranıştır: P6-C4 yine FAIL (oturum reddedilmedi) ama gözlem portalın
-  // DB'de açık olduğunu söyler ve `productFinding` YAZILMAZ — önceki baytlar bu durumda da "ÜRÜN BULGUSU … Recover düzeltemez" yazıyordu.
+  // R03-c: P6-C5'in DB okuması (HTTP ölçümlerinden SONRA) oturum yargısından ÖNCE yapılır; satırlar yine C4L, C4D, C5 sırasıyla yazılır.
+  const st2 = await portalState(prisma, receipt.clientId); res.afterMeasure = st2;
+  const c5ok = st2.isActive === false && st2.hasPortalAccess === false && st2.tokenVersion === st1.tokenVersion;
+  // R03-b: koşucu oturumunun 200 dönmesi DB'de portal hâlâ açıksa (P6-C2 FAIL; kapatma yapılmadı / tamamlanmadı) hesap açıkken beklenen davranıştır: P6-C4
+  // yine FAIL (oturum reddedilmedi) ama gözlem portalın DB'de açık olduğunu söyler ve `productFinding` YAZILMAZ.
+  // R03-c: 200, YALNIZ DB kapanışı HTTP ölçümlerinden ÖNCE (P6-C2 PASS = `flags`) VE SONRA (P6-C5 PASS = `c5ok`) ölçülmüşken ÜRÜN BULGUSUDUR. P6-C2 PASS iken
+  // P6-C5 FAIL ise hesap ölçüm sırasında yeniden açılmış / DB durumu değişmiştir: oturumun erişmesi ürün bulgusu adayı DEĞİLDİR ve `productFinding`
+  // YAZILMAZ — önceki baytlar P6-C5'e bakmadan "ÜRÜN BULGUSU … Recover düzeltemez" yazıyordu.
   const dbOpenTxt = `${st1.isActive === true ? 'portal hesabı DB\'de hâlâ AÇIK' : 'portal kapanışı DB\'de TAMAMLANMADI'} (P6-C2 FAIL: isActive=${st1.isActive} hasPortalAccess=${st1.hasPortalAccess}) — kapatma YAPILMADI; oturumun erişmesi bu durumda ürün bulgusu SAYILMADI`;
+  const reopened = st2.isActive === true || st2.hasPortalAccess === true;
+  const changedTxt = `${reopened ? 'hesap ölçüm sırasında yeniden AÇILDI' : 'hesabın DB durumu ölçüm sırasında DEĞİŞTİ'} (P6-C5 FAIL: isActive=${st2.isActive} hasPortalAccess=${st2.hasPortalAccess} sürüm ${st1.tokenVersion}→${st2.tokenVersion}) — oturumun erişmesi bu durumda ürün bulgusu SAYILMADI`;
   const judgeSession = (id, desc, r) => { if (!r) return R.unmeasured(id, desc, o.noSessionWhy || 'koşumda portal oturumu alınmadı — mevcut oturum ölçülemez'); if (r.indeterminate) return R.unmeasured(id, desc, 'yanıt alınamadı');
     if (r.status === 200) {
-      if (flags) { res.productFinding = 'ÜRÜN BULGUSU: portal erişimi kapatıldıktan ve DB kapanışı ölçüldükten sonra (P6-C2 PASS) MEVCUT oturum belge listesine erişmeye devam ediyor'; return R.check(id, desc, false, 'HTTP 200 — DB kapanışı ölçüldükten sonra (P6-C2 PASS) MEVCUT OTURUM KAPANMADI (ürün bulgusu)'); }
+      if (flags && c5ok) { res.productFinding = 'ÜRÜN BULGUSU: portal erişimi kapatıldıktan ve DB kapanışı HTTP ölçümlerinden önce ve sonra ölçülmüşken (P6-C2 PASS + P6-C5 PASS) MEVCUT oturum belge listesine erişmeye devam ediyor'; return R.check(id, desc, false, 'HTTP 200 — DB kapanışı HTTP ölçümlerinden önce ve sonra ölçülmüşken (P6-C2 PASS + P6-C5 PASS) MEVCUT OTURUM KAPANMADI (ürün bulgusu)'); }
+      if (flags) { res.sessionDuringChange = true; return R.check(id, desc, false, `HTTP 200 — ürün bulgusu adayı DEĞİL — ${changedTxt}`); }
       res.sessionWhileOpen = true; return R.check(id, desc, false, `HTTP 200 — ${dbOpenTxt}`);
     }
     if (r.status === 503 || r.status === 429) return R.unmeasured(id, desc, `HTTP ${r.status} — neden UNKNOWN`); return R.check(id, desc, r.status === 401, `HTTP ${r.status}`); };
   judgeSession('P6-C4L', 'kapanış sonrası MEVCUT portal oturumu belge listesinde YEREL 401', el); judgeSession('P6-C4D', 'kapanış sonrası MEVCUT portal oturumu belge listesinde DIŞ HTTPS 401', ed);
-  const st2 = await portalState(prisma, receipt.clientId);
-  R.check('P6-C5', 'HTTP ölçümlerinden SONRA DB hâlâ kapalı (pasif + erişim kapalı + sürüm geri gitmedi)', st2.isActive === false && st2.hasPortalAccess === false && st2.tokenVersion === st1.tokenVersion, `isActive=${st2.isActive} hasPortalAccess=${st2.hasPortalAccess} sürüm=${st2.tokenVersion}`);
+  R.check('P6-C5', 'HTTP ölçümlerinden SONRA DB hâlâ kapalı (pasif + erişim kapalı + sürüm geri gitmedi)', c5ok, `isActive=${st2.isActive} hasPortalAccess=${st2.hasPortalAccess} sürüm=${st2.tokenVersion}`);
   res.docResidue = await documentResidue(R, prisma, receipt, o.knownFiles, o.residueCleanup);
   const httpIds = ['P6-C3L', 'P6-C3D', 'P6-C4L', 'P6-C4D'];
   res.portalDbClosed = v('P6-C2') === 'PASS' && v('P6-C2V') !== 'FAIL' && v('P6-C5') === 'PASS';   // R03-b: kalıntıdan AYRI (kurtarma nedeni bunu kullanır)
@@ -281,26 +295,44 @@ function recoverExitCode(out, s) { const pc = out.portalClose || {}; if (!pc.dbC
  * kalıntısı ile depolama erişim hatası AYRI satırdır ve biri diğerini gizlemez. `adim` bir ÖNERİDİR, yetki değildir: Run'da çıkış kodu
  * Recover yetkisi değildir (Recover yalnız kanıt incelendikten sonra AYRI owner onayıyla); Recover'da İKİNCİ bir Recover için yol TANIMLAMAZ.
  */
+/**
+ * R03-c — MAKBUZ DOSYASININ RECOVER'DA KULLANILABİLİRLİĞİ (salt okuma; dosyaya yazmaz). Blok ve koşucu Recover'da makbuzu DOSYADAN okur: blok dosya var +
+ * kayıt türü + runId biçimi; koşucu kayıt türü + elevUserId + elevEmail + runId + DB kimlik bağı. Burada dosyadan ölçülebilen kısım ölçülür (DB kimlik bağı
+ * Recover'ın kendisindedir). `mem` (koşucunun bellekteki makbuzu) verilirse runId eşleşmesi ve diskteki makbuzun bellekteki son halle aynı olup olmadığı
+ * (`guncel`) da yazılır. Önceki baytlar Run adımında yalnız "makbuz yolu var mı" sorusuna bakıp dosya yazılamamışken de Recover komutunu öneriyordu.
+ */
+function receiptFileState(p, mem) {
+  if (!p) return { durum: 'YOL_YOK', kullanilabilir: false, neden: 'makbuz yolu yok' };
+  let txt; try { txt = fs.readFileSync(p, 'utf8'); } catch (e) { const c = (e && e.code) || 'HATA'; return c === 'ENOENT' ? { durum: 'YOK', kullanilabilir: false, neden: 'dosya yok (ENOENT)' } : { durum: 'OKUNAMADI', kullanilabilir: false, neden: `dosya okunamadı (${c})` }; }
+  let j = null; try { j = JSON.parse(txt); } catch (e) { return { durum: 'OKUNAMADI', kullanilabilir: false, neden: 'dosya JSON değil' }; }
+  if (!j || j.record !== RECEIPT_RECORD || !/^[0-9a-f]{8}$/.test(String(j.runId || '')) || !j.elevUserId || !j.elevEmail) return { durum: 'OKUNAMADI', kullanilabilir: false, neden: 'kayıt türü / runId / personel alanları eksik' };
+  if (mem && mem.runId && String(j.runId) !== String(mem.runId)) return { durum: 'OKUNAMADI', kullanilabilir: false, neden: 'runId bu koşumla eşleşmiyor' };
+  return { durum: 'KULLANILABILIR', kullanilabilir: true, guncel: mem ? JSON.stringify(j) === JSON.stringify(mem) : null };
+}
 function recoveryAdvice(out, receiptPath, mode) {
   const need = []; const pc = out.portalClose || {}; const dr = pc.docResidue || {};
   const residue = (dr.rows > 0) || (dr.filesLeftOnDisk || []).length > 0; const access = (dr.filesAccessError || []).length > 0;
   const notPass = (ids) => (out.results || []).filter((r) => ids.includes(r.id) && r.verdict !== 'PASS').map((r) => `${r.id}=${r.verdict}`);
   const verdictOf = (id) => ((out.results || []).find((r) => r.id === id) || {}).verdict || 'YOK';
+  // R03-c: ürün bulgusu satırı ("Recover düzeltemez") YALNIZ DB kapanışı HTTP ölçümlerinden önce VE sonra ölçülmüşken (P6-C2 PASS + P6-C5 PASS).
+  const realFinding = !!pc.productFinding && verdictOf('P6-C2') === 'PASS' && verdictOf('P6-C5') === 'PASS';
   if (!pc.ok) {
     // R03-b: PORTAL ERİŞİM satırı ürün bulgusu / belge kalıntısı / depolama erişim hatası satırlarından BAĞIMSIZ yazılır (önceki baytlarda else-if
     // zinciri, kalıntı ya da erişim hatası varken — ve her 200'de yazılan ürün bulgusu yüzünden — "PORTAL ERİŞİMİ kapandığı doğrulanmadı" satırını
     // bastırıyordu). Ölçüt: `portalDbClosed` (P6-C2/C2V/C5; kalıntıdan ayrı). DB'de açık ölçüldüyse satır bunu değerleriyle söyler.
     if (pc.lateCreateRisk) need.push('PORTAL: oluşturma belirsiz (geç oluşma DIŞLANAMADI), hesap kapanış penceresinde görülmedi — hesap sonradan oluşmuş olabilir');
     else if (!pc.portalDbClosed) {
-      const a = pc.after || {}; const open = a.isActive === true || a.hasPortalAccess === true;
+      const a = pc.after || {}; const m = pc.afterMeasure || null; const isOpen = (x) => !!x && (x.isActive === true || x.hasPortalAccess === true);
+      // R03-c: kapatmadan sonra kapalı (P6-C2) ama HTTP ölçümlerinden SONRA açık (P6-C5 FAIL) → satır st2 değerleriyle "yeniden AÇILDI" der.
+      const reopenTxt = !isOpen(a) && isOpen(m) ? ` — kapatmadan sonra DB'de kapalı ölçüldü (P6-C2=${verdictOf('P6-C2')}) ama hesap ölçüm sırasında yeniden AÇILDI (P6-C5 FAIL: HTTP ölçümlerinden sonra isActive=${m.isActive} hasPortalAccess=${m.hasPortalAccess}): açık erişim kapatılmalıdır${pc.sessionDuringChange ? '; koşucu oturumunun bu aralıkta erişmesi ürün bulgusu SAYILMADI' : ''}` : '';
       need.push(`PORTAL ERİŞİMİ kapandığı doğrulanmadı (${notPass(['P6-C1', 'P6-C2', 'P6-C2V', 'P6-C5']).join(',') || 'ölçüt satırı yok'})`
-        + (open ? ` — ${a.isActive === true ? 'portal hesabı DB\'de hâlâ AÇIK' : 'portal kapanışı DB\'de TAMAMLANMADI'} (isActive=${a.isActive} hasPortalAccess=${a.hasPortalAccess}): kapatma YAPILMADI, açık erişim kapatılmalıdır${pc.sessionWhileOpen ? '; koşucu oturumunun bu durumda erişmesi ürün bulgusu SAYILMADI' : ''}` : '')
+        + (isOpen(a) ? ` — ${a.isActive === true ? 'portal hesabı DB\'de hâlâ AÇIK' : 'portal kapanışı DB\'de TAMAMLANMADI'} (isActive=${a.isActive} hasPortalAccess=${a.hasPortalAccess}): kapatma YAPILMADI, açık erişim kapatılmalıdır${pc.sessionWhileOpen ? '; koşucu oturumunun bu durumda erişmesi ürün bulgusu SAYILMADI' : ''}` : reopenTxt)
         + `${(pc.disableCalls || []).length ? ` · kapatma çağrıları: ${pc.disableCalls.join(' · ')}` : ''}${pc.reason ? ` · hata: ${pc.reason}` : ''}`);
-    } else if (!pc.accountAbsent && !pc.productFinding) {
+    } else if (!pc.accountAbsent && !realFinding) {
       const h = notPass(['P6-C2V', 'P6-C3L', 'P6-C3D', 'P6-C4L', 'P6-C4D']);
       if (h.length) need.push(`PORTAL: DB'de erişim kapalı ölçüldü (P6-C2=${verdictOf('P6-C2')} · P6-C5=${verdictOf('P6-C5')}) ama doğrulanmayan kapanış ölçütleri var (${h.join(',')})`);
     }
-    if (pc.productFinding) need.push('PORTAL: mevcut oturum kapanmadı (ÜRÜN BULGUSU — DB kapanışı ölçüldükten sonra (P6-C2 PASS) koşucunun portal oturumu belge listesine erişti; Recover düzeltemez; portal oturumunun geçerlilik süresi bu koşumda ÖLÇÜLMEDİ)');
+    if (realFinding) need.push('PORTAL: mevcut oturum kapanmadı (ÜRÜN BULGUSU — DB kapanışı HTTP ölçümlerinden önce ve sonra ölçülmüşken (P6-C2 PASS + P6-C5 PASS) koşucunun portal oturumu belge listesine erişti; Recover düzeltemez; portal oturumunun geçerlilik süresi bu koşumda ÖLÇÜLMEDİ)');
     if (dr.durum === 'OLCULEMEDI_DB') need.push(`BELGE: belge kalıntısı ÖLÇÜLEMEDİ — bu müvekkilin belge satırları DB'den okunamadı (${dr.error || '-'}); kalıntı DOĞRULANMADI, yokluğu da DOĞRULANMADI`);
     if (residue) need.push(`BELGE: sentetik belge KALDI — DOĞRULANMIŞ KALINTI (satır=${dr.rows} · diskte dosya VAR=${(dr.filesLeftOnDisk || []).length}) — ürün DELETE'i personel oturumuyla yapılamaz; Recover'da D6_RESIDUE_CLEANUP=1 (owner kararı) satırları Prisma ile siler, dosyalar elle silinir`);
     if (access) need.push(`BELGE: depolama erişimi ÖLÇÜLEMEDİ (${dr.filesAccessError.join(',')}) — bu dosyalar kalıntı SAYILMADI, "yok" da SAYILMADI; belge kovasının (HUKUK_DATA_ROOT/portal-documents) okunabilirliği owner tarafından düzeltilmeden kalıntı yokluğu ölçülemez`);
@@ -309,10 +341,22 @@ function recoveryAdvice(out, receiptPath, mode) {
   if (!(out.closure && out.closure.ok)) need.push('PERSONEL/DOSYA KAPANIŞI doğrulanmadı');
   if (!need.length) return { gerekli: false };
   let onDisk = false; try { onDisk = !!receiptPath && fs.existsSync(receiptPath); } catch (e) { onDisk = false; }
-  const adim = mode === 'recover'
-    ? 'ÖNERİ (yetki DEĞİL): kanıt incelenir ve sonuç CLIENT\'a bildirilir. Bu çıkış kodu yeni bir Recover için yetki değildir; İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR, owner kararı gerektirir.'
-    : 'ÖNERİ (yetki DEĞİL): çıkış kodu Recover yetkisi değildir; önce kanıt incelenir. Recover yalnız AYRI owner onayıyla başlatılır (owner bloğu `-Mode Recover -ReceiptFile <makbuz>`); kabul ölçütleri tekrarlanmaz; belge kalıntısı için owner kararı Recover girişinde sorulur.';
-  return { gerekli: true, neden: need, makbuz: receiptPath || null, makbuzDiskte: onDisk, adim };
+  // R03-c: Run adımı Recover komutunu YALNIZ makbuz dosyası Recover'ın okuma kapısını geçiyorsa önerir. Dosya yoksa / okunamıyorsa uygulanamayan komut
+  // ÖNERİLMEZ: kanıttaki `receipt` nesnesi (out.receipt = koşucunun bellekteki makbuzu; kanıt yazılırken serileştirilir; parola / token içermez) yeni bir
+  // makbuz dosyasına yazılarak verilebilir (Recover onu da aynı kapılarla doğrular) — kanıtta makbuz da yoksa SOMUT ENGEL yazılır.
+  const rs = mode === 'recover' ? null : receiptFileState(receiptPath, out.receipt || null);
+  const head = 'ÖNERİ (yetki DEĞİL): çıkış kodu Recover yetkisi değildir; önce kanıt incelenir. Recover yalnız AYRI owner onayıyla başlatılır';
+  const wErr = out.receiptWriteError ? ` · makbuz yazma hatası: ${out.receiptWriteError}` : '';
+  let adim;
+  if (mode === 'recover') adim = 'ÖNERİ (yetki DEĞİL): kanıt incelenir ve sonuç CLIENT\'a bildirilir. Bu çıkış kodu yeni bir Recover için yetki değildir; İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR, owner kararı gerektirir.';
+  else if (rs.kullanilabilir) {
+    adim = `${head} (owner bloğu \`-Mode Recover -ReceiptFile <makbuz>\`); kabul ölçütleri tekrarlanmaz; belge kalıntısı için owner kararı Recover girişinde sorulur.`
+      + (rs.guncel === false ? ` Diskteki makbuz koşucunun bellekteki son makbuzundan FARKLI (makbuzun sonraki bir yazımı başarısız${wErr}): Recover diskteki makbuzu okur; makbuzun son hali kanıttaki \`receipt\` nesnesidir.` : '');
+  } else if (out.receipt) {
+    adim = `${head} — ama makbuz dosyası ${rs.durum === 'OKUNAMADI' ? 'OKUNAMIYOR' : 'YOK'} (${rs.neden}${wErr}): bu makbuz yoluyla bloktan Recover BAŞLATILAMAZ (blok ve koşucu Recover'da makbuzu dosyadan okur). `
+      + 'Kullanılabilir yol: bu kanıttaki `receipt` nesnesi (makbuzun koşucu belleğindeki son hali; parola / token içermez) değiştirilmeden yazılabilir bir dizinde yeni bir JSON dosyasına yazılır ve Recover yalnız AYRI owner onayıyla `-ReceiptFile <o dosya>` ile başlatılır (koşucu makbuzu kayıt türü, runId ve DB\'deki kimlik bağıyla doğrular; doğrulanmazsa yazmadan çıkış 4); kabul ölçütleri tekrarlanmaz.';
+  } else adim = `${head} — ama makbuz dosyası YOK (${rs.neden}${wErr}) ve bu kanıtta makbuz nesnesi de YOK — SOMUT ENGEL: Recover makbuz ister, bu paketle Recover başlatılamaz; makbuzsuz kapanış yolu bu pakette tanımlı değildir (açık kalan sentetik kaynaklar için karar owner/CLIENT'a aittir).`;
+  return { gerekli: true, neden: need, makbuz: receiptPath || null, makbuzDiskte: onDisk, makbuzDurumu: rs ? rs.durum : null, adim };
 }
 
 // ------------------------------------------------------------------ RUN
@@ -574,5 +618,5 @@ function recoverStepText(out) {
 }
 if (require.main === module) { const mode = String(process.env.D6_MODE || 'run').toLowerCase(); if (mode === 'run') runMode(); else if (mode === 'recover') recoverMode(); else { console.error(`REDDEDİLDİ: bilinmeyen D6_MODE '${mode}'`); process.exit(1); } }
 module.exports = { commonGates, runGates, LIVE_PARAMS, effectiveParams, FORBIDDEN, RECEIPT_RECORD, MAX_PDF_BYTES, buildPdf, multipart, caseListMatches, docListMatches, recoverExitCode, exitCodeOf, fileState,
-  recoveryAdvice, recoverStepText };
+  recoveryAdvice, recoverStepText, receiptFileState };
 void scrub;
