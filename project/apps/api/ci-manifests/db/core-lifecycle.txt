@@ -234,3 +234,17 @@ src/modules/expense-request/__tests__/expense-tenant-boundary.http.db-gated.inte
 #   alanlar 17.000 dondurmeyi surdurur" iddiasi bugunku davranisi sabitler. Duzeltmesiz servis koduyla 10 testin 10'u
 #   DUSER (RED kanitlandi; her testte mevcut alan iddialari duzeltmesiz kodla gecer).
 src/modules/claim-item/__tests__/claim-summary-currency.http.db-gated.integration.spec.ts
+
+# Asama masraf seti — dovizli dosyada oranli kalem matrahi, /stage/OPENING yan kapisi ve eszamanli acilis istegi, GERCEK
+#   HTTP + disposable PostgreSQL. Olculen kusurlar (main ef16f07f): (1) asama seti haciz harcini (anapara x 0,0044) ve satis
+#   harcini (anapara x 0,0113) anapara alacak kalemlerinin SAYISINA uyguluyor; 1.000.000 USD / EUR dosyada haciz seti 4.750,
+#   satis seti 13.800 TL — 1.000.000 TL'lik dosyayla AYNI; USD + TRY anapara tek sayida toplaniyor; talep PENDING / BLOCKING
+#   kayit ve muhasebe gunlugu ile yaziliyordu (is akisi asama degisiminde ayni islevi 'system' adina cagirir). (2) POST
+#   .../stage/OPENING acilis kalemlerinin besini 0 yaziyor: TL dosyada ikinci OPENING talebi, dovizli dosyada acilis
+#   korumasinin yan kapisi. (3) Iki ESZAMANLI POST .../opening iki talep + iki gunluk kaydi yaziyor. Kural: acilistaki owner
+#   ara karariyla (2026-10-01) ayni sinif — yanlis tutarli otomatik talep KAYDA GECMEZ, neden ve gereken bilgi yanitta;
+#   oranli kalemi olmayan yeniden tebligat seti ve TL dosyanin davranisi DEGISMEZ; acilis setinin tek ureticisi acilis
+#   islevidir; "takip basina tek acilis talebi" kurali kilit altinda yeniden denetlenir. Asama setlerinde mukerrer kurali ve
+#   is akisi yolunda gorunurluk owner karari (bugunku davranis sabitlenir). Duzeltmesiz servis koduyla 20 testin 15'i DUSER;
+#   TL kontrolleri, sabit tutarli set ve mevcut acilis kurali testi GECER (RED kanitlandi).
+src/modules/expense-request/__tests__/stage-expense-fx-basis.http.db-gated.integration.spec.ts

@@ -344,3 +344,8 @@ src/modules/case/__tests__/case-open-expense-email-outcome.spec.ts
 #   (currency / items / totals) DEGISMEZ: her kalem turu icin karakterizasyon duzeltmesiz servis koduyla da gecer; blok
 #   iddialari duzeltmesiz kodla DUSER (RED kanitlandi). Kalem basina para birimi kurali ve kur owner karari.
 src/modules/claim-item/__tests__/claim-summary-currency.spec.ts
+# Asama masraf seti — oranli kalemlerin matrahi TL olarak hesaplanabilir mi? Saf karar (hesap ve cevirme YOK): haciz harci
+#   ve satis harci TL tarifesi oranidir; dosya ya da anapara alacak kalemleri TL degilse HESAPLANAMAZ, tutar / kur / toplam
+#   uretilmez. Oranli kalemi olmayan set (yeniden tebligat) her para biriminde hesaplanabilir; siniflandirilmamis
+#   hesaplayici matraha bagli sayilir (guvenli taraf). Dovizli takipte oranli kalemin kurali owner karari.
+src/modules/expense-request/__tests__/stage-expense-basis.spec.ts
