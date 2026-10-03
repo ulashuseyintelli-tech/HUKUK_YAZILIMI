@@ -25,8 +25,16 @@
  *           (dayanak "P7-C2 PASS + P7-C5 PASS"), Z18 (ii) (P7-C5 FAIL'de ürün bulgusu satırı YOK) + (v) birim: setup.durum=YARIM_MAKBUZ_DOSYASI_YAZILAMADI
  *           ve makbuz dosyası durumları; C-1 (ürün bulgusu yalnız P7-C2 + P7-C5 PASS iken). `runScenario` çıkış sonrası kanca (`afterExit`) alır.
  *           Z15-d (7c taraması): portal hesabı YOKKEN P7-C1 günlük satırı "kapatıldı" demez (Run + Recover günlükleri).
+ * R03-d   : (R03-c bağımsız doğrulaması; D-6 R03-d ile aynı ilke) Z19-a DEĞİŞTİ — R03-c'nin "adayı DEĞİL" beklentisi YANLIŞTI: sahte API yeniden açmada
+ *           sürümü ürün gibi artırır; guard kusur taklidi + yeniden açma → 200 "ÜRÜN BULGUSU ADAYI — eski oturum sürüm reddine rağmen erişti" + AYRI
+ *           "yeniden AÇILDI … (Recover kapatabilir)" satırı · Z20-a guard NORMAL + yeniden açma → eski oturum 401 (P7-C4 PASS), bulgu yok · Z20-b sürüm
+ *           verilme değerine GERİ döner (afterDisableRevert) → 200 "adayı DEĞİL" · Z20-c sınıflama + kurtarma nedeni birim · Z20-d BAYAT makbuz
+ *           önerilmez (m7) + makbuzDiskte klasörde false (m6) + BOM'lu makbuz kullanılabilir · Z18 (v) / Z19-b DEĞİŞTİ — kanıttaki recovery.makbuzJson'dan
+ *           yeni dosya yazan TEK komut WinPS 5.1 VE PS 7 ile GERÇEKTEN koşulur; iki dosya (5.1 BOM'lu) koşucunun Recover kapısından geçer ve Recover
+ *           kimlik bağı OK ile koşar (m4) · C-1 DEĞİŞTİ — ürün bulgusu ADAYI (P7-C5 FAIL + sessionVersion ADAY) kabul; Run kanıtında makbuz varsa
+ *           recovery.makbuzJson = JSON.stringify(receipt, null, 1); bayat makbuzda Recover komutu önerilmez.
  */
-const { spawn, execFileSync } = require('child_process');
+const { spawn, spawnSync, execFileSync } = require('child_process');
 const fs = require('fs'); const path = require('path'); const os = require('os'); const crypto = require('crypto');
 
 const HERE = __dirname; const GOV = path.resolve(HERE, '..', '..');
@@ -444,9 +452,13 @@ async function withInsertFault(table, column, value, fn) {
     const u5 = raf ? raf(halfOut(goneP7), goneP7, 'run') : {}; const u5d = raf ? raf(halfOut(dirP7), dirP7, 'run') : {}; const u6 = raf ? raf(Object.assign(halfOut(okP7), { receiptWriteError: undefined, setup: { durum: 'TAMAM' } }), okP7, 'run') : {};
     const st18 = rfs ? [rfs(okP7, memR7), rfs(goneP7, memR7), rfs(dirP7, memR7), rfs(badP7, memR7), rfs(null, memR7)] : [];
     const noCmd7 = (a) => !String(a.adim || '').includes('-ReceiptFile <makbuz>');
-    const v5 = noCmd7(u5) && /— ama makbuz dosyası YOK \(dosya yok \(ENOENT\) · makbuz yazma hatası: EACCES: izin yok · setup\.durum=YARIM_MAKBUZ_DOSYASI_YAZILAMADI\): bu makbuz yoluyla bloktan Recover BAŞLATILAMAZ/.test(u5.adim || '')
-      && /Kullanılabilir yol: bu kanıttaki `receipt` nesnesi/.test(u5.adim || '') && /AYRI owner onayıyla `-ReceiptFile <o dosya>`/.test(u5.adim || '') && u5.makbuzDiskte === false && u5.makbuzDurumu === 'YOK'
-      && noCmd7(u5d) && /— ama makbuz dosyası OKUNAMIYOR \(dosya okunamadı \(EISDIR\)/.test(u5d.adim || '') && u5d.makbuzDurumu === 'OKUNAMADI'
+    // R03-d (m4): "kullanılabilir yol" artık kanıttaki recovery.makbuzJson'dan yeni dosya yazan TEK komut + AYRI owner onayıyla -ReceiptFile '<yeni makbuz>'
+    const altPath7 = (a) => /bu makbuz dosyasıyla Recover ÖNERİLMEZ/.test(a.adim || '') && /Kullanılabilir yol: makbuzun son hâli bu kanıttaki `recovery\.makbuzJson` alanıdır/.test(a.adim || '')
+      && String(a.adim || '').includes('`(Get-Content -Raw -Encoding UTF8 -LiteralPath ') && String(a.adim || '').includes(').recovery.makbuzJson | Set-Content -Encoding UTF8 -NoNewline -LiteralPath ')
+      && /AYRI owner onayıyla `-Mode Recover -ReceiptFile '/.test(a.adim || '') && typeof a.makbuzJson === 'string';
+    const v5 = noCmd7(u5) && /— ama makbuz dosyası YOK \(dosya yok \(ENOENT\) · makbuz yazma hatası: EACCES: izin yok · setup\.durum=YARIM_MAKBUZ_DOSYASI_YAZILAMADI\): bu makbuz dosyasıyla Recover ÖNERİLMEZ — bu makbuz yoluyla bloktan Recover BAŞLATILAMAZ/.test(u5.adim || '')
+      && altPath7(u5) && u5.makbuzDiskte === false && u5.makbuzDurumu === 'YOK'
+      && noCmd7(u5d) && /— ama makbuz dosyası OKUNAMIYOR \(dosya okunamadı \(EISDIR\)/.test(u5d.adim || '') && u5d.makbuzDurumu === 'OKUNAMADI' && altPath7(u5d)
       && String(u6.adim || '').includes('-Mode Recover -ReceiptFile <makbuz>') && u6.makbuzDurumu === 'KULLANILABILIR'
       && st18.map((x) => x.durum).join(',') === 'KULLANILABILIR,YOK,OKUNAMADI,OKUNAMADI,YOL_YOK';
     const n1 = u1.neden || []; const n2 = u2.neden || []; const n3 = u3.neden || [];
@@ -460,33 +472,101 @@ async function withInsertFault(table, column, value, fn) {
       `fonksiyon=${!!raf} · (i) ${n1.map((n) => n.slice(0, 60)).join(' | ')} · (ii) ${n2.map((n) => n.slice(0, 160)).join(' | ')} · (iii) ${n3.map((n) => n.slice(0, 60)).join(' | ')} · (iv) ${(u4.adim || '').slice(0, 80)} · özet=${tag.join(' / ')} · (v) durumlar=${st18.map((x) => x.durum).join(',')} yok=${String(u5.adim || '').slice(0, 260)} · klasör=${String(u5d.adim || '').slice(110, 220)} · var=${String(u6.adim || '').slice(0, 120)}`);
 
     // ==== R03-c — (a) ürün bulgusu yalnız P7-C2 PASS + P7-C5 PASS; (b) makbuz dosyası yazılamaz hale gelirse uygulanamayan Recover komutu önerilmez
+    // R03-d (M1): Z19-a DEĞİŞTİ — R03-c beklentisi ("ürün bulgusu adayı DEĞİL") YANLIŞTI. Ürün (HY_WT_R27): guard eski oturumu sürüm farkıyla isActive'ten
+    // BAĞIMSIZ reddeder; yeniden açma sürümü ARTIRIR. Sahte API artık yeniden açmada sürümü ürün gibi artırır (verilen + 2: kapatma +1, yeniden açma +1).
     const z19a = await runScenario('z19a-reopen-during-measure', dir, { guard: 'stale', reopen: 'afterDisable' }, {}, { onDisplay: fullPhone });
     const n19a = nedenOf(z19a); const line19a = n19a.find((n) => /^PORTAL ERİŞİMİ kapandığı doğrulanmadı \(/.test(n)) || '';
-    check('Z19-a', 'hesap HTTP ölçümleri SIRASINDA yeniden açıldı (sahte API reopen afterDisable + guard bayat; kapatma 201): P7-C2 PASS, P7-C5 FAIL; koşucu oturumu 200 → P7-C4L/D FAIL ama gözlem "ürün bulgusu adayı DEĞİL — hesap ölçüm sırasında yeniden AÇILDI (P7-C5 FAIL: isActive=true hasPortalAccess=true …)"; productFinding YOK; neden ve P7-D9\'da "ÜRÜN BULGUSU" / "Recover düzeltemez" YOK; kurtarma nedenindeki portal satırı P7-C5=FAIL + HTTP ölçümlerinden SONRAKİ değerlerle "yeniden AÇILDI … açık erişim kapatılmalıdır"; DB\'de hesap bağımsız ölçümde AÇIK; çıkış 6',
-      z19a.code === 6 && z19a.v('P7-C2') === 'PASS' && z19a.v('P7-C5') === 'FAIL' && !!z19a.ev && !z19a.ev.productFinding && !pcOf(z19a).productFinding
-        && ['P7-C4L', 'P7-C4D'].every((id) => z19a.v(id) === 'FAIL' && /^HTTP 200 — ürün bulgusu adayı DEĞİL — hesap ölçüm sırasında yeniden AÇILDI \(P7-C5 FAIL: isActive=true hasPortalAccess=true/.test(z19a.o(id)) && !/\(ürün bulgusu\)/.test(z19a.o(id)))
-        && !n19a.some((n) => /ÜRÜN BULGUSU|Recover düzeltemez/.test(n)) && !/ÜRÜN BULGUSU/.test(z19a.o('P7-D9'))
-        && /\(P7-C5=FAIL\)/.test(line19a) && /hesap ölçüm sırasında yeniden AÇILDI \(P7-C5 FAIL: HTTP ölçümlerinden sonra isActive=true hasPortalAccess=true\): açık erişim kapatılmalıdır/.test(line19a) && /ürün bulgusu SAYILMADI/.test(line19a)
-        && !!z19a.pu && z19a.pu.isActive === true && !!z19a.cl && z19a.cl.hasPortalAccess === true,
-      `çıkış=${z19a.code} · C2=${z19a.v('P7-C2')} C5=${z19a.v('P7-C5')} · bulgu=${JSON.stringify((z19a.ev || {}).productFinding || null)} · C4L=${z19a.o('P7-C4L').slice(0, 140)} · portal satırı=${line19a.slice(0, 260)} · DB sonra=${JSON.stringify(z19a.pu)}/${JSON.stringify(z19a.cl)}`);
+    const cand19a = n19a.find((n) => /^PORTAL: mevcut oturum ÜRÜN BULGUSU ADAYI/.test(n)) || ''; const sv19a = pcOf(z19a).sessionVersion || {};
+    check('Z19-a', 'R03-d: guard KUSUR taklidi + hesap HTTP ölçümleri SIRASINDA yeniden açıldı (sahte API reopen afterDisable; yeniden açma sürümü ürün gibi ARTIRIR): P7-C2 PASS, P7-C5 FAIL; koşucu oturumu 200 → P7-C4L/D FAIL + "ÜRÜN BULGUSU ADAYI — eski oturum sürüm reddine rağmen erişti (oturumun verildiği sürüm v ≠ HTTP ölçümlerinden sonraki DB sürümü v+2 …) · ayrıca hesap ölçüm sırasında yeniden AÇILDI (P7-C5 FAIL …)"; productFinding "ÜRÜN BULGUSU ADAYI … mesaj ucuna … oturum reddi ürün tarafıdır, Recover düzeltemez"; sessionVersion.sinif=ADAY; kurtarma nedeninde AYRI aday satırı VE portal satırı "yeniden AÇILDI (P7-C5 FAIL …): açık erişim kapatılmalıdır (Recover kapatabilir)" ("Recover düzeltemez" bu satırda YOK); "adayı DEĞİL" / "SAYILMADI" HİÇBİR yerde YOK; DB\'de hesap AÇIK ve sürüm = ölçüm sonrası; çıkış 6',
+      z19a.code === 6 && z19a.v('P7-C2') === 'PASS' && z19a.v('P7-C5') === 'FAIL' && !!z19a.ev && sv19a.sinif === 'ADAY' && Number.isInteger(sv19a.verilen) && sv19a.olcumSonrasi === sv19a.verilen + 2
+        && /^ÜRÜN BULGUSU ADAYI: eski portal oturumu sürüm reddine rağmen mesaj ucuna erişti/.test(z19a.ev.productFinding || '') && /oturum reddi ürün tarafıdır, Recover düzeltemez/.test(z19a.ev.productFinding || '')
+        && ['P7-C4L', 'P7-C4D'].every((id) => z19a.v(id) === 'FAIL' && /^HTTP 200 — ÜRÜN BULGUSU ADAYI — eski oturum sürüm reddine rağmen erişti \(oturumun verildiği sürüm \d+ ≠ HTTP ölçümlerinden sonraki DB sürümü \d+/.test(z19a.o(id)) && /· ayrıca hesap ölçüm sırasında yeniden AÇILDI \(P7-C5 FAIL: isActive=true hasPortalAccess=true/.test(z19a.o(id)))
+        && /oturum reddi ürün tarafıdır, Recover düzeltemez/.test(cand19a) && cand19a !== line19a
+        && /\(P7-C5=FAIL\)/.test(line19a) && /hesap ölçüm sırasında yeniden AÇILDI \(P7-C5 FAIL: HTTP ölçümlerinden sonra isActive=true hasPortalAccess=true\): açık erişim kapatılmalıdır \(Recover kapatabilir\)/.test(line19a) && !/Recover düzeltemez/.test(line19a)
+        && /ÜRÜN BULGUSU ADAYI/.test(z19a.o('P7-D9')) && ![...n19a, z19a.o('P7-C4L'), z19a.o('P7-C4D'), z19a.ev.productFinding || ''].some((t) => /adayı DEĞİL|SAYILMADI/.test(t))
+        && !!z19a.pu && z19a.pu.isActive === true && !!z19a.cl && z19a.cl.hasPortalAccess === true && z19a.pu.tokenVersion === sv19a.olcumSonrasi,
+      `çıkış=${z19a.code} · C2=${z19a.v('P7-C2')} C5=${z19a.v('P7-C5')} · sınıf=${JSON.stringify(sv19a)} · bulgu=${String((z19a.ev || {}).productFinding || '').slice(0, 160)} · C4L=${z19a.o('P7-C4L').slice(0, 200)} · aday satırı=${cand19a.slice(0, 160)} · portal satırı=${line19a.slice(0, 260)} · DB sonra=${JSON.stringify(z19a.pu)}/${JSON.stringify(z19a.cl)}`);
 
     // Gösterimden sonra makbuz yolu KLASÖR olur (koşucunun sonraki makbuz yazımı — 2. personel yanıtındaki runnerMessageIds — EISDIR ile başarısız olur);
     // kapatma 500 → çıkış 6. Klasör, koşucu çıktıktan sonra (afterExit) kaldırılır.
+    // R03-d (m4): kanıttaki adımın verdiği TEK komut Windows PowerShell 5.1 VE PowerShell 7 ile GERÇEKTEN koşulur; iki dosyanın her biriyle Recover koşar.
+    const runShell = (sh, cmd) => {
+      const exe = sh === 'ps51' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : 'pwsh';
+      const env = Object.assign({}, process.env); for (const k of Object.keys(env)) if (k.toLowerCase() === 'psmodulepath') delete env[k];   // WinPS 5.1: devralınan PS 7 modül yolu yerleşik cmdlet'leri bozabilir
+      const r = spawnSync(exe, ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(cmd, 'utf16le').toString('base64')], { env, encoding: 'utf8', timeout: 60000, windowsHide: true });
+      return { rc: r.status, out: `${r.stdout || ''}${r.stderr || ''}`.replace(/\s+/g, ' ').trim().slice(0, 300), err: r.error ? String(r.error.message).slice(0, 120) : null };
+    };
     const rp19 = path.join(dir, 'z19b-receipt-unwritable-receipt.json');
     const z19b = await runScenario('z19b-receipt-unwritable', dir, { disable: 'fail' }, {}, {
       onDisplay: async (rid, sink) => { try { fs.unlinkSync(rp19); fs.mkdirSync(rp19); } catch (e) { /* ölçüm aşağıda */ } return fullPhone(rid, sink); },
       afterExit: async () => { try { fs.rmdirSync(rp19); } catch (e) { /* ölçüm aşağıda */ } } });
     const rec19 = (z19b.ev && z19b.ev.recovery) || {}; const ev19r = (z19b.ev && z19b.ev.receipt) || null;
-    let r19 = null; const copy19 = path.join(dir, 'z19b-makbuz-kanittan.json');
-    if (ev19r) { fs.writeFileSync(copy19, JSON.stringify(ev19r, null, 1)); artifacts.push(copy19); r19 = await recover({ runId: z19b.runId, receipt: copy19, rc: ev19r, tenant: z19b.tenant }, dir, 'z19b-recover-from-evidence-receipt', {}); }
-    check('Z19-b', 'makbuz dosyası gösterimden sonra YAZILAMAZ hale geldi (uçtan uca; yol klasör; kapatma 500 → portal AÇIK, çıkış 6): kanıtta receiptWriteError (EISDIR), makbuzDurumu=OKUNAMADI; adım uygulanamayan `-Mode Recover -ReceiptFile <makbuz>` komutunu ÖNERMEZ, "makbuz dosyası OKUNAMIYOR … bloktan Recover BAŞLATILAMAZ" + kanıttaki `receipt` yolunu yazar; kanıttaki `receipt` nesnesi (kayıt türü D-7; runnerMessageIds dahil) değiştirilmeden dosyaya yazılıp Recover\'a verildiğinde Recover GERÇEKTEN koşar: kayıt EXTACC-D7-RECOVER, kimlik bağı OK, disable-user çağrıldı, portal pasif + erişim kapalı, yeni giriş 401, P7-MSG-KEPT makbuzdaki koşucu id\'leriyle PASS, personel pasif, çıkış 3',
+    const cmd19 = (String(rec19.adim || '').match(/`(\(Get-Content -Raw -Encoding UTF8 -LiteralPath [^`]+)`/) || [])[1] || null;
+    const newP19 = path.join(dir, 'd7-setup-receipt-kanittan.json'); const sh19 = {}; const r19 = {};
+    for (const sh of ['ps51', 'ps7']) {
+      try { fs.unlinkSync(newP19); } catch (e) { /* yok */ }
+      const x = cmd19 ? runShell(sh, cmd19) : { rc: -2, out: 'komut yok' }; const dst = path.join(dir, `z19b-makbuz-kanittan-${sh}.json`); let buf = null;
+      if (fs.existsSync(newP19)) { fs.renameSync(newP19, dst); buf = fs.readFileSync(dst); artifacts.push(dst); }
+      const txt = buf ? buf.toString('utf8').replace(/^\uFEFF/, '') : null; const g = buf && typeof EX0.readReceiptForRecover === 'function' ? EX0.readReceiptForRecover(dst) : null;
+      sh19[sh] = { rc: x.rc, out: x.out, err: x.err, bom: !!buf && buf[0] === 0xEF && buf[1] === 0xBB && buf[2] === 0xBF, same: txt !== null && txt === rec19.makbuzJson, gate: !!g && g.ok };
+      if (buf) r19[sh] = await recover({ runId: z19b.runId, receipt: dst, rc: ev19r, tenant: z19b.tenant }, dir, `z19b-recover-${sh}`, {});
+    }
+    const rec19Ok = (r) => !!r && r.code === 3 && !!r.ev && r.ev.record === 'EXTACC-D7-RECOVER' && ((r.ev.portalClose || {}).identity === 'OK') && !!r.pu && r.pu.isActive === false && r.cl.hasPortalAccess === false && r.v('P7-C3L') === 'PASS' && r.v('P7-MSG-KEPT') === 'PASS' && r.activeUsers === 0;
+    check('Z19-b', 'makbuz dosyası gösterimden sonra YAZILAMAZ hale geldi (uçtan uca; yol klasör; kapatma 500 → portal AÇIK, çıkış 6): kanıtta receiptWriteError (EISDIR), makbuzDurumu=OKUNAMADI; adım uygulanamayan `-Mode Recover -ReceiptFile <makbuz>` komutunu ÖNERMEZ; R03-d: kanıttaki `recovery.makbuzJson` = JSON.stringify(receipt, null, 1) (runnerMessageIds dahil) ve adımın verdiği TEK komut (somut kanıt yolu → <kanıt dizini>\\d7-setup-receipt-kanittan.json) Windows PowerShell 5.1 ve PowerShell 7 ile koşuldu (çıkış 0): 5.1 dosyası UTF-8 BOM\'lu, 7 BOM\'suz, ikisinin metni (BOM hariç) makbuzJson\'a BİREBİR eşit; koşucunun Recover okuma kapısı (readReceiptForRecover) ikisinde ok; her dosyayla Recover GERÇEKTEN koşar: kayıt EXTACC-D7-RECOVER, kimlik bağı OK, portal pasif + erişim kapalı, yeni giriş 401, P7-MSG-KEPT makbuzdaki koşucu id\'leriyle PASS, personel pasif, çıkış 3 (ilk Recover disable-user çağırdı)',
       z19b.code === 6 && !!z19b.ev && z19b.ev.displayed === true && /EISDIR/.test(z19b.ev.receiptWriteError || '') && rec19.gerekli === true && rec19.makbuzDurumu === 'OKUNAMADI' && noCmd7(rec19)
-        && /— ama makbuz dosyası OKUNAMIYOR \(/.test(rec19.adim || '') && /bloktan Recover BAŞLATILAMAZ/.test(rec19.adim || '') && /Kullanılabilir yol: bu kanıttaki `receipt` nesnesi/.test(rec19.adim || '') && /AYRI owner onayıyla `-ReceiptFile <o dosya>`/.test(rec19.adim || '')
-        && !!ev19r && ev19r.record === EX0.RECEIPT_RECORD && Array.isArray(ev19r.runnerMessageIds) && ev19r.runnerMessageIds.length >= 1
-        && !!r19 && r19.code === 3 && !!r19.ev && r19.ev.record === 'EXTACC-D7-RECOVER' && ((r19.ev.portalClose || {}).identity === 'OK') && r19.calls.some((c) => c.path === '/api/portal/admin/disable-user')
-        && !!r19.pu && r19.pu.isActive === false && r19.cl.hasPortalAccess === false && r19.v('P7-C3L') === 'PASS' && r19.v('P7-MSG-KEPT') === 'PASS' && r19.activeUsers === 0,
-      `çıkış=${z19b.code} · yazma hatası=${(z19b.ev || {}).receiptWriteError || '-'} · durum=${rec19.makbuzDurumu} · adım=${String(rec19.adim || '').slice(0, 240)} · kanıtta receipt=${!!ev19r} id=${ev19r && ev19r.runnerMessageIds ? ev19r.runnerMessageIds.length : '-'} · Recover(kanıttaki makbuz)=${r19 ? r19.code : '-'} kimlik=${r19 && r19.ev ? (r19.ev.portalClose || {}).identity : '-'} hesap=${r19 ? JSON.stringify(r19.pu) : '-'} KEPT=${r19 ? r19.v('P7-MSG-KEPT') : '-'}`);
+        && /— ama makbuz dosyası OKUNAMIYOR \(/.test(rec19.adim || '') && /bloktan Recover BAŞLATILAMAZ/.test(rec19.adim || '') && altPath7(rec19)
+        && !!ev19r && ev19r.record === EX0.RECEIPT_RECORD && Array.isArray(ev19r.runnerMessageIds) && ev19r.runnerMessageIds.length >= 1 && rec19.makbuzJson === JSON.stringify(ev19r, null, 1)
+        && !!cmd19 && cmd19.includes(path.join(dir, 'z19b-receipt-unwritable-evidence.json')) && cmd19.includes(newP19)
+        && sh19.ps51 && sh19.ps51.rc === 0 && sh19.ps51.bom && sh19.ps51.same && sh19.ps51.gate && rec19Ok(r19.ps51) && r19.ps51.calls.some((c) => c.path === '/api/portal/admin/disable-user')
+        && sh19.ps7 && sh19.ps7.rc === 0 && !sh19.ps7.bom && sh19.ps7.same && sh19.ps7.gate && rec19Ok(r19.ps7),
+      `çıkış=${z19b.code} · yazma hatası=${(z19b.ev || {}).receiptWriteError || '-'} · durum=${rec19.makbuzDurumu} · komut=${cmd19 ? 'var' : 'YOK'} · kanıtta receipt=${!!ev19r} id=${ev19r && ev19r.runnerMessageIds ? ev19r.runnerMessageIds.length : '-'} · ps51: rc=${(sh19.ps51 || {}).rc} BOM=${(sh19.ps51 || {}).bom} birebir=${(sh19.ps51 || {}).same} kapı=${(sh19.ps51 || {}).gate} Recover=${r19.ps51 ? r19.ps51.code : '-'} kimlik=${r19.ps51 && r19.ps51.ev ? (r19.ps51.ev.portalClose || {}).identity : '-'} [${(sh19.ps51 || {}).out || ''}${(sh19.ps51 || {}).err || ''}] · ps7: rc=${(sh19.ps7 || {}).rc} BOM=${(sh19.ps7 || {}).bom} birebir=${(sh19.ps7 || {}).same} kapı=${(sh19.ps7 || {}).gate} Recover=${r19.ps7 ? r19.ps7.code : '-'} kimlik=${r19.ps7 && r19.ps7.ev ? (r19.ps7.ev.portalClose || {}).identity : '-'} KEPT=${r19.ps7 ? r19.ps7.v('P7-MSG-KEPT') : '-'}`);
 
+    // ==== R03-d (M1) — guard NORMAL + yeniden açma (ürün gibi sürüm artışı): eski oturum 401 → P7-C4 PASS; bulgu yok; portal açık satırı var
+    const z20a = await runScenario('z20a-reopen-guard-normal', dir, { reopen: 'afterDisable' }, {}, { onDisplay: fullPhone });
+    const n20a = nedenOf(z20a); const line20a = n20a.find((n) => /^PORTAL ERİŞİMİ kapandığı doğrulanmadı \(/.test(n)) || '';
+    check('Z20-a', 'R03-d: guard NORMAL + hesap HTTP ölçümleri SIRASINDA yeniden açıldı (sahte API reopen afterDisable; sürüm ürün gibi ARTAR): eski oturum sürüm farkıyla REDDEDİLİR → P7-C4L/D PASS (HTTP 401); productFinding YOK, sessionVersion YOK; P7-C2 PASS, P7-C5 FAIL; kurtarma nedeninde portal satırı "yeniden AÇILDI (P7-C5 FAIL …): açık erişim kapatılmalıdır (Recover kapatabilir)"; "ÜRÜN BULGUSU" / "Recover düzeltemez" satırı YOK; DB\'de hesap AÇIK; çıkış 6',
+      z20a.code === 6 && ['P7-C4L', 'P7-C4D'].every((id) => z20a.v(id) === 'PASS' && z20a.o(id) === 'HTTP 401') && z20a.v('P7-C2') === 'PASS' && z20a.v('P7-C5') === 'FAIL' && !!z20a.ev && !z20a.ev.productFinding && !pcOf(z20a).sessionVersion
+        && /hesap ölçüm sırasında yeniden AÇILDI \(P7-C5 FAIL: HTTP ölçümlerinden sonra isActive=true hasPortalAccess=true\): açık erişim kapatılmalıdır \(Recover kapatabilir\)/.test(line20a) && !n20a.some((n) => /ÜRÜN BULGUSU|Recover düzeltemez/.test(n))
+        && !!z20a.pu && z20a.pu.isActive === true,
+      `çıkış=${z20a.code} · C4L=${z20a.o('P7-C4L')} C4D=${z20a.o('P7-C4D')} · C2=${z20a.v('P7-C2')} C5=${z20a.v('P7-C5')} · bulgu=${JSON.stringify((z20a.ev || {}).productFinding || null)} · portal satırı=${line20a.slice(0, 240)}`);
+    // ==== R03-d (M1) — sürüm verilme değerine GERİ döner (sahte API afterDisableRevert; guard normal): eski oturum 200 → "adayı DEĞİL" (sürüm reddi beklenmezdi)
+    const z20b = await runScenario('z20b-reopen-version-revert', dir, { reopen: 'afterDisableRevert' }, {}, { onDisplay: fullPhone });
+    const n20b = nedenOf(z20b); const line20b = n20b.find((n) => /^PORTAL ERİŞİMİ kapandığı doğrulanmadı \(/.test(n)) || ''; const sv20b = pcOf(z20b).sessionVersion || {};
+    check('Z20-b', 'R03-d: yeniden açmada sürüm oturumun verildiği değere GERİ döner (sahte API afterDisableRevert; guard normal): eski oturum 200 → P7-C4L/D FAIL + "ürün bulgusu adayı DEĞİL — HTTP ölçümlerinden sonraki DB sürümü (v) oturumun verildiği sürüme EŞİT ve hesap açık: sürüm reddi bu istekte beklenmezdi — hesap ölçüm sırasında yeniden AÇILDI (P7-C5 FAIL …)"; sessionVersion.sinif=DEGIL (ölçüm sonrası = verilen); productFinding YOK; portal satırı "(Recover kapatabilir); koşucu oturumunun bu aralıkta erişmesi ürün bulgusu adayı DEĞİL (…)"; "ÜRÜN BULGUSU" / "Recover düzeltemez" YOK; çıkış 6',
+      z20b.code === 6 && z20b.v('P7-C2') === 'PASS' && z20b.v('P7-C5') === 'FAIL' && sv20b.sinif === 'DEGIL' && Number.isInteger(sv20b.verilen) && sv20b.olcumSonrasi === sv20b.verilen && !!z20b.ev && !z20b.ev.productFinding
+        && ['P7-C4L', 'P7-C4D'].every((id) => z20b.v(id) === 'FAIL' && /^HTTP 200 — ürün bulgusu adayı DEĞİL — HTTP ölçümlerinden sonraki DB sürümü \(\d+\) oturumun verildiği sürüme EŞİT ve hesap açık: sürüm reddi bu istekte beklenmezdi — hesap ölçüm sırasında yeniden AÇILDI \(P7-C5 FAIL: isActive=true hasPortalAccess=true/.test(z20b.o(id)))
+        && /açık erişim kapatılmalıdır \(Recover kapatabilir\); koşucu oturumunun bu aralıkta erişmesi ürün bulgusu adayı DEĞİL \(/.test(line20b) && !n20b.some((n) => /ÜRÜN BULGUSU|Recover düzeltemez/.test(n))
+        && !!z20b.pu && z20b.pu.isActive === true && z20b.pu.tokenVersion === sv20b.verilen,
+      `çıkış=${z20b.code} · sınıf=${JSON.stringify(sv20b)} · C4L=${z20b.o('P7-C4L').slice(0, 220)} · portal satırı=${line20b.slice(0, 300)} · DB sonra=${JSON.stringify(z20b.pu)}`);
+    // ==== R03-d (M1) — sınıflama + kurtarma nedeni (birim)
+    const scf = typeof EX0.sessionClassDuringChange === 'function' ? EX0.sessionClassDuringChange : null; const chT = 'hesap ölçüm sırasında yeniden AÇILDI (P7-C5 FAIL: …)';
+    const k1 = scf ? scf(null, { tokenVersion: 3, isActive: true }, chT) : {}; const k2 = scf ? scf(1, { tokenVersion: 3, isActive: true }, chT) : {}; const k3 = scf ? scf(1, { tokenVersion: 1, isActive: true }, chT) : {};
+    const k4 = scf ? scf(1, { tokenVersion: 1, isActive: false }, chT) : {}; const k5 = scf ? scf(1, { tokenVersion: null, isActive: null }, chT) : {};
+    const vC = R7([['P7-C1', 'PASS'], ['P7-C2', 'PASS'], ['P7-C2V', 'PASS'], ['P7-C5', 'FAIL'], ['P7-C4L', 'FAIL'], ['P7-C4D', 'FAIL']]);
+    const pcC = (sv, f) => ({ ok: false, portalDbClosed: false, productFinding: f || null, sessionDuringChange: true, sessionVersion: sv, after: { isActive: false, hasPortalAccess: false }, afterMeasure: { isActive: true, hasPortalAccess: true } });
+    const nA = raf ? (raf({ closure: { ok: true }, results: vC, portalClose: pcC({ sinif: 'ADAY', ifade: k2.ifade, neden: k2.neden }, k2.bulgu) }, 'r.json', 'run').neden || []) : [];
+    const nD = raf ? (raf({ closure: { ok: true }, results: vC, portalClose: pcC({ sinif: 'DEGIL', neden: k3.neden }, null) }, 'r.json', 'run').neden || []) : [];
+    const nU = raf ? (raf({ closure: { ok: true }, results: vC, portalClose: pcC({ sinif: 'AYRISTIRILAMADI', neden: k1.neden }, null) }, 'r.json', 'run').neden || []) : [];
+    const candA = nA.filter((n) => /^PORTAL: mevcut oturum ÜRÜN BULGUSU ADAYI — eski portal oturumu sürüm reddine rağmen erişti \(oturumun verildiği sürüm 1 ≠ HTTP ölçümlerinden sonraki DB sürümü 3/.test(n) && /oturum reddi ürün tarafıdır, Recover düzeltemez/.test(n));
+    const openA = nA.filter((n) => /^PORTAL ERİŞİMİ kapandığı doğrulanmadı \(P7-C5=FAIL\)/.test(n) && /açık erişim kapatılmalıdır \(Recover kapatabilir\); koşucu oturumunun bu aralıkta erişmesi AYRI satırdadır \(ÜRÜN BULGUSU ADAYI\)/.test(n) && !/Recover düzeltemez/.test(n));
+    check('Z20-c', 'R03-d sınıflama (birim, sessionClassDuringChange): verilme sürümü bilinmiyor → AYRISTIRILAMADI + "ürün bulgusu ayrıştırılamadı (ÖLÇÜLEMEDİ …)" ("DEĞİL" YOK, bulgu yok) · verilen 1 ≠ ölçüm sonrası 3 → ADAY "ÜRÜN BULGUSU ADAYI — eski oturum sürüm reddine rağmen erişti" + bulgu "… mesaj ucuna … Recover düzeltemez" · eşit + hesap açık → DEGIL "ürün bulgusu adayı DEĞİL" (bulgu yok) · eşit + hesap pasif → ADAY "pasif hesap reddine rağmen erişti" · hesap yok (sürüm null) → ADAY; kurtarma nedeni (birim): ADAY → AYRI iki satır — aday satırı ("oturum reddi ürün tarafıdır, Recover düzeltemez") + portal satırı ("açık erişim kapatılmalıdır (Recover kapatabilir)"; "Recover düzeltemez" YOK); DEGIL → portal satırında "adayı DEĞİL (…)", aday satırı YOK; AYRISTIRILAMADI → "AYRIŞTIRILAMADI (ÖLÇÜLEMEDİ …)", "DEĞİL" YOK',
+      !!scf && !!raf && k1.sinif === 'AYRISTIRILAMADI' && /^HTTP 200 — ürün bulgusu ayrıştırılamadı \(ÖLÇÜLEMEDİ: oturumun verildiği sürüm bilinmiyor\) — /.test(k1.gozlem || '') && !/DEĞİL/.test(k1.gozlem || '') && k1.bulgu === null
+        && k2.sinif === 'ADAY' && /^HTTP 200 — ÜRÜN BULGUSU ADAYI — eski oturum sürüm reddine rağmen erişti \(oturumun verildiği sürüm 1 ≠ HTTP ölçümlerinden sonraki DB sürümü 3/.test(k2.gozlem || '') && /mesaj ucuna/.test(k2.bulgu || '') && /Recover düzeltemez/.test(k2.bulgu || '')
+        && k3.sinif === 'DEGIL' && /^HTTP 200 — ürün bulgusu adayı DEĞİL — /.test(k3.gozlem || '') && k3.bulgu === null
+        && k4.sinif === 'ADAY' && /pasif hesap reddine rağmen erişti/.test(k4.gozlem || '') && k5.sinif === 'ADAY'
+        && candA.length === 1 && openA.length === 1 && candA[0] !== openA[0] && !nD.some((n) => /ÜRÜN BULGUSU ADAYI|Recover düzeltemez/.test(n)) && nD.some((n) => /açık erişim kapatılmalıdır \(Recover kapatabilir\); koşucu oturumunun bu aralıkta erişmesi ürün bulgusu adayı DEĞİL \(HTTP ölçümlerinden sonraki DB sürümü \(1\)/.test(n))
+        && nU.some((n) => /AYRIŞTIRILAMADI \(ÖLÇÜLEMEDİ: oturumun verildiği sürüm bilinmiyor\)/.test(n)) && !nU.some((n) => /DEĞİL|ÜRÜN BULGUSU/.test(n)),
+      `fonksiyon=${!!scf} · sınıflar=${[k1, k2, k3, k4, k5].map((k) => k.sinif).join(',')} · ADAY neden=${nA.map((n) => n.slice(0, 110)).join(' | ')} · DEGIL=${nD.map((n) => n.slice(0, 160)).join(' | ')}`);
+    // ==== R03-d (m7 + m6 + BOM) — BAYAT makbuz önerilmez; makbuzDiskte klasörde false; BOM'lu makbuz KULLANILABILIR
+    const aStale7 = raf ? raf(Object.assign(halfOut(okP7), { receipt: Object.assign({}, memR7, { runnerMessageIds: ['m1'] }), receiptWriteError: 'EACCES: izin yok', setup: { durum: 'TAMAM' } }), okP7, 'run', path.join(r18, 'kanit.json')) : {};
+    const bomP7 = path.join(r18, 'bom.json'); fs.writeFileSync(bomP7, '\uFEFF' + JSON.stringify(memR7, null, 1), 'utf8'); const stBom7 = rfs ? rfs(bomP7, memR7) : {};
+    const gBom7 = typeof EX0.readReceiptForRecover === 'function' ? EX0.readReceiptForRecover(bomP7) : {};
+    check('Z20-d', 'R03-d: (m7) diskteki makbuz BAYAT (bellekteki son makbuzla eşit değil: runnerMessageIds eklenmiş, yazma hatası EACCES) → Run adımı diskteki dosyayı ÖNERMEZ ("-ReceiptFile <makbuz>" YOK): "makbuz dosyası BAYAT (… farklı alan(lar): runnerMessageIds; … EACCES: izin yok): … sonradan eklenen kimlikleri içermeyebilir → eksik kapanış: bu makbuz dosyasıyla Recover ÖNERİLMEZ" + kanıttaki makbuzJson\'dan TEK komut SOMUT kanıt yoluyla (<kanıt dizini>\\d7-setup-receipt-kanittan.json); makbuzGuncel=false · (m6) makbuz yolu KLASÖR → makbuzDiskte=false (önceki existsSync true) · BOM\'lu makbuz → receiptFileState KULLANILABILIR (güncel) ve readReceiptForRecover ok',
+      noCmd7(aStale7) && /— ama makbuz dosyası BAYAT \(diskteki makbuz koşucunun bellekteki son makbuzuyla EŞİT DEĞİL — farklı alan\(lar\): runnerMessageIds; makbuzun sonraki bir yazımı başarısız · makbuz yazma hatası: EACCES: izin yok\)/.test(aStale7.adim || '') && /eksik kapanış: bu makbuz dosyasıyla Recover ÖNERİLMEZ/.test(aStale7.adim || '')
+        && altPath7(aStale7) && String(aStale7.adim || '').includes(path.join(r18, 'd7-setup-receipt-kanittan.json')) && aStale7.makbuzGuncel === false && aStale7.makbuzDurumu === 'KULLANILABILIR'
+        && u5d.makbuzDiskte === false && fs.statSync(dirP7).isDirectory() && u5.makbuzDiskte === false
+        && stBom7.durum === 'KULLANILABILIR' && stBom7.guncel === true && gBom7.ok === true,
+      `bayat=${String(aStale7.adim || '').slice(0, 300)} · klasör makbuzDiskte=${u5d.makbuzDiskte} · BOM durum=${stBom7.durum}/${stBom7.guncel} okuma=${gBom7.ok}`);
     // ---- C-1 (R03 c) — kanıttaki kurtarma/kapanış metinleri YALNIZ ölçüleni söyler: bu öz-testin ürettiği TÜM Run/Recover kanıtları taranır
     let evScanned = 0; let evNeed = 0; const textBad = [];
     const fixedClaims = [/sentetik tenant CLOSED/, /sentetik tenant kapanışıyla/, /token 7 gün/, /birkaç dakika sonra Recover/, /Recover BİR KEZ/, /ile BİR KEZ/, /kapanışta yeniden kapatıldı/, /TEKRARLANMAZ: DB kapalı/];
@@ -508,13 +588,18 @@ async function withInsertFault(table, column, value, fn) {
         if (e.record === 'EXTACC-D7-RECOVER' && e.exitCode === 3 && !a.includes(`P7-C2=${vOf('P7-C2') || 'ÜRETİLMEDİ'} · P7-C5=${vOf('P7-C5') || 'ÜRETİLMEDİ'}`)) textBad.push(`${nm}:Recover 3 adımı kanıttaki verdict'i yazmıyor`);
         if (e.record !== 'EXTACC-D7-RECOVER' && !/AYRI owner onayıyla/.test(a)) textBad.push(`${nm}:Run adımı AYRI owner onayını yazmıyor`);
       }
-      // R03-c: ürün bulgusu yalnız P7-C2 PASS VE P7-C5 PASS iken (önceki ölçüt yalnız P7-C2'ye bakıyordu)
-      if (e.productFinding && (vOf('P7-C2') !== 'PASS' || vOf('P7-C5') !== 'PASS')) textBad.push(`${nm}:ürün bulgusu P7-C2 + P7-C5 PASS olmadan yazıldı`);
+      // R03-c: ürün bulgusu yalnız P7-C2 PASS VE P7-C5 PASS iken (önceki ölçüt yalnız P7-C2'ye bakıyordu). R03-d: ya da P7-C2 PASS + P7-C5 FAIL iken sürüm
+      // sınıflaması ADAY ise ("ÜRÜN BULGUSU ADAYI …"; portalClose.sessionVersion.sinif=ADAY) — başka her durumda bulgu metni yazılmaz.
+      const candOk = vOf('P7-C2') === 'PASS' && vOf('P7-C5') === 'FAIL' && ((e.portalClose || {}).sessionVersion || {}).sinif === 'ADAY' && /^ÜRÜN BULGUSU ADAYI/.test(e.productFinding || '');
+      if (e.productFinding && !(vOf('P7-C2') === 'PASS' && vOf('P7-C5') === 'PASS') && !candOk) textBad.push(`${nm}:ürün bulgusu P7-C2 + P7-C5 PASS (ya da ADAY sınıfı) olmadan yazıldı`);
       if (e.recovery && e.recovery.gerekli && e.record !== 'EXTACC-D7-RECOVER' && e.recovery.makbuzDurumu && e.recovery.makbuzDurumu !== 'KULLANILABILIR' && String(e.recovery.adim || '').includes('-ReceiptFile <makbuz>')) textBad.push(`${nm}:makbuz dosyası ${e.recovery.makbuzDurumu} iken Recover komutu önerildi`);
+      // R03-d (m4 + m7): Run kanıtında makbuz varsa recovery.makbuzJson makbuzun BİREBİR metnidir; bayat makbuzda (makbuzGuncel=false) Recover komutu önerilmez.
+      if (e.record === 'EXTACC-D7-PORTAL-MESSAGES-LIVE-RUN' && e.receipt && !(e.recovery && e.recovery.makbuzJson === JSON.stringify(e.receipt, null, 1))) textBad.push(`${nm}:recovery.makbuzJson yok ya da makbuzla eşit değil`);
+      if (e.recovery && e.recovery.makbuzGuncel === false && String(e.recovery.adim || '').includes('-ReceiptFile <makbuz>')) textBad.push(`${nm}:bayat makbuzla Recover komutu önerildi`);
       if (e.temporaryAccess && typeof e.temporaryAccessClosed !== 'boolean') textBad.push(`${nm}:temporaryAccessClosed ölçülmedi`);
       if (e.record === 'EXTACC-D7-PORTAL-MESSAGES-LIVE-RUN' && !(e.setup && typeof e.setup.durum === 'string')) textBad.push(`${nm}:setup.durum yok`);
     }
-    check('C-1', 'kanıttaki kurtarma/kapanış metinleri yalnız ölçüleni söyler (bu öz-testin TÜM Run/Recover kanıtları): revision=R03; sabit iddia YOK ("sentetik tenant CLOSED", "… kapanışıyla erişilemez", "token 7 gün", "birkaç dakika sonra Recover", "Recover BİR KEZ", "ile BİR KEZ", "kapanışta yeniden kapatıldı", "TEKRARLANMAZ: DB kapalı"); P7-MSG-KEPT kapanış özeti ölçülenden ve U-CLOSE / P7-C2 verdict\'iyle tutarlı; kurtarma gerekliyse adım "ÖNERİ (yetki DEĞİL)" ile başlar — Run adımı AYRI owner onayını, Recover adımı (çıkış 3 dışı) "İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR" kuralını, Recover 3 adımı kanıttaki P7-C2/C5 verdict\'ini yazar; R03-c: ürün bulgusu yalnız P7-C2 PASS + P7-C5 PASS iken; makbuz dosyası kullanılamıyorken Run adımı Recover komutu önermez; Recover geçici erişimi verdiyse kapanışı ölçülmüş alanla (temporaryAccessClosed); her Run kanıtında setup.durum',
+    check('C-1', 'kanıttaki kurtarma/kapanış metinleri yalnız ölçüleni söyler (bu öz-testin TÜM Run/Recover kanıtları): revision=R03; sabit iddia YOK ("sentetik tenant CLOSED", "… kapanışıyla erişilemez", "token 7 gün", "birkaç dakika sonra Recover", "Recover BİR KEZ", "ile BİR KEZ", "kapanışta yeniden kapatıldı", "TEKRARLANMAZ: DB kapalı"); P7-MSG-KEPT kapanış özeti ölçülenden ve U-CLOSE / P7-C2 verdict\'iyle tutarlı; R03-d: ürün bulgusu yalnız P7-C2 + P7-C5 PASS ya da ADAY sınıfıyla; Run kanıtında makbuz varsa recovery.makbuzJson birebir; bayat makbuzla komut yok; kurtarma gerekliyse adım "ÖNERİ (yetki DEĞİL)" ile başlar — Run adımı AYRI owner onayını, Recover adımı (çıkış 3 dışı) "İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR" kuralını, Recover 3 adımı kanıttaki P7-C2/C5 verdict\'ini yazar; R03-c: ürün bulgusu yalnız P7-C2 PASS + P7-C5 PASS iken; makbuz dosyası kullanılamıyorken Run adımı Recover komutu önermez; Recover geçici erişimi verdiyse kapanışı ölçülmüş alanla (temporaryAccessClosed); her Run kanıtında setup.durum',
       evScanned >= 24 && evNeed >= 8 && textBad.length === 0, `taranan kanıt=${evScanned} · kurtarma gerekli=${evNeed} · sorun=${textBad.length ? textBad.slice(0, 10).join(', ') : 'yok'}`);
 
     // ---- S-1 SIR SIZINTISI — parolalar, JWT'ler, DB URL, GO, telefon mesajı içeriği, tuzak (başka müvekkil) içeriği (sink dosyaları TARAMA DIŞI)

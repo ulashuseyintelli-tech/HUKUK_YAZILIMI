@@ -24,8 +24,11 @@
  *             relogin normal|reject|rateLimit (`expireOnDisable` token'ları geçersiz kıldıktan SONRAKİ personel girişleri 401 ya da 429 — ürünün giriş
  *             hız sınırı taklidi; koşum başındaki giriş etkilenmez). Personel token'ları benzersizdir (sıra no).
  * R03-c senaryosu: reopen normal|afterDisable — başarılı disable-user çağrısından SONRA YEREL API'ye gelen İLK mesaj listesi isteğinde (koşucunun
- *             kapanıştaki P7-C4L ölçümü) o müvekkilin portal hesabı DB'de YENİDEN AÇILIR (isActive=true + hasPortalAccess=true; sürüm DEĞİŞMEZ) —
+ *             kapanıştaki P7-C4L ölçümü) o müvekkilin portal hesabı DB'de YENİDEN AÇILIR (isActive=true + hasPortalAccess=true; R03-c'de sürüm DEĞİŞMİYORDU — R03-d aşağıda) —
  *             "hesap HTTP ölçümleri sırasında yeniden açıldı" taklidi (P7-C2 PASS, P7-C5 FAIL). guard 'stale' ile birlikte oturum 200 alır.
+ * R03-d     : reopen afterDisable artık ÜRÜN GİBİ sürümü ARTIRIR (HY_WT_R27 portal.service.ts reactivate: tokenVersion increment) — guard normal iken
+ *             eski oturum 401 (sürüm farkı), guard stale iken 200 · reopen afterDisableRevert (AYRI test varyantı): yeniden açarken sürümü kapatma
+ *             ÖNCESİ değere (oturumun verildiği sürüm) GERİ döndürür — guard normal iken eski oturum 200 alır ("adayı DEĞİL" dalı).
  * KOŞUCU YASAĞI: forgot-password/reset-password/change-password/documents çağrıları FORBIDDEN olarak işaretlenir (500).
  */
 const http = require('http'); const https = require('https'); const fs = require('fs'); const path = require('path'); const crypto = require('crypto');
@@ -42,7 +45,8 @@ const MSG_SELECT = { id: true, content: true, senderType: true, senderName: true
 const DEFAULT = { create: 'normal', disable: 'normal', guard: 'normal', ext: 'normal', extLogin: 'normal', wrongPw: 'normal', cases: 'normal', send: 'normal', list: 'normal', reply: 'normal', markRead: 'normal', unread: 'normal',
   staffAuth: 'normal', relogin: 'normal', reopen: 'normal' };
 // R03-c: reopen afterDisable — kapatılan müvekkil (başarılı disable-user) ve yeniden açmanın yapılıp yapılmadığı (tek sefer)
-let reopenClientId = null; let reopenDone = false;
+let reopenClientId = null; let reopenDone = false; let reopenRevertTv = null;   // R03-d: kapatma ÖNCESİ sürüm (afterDisableRevert)
+const REOPEN_MODES = ['afterDisable', 'afterDisableRevert'];
 // R03: personel token'ları benzersizdir (sıra no) — yeniden giriş YENİ token verir; `expireOnDisable` ile geçersiz kılınanlar burada tutulur.
 let jwtSeq = 0; let staffExpired = false; const expiredStaffJwts = new Set();
 const HANG = () => new Promise(() => {}); // yanıtsız taklidi: istek asla yanıtlanmaz (istemci zaman aşımı → indeterminate)
@@ -157,7 +161,7 @@ async function adminClientMessages(u, clientId) {
 async function apiHandler(req, res) {
   const p = new URL(req.url, 'http://127.0.0.1').pathname;
   if (p.startsWith('/__')) {
-    if (req.method === 'POST' && p === '/__scenario') { scenario = Object.assign({}, DEFAULT, await readBody(req)); disableFailed = 0; leakSeeded = new Set(); staffExpired = false; expiredStaffJwts.clear(); reopenClientId = null; reopenDone = false; return send(res, 200, scenario); }
+    if (req.method === 'POST' && p === '/__scenario') { scenario = Object.assign({}, DEFAULT, await readBody(req)); disableFailed = 0; leakSeeded = new Set(); staffExpired = false; expiredStaffJwts.clear(); reopenClientId = null; reopenDone = false; reopenRevertTv = null; return send(res, 200, scenario); }
     if (req.method === 'POST' && p === '/__reset') { calls = []; extCalls = []; for (const k of Object.keys(secrets)) secrets[k] = []; return send(res, 200, { ok: true }); }
     if (p === '/__calls') return send(res, 200, calls);
     if (p === '/__ext') return send(res, 200, extCalls);
@@ -210,17 +214,20 @@ async function apiHandler(req, res) {
     if (scenario.disable === 'fail' || (scenario.disable === 'failOnce' && disableFailed === 0)) { disableFailed++; return send(res, 500, { message: 'Internal server error' }); }
     const client = await prisma.client.findFirst({ where: { id: body.clientId, tenantId: u.tenantId }, select: { id: true } });
     if (!client) return send(res, 404, { message: 'Müvekkil bulunamadı' });
+    if (REOPEN_MODES.includes(scenario.reopen)) { const pre = await prisma.clientPortalUser.findUnique({ where: { clientId: body.clientId }, select: { tokenVersion: true } }); reopenRevertTv = pre ? pre.tokenVersion : null; }
     await prisma.$transaction(async (tx) => {
       await tx.clientPortalUser.updateMany({ where: { clientId: body.clientId }, data: { isActive: false, tokenVersion: { increment: 1 }, resetToken: null, resetTokenExp: null } });
       await tx.client.update({ where: { id: body.clientId }, data: { hasPortalAccess: false } });
     });
-    if (scenario.reopen === 'afterDisable') reopenClientId = body.clientId;
+    if (REOPEN_MODES.includes(scenario.reopen)) reopenClientId = body.clientId;
     return send(res, 201, { success: true });
   }
-  // R03-c: reopen afterDisable — kapanıştan sonraki İLK yerel mesaj listesi isteğinde hesap DB'de yeniden açılır (KUSUR/DIŞ MÜDAHALE TAKLİDİ; sürüm değişmez)
-  if (scenario.reopen === 'afterDisable' && reopenClientId && !reopenDone && req.method === 'GET' && p === '/api/portal/messages') {
+  // R03-c: reopen — kapanıştan sonraki İLK yerel mesaj listesi isteğinde hesap DB'de yeniden açılır (KUSUR/DIŞ MÜDAHALE TAKLİDİ).
+  // R03-d: afterDisable sürümü ÜRÜN GİBİ artırır (reactivate: tokenVersion increment); afterDisableRevert sürümü kapatma ÖNCESİ değere geri döndürür.
+  if (REOPEN_MODES.includes(scenario.reopen) && reopenClientId && !reopenDone && req.method === 'GET' && p === '/api/portal/messages') {
     reopenDone = true;
-    await prisma.clientPortalUser.updateMany({ where: { clientId: reopenClientId }, data: { isActive: true } });
+    const tv = scenario.reopen === 'afterDisableRevert' && Number.isInteger(reopenRevertTv) ? reopenRevertTv : { increment: 1 };
+    await prisma.clientPortalUser.updateMany({ where: { clientId: reopenClientId }, data: { isActive: true, tokenVersion: tv } });
     await prisma.client.update({ where: { id: reopenClientId }, data: { hasPortalAccess: true } });
   }
   const am = p.match(/^\/api\/portal\/admin\/messages\/([^/]+)$/);
