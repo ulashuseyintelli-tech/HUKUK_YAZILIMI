@@ -8,7 +8,7 @@
 // Eski `?token=` linkleri KABUL EDİLMEZ (fallback yok) — kullanıcı yeni link ister.
 // OFFICE emsali: app/auth/reset-password/page.tsx (OFFICE-AUTH-P02-HARDENING-R01, PR #1494).
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Scale, Loader2, Lock, Eye, EyeOff, ArrowLeft, CheckCircle } from "lucide-react";
@@ -35,8 +35,17 @@ export default function ResetPasswordPage() {
     }
   }, []);
 
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  // PORTAL-RESET-FORM-01: iki parola alanı KONTROLSÜZDÜR; değerler gönderim anında alanların kendisinden
+  // okunur. Ölçülen kusur (üretim derlemesi, 2026-10-02 ve #2894 sonrası 2026-10-03): alanlar `useState` ile
+  // kontrollüyken sayfa React tarafından devralınmadan önce yazılan / yapıştırılan / otomatik doldurulan
+  // parolalar devralmadan hemen sonraki çizimde alanlardan siliniyordu. Token okuma / temizleme / gönderme
+  // akışı DEĞİŞMEDİ.
+  // Alanlara `name` bilerek verilmez: yerel (React dışı) gönderim bugünkü gibi alanları taşımaz.
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const confirmPasswordRef = useRef<HTMLInputElement>(null);
+  // Tek kullanıcı gönderimi tek istek: yanıt beklenirken gelen ikinci gönderim olayı yok sayılır (kilit
+  // ref'tedir; durum bir sonraki çizime kadar eski kalabilir). Başarıda form kaldırıldığı için kilit açılmaz.
+  const inFlightRef = useRef(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
@@ -44,7 +53,12 @@ export default function ResetPasswordPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (inFlightRef.current) return;
     setError("");
+
+    // Parolalar olduğu gibi okunur (kırpılmaz).
+    const password = passwordRef.current?.value ?? "";
+    const confirmPassword = confirmPasswordRef.current?.value ?? "";
 
     if (!token) {
       setError("Bağlantı geçersiz (token bulunamadı). Lütfen şifre sıfırlama talebini tekrar başlatın.");
@@ -59,7 +73,9 @@ export default function ResetPasswordPage() {
       return;
     }
 
+    inFlightRef.current = true;
     setLoading(true);
+    let succeeded = false;
     try {
       const res = await fetch(portalApiUrl("/api/portal/reset-password"), {
         method: "POST",
@@ -72,6 +88,7 @@ export default function ResetPasswordPage() {
         throw new Error(data.message || "Şifre sıfırlanamadı");
       }
 
+      succeeded = true;
       setDone(true);
       // CLIENT-SEC-P01: tüketilen ham token client belleğinde gereksiz tutulmaz.
       setToken("");
@@ -79,6 +96,7 @@ export default function ResetPasswordPage() {
     } catch (err: any) {
       setError(err.message || "Bir hata oluştu");
     } finally {
+      if (!succeeded) inFlightRef.current = false;
       setLoading(false);
     }
   };
@@ -136,9 +154,8 @@ export default function ResetPasswordPage() {
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                 <input
+                  ref={passwordRef}
                   type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="En az 8 karakter"
                   autoComplete="new-password"
                   className="w-full pl-10 pr-10 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -159,9 +176,8 @@ export default function ResetPasswordPage() {
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                 <input
+                  ref={confirmPasswordRef}
                   type={showPassword ? "text" : "password"}
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Şifrenizi tekrar girin"
                   autoComplete="new-password"
                   className="w-full pl-10 pr-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
