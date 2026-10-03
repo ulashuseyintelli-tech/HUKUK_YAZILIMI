@@ -4889,9 +4889,17 @@ model ExpenseRequest {
 
   notes String?
 
+  // Aşama masraf seti İSTEK ANAHTARI (owner 2026-10-03, madde 4): aynı kullanıcı işleminin tekrarı (çift tıklama, ağ
+  // yeniden denemesi, süreç yeniden başladıktan sonra tekrar) aynı (büro, anahtar) ile tek talep döndürür. Her ikisi de
+  // NULL'lanabilir: anahtarsız çağrılar ve eski satırlar bu korumanın DIŞINDADIR (backfill yok). requestFingerprint yalnız
+  // istek girdilerinin (caseId, stageCode) özetidir; aynı anahtar farklı girdiyle gelirse 409.
+  idempotencyKey     String?
+  requestFingerprint String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([tenantId, idempotencyKey], map: "expense_request_tenant_idempotency_key_unique")
   @@index([tenantId])
   @@index([caseId])
   @@index([clientId])

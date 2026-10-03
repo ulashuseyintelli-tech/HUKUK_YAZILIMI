@@ -153,14 +153,21 @@ export class ExpenseRequestController {
   /**
    * Aşama bazlı masraf seti oluştur
    * POST /expense-requests/case/:caseId/stage/:stageCode
+   *
+   * Gövde `idempotencyKey` (isteğe bağlı): aynı kullanıcı işleminin tekrarı (çift tıklama, yeniden deneme) AYNI anahtarı,
+   * meşru yeni işlem YENİ anahtarı gönderir. Aynı büro + anahtar + aynı içerik → mevcut talep (`idempotentReplay: true`);
+   * farklı içerik → 409. Anahtarsız çağrılar mükerrer korumasının DIŞINDADIR.
    */
   @Post('case/:caseId/stage/:stageCode')
   async createStageExpenses(
     @Req() req: AuthRequest,
     @Param('caseId') caseId: string,
     @Param('stageCode') stageCode: string,
+    @Body() body?: { idempotencyKey?: unknown },
   ) {
-    return this.service.createStageExpenseSet(caseId, stageCode, req.user.tenantId, req.user.id);
+    return this.service.createStageExpenseSet(caseId, stageCode, req.user.tenantId, req.user.id, {
+      idempotencyKey: body?.idempotencyKey,
+    });
   }
 
   /**

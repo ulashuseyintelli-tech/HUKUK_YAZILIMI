@@ -35,6 +35,12 @@ import {
   OpeningExpenseBasisDecision,
 } from './opening-expense-basis';
 import { evaluateStageExpenseBasis } from './stage-expense-basis';
+import {
+  checkStageExpenseIdempotencyKey,
+  decideStageExpenseIdempotency,
+  IDEMPOTENCY_KEY_UNSUPPORTED_FOR_OPENING,
+  stageExpenseRequestFingerprint,
+} from './stage-expense-idempotency';
 
 const OPENING_EXPENSE_ALREADY_CREATED = 'Bu takip için açılış masrafları zaten oluşturulmuş';
 
@@ -1025,16 +1031,40 @@ export class ExpenseRequestService {
    * - WorkflowEngine.updateCaseStage() → aşama değişiminde arka planda (ENFORCEMENT → RE_NOTIFICATION, SEIZURE → SEIZURE,
    *   SALE_REQUEST → SALE); o yolda hata yalnız sunucu günlüğüne yazılır
    * </remarks>
+   *
+   * İSTEK ANAHTARI (isteğe bağlı, owner 2026-10-03): `options.idempotencyKey` verilirse aynı (büro, anahtar, dosya, aşama)
+   * tekrarı yeni talep YAZMAZ, mevcut talebi `idempotentReplay: true` ile döndürür; aynı anahtar farklı içerikle ya da iptal
+   * edilmiş talebin anahtarıyla gelirse 409. Anahtarsız çağrılar (iş akışı yolu dahil) bu korumanın DIŞINDADIR.
    */
-  async createStageExpenseSet(caseId: string, stageCode: string, tenantId: string, userId: string) {
+  async createStageExpenseSet(
+    caseId: string,
+    stageCode: string,
+    tenantId: string,
+    userId: string,
+    options?: { idempotencyKey?: unknown },
+  ) {
     const template = EXPENSE_SET_TEMPLATES[stageCode as keyof typeof EXPENSE_SET_TEMPLATES];
     if (!template) {
       throw new BadRequestException(`Geçersiz aşama kodu: ${stageCode}`);
     }
 
+    const keyCheck = checkStageExpenseIdempotencyKey(options?.idempotencyKey);
+    if (!keyCheck.ok) {
+      throw new BadRequestException({ code: keyCheck.code, message: keyCheck.message });
+    }
+    const idempotencyKey = keyCheck.key;
+
     // Açılış setinin tek üreticisi createOpeningExpenseSet'tir. Aşama hesaplayıcısı açılış kalemlerini tanımaz (altı kalemin
     // beşi 0 yazılıyordu) ve bu yol açılışın "zaten oluşturulmuş" ile peşin harç matrahı denetimlerinden geçmiyordu.
     if (template.code === 'OPENING') {
+      // Açılış seti kendi dosya kilidi ve "zaten oluşturulmuş" denetimiyle korunur; istek anahtarı bu uçta DESTEKLENMEZ.
+      // Sessizce yok sayılırsa istemci korunduğunu sanır → açıkça reddedilir.
+      if (idempotencyKey) {
+        throw new BadRequestException({
+          code: IDEMPOTENCY_KEY_UNSUPPORTED_FOR_OPENING,
+          message: 'Açılış masraf seti idempotencyKey kabul etmez; açılış seti dosya başına tek kez oluşturulur',
+        });
+      }
       return this.createOpeningExpenseSet(caseId, tenantId, userId);
     }
 
@@ -1052,6 +1082,17 @@ export class ExpenseRequestService {
 
     if (!caseItem.clientId) {
       throw new BadRequestException('Takibe müvekkil atanmamış');
+    }
+
+    // İstek anahtarı: dosya / büro / müvekkil denetimleri YUKARIDA ilk çağrıda da tekrarda da aynen çalışır (başka büronun
+    // dosyası 404, anahtar yalnız kendi bürosunda aranır). Aynı anahtarla önceki işlem tamamlandıysa matrah denetimi ve
+    // hesap tekrarlanmaz: aynı kullanıcı işleminin tekrarı özgün sonucu döndürür.
+    const requestFingerprint = stageExpenseRequestFingerprint({ caseId, stageCode: template.code });
+    if (idempotencyKey) {
+      const existing = await this.prisma.expenseRequest.findFirst({ where: { tenantId, idempotencyKey } });
+      if (existing) {
+        return this.replayStageExpenseRequest(existing, requestFingerprint);
+      }
     }
 
     // Haciz harcı ve satış harcı TL tarifesi oranıdır: aşağıda toplanan anapara alacak kalemleri TL değilse hesaplanamaz
@@ -1092,54 +1133,113 @@ export class ExpenseRequestService {
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + 7);
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      const expenseRequest = await tx.expenseRequest.create({
-        data: {
-          tenantId,
-          caseId,
-          clientId: caseItem.clientId!,
-          packageCode: stageCode,
-          stageCode,
-          gateType: template.gateType as ExpenseGateType,
-          totalSuggested: totalAmount,
-          totalAmount,
-          dueDate,
-          status: 'PENDING',
-          createdById: userId,
-          paidTotal: 0,
-        },
-      });
+    let written: { row: Prisma.ExpenseRequestGetPayload<object>; replayed: boolean };
+    try {
+      written = await this.prisma.$transaction(async (tx) => {
+        if (idempotencyKey) {
+          // Aynı (büro, anahtar) yazımlarını serileştirir: ikinci istek birincinin işlemi bitene kadar bekler, sonra
+          // kilit altında yeniden okur (çift tıklama, birden fazla süreç).
+          await this.lockStageExpenseIdempotencyKey(tx, tenantId, idempotencyKey);
+          const duplicate = await tx.expenseRequest.findFirst({ where: { tenantId, idempotencyKey } });
+          if (duplicate) {
+            return { row: duplicate, replayed: true };
+          }
+        }
 
-      for (let i = 0; i < calculatedItems.length; i++) {
-        const item = calculatedItems[i];
-        await tx.expenseRequestItem.create({
+        const expenseRequest = await tx.expenseRequest.create({
           data: {
-            expenseRequestId: expenseRequest.id,
-            itemCode: item.itemCode,
-            label: item.label,
-            suggestedAmount: item.suggestedAmount,
-            finalAmount: item.suggestedAmount,
-            calcParams: item.calcParams as any,
-            sortOrder: i,
+            tenantId,
+            caseId,
+            clientId: caseItem.clientId!,
+            packageCode: stageCode,
+            stageCode,
+            gateType: template.gateType as ExpenseGateType,
+            totalSuggested: totalAmount,
+            totalAmount,
+            dueDate,
+            status: 'PENDING',
+            createdById: userId,
+            paidTotal: 0,
+            ...(idempotencyKey ? { idempotencyKey, requestFingerprint } : {}),
           },
         });
-      }
 
-      await tx.expenseAuditLog.create({
-        data: {
-          expenseRequestId: expenseRequest.id,
-          action: 'CREATED',
-          details: { stageCode, itemCount: calculatedItems.length, totalAmount },
-          userId,
-        },
+        for (let i = 0; i < calculatedItems.length; i++) {
+          const item = calculatedItems[i];
+          await tx.expenseRequestItem.create({
+            data: {
+              expenseRequestId: expenseRequest.id,
+              itemCode: item.itemCode,
+              label: item.label,
+              suggestedAmount: item.suggestedAmount,
+              finalAmount: item.suggestedAmount,
+              calcParams: item.calcParams as any,
+              sortOrder: i,
+            },
+          });
+        }
+
+        await tx.expenseAuditLog.create({
+          data: {
+            expenseRequestId: expenseRequest.id,
+            action: 'CREATED',
+            details: { stageCode, itemCount: calculatedItems.length, totalAmount },
+            userId,
+          },
+        });
+
+        await this.writeExpenseRequestRecordedJournal(tx, tenantId, userId, expenseRequest as JournalableExpenseRequestRow);
+        return { row: expenseRequest, replayed: false };
       });
+    } catch (error) {
+      // Kilidi atlayan eşzamanlı yazım (ör. kilit öncesi sürümle çalışan eski süreç): benzersiz indeks son savunmadır →
+      // kazanan satır yeniden okunur ve tekrar olarak oynatılır.
+      if (idempotencyKey && error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const winner = await this.prisma.expenseRequest.findFirst({ where: { tenantId, idempotencyKey } });
+        if (winner) {
+          return this.replayStageExpenseRequest(winner, requestFingerprint);
+        }
+      }
+      throw error;
+    }
 
-      await this.writeExpenseRequestRecordedJournal(tx, tenantId, userId, expenseRequest as JournalableExpenseRequestRow);
-      return expenseRequest;
-    });
+    if (written.replayed) {
+      return this.replayStageExpenseRequest(written.row, requestFingerprint);
+    }
 
-    this.logger.log(`Stage expense set created for case ${caseId}, stage ${stageCode}: ${result.id}`);
-    return result;
+    this.logger.log(`Stage expense set created for case ${caseId}, stage ${stageCode}: ${written.row.id}`);
+    return idempotencyKey ? { ...written.row, idempotentReplay: false } : written.row;
+  }
+
+  /**
+   * Aynı (büro, anahtar) ile kayıtlı talep bulunduğunda: aynı içerik → mevcut talep (tekrar), farklı içerik / iptal edilmiş
+   * talep → 409. Hiçbir yazım yapmaz.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ExpenseRequestService.createStageExpenseSet() (kilit öncesi, kilit altı ve P2002 sonrası)
+   * </remarks>
+   */
+  private replayStageExpenseRequest(existing: Prisma.ExpenseRequestGetPayload<object>, requestFingerprint: string) {
+    const decision = decideStageExpenseIdempotency(existing, requestFingerprint);
+    if (decision.outcome !== 'REPLAY') {
+      throw new ConflictException({ code: decision.code, message: decision.message });
+    }
+    this.logger.log(`Stage expense set replayed for idempotency key (request ${existing.id})`);
+    return { ...existing, idempotentReplay: true };
+  }
+
+  /**
+   * Aynı (büro, istek anahtarı) aşama masraf seti yazımlarını serileştirir; kilit işlem bitince kendiliğinden bırakılır.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ExpenseRequestService.createStageExpenseSet() (yazma işlemi içinde, anahtarla yeniden okumadan önce)
+   * </remarks>
+   */
+  private async lockStageExpenseIdempotencyKey(tx: Prisma.TransactionClient, tenantId: string, idempotencyKey: string): Promise<void> {
+    const lockKeyText = `expense-request-stage-key:${tenantId}:${idempotencyKey}`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKeyText}, 0))`;
   }
   private async writeExpenseRequestRecordedJournal(
     tx: Prisma.TransactionClient,

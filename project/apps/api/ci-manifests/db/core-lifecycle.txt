@@ -282,3 +282,10 @@ src/modules/template-engine/__tests__/template-totals-currency.http.db-gated.int
 #   is akisi yolunda gorunurluk owner karari (bugunku davranis sabitlenir). Duzeltmesiz servis koduyla 20 testin 15'i DUSER;
 #   TL kontrolleri, sabit tutarli set ve mevcut acilis kurali testi GECER (RED kanitlandi).
 src/modules/expense-request/__tests__/stage-expense-fx-basis.http.db-gated.integration.spec.ts
+# Asama masraf seti ISTEK ANAHTARI (owner 2026-10-03, madde 4): ayni buro + anahtar + ayni icerik tek talep dondurur,
+#   farkli icerik 409 IDEMPOTENCY_KEY_CONFLICT; cift tiklama, 3 eszamanli istek, surec yeniden basladiktan sonra tekrar
+#   ve iki ayri uygulama ornegi (ayri veritabani havuzu) tek talep yazar; iptal edilen talebin anahtari yeniden
+#   kullanilamaz; VIEWER ilk cagrida VE tekrarda 403, baska buro anahtari gormez; anahtarsiz eski cagri korumanin DISINDA
+#   (bugunku davranis sabitlenir); dovizli dosyada 409 davranisi degismez ve anahtar kaydi birakmaz; benzersiz indeks son
+#   savunma. Duzeltmesiz servis / denetleyici koduyla 15 testin 9'u DUSER, 6 kontrol GECER (RED kanitlandi).
+src/modules/expense-request/__tests__/stage-expense-idempotency.http.db-gated.integration.spec.ts
