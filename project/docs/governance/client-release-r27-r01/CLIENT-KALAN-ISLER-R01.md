@@ -1,4 +1,4 @@
-# CLIENT — KALAN İŞLER TEK ÇALIŞMA LİSTESİ (R02) · 2026-10-02
+# CLIENT — KALAN İŞLER TEK ÇALIŞMA LİSTESİ (R03) · 2026-10-03
 
 > **DURUM: CLIENT GENEL KABUL TAMAMLANMADI.** Bu belge CLIENT'in kalan kabul işlerini tek yerde toplar: D-1…D-9, H1…H8, açık
 > güvenlik işleri, hazır teslimler ve tek owner karar listesi. Belge **kabul vermez**, sayaç ilerletmez ve hiçbir canlı işlemi
@@ -10,19 +10,28 @@
 > bağımlılık / sonraki işlem / owner kararı" sütunlarına geçti · D-6/D-7 koşucu öz-testleri teslim edilen dosyalarla tekrarlanabilir
 > (§4) · D-8 kapsam boşluklarının kabule etkisi (§5) · H3/H6/H8 ölçüt + kanıt + beyan taslağı (§7) · hazırlık hükmü (§10).
 >
-> Kaynak ayrımı: **[Ö]** bu çalışmanın kendi ölçümü (2026-10-02; salt okuma ya da izole test) · **[B]** mevcut kayıt belgesinin
-> iddiası (yeniden ölçülmedi) · **[O]** owner beyanı (makine ölçümü değildir).
+> **R03'te değişenler (2026-10-03):** dört PR birleştirildi (§9) · D-5 koşumunun ikinci takip kaydı (iki eksik beyan, bugünkü özet
+> envanteri, açık beyan / çıkarım ayrımı) · A2 owner kararıyla ürün düzeltmesi (PORTAL-RESET-FORM-01, #2900) · "teşhis satırı yok →
+> API'ye ulaşmadı" ifadesi düzeltildi (§3.1) · KR-6 canlı salt okuma sayımı yapıldı · D-6 kapanış düzeltmesi yerelde hazır, D-7
+> kapanışı ve D-8 sonda kapsamı sırada (§4, §5) · H6/H8 yayın adayına karşı yeniden değerlendirildi, H1/H2/H4/H5/H7 kararları günlük
+> dille (§7) · karar listesi güncellendi (§11). Owner'ın 2026-10-03 karar tablosu koordinasyon kaydındadır; bu belge onu yalnız
+> CLIENT kalemleri için anar.
+>
+> Kaynak ayrımı: **[Ö]** bu çalışmanın kendi ölçümü (salt okuma ya da izole test) · **[B]** mevcut kayıt belgesinin iddiası
+> (yeniden ölçülmedi) · **[K]** yayın koordinatörünün ölçümü (aday doğrulama kaydı; depoda değil) · **[O]** owner beyanı (makine
+> ölçümü değildir).
 
 ## 1. Kimlikler — `main` ile canlı ayrı tutulur
 
 | Konu | Değer | Kaynak |
 |---|---|---|
 | Canlı ürün | **R27** — kaynak `1b758d29`, API dist `E28A6863…5134`, WEB `B2DEE365…F621` / `W2UQpBPD…`; migration 0 | [B] `record/R27-LIVE-RECORD-R01.md` §1 |
-| `main` | `7ba023c1`. **main ≠ canlı**: `1b758d29` `main`'in atası değildir; `main` canlı adaydan 168 commit ve 5 migration ileridedir (ölçüm: 2026-10-02 22:03Z; `main` sık ilerler) | [Ö] git |
+| `main` | R03 tabanı `5477a073` (#2885 dahil). **main ≠ canlı**: `1b758d29` `main`'in atası değildir; `main` canlı adaydan 170'ten fazla commit ve 5 migration ileridedir (`main` sık ilerler) | [Ö] git |
 | Canlı veritabanı kodlaması | **UTF8** — salt okunur `SHOW server_encoding`, 2026-10-02 20:39Z; yalnız bu tek okuma yapıldı (owner talimatı CLIENT-HAZIRLIK-KAPANISI-R02 madde 3: "bu okuma yetkilidir"); çıktı yerel kanıt dizinindedir (depoya alınmadı). #2884'ün tek ortam ön koşulu karşılanıyor | [Ö] |
 | Yayın B0/B1/B2 · D-1…D-4 kabulleri · D-5 koşumu | Tamamlandı / koşuldu; **tekrarlanmadı, yeniden çalıştırılmadı** | [B] |
 | Ağ azaltım kuralı (8080 engeli) ve geri dönüş yedekleri | **Korunur**; bu çalışma dokunmadı | [B] |
-| Yayın adayı çalışması | Ayrı bir oturumun taslak PR'ı #2895 (taban `release/r27-candidate` = `1b758d29`). Bu belge o işe **dokunmaz**; yalnız #2884'ün o adaya uygulanabilirliği salt okunur ölçüldü (§3.3) | [Ö] |
+| Yayın adayı çalışması | Taslak PR #2895 (taban `release/r27-candidate` = `1b758d29`); **tek yazarı yayın koordinatörüdür**. CLIENT yalnız düzeltme ve kanıt teslim eder: #2884 adaya `f69783af` olarak alındı (manifest çakışması yalnız #2884'ün satırlarıyla çözüldü; saf testleri aday üstünde 116/116 [K]). Adayın birleştirilmesi ve canlı yayın için owner GO'su **yok** | [K] |
+| Canlı portal hesapları (KR-6 sayımı) | 2026-10-03, salt okunur, yalnız sayı: toplam 7 portal hesabı, **aktif 0**; aktifler arasında birebir ya da biçim farkıyla çakışan adres 0 (ölçüm aracı kör değil: toplam sayıyı gördü). Veri düzeltme yetkisi değildir | [Ö] |
 
 ## 2. D halkaları — tek tablo
 
@@ -34,10 +43,10 @@ Kabul ölçütlerinin kanonik tanımı `client-external-access-r01` §7'dir; pak
 | **D-2** form sentetik veriyle gönderilir | **Kabul — dar (intake)**: `cff5c692` [B] | yok | tamam | — | yok | — |
 | **D-3** doğru büro/dosya/statü | **Kabul — dar (intake)**: `cff5c692` [B] | yok | tamam | — | yok | — |
 | **D-4** portal girişi dış cihazdan | **Kabul — dar**: runId `e34b7e6d` 21/21 [B]; telefon [O] | yok | tamam | — | yok; Run/Recover tekrarlanmaz | — |
-| **D-5** portal parola sıfırlama uçtan uca | **Kabul yok.** runId `00c96bd5`: çıkış 3 · 21 PASS / 0 FAIL / 8 ÖLÇÜLEMEYEN [Ö]; "e-posta gelmedi" [O] | (a) uçtan uca sıfırlama hiç ölçülmedi (8 ölçüt) · (b) kök neden **kanıtlanmadı** · (c) bu koşumun kanıt paketi manifestsiz — **tamamlanamaz** (§3.2) | teşhis: UNKNOWN düzeyinde tamam · yama #2884: hazır, merge edilmedi · yayın hazırlığı: **başlatılmadı** | #2884 merge → yayın (aday kapsamı + GO) → pin PR'ı → yeni D-5 GO'su | §3.3 sırası | D-5 yol seçimi · yayın GO'su · yeni D-5 GO'su · alıcı adresi · tek gönderim onayı |
-| **D-6** belge yükleme/indirme/silme | **Kabul yok** — canlı koşum yok | canlı Run + owner beyanı (D6-*, P6-C*) | blok R02 #2880: hazır, merge edilmedi · blok öz-testi 73/73 · koşucu öz-testi teslim dosyasıyla 51/51 (§4) | #2880 merge (blok `main` checkout'undan okunur) · ayrı GO · dış zincir · canlı dist pini R27 (yayından önce ya da pin PR'ından sonra) | Preflight → QrTest → Run | D-6 GO · telefon yüklemesi · kalıcı izlerin kabulü · kalıntıda sıra kararı (§4.3) |
-| **D-7** mesaj gönderme/okuma | **Kabul yok** — canlı koşum yok | canlı Run + owner beyanı (D7-*, P7-C*) | blok R02 #2882: hazır, merge edilmedi · blok öz-testi 64/64 · koşucu öz-testi teslim dosyasıyla 41/41 (§4) | #2882 merge · ayrı GO · dış zincir · canlı dist pini · SEC-PORTAL-ADMIN-MSG-01 açık (engel değil) | Preflight → QrTest → Run | D-7 GO · kalan mesaj/bildirim satırları "saklandı" · kapsam dışı dosya referansında 400'ün ölçüt sayılması · Recover kuralı |
-| **D-8** personel yüzeyi dışarıdan kapalı | **Kısmi**: yalnız 2026-09-27 telefon beyanı, 5 GET 403 [O]; R27 öncesi | sonda canlıda koşulmadı; telefon beyanı R27 sonrası yinelenmedi; katman ölçülmez | sonda + öz-test hazır (pin `D5FA37D1…579B`); **kapsam kararı bekliyor** (§5) | ayrı GO · dış zincir · D8-E1/E2/E3 kararı | karar → (gerekirse sonda revizyonu) → GO → sonda + telefon beyanı | D-8 GO + §5 kapsam kararları |
+| **D-5** portal parola sıfırlama uçtan uca | **Kabul yok.** runId `00c96bd5`: çıkış 3 · 21 PASS / 0 FAIL / 8 ÖLÇÜLEMEYEN [Ö]; "e-posta gelmedi" [O] | (a) uçtan uca sıfırlama hiç ölçülmedi (8 ölçüt) · (b) kök neden **kanıtlanmadı** · (c) bu koşumun kanıt paketi manifestsiz — **tamamlanamaz** (§3.2) | teşhis: UNKNOWN düzeyinde tamam · API yaması #2884: `main`'de (`be08dbe9`) ve adayda · web yaması #2900: `main`'de (`8b9a9989`) · aday doğrulaması: koordinatörde · yayın: **GO yok** | doğrulanmış aday (API + web) → onaylı yayın → pin güncellemesi → yeni D-5 GO'su | §3.3 sırası | yayın GO'su · yeni D-5 GO'su · alıcı adresi · tek gönderim onayı |
+| **D-6** belge yükleme/indirme/silme | **Kabul yok** — canlı koşum yok | canlı Run + owner beyanı (D6-*, P6-C*) | blok R02 `main`'de (#2880 → `6744abff`) · kapanış düzeltmesi R03 **yerelde hazır, yayımlanmadı** (bağımsız doğrulama: 1 major + 3 minor açık; §4.4) | R03 major düzeltmesi + PR (CLIENT yuvası sırası: portal → F1 → D-6) · ayrı GO · dış zincir · canlı dist pini (yayından önce ya da pin güncellemesinden sonra) | R03 tamamlama → Preflight → QrTest → Run | D-6 GO · telefon yüklemesi · kalıcı izlerin kabulü · kalıntıda sıra · OK-5 (§4.4) |
+| **D-7** mesaj gönderme/okuma | **Kabul yok** — canlı koşum yok | canlı Run + owner beyanı (D7-*, P7-C*) | blok R02 `main`'de (#2882 → `0e04f4a6`) · kapanış eksikleri (makbuzdan önceki yarım kurulum, oturum yenileme, kapanış satırı) **sırada** (§4.4) | D-7 kapanış düzeltmesi (CLIENT yuvası, D-6'dan sonra) · ayrı GO · dış zincir · canlı dist pini · SEC-PORTAL-ADMIN-MSG-01 açık (engel değil) | kapanış düzeltmesi → Preflight → QrTest → Run | D-7 GO · kalan mesaj/bildirim satırları "saklandı" · kapsam dışı dosya referansında 400'ün ölçüt sayılması · Recover kuralı |
+| **D-8** personel yüzeyi dışarıdan kapalı | **Kısmi**: yalnız 2026-09-27 telefon beyanı, 5 GET 403 [O]; R27 öncesi | sonda canlıda koşulmadı; telefon beyanı R27 sonrası yinelenmedi; katman ölçülmez | sonda + öz-test hazır (pin `D5FA37D1…579B`) · HEAD / OPTIONS ve 18 kodlama varyantının sondaya alınması **sırada** (CLIENT yuvası) · diğer ana makine adı kısıtlı envanterde belirlendi (§5) | sonda revizyonu (pin + öz-test + belge) · ayrı GO · dış zincir · ad kapsamı kararı | revizyon → GO → sonda + telefon beyanı | D-8 GO + ad kapsamı (§5) |
 | **D-9 (intake)** | **Kabul — dar**: `cff5c692` [B] | yok | tamam | — | yok | — |
 | **D-9 (portal, D-4 koşumu)** | **Kabul — dar**: `e34b7e6d` [B] | yok | tamam | — | yok | — |
 | **D-9 (birleşik)** | **Açık** | D-5 bileşeni ölçülemeyenli; D-6/D-7 bileşenleri yok (§6) | — | D-5, D-6, D-7 koşumları | koşumlardan sonra kayıt | birleşik kabul onayı; dar kanıt genel kapanış sayılmaz |
@@ -64,46 +73,52 @@ Gözlenen tabloyla (başarı ekranı · token yok · günlük satırı yok · e-
 | # | Aday | Dayanak | #2884 ne yapar |
 |---|---|---|---|
 | A1 | Formda yazılan adres kayıtlı adresle yalnız harf büyüklüğü ya da baş/son boşlukla farklıydı | kaynak okumasıyla doğrulanmış kusur sınıfı (canlı kaynak) | **kapatır** |
-| A2 | **Web tarafı:** sıfırlama sayfası tarayıcıda devralınmadan (hydration) önce doldurulan adres API'ye **boş** gider; API aynı başarı yanıtını verir, sıfırlama kaydı ve e-posta oluşmaz | ayrı bir ölçümde üretim derlemesinde doğrulanmış davranış (2026-10-02; ölçülen sayfa dosyası canlı kaynakla aynı); bu koşumda olduğu **ölçülmedi** | **kapatmaz**; yalnız "e-posta alanı boş" teşhis satırı kazandırır (boş gönderim yanlış yazılmış adresten ayırt edilir). `main`'deki giriş formu düzeltmesi (#2894) düğmeyi devralmaya kadar kapatır, alan değerini **eşitlemez** |
-| A3 | Talep API'ye ulaşmadı (kenar katmanı) | erişim günlüğü yok; kenar günlüğü okunmadı | teşhis satırının **yokluğu** bir sonraki denemede bunu gösterir |
+| A2 | **Web tarafı:** sıfırlama sayfası tarayıcıda devralınmadan (hydration) önce doldurulan adres API'ye **boş** gider; API aynı başarı yanıtını verir, sıfırlama kaydı ve e-posta oluşmaz | ayrı bir ölçümde üretim derlemesinde doğrulanmış davranış (2026-10-02; ölçülen sayfa dosyası canlı kaynakla aynı); bu koşumda olduğu **ölçülmedi**. 2026-10-03 yeniden üretim (#2894 sonrası `main`): kusur üç portal formunda sürüyor; belirti değişti — erken girilen değer devralmada **siliniyor**, istek çıkmıyor; tarayıcı denetimi atlanırsa yine boş gövde gidiyor | **kapatmaz**; yalnız "e-posta alanı boş" teşhis satırı kazandırır. **Ürün düzeltmesi: PORTAL-RESET-FORM-01, PR #2900** (owner kararı: yeni D-5 denemesinden önce yayında olacak; elle yazma talimatı düzeltmenin yerine geçmez) |
+| A3 | Talep API'ye ulaşmadı (kenar katmanı) | erişim günlüğü yok; kenar günlüğü okunmadı | API'ye ulaşan istekte hangi dalın çalıştığını gösterir. Günlük kapsamı ve kayıt mekanizması doğrulanmadan bir teşhis satırının **yokluğu** "ulaşmadı" anlamına **gelmez** — UNKNOWN kalır |
 | A4 | SMTP / sağlayıcı | token görülmediği için gönderim aşamasına gelindiğine dair iz yok; **dışlanmadı** | gönderim sonucu satırı (mevcut) |
 
 #2884 **kaynak okumasıyla doğrulanmış bir kusur sınıfını** (A1) kapatır ve sessiz dallara teşhis satırı ekler. **#2884'ün bu koşumun
-kök nedenini giderdiği kanıtlanmamıştır.** Kesin kazanımı: bir sonraki denemede API tarafındaki neden ölçülebilir olur. A2 için
-ürün düzeltmesi web tarafındadır ve bu çalışmanın kapsamında **değildir** (§11 KR-3).
+kök nedenini giderdiği kanıtlanmamıştır.** Kazanımı: istek API'ye ulaşırsa hangi sessiz dalın çalıştığı günlükte görünür; bu
+uçtan uca izleme **değildir**. A2 için ürün düzeltmesi web tarafındadır: PR #2900 (owner kararı KR-3, §11). A2 de eski koşumun kök
+nedeni olarak sunulmaz.
 
 ### 3.2 Bu koşumun kanıt paketi — TAMAMLANMADI
 
-Ayrıntı: `client-extacc-portal-d5-r01/D5-RUN-00C96BD5-TAKIP-20261002.md` ve paket belgesi §8.
+Ayrıntı: `client-extacc-portal-d5-r01/D5-RUN-00C96BD5-TAKIP-20261002.md`, **`D5-RUN-00C96BD5-TAKIP-20261003.md`** (iki eksik
+beyan, beş dosyanın 2026-10-03 özet envanteri — koşum sonu değerleriyle aynı — ve dokuz sorunun açık beyan / çıkarım ayrımı) ve
+paket belgesi §8. Koşum çıkış 3 / ÖLÇÜLEMEYEN olarak kalır; D-5 yeniden kabulü ve birleşik D-9 için **yeterli sayılmaz**. Eksik
+tarihsel paket bağımsız hazırlık işlerini bekletmez.
 
 - Beyan penceresi **kapanmıştır** [Ö 2026-10-02]: süreç yok; makine koşumdan sonra yeniden başladı. Blok, beyan dosyasını, birleşik
   kararı ve manifesti beyan sorularından sonra yazar; akış o noktaya gelmedi. **Üç dosya yoktur ve bu koşum için sonradan
   üretilmez**; üretilmiş gibi gösterilmez. Yeni Run başlatılmadı.
 - Beş özgün dosya korunur; ham bayt özetleri koşum sonu ile aynıdır [Ö].
-- Bloğun dokuz sorusundan yedisi owner beyanından ya da onun sonucundan okunur; **ikisi eksiktir** (telefonun ağı · koşumdan sonra
-  telefondaki sayfa yenilenince görülen ekran). Yanıtlar takip kaydına işlenir; blok dosyası üretilmez (§11 KR-1).
+- Bloğun dokuz sorusu: biri açık owner beyanı (e-posta gelmedi), altısı o beyandan **çıkarım** (owner beyanı değildir), iki eksik
+  soru 2026-10-03'te owner'a bir kez soruldu ve **sonradan verilmiş hatırlama beyanı** olarak kaydedildi (telefon mobil verideydi;
+  yenilemede giriş sayfası görüldü — bu koşumda telefonda portal oturumu olmadığı için oturum reddini kanıtlamaz). Blok dosyası
+  üretilmedi.
 - Kapanış üç ayrı görünümdedir: (a) kapanış — DB, token, yeni giriş, personel/dosya: **PASS** · (b) özgün (sıfırlama öncesi)
   oturumun reddi: **PASS** · (c) sıfırlama sonrası kontroller: **ÖLÇÜLEMEYEN** (8 ölçüt; sıfırlama gerçekleşmedi). (c) PASS sayılmaz.
 
-### 3.3 Uygulanabilir sıra: teşhis/yama → yayın hazırlığı → yeni GO ile tek deneme
+### 3.3 Uygulanabilir sıra: API + web düzeltmeleri → doğrulanmış aday → onaylı yayın → pin → tek deneme
 
-| Adım | İçerik | Durum | Yetki |
+| Adım | İçerik | Durum (2026-10-03) | Yetki |
 |---|---|---|---|
-| 1 Teşhis | §3.1 — kök neden **UNKNOWN**; dört aday kayıtlı. Güncel veritabanından geçmiş eşleşme türetilmez. Okunmamış iki kaynak (kenar günlüğü, sağlayıcı kayıtları) owner erişimi ister | **bu çalışmanın erişebildiği kaynaklarla tamam**; kök neden açık | okunmamış kaynakların okunması (isteğe bağlı) |
-| 2 Yama | #2884 (A1'i kapatır; A2/A3 için teşhis satırı). Durum §9 | açık; merge edilmedi; CI 10/10 (§10) | merge onayı |
-| 2b Web tarafı (A2) | sıfırlama sayfasında erken doldurulan alanın boş gitmesi: düzeltme seçenekleri ayrı ölçüm kaydındadır; bu çalışmada kod değişmedi | **karar bekliyor** | §11 KR-3 |
-| 3a Aday kapsamı | Ölçüm [Ö, `git merge-tree`, salt okuma]: #2884 canlı kaynağa **tek başına** taşınırsa portal servisinde 2 çakışma bölümü çıkar (hesap açmadaki işlem içi yetki satırları canlıda yok — #2825). İşlem içi yetki satırlarını içeren aday taslağı (#2895) üstünde servis ve testler **otomatik birleşir**; yalnız CI manifestinde tek satır elle çözülür. Sonuç: #2884 ya o adaya eklenir ya da hesap açma ayağı elle uyarlanır | ölçüldü; **karar bekliyor** | aday kapsamı kararı (yayın planı owner'da) |
+| 1 Teşhis | §3.1 — kök neden **UNKNOWN**; dört aday kayıtlı. Okunmamış iki kaynak (kenar günlüğü, sağlayıcı kayıtları) owner erişimi ister | erişilebilen kaynaklarla tamam; kök neden açık | okunmamış kaynakların okunması (isteğe bağlı) |
+| 2 API yaması | #2884 (A1'i kapatır; teşhis satırları; hesap açmada çakışma kuralı işlem içinde) | **`main`'de** `be08dbe9` (main CI yeşil) · adayda `f69783af` [K] | — |
+| 2b Web yaması (A2) | PORTAL-RESET-FORM-01: üç portal formu, değer gönderim anında alandan okunur, boş / biçimsiz giriş istek üretmez, tek gönderim tek istek | **`main`'de** `8b9a9989` (#2900; main CI yeşil); üretim derlemesinde doğrulandı; adaya uyarlama koordinatörde | — |
+| 2c Dev token kaybı (F1) | şifre sıfırla sayfalarının geliştirme ortamındaki token kaybı; üretim davranışı korunur | **PR #2902** açık; güvenlik adayına eklenmez | aynı teslim yetkisi; sıra koordinatörde |
+| 3 Aday | #2884 + #2900 + gerekli giriş formu bağımlılıkları (#2894'ün aday parçası) yayın adayına; #2825 sırası korunur | **koordinatörde** (adayın tek yazarı); birleşik aday doğrulaması sürüyor | yayın GO'su ayrı karar |
 | 3b Ön koşul | canlı veritabanı kodlaması UTF8 | **ölçüldü** (§1) | — |
-| 3c Aday derleme + izole prova | B0 → B1 → B2 kalıbı; geri dönüş B3 (#2862; canlıda koşulmadı) | **başlatılmadı** | yayın hazırlığı GO'su |
-| 3d Yayın | canlı API dist değişir; `.env` ve şema değişmez (yalnız #2884 için migration 0). WEB yalnız #2884 için değişmez; A2 düzeltmesi kapsama alınırsa WEB de değişir | **başlatılmadı** | yayın GO'su |
-| 3e Pin PR'ı | owner bloklarının canlı dist pini yeni değere çekilir (D-5/D-6/D-7/D-8 blokları dahil). #2880 ve #2882 bundan **önce** `main`'de olmalı | **başlatılmadı** | merge onayı |
-| 4 Tek deneme | Preflight → **QrTest** (pin PR'ı bloğu değiştirdiği için yeniden koşulur; canlı veri işlemez, GO tüketmez) → Run (tek gönderim) → pencere kapanmadan dokuz beyan sorusu → manifest. A2 web tarafında düzeltilmediyse owner adımı: sayfa **tam yüklendikten sonra** adres alana elle yazılır (yapıştırma / otomatik doldurma yok). Otomatik ikinci gönderim, ikinci Run ya da Recover **yok** | **başlatılmadı** | yeni D-5 GO'su · alıcı adresi (yalnız konsol) · tek gönderim onayı |
+| 4 Yayın | canlı API ve WEB dist değişir; `.env` ve şema değişmez (CLIENT kalemleri için migration 0) | **GO yok** | yayın GO'su |
+| 5 Pin güncellemesi | owner bloklarının canlı dist pinleri yeni değere çekilir (D-5/D-6/D-7/D-8). Değerleri (aday SHA, derleme özetleri, dosya listesi) koordinatör verir; D-5 paket ve pin dosyalarının tek yazarı CLIENT'tir | aday kesinleşince | birleştirme yetkisi |
+| 6 Tek deneme | Preflight → **QrTest** (pin değiştiği için yeniden) → Run (tek gönderim) → pencere kapanmadan dokuz beyan sorusu → manifest. Otomatik ikinci gönderim, ikinci Run ya da Recover **yok** | **başlatılmadı** | yeni D-5 GO'su · alıcı adresi (yalnız konsol) · tek gönderim onayı |
 
 Kabul ölçütü değişmez: Run çıkış 0 **ve** owner beyanı. Çıkış 3 kabul değildir. E-posta teslimi makineyle ölçülmez; yalnız owner
 beyanıdır. Token'ın veritabanına yazılması teslimi kanıtlamaz.
 
-Alternatif (yayınsız yeni deneme): canlı R27 değişmeden yeni GO ile deneme. Kök neden UNKNOWN olduğu için aynı sonuç yeni bir GO ve
-gönderim onayını tüketerek tekrarlanabilir ve yine teşhis satırı oluşmaz. **Önerilmez**; karar owner'ındır (§11 KR-2).
+Yayınsız yeni deneme seçeneği **kapandı**: owner 2026-10-03 kararıyla web düzeltmesi yeni D-5 denemesinden önce yayında olacak ve
+elle yazma talimatı ürün düzeltmesinin yerine kabul edilmez (§11 KR-2, KR-3).
 
 ## 4. D-6 / D-7 — Run, normal kapanış ve ayrı Recover sınırları
 
@@ -153,6 +168,21 @@ merge edilince 73/73 ve 64/64 olur ve o satırlar ayrıca güncellenir (D-7'nin 
   silinmesi ya da ikinci Recover **owner kararıdır** (§11 KR-5).
 - D-7'de kurulum ile makbuz arasındaki pencerede hata olursa makbuz oluşmaz ve bu bloktan Recover koşulamaz; yapılacak iş owner /
   CLIENT kararıdır (paket belgesi; çözüm tanımlı değil).
+
+### 4.4 Kapanış eksiklerinin giderilmesi (R03 — 2026-10-03)
+
+Owner'ın istediği dört sınır kaynakla değerlendirildi. Yalnız uyarı metni eklemek çözüm sayılmadı; koşucuya dar düzeltme ve izole hata
+senaryosu hazırlandı. Yeni canlı Run / Recover başlatılmadı; normal Run kapanışı ile ayrı Recover yetkisi ayrı tutuldu.
+
+| Sınır | Değerlendirme | Durum |
+|---|---|---|
+| Personel oturumu kapanışta geçersizleşirse | **kusur gerçek**: Run kapanışı oturum yenilemiyor, yetkili uç reddederse portal açık kalıyor (çıkış 6). Düzeltme: 401/403'te aynı sentetik personelle **bir** kez yeniden giriş + tek yeniden deneme. Canlıya ek etkisi kaynaktan okundu (giriş uç noktası veritabanına yazmaz; bellekteki giriş hız sınırı sayacı +1); canlıda ölçülmedi | D-6: **yerelde hazır** (öz-test 62/62; yeni senaryolar eski koşucuda düşüyor) · D-7: sırada |
+| D-7'de makbuz yazılmadan yarım kalan kurulum | kurulumdan sonraki iki ek yazma makbuzdan önce geliyor; hata olursa makbuz yok, kapanış "kapatılacak bir şey yok" sayıyor | **sırada** (D-7 kapanış düzeltmesi; makbuzun kurulumdan hemen sonra yazılması + izole hata senaryosu) |
+| D-6 depolama erişim hatası ile doğrulanmış kalıntının ayrılması | **kusur gerçek**: erişim hatası doğrulanmış kalıntıyı gizleyebiliyor ya da FAIL'e çevrilebiliyordu. Düzeltme: doğrulanmış kalıntı FAIL, erişim hatası ÖLÇÜLEMEYEN + ayrı neden; kanıtta ayrı `durum` alanı. Kapanış bağlamında ikisi de çıkış 6 verir (kapanış doğrulanmamıştır) — ayrı çıkış kodu istenip istenmediği **OK-5 owner kararı** | D-6: yerelde hazır |
+| Kapanış metninin yalnız ölçüleni söylemesi | **kusur gerçek**: kanıttaki bazı kurtarma / kapanış metinleri ölçülmemiş şeyi iddia ediyor ya da ikinci Recover'a yol tarif ediyordu; düzeltildi ("ÖNERİ — yetki değil"). Bağımsız doğrulama bir **major** buldu: kapatma hiç yapılmadığında koşucunun kendi oturumunun açık kalması yanlışlıkla "ürün bulgusu — Recover düzeltemez" diye yazılıyor ve owner'ı açık kalan portalı kapatmaktan alıkoyabilir (R02'den kalma) | D-6: **major düzeltilmeden yayımlanmayacak**; CLIENT yuvası sırası: portal → F1 → D-6 → D-7 |
+
+Pinler: D-6 koşucusu değiştiği için bloğun pin listesi, paket digest'i, blok ve blok öz-testi özetleri birlikte değişti (blok öz-testi
+iki kabukta yeşil); belge güncellendi. Değerler PR açılırken paket belgesindedir.
 
 ## 5. D-8 sondası — 46 isteğin kapsamı, yan etkiler, kapsam boşluklarının kabule etkisi (**çalıştırılmadı**)
 
@@ -219,6 +249,16 @@ beyanıdır.
 revizyonu yolunda pin, öz-test ve belge birlikte değişir ve koşum ondan sonra yapılır. SEC-API-BIND-01 açıkken D-8 sonucu ayrıca
 "dışarıdan erişilemez" diye genellenmez (§8).
 
+**R03 (2026-10-03):**
+- **Diğer ana makine adları (D8-E3)** kısıtlı yerel envanterde belirlendi (tünelin yerel ölçüm ucundan salt okuma; adlar depoya
+  yazılmaz): birincil addan başka **bir** adlı ad daha var; ikisi de aynı yerel kenar servisine yönlenir, yol kısıtı yok; diğer
+  her ad 404 döner. Kenarın iki ad için aynı filtreyi uygulayıp uygulamadığı **ölçülmedi** (canlı kenar yapılandırmasının şablonla
+  eşitliği zaten D8-E6'dır). Kapsam owner kararıdır: (a) sonda her iki ad için ayrı koşulur; (b) "kapsam = yalnız birincil ad"
+  diye kayda geçer — o durumda diğer ad için "dışarıdan kapalı" denmez.
+- **HEAD / OPTIONS ve 18 kodlama varyantı (D8-E1 / D8-E2)** sondaya alınacak; gerçek istek sayısı, yan etkiler, öz-test ve pinler
+  birlikte güncellenecek. İş CLIENT yuvasında D-6 / D-7 kapanışından sonra sıradadır; canlı sonda çalıştırılmayacak. 403 sonucu
+  kesin katman kanıtı sayılmaz.
+
 Diğer sınırlar (minor; koşumu engellemez; kimlikler bu belgede tanımlıdır): uygulama katmanını ayırt eden başlık kanıta alınmıyor
 (D8-E4) · 403 dışı kenar hataları "bulgu" diye sınıflanır, dış zincir ön ölçümü yok (D8-E5) · canlı kenar yapılandırmasının
 şablonla eşitliği ölçülmüyor (D8-E6) · dış ağdan makine koşumu yok (D8-E7) · blok kanıtı mühürlemiyor (D8-E8) · telefon beyanı
@@ -256,9 +296,9 @@ Bu bölümde "R27 §10 K-n" R27 paket belgesinin karar numaralarıdır; bu belge
 | **H3 Vekâlet** | yok (teknik: İ10 `c9b07bcb` 10/0/0) | yok — ölçüt kümesi tamam; ölçülmeyen yollar beyanda "kapsam dışı" yazılmalı | **beyan taslağı hazır** | — (vekâlet yolları yayın adayı taslağında değişmiyor [Ö]) | owner beyanı imzalar | **imza + bir seçim**: ölçülmeyen kalemler "kabul dışı" mı, "ayrı canlı ölçüm" mü. İkincisi seçilirse H3 yalnız imzayla kapanmaz (§11 KR-12) |
 | H4 Talimat/beyan/rıza | yok (teknik: `e28c5c06` 14/14) | H4-08 gerçek yayın ayağı gerçek sağlayıcıyla ölçülmedi | hüküm bekliyor | R27 §10 K-12; H6 beyanıyla çelişmemeli | hüküm → beyan | H4-08 hükmü · imza (§11 KR-12) |
 | H5 Bilgi/belge toplama | yok (dar kabul `dda5d8c3` hizmet kabulü **değildir**) | — | hüküm bekliyor | R27 §10 K-13 | ayrı hizmet-kabulü satırı | R27 §10 K-13 · B-I11-2 hükmü (§11 KR-12) |
-| **H6 Gönderim** | yok (teknik: İ12 `92d04ef3` 17/17; bağımsız doğrulama 10/10) | yok — ölçüt kümesi tamam; gerçek alıcı/sağlayıcı ölçülmedi (test alıcısı) | **beyan taslağı hazır** | **yayın kapsamı**: yayın adayı taslağı finansal beyan modülünde 4 test dışı dosyayı değiştiriyor [Ö] — yayınlanırsa beyanın 4. maddesi gereği kabul yeniden değerlendirilir | owner beyanı imzalar | imza — yayından önce mi sonra mı (§11 KR-12, KR-8) |
+| **H6 Gönderim** | yok (teknik: İ12 `92d04ef3` 17/17; bağımsız doğrulama 10/10) | yok — ölçüt kümesi tamam; gerçek alıcı/sağlayıcı ölçülmedi (test alıcısı) | **beyan taslağı hazır** | **yayın adayına karşı yeniden değerlendirildi (§7.1)**: aday yayın yetkisine kilit + görüntüleyici reddi ekliyor; G1–G7 davranışı değişmiyor; adaydaki odak testleri yeşil [K] | owner beyanı imzalar | imza — yayından önce mi sonra mı (§11 KR-12) |
 | H7 Portal | yok (teknik: İ16 `6b883b16` 12/12, R25B) | tazelik: ölçümden sonra portal kodu değişti; H7-05b · K-1 yazma matrisi (portal ölçütü) · PSUS yalnız tek kullanımlık ortamda | hüküm bekliyor | R27 §10 K-12 ve K-11; D-5 tamamlanmadı | hüküm → beyan | hükümler · tazelik · "D-5 tamamlanmadan imzalanır mı" (§11 KR-12) |
-| **H8 Muhasebe kayıt kapanışı (F04)** | yok (teknik: İ15 `1b83637a` 5/5; bağımsız doğrulama 7/7; test kanıtı 10/10) | yok — ölçüt kümesi tamam; **canlı yarış testi değildir** | **beyan taslağı hazır** | **yayın kapsamı**: yayın adayı taslağı kayıt modülünde 10 test dışı dosyayı değiştiriyor [Ö] — yayınlanırsa test kanıtı o kaynakta yenilenmeden kabul geçerli sayılmaz | owner beyanı imzalar | imza — yayından önce mi sonra mı (§11 KR-12, KR-8) |
+| **H8 Muhasebe kayıt kapanışı (F04)** | yok (teknik: İ15 `1b83637a` 5/5; bağımsız doğrulama 7/7; test kanıtı 10/10) | yok — ölçüt kümesi tamam; **canlı yarış testi değildir** | **beyan taslağı hazır** | **yayın adayına karşı yeniden değerlendirildi (§7.1)**: aday muhasebeleştirme işlemine yetki kilidi ekliyor; yedi senaryoluk test kanıtı adayda **yenilendi** (10/10 [K]) | owner beyanı imzalar | imza — yayından önce mi sonra mı (§11 KR-12) |
 
 **"Yalnız imza bekliyor" iddiası kayıt düzeyinde doğrulandı — H6 ve H8 için yalnız imza; H3 için imza + bir seçim.** Üçünde de
 bekleyen ayrı hüküm (R27 §10 K-12 kalemi) yoktur. Ölçüt, tamamlanmış kanıt, sınırlar, kaynak tazeliği (ölçümü belirleyen kaynak
@@ -266,6 +306,44 @@ dosyalarda ölçüm kaynağı → canlı R27 arasında 0 fark; kapsam beyan belg
 `H3-H6-H8-OWNER-BEYAN-TASLAKLARI-R01.md`. Taslaklar imzalanmadıkça sayaç **0/8** kalır.
 
 `office-remaining-decisions-r01` §4'teki toplu metin olduğu gibi imzalanmamalıdır (açık kalemleri örtük kabul ettirir).
+
+### 7.1 H6 / H8 — yayın adayında değişen davranışlara karşı (R03)
+
+Aday taslağı (`1b758d29` + yedi güvenlik teslimi; koordinatörün doğrulama kaydı) H6 ve H8'in dayandığı modüllerde şunları değiştirir
+[Ö, `git diff`]:
+
+| H | Adaydaki değişiklik | H ölçütlerine etkisi | Adaydaki odak kanıtı [K] |
+|---|---|---|---|
+| H6 | finansal beyan **yayınında** yetkili aktör satırları kilitlenir ve görüntüleyici reddedilir; ilgili denetleyicilere görüntüleyici yazma engeli eklenir | G3/G6 yayın yolunda yetki kararı artık iptalle serileşir; İ12'deki yayın aktörü yetkiliydi → beklenen davranış aynı. G1/G2 (bilgi talebi), G4/G5 (durum / sağlayıcı), G7 (aylık ekstre, modül değişmedi) etkilenmez | finansal beyan yayını 26/26 · onayı 29/29 · uçtan uca 6/6 · bilgi talebi sağlayıcı sonucu 6/6 |
+| H8 | muhasebeleştirme işleminde, ilk finansal yazımdan önce yetkili aktör kilidi; denetleyiciye görüntüleyici yazma engeli | KABUL-5 (başka büronun dağıtımı → 404) önceki adımda kalır; kilit sırası değiştiği için yedi senaryoluk yarış kanıtı **adayda yeniden koşuldu** | tahsilat / iptal yarışı (yedi senaryo + A2, C, 5) **10/10** · muhasebeleştirme servisi birim testi yeşil |
+
+Bu sonuçlar koordinatörün aday doğrulama koşusundandır (tek kullanımlık veritabanı; depoya alınmadı) ve bu çalışmada yeniden
+koşulmadı. Eski kabul taslağı yeni sürüme **otomatik taşınmaz**: H6 / H8 beyanları canlı R27 için yazılmıştır; aday yayınlanırsa
+beyanın 4. maddesi gereği owner, adaydaki bu kanıtla yeniden değerlendirir.
+
+### 7.2 H1 / H2 / H4 / H5 / H7 — kalan kararlar günlük dille
+
+Hiçbir seçenek bu belgede seçilmedi.
+
+- **H1 Kimlik — B-2 ve tazelik.** Bugün: müvekkil kaydını kapatma / yeniden açma gibi işlemler reddedildiğinde sistem "yetkiniz yok"
+  der ve hiçbir şey yazmaz, ama ret yanıtında ekranın ya da başka bir sistemin nedeni ayırt edebileceği sabit bir kod yoktur.
+  Ölçümden sonra müvekkil oluşturma kodu değişti (#2645) ve canlı R27'de yeniden ölçülmedi. Seçenekler: (a) sabit kodu "sonraki ürün
+  işi" sayıp imzala — kullanıcı reddi yine görür, yalnız otomatik ayırt etme sonraya kalır; (b) önce sabit kod eklensin — küçük ürün
+  işi + yayın. Tazelik: mevcut ölçüm yeterli sayılır ya da canlı R27'de dar yeniden ölçüm (yeni GO) yapılır.
+- **H2 Adres ve iletişim — KB-03.** Bugün: iletişim kişileri tek tek eklenip silinmez; liste her kayıtta bütün olarak yeniden
+  yazılır ve canlıda doğru çalıştığı ölçüldü. Seçenekler: (a) böyle kalsın — iki ekrandan aynı anda düzenlenirse sonuncu kazanır;
+  (b) ayrı ekle / sil / düzelt işlemleri yapılsın — ürün işi + yayın, H2 sonra yeniden ölçülür.
+- **H4 Talimat / beyan / rıza — H4-08.** Bugün: finansal beyanın gerçek yayını yalnız onaylı e-posta sağlayıcısıyla yapılabilir; bu
+  canlıda yeniden koşulmadı, H6'nın test alıcısına yaptığı gönderim kanıtına bağlandı. Seçenekler: (a) bağlı kanıt yeterli — H6'daki
+  "gerçek sağlayıcı ölçülmedi" sınırı H4'e de yazılır; (b) gerçek sağlayıcıyla ayrı canlı ölçüm — gerçek gönderim ve yeni GO ister.
+- **H5 Bilgi / belge toplama — B-I11-2 ve ayrı satır.** Bugün: dışarıdan gelen bilgi formu çalışıyor; gelen bilgiyi ana kayda aktarma
+  yetkisiz kişide reddediliyor ama ret yanıtında sabit kod yok (H1 ile aynı sınıf). H5 toplu imza metnine dahil değil, ayrı imza
+  satırı ister. Seçenekler: sabit kodu sonraki iş say ya da önce ekle; ardından H5 için ayrı imza.
+- **H7 Portal — test ortamı kanıtı ve tazelik.** Bugün: portalın dört ret nedeni, müvekkilin dosya referansıyla yazma denemeleri ve
+  askıya alınmış büroda portalın kapanması yalnız tek kullanımlık test ortamında ölçüldü (canlıda üretmek canlı bir büroyu askıya
+  almayı ya da canlı yükleme yapmayı gerektirir). Ölçümden sonra portal kodu değişti; #2884 ve #2900 da portalı değiştiriyor.
+  Seçenekler: (a) test ortamı kanıtı yeterli; (b) yazma denemelerini D-6 canlı koşumuna bağla. Portal değişiklikleri yayınlanmadan
+  imza verilirse imza bugünkü canlı portala aittir. "D-5 tamamlanmadan H7 imzalanır mı" ayrı sorudur.
 
 ## 8. Güvenlik işleri
 
@@ -276,9 +354,9 @@ Bu çalışma açık bulguları topluca kapatmadı.
 
 | Kimlik | Mevcut kabul / durum | Eksik kanıt | Hazırlık durumu | Bağımlılık / etkilediği adım | Sonraki işlem | Gerekli owner kararı |
 |---|---|---|---|---|---|---|
-| **SEC-PORTAL-REQ-01** | risk kabulü **yok** (R27 kabulü genişletilmedi) · AÇIK | canlıda ölçülmedi | yama hazır (#2884); merge edilmedi, canlıda değil | portal giriş ve sıfırlama talebi; portal hesabı açma; D-5 yeni denemesi | merge → yayın | KR-7, KR-8 |
+| **SEC-PORTAL-REQ-01** | risk kabulü **yok** (R27 kabulü genişletilmedi) · AÇIK (canlıda) | canlıda ölçülmedi | yama **`main`'de** (`be08dbe9`) ve yayın adayında; canlıda değil | portal giriş ve sıfırlama talebi; portal hesabı açma; D-5 yeni denemesi | aday doğrulaması → yayın | KR-8 |
 | SEC-PORTAL-REQ-01-K1 | risk kabulü yok · AÇIK (kalan risk; #2884 kapatmaz) | — | yama yok | portal hesabı açma | ayrı iş | KR-4 |
-| SEC-PORTAL-REQ-01-K2 | risk kabulü yok · AÇIK (önceden var) | canlı sayım yapılmadı | yama yok | portal girişi ve sıfırlama talebi | sayım → karar | KR-4, KR-6 |
+| SEC-PORTAL-REQ-01-K2 | risk kabulü yok · AÇIK (önceden var) | canlı salt okuma sayımı yapıldı (2026-10-03): bugün etkilenen **aktif hesap 0** | yama yok | portal girişi ve sıfırlama talebi | politika kararı | KR-4 |
 | SEC-PORTAL-REQ-01-K3 | KOŞULLU | — | yayın paketinde ele alınır | #2884 yayını | yayın paketi | KR-8 |
 | SEC-PORTAL-REQ-01-K4 | risk kabulü yok · AÇIK (önceden var; #2884 dışında) | — | yama yok | portal hesabı açma ve kapatma | ayrı iş | KR-14 |
 | SEC-STAFF-XFF-01 | risk kabulü yok · AÇIK | ek ölçüm gerekir | yama yok | D-8 sonda vektörü 06; yayın sonrası ürün düzeltmesi | ek ölçüm + ayrı yama | KR-14 |
@@ -291,52 +369,67 @@ Bu çalışma açık bulguları topluca kapatmadı.
 | B3H-1 / B3H-2 / B3H-3 / F1 | KAPANDI (betik düzeyi, #2862) | canlı B3 koşulmadı | — | B3 | — | — |
 | R27 §10 K-5 · K-14 / K-15 · eski bloklardaki yerel topoloji literalleri | AÇIK | — | — | engelleyici değil / sonraki yayınlarda B0/B1 | — | KR-14 |
 
-## 9. Dört PR — kesin durum [Ö 2026-10-02 22:03Z; tek ölçüm]
+## 9. PR'lar — kesin durum [Ö 2026-10-03]
 
-| PR | İçerik | Uç | Yerel doğrulama | Durum |
+Dört PR owner'ın koşullu birleştirme yetkisiyle (bu sayfada owner'ın kendi teyidi + koordinasyon kaydındaki owner kararı KR-7)
+sırayla birleştirildi: her biri yalnız tam uç SHA eşleşince, PR denetimleri yeşilken ve `main` CI boşken (koşan / sıradaki 0), uç
+commit'e sabitli squash ile. Kanonik `main` checkout'u yalnız ileri sarılarak senkronlandı. Force-push ya da koruma atlama yok.
+
+| PR | İçerik | Uç (tam SHA eşleşti) | Birleştirme commit'i | `main` CI |
 |---|---|---|---|---|
-| #2884 | portal e-posta eşleşmesi, teşhis satırları ve hesap açma çakışma kuralı. Dış yanıtlar, şema, kayıtlı adres biçimi değişmez; migration yok. Ayrıntı PR'da ve kısıtlı kayıtta | `7bdcc533` | yeni birim + gerçek Postgres 86/86 (Türkçe yerel ayarlı veritabanında ve bağlantı havuzu 3 ile de); mutasyon 34/34 + hedefli 12/12 + 5/5; `pure/client-portal` 150 suite / 2229 test; `pure/architecture-guards` 78 / 1359. Bağımsız inceleme önceki ucun (`4d16ba6a`) CI'da **kırmızı** olduğunu buldu (eşzamanlılık testi koşucunun bağlantı havuzuna sığmıyordu; ürün davranışı değil) — test düzeltildi | açık; merge edilmedi; CI 10/10 (§10) |
-| #2880 | D-6 owner bloğu R02 + koşucu öz-testinin canlı ağaç bağımlılığının giderilmesi + belgede Run / kapanış / Recover sınırları. Koşucu ve pinli dosyalar değişmedi | `357027bb` | blok öz-testi 73/73 ×2 kabuk (belgenin son hâliyle); koşucu öz-testi commit'teki dosyayla 51/51; negatif kontroller; bağımsız doğrulama (altı küçük düzeltme uygulandı) | açık; merge edilmedi |
-| #2882 | D-7 owner bloğu R02 + koşucu öz-testinin canlı ağaç bağımlılığının giderilmesi + belgede sınırlar. Koşucu ve pinli dosyalar değişmedi | `4d368a8f` | blok öz-testi 64/64 ×2 kabuk (belgenin son hâliyle); koşucu öz-testi commit'teki dosyayla 41/41; negatif kontroller 7/7; bağımsız doğrulama (bir major + beş küçük düzeltme uygulandı) | açık; merge edilmedi |
-| bu PR (#2885) | D-5 koşum kaydı ve takip kaydı, bu tablo, H3/H6/H8 beyan taslakları, bayat satır düzeltmeleri (yalnız belge) | — | bağımsız inceleme (beş major + on dört küçük bulgu; hepsi bu metinde ele alındı) | açık; merge edilmedi |
+| #2880 | D-6 owner bloğu R02 + öz-test bağımsızlığı + belge sınırları | `357027bb` | `6744abff` | yeşil |
+| #2882 | D-7 owner bloğu R02 + öz-test bağımsızlığı + belge sınırları | `4d368a8f` | `0e04f4a6` | yeşil |
+| #2884 | portal e-posta eşleşmesi + teşhis satırları + hesap açma çakışma kuralı (API; migration yok). Commit gövdesi düzeltilmiş özetle verildi (eski "SMTP değil" ifadesi `main`'e taşınmadı) | `7bdcc533` | `be08dbe9` | yeşil |
+| #2885 | D-5 koşum kaydı, kalan işler tablosu R02, H3/H6/H8 beyan taslakları (yalnız belge) | `a2e7dae5` | `5477a073` | yeşil |
+| #2900 | PORTAL-RESET-FORM-01 — üç portal formu (yalnız web); owner'ın teslim yetkisiyle (IF GO-COMPLETE) | `281fd9d4` | `8b9a9989` | yeşil |
+| #2902 | F1 — şifre sıfırla sayfaları geliştirme ortamında token kaybetmez (yalnız web; güvenlik adayına eklenmez) | açık | — | PR denetimleri koşuyor; birleştirme sırası koordinatörde |
+| bu PR | R03 güncellemesi + D-5 takip kaydı (2) (yalnız belge) | — | — | — |
 
-**Hiçbiri merge edilmedi; hiçbiri canlıda değil.** Merge owner kararıdır.
+Koordinatörün sıralama isteğiyle #2899 (OFFICE) #2884 ile #2885 arasında birleştirildi.
 
 ## 10. Hazırlık hükmü
 
 | Ölçüt | Durum |
 |---|---|
-| D-5 teşhisi kanıtın taşıdığı düzeyde yazıldı | karşılandı (§3.1); kök neden UNKNOWN, dört aday kayıtlı |
-| Dört PR'ın CI'ı | **karşılandı — ölçüm 2026-10-03 07:12Z**: #2880 (`357027bb`), #2882 (`4d368a8f`), #2884 (`7bdcc533`) ve #2885 (`88348662`) 10/10 başarılı, birleştirilebilir. #2884'te `db/domain-integration`, `pure/architecture-guards` ve `pure/client-portal` adımlarının bu uçta koştuğu ayrıca doğrulandı (önceki uç `4d16ba6a` kırmızıydı; test düzeltildi). Bu satırı taşıyan commit'in kendi CI'ı push'tan sonra koşar |
-| D-6 / D-7 doğrulaması teslim edilen dosyalarla tekrarlanabilir | karşılandı (§4.1) |
-| #2884 açık soruları | kanıtlandı ya da yamalandı; kalan riskler kısıtlı kayıtta kimlikleriyle duruyor; **ürün politikası kararı açık** (§11 KR-4) |
-| D-5 koşumu `00c96bd5` kanıt bütünlüğü | **AÇIK — tamamlanamaz**: manifest yok; pencere kapandı; iki owner beyanı eksik (§3.2) |
+| Dört PR'ın birleştirilmesi ve birleştirme commit'lerinin `main` CI'ı | **karşılandı** — dört PR birleştirildi; dört birleştirme commit'inin `main` CI'ı (CI · Push on main · GOV-COORD-V2) yeşil; kanonik `main` senkron |
+| D-5 teşhisi kanıtın taşıdığı düzeyde | karşılandı (§3.1); kök neden UNKNOWN, dört aday |
+| D-5 tarihsel kanıt paketi | **eksik kalır** (manifest yok, üretilmez); takip kayıtlarıyla kapatıldı; bağımsız hazırlığı bekletmez |
+| API düzeltmesi (#2884) | `main`'de; adaya alındı (`f69783af`), adaydaki saf testleri 116/116 [K] |
+| Web düzeltmesi (#2900) | üretim derlemesinde doğrulandı; `main`'de (`8b9a9989`, main CI yeşil); aday uyarlaması koordinatörde |
+| Yayın adayı (API + web) | **hazır değil** — birleşik aday doğrulaması koordinatörde sürüyor; canlı yayın GO'su yok |
+| D-6 kapanış düzeltmesi | yerelde hazır; bağımsız doğrulamanın **major** bulgusu açık |
+| D-7 kapanış düzeltmesi · D-8 sonda revizyonu | sırada |
 | Canlı kabul | **eksik**: D-5, D-6, D-7, D-8 (kısmi), birleşik D-9; H1–H8 0/8 |
 
-**Hüküm: HAZIRLIK GO-COMPLETE DEĞİL.** Açık madde: D-5 koşumu `00c96bd5` kanıt bütünlüğü — manifest yok ve bu koşum için üretilemez; iki owner beyanı eksik. CI (dört PR) ve teslim dosyalarının doğrulaması (D-6 / D-7 öz-testleri, #2884 testleri) tamamdır.
+**REPO TESLİMİ (dört PR): GO-COMPLETE** — birleştirmeler ve birleştirme sonrası `main` CI'ları yeşil.
+
+**HAZIRLIK TAMAM** olan paketler: #2884 API düzeltmesi (`main`'de, adaya alındı) · PORTAL-RESET-FORM-01 web düzeltmesi (#2900,
+`main`'de; üretim derlemesinde doğrulandı). Yayın adayı (API + web birleşik) **henüz hazır değil** — doğrulaması koordinatörde.
+D-6 / D-7 kapanış hazırlığı ve D-8 sonda revizyonu **tamamlanmadı** (§4.4, §5).
 
 **CLIENT GENEL KABUL TAMAMLANMADI** (canlı kabul eksik: D-5, D-6, D-7, D-8, birleşik D-9; hizmet kabulü 0/8).
 
 ## 11. Tek owner karar listesi (KR-n; R27 paketinin K-n numaralarından ayrıdır)
 
+**Kapanan kararlar (R03):** KR-1 (iki beyan alındı, takip kaydında) · KR-2 ve KR-3 (owner 2026-10-03: web düzeltmesi yeni D-5'ten
+önce yayında; yayınsız deneme ve elle yazma talimatı kapandı) · KR-6 (sayım yapıldı: aktif hesap 0) · KR-7 (dört PR birleştirildi)
+· KR-8'in hazırlık kısmı (aday kapsamı genişletildi; tek yazar yayın koordinatörü).
+
 | # | Karar | Seçenekler / not | Ne zaman |
 |---|---|---|---|
-| KR-1 | D-5 koşumu `00c96bd5` için iki eksik beyan | (i) telefon hangi ağdaydı · (ii) koşum bittikten sonra telefondaki sayfa yenilenince ne görüldü. Yanıtlar takip kaydına işlenir; kanıt paketi yine manifestsiz kalır | ilk fırsatta |
-| KR-2 | D-5 yol seçimi | **A (önerilen)**: #2884 merge → yayın → pin PR'ı → yeni GO ile tek deneme (§3.3) · **B**: yayınsız yeni deneme (önerilmez) | D-5'ten önce |
-| KR-3 | D-5 web tarafı adayı (A2) | (a) sıfırlama sayfası düzeltmesi yayın kapsamına alınır (ayrı iş; seçenekleri ayrı ölçüm kaydında) · (b) düzeltme olmadan tek denemede owner adımı: sayfa tam yüklendikten sonra adres elle yazılır · (c) okunmamış kaynaklar (kenar günlüğü, sağlayıcı kayıtları) önce okunur | D-5'ten önce |
-| KR-4 | SEC-PORTAL-REQ-01-K1 ve K2 için ürün politikası kararı | seçenekler ve etkileri kısıtlı kayıttadır; owner'a doğrudan sunulur (public belgeye yazılmaz) | #2884 yayınından önce |
-| KR-5 | D-6 / D-7 Recover kuralı | ayrı onayın nasıl verilip kaydedileceği · ikinci Recover gerekirse yol · D-6 kalıntısında sıra · D-7'de makbuzsuz yarım kurulumda yapılacak iş · yayın ile D-6/D-7 sırası · paket belgelerindeki açık kararlar (D-6 OK-1…OK-4; D-7 K-4…K-7) | D-6/D-7 koşumundan önce |
-| KR-6 | Canlı veritabanında salt okuma **sayımı** (SEC-PORTAL-REQ-01-K2; adres yazılmaz, yalnız sayı) | yap / yapma | #2884 yayınından önce (isteğe bağlı) |
-| KR-7 | Merge onayları: #2884, #2880, #2882, #2885 | inceleme sonrası; `main` CI boşken, uç commit'e sabitli | — |
-| KR-8 | Yayın: aday kapsamı (#2884 hangi adaya girer; A2 düzeltmesi girer mi) + yayın hazırlığı GO'su + yayın GO'su | yayın planı seçenekleri koordinasyon kaydındadır. Aday H6/H8 modüllerini değiştirirse o beyanlar yeniden değerlendirilir (§7) | KR-2 = A ise |
-| KR-9 | D-8: GO + D8-E1/E2/E3 (§5) + katman `unknown` iken PASS'in kabulü + R27 sonrası telefon beyanının yenilenmesi | sınır kaydıyla dar kabul / sonda revizyonu | D-8 koşumundan önce |
-| KR-10 | D-6: GO · telefon yüklemesi yapılsın mı · kalıcı izlerin kabulü · belge onay/ret akışı ayrı paket mi | — | D-6 koşumundan önce |
+| KR-4 | SEC-PORTAL-REQ-01-K1 ve K2 için ürün politikası | seçenekler ve sonuçları owner'a doğrudan sunuldu (public belgeye yazılmaz); bugün etkilenen aktif hesap 0 | yayından önce |
+| KR-8 | Yayın GO'su | doğrulanmış nihai aday, açık riskler ve geri dönüş planı koordinatörden somut paket olarak gelir | aday hazır olunca |
+| KR-5 | D-6 / D-7 Recover kuralı ve açık paket kararları (D-6 OK-1…OK-5; D-7 K-4…K-7) | ayrı onayın kaydı · ikinci Recover · D-6 kalıntısında sıra · D-6 kalıntı bağlamında ayrı çıkış kodu (OK-5) · D-7 makbuzsuz yarım kurulum · yayın ile D-6/D-7 sırası | D-6/D-7 koşumundan önce |
+| KR-17 | D-6 R03: Run kapanışında 401/403'te tek yeniden giriş | aynı sentetik personel, veritabanı yazması yok; canlıya ek etkisi giriş hız sınırı sayacı +1 (kaynaktan okundu) — Run'ın kendi kapanış yetkisi içinde sayılır mı | D-6 PR'ı birleştirilmeden önce |
+| KR-18 | Portal formları (#2900, `main`'de) küçük görünür değişiklikler | başarılı girişte düğme yönlendirme bitene dek "Giriş yapılıyor..." kalır — kabul edilmezse küçük takip düzeltmesi · API tarafında giriş / şifremi unuttum gövde doğrulaması ayrı iş olarak açılsın mı | yayından önce (ilki) / herhangi bir zaman (ikincisi) |
+| KR-9 | D-8: GO + ad kapsamı (birincil ad / iki ad) + katman `unknown` iken PASS'in kabulü + R27 sonrası telefon beyanının yenilenmesi | §5 R03 | D-8 koşumundan önce |
+| KR-10 | D-6: GO · telefon yüklemesi · kalıcı izlerin kabulü · belge onay/ret akışı ayrı paket mi | — | D-6 koşumundan önce |
 | KR-11 | D-7: GO · kalan mesaj/bildirim satırları "saklandı" · SEC-PORTAL-ADMIN-MSG-01 açıkken koşum teyidi · kapsam dışı dosya referansında 400'ün ölçüt sayılması | — | D-7 koşumundan önce |
-| KR-12 | H beyanları: H6 · H8 taslaklarının imzası; H3 imza + seçim · H1/H2/H4/H7 hükümleri (R27 §10 K-12) · H5 için ayrı satır (R27 §10 K-13) | taslaklar: `H3-H6-H8-OWNER-BEYAN-TASLAKLARI-R01.md`; H6/H8 için yayın sırası (KR-8) | herhangi bir zaman |
-| KR-13 | Birleşik D-9: `00c96bd5` kapanışı D-5 bileşeni sayılır mı | varsayılan: **hayır** | D-9 kaydından önce |
+| KR-12 | H beyanları: H6 · H8 imzası (yayından önce mi sonra mı); H3 imza + kapsam seçimi (açık bırakıldı) · H1 / H2 / H4 / H5 / H7 hükümleri (§7.2, günlük dille) | taslaklar: `H3-H6-H8-OWNER-BEYAN-TASLAKLARI-R01.md` | herhangi bir zaman |
+| KR-13 | Birleşik D-9: `00c96bd5` kapanışı D-5 bileşeni sayılır mı | varsayılan: **hayır** (bu kayıtta da yeterli sayılmadı) | D-9 kaydından önce |
 | KR-14 | Güvenlik öncelikleri: SEC-MAIL-LOG-01 · SEC-STAFF-XFF-01 / SEC-API-BIND-01 kalıcı düzeltme · SEC-PORTAL-ADMIN-MSG-01 · SEC-PORTAL-REQ-01-K4 · FRK-1 · LS-1 · R27 §10 K-5 / K-14 / K-15 | — | herhangi bir zaman |
-| KR-15 | Sıradaki blok/koşucu revizyonlarının kapsamı (hepsi pin değiştirir; canlı koşumu engellemez): D-7 kapanış satırının yalnız ölçüleni yazması · D-6 koşucusunda kova erişim reddinin ÖLÇÜLEMEYEN sayılması · koşucuların kanıta yazdığı kurtarma adımı metni · D-6 blok metnindeki eksikler | — | herhangi bir zaman |
-| KR-16 | Public depodaki dal commit'lerinde görünen yazar adresi | dal commit'leri yerel git yapılandırmasındaki adresle yazılıyor; bu adres `main`'deki commit'lerde görünen adresten farklı türdedir (adres bu belgeye yazılmaz). Geçmiş yeniden yazılmaz (force-push yok); karar yalnız ileriye dönüktür | herhangi bir zaman |
+| KR-15 | Sıradaki blok revizyonlarının kapsamı: D-7 kapanış satırının yalnız ölçüleni yazması · D-6 blok metnindeki eksikler (OK-4) | — | herhangi bir zaman |
+| KR-16 | Public depodaki dal commit'lerinde görünen yazar adresi | dal commit'leri yerel git yapılandırmasındaki adresle yazılıyor; adres bu belgeye yazılmaz; yalnız ileriye dönük karar | herhangi bir zaman |
 
 ## 12. Bayat satır düzeltmeleri
 
@@ -353,6 +446,10 @@ Bağımsız inceleme (salt okuma, 2026-10-03) bu belge kümesinde beş major ve 
 karar kimlikleri R27 paketinin numaralarından ayrıldı (KR-n) · D-5 aday listesine web tarafı adayı ve okunmamış kaynaklar eklendi ·
 güvenlik tablosu altı sütuna çekildi ve teknik ayrıntı çıkarıldı · H3 / H6 tazelik kanıtının kapsamı düzeltildi · küçük bulgular
 (D-8 sınır tanımları, gövde ifadesi, QrTest adımı, yayın bağımlılığı, kayıt atıfları) işlendi.
+
+R03'te düzeltilenler: §3.1'deki "teşhis satırının yokluğu bir sonraki denemede API'ye ulaşmadığını gösterir" ifadesi
+(günlük kapsamı doğrulanmadan UNKNOWN kalır) · #2884'ün teşhis katkısının uçtan uca izleme gibi sunulması · D-5 sırasındaki
+"elle yazma" owner adımı (owner kararıyla kaldırıldı) · PR durumları ve karar listesi.
 
 Düzeltilmeyenler (bilinçli): `decision-log.md`'ye satır eklenmedi (owner kararı kaydı değildir) · `H1-H8-ACIK-OLCUTLER-R01.md`
 içindeki kaymış `product-backlog.md` satır atıfları (ayrı iş).

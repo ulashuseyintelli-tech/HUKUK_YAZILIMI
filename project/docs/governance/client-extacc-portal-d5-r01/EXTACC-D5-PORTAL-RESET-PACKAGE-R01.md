@@ -324,7 +324,9 @@ Beş dosyada üç kodlamayla sır taraması: gerçek e-posta adresi 0 · GO lite
 **Eksik ve artık blok tarafından üretilemez:** `owner-declaration.json`, `d5-combined-verdict.json`, `SHA256-MANIFEST.txt`. Blok bu üç
 dosyayı koşum sonunda, owner 9 beyan sorusunu yanıtladıktan sonra yazar. Sorular yanıtlanmadan pencere kapandı: 2026-10-02 ölçümünde
 pencere süreci yoktu ve makine 2026-10-02 02:56'da (TSİ) yeniden başlamıştı. Bu dosyalar **üretilmiş gibi gösterilmez**; yeni Run
-başlatılmadı. Manifest olmadığı için bu koşumun kanıt paketi **tamamlanmış sayılmaz**. Takip kaydı: `D5-RUN-00C96BD5-TAKIP-20261002.md`.
+başlatılmadı. Manifest olmadığı için bu koşumun kanıt paketi **tamamlanmış sayılmaz**. Takip kayıtları: `D5-RUN-00C96BD5-TAKIP-20261002.md`
+ve `D5-RUN-00C96BD5-TAKIP-20261003.md` (2026-10-03: iki eksik beyan sonradan alındı, beş dosyanın özet envanteri koşum sonu
+değerleriyle aynı, dokuz sorunun açık beyan / çıkarım ayrımı; koşum D-5 yeniden kabulü ve birleşik D-9 için yeterli sayılmaz).
 
 Owner beyanı (2026-10-01; çalışma oturumunda iletildi; blok dosyası **değildir**) [O]: telefonda ilk QR üzerinden sıfırlama formu
 **bir kez** gönderildi; genel "e-posta gönderildi — bu adresle kayıtlı hesap varsa…" ekranı çıktı; posta kutusu ve istenmeyen klasörü
