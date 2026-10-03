@@ -34,6 +34,10 @@
 #          O-15 o TEK komut Windows PowerShell 5.1 VE PowerShell 7'de koşulur, üretilen dosya bloğun Recover okuma kapısından ve GERÇEK koşucunun
 #          readReceiptForRecover kapısından geçer (m4 kapı kalemi); O-16 ürün bulgusu ADAYI "ADAYIDIR" diye gösterilir (M1). Sahte koşucu kanıta record +
 #          exitCode + recovery.makbuzJson yazar (EXSTUB_STALE / EXSTUB_EV_EXITCODE / EXSTUB_SV / EXSTUB_EXPECT_COPY / EXSTUB_REAL_RUNNER).
+# R03-e  : (R03-d iki bağımsız doğrulaması, B1) O-17 — kanıttaki portalClose.acikErisim (açık portal erişimi, "(Recover kapatabilir)") Run sonu ekranında ürün
+#          bulgusu satırından AYRI "PORTAL ERİŞİMİ: …" satırında gösterilir; bulgu satırı onu içermez. Sahte koşucu EXSTUB_ACIK ile acikErisim yazar. PIN-1 yeni
+#          koşucu pini + $ExpPackage ile. R03-d blok baytlarında (60b2a84d aynası) yalnız O-17 FAIL verir (satır gösterilmez; iki kabukta ölçüldü) — PIN-1
+#          aynada eski koşucu + eski pinle tutarlı olduğundan PASS.
 # KULLANIM: powershell.exe -NoProfile -ExecutionPolicy Bypass -File d6-owner-block-selftest.ps1   (ve pwsh)
 # ÇIKIŞ  : 0 hepsi PASS · 1 en az bir FAIL · 2 ölçülemedi
 $ErrorActionPreference = 'Stop'
@@ -94,7 +98,8 @@ const rcptText = JSON.stringify({ record: 'EXTACC-D6-SETUP-RECEIPT', runId: Stri
 if (process.env.D6_MODE === 'run' && process.env.D6_RECEIPT && process.env.EXSTUB_NO_RECEIPT !== '1') fs.writeFileSync(process.env.D6_RECEIPT, process.env.EXSTUB_NO_RECEIPT === 'B' ? '{"record":"BASKA"}' : rcptText);
 if (process.env.EXSTUB_EXPECT_COPY) fs.writeFileSync(process.env.EXSTUB_EXPECT_COPY, rcptText);
 if (process.env.EXSTUB_WRITE_EVID === '1') {
-  const pc = Object.assign({}, process.env.EXSTUB_DOCDURUM ? { docResidue: { durum: process.env.EXSTUB_DOCDURUM } } : {}, process.env.EXSTUB_SV ? { sessionVersion: { sinif: process.env.EXSTUB_SV } } : {});
+  const pc = Object.assign({}, process.env.EXSTUB_DOCDURUM ? { docResidue: { durum: process.env.EXSTUB_DOCDURUM } } : {}, process.env.EXSTUB_SV ? { sessionVersion: { sinif: process.env.EXSTUB_SV } } : {},
+    process.env.EXSTUB_ACIK ? { acikErisim: process.env.EXSTUB_ACIK } : {});   // R03-e: açık portal erişimi (koşucu portalClose.acikErisim)
   const noRc = process.env.EXSTUB_EV_RECEIPT === '0';
   fs.writeFileSync(process.env.D6_EVID_FILE, JSON.stringify({ record: process.env.D6_MODE === 'recover' ? 'EXTACC-D6-RECOVER' : 'EXTACC-D6-PORTAL-DOCUMENTS-LIVE-RUN',
     exitCode: Number(process.env.EXSTUB_EV_EXITCODE !== undefined ? process.env.EXSTUB_EV_EXITCODE : (process.env.EXSTUB_RC || 0)), productFinding: process.env.EXSTUB_FINDING || null,
@@ -554,10 +559,24 @@ try {
   $o16Ok = ($o16a.out -eq 6 -and $o16aTxt.Contains('ÜRÜN BULGUSU ADAYI: x — bu bir ÜRÜN BULGUSU ADAYIDIR (CLIENT doğrular); kapanış PASS SAYILMAZ') -and -not $o16aTxt.Contains('bu bir ÜRÜN BULGUSUDUR') -and
             $o16b.out -eq 6 -and $o16bTxt.Contains('ÜRÜN BULGUSU: y — bu bir ÜRÜN BULGUSUDUR; kapanış PASS SAYILMAZ') -and -not $o16bTxt.Contains('ADAYIDIR'))
   Check 'O-16' 'ürün bulgusu satırı (GÖSTERİLEN): kanıtta portalClose.sessionVersion.sinif=ADAY ise "… — bu bir ÜRÜN BULGUSU ADAYIDIR (CLIENT doğrular)" ("ÜRÜN BULGUSUDUR" YOK); sınıf yoksa (P6-C2 + P6-C5 PASS iken kesin bulgu) "… — bu bir ÜRÜN BULGUSUDUR" aynen; kanıt -Encoding UTF8 ile okunur (WinPS 5.1''de Türkçe metin bozulmadan gösterilir)' $o16Ok "aday: rc=$($o16a.out) ADAYIDIR=$($o16aTxt.Contains('ADAYIDIR (CLIENT doğrular)')) · kesin: rc=$($o16b.out) BULGUSUDUR=$($o16bTxt.Contains('bu bir ÜRÜN BULGUSUDUR'))"
+
+  # ---- R03-e: O-17 (B1, blok tarafı) — kanıtta portalClose.acikErisim varsa "PORTAL ERİŞİMİ: …" AYRI satırda gösterilir; ürün bulgusu satırı onu İÇERMEZ (birleşik tek satır YOK)
+  $o17Find = 'ÜRÜN BULGUSU ADAYI (T2): eski portal oturumu sürüm reddine rağmen belge listesine erişti (ölçüm); oturum reddi ürün tarafıdır, Recover düzeltemez'
+  $o17Acik = 'portal hesabı açık (HTTP ölçümlerinden sonra isActive=true hasPortalAccess=true sürüm=2) — açık erişim kapatılmalıdır (Recover kapatabilir)'
+  $env:EXSTUB_FINDING = $o17Find; $env:EXSTUB_SV = 'ADAY'; $env:EXSTUB_ACIK = $o17Acik; $env:EXSTUB_D9 = 'FAIL'; $script:goN = 39
+  $o17aTxt = Get-HostText { $script:capR = Invoke-Mode 'Run' $real.Exe 6 $true }; $o17a = $script:capR
+  Remove-Item 'Env:EXSTUB_ACIK' -ErrorAction SilentlyContinue; $script:goN = 40
+  $o17bTxt = Get-HostText { $script:capR = Invoke-Mode 'Run' $real.Exe 6 $true }; $o17b = $script:capR
+  Remove-Item 'Env:EXSTUB_FINDING', 'Env:EXSTUB_SV' -ErrorAction SilentlyContinue; $env:EXSTUB_D9 = 'PASS'
+  $o17aLines = @($o17aTxt -split "`n"); $o17FindL = @($o17aLines | Where-Object { $_.Contains($o17Find) }); $o17AcikL = @($o17aLines | Where-Object { $_ -cmatch '^\s*PORTAL ERİŞİMİ: ' })
+  $o17Ok = ($o17a.out -eq 6 -and $o17FindL.Count -eq 1 -and $o17AcikL.Count -eq 1 -and $o17FindL[0] -ne $o17AcikL[0] -and $o17AcikL[0].Contains("PORTAL ERİŞİMİ: $o17Acik") -and
+            -not $o17FindL[0].Contains('Recover kapatabilir') -and -not $o17FindL[0].Contains('açık erişim') -and -not $o17AcikL[0].Contains('Recover düzeltemez') -and $o17FindL[0].Contains('ADAYIDIR (CLIENT doğrular)') -and
+            $o17b.out -eq 6 -and @($o17bTxt -split "`n" | Where-Object { $_ -cmatch '^\s*PORTAL ERİŞİMİ: ' }).Count -eq 0)
+  Check 'O-17' 'R03-e: ürün bulgusu satırı ile açık portal erişimi satırı (GÖSTERİLEN) AYRI — kanıtta portalClose.acikErisim varsa "PORTAL ERİŞİMİ: portal hesabı açık (…) — açık erişim kapatılmalıdır (Recover kapatabilir)" kendi satırında; ürün bulgusu satırı ("… Recover düzeltemez — bu bir ÜRÜN BULGUSU ADAYIDIR …") "Recover kapatabilir" / "açık erişim" İÇERMEZ, açık erişim satırı "Recover düzeltemez" İÇERMEZ; acikErisim yoksa "PORTAL ERİŞİMİ:" satırı YOK; çıkış kodu değişmeden' $o17Ok "açık: rc=$($o17a.out) bulgu satırı=$($o17FindL.Count) erişim satırı=$($o17AcikL.Count) [$(@($o17AcikL) -join ' | ')] · açık yok: rc=$($o17b.out)"
 }
 finally {
   foreach ($k in 'EXSTUB_RC', 'EXSTUB_WRITE_EVID', 'EXSTUB_MARKER', 'EXSTUB_WAIT', 'EXSTUB_QR_RC', 'EXSTUB_FINDING', 'EXSTUB_D9', 'EXSTUB_DOC', 'EXSTUB_EXTRA', 'EXSTUB_DOCDURUM', 'EXSTUB_NO_RECEIPT', 'EXSTUB_EV_RECEIPT',
-             'EXSTUB_STALE', 'EXSTUB_EV_EXITCODE', 'EXSTUB_SV', 'EXSTUB_EXPECT_COPY', 'EXSTUB_REAL_RUNNER') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
+             'EXSTUB_STALE', 'EXSTUB_EV_EXITCODE', 'EXSTUB_SV', 'EXSTUB_EXPECT_COPY', 'EXSTUB_REAL_RUNNER', 'EXSTUB_ACIK') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
   Clear-SecretEnv
 }
 

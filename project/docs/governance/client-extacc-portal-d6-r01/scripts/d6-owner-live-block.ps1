@@ -51,6 +51,10 @@
 #          ölçülmüş TEK komut (kanıttaki makbuzJson → yeni makbuz dosyası) + AYRI owner onayıyla Recover. (c) Ürün bulgusu ADAYI "adayı" diye
 #          gösterilir. (d) Get-ClosureStatus kanıtı -Encoding UTF8 ile okur (WinPS 5.1 ANSI varsayılanı makbuz metnini bozabilirdi). Kapılar, sıra,
 #          Recover okuma kapısı, node çağrısı, çıkış kodları DEĞİŞMEDİ.
+# R03-e  : (2026-10-04; R03-d iki bağımsız doğrulaması, B1) koşucu değişti (oturum 200'ünün tek sınıflaması; ölçülen kapatma metni; token claim'i) →
+#          koşucu pini + $ExpPackage güncellendi. Blokta yalnız GÖSTERİM: kanıttaki portalClose.acikErisim (HTTP ölçümlerinden sonra portal erişimi açık)
+#          ürün bulgusu satırından AYRI "PORTAL ERİŞİMİ: …" satırında gösterilir (birleşik tek satır değil). Kapılar, sıra, Recover okuma kapısı, node
+#          çağrısı, çıkış kodları DEĞİŞMEDİ.
 # TOPOLOJİ: public portal adresi canlı .env'den okunur ve owner'ın konsola yazdığı R05 adresiyle doğrulanır; kanıt kökü $env:USERPROFILE'a görelidir
 #          (bu dosyada canlı alan adı / yerel kullanıcı yolu literali yoktur). Canlı kök ($Rel) tek yerde tanımlıdır.
 # ÇIKIŞ  : node kodu değiştirilmeden taşınır · 90 kapıda durdu · 91 node başlatılamadı / kod alınamadı · 7 kanıt yok.
@@ -77,7 +81,7 @@ $ExpEnvSha   = '5C776BBEEE018EA5CC8192378D42D742FD4ABC1B6D0E9A3EA671CF463206908D
 $ExpBaseUrl  = $null   # R05 public portal adresi: canlı .env PUBLIC_PORTAL_BASE_URL'den okunur (Invoke-ReadOnlyGates, biçim kapısı) ve Run/QrTest'te owner'ın konsola yazdığı R05 adresiyle birebir doğrulanır (Confirm-PortalBaseUrlR05). Public repoya host literali YAZILMAZ.
 # Koşucunun YÜKLEDİĞİ tüm governance dosyaları + QR denemesi (require ağacı ölçüldü).
 $PkgPins = [ordered]@{
-  'client-extacc-portal-d6-r01\scripts\d6-portal-documents-live-run.js'               = 'EE0AE16D13BAD1A8E3AFE5FEF3E668409BEB85E09AA054499C28A73E0E0E0202'
+  'client-extacc-portal-d6-r01\scripts\d6-portal-documents-live-run.js'               = '9C8B05105532A212B8AEC0005C805AB19D8232FAB21B06DDE8E5DAE89AC49349'
   'client-extacc-portal-d6-r01\scripts\d6-qr-test.js'                                 = 'C9FC15AADBFDF4AA87702542340EB6A5C68558D3FE6423F06DED8E452D85F418'
   'client-extacc-intake-chain-r01\scripts\extacc-display.js'                          = 'F257188DF66C429472C214D38D965C1E6F5A2EA490D348369AC68C5DC6F26867'
   'client-extacc-intake-chain-r01\scripts\vendor\qrcode-generator-1.4.4\qrcode.js'    = '18AE399F81182BC9DE916E9C77B195DF20CC58D6F2D55A62B085A299F1BF1780'
@@ -87,7 +91,7 @@ $PkgPins = [ordered]@{
   'client-acceptance-runners-i3-r01\scripts\i3-lib.js'                                = '56F3788E9F84746CFFEE384D8C18B9B9A28130CC8E2285F9570AB69CC6EE74A3'
   'client-acceptance-harness-r01\scripts\ah-lib.js'                                   = 'DF882DB7F33A667092F126F01E518C1A8292C8C0B3C4C039BF73D71F3ACCBFD7'
 }
-$ExpPackage = '13858A1283CA465694F6117EBD835ADA7B1E211AA083D15CB21AC419B3F9CED1'
+$ExpPackage = 'E49930A2EB04E2FD50A0A622357F12927629574E725D7C1305E9D042BB309AC9'
 $SecretEnv  = @('AH_DATABASE_URL', 'AH_PRISMA_ROOT', 'AH_BCRYPT_PATH', 'D6_LIVE_CONFIRM', 'D6_RECOVER_CONFIRM', 'D6_LIVE_GO_REF',
                 'D6_RUNID', 'D6_MODE', 'D6_EXPECT_DB', 'D6_EXPECT_TENANT_SLUG', 'D6_API_BASE', 'D6_EXPECT_API',
                 'D6_EXPECT_BASE_URL', 'D6_LIVE_LOGIN_PW', 'D6_RECEIPT', 'D6_EVID_FILE', 'D6_DISPLAY', 'EXA_QRTEST_URL',
@@ -325,12 +329,13 @@ function Read-ResidueDecision {
 }
 # Kapanış durumu kanıttan okunur; metin KOŞULSUZ "kapatıldı" demez.
 function Get-ClosureStatus([string]$evidFile, [object]$rc) {
-  $st = [ordered]@{ verified = $false; text = ''; finding = $null; findingCandidate = $false; waitVerdict = $null; docVerdict = $null; docDurum = $null; docText = ''; phoneDocVerdict = $null; uploadVerdict = $null; receiptInEvidence = $false; makbuzJson = $null }
+  $st = [ordered]@{ verified = $false; text = ''; finding = $null; findingCandidate = $false; acikErisim = $null; waitVerdict = $null; docVerdict = $null; docDurum = $null; docText = ''; phoneDocVerdict = $null; uploadVerdict = $null; receiptInEvidence = $false; makbuzJson = $null }
   try {
     $ev = Get-Content -Raw -Encoding UTF8 -LiteralPath $evidFile | ConvertFrom-Json   # R03-d: node kanıtı BOM'suz UTF-8; WinPS 5.1 varsayılanı ANSI (makbuz metni birebir okunmalı)
     $st.receiptInEvidence = [bool]($ev.receipt -and $ev.receipt.record -eq 'EXTACC-D6-SETUP-RECEIPT')   # R03-c: makbuz dosyası yoksa kullanılabilir yolun kaynağı
     $st.makbuzJson = $(if ($ev.recovery -and $ev.recovery.makbuzJson -is [string]) { [string]$ev.recovery.makbuzJson } else { $null })   # R03-d: makbuzun birebir JSON metni
     $st.findingCandidate = [bool]($ev.portalClose -and $ev.portalClose.sessionVersion -and $ev.portalClose.sessionVersion.sinif -eq 'ADAY')   # R03-d: ürün bulgusu ADAYI
+    $st.acikErisim = $(if ($ev.portalClose -and $ev.portalClose.acikErisim -is [string]) { [string]$ev.portalClose.acikErisim } else { $null })   # R03-e: açık portal erişimi (AYRI satır)
     $d9 = ($ev.results | Where-Object { $_.id -eq 'P6-D9' }).verdict
     $st.waitVerdict = ($ev.results | Where-Object { $_.id -eq 'P6-WAIT' }).verdict
     $st.docVerdict = ($ev.results | Where-Object { $_.id -eq 'P6-C-DOC' }).verdict
@@ -447,6 +452,9 @@ function Invoke-RunMode($g) {
   Write-Host '  0 PASS · 2 FAIL · 3 ÖLÇÜLEMEYEN · 1 DURDU · 4 KİMLİK/HEDEF REDDİ · 7 KANIT YAZILAMADI · 5 PERSONEL/DOSYA KAPANIŞI · 6 PORTAL KAPANIŞI (erişim/belge kalıntısı) DOĞRULANMADI · 91 NODE BAŞLATILAMADI'
   # R03-d: ürün bulgusu ADAYI (koşucu: P6-C2 PASS + P6-C5 FAIL iken sürüm sınıflaması) "ADAYI" diye gösterilir — kesin bulgu gibi yazılmaz.
   if ($finding) { Write-Host ("  $finding — " + $(if ($closure.findingCandidate) { 'bu bir ÜRÜN BULGUSU ADAYIDIR (CLIENT doğrular)' } else { 'bu bir ÜRÜN BULGUSUDUR' }) + "; kapanış PASS SAYILMAZ. CLIENT'a bildirin.") -ForegroundColor Red }
+  # R03-e: portal erişimi HTTP ölçümlerinden sonra AÇIKSA (kanıttaki portalClose.acikErisim) AYRI satır — ürün bulgusu satırıyla BİRLEŞTİRİLMEZ (oturum reddini
+  # Recover düzeltemez; açık erişimi Recover kapatabilir — yalnız AYRI owner onayıyla, aşağıdaki öneriye bakın).
+  if ($closure.acikErisim) { Write-Host ("  PORTAL ERİŞİMİ: {0}" -f $closure.acikErisim) -ForegroundColor Yellow }
   if ($closure.uploadVerdict -ne 'PASS') { Write-Host '  Koşucunun kendi yüklemesi (makine ölçümü) PASS değil — D6-1 kanıt satırına bakın.' -ForegroundColor Yellow }
   if ($closure.docVerdict -ne 'PASS') { Write-Host ('  BELGE KALINTISI: {0} Bu blok Recover BAŞLATMAZ ve dosya silmez: kalan satırlar için karar yalnız kanıt incelendikten sonra AYRI owner onayıyla başlatılacak bir Recover''da sorulur (otomatik DEĞİL); kanıtta diskte kalan dosya listelendiyse OWNER elle siler.' -f $closure.docText) -ForegroundColor Red }
   if ($closure.phoneDocVerdict -eq 'FAIL') { Write-Host '  Telefondan yüklenen belge koşucu beklerken silinmedi — kalıntı olarak ölçüldü.' -ForegroundColor Yellow }
