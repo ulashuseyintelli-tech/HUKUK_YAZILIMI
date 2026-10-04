@@ -35,6 +35,10 @@
  *             sürümü artırır) · rowDelete onDisable → disable-user portal kullanıcı SATIRINI siler + erişim bayrağını kapatır, 201 (ürün dışı satır silme) ·
  *             disable passiveOnly → yalnız isActive=false, sürüm ARTMAZ, hasPortalAccess DEĞİŞMEZ, 201 (ürün dışı kapatma) · reopen afterDisableNoBump →
  *             yeniden açmada sürüm DEĞİŞMEZ (ürün dışı yeniden açma). Bu varyantlar ürünün kendisi DEĞİLDİR; koşucunun sınıflamasını sınar.
+ * R03-f     : portalToken badClaim → üç parçalı JWT ama `tokenVersion` claim'i GEÇERSİZ (-1; tam sayı ≥ 0 değil). Ürünün imzaladığı token'da claim DB'deki tam
+ *             sayıdır (portal.service.ts:443) — bu varyant ürün değildir, koşucunun TG hücresini sınar. Guard NORMAL taklidi artık ürün guard'ı gibi claim'i
+ *             doğrular: tam sayı ≥ 0 değilse DB'ye bakmadan reddeder (portal-auth.guard.ts:42-45, :98-104); claim yoksa 0 (değişmedi). Guard 'stale' kusur
+ *             taklidi claim'e bakmaz (değişmedi).
  * KOŞUCU YASAĞI: forgot/reset/change-password, messages, admin approve/reject çağrıları FORBIDDEN işaretlenir (500).
  */
 const http = require('http'); const https = require('https'); const fs = require('fs'); const path = require('path'); const crypto = require('crypto');
@@ -118,6 +122,7 @@ function portalClaimOf(req) {
 async function portalUser(req) {
   const c = portalClaimOf(req); if (!c || c.type !== 'portal') return null;
   if (scenario.guard === 'stale') return { clientId: c.cid, tenantId: c.tid }; // KUSUR TAKLİDİ — yalnız negatif test
+  if (!(Number.isInteger(c.tv) && c.tv >= 0)) return null;   // R03-f: ürün guard'ı gibi geçersiz claim → DB'ye bakmadan ret (portal-auth.guard.ts:42-45)
   const u = await prisma.clientPortalUser.findUnique({ where: { id: c.sub }, select: { isActive: true, clientId: true, tokenVersion: true, client: { select: { tenantId: true } } } });
   if (!u || !u.isActive || u.clientId !== c.cid || u.client.tenantId !== c.tid || u.tokenVersion !== c.tv) return null;
   return { clientId: u.clientId, tenantId: u.client.tenantId };
@@ -130,8 +135,10 @@ async function portalLogin(body) {
   // R03-e: login bumpBeforeSign — İLK portal girişinde token imzalanmadan ÖNCE sürüm +1 (claim ≠ koşucunun girişten önce okuduğu s1)
   if (scenario.login === 'bumpBeforeSign' && !loginBumped) { loginBumped = true; const b = await prisma.clientPortalUser.update({ where: { id: u.id }, data: { tokenVersion: { increment: 1 } }, select: { tokenVersion: true } }); u.tokenVersion = b.tokenVersion; }
   const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  // R03-f: badClaim → claim GEÇERSİZ (-1) — ürün değil; koşucunun TG hücresi için
+  const tvClaim = scenario.portalToken === 'badClaim' ? -1 : u.tokenVersion;
   const token = scenario.portalToken === 'opaque' ? 'pfake.' + b64({ sub: u.id, cid: u.clientId, tid: u.client.tenantId, tv: u.tokenVersion, type: 'portal' })
-    : `pfake.${b64({ sub: u.id, clientId: u.clientId, tenantId: u.client.tenantId, type: 'portal', tokenVersion: u.tokenVersion })}.${crypto.randomBytes(8).toString('hex')}`;
+    : `pfake.${b64({ sub: u.id, clientId: u.clientId, tenantId: u.client.tenantId, type: 'portal', tokenVersion: tvClaim })}.${crypto.randomBytes(8).toString('hex')}`;
   secrets.portalJwts.push(token);
   return { status: 201, body: { token, user: { id: u.id, email: u.email, clientId: u.clientId, clientName: u.client.displayName } } };
 }

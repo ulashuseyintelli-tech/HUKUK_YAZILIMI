@@ -38,6 +38,9 @@
 #          bulgusu satırından AYRI "PORTAL ERİŞİMİ: …" satırında gösterilir; bulgu satırı onu içermez. Sahte koşucu EXSTUB_ACIK ile acikErisim yazar. PIN-1 yeni
 #          koşucu pini + $ExpPackage ile. R03-d blok baytlarında (60b2a84d aynası) yalnız O-17 FAIL verir (satır gösterilmez; iki kabukta ölçüldü) — PIN-1
 #          aynada eski koşucu + eski pinle tutarlı olduğundan PASS.
+# R03-f  : (R03-e iki bağımsız doğrulamasının MINOR bulguları; blokta YALNIZ yorum + pin) O-18 — blok kaynağında (yorumlar dahil) Recover'ın açık erişimi
+#          kapatabileceğine dair kesin ifade YOK (F2) ve R03-d'den kalma bayat "P6-C2 PASS + P6-C5 FAIL iken sürüm sınıflaması" yorumu YOK (F6); ADAY yorumu
+#          sessionClass200 karar tablosunu adlandırır. PIN-1 yeni koşucu pini + $ExpPackage ile. R03-e blok baytlarında (4b75bbe7 aynası) O-18 FAIL verir.
 # KULLANIM: powershell.exe -NoProfile -ExecutionPolicy Bypass -File d6-owner-block-selftest.ps1   (ve pwsh)
 # ÇIKIŞ  : 0 hepsi PASS · 1 en az bir FAIL · 2 ölçülemedi
 $ErrorActionPreference = 'Stop'
@@ -573,6 +576,13 @@ try {
             -not $o17FindL[0].Contains('Recover kapatabilir') -and -not $o17FindL[0].Contains('açık erişim') -and -not $o17AcikL[0].Contains('Recover düzeltemez') -and $o17FindL[0].Contains('ADAYIDIR (CLIENT doğrular)') -and
             $o17b.out -eq 6 -and @($o17bTxt -split "`n" | Where-Object { $_ -cmatch '^\s*PORTAL ERİŞİMİ: ' }).Count -eq 0)
   Check 'O-17' 'R03-e: ürün bulgusu satırı ile açık portal erişimi satırı (GÖSTERİLEN) AYRI — kanıtta portalClose.acikErisim varsa "PORTAL ERİŞİMİ: portal hesabı açık (…) — açık erişim kapatılmalıdır (Recover kapatabilir)" kendi satırında; ürün bulgusu satırı ("… Recover düzeltemez — bu bir ÜRÜN BULGUSU ADAYIDIR …") "Recover kapatabilir" / "açık erişim" İÇERMEZ, açık erişim satırı "Recover düzeltemez" İÇERMEZ; acikErisim yoksa "PORTAL ERİŞİMİ:" satırı YOK; çıkış kodu değişmeden' $o17Ok "açık: rc=$($o17a.out) bulgu satırı=$($o17FindL.Count) erişim satırı=$($o17AcikL.Count) [$(@($o17AcikL) -join ' | ')] · açık yok: rc=$($o17b.out)"
+
+  # ---- R03-f: O-18 (F2 + F6, blok tarafı; statik) — blok kaynağında (yorumlar DAHİL) Recover'ın açık erişimi kapatabileceğine dair kesin ifade YOK ve R03-d'den
+  #      kalma bayat ADAY yorumu YOK; ADAY yorumu karar tablosunu (sessionClass200) adlandırır. Gösterilen "PORTAL ERİŞİMİ:" metni koşucudan gelir (O-17).
+  $o18Src = [IO.File]::ReadAllText($wrapper, [Text.Encoding]::UTF8)
+  $o18Kap = ([regex]::Matches($o18Src, 'Recover kapatabilir')).Count; $o18Eski = ([regex]::Matches($o18Src, [regex]::Escape('P6-C2 PASS + P6-C5 FAIL iken sürüm sınıflaması'))).Count
+  $o18Ok = ($o18Src.Length -gt 1000 -and $o18Kap -eq 0 -and $o18Eski -eq 0 -and $o18Src.Contains('sessionClass200 karar tablosunun ADAY hücreleri'))
+  Check 'O-18' 'R03-f (F2 + F6): blok kaynağında (yorumlar dahil) "Recover kapatabilir" YOK; R03-d''den kalma bayat yorum ("P6-C2 PASS + P6-C5 FAIL iken sürüm sınıflaması") YOK; ADAY gösterim yorumu "sessionClass200 karar tablosunun ADAY hücreleri" der' $o18Ok "kaynak=$($o18Src.Length) karakter · Recover-kapatabilir sayısı=$o18Kap · bayat R03-d yorumu=$o18Eski · karar tablosu yorumu=$($o18Src.Contains('sessionClass200 karar tablosunun ADAY hücreleri'))"
 }
 finally {
   foreach ($k in 'EXSTUB_RC', 'EXSTUB_WRITE_EVID', 'EXSTUB_MARKER', 'EXSTUB_WAIT', 'EXSTUB_QR_RC', 'EXSTUB_FINDING', 'EXSTUB_D9', 'EXSTUB_DOC', 'EXSTUB_EXTRA', 'EXSTUB_DOCDURUM', 'EXSTUB_NO_RECEIPT', 'EXSTUB_EV_RECEIPT',
