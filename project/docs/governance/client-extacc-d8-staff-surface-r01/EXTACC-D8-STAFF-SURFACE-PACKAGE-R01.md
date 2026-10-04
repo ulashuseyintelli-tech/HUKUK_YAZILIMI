@@ -17,17 +17,26 @@
 > İPUCU olarak `layerHint`/`denyLayerHints`'e yazılır; sondada kesin katman kanıt kaynağı olmadığından 403 satırlarında `layer` daima `unknown`.
 > `unknown` ret ölçümünü (satır `ok`, çıkış kodu) **başarısız saydırmaz**. Ham request-target korunur (değişmedi). Öz-test yeni anlama göre
 > güncellendi: **15/15**; eski (başlıktan katman türeten) sonda yeni öz-testte **9/15** (negatif kontrol). Canlı sonda yine çalıştırılmadı.
+> **R04 D8-E1/E2 (2026-10-03):** yöntem kapsamı HEAD ve OPTIONS ile genişletildi (üç yüzeyde: personel sayfası, personel API, admin portal
+> yolu = 6 vektör) ve izole provadaki (edge-allowlist-probe.js) **18 kodlama/normalizasyon varyantının tamamı** sondaya alındı. Ret 37→**59**,
+> toplam istek 46→**68** (yöntem dağılımı §1a/§5). Öz-test sahte kenarı artık gerçek Caddy yol temizliğini (yüzde-çöz + `.`/`..`/`//`) modeller;
+> öz-test **17/17** (S7, T-3 eklendi; eski sonda ile negatif kontrol 12/17). `layer` 403'te hâlâ `unknown` kuralı aynen korunur; "403 = kesin
+> katman kanıtı değildir" değişmedi. HEAD yanıtı **gövdesizdir** → sağlayıcı imzası/`suspectAppOrigin403` HEAD'te okunamaz (ipucu `none`/şüpheye
+> girmez), katman yine `unknown`. Canlı sonda yine **çalıştırılmadı**; pin değişti (§7).
 
 ## 1. D-8 makine sondası (`scripts/d8-staff-surface-probe.js`)
 
 Owner PC'sinden, gerçek alan adı ve gerçek TLS ile (`--origin https://<public host>`; TLS doğrulaması kapalıysa reddeder).
-**37 ret vektörü** (personel sayfaları `/`, `/auth/login`, `/dashboard`, `/auth/reset-password`; personel API `/api/auth/me`,
+**59 ret vektörü** (personel sayfaları `/`, `/auth/login`, `/dashboard`, `/auth/reset-password`; personel API `/api/auth/me`,
 `POST /api/auth/login`, `POST /api/auth/register`, `GET /api/auth/capabilities`, `/api/cases`, `/api/users`, `/api/health`;
-`/api/portal/admin/*` düz/büyük harf/`./`/`%2F`/sorgu varyantları; intake DELETE/PUT/PATCH; izinli yollarda yanlış yöntem;
-`/api`, `/api/`, `/robots.txt`) → hepsi **403** beklenir. `POST /api/auth/account-recovery/find-tenants` sondada YOKTUR
+`/api/portal/admin/*` düz/kök/`%2F`-önek/sorgu varyantları; intake DELETE/PUT/PATCH; izinli yollarda yanlış yöntem;
+`/api`, `/api/`, `/robots.txt`; **D8-E1: HEAD ve OPTIONS üç yüzeyde — personel sayfası `/`, personel API `/api/auth/me`, admin
+`/api/portal/admin/documents/pending`**; **D8-E2: izole provadan (edge-allowlist-probe.js) taşınan 18 kodlama/normalizasyon
+varyantı — yüzde-kodlama, kodlanmış/düz traversal, çift slash, nokta segmenti, büyük harf, sondaki slash, noktalı virgül,
+boş bayt, çift kodlama, geçersiz unicode**) → hepsi **403** beklenir. `POST /api/auth/account-recovery/find-tenants` sondada YOKTUR
 (login ile aynı hız sınırı sayacını paylaşır; yan etkiyi artırmamak için).
 **9 pozitif** (izinli çiftler uygulamaya ulaşır, yazma yok): sayfalar 200; `cases/documents/messages` GET, `POST messages`,
-`DELETE documents/:id`, `POST change-password` token olmadan **401** (guard'a ulaştı).
+`DELETE documents/:id`, `POST change-password` token olmadan **401** (guard'a ulaştı). **Toplam 68 istek.**
 
 **Kimlik bilgisi gönderilmez; yazma verisi gönderilmez.** Ret listesinde POST/PUT/PATCH/DELETE istekleri VARDIR — POST/PUT/PATCH
 gövdesi boş JSON `{}`, **DELETE gövdesiz** (yalnız `content-type: application/json` başlığı); hiçbir istekte authorization/cookie/
@@ -72,7 +81,10 @@ Beklenen: her ret vektörü **kenar 403** (uygulamaya ulaşmaz → yan etki yok)
 | `GET /api/auth/capabilities` | GET | 403 | guard yok → 200 (statik bayrak); yazma yok; personel API dışarıya açık = bulgu |
 | `GET /api/health` | GET | 403 | R27'de kök `health` ucu yok → 404 |
 | `/api/portal/admin/*` düz (create-user/disable-user POST boş gövde; documents/pending, messages/clients GET) | GET / POST `{}` | 403 | `JwtAuthGuard` → 401 (token yok); yazma yok |
-| admin varyantları (`/api/portal/admin`, `ADMIN`, `./admin`, `%2Fadmin`, `?x=1`) | GET | 403 | normalizasyona göre admin rotası (401) veya 404; yazma yok |
+| admin varyantları (`/api/portal/admin` kök, `%2Fadmin`-önek, `?x=1` sorgu) | GET | 403 | normalizasyona göre admin rotası (401) veya 404; yazma yok |
+| **D8-E1 HEAD** üç yüzeyde: `/` (sayfa), `/api/auth/me` (personel API), `/api/portal/admin/documents/pending` (admin) | HEAD (gövdesiz) | 403 | kenar izin matcher'ı yöntem duyarlı → HEAD hiçbir kurala uymaz, varsayılan 403. Kenar geçirirse: sayfa → Next HEAD=GET başlıkları (gövde yok) 200/3xx; API/admin → Express HEAD'i GET işleyicisine yönlendirir → `JwtAuthGuard` 401 (token yok); DB/yazma/audit/giriş sayacı yok |
+| **D8-E1 OPTIONS** üç yüzeyde: `/`, `/api/auth/me`, `/api/portal/admin/documents/pending` | OPTIONS (gövdesiz) | 403 | HEAD gibi matcher'a uymaz → 403. Kenar geçirirse: API/admin → Nest `enableCors` ön uçuşu yönlendirme/guard öncesinde **204** (Content-Length 0; istek Origin başlığı yok → ACAO yansıtılmaz; guard/rota/DTO/giriş sayacı çalışmaz; yazma/audit/hata kaydı yok); sayfa → Next 405/404 (çalışma zamanıyla doğrulanmadı) |
+| **D8-E2** izole provadan 18 kodlama/normalizasyon varyantı (yüzde-kodlama, kodlanmış/düz traversal, çift slash, nokta segmenti, büyük harf, sondaki slash, noktalı virgül, boş bayt, çift kodlama, geçersiz unicode) — 16 GET + 1 POST `{}` + 1 DELETE | GET / POST `{}` / DELETE (gövdesiz) | 403 | kenar ham yolu **temizler** (yüzde-çöz + `.`/`..`/`//` sadeleştir) → izin listesini aşmaz: admin'e normalize olan `@deny` ile 403, diğeri varsayılan-ret 403. Kenar geçirir ve uygulama çözerse: admin → `JwtAuthGuard` 401 / rota yok → 404 / personel sayfası → 200; yazma yok |
 | intake `DELETE /intake/:id` (web) | DELETE (gövdesiz) | 403 | Next sayfa rotasına yazma yöntemi → 404/405 (kaynak/çalışma zamanıyla ölçülmedi) |
 | intake API DELETE/PUT/PATCH `/api/public/intake/:id` | DELETE (gövdesiz) / PUT `{}` / PATCH `{}` | 403 | rota yok → 404; yazma yok |
 | izinli yolda yanlış yöntem: `GET /api/portal/login`, `POST /api/portal/cases`, `DELETE cases/:id`, `DELETE/PUT messages`, `PUT/POST documents/:id`, `GET change-password` | GET / POST-PUT `{}` / DELETE (gövdesiz) | 403 | rota yok → 404; yazma yok |
@@ -81,28 +93,41 @@ Beklenen: her ret vektörü **kenar 403** (uygulamaya ulaşmaz → yan etki yok)
 | **Pozitifler** `GET /portal/login|forgot-password|reset-password` | GET | 200 | — (izinli) |
 | **Pozitifler** `GET /api/portal/cases|documents|messages`, `POST messages {}`, `DELETE documents/:id`, `POST change-password {}` | token yok | 401 | — (`PortalAuthGuard` token yokken durur; yazma yok) |
 
-Öz-test (`d8-selftest.js`, sahte kenar = şablonun 4 regex'i + admin reddi, gerçek TLS; kenar gördüğü ham `req.url`'i, kimlik
-başlığı varlığını ve gövde uzunluğunu `/__seen` ile verir): S1 sağlıklı (`Server: Caddy`) 0 · katman `unknown` + ipucu `caddy` · **S1-p ham yol birebir (46/46
-satır, `./` `%2F` `?x=1` `ADMIN` 4/4)** · **S1-c kimlik/gövde ölçümü** (kenar hiçbir istekte kimlik başlığı görmedi; gövde 0 veya 2;
-`measured` kenarla uyumlu, `bodies.emptyJson` = POST/PUT/PATCH sayısı, `bodies.empty` = GET/DELETE sayısı; `design` ayrı) ·
-S2 bozuk kenar 2 (**bulgu = `/api/auth/me` + 6 düz admin yolu = 7**; kodlama varyantları `ADMIN`/`./`/`%2F` sahte kenarda 403 kalır;
-`ifPassed` dolu) · S3 sağlayıcı reddi → çıkış 0, `unknown` + ipucu `edge-provider` (hints dolu) · **S3-b boş gövde, Server yok → `unknown`, ipucu yok** ·
+Öz-test (`d8-selftest.js`, sahte kenar = şablonun 4 regex'i + admin reddi, gerçek TLS; **karar gerçek Caddy yol temizliği
+modeliyle verilir: yüzde-çöz + `.`/`..`/`//` sadeleştir → traversal/kodlama izin listesini aşamaz**; kenar gördüğü ham `req.url`'i,
+kimlik başlığı varlığını ve gövde uzunluğunu `/__seen` ile verir): S1 sağlıklı (`Server: Caddy`) 0 · katman `unknown` + ipucu `caddy`,
+59 ret 403 · **S1-p ham yol birebir (68/68 satır; `./` `%2F` `?x=1` büyük harf + boş bayt, çift kodlama, çift slash, unicode slash 8/8)** ·
+**S1-c kimlik/gövde ölçümü** (kenar hiçbir istekte kimlik başlığı görmedi; gövde 0 GET/DELETE/HEAD/OPTIONS veya 2 POST/PUT/PATCH;
+`measured` kenarla uyumlu, `bodies.emptyJson` = 15, `bodies.empty` = 53; `design` ayrı) · **S7 D8-E1/E2 kapsamı: 3 HEAD + 3 OPTIONS
+(üç yüzey) + 18 kodlama varyantı, hepsi sağlıklı kenarda 403 + `unknown`; HEAD/OPTIONS gövdesiz** ·
+S2 bozuk kenar 2 (**bulgu = `/api/auth/me` GET+HEAD+OPTIONS=3 + admin'e normalize olan 17 istek = 20**; admin'e normalize olan
+kodlama varyantları DA sızar, başka yere normalize olanlar — büyük harf `ADMIN`, boş bayt, geçersiz unicode, `/API/`, `cases/`, `cases;x=1`,
+traversal→`/auth/login` — 403 kalır; `ifPassed` dolu) · S3 sağlayıcı reddi → çıkış 0, `unknown`; gövdeli retlerde ipucu `edge-provider`,
+**HEAD retleri gövdesiz → imza okunamaz → ipucu `none`** (yine 403, layer `unknown`) · **S3-b boş gövde, Server yok → `unknown`, ipucu yok** ·
 **S3-c boş gövde, `Server: cloudflare`, imza yok → `unknown`, ipucu yok** · **S3-d dolu JSON gövdeli 403 + `Server: Caddy` → çıkış 0, `unknown` + ipucu `caddy`, `suspectAppOrigin403` =
-ret sayısı (S1'de 0)** · S4 kenar kapalı 3 · S5 kapılar 4/4/7 · S6 telefon listesi · T-1 pozitif liste statik · T-2 statik (seçenek
-nesnesi, `ifPassed`, "boş gövde" adlandırma, kimlik/yazma bayrakları yalnız `design`+`measured` — kanıt kökünde sabit literal yok,
-`layerOf` başlık/ipucu/gövde okumaz) — **15/15 PASS** (R03, 2026-09-30, Linux node 22; eski sonda ile negatif kontrol 9/15: S1, S3, S3-b, S3-c, S3-d, T-2 FAIL.
-Önceki anlamla 15/15: 2026-09-29; kanıt `HY_R27_AGENT_EVIDENCE\extacc-d8-r01-is3-fix\d8-selftest-fix-run2.log`;
-mutasyon provaları: URL-string kopya 11/13 [`extacc-d8-r01-is3\d8-selftest-mutation-urlstring.log`, önceki tur], DELETE'e `{}` yazan
-kopya 8/15 [`d8-selftest-mutation-delete-body.log`], kanıt köküne sabit `credentialsSent:false` yazan kopya 13/15
-[`d8-selftest-mutation-root-literal.log`]). Önceki tur kanıtı (13/13) `extacc-d8-r01-is3\` altında korunur.
+gövdeli (HEAD olmayan) ret sayısı; HEAD gövdesiz → şüpheye girmez (S1'de 0)** · S4 kenar kapalı 3 · S5 kapılar 4/4/7 · S6 telefon listesi ·
+T-1 pozitif liste statik · T-2 statik (seçenek nesnesi, `ifPassed`, "boş gövde" adlandırma, kimlik/yazma bayrakları yalnız `design`+`measured`
+— kanıt kökünde sabit literal yok, `layerOf` başlık/ipucu/gövde okumaz) · **T-3 statik D8-E1/E2: deny kaynağında 3 HEAD + 3 OPTIONS (üç yüzey)
++ 18 kodlama ham yolu, FX etiketleri bağlı** — **17/17 PASS** (R04, 2026-10-03, Windows node 24; eski origin/main sonda ile negatif kontrol
+**12/17**: S1-p, S7, S2, S3, T-3 FAIL — yeni vektörler orada yok; kanıt `HY_R27_AGENT_EVIDENCE\r04\d8-probe-r02\`).
+Önceki tur (R03, 15/15, Server-başlığından-katman anlamıyla) kanıtı `extacc-d8-r01-is3-fix\` ve mutasyon provaları `extacc-d8-r01-is3\` altında korunur.
 
 Koşum (normal pencere). **Bu paket revizyonunda canlı sonda ÇALIŞTIRILMADI**; koşum owner GO'sundan sonra, kayıt sahibinin
 penceresinde. Dış origin **yer tutucu değildir**: blok onu mevcut doğrulanmış yapılandırmadan (canlı `.env` `PUBLIC_PORTAL_BASE_URL`; salt
 okuma, D-5/D-6/D-7 bloklarıyla aynı kaynak) okur ve https/yolsuz origin biçim kapısından geçirir; kanıt kökü kullanıcı profiline görelidir
 (public belgeye canlı alan adı ve kullanıcı yolu yazılmaz):
 ```powershell
-& { $ErrorActionPreference='Stop'; $e='C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\.env'; $l=@([IO.File]::ReadAllLines($e) | Where-Object { $_ -match '^\s*PUBLIC_PORTAL_BASE_URL\s*=' }); if($l.Count -ne 1){ throw 'PUBLIC_PORTAL_BASE_URL satiri 1 degil - DUR' }; $ExpBaseUrl=($l[0] -replace '^\s*PUBLIC_PORTAL_BASE_URL\s*=\s*','').Trim().Trim('"').Trim("'"); if($ExpBaseUrl -cnotmatch '^https://[A-Za-z0-9.-]+(:\d+)?$'){ throw 'PUBLIC_PORTAL_BASE_URL https/yolsuz origin degil - DUR' }; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-extacc-d8-staff-surface-r01\scripts\d8-staff-surface-probe.js'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne 'D5FA37D1EAC77793F3CD1D2438B496B16B7BABEFB5E804E77D863F41A954579B'){ throw 'D8 SONDA SHA UYUSMUYOR - DUR' }; $o=Join-Path $env:USERPROFILE ('Documents\CLIENT-EVIDENCE-20260911\extacc-d8-' + (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss') + 'Z'); New-Item -ItemType Directory -Force -Path $o | Out-Null; & node $f --origin $ExpBaseUrl --out "$o\d8-probe.json" --phone-list; 'D8 cikis=' + $LASTEXITCODE }
+& { $ErrorActionPreference='Stop'; $e='C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\.env'; $l=@([IO.File]::ReadAllLines($e) | Where-Object { $_ -match '^\s*PUBLIC_PORTAL_BASE_URL\s*=' }); if($l.Count -ne 1){ throw 'PUBLIC_PORTAL_BASE_URL satiri 1 degil - DUR' }; $ExpBaseUrl=($l[0] -replace '^\s*PUBLIC_PORTAL_BASE_URL\s*=\s*','').Trim().Trim('"').Trim("'"); if($ExpBaseUrl -cnotmatch '^https://[A-Za-z0-9.-]+(:\d+)?$'){ throw 'PUBLIC_PORTAL_BASE_URL https/yolsuz origin degil - DUR' }; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-extacc-d8-staff-surface-r01\scripts\d8-staff-surface-probe.js'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne 'E150EEDAC7FE71F6CC5004C3F5B1341F5A4451382CA358F081416463B6AB514C'){ throw 'D8 SONDA SHA UYUSMUYOR - DUR' }; $o=Join-Path $env:USERPROFILE ('Documents\CLIENT-EVIDENCE-20260911\extacc-d8-' + (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss') + 'Z'); New-Item -ItemType Directory -Force -Path $o | Out-Null; & node $f --origin $ExpBaseUrl --out "$o\d8-probe.json" --phone-list; 'D8 cikis=' + $LASTEXITCODE }
 ```
+
+### 1b. D8-E3 — diğer ana makine adları (kapsam owner kararı)
+
+Ad envanteri **kısıtlı kayıttadır** (public belgeye ad/alan adı/IP yazılmaz). Sonda tek `--origin https://<host>` ile çalışır; kapsam
+owner kararıdır: **(a)** tünele bağlı her ad için **ayrı koşum** (aynı sonda, her ada bir `--origin`, ayrı kanıt dosyası) — "dışarıdan
+kapalı" hükmü ancak koşulan adlar için verilir; **(b)** yalnız **birincil ad** ölçülür ve kabul "kapsam = yalnız birincil ad" sınır
+kaydıyla alınır. Birden çok ad için sondaya **parametre eklenmez**: her ad ayrı `--origin` çağrısıdır (owner bloğu adı doğrulanmış
+yapılandırmadan okur). Çok-adlı tek koşum için döngü parametresi eklemek **pin'i değiştirir** ve ayrıca öz-testle ölçülmesi gerekir;
+bu nedenle bu revizyonda **eklenmedi** (gerekirse ayrı revizyon). Adların depoya yazılmaması kuralı bu kararın her iki yolunda da geçerlidir.
 
 ## 2. D-8 telefon adımı (owner beyanı; makine ölçümü değildir)
 
@@ -181,6 +206,7 @@ Kurallar:
 
 ## 7. Pinler
 
-`d8-staff-surface-probe.js` `D5FA37D1EAC77793F3CD1D2438B496B16B7BABEFB5E804E77D863F41A954579B` · `d8-selftest.js` `AD7B0759F7AE99BDCB27ABD5F8B869C2F6E68B0B10289A0E86548BF4315E4AB7`.
+`d8-staff-surface-probe.js` `E150EEDAC7FE71F6CC5004C3F5B1341F5A4451382CA358F081416463B6AB514C` · `d8-selftest.js` `45FC0B5EDCDA51C04BC52F22DF7BF2A258F3351F5B2DC4155BA729FEAC1AE264`.
 (Önceki pinler: R01 ilk `DD6448A5…` / `E50EAE0C…`; birinci tur düzeltme `51B78C3B…` / `F9E9BD65…` [13/13]; ikinci tur `6400223…` / `A311CF00…`
-[15/15] — R27-R03'te katman ipucu düzeltmesiyle 2026-09-30 değişti; öz-test 15/15.)
+[15/15]; R27-R03 katman ipucu `D5FA37D1…` / `AD7B0759…` [15/15, 2026-09-30]. R04 D8-E1/E2 ile 2026-10-03 değişti: HEAD/OPTIONS (6)
++ izole provadan 18 kodlama varyantı sondaya alındı; öz-test 17/17.)
