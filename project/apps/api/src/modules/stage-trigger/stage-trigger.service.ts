@@ -351,14 +351,17 @@ export class StageTriggerService {
       tebligatCount: eventParams?.tebligatCount || caseData.debtors?.length || 1,
     });
 
+    // Avans kaydı yoksa (okuma artık satır oluşturmaz) kullanılabilir avans yoktur → karşılaştırma ve mesaj bugünkü sıfır bakiyeyle aynı.
+    const availableAdvance = balance.exists ? String(balance.balance) : '0';
+
     // Bakiye yeterliyse hazır
-    if (Number(balance.balance) >= computed.totalSuggested) {
+    if (Number(availableAdvance) >= computed.totalSuggested) {
       return {
         action: 'READY',
         caseStatus: 'READY_FOR_UYAP',
         suggestion: {
           title: 'UYAP\'a gönderime hazır',
-          description: `Bakiyeniz yeterli (${balance.balance} TL). Gönderim yapabilirsiniz.`,
+          description: `Bakiyeniz yeterli (${availableAdvance} TL). Gönderim yapabilirsiniz.`,
           packageCode,
         },
       };
@@ -367,7 +370,7 @@ export class StageTriggerService {
     // Bakiye yetersiz, modal aç
     return {
       action: 'OPEN_EXPENSE_MODAL',
-      blockReason: `Yetersiz bakiye. Gerekli: ${computed.totalSuggested} TL, Mevcut: ${balance.balance} TL`,
+      blockReason: `Yetersiz bakiye. Gerekli: ${computed.totalSuggested} TL, Mevcut: ${availableAdvance} TL`,
       suggestion: {
         title: `${computed.packageName} için masraf gerekiyor`,
         description: `Toplam: ${computed.totalSuggested.toLocaleString('tr-TR')} TL`,
