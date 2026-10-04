@@ -106,12 +106,11 @@ export interface ExpenseCaseSummary {
   blockingUnpaid: number;
 }
 
-/**
- * Masraf-avansı (CaseBalance) bakiyesi. balance Decimal-string.
- * Dosya için avans kaydı YOKSA `exists:false`: tutar ve para birimi taşımaz (sıfır bakiye ya da varsayılan / dosya para birimi
- * UYDURULMAZ — owner GO 2026-10-05, karar 5).
- */
-export type CaseBalanceInfo = { exists: true; balance: string; currency: string } | { exists: false };
+/** Masraf-avansı (CaseBalance) bakiyesi. balance Decimal-string. */
+export interface CaseBalanceInfo {
+  balance: string;
+  currency: string;
+}
 
 /**
  * G1 — dosya satırının istenen para birimi görünümündeki kapsamı (SUNUCU beyanı; UI hesaplamaz).
@@ -349,21 +348,12 @@ export const clientAccountingApi = {
     return resp.data;
   },
 
-  /**
-   * Faz7-V — masraf/avans bakiyesi (CaseBalance). Tek zarf (response.data). Payout defteri DEĞİL.
-   * Sunucu satır yokken `exists:false` döner (okuma satır oluşturmaz). Satır varsa tutar ve para birimi sunucudan gelmelidir;
-   * eksikse sıfır / TRY uydurulmaz, hata verilir (kart "Yüklenemedi." yazar).
-   */
+  /** Faz7-V — masraf/avans bakiyesi (CaseBalance). Tek zarf (response.data). Payout defteri DEĞİL. */
   async getCaseBalance(caseId: string): Promise<CaseBalanceInfo> {
-    const resp = await apiClient.get<{ exists?: boolean; balance?: string | number | null; currency?: string | null }>(
+    const resp = await apiClient.get<{ balance?: string | number; currency?: string }>(
       `/cases/${caseId}/balance`,
     );
-    const data = resp.data;
-    if (data?.exists === false) return { exists: false };
-    if (data?.balance === undefined || data.balance === null || !data.currency) {
-      throw new Error('Avans bakiyesi yanıtı eksik: tutar veya para birimi yok');
-    }
-    return { exists: true, balance: String(data.balance), currency: data.currency };
+    return { balance: String(resp.data?.balance ?? '0'), currency: resp.data?.currency ?? 'TRY' };
   },
 
   /** Faz7-V — borçludan dosyaya gelen toplam tahsilat (calculation-summary.toplamTahsilat). Tek zarf. */

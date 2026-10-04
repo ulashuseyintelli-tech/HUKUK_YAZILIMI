@@ -263,36 +263,4 @@ describe('Müvekkil Muhasebesi sayfası — para birimi', () => {
       expect(within(modal).getByText('₺1.200,00')).toBeInTheDocument();
     });
   });
-
-  describe('avans kaydı yok (sunucu `exists:false`)', () => {
-    beforeEach(() => {
-      accounting.getCaseBalance.mockResolvedValue({ exists: false });
-    });
-
-    it('USD dosya: avans kartı "Avans kaydı yok" yazar — ₺0,00 / $0,00 / 0 ya da bir para birimi UYDURMAZ', async () => {
-      nav.search = 'caseId=caseU';
-      renderPage();
-      await waitForCards();
-      expect(cardValue('Masraf/Avans Bakiyesi').value).toBe('Avans kaydı yok');
-      const card = sectionOf('Masraf/Avans Bakiyesi');
-      expect(card.textContent).not.toMatch(/[₺$€£]\s?0|0,00/);
-      // Öteki kartlar etkilenmez
-      expect(cardValue('Müvekkile Borç (Net)').value).toBe('$500,00');
-    });
-
-    it('TL dosya: aynı metin', async () => {
-      nav.search = 'caseId=caseT';
-      renderPage();
-      await waitForCards();
-      expect(cardValue('Masraf/Avans Bakiyesi').value).toBe('Avans kaydı yok');
-    });
-
-    it('KONTROL: kayıt varsa (exists:true) tutar kendi para birimiyle yazılır', async () => {
-      nav.search = 'caseId=caseT';
-      accounting.getCaseBalance.mockResolvedValue({ exists: true, balance: '600', currency: 'TRY' });
-      renderPage();
-      await waitForCards();
-      expect(cardValue('Masraf/Avans Bakiyesi').value).toBe('₺600,00');
-    });
-  });
 });

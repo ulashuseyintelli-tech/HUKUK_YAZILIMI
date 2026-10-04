@@ -124,9 +124,11 @@ export class CaseBalanceService {
   /// - Yazma yolları (credit/debit/postExpenseActual/adjust/setLowThreshold) bu tek noktadan geçer → service-level fail-closed.
   /// - Cross-tenant veya bilinmeyen dava aynı tenant-scoped NotFound yanıtını alır (existence oracle yok).
   /// - Mevcut CaseBalance satırı authenticated tenant ile eşleşmezse fail-closed; historical mismatch auto-repair EDİLMEZ.
-  /// - OKUMA yolları (getBalance/getLedger) bu işlevi KULLANMAZ: okuma isteği bakiye satırı oluşturmaz (owner GO 2026-10-05, karar 5).
+  /// - getLedger (hareket listesi) bu işlevi KULLANMAZ: okuma isteği bakiye satırı oluşturmaz (owner GO 2026-10-05, karar 5).
+  ///   getBalance HÂLÂ kullanır — satır yokluğunun yanıt biçimi owner kararını bekliyor (ayrı iş).
   ///
   /// Çağrıldığı yerler:
+  /// - CaseBalanceService.getBalance() → GET /cases/:caseId/balance (satır yoksa oluşturur; owner kararı bekliyor)
   /// - CaseBalanceService.credit() / debit() / postExpenseActual() / adjust() / setLowThreshold() → yazma yolu, satır yoksa oluşturur
   /// </remarks>
   async getOrCreateBalance(tenantId: string, caseId: string) {
@@ -163,7 +165,7 @@ export class CaseBalanceService {
   /// <remarks>
   /// Çağrıldığı yerler:
   /// - CaseBalanceService.getOrCreateBalance() → mevcut satır araması (sahiplik + tenant kapısı tek yerde)
-  /// - CaseBalanceService.getBalance() / getLedger() → GET /cases/:caseId/balance[/ledger] (satır oluşturmadan okuma)
+  /// - CaseBalanceService.getLedger() → GET /cases/:caseId/balance/ledger (satır oluşturmadan okuma)
   /// </remarks>
   private async findExistingBalance(tenantId: string, caseId: string) {
     // 1) Dava sahipliği: caseId authenticated tenant'a ait mi? Değilse tenant-scoped NotFound (existence oracle yok).
@@ -184,30 +186,11 @@ export class CaseBalanceService {
   }
 
   /**
-   * Dosya bakiyesini getir (SALT OKUNUR — satır oluşturmaz).
-   *
-   * Satır VARSA yanıt eskisi gibidir (+ `exists: true`). Satır YOKSA `exists: false` ve değer alanları `null`'dır:
-   * yokluk sahte sıfır bakiye ya da varsayılan / dosya para birimi olarak üretilmez (owner GO 2026-10-05, karar 5).
+   * Dosya bakiyesini getir
    */
-  /// <remarks>
-  /// Çağrıldığı yerler:
-  /// - CaseBalanceController.getBalance() → GET /cases/:caseId/balance (web: Müvekkil Muhasebesi avans kartı, BalanceWidget)
-  /// - StageTriggerService.handleUyapPrepare() → UYAP hazırlığında avans yeterlilik karşılaştırması (yokluk = kullanılabilir avans yok)
-  /// </remarks>
   async getBalance(tenantId: string, caseId: string) {
-    const balance = await this.findExistingBalance(tenantId, caseId);
-    if (!balance) {
-      return {
-        exists: false as const,
-        caseId,
-        balance: null,
-        currency: null,
-        lowThreshold: null,
-        isLow: null,
-        recentLedger: [] as never[],
-      };
-    }
-
+    const balance = await this.getOrCreateBalance(tenantId, caseId);
+    
     // Son hareketleri de getir
     const recentLedger = await this.prisma.balanceLedger.findMany({
       where: { caseBalanceId: balance.id },
@@ -216,7 +199,6 @@ export class CaseBalanceService {
     });
 
     return {
-      exists: true as const,
       ...balance,
       isLow: Number(balance.balance) < Number(balance.lowThreshold || 500),
       recentLedger,
