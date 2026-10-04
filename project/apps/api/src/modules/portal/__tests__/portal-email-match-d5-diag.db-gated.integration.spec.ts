@@ -16,12 +16,17 @@
  *  [8] eşzamanlı hesap açma / yeniden açma: FARKLI müvekkiller için biçim farkıyla aynı adrese gelen isteklerden yalnız
  *      biri yazar. İstekler transaction içinde bir bariyerde toplanıp birlikte bırakılır (çakışma zamanlamaya bırakılmaz);
  *      eşzamanlı istek sayısı bağlantı havuzunun en küçük varsayılanını (3) aşmaz
+ *  [9]-[13] KR-4: adres birebir yazımla birden çok AKTİF hesapla eşleşirse eşleşme yok sayılır. Bu veri ürün yolundan
+ *      (çakışma kapısı) açılamaz; ürün dışı / kapı öncesi var olan veri satırlar DOĞRUDAN yazılarak taklit edilir.
+ *      [9] aynı büroda iki hesap (iki ekleme sırası; istatistik öncesi ve sonrası) · [10] bürolar arası (aynı adres
+ *      kapalı; farklı adreslerde her hesap kendi bürosuna) · [11] üç hesap · [12] aktif + pasif, pasif + pasif ·
+ *      [13] tek uygun hesap (birebir ve biçim farkıyla), hiç hesap yok, yalnız biçim farkıyla iki hesap (giriş)
  */
 import { describeDb } from "../../../../test/describe-db";
 import { Test, TestingModule } from "@nestjs/testing";
-import { JwtModule } from "@nestjs/jwt";
+import { JwtModule, JwtService } from "@nestjs/jwt";
 import { ConfigModule, ConfigService } from "@nestjs/config";
-import { BadRequestException, ConflictException, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Logger, UnauthorizedException } from "@nestjs/common";
 import * as bcrypt from "bcrypt";
 import { PrismaService } from "@/prisma/prisma.service";
 import { AuditService } from "../../audit/audit.service";
@@ -332,5 +337,185 @@ describeDb("D5-DIAG-R01 — portal e-posta biçim farkı eşleşmesi (integratio
     expect(rejected.length).toBe(1);
     expect(rejected.every((r) => r.reason instanceof ConflictException)).toBe(true);
     expect((await rowOf(a.id)).isActive !== (await rowOf(b.id)).isActive).toBe(true);
+  });
+
+  // ── KR-4 ────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  const PW_A = "ParolaA12345";
+  const PW_B = "ParolaB12345";
+  const PW_C = "ParolaC12345";
+  const KR4_DOMAIN = "KR4-Portal.invalid";
+  async function createTenantOnly(label: string) {
+    const ts = uniq();
+    const tenant = await prisma.tenant.create({ data: { name: `KR-4 ${label} ${ts}`, slug: `kr4-${label}-${ts}`.toLowerCase() } });
+    createdTenantIds.push(tenant.id);
+    return tenant;
+  }
+  /** Ürün dışı / kapı öncesi veri taklidi: satır çakışma kapısından geçmeden doğrudan yazılır. */
+  async function seedDirect(tenantId: string, label: string, email: string, password: string, isActive = true) {
+    const client = await prisma.client.create({ data: { tenantId, type: "PERSON", displayName: `${label} Müvekkil` } });
+    return prisma.clientPortalUser.create({
+      data: { clientId: client.id, email, passwordHash: await bcrypt.hash(password, 4), isActive },
+    });
+  }
+  /** Giriş / sıfırlama yollarının yazabileceği bütün alanlar. */
+  async function stateOf(id: string) {
+    const r = await rowOf(id);
+    const { lastLoginAt, loginCount, resetToken, resetTokenExp, tokenVersion, passwordHash, isActive, updatedAt } = r;
+    return { lastLoginAt, loginCount, resetToken, resetTokenExp, tokenVersion, passwordHash, isActive, updatedAt };
+  }
+  const statesOf = async (ids: string[]) => Promise.all(ids.map(stateOf));
+  const unknownAddress = () => `yok.${uniq()}@${KR4_DOMAIN}`;
+  /** Birebir aynı adresli birden çok aktif hesap: giriş her parolayla bilinmeyen adresle AYNI ret; sıfırlama token/e-posta yok. */
+  async function expectClosed(email: string, ids: string[], passwords: string[]) {
+    const before = await statesOf(ids);
+    for (const pw of passwords) {
+      const e = await portal.login(email, pw).catch((x) => x);
+      const unknown = await portal.login(unknownAddress(), pw).catch((x) => x);
+      expect(e).toBeInstanceOf(UnauthorizedException);
+      expect(e.message).toBe(unknown.message);
+      expect(e.getResponse()).toEqual(unknown.getResponse());
+    }
+    const logSpy = jest.spyOn(Logger.prototype, "log").mockImplementation(() => undefined);
+    try {
+      const res = await portal.createResetToken(email);
+      expect(res).toEqual(await portal.createResetToken(unknownAddress()));
+      expect(res).toEqual({ success: true });
+      const lines = logSpy.mock.calls.map((c) => String(c[0]));
+      expect(lines.filter((l) => l.includes("belirsiz (birebir)"))).toHaveLength(1);
+      expect(lines.join("|").toLowerCase()).not.toContain(email.toLowerCase());
+    } finally {
+      logSpy.mockRestore();
+    }
+    expect(sendSpy).not.toHaveBeenCalled();
+    expect(await statesOf(ids)).toEqual(before);
+  }
+
+  it("[9] KR-4 aynı büroda birebir aynı adresli İKİ aktif hesap (iki ekleme sırası; istatistik öncesi ve sonrası) → kapalı; hiçbir satır değişmez", async () => {
+    for (const order of ["AB", "BA"]) {
+      const tenant = await createTenantOnly(`ayni-${order}`);
+      const email = `Ortak.Adres.${uniq()}@${KR4_DOMAIN}`;
+      const ids: Record<string, string> = {};
+      for (const l of order.split("")) ids[l] = (await seedDirect(tenant.id, `kr4-${l}`, email, l === "A" ? PW_A : PW_B)).id;
+      await expectClosed(email, [ids.A, ids.B], [PW_A, PW_B]);
+      await prisma.$executeRawUnsafe(`ANALYZE "ClientPortalUser"`); // satır seçimi sorgu planına bağlı olmamalı
+      await expectClosed(email, [ids.A, ids.B], [PW_A, PW_B]);
+    }
+  });
+
+  it("[10] KR-4 bürolar arası: iki büronun aktif hesabı birebir aynı adreste → kapalı; farklı adreslerde her hesap kendi bürosuna giriş yapar ve token kendi satırına yazılır", async () => {
+    const jwt = module.get<JwtService>(JwtService);
+    const email = `Kiracilar.Arasi.${uniq()}@${KR4_DOMAIN}`;
+    const ta = await createTenantOnly("buro-a");
+    const tb = await createTenantOnly("buro-b");
+    const ua = await seedDirect(ta.id, "kr4-buro-a", email, PW_A);
+    const ub = await seedDirect(tb.id, "kr4-buro-b", email, PW_B);
+    await expectClosed(email, [ua.id, ub.id], [PW_A, PW_B]);
+
+    // koruma: farklı adresler → her hesap kendi bürosuna
+    const xa = await seedDirect(ta.id, "kr4-x-a", `Buro.A.${uniq()}@${KR4_DOMAIN}`, PW_A);
+    const xb = await seedDirect(tb.id, "kr4-x-b", `Buro.B.${uniq()}@${KR4_DOMAIN}`, PW_B);
+    for (const [row, pw, tenantId] of [
+      [xa, PW_A, ta.id],
+      [xb, PW_B, tb.id],
+    ] as const) {
+      const res: any = await portal.login(row.email, pw);
+      const payload: any = jwt.verify(res.token);
+      expect(payload).toEqual(expect.objectContaining({ sub: row.id, clientId: row.clientId, tenantId, type: "portal" }));
+      expect(res.user.id).toBe(row.id);
+      expect((await rowOf(row.id)).loginCount).toBe(1);
+    }
+    await expect(portal.login(xa.email, PW_B)).rejects.toBeInstanceOf(UnauthorizedException);
+    await portal.createResetToken(xb.email);
+    expect(await tokenOf(xb.id)).toMatch(/^[0-9a-f]{64}$/);
+    expect(await tokenOf(xa.id)).toBeNull();
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    expect(sendSpy.mock.calls[0][0].to).toBe(xb.email);
+  });
+
+  it("[11] KR-4 ikiden FAZLA (3) birebir aynı aktif hesap → üç parolayla da kapalı; satırlar değişmez", async () => {
+    const tenant = await createTenantOnly("uclu");
+    const email = `Uclu.${uniq()}@${KR4_DOMAIN}`;
+    const ids: string[] = [];
+    for (const [l, pw] of [
+      ["A", PW_A],
+      ["B", PW_B],
+      ["C", PW_C],
+    ]) {
+      ids.push((await seedDirect(tenant.id, `kr4-uc-${l}`, email, pw)).id);
+    }
+    await expectClosed(email, ids, [PW_A, PW_B, PW_C]);
+  });
+
+  it("[12] KR-4 aynı adreste tek AKTİF + PASİF kayıt (iki sıra) → yalnız aktif hesap kullanılır; PASİF + PASİF → eşleşme yok", async () => {
+    for (const passiveFirst of [true, false]) {
+      sendSpy.mockClear();
+      const tenant = await createTenantOnly(`aktif-pasif-${passiveFirst ? "p" : "a"}`);
+      const email = `Aktif.Pasif.${uniq()}@${KR4_DOMAIN}`;
+      const seeded: Record<string, Awaited<ReturnType<typeof seedDirect>>> = {};
+      for (const kind of passiveFirst ? ["pasif", "aktif"] : ["aktif", "pasif"]) {
+        seeded[kind] = await seedDirect(tenant.id, `kr4-${kind}`, email, kind === "aktif" ? PW_A : PW_B, kind === "aktif");
+      }
+      const { aktif: active, pasif: passive } = seeded;
+      const passiveBefore = await stateOf(passive.id);
+      const res: any = await portal.login(email, PW_A);
+      expect(res.user.id).toBe(active.id);
+      expect((await rowOf(active.id)).loginCount).toBe(1);
+      await expect(portal.login(email, PW_B)).rejects.toBeInstanceOf(UnauthorizedException); // pasif hesabın parolası
+      await portal.createResetToken(email);
+      expect(await tokenOf(active.id)).toMatch(/^[0-9a-f]{64}$/);
+      expect(sendSpy).toHaveBeenCalledTimes(1);
+      expect(sendSpy.mock.calls[0][0].to).toBe(email);
+      expect(await stateOf(passive.id)).toEqual(passiveBefore);
+    }
+
+    sendSpy.mockClear();
+    const tenant = await createTenantOnly("pasif-pasif");
+    const email = `Pasif.Pasif.${uniq()}@${KR4_DOMAIN}`;
+    const p1 = await seedDirect(tenant.id, "kr4-p1", email, PW_A, false);
+    const p2 = await seedDirect(tenant.id, "kr4-p2", email, PW_B, false);
+    const before = await statesOf([p1.id, p2.id]);
+    for (const pw of [PW_A, PW_B]) await expect(portal.login(email, pw)).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(portal.createResetToken(email)).resolves.toEqual({ success: true });
+    expect(sendSpy).not.toHaveBeenCalled();
+    expect(await statesOf([p1.id, p2.id])).toEqual(before);
+  });
+
+  it("[13] KR-4 koruma: tek uygun hesap birebir ve biçim farkıyla (harf, baş/son boşluk) giriş + sıfırlama; hiç hesap yok → aynı ret; yalnız biçim farkıyla iki aktif hesap → giriş iki parolayla da ret", async () => {
+    const jwt = module.get<JwtService>(JwtService);
+    const tenant = await createTenantOnly("tek");
+    const stored = `Tek.Hesap.${uniq()}@${KR4_DOMAIN}`;
+    const single = await seedDirect(tenant.id, "kr4-tek", stored, PW_A);
+    const typedForms = [stored, stored.toLowerCase(), `  ${stored.toUpperCase()}\t`];
+    for (let i = 0; i < typedForms.length; i++) {
+      const res: any = await portal.login(typedForms[i], PW_A);
+      expect((jwt.verify(res.token) as any).tenantId).toBe(tenant.id);
+      expect(res.user.id).toBe(single.id);
+      expect((await rowOf(single.id)).loginCount).toBe(i + 1);
+    }
+    for (const typed of typedForms) {
+      sendSpy.mockClear();
+      await prisma.clientPortalUser.update({ where: { id: single.id }, data: { resetToken: null, resetTokenExp: null } });
+      await expect(portal.createResetToken(typed)).resolves.toEqual({ success: true });
+      expect(await tokenOf(single.id)).toMatch(/^[0-9a-f]{64}$/);
+      expect(sendSpy).toHaveBeenCalledTimes(1);
+      expect(sendSpy.mock.calls[0][0].to).toBe(stored);
+    }
+
+    // hiç hesap yok
+    sendSpy.mockClear();
+    const none = unknownAddress();
+    const e = await portal.login(none, PW_A).catch((x) => x);
+    expect(e).toBeInstanceOf(UnauthorizedException);
+    expect(e.message).toBe("Geçersiz e-posta veya şifre");
+    await expect(portal.createResetToken(none)).resolves.toEqual({ success: true });
+    expect(sendSpy).not.toHaveBeenCalled();
+
+    // yalnız biçim farkıyla iki aktif hesap (#2884 belirsiz dalı): üçüncü yazımla giriş iki parolayla da ret, satırlar değişmez
+    const base = `bicim.${uniq()}@kr4-portal.invalid`;
+    const fa = await seedDirect(tenant.id, "kr4-bicim-a", base.replace("bicim", "Bicim"), PW_A);
+    const fb = await seedDirect(tenant.id, "kr4-bicim-b", base.replace("bicim", "BICIM"), PW_B);
+    const before = await statesOf([fa.id, fb.id]);
+    for (const pw of [PW_A, PW_B]) await expect(portal.login(base, pw)).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(await statesOf([fa.id, fb.id])).toEqual(before);
   });
 });

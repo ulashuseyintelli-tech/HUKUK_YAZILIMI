@@ -19,6 +19,11 @@
  *  [10]-[12] login: aynı kurallar
  *  [13]-[15] createPortalUser: çakışma kapısı aynı karşılaştırmayla; kayıtlı adres biçimi değiştirilmez; girdi doğrulaması
  *  [16]      createPortalUser: yazımdan önce transaction içinde adres kilidi + çakışmanın yeniden ölçümü (eşzamanlı istekler)
+ *  [17]-[24] KR-4: adres birebir yazımla birden çok AKTİF hesapla eşleşirse eşleşme yok sayılır (biçim farkı belirsiz
+ *            dalıyla aynı kapalı yön): giriş bilinmeyen adresle aynı ret, parola denenmez, giriş kaydı / oturum yok;
+ *            sıfırlamada token ve e-posta yok, dış cevap aynı, ayırt edici iç günlük satırı. Birebir okuma en çok iki
+ *            kayıt; tek aktif + aynı adresli pasif → aktif hesap. (Tek aday: [3], [10c]; aday yok → biçim farkı yolu: [1],
+ *            [2], [10]; yalnız biçim farkıyla iki hesap: [4], [12]; eşleşmeyen adres: [5].)
  */
 import { BadRequestException, ConflictException, Logger, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
@@ -95,6 +100,11 @@ function buildService(users: FakeUser[], over: any = {}) {
         const m = match(where)[0];
         return m ? shape(m) : null;
       }),
+      // KR-4: birebir eşleşme okuması; `take` sahte depoda da uygulanır (dizi sırası = satır sırası).
+      findMany: jest.fn(async ({ where, take }: any) => {
+        const m = match(where);
+        return (take === undefined ? m : m.slice(0, take)).map(shape);
+      }),
       findUnique: jest.fn(async () => over.existingForClient ?? null),
       create: jest.fn(async ({ data }: any) => ({ id: 'PU-NEW', ...data })),
       update: jest.fn().mockResolvedValue({}),
@@ -160,8 +170,10 @@ describe('D5-DIAG-R01 createResetToken — e-posta biçim farkı', () => {
     const { svc, prisma, emailProvider } = buildService([{ id: 'PU1', email: STORED, isActive: true }]);
     await svc.createResetToken(STORED);
     expect(prisma.$queryRaw).not.toHaveBeenCalled();
-    expect(prisma.clientPortalUser.findFirst).toHaveBeenCalledTimes(1);
-    expect(prisma.clientPortalUser.findFirst.mock.calls[0][0].where).toEqual({ email: STORED, isActive: true });
+    // KR-4: birebir okuma findMany ile (en çok iki kayıt); tek kayıtta yeniden okuma yok.
+    expect(prisma.clientPortalUser.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.clientPortalUser.findFirst).not.toHaveBeenCalled();
+    expect(prisma.clientPortalUser.findMany.mock.calls[0][0].where).toEqual({ email: STORED, isActive: true });
     expect(emailProvider.send.mock.calls[0][0].to).toBe(STORED);
   });
 
@@ -192,7 +204,7 @@ describe('D5-DIAG-R01 createResetToken — e-posta biçim farkı', () => {
       { id: 'PU2', email: STORED, isActive: true },
     ]);
     await svc.createResetToken('ali.veli@example.com');
-    expect(prisma.clientPortalUser.findFirst.mock.calls[0][0].where).toEqual({ email: 'ali.veli@example.com', isActive: true });
+    expect(prisma.clientPortalUser.findMany.mock.calls[0][0].where).toEqual({ email: 'ali.veli@example.com', isActive: true });
     expect(prisma.clientPortalUser.updateMany.mock.calls[0][0].where).toEqual({ id: 'PU2', isActive: true });
     expect(emailProvider.send.mock.calls[0][0].to).toBe(STORED);
   });
@@ -221,6 +233,7 @@ describe('D5-DIAG-R01 createResetToken — e-posta biçim farkı', () => {
     const { svc, prisma, emailProvider } = buildService([{ id: 'PU1', email: STORED, isActive: true }]);
     await expect(svc.createResetToken(bad as any)).resolves.toEqual({ success: true });
     expect(prisma.clientPortalUser.findFirst).not.toHaveBeenCalled();
+    expect(prisma.clientPortalUser.findMany).not.toHaveBeenCalled();
     expect(prisma.$queryRaw).not.toHaveBeenCalled();
     expect(prisma.clientPortalUser.updateMany).not.toHaveBeenCalled();
     expect(emailProvider.send).not.toHaveBeenCalled();
@@ -403,8 +416,10 @@ describe('D5-DIAG-R01 login — e-posta biçim farkı', () => {
     const { svc, prisma } = buildService([{ id: 'PU1', email: STORED, isActive: true, passwordHash: hash }]);
     await svc.login(STORED, pw);
     expect(prisma.$queryRaw).not.toHaveBeenCalled();
-    expect(prisma.clientPortalUser.findFirst).toHaveBeenCalledTimes(1);
-    expect(prisma.clientPortalUser.findFirst.mock.calls[0][0].where).toEqual({ email: STORED, isActive: true });
+    // KR-4: birebir okuma findMany ile (en çok iki kayıt); tek kayıtta yeniden okuma yok.
+    expect(prisma.clientPortalUser.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.clientPortalUser.findFirst).not.toHaveBeenCalled();
+    expect(prisma.clientPortalUser.findMany.mock.calls[0][0].where).toEqual({ email: STORED, isActive: true });
   });
 
   it('[10d] PASİF hesap: birebir ya da harf farkıyla yazım + doğru parola → ret', async () => {
@@ -433,6 +448,7 @@ describe('D5-DIAG-R01 login — e-posta biçim farkı', () => {
     expect(e).toBeInstanceOf(UnauthorizedException);
     expect(e.message).toBe('Geçersiz e-posta veya şifre');
     expect(prisma.clientPortalUser.findFirst).not.toHaveBeenCalled();
+    expect(prisma.clientPortalUser.findMany).not.toHaveBeenCalled();
     expect(prisma.$queryRaw).not.toHaveBeenCalled();
     expect(jwt.sign).not.toHaveBeenCalled();
   });
@@ -631,5 +647,181 @@ describe('D5-DIAG-R01 createPortalUser — çakışma kapısı giriş/sıfırlam
     // dış istemci: yalnız işlem öncesi kapı (1) + tx sarmalayıcısının iletimi (1)
     expect(outerQueryRaw.mock.calls.length - before).toBe(2);
     expect(prisma.clientPortalUser.create).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('KR-4 birebir aynı adresli birden çok AKTİF hesap — eşleşme yok sayılır (kapalı yön)', () => {
+  const pwA = 'ParolaA12345';
+  const pwB = 'ParolaB12345';
+  const pwC = 'ParolaC12345';
+  const hashA = bcrypt.hashSync(pwA, 4);
+  const hashB = bcrypt.hashSync(pwB, 4);
+  const hashC = bcrypt.hashSync(pwC, 4);
+  const SAME = 'Ortak.Adres@Example.com';
+  const UNKNOWN = 'yok.boyle.biri@example.com';
+  const LOGIN_REJECT = 'Geçersiz e-posta veya şifre';
+  const AMBIG_EXACT = 'belirsiz (birebir)';
+  const twoActive = (): FakeUser[] => [
+    { id: 'PU1', email: SAME, isActive: true, passwordHash: hashA },
+    { id: 'PU2', email: SAME, isActive: true, passwordHash: hashB },
+  ];
+  /** Sahte depo + posta + oturum çağrılarının sırası (çağrı sırasına göre adlar). */
+  const callSequence = (b: ReturnType<typeof buildService>) =>
+    (
+      [
+        ['findMany', b.prisma.clientPortalUser.findMany],
+        ['findFirst', b.prisma.clientPortalUser.findFirst],
+        ['$queryRaw', b.prisma.$queryRaw],
+        ['update', b.prisma.clientPortalUser.update],
+        ['updateMany', b.prisma.clientPortalUser.updateMany],
+        ['send', b.emailProvider.send],
+        ['sign', b.jwt.sign],
+      ] as Array<[string, jest.Mock]>
+    )
+      .flatMap(([name, fn]) => fn.mock.invocationCallOrder.map((order) => [order, name] as [number, string]))
+      .sort((x, y) => x[0] - y[0])
+      .map(([, name]) => name);
+
+  let compareSpy: jest.SpyInstance;
+  beforeEach(() => {
+    compareSpy = jest.spyOn(bcrypt, 'compare');
+  });
+  afterEach(() => compareSpy.mockRestore());
+
+  it('[17] sıfırlama: İKİ aktif hesap → hiçbir satıra token yok, e-posta yok, dış cevap bilinmeyen adresle aynı; ayırt edici günlük satırı (adres yok)', async () => {
+    const amb = buildService(twoActive());
+    const ambRes = await amb.svc.createResetToken(SAME);
+    const ambLog = logged();
+    expect(ambRes).toEqual(await buildService(twoActive()).svc.createResetToken(UNKNOWN));
+    expect(ambRes).toEqual({ success: true });
+    expect(amb.prisma.clientPortalUser.updateMany).not.toHaveBeenCalled();
+    expect(amb.prisma.clientPortalUser.update).not.toHaveBeenCalled();
+    expect(amb.emailProvider.send).not.toHaveBeenCalled();
+    expect(ambLog).toHaveLength(1);
+    expect(ambLog[0]).toContain(AMBIG_EXACT);
+    expect(ambLog[0]).toContain('token üretilmedi, e-posta gönderilmedi');
+    expect(ambLog[0]).not.toContain('biçim farkıyla');
+    expect(ambLog[0]).not.toContain('eşleşen aktif portal hesabı yok');
+    expect(ambLog[0]).not.toContain('@');
+    expect(ambLog[0].toLowerCase()).not.toContain('ortak.adres');
+  });
+
+  it.each([
+    ['ilk hesabın parolası', pwA],
+    ['ikinci hesabın parolası', pwB],
+  ])('[18] giriş: İKİ aktif hesap + %s → bilinmeyen adresle AYNI 401; parola denenmez, giriş kaydı / oturum yok', async (_d, pw) => {
+    const { svc, prisma, jwt } = buildService(twoActive());
+    const e = await svc.login(SAME, pw).catch((x) => x);
+    const unknown = await buildService(twoActive()).svc.login(UNKNOWN, pw).catch((x) => x);
+    expect(e).toBeInstanceOf(UnauthorizedException);
+    expect(unknown).toBeInstanceOf(UnauthorizedException);
+    expect(e.message).toBe(LOGIN_REJECT);
+    expect(e.message).toBe(unknown.message);
+    expect(e.getStatus()).toBe(unknown.getStatus());
+    expect(e.getResponse()).toEqual(unknown.getResponse());
+    expect(compareSpy).not.toHaveBeenCalled();
+    expect(prisma.clientPortalUser.update).not.toHaveBeenCalled();
+    expect(prisma.clientPortalUser.findFirst).not.toHaveBeenCalled();
+    expect(jwt.sign).not.toHaveBeenCalled();
+  });
+
+  it('[19] işlem sırası bilinmeyen adres dalıyla aynı: birebir okuma → biçim farkı ölçümü → ret (parola denemesi, yazım, gönderim yok)', async () => {
+    for (const op of ['login', 'reset'] as const) {
+      const amb = buildService(twoActive());
+      const unk = buildService(twoActive());
+      const run = (b: ReturnType<typeof buildService>, email: string) =>
+        op === 'login' ? b.svc.login(email, pwA).catch(() => undefined) : b.svc.createResetToken(email);
+      await run(amb, SAME);
+      await run(unk, UNKNOWN);
+      expect(callSequence(amb)).toEqual(['findMany', '$queryRaw']);
+      expect(callSequence(unk)).toEqual(callSequence(amb));
+    }
+    expect(compareSpy).not.toHaveBeenCalled();
+  });
+
+  it('[20] ikiden FAZLA (3) birebir aktif eşleşme → okuma en çok iki kayıt; üç parolayla da giriş ve sıfırlama kapalı', async () => {
+    const users: FakeUser[] = [...twoActive(), { id: 'PU3', email: SAME, isActive: true, passwordHash: hashC }];
+    for (const pw of [pwA, pwB, pwC]) {
+      const { svc, prisma, jwt } = buildService(users);
+      await expect(svc.login(SAME, pw)).rejects.toThrow(LOGIN_REJECT);
+      expect(await prisma.clientPortalUser.findMany.mock.results[0].value).toHaveLength(2);
+      expect(prisma.clientPortalUser.update).not.toHaveBeenCalled();
+      expect(jwt.sign).not.toHaveBeenCalled();
+    }
+    const r = buildService(users);
+    await expect(r.svc.createResetToken(SAME)).resolves.toEqual({ success: true });
+    expect(r.prisma.clientPortalUser.updateMany).not.toHaveBeenCalled();
+    expect(r.emailProvider.send).not.toHaveBeenCalled();
+    expect(logged().some((l) => l.includes(AMBIG_EXACT))).toBe(true);
+    expect(compareSpy).not.toHaveBeenCalled();
+  });
+
+  it('[21] birebir okuma biçimi: yalnız aktif hesaplar, en çok İKİ kayıt, sıralama yok; hesap bilgisi tek okumada (giriş ve sıfırlama)', async () => {
+    const one: FakeUser[] = [{ id: 'PU1', email: SAME, isActive: true, passwordHash: hashA }];
+    const l = buildService(one);
+    await expect(l.svc.login(SAME, pwA)).resolves.toEqual(expect.objectContaining({ token: 'jwt-token' }));
+    const r = buildService(one);
+    await r.svc.createResetToken(SAME);
+    expect(r.emailProvider.send).toHaveBeenCalledTimes(1);
+    for (const b of [l, r]) {
+      const args = b.prisma.clientPortalUser.findMany.mock.calls[0][0];
+      expect(Object.keys(args).sort()).toEqual(['include', 'take', 'where']);
+      expect(args.where).toEqual({ email: SAME, isActive: true });
+      expect(args.take).toBe(2);
+    }
+    expect(l.prisma.clientPortalUser.findMany.mock.calls[0][0].include).toEqual({
+      client: { select: { id: true, displayName: true, tenantId: true, type: true, tenant: { select: { lifecycle: true } } } },
+    });
+    expect(r.prisma.clientPortalUser.findMany.mock.calls[0][0].include).toEqual({
+      client: { select: { tenant: { select: { lifecycle: true } } } },
+    });
+  });
+
+  it.each([
+    ['pasif kayıt önce', true],
+    ['aktif kayıt önce', false],
+  ])('[22] tek AKTİF + aynı adresli PASİF kayıt (%s) → yalnız aktif hesap kullanılır', async (_d, passiveFirst) => {
+    const passive: FakeUser = { id: 'PU-P', email: SAME, isActive: false, passwordHash: hashB };
+    const active: FakeUser = { id: 'PU-A', email: SAME, isActive: true, passwordHash: hashA };
+    const users = passiveFirst ? [passive, active] : [active, passive];
+    const ok = buildService(users);
+    const res: any = await ok.svc.login(SAME, pwA);
+    expect(res.user.id).toBe('PU-A');
+    expect((ok.jwt.sign.mock.calls[0] as any[])[0]).toEqual(expect.objectContaining({ sub: 'PU-A' }));
+    expect(ok.prisma.clientPortalUser.update.mock.calls[0][0].where).toEqual({ id: 'PU-A' });
+    await expect(buildService(users).svc.login(SAME, pwB)).rejects.toThrow(LOGIN_REJECT); // pasif hesabın parolası
+    const r = buildService(users);
+    await r.svc.createResetToken(SAME);
+    expect(r.prisma.clientPortalUser.updateMany.mock.calls[0][0].where).toEqual({ id: 'PU-A', isActive: true });
+    expect(r.emailProvider.send).toHaveBeenCalledTimes(1);
+    expect(logged().some((l) => l.includes(AMBIG_EXACT))).toBe(false);
+  });
+
+  it('[23] birebir okuma belirsizse biçim farkı ölçümü TEK hesap döndürse de (arada durum değişimi) eşleşme yok sayılır', async () => {
+    const l = buildService(twoActive(), { rawRows: [{ id: 'PU1', email: SAME }] });
+    await expect(l.svc.login(SAME, pwA)).rejects.toThrow(LOGIN_REJECT);
+    expect(l.prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(l.prisma.clientPortalUser.findFirst).not.toHaveBeenCalled();
+    expect(l.jwt.sign).not.toHaveBeenCalled();
+    const r = buildService(twoActive(), { rawRows: [{ id: 'PU2', email: SAME }] });
+    await expect(r.svc.createResetToken(SAME)).resolves.toEqual({ success: true });
+    expect(r.prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(r.prisma.clientPortalUser.findFirst).not.toHaveBeenCalled();
+    expect(r.prisma.clientPortalUser.updateMany).not.toHaveBeenCalled();
+    expect(r.emailProvider.send).not.toHaveBeenCalled();
+    expect(logged().filter((x) => x.includes(AMBIG_EXACT))).toHaveLength(1);
+    expect(compareSpy).not.toHaveBeenCalled();
+  });
+
+  it('[24] günlük satırları ayrışır: biçim farkı belirsizliği "birebir" satırını yazmaz', async () => {
+    const folded = buildService([
+      { id: 'PU1', email: 'Ali.Veli@Example.com', isActive: true },
+      { id: 'PU2', email: 'ali.veli@EXAMPLE.com', isActive: true },
+    ]);
+    await folded.svc.createResetToken('ALI.VELI@example.com');
+    const lines = logged();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('biçim farkıyla birden çok aktif portal hesabıyla eşleşiyor (belirsiz)');
+    expect(lines[0]).not.toContain(AMBIG_EXACT);
   });
 });

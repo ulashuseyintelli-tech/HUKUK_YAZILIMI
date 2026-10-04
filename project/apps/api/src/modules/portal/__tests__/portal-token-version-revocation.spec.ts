@@ -34,6 +34,8 @@ function buildService(over: any = {}) {
   const prisma: any = {
     clientPortalUser: {
       findFirst: jest.fn().mockResolvedValue(over.findFirstResult ?? null),
+      // KR-4: giriş birebir eşleşmeyi en çok iki aktif kayıtla okur (findMany, take: 2); bu dosyada en çok bir hesap.
+      findMany: jest.fn().mockResolvedValue(over.findFirstResult ? [over.findFirstResult] : []),
       findUnique: jest.fn().mockResolvedValue(over.findUniqueResult ?? null),
       update: jest.fn().mockImplementation((a: any) => Promise.resolve({ id: a.where.id, ...a.data })),
       updateMany: jest.fn().mockResolvedValue(over.updateManyResult ?? { count: 0 }),
