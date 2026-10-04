@@ -88,6 +88,11 @@
  *          hücre TJ (ADAY; ürün guard'ı bu token'ı DB'den önce reddeder — portal-auth.guard.ts:36 verifyAsync); sıra B → T1 → TG → TJ → T3 → T0 …; T5'e
  *          ulaşmaz. Verilme sürümü bu durumda yine s1 (P7-C2V referansı değişmedi). (G4) T2'nin a = c ≠ b dalında b > c iken "(DB sürümü verilme sürümünün
  *          ALTINDA — ürün dışı azaltma)" notu. Çıkış kodu fonksiyonları ve öncelik DEĞİŞMEDİ; kanıttaki `revision` R03 kalır.
+ * R04    : (2026-10-04; owner talimatı madde 5 — "R04-recover-girdi"; D-6 R04 ile aynı ilke) Ret ölçütlerinde (yeni giriş P7-C3L/D · mevcut oturum P7-C4L/D) 503 / 429
+ *          DIŞINDAKİ 5xx gözlemi artık "HTTP <kod> — ret kanıtlanmadı; neden kesinleşmedi (ürün kusuru olarak sınıflanmadı)" der (`rejectObs`; önceki
+ *          gözlem yalnız "HTTP <kod>"; P7-C3L/D'de ölçüm parolası notu aynen eklenir). Verdict (FAIL: 401 beklenirken 401 gelmedi), 503 / 429 → ÖLÇÜLEMEYEN
+ *          kuralı, çıkış kodu fonksiyonları ve öncelik DEĞİŞMEDİ; kanıttaki `revision` R03 kalır. Diğer 5xx gözlemleri (mesaj uçları, kapsam dışı ölçümler,
+ *          kapatma çağrıları) bu kapsamda DEĞİL — değişmedi.
  */
 const fs = require('fs'); const crypto = require('crypto'); const path = require('path');
 const H5 = require('../../client-h5-intake-url-r01/scripts/h5-url-live-run');
@@ -163,6 +168,12 @@ function receiptFromEvidenceCommand(evidPath, newPath) {
 //   AYNI id ile yeniden açar (:289-317), yeni satır yalnız satır yokken (:345); satırı silen ürün yolu yalnız Client cascade (schema onDelete: Cascade).
 const SESSION_EP = 'mesaj ucuna';
 const isOpenAccess = (s) => !!s && s.exists !== false && (s.isActive === true || s.hasPortalAccess === true);
+// R04 (owner talimatı madde 5): ret ölçütlerinin (P7-C3L/D yeni giriş · P7-C4L/D mevcut oturum) 503 / 429 DIŞINDAKİ 5xx gözlemi. Verdict DEĞİŞMEZ (çağıran
+// `r.status === 401` ile FAIL yazar); metin yalnız ölçüleni söyler: 401 (ret) GELMEDİ → ret kanıtlanmadı; 5xx'in hangi katmanda üretildiği ölçülmez (guard'dan
+// sonra mı önce mi, dış uçta kenar katmanı mı) → neden kesinleşmedi; ürün kusuru / ürün bulgusu olarak SINIFLANMAZ (sessionVersion / productFinding yazılmaz —
+// değişmedi). 5xx dışındaki kodlar ve 503 eskisi gibi "HTTP <kod>" (503 / 429 çağıranda önceden ÖLÇÜLEMEYEN'dir).
+const rejectObs = (status) => (Number.isInteger(status) && status >= 500 && status <= 599 && status !== 503
+  ? `HTTP ${status} — ret kanıtlanmadı; neden kesinleşmedi (ürün kusuru olarak sınıflanmadı)` : `HTTP ${status}`);
 const dbTxt = (s) => (!s ? 'ölçülmedi' : (s.exists === false ? `hesap satırı DB'de YOK (hasPortalAccess=${s.hasPortalAccess})` : `isActive=${s.isActive} hasPortalAccess=${s.hasPortalAccess} sürüm=${s.tokenVersion}`));
 // R03-f (F3): açık portal erişiminin ÖLÇÜLEN durumu tek yerde. isActive=true → "portal hesabı AKTİF (…)"; isActive=false + hasPortalAccess=true → "portal kapanışı
 // TAMAMLANMADI: hesap pasif ama müvekkil erişim bayrağı açık (…)" — "portal hesabı açık" YAZILMAZ (guard pasif hesabı reddeder, giriş isActive=true ister:
@@ -404,7 +415,7 @@ async function closePortal(R, prisma, base, origin, receipt, P, opts) {
     if (!r) return R.unmeasured(id, desc, `kimlik bilgisi yok${res.measureCreds ? ' (' + res.measureCreds + ')' : ''} — ölçülemez`);
     if (r.indeterminate) return R.unmeasured(id, desc, 'yanıt alınamadı (zaman aşımı/taşıma)');
     if (r.status === 503 || r.status === 429) return R.unmeasured(id, desc, `HTTP ${r.status} — neden UNKNOWN`);
-    return R.check(id, desc, r.status === 401, `HTTP ${r.status}${res.measureCreds && !o.creds ? ' · ' + res.measureCreds : ''}`);
+    return R.check(id, desc, r.status === 401, `${rejectObs(r.status)}${res.measureCreds && !o.creds ? ' · ' + res.measureCreds : ''}`);
   };
   judge401('P7-C3L', 'kapanış sonrası YENİ portal girişi YEREL 401', nl);
   judge401('P7-C3D', 'kapanış sonrası YENİ portal girişi DIŞ HTTPS 401', nd);
@@ -430,7 +441,7 @@ async function closePortal(R, prisma, base, origin, receipt, P, opts) {
       return R.check(id, desc, false, `${sc.gozlem} · DB: HTTP öncesi ${dbTxt(st1)} → sonrası ${dbTxt(st2)}${res.closeText ? ` · kapatma: ${res.closeText}` : ''}`);
     }
     if (r.status === 503 || r.status === 429) return R.unmeasured(id, desc, `HTTP ${r.status} — neden UNKNOWN`);
-    return R.check(id, desc, r.status === 401, `HTTP ${r.status}`);
+    return R.check(id, desc, r.status === 401, rejectObs(r.status));
   };
   judgeSession('P7-C4L', 'kapanış sonrası MEVCUT portal oturumu mesaj ucunda (GET /portal/messages) YEREL 401', el);
   judgeSession('P7-C4D', 'kapanış sonrası MEVCUT portal oturumu mesaj ucunda DIŞ HTTPS 401', ed);
@@ -1028,5 +1039,5 @@ if (require.main === module) {
 }
 module.exports = { commonGates, runGates, LIVE_PARAMS, effectiveParams, FORBIDDEN_PORTAL, EXTERNAL_ADMIN_RE, FOREIGN_CASE_EXPECT, RECEIPT_RECORD, caseListMatches, listOnlyOwn, recoverExitCode, exitCodeOf,
   recoveryAdvice, recoverStepText, closureTag, receiptFileState, readReceiptForRecover, sessionClass200, portalTokenClaimVersion, issuedVersionOf, receiptFromEvidenceCommand, recoverCloseText, C1_DESC,
-  recoverOpenAccessText };
+  recoverOpenAccessText, rejectObs };
 void scrub;

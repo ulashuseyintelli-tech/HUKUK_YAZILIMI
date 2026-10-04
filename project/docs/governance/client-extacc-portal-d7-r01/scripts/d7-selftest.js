@@ -60,6 +60,9 @@
  *           sıra girdileri B-TG, T1-TG, B-TJ, T1-TJ; T2 a = c ≠ b dalında b > c → ALTINDA notu; 33 girdi, 14 hücre) · Z21-l (G3: opaque token + guard kusur taklidi →
  *           T2 değil TJ; sahte API opaque token ürün davranışı değildir — ürün guard'ı JWT olmayan token'ı :36'da DB'den önce reddeder) · T-11 (çağrı 5 bağımsız
  *           değişkenli; Run TJ girdisini claimDurum OKUNAMADI'dan kurar).
+ * R04     : (owner talimatı madde 5 — "R04-recover-girdi"; D-6 R04 ile aynı ilke) YENİ: T-13 (birim + statik; STATİK bölümde, disposable DB / sahte API senaryosu
+ *           GEREKTİRMEZ) ret ölçütlerinde (P7-C3L/D · P7-C4L/D) 503 / 429 dışındaki 5xx gözlemi "ret kanıtlanmadı; neden kesinleşmedi (ürün kusuru olarak
+ *           sınıflanmadı)"; verdict ve çıkış kodu değişmedi (koşum sonucu paket belgesi §14.9'da).
  */
 const { spawn, spawnSync, execFileSync } = require('child_process');
 const fs = require('fs'); const path = require('path'); const os = require('os'); const crypto = require('crypto');
@@ -963,6 +966,22 @@ async function withInsertFault(table, column, value, fn) {
   check('T-12', 'R03-f: yorum dışı koşucu kaynağında "Recover kapatabilir", "DB\'ye yansımadı", "portal hesabı açık", "DB\'de AÇIK" ve eski "\'AÇIK\' : \'kapanış TAMAMLANMADI\'" biçimi YOK; P7-C1 yazan tüm R.check / R.unmeasured çağrıları (≥ 4) açıklamayı C1_DESC ya da "portal hesabı YOK (DB\'de ölçüldü) …" ile verir, "kapatıldı" geçmez; C1_DESC "DB kapanışı P7-C2 / P7-C5 satırlarında" der',
     t12Bad.length === 0 && c1Calls7.length >= 4 && c1Calls7.every((c) => /'P7-C1', C1_DESC,$/.test(c) || /'P7-C1', 'portal hesabı YOK \(DB\\'de ölçüldü\)/.test(c)) && !c1Calls7.some((c) => /kapatıldı/.test(c)) && /DB kapanışı P7-C2 \/ P7-C5 satırlarında/.test((require(RUN).C1_DESC) || ''),
     `yasak dize=${t12Bad.join(',') || 'yok'} · P7-C1 çağrısı=${c1Calls7.length}: ${c1Calls7.map((c) => c.slice(0, 48)).join(' | ')}`);
+  // T-13 (R04, owner talimatı madde 5; birim + statik — disposable DB / sahte API senaryosu GEREKMEZ): ret ölçütlerinde (P7-C3L/D yeni giriş · P7-C4L/D mevcut
+  // oturum) 503 / 429 DIŞINDAKİ 5xx gözlemi "ret kanıtlanmadı; neden kesinleşmedi (ürün kusuru olarak sınıflanmadı)" der; verdict ifadesi (`r.status === 401`) ve
+  // 503 / 429 → ÖLÇÜLEMEYEN dalı DEĞİŞMEDİ (her iki ölçütte R.check satırından hemen önce); eski yalın "HTTP ${r.status}" gözlemi iki ret ölçütünde kalmadı.
+  const t13Txt = 'ret kanıtlanmadı; neden kesinleşmedi (ürün kusuru olarak sınıflanmadı)';
+  const t13Fn = typeof EX.rejectObs === 'function';
+  const t13Five = t13Fn && [500, 502, 504, 599].every((s) => EX.rejectObs(s) === `HTTP ${s} — ${t13Txt}`);
+  const t13Other = t13Fn && [401, 403, 404, 200, 201, 429, 503, 600].every((s) => EX.rejectObs(s) === `HTTP ${s}`);
+  const t13Cnt = (s) => src.split(s).length - 1;
+  const t13Login = t13Cnt("return R.check(id, desc, r.status === 401, `${rejectObs(r.status)}${res.measureCreds && !o.creds ? ' · ' + res.measureCreds : ''}`);");
+  const t13Sess = t13Cnt('return R.check(id, desc, r.status === 401, rejectObs(r.status));');
+  const t13Old = t13Cnt('r.status === 401, `HTTP ${r.status}');
+  const t13Unm = (src.match(/if \(r\.status === 503 \|\| r\.status === 429\) return R\.unmeasured\(id, desc, `HTTP \$\{r\.status\} — neden UNKNOWN`\);\n\s*return R\.check\(id, desc, r\.status === 401, /g) || []).length;
+  const t13Calls = ["judge401('P7-C3L'", "judge401('P7-C3D'", "judgeSession('P7-C4L'", "judgeSession('P7-C4D'"].every((c) => src.includes(c));
+  check('T-13', 'R04 (owner madde 5): ret ölçütlerinde 503 / 429 dışındaki 5xx gözlemi "HTTP <kod> — ret kanıtlanmadı; neden kesinleşmedi (ürün kusuru olarak sınıflanmadı)" (birim: 500/502/504/599); 5xx dışı kodlar ve 503 "HTTP <kod>" aynen; judge401 (P7-C3L/D; ölçüm parolası notu korunur) ve judgeSession (P7-C4L/D) son dalı gözlemi `rejectObs(r.status)` ile yazar — verdict ifadesi `r.status === 401` ve hemen önündeki 503 / 429 → ÖLÇÜLEMEYEN dalı değişmedi; eski yalın "HTTP ${r.status}" ret gözlemi YOK',
+    t13Fn && t13Five && t13Other && t13Login === 1 && t13Sess === 1 && t13Old === 0 && t13Unm === 2 && t13Calls,
+    `fonksiyon=${t13Fn} · 5xx metni=${t13Five} · diğer kodlar=${t13Other} · yeni giriş son dalı=${t13Login} · mevcut oturum son dalı=${t13Sess} · eski son dal=${t13Old} · 503/429 dalı + R.check=${t13Unm} · dört ölçüt çağrısı=${t13Calls} · örnek=${t13Fn ? EX.rejectObs(502) : '-'}`);
   // T-10 (R03 a): makbuz kurulumdan hemen sonra atanır ve dosyaya yazılır — iki ek dosya yazmasından ÖNCE (kaynak sırası).
   const iRcpt = runSrc.indexOf('receipt = { record: RECEIPT_RECORD'); const iSave = runSrc.indexOf("saveReceipt('makbuz yazılamadı"); const iSetup = runSrc.indexOf('L.setupI3(');
   const iCases = [...runSrc.matchAll(/prisma\.case\.create\(/g)].map((m) => m.index);
