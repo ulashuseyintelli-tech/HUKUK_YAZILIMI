@@ -24,6 +24,7 @@ import {
   CLIENT_WORKSPACE_COMMAND,
 } from "../client/client-workspace-command-authority";
 import { ClientNotificationAuthorityAdapter } from "./client-notification-authority.adapter";
+import { OfficeF01AuthorizationGuard } from "../office-approval/office-f01-authorization.guard";
 
 @Controller("client-notifications")
 @UseGuards(JwtAuthGuard)
@@ -110,8 +111,15 @@ export class ClientNotificationController {
     return this.service.getEmailTemplates(tenantId, category);
   }
 
+  // ŞABLON YAZMA KAPISI (owner kararı 4, 05.10.2026): aşağıdaki üç şablon YAZMA ucu büro ayarlarının yazma rotalarıyla
+  // AYNI F01 kapısını taşır (`OfficeF01AuthorizationGuard`: VIEWER elenir; yazan = ADMIN ya da aynı büroya bağlı,
+  // personel olmayan PARTNER / MANAGER / delege avukat). Yeni rol / izin kodu / politika YOKTUR. Kapı handler
+  // düzeyindedir: sınıf düzeyinde bağlansaydı aynı denetleyicideki gönderim / bağlantı testi uçlarının (bu işin kapsamı
+  // DIŞI) davranışı da değişirdi. Okuma uçları DEĞİŞMEZ.
+
   // Şablon oluştur
   @Post("templates")
+  @UseGuards(OfficeF01AuthorizationGuard)
   createEmailTemplate(
     @CurrentUser("tenantId") tenantId: string,
     @Body() body: CreateClientNotificationTemplateDto
@@ -121,6 +129,7 @@ export class ClientNotificationController {
 
   // Şablon güncelle
   @Put("templates/:id")
+  @UseGuards(OfficeF01AuthorizationGuard)
   updateEmailTemplate(
     @CurrentUser("tenantId") tenantId: string,
     @Param("id") templateId: string,
@@ -131,6 +140,7 @@ export class ClientNotificationController {
 
   // Varsayılan şablonları oluştur
   @Post("templates/create-defaults")
+  @UseGuards(OfficeF01AuthorizationGuard)
   createDefaultTemplates(@CurrentUser("tenantId") tenantId: string) {
     return this.service.createDefaultTemplates(tenantId);
   }
