@@ -43,6 +43,9 @@ const PAGE_SIZE = 20;
  */
 const EXPENSE_CURRENCY = 'TRY';
 
+/** Dosya için avans kaydı yok: sıfır bakiye ya da bir para birimiyle yazılmaz (sunucu `exists:false` döner). */
+const NO_ADVANCE_RECORD = 'Avans kaydı yok';
+
 export default function ClientAccountingPage() {
   const params = useParams();
   const clientId = params.clientId as string;
@@ -259,7 +262,13 @@ export default function ClientAccountingPage() {
           loading={balanceQ.isLoading}
           error={balanceQ.isError}
           fetching={balanceQ.isFetching}
-          value={balanceQ.data ? formatMoneyString(balanceQ.data.balance, balanceQ.data.currency) : null}
+          value={
+            balanceQ.data
+              ? balanceQ.data.exists === false
+                ? NO_ADVANCE_RECORD
+                : formatMoneyString(balanceQ.data.balance, balanceQ.data.currency)
+              : null
+          }
           note="BalanceLedger/CaseBalance kaynaklı avans hareketleri. Payout defteri değildir."
         />
 
