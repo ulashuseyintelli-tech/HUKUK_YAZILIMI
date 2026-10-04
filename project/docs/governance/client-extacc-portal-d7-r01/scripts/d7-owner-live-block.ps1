@@ -45,6 +45,11 @@
 #          (R03-g'deki "Recover bitiş ekranı acikErisim'i göstermez" sınırı kapandı). (d) Koşucu değişti (ret ölçütlerinde 5xx gözlem metni; verdict / çıkış kodu
 #          aynı) → koşucu pini + $ExpPackage güncellendi. Kapılar, Run sırası, node çağrısı, çıkış kodları DEĞİŞMEDİ; Recover soru SORMAZ (değişmedi); Recover okuma
 #          kapısına TEK ek: KULLANILMAZ diye işaretlenmiş bir Recover girdisi dizinindeki makbuz -ReceiptFile ile de reddedilir (başka -ReceiptFile davranışı değişmedi).
+# R04-b (2026-10-04; aşama 2 — D-6 R04-b (a) ile aynı ilke): koşucu değişti → koşucu pini + $ExpPackage güncellendi: kanıttaki kurtarma adımı artık bu bloğun Run sonu
+#          ekranıyla AYNI seçeneği gösterir (`-Mode Recover -RunEvidenceDir '<kanıt dizini>'`); Run kanıt dizininin İÇİNE makbuz yazdıran elle komut koşucudan
+#          KALDIRILDI. Blokta YALNIZ METİN: Run sonu metnindeki "elle komut yerine" ifadesi buna göre değişti. D-7 koşucusu Recover'da makbuz dosyasına YAZMAZ
+#          (kaynaktan + koşucu öz-testi Z19-b: makbuz baytları Recover'dan önce = sonra) → D-6'daki salt okunur bayrağın D-7'de karşılığı yoktur. Kapılar, sıra,
+#          Recover okuma kapısı, node çağrısı, çıkış kodları DEĞİŞMEDİ.
 # MODLAR
 #   -Mode Preflight  SALT OKUMA: tüm kapılar (canlı dist = R27 pini); GO sorulmaz; kanıt/ortam/DB/canlı dosya yazılmaz; koşucu çağrılmaz (yalnız `node --version`). Kapılardaki `git fetch` yerel repodaki uzak izleme ref'lerini günceller (iş verisi değildir).
 #   -Mode QrTest     Canlı veri YOK: portal MESAJ sayfasının QR'ı yerel konsolda gösterilir (d7-qr-test.js); owner telefonla okutur.
@@ -98,7 +103,7 @@ $ExpEnvSha   = '5C776BBEEE018EA5CC8192378D42D742FD4ABC1B6D0E9A3EA671CF463206908D
 $ExpBaseUrl  = $null   # R05 public portal adresi: canlı .env PUBLIC_PORTAL_BASE_URL'den okunur (Invoke-ReadOnlyGates, biçim kapısı) ve Run/QrTest'te owner'ın konsola yazdığı R05 adresiyle birebir doğrulanır (Confirm-PortalBaseUrlR05). Public repoya host literali YAZILMAZ.
 # Koşucunun YÜKLEDİĞİ tüm governance dosyaları + D-7 QR denemesi (require ağacı ölçüldü).
 $PkgPins = [ordered]@{
-  'client-extacc-portal-d7-r01\scripts\d7-portal-messages-live-run.js'                = 'AB38AC97DD400B13A2BD71F561EEC7C3EA8A37AB937DC02DE31BA992810F41C2'
+  'client-extacc-portal-d7-r01\scripts\d7-portal-messages-live-run.js'                = '20DC82E2EE807F480E02BF9EC4BAF409F847489972B466D16955BB4F5DF51965'
   'client-extacc-portal-d7-r01\scripts\d7-qr-test.js'                                 = '15E6431396E978423BAE72F3B7511F3972F12847EF96AA02C12937E0F2233E15'
   'client-extacc-intake-chain-r01\scripts\extacc-display.js'                          = 'F257188DF66C429472C214D38D965C1E6F5A2EA490D348369AC68C5DC6F26867'
   'client-extacc-intake-chain-r01\scripts\vendor\qrcode-generator-1.4.4\qrcode.js'    = '18AE399F81182BC9DE916E9C77B195DF20CC58D6F2D55A62B085A299F1BF1780'
@@ -108,7 +113,7 @@ $PkgPins = [ordered]@{
   'client-acceptance-runners-i3-r01\scripts\i3-lib.js'                                = '56F3788E9F84746CFFEE384D8C18B9B9A28130CC8E2285F9570AB69CC6EE74A3'
   'client-acceptance-harness-r01\scripts\ah-lib.js'                                   = 'DF882DB7F33A667092F126F01E518C1A8292C8C0B3C4C039BF73D71F3ACCBFD7'
 }
-$ExpPackage = '01DFD77FE88240A0BCBF8A986FBF4F80F759C975D233D9BB68B00B93118CA789'
+$ExpPackage = '16D95F54DB430D3E113DA86DF36719BC68C19DD934E8D32170D44682014AD1C5'
 $SecretEnv  = @('AH_DATABASE_URL', 'AH_PRISMA_ROOT', 'AH_BCRYPT_PATH', 'D7_LIVE_CONFIRM', 'D7_RECOVER_CONFIRM', 'D7_LIVE_GO_REF',
                 'D7_RUNID', 'D7_MODE', 'D7_EXPECT_DB', 'D7_EXPECT_TENANT_SLUG', 'D7_API_BASE', 'D7_EXPECT_API',
                 'D7_EXPECT_BASE_URL', 'D7_LIVE_LOGIN_PW', 'D7_RECEIPT', 'D7_EVID_FILE', 'D7_DISPLAY', 'EXA_QRTEST_URL', 'D7_TEST_DISPLAY_SINK',
@@ -638,12 +643,13 @@ function Invoke-RunMode($g) {
     Write-Host '  KAPANIŞ DOĞRULANMADI: Run kendi kapanış adımlarını koşucu İÇİNDE denedi; bu çıkış kodu Recover YETKİSİ DEĞİLDİR ve bu blok Recover BAŞLATMAZ.' -ForegroundColor Yellow
     Write-Host '  Önce kanıtı inceleyin (d7-evidence.json: kurtarma/inceleme nedeni ve açık kalan kaynaklar) ve sonucu CLIENT''a bildirin. Kanıttaki kurtarma adımı' -ForegroundColor Yellow
     # R03-c / R03-d: makbuz dosyasının durumu (okuma kapısı + kanıttaki son makbuz metniyle eşitlik; BAYAT) ölçülür. R04 (owner kararı 2026-10-04): kanıtta
-    # makbuz metni (recovery.makbuzJson) VARSA öneri, elle komut yerine bu bloğun -RunEvidenceDir seçeneğidir — makbuzu blok, AYRI Recover onayından sonra Run
+    # (R04-b: koşucunun kanıta yazdığı kurtarma adımı da aynı seçeneği gösterir — elle komut koşucudan kaldırıldı → metin "elle komut yerine" demez.)
+    # makbuz metni (recovery.makbuzJson) VARSA öneri bu bloğun -RunEvidenceDir seçeneğidir — makbuzu blok, AYRI Recover onayından sonra Run
     # kanıt dizininin DIŞINA (kardeş dizin) yazar ve doğrular; kanıt dizinindeki makbuz dosyası -ReceiptFile ile ÖNERİLMEZ (Recover recover-* dizinini makbuzun
     # yanında açar → Run kanıt dizini değişir). Kanıtta makbuz metni yoksa R03-d dalları aynen (ya da SOMUT ENGEL).
     $rs = Get-ReceiptFileState (Join-Path $EvDir 'd7-setup-receipt.json') $closure.makbuzJson
     if ($closure.makbuzJson) {
-      Write-Host '  bir ÖNERİDİR (otomatik DEĞİL; ürün bulgusu varsa Recover onu DÜZELTMEZ): Recover yalnız kanıt incelendikten sonra AYRI owner onayıyla, BİR KEZ, bu blokla şu seçenekle başlatılır (kanıttaki kurtarma adımındaki elle komut yerine). Kabulü TEKRARLAMAYIN.' -ForegroundColor Yellow
+      Write-Host '  bir ÖNERİDİR (otomatik DEĞİL; ürün bulgusu varsa Recover onu DÜZELTMEZ): Recover yalnız kanıt incelendikten sonra AYRI owner onayıyla, BİR KEZ, bu blokla şu seçenekle başlatılır (kanıttaki kurtarma adımı da bu seçeneği gösterir). Kabulü TEKRARLAMAYIN.' -ForegroundColor Yellow
       Write-Host ("    -Mode Recover -RunEvidenceDir '{0}'" -f $EvDir.Replace("'", "''")) -ForegroundColor Yellow
       Write-Host '  Bu seçenekte blok, Recover başlamadan önce: kaynağı doğrular (SHA256-MANIFEST.txt satırı = d7-evidence.json sha256 ve manifestteki her dosya; kayıt türü Run; runId ve kimlik alanları; GO defteri satırı), makbuzu kanıttaki recovery.makbuzJson alanından Run kanıt dizininin DIŞINDA kardeş bir dizine (<kanıt dizini>.recover-girdi-<UTC zaman>) yazar, baytları geri okur ve Run kanıtı + manifestin değişmediğini ölçer; biri tutmazsa Recover BAŞLAMAZ. Run kanıt dizinine ve manifeste yazmaz.' -ForegroundColor Yellow
       Write-Host ("  Kanıt dizinindeki makbuz dosyası (d7-setup-receipt.json): {0} — bu dosyayı -ReceiptFile ile VERMEYİN: Recover recover-* dizinini makbuzun yanında açar (Run kanıt dizini değişir)." -f $rs.why) -ForegroundColor Yellow

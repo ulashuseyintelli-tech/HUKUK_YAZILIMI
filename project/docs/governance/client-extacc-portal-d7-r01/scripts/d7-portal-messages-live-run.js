@@ -93,6 +93,13 @@
  *          gözlem yalnız "HTTP <kod>"; P7-C3L/D'de ölçüm parolası notu aynen eklenir). Verdict (FAIL: 401 beklenirken 401 gelmedi), 503 / 429 → ÖLÇÜLEMEYEN
  *          kuralı, çıkış kodu fonksiyonları ve öncelik DEĞİŞMEDİ; kanıttaki `revision` R03 kalır. Diğer 5xx gözlemleri (mesaj uçları, kapsam dışı ölçümler,
  *          kapatma çağrıları) bu kapsamda DEĞİL — değişmedi.
+ * R04-b  : (2026-10-04; owner talimatı madde 5 — aşama 2; D-6 R04-b (a) ile aynı ilke) KURTARMA ADIMI owner bloğunun Run sonu ekranıyla HİZALANDI: kanıtta makbuz
+ *          metni (`recovery.makbuzJson`) varken adım `-Mode Recover -RunEvidenceDir '<bu koşumun kanıt dizini>'` der (makbuzu blok kaynak kanıttan doğrulayıp Run
+ *          kanıt dizininin DIŞINDA kardeş dizine yazar). Önceki baytlar (R03-d) burada elle TEK komut veriyor ve yeni makbuzu Run kanıt dizininin İÇİNE
+ *          yazdırıyordu; diskteki makbuz güncelken de `-ReceiptFile <makbuz>` öneriyordu (Recover recover-* dizinini makbuzun yanında, yani Run kanıt dizininde
+ *          açar). İkisi de KALDIRILDI (`receiptFromEvidenceCommand` silindi); diskteki makbuz dosyasının durumu adımda yalnız BİLGİ olarak yazılır. Kanıtta
+ *          makbuz yoksa "bu koşumda makbuz YOK … (K-7)" metni aynen. Recover makbuz dosyasına YAZMAZ (recoverMode'da makbuz yazımı yok — değişmedi; D-6'daki
+ *          `residueFiles` yazımının D-7'de karşılığı yoktur). Çıkış kodu fonksiyonları, öncelik, verdict'ler ve kanıttaki `revision` (R03) DEĞİŞMEDİ.
  */
 const fs = require('fs'); const crypto = require('crypto'); const path = require('path');
 const H5 = require('../../client-h5-intake-url-r01/scripts/h5-url-live-run');
@@ -156,10 +163,6 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const stripBom = (t) => (typeof t === 'string' && t.charCodeAt(0) === 0xFEFF ? t.slice(1) : t);
 // R03-d: PowerShell tek tırnaklı dizge (içteki ' iki kez yazılır).
 const psq = (x) => `'${String(x).replace(/'/g, "''")}'`;
-/** R03-d (m4): kanıttaki `recovery.makbuzJson` dizgesinden yeni makbuz dosyası yazan TEK komut (Windows PowerShell 5.1 ve PowerShell 7'de öz-testte koşuldu). */
-function receiptFromEvidenceCommand(evidPath, newPath) {
-  return `(Get-Content -Raw -Encoding UTF8 -LiteralPath ${psq(evidPath || '<kanıt dosyası>')} | ConvertFrom-Json).recovery.makbuzJson | Set-Content -Encoding UTF8 -NoNewline -LiteralPath ${psq(newPath || '<yeni makbuz>')}`;
-}
 // R03-e — oturum sınıflamasının ortak parçaları (ürün kaynağı HY_WT_R27, salt okuma; satır numaraları o ağaçta grep ile doğrulandı):
 //   portal-auth.guard.ts — satır `id = sub` ile aranır (:47-56); satır yok / müvekkil yok / isActive=false → 401 (:58-60); claim sürümü ≠ DB sürümü → 401
 //   (:66-68); claim yoksa 0 (:98-101), tam sayı değilse oturum hep reddedilir (:42-45, :102-104); hasPortalAccess guard'da OKUNMAZ.
@@ -562,32 +565,34 @@ function recoveryAdvice(out, receiptPath, mode, evidPath) {
     else if (tdb.hedef > 0 || tdb.yabanci > 0) need.push(`KURULUM: makbuz YOK (kurulum aşaması=${su.asama || '-'}) ama sentetik tenant slug'ı DB'de VAR (hedef=${tdb.hedef} · yabancı=${tdb.yabanci}) — Run kapanışı makbuzsuz KOŞMADI; tenantın bu koşumun kurulumundan mı geldiği kanıttaki fatal metninden okunur; makbuzsuz kapanış yolu bu pakette tanımlı değildir (K-7)`);
   }
   // R03-d (m4): Run kanıtı makbuzun BİREBİR JSON metnini dizge olarak taşır (writeJson ile aynı serileştirme; parola / token içermez — S-1 ölçer). Bu alan
-  // ConvertFrom-Json'da dizge kalır (PowerShell 7'nin tarih dönüşümüne uğramaz — öz-testte ölçüldü); makbuz dosyası yoksa / okunamıyorsa / BAYATsa kullanılır.
+  // ConvertFrom-Json'da dizge kalır (PowerShell 7'nin tarih dönüşümüne uğramaz — öz-testte ölçüldü). R04-b: owner bloğu `-Mode Recover -RunEvidenceDir` yolunda
+  // Recover makbuzunu BU alandan çıkarır (diskteki makbuz dosyasının durumundan bağımsız).
   const makbuzJson = mode === 'recover' || !out.receipt ? undefined : JSON.stringify(out.receipt, null, 1);
   if (!need.length) return { gerekli: false, makbuzJson };
   // R03-d (m6): "makbuz dosyası diskte var mı" = DOSYA (statSync().isFile()); existsSync klasörde de true döndürüyordu.
   let onDisk = false; try { onDisk = !!receiptPath && fs.statSync(receiptPath).isFile(); } catch (e) { onDisk = false; }
-  // R03-c: Run adımı Recover komutunu YALNIZ makbuz dosyası Recover'ın okuma kapısını geçiyorsa önerir. R03-d: ve dosya bellekteki son makbuzla EŞİTSE
-  // (BAYAT değilse). Makbuz bellekte var ama dosyası yazılamamış (setup.durum=YARIM_MAKBUZ_DOSYASI_YAZILAMADI) / okunamıyor / BAYAT ise diskteki dosya
-  // ÖNERİLMEZ; kanıttaki `recovery.makbuzJson` dizgesinden yeni dosya yazan TEK komut verilir. Makbuz hiç yoksa (kurulum yarıda) "makbuz YOK … (K-7)" kalır.
+  // R04-b (aşama 2): Run adımı owner bloğunun Run sonu ekranıyla AYNI yönü gösterir. Kanıtta makbuz metni (`recovery.makbuzJson` — yani `out.receipt`) VARSA
+  // öneri `-Mode Recover -RunEvidenceDir '<bu koşumun kanıt dizini>'`dir: makbuzu blok, AYRI Recover onayından sonra, kaynak kanıttan doğrulayıp Run kanıt
+  // dizininin DIŞINDA kardeş dizine yazar. Diskteki makbuz dosyasının durumu (R03-c okuma kapısı · R03-d BAYAT ölçümü · setup.durum) yalnız BİLGİ olarak yazılır
+  // ve dosya `-ReceiptFile` ile ÖNERİLMEZ — güncel olsa da (Recover recover-* dizinini makbuzun yanında, yani Run kanıt dizininde açar). Run kanıt dizininin
+  // İÇİNE dosya yazdıran elle komut (R03-d m4) HİÇBİR dalda yoktur. Kanıtta makbuz yokken: dosya okunabiliyorsa `-ReceiptFile <makbuz>` (bloğun aynı durumdaki
+  // dalı; koşucunun kendi Run'ında oluşmaz — makbuz yokken makbuz yolu da verilmez), değilse "bu koşumda makbuz YOK … (K-7)" (metin aynen).
   const rs = mode === 'recover' ? null : receiptFileState(receiptPath, out.receipt || null);
   const head = 'ÖNERİ (yetki DEĞİL): çıkış kodu Recover yetkisi değildir; önce kanıt incelenir. Recover yalnız AYRI owner onayıyla başlatılır ';
   const wErr = out.receiptWriteError ? ` · makbuz yazma hatası: ${out.receiptWriteError}` : '';
   const su0 = out.setup || {};
   let adim;
   if (mode === 'recover') adim = 'ÖNERİ (yetki DEĞİL): kanıt incelenir ve sonuç CLIENT\'a bildirilir. Bu çıkış kodu yeni bir Recover için yetki değildir; İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR, owner kararı gerektirir.';
-  else if (rs.kullanilabilir && rs.guncel !== false) {
+  else if (out.receipt) {
+    const evDir = evidPath ? path.dirname(evidPath) : null;
+    const durumTxt = !rs.kullanilabilir ? `${rs.durum === 'OKUNAMADI' ? 'OKUNAMIYOR' : 'YOK'} (${rs.neden}${wErr}${su0.durum ? ` · setup.durum=${su0.durum}` : ''})`
+      : (rs.guncel === false
+        ? `BAYAT (diskteki makbuz koşucunun bellekteki son makbuzuyla EŞİT DEĞİL — farklı alan(lar): ${(rs.farkliAlanlar || []).join(',') || 'alan sırası'}; makbuzun sonraki bir yazımı başarısız${wErr}; sonradan eklenen kimlikleri içermeyebilir → bu dosyayla Recover eksik kapanış yapabilir)`
+        : 'VAR — koşucunun bellekteki son makbuzuyla EŞİT');
+    adim = `${head}— owner bloğunun şu seçeneğiyle: \`-Mode Recover -RunEvidenceDir ${psq(evDir || '<bu koşumun kanıt dizini>')}\` — blok makbuzu bu kanıttaki \`recovery.makbuzJson\` alanından (makbuzun birebir JSON metni; parola / token içermez) çıkarır, kaynak kanıtı doğrular (manifest / hash bağı, runId / kimlik bağı) ve Run kanıt dizininin DIŞINDA kardeş bir dizine yazar; doğrulama tutmazsa Recover BAŞLAMAZ. `
+      + `Run kanıt dizinine dosya YAZILMAZ; kanıt dizinindeki makbuz dosyası (durumu: ${durumTxt}) \`-ReceiptFile\` ile VERİLMEZ. Koşucu Recover'da makbuzu kayıt türü, runId ve DB'deki kimlik bağıyla doğrular (doğrulanmazsa yazmadan çıkış 4); kabul ölçütleri tekrarlanmaz.`;
+  } else if (rs.kullanilabilir) {
     adim = `${head}(owner bloğu \`-Mode Recover -ReceiptFile <makbuz>\`); kabul ölçütleri tekrarlanmaz.`;
-  } else if (out.receipt) {
-    // R03-d (m4 + m7): makbuz dosyası YOK / OKUNAMIYOR / BAYAT → diskteki dosya ÖNERİLMEZ (bayat makbuz sonradan eklenen kimlikleri — ör. runnerMessageIds —
-    // içermeyebilir → eksik kapanış / eksik sayım); R03-c'nin "receipt nesnesini yeni bir JSON dosyasına yazın" yolu ölçülmemişti (WinPS 5.1 BOM'u koşucu
-    // kapısında reddediliyordu). Yerine iki kabukta ölçülen TEK komut: kanıttaki `recovery.makbuzJson` dizgesi yeni dosyaya birebir yazılır.
-    const newPath = evidPath ? path.join(path.dirname(evidPath), 'd7-setup-receipt-kanittan.json') : null;
-    const durumTxt = rs.kullanilabilir
-      ? `BAYAT (diskteki makbuz koşucunun bellekteki son makbuzuyla EŞİT DEĞİL — farklı alan(lar): ${(rs.farkliAlanlar || []).join(',') || 'alan sırası'}; makbuzun sonraki bir yazımı başarısız${wErr}): Recover diskteki makbuzu okur ve sonradan eklenen kimlikleri içermeyebilir → eksik kapanış`
-      : `${rs.durum === 'OKUNAMADI' ? 'OKUNAMIYOR' : 'YOK'} (${rs.neden}${wErr}${su0.durum ? ` · setup.durum=${su0.durum}` : ''})`;
-    adim = `${head}— ama makbuz dosyası ${durumTxt}: bu makbuz dosyasıyla Recover ÖNERİLMEZ${rs.kullanilabilir ? '' : ' — bu makbuz yoluyla bloktan Recover BAŞLATILAMAZ (blok ve koşucu Recover\'da makbuzu dosyadan okur)'}. `
-      + `Kullanılabilir yol: makbuzun son hâli bu kanıttaki \`recovery.makbuzJson\` alanıdır (makbuzun birebir JSON metni; parola / token içermez); şu TEK komut onu yeni bir makbuz dosyasına yazar (öz-testte Windows PowerShell 5.1 ve PowerShell 7 ile koşuldu): \`${receiptFromEvidenceCommand(evidPath, newPath)}\` — ardından Recover yalnız AYRI owner onayıyla \`-Mode Recover -ReceiptFile ${psq(newPath || '<yeni makbuz>')}\` ile başlatılır (koşucu makbuzu kayıt türü, runId ve DB'deki kimlik bağıyla doğrular; doğrulanmazsa yazmadan çıkış 4); kabul ölçütleri tekrarlanmaz.`;
   } else adim = `${head}— ama bu koşumda makbuz YOK: Recover bu kanıtla başlatılamaz; makbuzsuz kapanış yolu bu pakette tanımlı değildir (owner/CLIENT kararı; K-7).`;
   return { gerekli: true, neden: need, makbuz: receiptPath || null, makbuzDiskte: onDisk, makbuzDurumu: rs ? rs.durum : null, makbuzGuncel: rs && rs.kullanilabilir ? rs.guncel : null, adim, makbuzJson };
 }
@@ -1038,6 +1043,6 @@ if (require.main === module) {
   else { console.error(`REDDEDİLDİ: bilinmeyen D7_MODE '${mode}'`); process.exit(1); }
 }
 module.exports = { commonGates, runGates, LIVE_PARAMS, effectiveParams, FORBIDDEN_PORTAL, EXTERNAL_ADMIN_RE, FOREIGN_CASE_EXPECT, RECEIPT_RECORD, caseListMatches, listOnlyOwn, recoverExitCode, exitCodeOf,
-  recoveryAdvice, recoverStepText, closureTag, receiptFileState, readReceiptForRecover, sessionClass200, portalTokenClaimVersion, issuedVersionOf, receiptFromEvidenceCommand, recoverCloseText, C1_DESC,
+  recoveryAdvice, recoverStepText, closureTag, receiptFileState, readReceiptForRecover, sessionClass200, portalTokenClaimVersion, issuedVersionOf, recoverCloseText, C1_DESC,
   recoverOpenAccessText, rejectObs };
 void scrub;
