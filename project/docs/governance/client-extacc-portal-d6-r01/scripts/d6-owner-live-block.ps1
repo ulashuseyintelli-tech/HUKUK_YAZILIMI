@@ -74,6 +74,13 @@
 #          "Recover bitiş ekranı acikErisim'i göstermez" sınırı kapandı). (d) Koşucu değişti (ret ölçütlerinde 5xx gözlem metni; verdict / çıkış kodu aynı) →
 #          koşucu pini + $ExpPackage güncellendi. Kapılar, Run sırası, node çağrısı, çıkış kodları DEĞİŞMEDİ; Recover okuma kapısına TEK ek: KULLANILMAZ diye
 #          işaretlenmiş bir Recover girdisi dizinindeki makbuz -ReceiptFile ile de reddedilir (başka -ReceiptFile davranışı değişmedi).
+# R04-b  : (2026-10-04; aşama 2 — iki somut kusur) (a) Koşucu değişti → koşucu pini + $ExpPackage güncellendi: kanıttaki kurtarma adımı artık bu bloğun Run sonu
+#          ekranıyla AYNI seçeneği gösterir (`-Mode Recover -RunEvidenceDir '<kanıt dizini>'`); Run kanıt dizininin İÇİNE makbuz yazdıran elle komut koşucudan
+#          KALDIRILDI. Run sonu metnindeki "elle komut yerine" ifadesi buna göre değişti (yalnız METİN). (b) `-RunEvidenceDir` yolunda makbuz koşucuya SALT OKUNUR
+#          verilir (D6_RECEIPT_READONLY=1): koşucu Recover'da makbuzu yeniden YAZMAZ (önceki baytlarda kalan belge yollarını — residueFiles — kardeş dizindeki
+#          makbuza yazıyor, RECOVER-GIRDI-KAYDI.json'daki makbuzSha256 tutmuyordu — ölçüldü); yollar Recover kanıtına yazılır. Recover'dan SONRA makbuzun sha256'sı
+#          yeniden ölçülür ve "RECOVER GİRDİSİ (makbuz): … DEĞİŞMEDİ / DEĞİŞTİ" satırıyla gösterilir. `-ReceiptFile` yolunda bayrak VERİLMEZ (davranış değişmedi).
+#          Kapılar, Run sırası, node çağrısı, çıkış kodları DEĞİŞMEDİ.
 # TOPOLOJİ: public portal adresi canlı .env'den okunur ve owner'ın konsola yazdığı R05 adresiyle doğrulanır; kanıt kökü $env:USERPROFILE'a görelidir
 #          (bu dosyada canlı alan adı / yerel kullanıcı yolu literali yoktur). Canlı kök ($Rel) tek yerde tanımlıdır.
 # ÇIKIŞ  : node kodu değiştirilmeden taşınır · 90 kapıda durdu · 91 node başlatılamadı / kod alınamadı · 7 kanıt yok.
@@ -101,7 +108,7 @@ $ExpEnvSha   = '5C776BBEEE018EA5CC8192378D42D742FD4ABC1B6D0E9A3EA671CF463206908D
 $ExpBaseUrl  = $null   # R05 public portal adresi: canlı .env PUBLIC_PORTAL_BASE_URL'den okunur (Invoke-ReadOnlyGates, biçim kapısı) ve Run/QrTest'te owner'ın konsola yazdığı R05 adresiyle birebir doğrulanır (Confirm-PortalBaseUrlR05). Public repoya host literali YAZILMAZ.
 # Koşucunun YÜKLEDİĞİ tüm governance dosyaları + QR denemesi (require ağacı ölçüldü).
 $PkgPins = [ordered]@{
-  'client-extacc-portal-d6-r01\scripts\d6-portal-documents-live-run.js'               = '74C495094F1191C950728D866245044DBDF5DBB82E216519646D2ED36284BDCE'
+  'client-extacc-portal-d6-r01\scripts\d6-portal-documents-live-run.js'               = '954B6857ABE3DDE22F73D6F7A1E77113BF42B2D1D08887D94F3E2B0F68A2D501'
   'client-extacc-portal-d6-r01\scripts\d6-qr-test.js'                                 = 'C9FC15AADBFDF4AA87702542340EB6A5C68558D3FE6423F06DED8E452D85F418'
   'client-extacc-intake-chain-r01\scripts\extacc-display.js'                          = 'F257188DF66C429472C214D38D965C1E6F5A2EA490D348369AC68C5DC6F26867'
   'client-extacc-intake-chain-r01\scripts\vendor\qrcode-generator-1.4.4\qrcode.js'    = '18AE399F81182BC9DE916E9C77B195DF20CC58D6F2D55A62B085A299F1BF1780'
@@ -111,11 +118,11 @@ $PkgPins = [ordered]@{
   'client-acceptance-runners-i3-r01\scripts\i3-lib.js'                                = '56F3788E9F84746CFFEE384D8C18B9B9A28130CC8E2285F9570AB69CC6EE74A3'
   'client-acceptance-harness-r01\scripts\ah-lib.js'                                   = 'DF882DB7F33A667092F126F01E518C1A8292C8C0B3C4C039BF73D71F3ACCBFD7'
 }
-$ExpPackage = 'DF36BC1B838373A15024C36364E4C358C272EF02BA69A27B7380CA2E0F865080'
+$ExpPackage = '9C6AE01DC6A8BFC78110AA7EEF97C709D3DB47066B2D150ED0C720F0D30F8682'
 $SecretEnv  = @('AH_DATABASE_URL', 'AH_PRISMA_ROOT', 'AH_BCRYPT_PATH', 'D6_LIVE_CONFIRM', 'D6_RECOVER_CONFIRM', 'D6_LIVE_GO_REF',
                 'D6_RUNID', 'D6_MODE', 'D6_EXPECT_DB', 'D6_EXPECT_TENANT_SLUG', 'D6_API_BASE', 'D6_EXPECT_API',
                 'D6_EXPECT_BASE_URL', 'D6_LIVE_LOGIN_PW', 'D6_RECEIPT', 'D6_EVID_FILE', 'D6_DISPLAY', 'EXA_QRTEST_URL',
-                'D6_RESIDUE_CLEANUP', 'D6_TEST_DISPLAY_SINK',
+                'D6_RESIDUE_CLEANUP', 'D6_RECEIPT_READONLY', 'D6_TEST_DISPLAY_SINK',
                 'D6_WAIT_MS', 'D6_POLL_MS', 'D6_VIEW_MS', 'D6_HTTP_TIMEOUT_MS', 'D6_CALL_TIMEOUT_MS', 'D6_LATE_CREATE_MS', 'D6_RESIDUE_WAIT_MS')
 # CANLI SÜRELER — açıkça kurulur; pencereden devralınan değerler başta ve sonda SİLİNİR (koşucu da canlı DB'de bunları zorlar).
 $LiveParams = [ordered]@{ D6_WAIT_MS = '1200000'; D6_POLL_MS = '5000'; D6_VIEW_MS = '120000'; D6_HTTP_TIMEOUT_MS = '15000'; D6_CALL_TIMEOUT_MS = '30000'
@@ -549,6 +556,7 @@ function New-RecoverInputFromRun([string]$runDir) {
       kodlama = 'recovery.makbuzJson dizgesinin UTF-8 baytları; BOM YOK; satır sonları dönüştürülmedi; sonda ek satır sonu YOK'
       geriOkuma = 'baytlar EŞİT'; okumaKapisi = 'Get-ReceiptFileState: kullanılabilir (makbuzJson metin eşitliği dahil)'
       kaynakYazimdanSonra = 'd6-evidence.json ve SHA256-MANIFEST.txt sha256 DEĞİŞMEDİ (önce = sonra)'
+      makbuzRecoverda = 'koşucuya SALT OKUNUR verilir (D6_RECEIPT_READONLY=1): Recover bu dosyayı yeniden yazmaz; makbuzSha256 Recover BAŞLAMADAN önce ölçülen değerdir ve Recover''dan sonra blok tarafından yeniden ölçülüp ekranda gösterilir (bu kayıt Recover''dan sonra GÜNCELLENMEZ)'
       bagimsizCapa = [ordered]@{ manifestVeKanit = 'YOK — Run kayıtları (owner-block.json, goref-consumed.json, owner-declaration.json, GO defteri) manifest ya da kanıt özeti taşımaz; manifest kanıtla birlikte değiştirilirse bu doğrulama YAKALAYAMAZ'
                                  runId = ('GO defteri (kanıt dizini dışında) satırı doğrulandı: GO sha256 + runId=' + $src.runId) } }
     try { Write-NewFileBytes (Join-Path $target 'RECOVER-GIRDI-KAYDI.json') ([Text.UTF8Encoding]::new($false).GetBytes(($k | ConvertTo-Json -Depth 4))) } catch { $why = "RECOVER-GIRDI-KAYDI.json yazılamadı ($(Get-ErrName $_))" }
@@ -670,12 +678,13 @@ function Invoke-RunMode($g) {
     Write-Host '  KAPANIŞ DOĞRULANMADI: Run kendi kapanış adımlarını koşucu İÇİNDE denedi; bu çıkış kodu Recover YETKİSİ DEĞİLDİR ve bu blok Recover BAŞLATMAZ.' -ForegroundColor Yellow
     Write-Host '  Önce kanıtı inceleyin (d6-evidence.json: kurtarma/inceleme nedeni ve açık kalan kaynaklar) ve sonucu CLIENT''a bildirin. Kanıttaki kurtarma adımı' -ForegroundColor Yellow
     # R03-c / R03-d: makbuz dosyasının durumu (okuma kapısı + kanıttaki son makbuz metniyle eşitlik; BAYAT) ölçülür. R04 (owner kararı 2026-10-04): kanıtta
-    # makbuz metni (recovery.makbuzJson) VARSA öneri, elle komut yerine bu bloğun -RunEvidenceDir seçeneğidir — makbuzu blok, AYRI Recover onayından sonra Run
+    # makbuz metni (recovery.makbuzJson) VARSA öneri bu bloğun -RunEvidenceDir seçeneğidir — makbuzu blok, AYRI Recover onayından sonra Run
     # kanıt dizininin DIŞINA (kardeş dizin) yazar ve doğrular; kanıt dizinindeki makbuz dosyası -ReceiptFile ile ÖNERİLMEZ (Recover makbuzu yerinde yeniden
     # yazabilir ve recover-* dizinini makbuzun yanında açar → Run kanıtı ve manifest değişir). Kanıtta makbuz metni yoksa R03-d dalları aynen (ya da SOMUT ENGEL).
+    # R04-b: koşucunun kanıta yazdığı kurtarma adımı da aynı seçeneği gösterir (elle komut koşucudan kaldırıldı) → metin "elle komut yerine" demez.
     $rs = Get-ReceiptFileState (Join-Path $EvDir 'd6-setup-receipt.json') $closure.makbuzJson
     if ($closure.makbuzJson) {
-      Write-Host '  bir ÖNERİDİR (otomatik DEĞİL; ürün bulgusu varsa Recover onu DÜZELTMEZ): Recover yalnız kanıt incelendikten sonra AYRI owner onayıyla, BİR KEZ, bu blokla şu seçenekle başlatılır (kanıttaki kurtarma adımındaki elle komut yerine). Kabulü TEKRARLAMAYIN.' -ForegroundColor Yellow
+      Write-Host '  bir ÖNERİDİR (otomatik DEĞİL; ürün bulgusu varsa Recover onu DÜZELTMEZ): Recover yalnız kanıt incelendikten sonra AYRI owner onayıyla, BİR KEZ, bu blokla şu seçenekle başlatılır (kanıttaki kurtarma adımı da bu seçeneği gösterir). Kabulü TEKRARLAMAYIN.' -ForegroundColor Yellow
       Write-Host ("    -Mode Recover -RunEvidenceDir '{0}'" -f $EvDir.Replace("'", "''")) -ForegroundColor Yellow
       Write-Host '  Bu seçenekte blok, Recover başlamadan önce: kaynağı doğrular (SHA256-MANIFEST.txt satırı = d6-evidence.json sha256 ve manifestteki her dosya; kayıt türü Run; runId ve kimlik alanları; GO defteri satırı), makbuzu kanıttaki recovery.makbuzJson alanından Run kanıt dizininin DIŞINDA kardeş bir dizine (<kanıt dizini>.recover-girdi-<UTC zaman>) yazar, baytları geri okur ve Run kanıtı + manifestin değişmediğini ölçer; biri tutmazsa Recover BAŞLAMAZ. Run kanıt dizinine ve manifeste yazmaz.' -ForegroundColor Yellow
       Write-Host ("  Kanıt dizinindeki makbuz dosyası (d6-setup-receipt.json): {0} — bu dosyayı -ReceiptFile ile VERMEYİN: Recover makbuzu yerinde yeniden yazabilir ve recover-* dizinini makbuzun yanında açar (Run kanıt dizini ve manifest değişir)." -f $rs.why) -ForegroundColor Yellow
@@ -708,11 +717,16 @@ function Invoke-RecoverMode($g, [string]$receiptPath, [string]$runEvidenceDir = 
   $rcpt = Get-Content -Raw -LiteralPath $receiptPath | ConvertFrom-Json
   if ($rcpt.record -ne 'EXTACC-D6-SETUP-RECEIPT' -or $rcpt.runId -notmatch '^[0-9a-f]{8}$') { Fail 'makbuz biçimi tanınmadı' }
   if (-not $runEvidenceDir) { $Residue = Read-ResidueDecision }
+  # R04-b: -RunEvidenceDir yolunda makbuz bloğun Run kanıtından çıkarıp doğruladığı girdidir (sha256'sı RECOVER-GIRDI-KAYDI.json'da). Koşucuya SALT OKUNUR verilir
+  # (D6_RECEIPT_READONLY=1 → koşucu Recover'da makbuzu yeniden yazmaz; kalan belge yolları Recover kanıtına yazılır) ve Recover'dan sonra sha256'sı yeniden ölçülür.
+  # -ReceiptFile yolunda bayrak VERİLMEZ (koşucu makbuzu eskisi gibi yerinde yeniden yazabilir — paket belgesi §10.3).
+  $rcptShaBefore = $null; if ($runEvidenceDir) { $rcptShaBefore = Sha $receiptPath }
   $EvDir = Join-Path (Split-Path -Parent $receiptPath) ("recover-{0}-{1}" -f (Get-Date -Format 'yyyyMMdd-HHmmss'), [Guid]::NewGuid().ToString('N').Substring(0, 6))
   New-Item -ItemType Directory -Force -Path $EvDir | Out-Null
   try {
     Set-RunEnv $rcpt.runId $EvDir
     $env:D6_MODE = 'recover'; $env:D6_RECOVER_CONFIRM = '1'; $env:D6_RECEIPT = $receiptPath; $env:D6_DISPLAY = 'conout'; $env:D6_RESIDUE_CLEANUP = $Residue
+    if ($runEvidenceDir) { $env:D6_RECEIPT_READONLY = '1' }
     $evid = $env:D6_EVID_FILE
     Assert-FreshEvidence $evid
     $rc = Invoke-Node $g.nodeExe (Join-Path $Sc 'd6-portal-documents-live-run.js') (Join-Path $EvDir 'd6-recover.log')
@@ -737,6 +751,12 @@ function Invoke-RecoverMode($g, [string]$receiptPath, [string]$runEvidenceDir = 
   # R04: portal erişimi SON ÖLÇÜME göre (bu Recover'ın kanıtı) AÇIK / KAPALI / ÖLÇÜLEMEDİ — kod açıklamalarından AYRI satır; kanıt okunamıyorsa ÖLÇÜLEMEDİ.
   $pa = Get-RecoverPortalAccess (Join-Path $EvDir 'd6-evidence.json') $es
   Write-Host ("  PORTAL ERİŞİMİ (son ölçüme göre, bu Recover'ın kanıtından; DB durumu): {0} — {1}. Yeni giriş reddi kanıttaki P6-C3L/D satırlarından okunur; mevcut oturum reddi Recover'da ÖLÇÜLEMEZ." -f $pa.durum, $pa.text) -ForegroundColor $(if ($pa.durum -eq 'AÇIK') { 'Red' } elseif ($pa.durum -eq 'KAPALI') { 'Green' } else { 'Yellow' })
+  # R04-b: doğrulanmış Recover girdisi (makbuz) Recover'dan SONRA yeniden ölçülür — değiştiyse RECOVER-GIRDI-KAYDI.json'daki özet artık dosyayı anlatmaz (kırmızı).
+  if ($runEvidenceDir) {
+    $rcptShaAfter = $null; try { $rcptShaAfter = Sha $receiptPath } catch { $rcptShaAfter = $null }
+    if ($rcptShaAfter -and $rcptShaBefore -and $rcptShaAfter -ceq $rcptShaBefore) { Write-Host ("  RECOVER GİRDİSİ (makbuz): Recover'dan sonra DEĞİŞMEDİ (sha256 önce = sonra = {0}; koşucuya salt okunur verildi — bilinen / kalan belge yolu varsa Recover kanıtındaki residueFiles alanındadır)." -f $rcptShaAfter) }
+    else { Write-Host ("  RECOVER GİRDİSİ (makbuz): Recover'dan sonra DEĞİŞTİ ya da okunamadı (sha256 önce={0} · sonra={1}) — RECOVER-GIRDI-KAYDI.json'daki makbuzSha256 Recover'dan ÖNCEKİ baytlara aittir; kanıt dizinini CLIENT'a iletin." -f $rcptShaBefore, $(if ($rcptShaAfter) { $rcptShaAfter } else { 'okunamadı' })) -ForegroundColor Red }
+  }
   Write-Host "  kanıt dizini: $EvDir"
   return $rc
 }
