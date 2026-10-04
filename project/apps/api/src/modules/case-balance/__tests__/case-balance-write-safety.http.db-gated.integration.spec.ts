@@ -24,11 +24,12 @@ import { CaseBalanceModule } from '../case-balance.module';
 /**
  * Masraf/avans bakiyesi (`cases/:caseId/balance`) — owner kararı 2026-10-05 (karar 5), DAR kapsam. GERÇEK HTTP + disposable PostgreSQL.
  *
- *   (1) VIEWER avans yazamaz: denetleyicinin TÜM yazma rotaları (rota metadata'sından sayılır) 403 VIEWER_WRITE_DENIED verir, satır yazılmaz.
- *   (2) Hareket listesi okuması (`GET /balance/ledger`) bakiye satırı oluşturmaz; yanıt bugünkü sözleşmeyle aynıdır (boş liste).
+ *   (1) VIEWER avans yazamaz (kredi / düşüm / gerçekleşen masraf): 403 VIEWER_WRITE_DENIED, satır yazılmaz.
+ *   (2) Okuma isteği bakiye satırı oluşturmaz (`GET /balance`, `GET /balance/ledger`). Satır yokluğu AÇIKÇA ifade edilir
+ *       (`exists:false`, değer alanları null); sahte sıfır bakiye ve varsayılan / dosya para birimi ÜRETİLMEZ.
  *
- * KAPSAM DIŞI (bu dosya iddia KOYMAZ): `GET /balance`'ın satır yokken ne döneceği (owner kararı bekliyor — ayrı iş), kayıtlı bakiye ↔
- * defter mutabakatı, mahsubun harcanabilir avansa etkisi, dosya üyesi OLMAYAN personelin yazma yetkisi, avans para birimi sözleşmesi.
+ * DEĞİŞMEYENLER (owner): kayıtlı bakiye ↔ defter mutabakatı, mahsubun harcanabilir avansa etkisi, dosya üyesi OLMAYAN personelin
+ * yazma yetkisi. Bu dosya o davranışlara iddia KOYMAZ.
  */
 const TEST_DB_URL = resolveTestDatabaseUrl(process.env);
 if (process.env.CI && !TEST_DB_URL) {
@@ -201,8 +202,8 @@ describeWithDisposableDb('Masraf/avans bakiyesi — VIEWER yazma sınırı ve ok
     });
   });
 
-  describe('(2) hareket listesi okuması bakiye satırı oluşturmaz', () => {
-    it('GET /balance/ledger — satırsız dosya: 200 ve boş liste; satır OLUŞMAZ (admin, USER, VIEWER)', async () => {
+  describe('(2) okuma isteği bakiye satırı oluşturmaz', () => {
+    it('GET /balance/ledger — satırsız dosya: 200 ve boş liste; satır OLUŞMAZ (VIEWER dahil)', async () => {
       for (const [label, user] of [['admin', adminId], ['viewer', viewerId], ['member', memberId]] as const) {
         const caseId = await newCase(`led-${label}`);
         const res = await request(app.getHttpServer()).get(`/cases/${caseId}/balance/ledger`).set(as(user));
@@ -212,33 +213,71 @@ describeWithDisposableDb('Masraf/avans bakiyesi — VIEWER yazma sınırı ve ok
       }
     });
 
-    it('GET /balance/ledger — dövizli dosya, satırsız: satır (ve uydurma TRY para birimi) OLUŞMAZ', async () => {
-      const caseId = await newCase('led-usd', tenantId, 'USD');
+    const ABSENT = (caseId: string) => ({
+      exists: false,
+      caseId,
+      balance: null,
+      currency: null,
+      lowThreshold: null,
+      isLow: null,
+      recentLedger: [],
+    });
+
+    it('GET /balance — satırsız dosya: 200 + açık yokluk (exists:false, değerler null); satır OLUŞMAZ (VIEWER dahil)', async () => {
+      const caseId = await newCase('bal-none');
+      const first = await request(app.getHttpServer()).get(`/cases/${caseId}/balance`).set(as(adminId));
+      expect(first.status).toBe(200);
+      expect(first.body).toEqual(ABSENT(caseId));
+      const second = await request(app.getHttpServer()).get(`/cases/${caseId}/balance`).set(as(viewerId));
+      expect(second.status).toBe(200);
+      expect(second.body).toEqual(ABSENT(caseId));
+      expect(await rows(caseId)).toEqual({ balances: 0, ledger: 0 });
+    });
+
+    it('GET /balance — dövizli dosya, satırsız: para birimi TRY da USD de DÖNMEZ (null); uydurma TRY satırı OLUŞMAZ', async () => {
+      const caseId = await newCase('bal-usd', tenantId, 'USD');
+      const res = await request(app.getHttpServer()).get(`/cases/${caseId}/balance`).set(as(adminId));
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual(ABSENT(caseId));
+      expect(res.body.currency).toBeNull();
       await request(app.getHttpServer()).get(`/cases/${caseId}/balance/ledger`).set(as(adminId)).expect(200);
       expect(await prisma.caseBalance.count({ where: { caseId } })).toBe(0);
     });
 
-    it('12 eşzamanlı hareket listesi okuması → satır oluşmaz', async () => {
-      const caseId = await newCase('led-conc');
-      const all = await Promise.all(Array.from({ length: 12 }, () => request(app.getHttpServer()).get(`/cases/${caseId}/balance/ledger`).set(as(adminId))));
+    it('12 eşzamanlı okuma → satır oluşmaz', async () => {
+      const caseId = await newCase('bal-conc');
+      const all = await Promise.all(
+        Array.from({ length: 12 }, (_, i) =>
+          request(app.getHttpServer()).get(`/cases/${caseId}/balance${i % 2 ? '/ledger' : ''}`).set(as(adminId)),
+        ),
+      );
       expect(all.every((r) => r.status === 200)).toBe(true);
       expect(await rows(caseId)).toEqual({ balances: 0, ledger: 0 });
     });
 
-    it('VAR OLAN satırın hareket listesi DEĞİŞMEZ', async () => {
-      const caseId = await newCase('led-existing');
+    it('VAR OLAN satırın yanıtı DEĞİŞMEZ (yalnız `exists:true` eklenir): balance / currency / lowThreshold / isLow / recentLedger aynı', async () => {
+      const caseId = await newCase('bal-existing');
       await request(app.getHttpServer()).post(`/cases/${caseId}/balance/credit`).set(as(adminId)).send({ amount: 1250.5, source: 'manual' }).expect(201);
-      const res = await request(app.getHttpServer()).get(`/cases/${caseId}/balance/ledger`).set(as(adminId));
+      const res = await request(app.getHttpServer()).get(`/cases/${caseId}/balance`).set(as(adminId));
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(1);
-      expect(res.body[0]).toMatchObject({ type: 'CREDIT', amount: '1250.5' });
+      expect(res.body).toMatchObject({ exists: true, caseId, tenantId, balance: '1250.5', currency: 'TRY', lowThreshold: '500', isLow: false });
+      expect(res.body.recentLedger).toHaveLength(1);
+      expect(res.body.recentLedger[0]).toMatchObject({ type: 'CREDIT', amount: '1250.5' });
+      // Eski istemci (`exists` alanını bilmeyen) bozulmaz: `exists` dışındaki anahtar kümesi değişmedi.
+      // Taban biçimi: `{ ...CaseBalance satırı, isLow, recentLedger }` (+ yalnız `exists`).
+      const columns = Object.keys(await prisma.caseBalance.findUniqueOrThrow({ where: { caseId } }));
+      expect(Object.keys(res.body).filter((k) => k !== 'exists').sort()).toEqual([...columns, 'isLow', 'recentLedger'].sort());
+      expect(typeof res.body.balance).toBe('string');
+      expect(typeof res.body.currency).toBe('string');
       expect(await rows(caseId)).toEqual({ balances: 1, ledger: 1 });
     });
 
-    it('KİRACI SINIRI: başka büro GET /balance/ledger → 404 ve satır oluşmaz', async () => {
-      const caseId = await newCase('led-tenant');
-      const res = await request(app.getHttpServer()).get(`/cases/${caseId}/balance/ledger`).set(as(otherAdminId));
-      expect(res.status).toBe(404);
+    it('KİRACI SINIRI: başka büro GET /balance, /ledger → 404 ve satır oluşmaz', async () => {
+      const caseId = await newCase('bal-tenant');
+      for (const path of ['', '/ledger']) {
+        const res = await request(app.getHttpServer()).get(`/cases/${caseId}/balance${path}`).set(as(otherAdminId));
+        expect(res.status).toBe(404);
+      }
       expect(await rows(caseId)).toEqual({ balances: 0, ledger: 0 });
     });
   });
