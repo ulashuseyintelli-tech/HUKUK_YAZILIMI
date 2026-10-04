@@ -50,6 +50,19 @@
 #          KALDIRILDI. Blokta YALNIZ METİN: Run sonu metnindeki "elle komut yerine" ifadesi buna göre değişti. D-7 koşucusu Recover'da makbuz dosyasına YAZMAZ
 #          (kaynaktan + koşucu öz-testi Z19-b: makbuz baytları Recover'dan önce = sonra) → D-6'daki salt okunur bayrağın D-7'de karşılığı yoktur. Kapılar, sıra,
 #          Recover okuma kapısı, node çağrısı, çıkış kodları DEĞİŞMEDİ.
+# R04-c (2026-10-05; aşama 3 — odak doğrulamanın beş somut noktası; D-6 R04-c ile aynı ilke; koşucu, PkgPins ve $ExpPackage DEĞİŞMEDİ): K1: Recover bitiş ekranındaki
+#          PORTAL ERİŞİMİ satırı DB KAPALI iken yalnız DB durumundan KURULMAZ — aynı Recover kanıtındaki yeni giriş reddi ölçütleri (P7-C3L yerel · P7-C3D dış) satıra
+#          yazılır ve rengi belirler: ikisi PASS → yeşil "KAPALI (DB + yeni giriş reddi PASS)"; biri FAIL → kırmızı "DB'de kapalı AMA yeni giriş reddi FAIL (…) —
+#          erişim kapalı SAYILMAZ"; aksi halde (ÖLÇÜLEMEYEN / satır yok — portal hesabı satırı DB'de yokken de: koşucu hesap yokken giriş reddini ölçmez) → sarı
+#          "DB'de kapalı; yeni giriş reddi ÖLÇÜLEMEDİ (…)". K2: `-ReceiptFile` ile verilen makbuz, manifesti olan (tamamlanmış) bir kanıt dizininin İÇİNDEyse ve o
+#          dizindeki kanıtta makbuz metni (recovery.makbuzJson) VARSA Recover BAŞLAMAZ (DUR, 90; `-RunEvidenceDir`'e yönlendirir); kanıtta makbuz metni yoksa bu
+#          paketle tanımlı tek yol olduğu için izin verilir ama kanıt dizininin DEĞİŞECEĞİ Recover başında, bitişinde ve Run sonu ekranının ilgili dalında yazılır.
+#          K3: `-RunEvidenceDir` yolunda makbuzun sha256'sı Recover kanıt dizini açılmadan ÖNCE ve node'dan HEMEN ÖNCE yeniden ölçülür;
+#          RECOVER-GIRDI-KAYDI.json'a yazılan özetten farklıysa Recover BAŞLAMAZ (DUR, 90) ve Recover girdisi dizini KULLANILMAZ diye işaretlenir; Recover'dan
+#          SONRA makbuz yeniden ölçülür ve "RECOVER GİRDİSİ (makbuz): … DEĞİŞMEDİ / DEĞİŞTİ" satırıyla gösterilir (D-6 R04-b satırının ikizi; çıkış kodu değişmez).
+#          K4: manifest yokken DUR metni kalan yolu ve kanıt dizinindeki makbuz dosyasının ölçülen durumunu yazar. K5: makbuz yazımından sonraki adımlarda
+#          BEKLENMEYEN istisna da (ör. okuma kapısında dosya kilidi) KULLANILMAZ işareti + DUR üretir. Kapılar, Run sırası, node çağrısı, çıkış kodları DEĞİŞMEDİ;
+#          Recover soru SORMAZ (değişmedi).
 # MODLAR
 #   -Mode Preflight  SALT OKUMA: tüm kapılar (canlı dist = R27 pini); GO sorulmaz; kanıt/ortam/DB/canlı dosya yazılmaz; koşucu çağrılmaz (yalnız `node --version`). Kapılardaki `git fetch` yerel repodaki uzak izleme ref'lerini günceller (iş verisi değildir).
 #   -Mode QrTest     Canlı veri YOK: portal MESAJ sayfasının QR'ı yerel konsolda gösterilir (d7-qr-test.js); owner telefonla okutur.
@@ -409,6 +422,9 @@ function Write-OwnerDeclaration([string]$evDir, [string]$runId, $closure) {
 #   (dosya ya da dizin silen çağrı yok): içine RECOVER-GIRDI-KULLANILMAZ.txt (neden) yazılır; yarım ya da doğrulanamamış makbuz dosyası yerinde KALIR ve
 #   Invoke-RecoverMode o dizindeki bir makbuzu -ReceiptFile ile de REDDEDER (işaret dosyası varsa DUR). İşaret dosyası da yazılamazsa ekran bunu söyler
 #   (o durumda dizin elle KULLANILMAZ sayılır — kodla zorlanamaz).
+# R04-c: (K5) yazımdan sonraki adımlarda BEKLENMEYEN istisna da aynı HATA yoluna düşer (işaret + DUR). (K3) hazırlık tuttuktan sonra makbuzun sha256'sı Recover kanıt
+#   dizini açılmadan önce ve node çağrısından hemen önce yeniden ölçülür; kayda yazılan özetten farklıysa dizin KULLANILMAZ diye işaretlenir ve Recover BAŞLAMAZ. Bu
+#   ölçüm ile koşucunun dosyayı kendi okuması arasındaki aralık blokla KAPATILAMAZ (koşucu değişmedi) — Recover'dan SONRAKİ ölçüm bunu ayrıca gösterir.
 function Get-RecoverInputStamp { return (Get-Date).ToUniversalTime().ToString("yyyyMMdd'T'HHmmss'Z'") }
 # İstisnanın SOMUT türü: .NET çağrısından gelen hata PowerShell'de MethodInvocationException ile sarılır; en içteki istisnanın adı yazılır (ör. IOException).
 function Get-ErrName($e) { $x = $e.Exception; while ($x -and $x.InnerException) { $x = $x.InnerException }; if ($x) { return $x.GetType().Name }; return 'bilinmeyen hata' }
@@ -438,7 +454,16 @@ function Test-RunEvidenceSource([string]$runDir) {
   if (-not $nm.Success) { Fail "Run kanıt dizininin adı tanınmadı ($(Split-Path -Leaf $dir); extacc-d7-live-<runId>-<zaman> bekleniyor)$stop" }
   $dirRun = $nm.Groups[1].Value
   $manPath = Join-Path $dir 'SHA256-MANIFEST.txt'
-  if (-not (Test-Path -LiteralPath $manPath -PathType Leaf)) { Fail "SHA256-MANIFEST.txt YOK — kaynak kanıtın hash bağı doğrulanamaz$stop" }
+  if (-not (Test-Path -LiteralPath $manPath -PathType Leaf)) {
+    # R04-c (K4): manifest yoksa (Run beyan adımında kesilmiş olabilir) DUR metni kalan yolu ve kanıt dizinindeki makbuz dosyasının ÖLÇÜLEN durumunu yazar
+    # (Run sonu ekranıyla aynı ölçüm: Get-ClosureStatus → kanıttaki makbuz metni; Get-ReceiptFileState → okuma kapısı + BAYAT). Salt okuma; ölçüm hata verirse metin bunu söyler.
+    $mf = 'ÖLÇÜLEMEDİ (dosya durumu okunamadı)'; $mfNote = ' → makbuz dosyasını owner / CLIENT inceler'
+    try {
+      $rs0 = Get-ReceiptFileState (Join-Path $dir 'd7-setup-receipt.json') (Get-ClosureStatus (Join-Path $dir 'd7-evidence.json') 0).makbuzJson; $mf = [string]$rs0.why
+      $mfNote = if ($rs0.usable) { '' } elseif ($rs0.stale) { ' → bu dosyayla Recover ÖNERİLMEZ (eksik kapanış yapabilir)' } else { ' → -ReceiptFile mevcut ve okunabilir bir makbuz dosyası ister: bu paketle Recover BAŞLATILAMAZ' }
+    } catch { $mf = 'ÖLÇÜLEMEDİ (dosya durumu okunamadı)' }
+    Fail ("SHA256-MANIFEST.txt YOK — kaynak kanıtın hash bağı doğrulanamaz$stop. Run tamamlanmamış olabilir (manifest yazılmadan kesilmiş): bu durumda bu paketle tanımlı tek yol, kanıt dizinindeki makbuz dosyası okunabiliyorsa '-Mode Recover -ReceiptFile <makbuz>' — bu yol Run kanıt dizinine yazar; karar owner / CLIENT. Kanıt dizinindeki makbuz dosyası (d7-setup-receipt.json) şu an: {0}{1}" -f $mf, $mfNote)
+  }
   $manBytes = [IO.File]::ReadAllBytes($manPath); $manSha = ShaBytes $manBytes
   $man = [ordered]@{}
   foreach ($l in @(([Text.Encoding]::ASCII.GetString($manBytes)) -split "`r?`n" | Where-Object { $_ -ne '' })) {
@@ -487,6 +512,21 @@ function Test-RunEvidenceSource([string]$runDir) {
   return [pscustomobject]@{ dir = $dir; runId = $runId; manifestSha = $manSha; manifestLine = ('{0}  d7-evidence.json' -f $man['d7-evidence.json']); manifestCount = $man.Count
                             evidenceSha = $man['d7-evidence.json']; makbuzJson = $mj; bytes = $bytes; idFields = $idFields }
 }
+# Recover girdisi dizinini KULLANILMAZ diye işaretler (RECOVER-GIRDI-KULLANILMAZ.txt; CreateNew — var olan dosya ezilmez) ve DUR metninin dizinle ilgili parçasını
+# döndürür. Dizin ve içindeki dosyalar SİLİNMEZ. Çağıranlar: New-RecoverInputFromRun (hazırlık tutmadı) · Assert-RecoverInputUnchanged (R04-c K3: girdi sonradan değişti).
+function Set-RecoverInputUnusable([string]$target, [string]$why, [string]$srcLeaf) {
+  $marked = $false
+  try { Write-NewFileBytes (Join-Path $target 'RECOVER-GIRDI-KULLANILMAZ.txt') ([Text.UTF8Encoding]::new($false).GetBytes("KULLANILMAZ — bu dizindeki dosyalar Recover girdisi DEĞİLDİR (-ReceiptFile ile vermeyin).`r`nneden: $why`r`nkaynak (kardeş dizin): $srcLeaf`r`nzaman (UTC): $((Get-Date).ToUniversalTime().ToString('o'))`r`n")); $marked = $true } catch { $marked = $false }
+  return ('Hedef dizin SİLİNMEDİ; {0}: {1}' -f $(if ($marked) { 'KULLANILMAZ diye işaretlendi (RECOVER-GIRDI-KULLANILMAZ.txt)' } else { 'işaret dosyası da YAZILAMADI — dizin elle KULLANILMAZ sayılır' }), $target)
+}
+# R04-c (K3): doğrulanmış Recover girdisinin (makbuz) sha256'sı yeniden ölçülür. RECOVER-GIRDI-KAYDI.json'a yazılan özetten (New-RecoverInputFromRun'ın döndürdüğü değer)
+# farklıysa ya da dosya okunamıyorsa Recover BAŞLAMAZ: dizin KULLANILMAZ diye işaretlenir ve DUR (node çağrılmaz; başarı sayılmaz). Eşitse ölçülen özet döner.
+function Assert-RecoverInputUnchanged($rin, [string]$when) {
+  $now = $null; try { $now = Sha $rin.path } catch { $now = $null }
+  if ($now -and $now -ceq [string]$rin.sha256) { return $now }
+  $why = "makbuz doğrulamadan SONRA, node başlamadan ÖNCE DEĞİŞTİ ya da okunamadı ($when; sha256 kayıttaki=$($rin.sha256) · şimdi=$(if ($now) { $now } else { 'okunamadı' }))"
+  Fail ("Recover girdisi artık doğrulanmış girdi DEĞİL: {0} — RECOVER-GIRDI-KAYDI.json'daki makbuzSha256 bu dosyayı anlatmıyor; Recover BAŞLAMADI (node çağrılmadı; başarı sayılmaz). {1}" -f $why, (Set-RecoverInputUnusable $rin.dir $why $rin.srcLeaf))
+}
 function New-RecoverInputFromRun([string]$runDir) {
   $src = Test-RunEvidenceSource $runDir
   $target = Join-Path (Split-Path -Parent $src.dir) ('{0}.recover-girdi-{1}' -f (Split-Path -Leaf $src.dir), (Get-RecoverInputStamp))
@@ -494,6 +534,10 @@ function New-RecoverInputFromRun([string]$runDir) {
   try { $null = New-Item -ItemType Directory -Path $target -ErrorAction Stop } catch { Fail "hedef dizin oluşturulamadı ($target): $(Get-ErrName $_) — makbuz yazılmadı, Recover başlamadı" }
   $rcptPath = Join-Path $target 'd7-setup-receipt-kanittan.json'
   $why = $null; $newSha = $null
+  # R04-c (K5): hedef dizin oluştuktan SONRAKİ tüm adımlar (yazım, geri okuma, okuma kapısı, kaynağın yeniden ölçümü, kayıt yazımı) TEK try/catch içindedir —
+  # adımların kendi yakalamadığı BEKLENMEYEN bir istisna da (ör. okuma kapısında dosya kilidi) aşağıdaki KULLANILMAZ işareti + DUR yoluna düşer (önceki baytlarda
+  # istisna işaret yazılmadan yukarı çıkıyordu; o dizindeki makbuz sonradan -ReceiptFile ile kabul edilebiliyordu).
+  try {
   try { Write-NewFileBytes $rcptPath $src.bytes } catch { $why = "makbuz dosyası yazılamadı ($(Get-ErrName $_))" }
   if (-not $why) {
     $back = $null
@@ -520,11 +564,8 @@ function New-RecoverInputFromRun([string]$runDir) {
                                  runId = ('GO defteri (kanıt dizini dışında) satırı doğrulandı: GO sha256 + runId=' + $src.runId) } }
     try { Write-NewFileBytes (Join-Path $target 'RECOVER-GIRDI-KAYDI.json') ([Text.UTF8Encoding]::new($false).GetBytes(($k | ConvertTo-Json -Depth 4))) } catch { $why = "RECOVER-GIRDI-KAYDI.json yazılamadı ($(Get-ErrName $_))" }
   }
-  if ($why) {
-    $marked = $false
-    try { Write-NewFileBytes (Join-Path $target 'RECOVER-GIRDI-KULLANILMAZ.txt') ([Text.UTF8Encoding]::new($false).GetBytes("KULLANILMAZ — bu dizindeki dosyalar Recover girdisi DEĞİLDİR (-ReceiptFile ile vermeyin).`r`nneden: $why`r`nkaynak (kardeş dizin): $(Split-Path -Leaf $src.dir)`r`nzaman (UTC): $((Get-Date).ToUniversalTime().ToString('o'))`r`n")); $marked = $true } catch { $marked = $false }
-    Fail ("Recover girdisi hazırlanamadı: {0} — Recover BAŞLAMADI (başarı sayılmaz). Hedef dizin SİLİNMEDİ; {1}: {2}" -f $why, $(if ($marked) { 'KULLANILMAZ diye işaretlendi (RECOVER-GIRDI-KULLANILMAZ.txt)' } else { 'işaret dosyası da YAZILAMADI — dizin elle KULLANILMAZ sayılır' }), $target)
-  }
+  } catch { if (-not $why) { $why = "yazımdan sonraki adımda BEKLENMEYEN hata ($(Get-ErrName $_)) — makbuz doğrulanamadı" } }
+  if ($why) { Fail ("Recover girdisi hazırlanamadı: {0} — Recover BAŞLAMADI (başarı sayılmaz). {1}" -f $why, (Set-RecoverInputUnusable $target $why (Split-Path -Leaf $src.dir))) }
   Write-Host ''
   Write-Host 'RECOVER GİRDİSİ HAZIR — makbuz Run kanıtındaki recovery.makbuzJson alanından çıkarıldı; kaynak doğrulandı:' -ForegroundColor Cyan
   Write-Host ("  kaynak: {0}" -f $src.dir)
@@ -532,15 +573,20 @@ function New-RecoverInputFromRun([string]$runDir) {
   Write-Host ("  yeni makbuz: {0} ({1} bayt · sha256={2}; UTF-8 BOM YOK, satır sonları dönüştürülmedi, sonda ek satır sonu YOK; geri okunan baytlar = kaynak) · kayıt: RECOVER-GIRDI-KAYDI.json" -f $rcptPath, $src.bytes.Length, $newSha)
   Write-Host '  Run kanıtı ve manifest yazımdan ÖNCE ve SONRA ölçüldü: DEĞİŞMEDİ. Run kanıt dizinine yazılmadı; Recover kanıt dizini (recover-*) bu kardeş dizinde açılır.'
   Write-Host '  SINIR: manifestin bağımsız çapası YOK — manifest ve kanıt aynı dizindedir; ikisi BİRLİKTE değiştirilirse bu doğrulama YAKALAYAMAZ (GO defteri yalnız runId ↔ GO sha256 bağını taşır).' -ForegroundColor Yellow
-  return $rcptPath
+  # R04-c (K3): yol + kayda yazılan makbuz özeti birlikte döner — Invoke-RecoverMode node'dan önce makbuzu bu özetle yeniden karşılaştırır (Assert-RecoverInputUnchanged).
+  return [pscustomobject]@{ path = $rcptPath; sha256 = $newSha; dir = $target; srcLeaf = (Split-Path -Leaf $src.dir) }
 }
 # R04: Recover bitiş ekranı — portal erişiminin SON ÖLÇÜME göre durumu (bu Recover'ın kanıtındaki portalClose; salt okuma). Son ölçüm sırası: HTTP ölçümlerinden
 # sonraki DB okuması (afterMeasure, P7-C5) → kapatma adımından sonraki (after, P7-C2) → Recover başındaki (before). AÇIK = hesap aktif ya da müvekkil erişim
 # bayrağı açık (koşucunun isOpenAccess kuralı; hesap pasif + bayrak açık durumu "kapanış TAMAMLANMADI" diye AYRICA adlandırılır — koşucunun openStateTxt ayrımı);
 # KAPALI = hesap pasif + bayrak kapalı ya da hesap satırı YOK; aksi halde ÖLÇÜLEMEDİ (kanıt okunamadı, portalClose yok, geç oluşma dışlanamadı, DB değeri
-# yok). Bu bir DB durumudur: yeni giriş reddi P7-C3L/D satırlarında; mevcut oturum reddi Recover'da ÖLÇÜLEMEZ. Değerler kanıttaki gibi küçük harfle yazılır.
+# yok). `durum` bir DB durumudur; mevcut oturum reddi Recover'da ÖLÇÜLEMEZ. Değerler kanıttaki gibi küçük harfle yazılır.
+# R04-c (K1): ekrandaki satır DB KAPALI iken yalnız DB durumundan KURULMAZ. Aynı kanıttaki yeni giriş reddi ölçütleri (P7-C3L yerel · P7-C3D dış) satıra yazılır;
+# gösterilen ad (`goster`) ve renk (`renk`) bunlara bağlıdır: ikisi PASS → yeşil "KAPALI (DB + yeni giriş reddi PASS)"; biri FAIL (ör. kapanıştan sonra giriş KABUL
+# EDİLDİ) → kırmızı "DB'de kapalı AMA yeni giriş reddi FAIL (…) — erişim kapalı SAYILMAZ"; aksi halde (ÖLÇÜLEMEYEN / satır yok / tek değil / tanınmayan değer) → sarı
+# "DB'de kapalı; yeni giriş reddi ÖLÇÜLEMEDİ (…)". Portal hesabı satırı DB'de YOKKEN koşucu giriş reddini ölçmez (satır yok) → sarı. AÇIK → kırmızı; ÖLÇÜLEMEDİ → sarı.
 function Get-RecoverPortalAccess([string]$evidFile, $es) {
-  $u = { param([string]$w) [pscustomobject]@{ durum = 'ÖLÇÜLEMEDİ'; text = $w } }
+  $u = { param([string]$w) [pscustomobject]@{ durum = 'ÖLÇÜLEMEDİ'; goster = 'ÖLÇÜLEMEDİ'; renk = 'Yellow'; giris = $null; text = $w } }
   if (-not $es -or -not $es.valid) { return (& $u ("Recover kanıtı okunabilir değil ({0}) — son portal ölçümü bu Recover'dan okunamaz" -f $(if ($es) { $es.state } else { 'durum yok' }))) }
   $ev = $null; try { $ev = Get-Content -Raw -Encoding UTF8 -LiteralPath $evidFile | ConvertFrom-Json } catch { $ev = $null }
   $pc = if ($ev) { $ev.portalClose } else { $null }
@@ -552,14 +598,45 @@ function Get-RecoverPortalAccess([string]$evidFile, $es) {
   elseif ($pc.before) { $m = $pc.before; $where = 'Recover başındaki DB okuması' }
   if (-not $m) { return (& $u ('portal DB durumu Recover kanıtında yok' + $(if ($pc.reason) { " (kapanış adımı hatası: $($pc.reason))" } else { '' }))) }
   $lc = { param($x) if ($x -is [bool]) { ([string]$x).ToLowerInvariant() } else { [string]$x } }
-  if ($m.exists -eq $false) { return [pscustomobject]@{ durum = 'KAPALI'; text = ("portal hesabı satırı DB'de YOK (hasPortalAccess={0}; son ölçüm: {1})" -f (& $lc $m.hasPortalAccess), $where) } }
+  # Yeni giriş reddi ölçütünün kanıttaki verdict'i: aynı kimlikli satırlardan biri FAIL ise FAIL; satır yoksa / tek değilse / değer tanınmıyorsa PASS SAYILMAZ.
+  $v3 = { param([string]$id)
+    $h = @(@($ev.results) | Where-Object { $_ -and $_.id -eq $id } | ForEach-Object { [string]$_.verdict })
+    if ($h.Count -eq 0) { 'satır yok' } elseif (@($h | Where-Object { $_ -eq 'FAIL' }).Count -gt 0) { 'FAIL' } elseif ($h.Count -ne 1) { "satır tek değil ($($h.Count))" }
+    elseif ($h[0] -ceq 'PASS') { 'PASS' } elseif ($h[0] -ceq 'UNMEASURED') { 'ÖLÇÜLEMEYEN' } else { "tanınmadı [$($h[0])]" } }
+  $shut = { param([string]$dbText)
+    $l = [string](& $v3 'P7-C3L'); $d = [string](& $v3 'P7-C3D'); $vt = "P7-C3L=$l, P7-C3D=$d"
+    if ($l -ceq 'FAIL' -or $d -ceq 'FAIL') { return [pscustomobject]@{ durum = 'KAPALI'; goster = "DB'de kapalı AMA yeni giriş reddi FAIL ($vt) — erişim kapalı SAYILMAZ"; renk = 'Red'; giris = 'FAIL'; text = $dbText } }
+    if ($l -ceq 'PASS' -and $d -ceq 'PASS') { return [pscustomobject]@{ durum = 'KAPALI'; goster = 'KAPALI (DB + yeni giriş reddi PASS)'; renk = 'Green'; giris = 'PASS'; text = "$dbText; $vt" } }
+    return [pscustomobject]@{ durum = 'KAPALI'; goster = "DB'de kapalı; yeni giriş reddi ÖLÇÜLEMEDİ ($vt)"; renk = 'Yellow'; giris = 'ÖLÇÜLEMEDİ'; text = $dbText } }
+  if ($m.exists -eq $false) { return (& $shut ("portal hesabı satırı DB'de YOK (hasPortalAccess={0}; son ölçüm: {1}; hesap yokken koşucu yeni giriş reddini ölçmez)" -f (& $lc $m.hasPortalAccess), $where)) }
   $vals = 'isActive={0} hasPortalAccess={1} sürüm={2}' -f (& $lc $m.isActive), (& $lc $m.hasPortalAccess), $m.tokenVersion
   if ($m.isActive -eq $true -or $m.hasPortalAccess -eq $true) {
     $kind = if ($m.isActive -eq $true) { 'portal hesabı AKTİF' } else { 'portal kapanışı TAMAMLANMADI: hesap pasif ama müvekkil erişim bayrağı açık' }
-    return [pscustomobject]@{ durum = 'AÇIK'; text = ("$kind ($vals; son ölçüm: $where)" + $(if ($pc.acikErisim -is [string]) { " — kanıttaki açık erişim metni: $($pc.acikErisim)" } else { '' })) }
+    return [pscustomobject]@{ durum = 'AÇIK'; goster = 'AÇIK'; renk = 'Red'; giris = $null; text = ("$kind ($vals; son ölçüm: $where)" + $(if ($pc.acikErisim -is [string]) { " — kanıttaki açık erişim metni: $($pc.acikErisim)" } else { '' })) }
   }
-  if ($m.isActive -eq $false -and $m.hasPortalAccess -eq $false) { return [pscustomobject]@{ durum = 'KAPALI'; text = "hesap pasif + müvekkil erişim bayrağı kapalı ($vals; son ölçüm: $where)" } }
+  if ($m.isActive -eq $false -and $m.hasPortalAccess -eq $false) { return (& $shut "hesap pasif + müvekkil erişim bayrağı kapalı ($vals; son ölçüm: $where)") }
   return (& $u "DB değerleri okunamadı ($vals; son ölçüm: $where)")
+}
+# R04-c (K2): `-ReceiptFile` yolunun kanıt dizinine etkisi — TEK metin; Recover başında, Recover bitişinde ve Run sonu ekranının `-ReceiptFile <makbuz>` dalında AYNEN gösterilir.
+# (D-7 koşucusu Recover'da makbuz dosyasına yazmaz — R04-b notu; D-6'da koşucu makbuzu yerinde yeniden yazabilir. Değişen: recover-* dizini kanıt dizininin İÇİNDE açılır.)
+function Get-RunDirWriteNote { return 'bu yol recover-* dizinini Run kanıt dizinine açar — orijinal kanıt dizini DEĞİŞİR; manifest kapsamı dışında kalır' }
+# R04-c (K2): `-ReceiptFile` ile verilen makbuzun DİZİNİ manifesti olan (tamamlanmış) bir kanıt dizini mi (SHA256-MANIFEST.txt var)? Değilse $false (davranış değişmedi).
+# Öyleyse ve o dizindeki kanıtta makbuz metni (recovery.makbuzJson) VARSA — Run sonu ekranının `-RunEvidenceDir` önerdiği ve "-ReceiptFile ile VERMEYİN" dediği koşulun
+# AYNISI (Get-ClosureStatus) — Recover BAŞLAMAZ: DUR (node çağrılmaz) + `-Mode Recover -RunEvidenceDir '<dizin>'` yönlendirmesi (o yol kaynağı doğrular ve kanıt dizininin
+# DIŞINA yazar). Kanıtta makbuz metni YOKSA ya da kanıt okunamıyorsa `-RunEvidenceDir` kullanılamaz; bu paketle tanımlı tek yol budur → izin verilir, kanıt dizininin
+# DEĞİŞECEĞİ ekrana yazılır ve $true döner. Salt okuma (dosya yazmaz).
+function Assert-ReceiptFileRoute([string]$rcptDir) {
+  if (-not $rcptDir -or -not (Test-Path -LiteralPath (Join-Path $rcptDir 'SHA256-MANIFEST.txt') -PathType Leaf)) { return $false }
+  $full = $rcptDir; try { $full = (Resolve-Path -LiteralPath $rcptDir).ProviderPath.TrimEnd('\') } catch { $full = $rcptDir }
+  $inDir = Get-ClosureStatus (Join-Path $rcptDir 'd7-evidence.json') 0
+  if ($inDir.makbuzJson) {
+    Fail ("makbuz, manifesti olan (tamamlanmış) bir Run kanıt dizininin İÇİNDE ve o dizindeki kanıtta makbuz metni (recovery.makbuzJson) VAR — -ReceiptFile bu dizine yazardı (recover-* dizini): Recover BAŞLAMADI (node çağrılmadı). Bunun yerine -Mode Recover -RunEvidenceDir '{0}' kullanın — blok makbuzu kanıttan çıkarır, kaynağı doğrular ve Run kanıt dizininin DIŞINA yazar (AYRI owner onayıyla; doğrulama tutmazsa Recover başlamaz, karar owner / CLIENT)" -f $full.Replace("'", "''"))
+  }
+  Write-Host ''
+  Write-Host ("UYARI — makbuz, manifesti olan (tamamlanmış) bir kanıt dizininin İÇİNDE: {0}" -f $full) -ForegroundColor Yellow
+  Write-Host '  O dizindeki kanıtta makbuz metni (recovery.makbuzJson) YOK ya da kanıt okunamadı → -RunEvidenceDir kullanılamaz; -ReceiptFile bu paketle tanımlı tek yoldur.' -ForegroundColor Yellow
+  Write-Host ("  DİKKAT: {0}. Bu yolu kullanma kararı owner / CLIENT'a aittir." -f (Get-RunDirWriteNote)) -ForegroundColor Yellow
+  return $true
 }
 
 # ---------------------------------------------------------------- RUN
@@ -652,10 +729,13 @@ function Invoke-RunMode($g) {
       Write-Host '  bir ÖNERİDİR (otomatik DEĞİL; ürün bulgusu varsa Recover onu DÜZELTMEZ): Recover yalnız kanıt incelendikten sonra AYRI owner onayıyla, BİR KEZ, bu blokla şu seçenekle başlatılır (kanıttaki kurtarma adımı da bu seçeneği gösterir). Kabulü TEKRARLAMAYIN.' -ForegroundColor Yellow
       Write-Host ("    -Mode Recover -RunEvidenceDir '{0}'" -f $EvDir.Replace("'", "''")) -ForegroundColor Yellow
       Write-Host '  Bu seçenekte blok, Recover başlamadan önce: kaynağı doğrular (SHA256-MANIFEST.txt satırı = d7-evidence.json sha256 ve manifestteki her dosya; kayıt türü Run; runId ve kimlik alanları; GO defteri satırı), makbuzu kanıttaki recovery.makbuzJson alanından Run kanıt dizininin DIŞINDA kardeş bir dizine (<kanıt dizini>.recover-girdi-<UTC zaman>) yazar, baytları geri okur ve Run kanıtı + manifestin değişmediğini ölçer; biri tutmazsa Recover BAŞLAMAZ. Run kanıt dizinine ve manifeste yazmaz.' -ForegroundColor Yellow
-      Write-Host ("  Kanıt dizinindeki makbuz dosyası (d7-setup-receipt.json): {0} — bu dosyayı -ReceiptFile ile VERMEYİN: Recover recover-* dizinini makbuzun yanında açar (Run kanıt dizini değişir)." -f $rs.why) -ForegroundColor Yellow
+      # R04-c (K2): bu durumda blok -ReceiptFile'ı da REDDEDER (Recover modunun kapısı: manifesti olan dizin + kanıtta makbuz metni) — metin bunu söyler.
+      Write-Host ("  Kanıt dizinindeki makbuz dosyası (d7-setup-receipt.json): {0} — bu dosyayı -ReceiptFile ile VERMEYİN: Recover recover-* dizinini makbuzun yanında açar (Run kanıt dizini değişir); blok bu durumda o yolu REDDEDER (DUR)." -f $rs.why) -ForegroundColor Yellow
     } elseif ($rs.usable) {
       Write-Host '  bir ÖNERİDİR: -Mode Recover -ReceiptFile <makbuz> yalnız AYRI owner onayıyla, BİR KEZ (ürün bulgusu varsa Recover onu DÜZELTMEZ). Kabulü TEKRARLAMAYIN.' -ForegroundColor Yellow
       Write-Host ('  Makbuz dosyası: {0} (kanıt dizinindeki d7-setup-receipt.json; kayıt türü + runId okundu — kimlik bağını koşucu Recover''da DB''de doğrular).' -f $rs.why) -ForegroundColor Yellow
+      # R04-c (K2): kanıtta makbuz metni yokken -RunEvidenceDir kullanılamaz; kalan tek yol -ReceiptFile'dır ve kanıt dizinine YAZAR — açıkça yazılır (Recover başında da gösterilir).
+      Write-Host ("  DİKKAT: kanıtta makbuz metni (recovery.makbuzJson) yok → -RunEvidenceDir kullanılamaz; {0}. Bu yolu kullanma kararı owner / CLIENT'a aittir." -f (Get-RunDirWriteNote)) -ForegroundColor Yellow
     } else {
       Write-Host ("  bir ÖNERİDİR — ama MAKBUZ DOSYASI {0} (kanıt dizinindeki d7-setup-receipt.json): bu dosyayla Recover ÖNERİLMEZ{1}." -f $rs.why, $(if ($rs.stale) { '' } else { ' — bu makbuzla bloktan Recover BAŞLATILAMAZ (Recover makbuzu dosyadan okur; -ReceiptFile mevcut bir makbuz dosyası ister)' })) -ForegroundColor Yellow
       Write-Host '  SOMUT ENGEL: kanıtta makbuz metni (recovery.makbuzJson) YOK ya da kanıt okunamadı — bu paketle Recover BAŞLATILAMAZ; makbuzsuz kapanış yolu tanımlı değildir (K-7). Açık kalan sentetik kaynaklar için karar owner/CLIENT''a aittir: kanıt dizinini ve d7-run.log''u CLIENT''a iletin.' -ForegroundColor Red
@@ -675,11 +755,16 @@ function Invoke-RecoverMode($g, [string]$receiptPath, [string]$runEvidenceDir = 
   if ($runEvidenceDir -and $receiptPath) { Fail '-ReceiptFile ile -RunEvidenceDir BİRLİKTE verilemez — makbuz kaynağı tek olmalı (yalnız biri)' }
   # R04: makbuz YALNIZ owner'ın AYRI Recover onayından (bu modu -RunEvidenceDir ile ayrıca başlatması; blok bu onayı SORMAZ ve ÖLÇMEZ) SONRA yazılır; Recover bu
   # dosyayla başlar. Kaynak doğrulanamazsa ya da yazım / geri okuma tutmazsa New-RecoverInputFromRun DURUR (node çağrılmaz).
-  if ($runEvidenceDir) { $receiptPath = New-RecoverInputFromRun $runEvidenceDir }
+  # R04-c (K3): New-RecoverInputFromRun yol + kayda yazılan makbuz özetini döndürür; makbuz node'dan önce bu özetle yeniden karşılaştırılır.
+  $rin = $null; $inEvidenceDir = $false
+  if ($runEvidenceDir) { $rin = New-RecoverInputFromRun $runEvidenceDir; $receiptPath = [string]$rin.path }
   if (-not $receiptPath -or -not (Test-Path -LiteralPath $receiptPath -PathType Leaf)) { Fail 'Recover için -ReceiptFile <makbuz yolu> ya da -RunEvidenceDir <tamamlanmış Run kanıt dizini> gerekli' }
   # R04: KULLANILMAZ diye işaretlenmiş bir Recover girdisi dizinindeki makbuz (yarım yazım / doğrulanamayan çıkarma) -ReceiptFile ile de KABUL EDİLMEZ.
   $rcptDir = Split-Path -Parent $receiptPath
   if ($rcptDir -and (Test-Path -LiteralPath (Join-Path $rcptDir 'RECOVER-GIRDI-KULLANILMAZ.txt') -PathType Leaf)) { Fail 'makbuz KULLANILMAZ diye işaretlenmiş bir Recover girdisi dizininde (RECOVER-GIRDI-KULLANILMAZ.txt; neden o dosyada) — bu makbuzla Recover BAŞLAMAZ' }
+  # R04-c (K2): -ReceiptFile ile verilen makbuz manifesti olan (tamamlanmış) bir kanıt dizininin İÇİNDEyse — kanıtta makbuz metni varsa DUR (-RunEvidenceDir'e yönlendirir);
+  # yoksa tek kalan yol olduğu için sürer, kanıt dizininin DEĞİŞECEĞİ ekrana yazılır (Recover bilgi metninden ÖNCE). Manifesti olmayan dizin: davranış değişmedi.
+  if (-not $runEvidenceDir) { $inEvidenceDir = [bool](Assert-ReceiptFileRoute $rcptDir) }
   $rcpt = Get-Content -Raw -Encoding UTF8 -LiteralPath $receiptPath | ConvertFrom-Json
   if ($rcpt.record -ne 'EXTACC-D7-SETUP-RECEIPT' -or $rcpt.runId -notmatch '^[0-9a-f]{8}$') { Fail 'makbuz biçimi tanınmadı' }
   # Bilgi metni (yalnız gösterim; soru/akış YOK): Recover'ın canlı yazma kümesi ve yetki kuralı. Blok owner onayını ve "BİR KEZ" kuralını ÖLÇMEZ.
@@ -702,6 +787,9 @@ function Invoke-RecoverMode($g, [string]$receiptPath, [string]$runEvidenceDir = 
   Write-Host '      (Run kanıt dizinine ve manifestine yazılmaz).'
   Write-Host '  Recover U-ISO ölçmez; portal hesabı varken mevcut oturum reddi Recover''da ÖLÇÜLEMEZ (bu durumda en iyi çıkış 3).'
   Write-Host '  Kimlik bağı doğrulanmazsa koşucu canlı DB''ye yazmadan durur (çıkış 4).'
+  # R04-c (K3): geri okuma doğrulaması ile node başlangıcı arasında makbuz değişirse Recover BAŞLAMAZ — sha256 iki noktada yeniden ölçülür ve kayda yazılan özetle
+  # karşılaştırılır: (1) Recover kanıt dizini (recover-*) açılmadan ÖNCE (fark varsa dizin açılmaz), (2) node çağrısından HEMEN ÖNCE. Fark → dizin KULLANILMAZ + DUR.
+  $rcptShaBefore = $null; if ($rin) { $rcptShaBefore = Assert-RecoverInputUnchanged $rin 'Recover kanıt dizini açılmadan önce' }
   $EvDir = Join-Path (Split-Path -Parent $receiptPath) ("recover-{0}-{1}" -f (Get-Date -Format 'yyyyMMdd-HHmmss'), [Guid]::NewGuid().ToString('N').Substring(0, 6))
   New-Item -ItemType Directory -Force -Path $EvDir | Out-Null
   try {
@@ -709,6 +797,7 @@ function Invoke-RecoverMode($g, [string]$receiptPath, [string]$runEvidenceDir = 
     $env:D7_MODE = 'recover'; $env:D7_RECOVER_CONFIRM = '1'; $env:D7_RECEIPT = $receiptPath; $env:D7_DISPLAY = 'conout'
     $evid = $env:D7_EVID_FILE
     Assert-FreshEvidence $evid
+    if ($rin) { $rcptShaBefore = Assert-RecoverInputUnchanged $rin 'node çağrısından hemen önce' }
     $rc = Invoke-Node $g.nodeExe (Join-Path $Sc 'd7-portal-messages-live-run.js') (Join-Path $EvDir 'd7-recover.log')
     $rc = Complete-NodeRc $rc $evid
   }
@@ -726,8 +815,19 @@ function Invoke-RecoverMode($g, [string]$receiptPath, [string]$runEvidenceDir = 
   Write-Host "EXTACC D-7 KURTARMA BİTTİ - RUNID=$($rcpt.runId) · çıkış=$rc (HER KODDA: mevcut oturum reddi Recover'da ÖLÇÜLEMEZ — HER ZAMAN (P7-C4L/D; koşumun portal oturumu saklanmaz; Run kanıtındaki P7-C4 satırlarına bakın; PASS SAYILMAZ); yeni giriş reddinin ölçülüp ölçülmediği kanıttaki P7-C3L/D satırlarından okunur · 0 = FAIL ve ÖLÇÜLEMEYEN satır yok — koşucu mantığında fiilen beklenmez: portal hesabı varken mevcut oturum reddi ölçülemediği için en iyi sonuç 3'tür, hesap yoksa mesaj kalıntısı ÖLÇÜLEMEYEN olur (paket belgesi §9) · 3 = FAIL yok, en az bir ölçüt ÖLÇÜLEMEYEN — P7-C2 / P7-C5 ölçüldü; P7-C2V FAIL değil (ÖLÇÜLEMEYEN olabilir — kanıttaki satır) ya da portal hesabı yok; personel/dosya kapanışı doğrulandı · 2 = 3'teki portal ölçütleri (ya da portal hesabı yok) ve personel/dosya kapanışı doğrulandı, hazırlık hatası yok, en az bir satır FAIL (Recover'da yalnız P7-MSG-KEPT: makbuzdaki koşucu mesaj satırlarından biri yerinde değil) · 1 = DURDU: 3'teki portal ölçütleri (ya da portal hesabı yok) ve personel/dosya kapanışı doğrulandı ama hazırlık adımında hata (kanıttaki fatal alanı; HTTP reddinin doğrulandığı anlamına GELMEZ — satırlar ayrıca okunur) · 6 portal DB/HTTP kapanışı doğrulanmadı · 5 personel/dosya kapanışı doğrulanmadı · 4 kimlik reddi (yazma yok) · 7 kanıt yok · 91 node başlatılamadı)" -ForegroundColor $(if ($rc -eq 0) { 'Green' } else { 'Yellow' })
   }
   # R04: portal erişimi SON ÖLÇÜME göre (bu Recover'ın kanıtı) AÇIK / KAPALI / ÖLÇÜLEMEDİ — kod açıklamalarından AYRI satır; kanıt okunamıyorsa ÖLÇÜLEMEDİ.
+  # R04-c (K1): DB KAPALI iken gösterilen ad ve renk kanıttaki yeni giriş reddi ölçütlerine (P7-C3L/D) bağlıdır — yeşil yalnız DB kapalı + ikisi PASS iken
+  # (Get-RecoverPortalAccess: goster / renk). Çıkış kodu bu satırdan ETKİLENMEZ.
   $pa = Get-RecoverPortalAccess (Join-Path $EvDir 'd7-evidence.json') $es
-  Write-Host ("  PORTAL ERİŞİMİ (son ölçüme göre, bu Recover'ın kanıtından; DB durumu): {0} — {1}. Yeni giriş reddi kanıttaki P7-C3L/D satırlarından okunur; mevcut oturum reddi Recover'da ÖLÇÜLEMEZ." -f $pa.durum, $pa.text) -ForegroundColor $(if ($pa.durum -eq 'AÇIK') { 'Red' } elseif ($pa.durum -eq 'KAPALI') { 'Green' } else { 'Yellow' })
+  Write-Host ("  PORTAL ERİŞİMİ (son ölçüme göre, bu Recover'ın kanıtından; DB durumu + yeni giriş reddi ölçütleri): {0} — {1}. Yeni giriş reddi kanıttaki P7-C3L/D satırlarından okunur; mevcut oturum reddi Recover'da ÖLÇÜLEMEZ." -f $pa.goster, $pa.text) -ForegroundColor $pa.renk
+  # R04-c (K2): -ReceiptFile ile manifesti olan kanıt dizinindeki makbuz kullanıldıysa (tek kalan yol) o dizinin değiştiği bitişte de yazılır.
+  if ($inEvidenceDir) { Write-Host ("  NOT (-ReceiptFile, manifesti olan kanıt dizini): {0}. Bu Recover'ın kanıt dizini (recover-*) o dizinin İÇİNDEDİR." -f (Get-RunDirWriteNote)) -ForegroundColor Yellow }
+  # R04-c (K3; D-6 R04-b satırının ikizi): doğrulanmış Recover girdisi (makbuz) Recover'dan SONRA yeniden ölçülür — değiştiyse RECOVER-GIRDI-KAYDI.json'daki özet artık
+  # dosyayı anlatmaz (kırmızı). D-7 koşucusu Recover'da makbuza yazmaz (R04-b notu); satır bunu ÖLÇEREK gösterir. Çıkış kodu bu satırdan ETKİLENMEZ.
+  if ($runEvidenceDir) {
+    $rcptShaAfter = $null; try { $rcptShaAfter = Sha $receiptPath } catch { $rcptShaAfter = $null }
+    if ($rcptShaAfter -and $rcptShaBefore -and $rcptShaAfter -ceq $rcptShaBefore) { Write-Host ("  RECOVER GİRDİSİ (makbuz): Recover'dan sonra DEĞİŞMEDİ (sha256 önce = sonra = {0}; D-7 koşucusu Recover'da makbuz dosyasına yazmaz)." -f $rcptShaAfter) }
+    else { Write-Host ("  RECOVER GİRDİSİ (makbuz): Recover'dan sonra DEĞİŞTİ ya da okunamadı (sha256 önce={0} · sonra={1}) — RECOVER-GIRDI-KAYDI.json'daki makbuzSha256 Recover'dan ÖNCEKİ baytlara aittir; kanıt dizinini CLIENT'a iletin." -f $rcptShaBefore, $(if ($rcptShaAfter) { $rcptShaAfter } else { 'okunamadı' })) -ForegroundColor Red }
+  }
   if ($closure.keptText) {
     Write-Host "  Mesaj kalıntısı: $($closure.keptText)" -ForegroundColor Cyan
     Write-Host '  (Parantez içindeki kapanış özeti koşucunun kanıttaki U-CLOSE ve portal DB ölçümünden kurulur (R03; sabit ifade değildir). Kapanış durumu' -ForegroundColor Cyan
