@@ -17,6 +17,8 @@ async function build(currentPassword: string) {
   const prisma = {
     clientPortalUser: {
       findFirst: jest.fn().mockResolvedValue(user),
+      // KR-4: giriş birebir eşleşmeyi en çok iki aktif kayıtla okur (findMany, take: 2); burada tek hesap.
+      findMany: jest.fn().mockResolvedValue([user]),
       findUnique: jest.fn().mockResolvedValue(user),
       update: jest.fn().mockResolvedValue({}),
     },

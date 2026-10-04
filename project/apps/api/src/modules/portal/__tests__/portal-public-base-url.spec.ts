@@ -17,9 +17,12 @@ import * as path from 'path';
 import { PortalService } from '../portal.service';
 
 function buildService(configMap: Record<string, string | undefined>) {
+  const user = { id: 'PU1', email: 'muvekkil@example.com', client: { tenant: { lifecycle: 'ACTIVE' } } };
   const prisma = {
     clientPortalUser: {
-      findFirst: jest.fn().mockResolvedValue({ id: 'PU1', email: 'muvekkil@example.com', client: { tenant: { lifecycle: 'ACTIVE' } } }),
+      findFirst: jest.fn().mockResolvedValue(user),
+      // KR-4: sıfırlama talebi birebir eşleşmeyi en çok iki aktif kayıtla okur (findMany, take: 2); burada tek hesap.
+      findMany: jest.fn().mockResolvedValue([user]),
       update: jest.fn().mockResolvedValue({}),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
