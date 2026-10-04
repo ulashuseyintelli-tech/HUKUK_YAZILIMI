@@ -47,6 +47,11 @@ import {
   type ClaimItemLifecycleRecord,
 } from './claim-item-lifecycle-contract';
 import { throwClaimItemFormationContextRequired } from './claim-item-formation-containment';
+import {
+  CLAIM_ITEM_ADD_INTEREST_REMOVED_MESSAGE,
+  CLAIM_ITEM_RECALCULATE_INTEREST_REMOVED_MESSAGE,
+  throwClaimItemEndpointRemoved,
+} from './claim-item-removed-endpoints';
 
 export interface ClaimItemMutationResult {
   applied: boolean;
@@ -366,6 +371,57 @@ export class ClaimItemService {
     actorUserId: string,
     dto: AutoGenerateClaimItemsDto,
   ) {
+    const items = this.buildDocumentGeneratedItems(tenantId, dto);
+
+    // Toplu oluştur
+    const createdItems = [];
+    for (const [sourceIndex, item] of items.entries()) {
+      const data = {
+        ...item,
+        ...claimItemCreationAmounts(item.amount),
+      };
+      const created = await this.requireClaimItemWriterRouter().createSystemClaimItem<any>({
+        route: 'DOCUMENT_AUTO_GENERATOR',
+        tenantId,
+        caseId: dto.caseId,
+        sourceId: dto.documentId,
+        sourceSlot: `${dto.documentType}:${sourceIndex}:${item.itemType}`,
+        initiatedByUserId: actorUserId,
+        data,
+        currency: item.currency,
+      });
+      createdItems.push(created);
+    }
+
+    return createdItems;
+  }
+
+  /**
+   * K3 (owner kararı 2026-09-28) — İNSAN tarafından çağrılan belge üretimi (POST /claim-items/auto-generate).
+   * SYSTEM_ROUTE etiketi insan isteğine sistem yetkisi KAZANDIRMAZ: üretilecek her kalem, `createFromUser` ile
+   * AYNI insan yazma kapısından (aktör profili, tenant/dosya/yük kapsamı, dosyada mali düzenleme nesne yetkisi)
+   * geçer; hepsi YAZMADAN ÖNCE değerlendirilir. İnsan CREATE'i mevcut politikada onay + oluşum (formation)
+   * bağlamı gerektirdiği için doğrudan kalem YAZILMAZ — dört-göz gereksinimi korunur, çoklu üretimde kısmi
+   * yazma oluşmaz. Sistem yazıcısı `autoGenerateFromDocument` değişmez.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - ClaimItemController.autoGenerate() → POST /claim-items/auto-generate
+   * /// </remarks>
+   */
+  async autoGenerateFromUser(
+    tenantId: string,
+    actorUserId: string,
+    dto: AutoGenerateClaimItemsDto,
+  ): Promise<ClaimItemMutationResult> {
+    const items = this.buildDocumentGeneratedItems(tenantId, dto).map((item) => ({
+      ...item,
+      ...claimItemCreationAmounts(item.amount),
+    }));
+    return this.assertHumanGeneratedCreatesAdmissible(tenantId, actorUserId, dto.caseId, items);
+  }
+
+  private buildDocumentGeneratedItems(tenantId: string, dto: AutoGenerateClaimItemsDto): any[] {
     if (dto.documentType === DocumentSourceType.FATURA) {
       throw new BadRequestException(
         'Fatura alacağı auto-generate ile oluşturulamaz; kanonik Due -> ClaimItem yolu kullanılmalıdır.',
@@ -396,27 +452,7 @@ export class ClaimItemService {
         });
     }
 
-    // Toplu oluştur
-    const createdItems = [];
-    for (const [sourceIndex, item] of items.entries()) {
-      const data = {
-        ...item,
-        ...claimItemCreationAmounts(item.amount),
-      };
-      const created = await this.requireClaimItemWriterRouter().createSystemClaimItem<any>({
-        route: 'DOCUMENT_AUTO_GENERATOR',
-        tenantId,
-        caseId: dto.caseId,
-        sourceId: dto.documentId,
-        sourceSlot: `${dto.documentType}:${sourceIndex}:${item.itemType}`,
-        initiatedByUserId: actorUserId,
-        data,
-        currency: item.currency,
-      });
-      createdItems.push(created);
-    }
-
-    return createdItems;
+    return items;
   }
 
   // Çekten alacak kalemleri
@@ -704,103 +740,37 @@ export class ClaimItemService {
 
   // ==================== TOPLU İŞLEMLER ====================
 
-  // Dosyaya faiz kalemi ekle (otomatik hesaplamalı)
+  // Kaldırılmış faiz kalemi ekleme işlevi
   /**
-   * @deprecated Faiz kalemi ekleme interest-engine üzerinden yapılmalı
-   * 
-   * Bu metod artık hesap YAPMAZ. Faiz kalemi eklemek için:
-   * 1. interest-engine.calculate() ile faiz hesaplayın
-   * 2. Sonucu claim-item olarak kaydedin
-   * 
-   * @throws Error - Her zaman hata fırlatır
+   * KALDIRILDI (2026-01-15, 51f704c9) — kontrollü 410 Gone + sabit kod (owner GO 2026-09-28, seçenek B).
+   * Dosyaya veya ClaimItem'a dokunmaz; onay/oluşum akışı YOKTUR. Faiz hesabı interest-engine üzerindedir.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - ClaimItemController.addInterest() → POST /claim-items/case/:caseId/add-interest
+   * /// </remarks>
    */
   async addInterestItem(
     _tenantId: string,
     _caseId: string,
     _interestType: InterestType,
     _isPreInterest: boolean = true,
-  ) {
-    throw new Error(
-      '🚫 claim-item.addInterestItem() KALDIRILDI. ' +
-      'Faiz kalemi eklemek için interest-engine.calculate() kullanın, ' +
-      'sonucu claim-item olarak kaydedin. @see ARCHITECTURE.md'
-    );
+  ): Promise<never> {
+    throwClaimItemEndpointRemoved(CLAIM_ITEM_ADD_INTEREST_REMOVED_MESSAGE);
   }
 
-  // Masraf kalemi ekle
-  async addExpenseItem(
-    tenantId: string,
-    caseId: string,
-    amount: number,
-    description: string,
-    currency: string = 'TRY',
-  ) {
-    return (this.prisma as any).claimItem.create({
-      data: {
-        tenantId,
-        caseId,
-        itemType: 'EXPENSE',
-        ...claimItemCreationAmounts(amount),
-        currency,
-        description,
-        sortOrder: 30,
-      },
-    });
-  }
-
-  // Harç kalemi ekle
-  async addFeeItem(
-    tenantId: string,
-    caseId: string,
-    amount: number,
-    description: string,
-    currency: string = 'TRY',
-  ) {
-    return (this.prisma as any).claimItem.create({
-      data: {
-        tenantId,
-        caseId,
-        itemType: 'FEE',
-        ...claimItemCreationAmounts(amount),
-        currency,
-        description,
-        sortOrder: 40,
-      },
-    });
-  }
-
-  // Vekalet ücreti kalemi ekle
-  async addAttorneyFeeItem(
-    tenantId: string,
-    caseId: string,
-    amount: number,
-    description: string = 'Vekalet ücreti',
-    currency: string = 'TRY',
-  ) {
-    return (this.prisma as any).claimItem.create({
-      data: {
-        tenantId,
-        caseId,
-        itemType: 'ATTORNEY_FEE',
-        ...claimItemCreationAmounts(amount),
-        currency,
-        description,
-        sortOrder: 50,
-      },
-    });
-  }
-
-  // Tüm faizleri yeniden hesapla
+  // Kaldırılmış toplu faiz yeniden hesaplama işlevi
   /**
-   * @deprecated Faiz yeniden hesaplama interest-engine üzerinden yapılmalı
-   * @throws Error - Her zaman hata fırlatır
+   * KALDIRILDI (2026-01-15, 51f704c9) — kontrollü 410 Gone + sabit kod (owner GO 2026-09-28, seçenek B).
+   * Dosyaya veya ClaimItem'a dokunmaz. Faiz hesabı interest-engine üzerindedir.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - ClaimItemController.recalculateInterest() → POST /claim-items/case/:caseId/recalculate-interest
+   * /// </remarks>
    */
-  async recalculateAllInterest(_tenantId: string, _caseId: string) {
-    throw new Error(
-      '🚫 claim-item.recalculateAllInterest() KALDIRILDI. ' +
-      'Faiz yeniden hesaplama için interest-engine.calculate() kullanın. ' +
-      '@see ARCHITECTURE.md'
-    );
+  async recalculateAllInterest(_tenantId: string, _caseId: string): Promise<never> {
+    throwClaimItemEndpointRemoved(CLAIM_ITEM_RECALCULATE_INTEREST_REMOVED_MESSAGE);
   }
 
   // ==================== CLAIM ENGINE ENTEGRASYONU ====================
@@ -814,6 +784,62 @@ export class ClaimItemService {
     extractedData: Record<string, any>,
     wizardData: Record<string, any> = {},
   ) {
+    const prepared = await this.buildRuleEngineGeneratedItems(tenantId, caseId, subCategory, extractedData, wizardData);
+    const createdItems: any[] = [];
+
+    for (const { data, sourceIndex, sourceType } of prepared) {
+      const createdItem = await this.requireClaimItemWriterRouter().createSystemClaimItem<any>({
+        route: 'RULE_ENGINE_GENERATOR',
+        tenantId,
+        caseId,
+        sourceId: caseId,
+        sourceSlot: `${subCategory}:${sourceIndex}:${sourceType}`,
+        initiatedByUserId: actorUserId,
+        data,
+        currency: data.currency,
+      });
+
+      createdItems.push(createdItem);
+    }
+
+    return createdItems;
+  }
+
+  /**
+   * K3 (owner kararı 2026-09-28) — İNSAN tarafından çağrılan kural motoru üretimi
+   * (POST /claim-items/case/:caseId/generate-from-rules). `autoGenerateFromUser` ile aynı ilke: her kalem insan
+   * yazma kapısından YAZMADAN ÖNCE geçer; onay + oluşum bağlamı gerektiği için doğrudan kalem YAZILMAZ.
+   * Sistem yazıcısı `generateFromRuleEngine` değişmez.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - ClaimItemController.generateFromRules() → POST /claim-items/case/:caseId/generate-from-rules
+   * /// </remarks>
+   */
+  async generateFromRuleEngineForUser(
+    tenantId: string,
+    actorUserId: string,
+    caseId: string,
+    subCategory: string,
+    extractedData: Record<string, any>,
+    wizardData: Record<string, any> = {},
+  ): Promise<ClaimItemMutationResult> {
+    const prepared = await this.buildRuleEngineGeneratedItems(tenantId, caseId, subCategory, extractedData, wizardData);
+    return this.assertHumanGeneratedCreatesAdmissible(
+      tenantId,
+      actorUserId,
+      caseId,
+      prepared.map((p) => p.data),
+    );
+  }
+
+  private async buildRuleEngineGeneratedItems(
+    tenantId: string,
+    caseId: string,
+    subCategory: string,
+    extractedData: Record<string, any>,
+    wizardData: Record<string, any>,
+  ): Promise<Array<{ data: Record<string, any>; sourceIndex: number; sourceType: unknown }>> {
     if (!this.claimEngineService) {
       throw new BadRequestException('Claim Engine servisi mevcut değil');
     }
@@ -838,7 +864,7 @@ export class ClaimItemService {
       sourceIndex,
       itemType: this.mapItemType(item.type),
     }));
-    const createdItems: any[] = [];
+    const prepared: Array<{ data: Record<string, any>; sourceIndex: number; sourceType: unknown }> = [];
 
     for (const { item, sourceIndex, itemType } of preflightedItems) {
       // Sadece zorunlu veya tutarı olan kalemleri oluştur
@@ -846,35 +872,58 @@ export class ClaimItemService {
 
       const amount = item.amount ?? 0;
 
-      const data = {
-        tenantId,
-        caseId,
-        itemType,
-        ...claimItemCreationAmounts(amount),
-        currency: item.currency || 'TRY',
-        dueDate: item.dueDate ? new Date(item.dueDate) : null,
-        description: item.label,
-        isCalculated: item.isCalculated,
-        calculatedAt: item.isCalculated ? new Date() : null,
-        interestType: item.interestRule?.interestType,
-        interestRate: item.interestRule?.annualRate,
-        sortOrder: createdItems.length + 1,
-      };
-      const createdItem = await this.requireClaimItemWriterRouter().createSystemClaimItem<any>({
-        route: 'RULE_ENGINE_GENERATOR',
-        tenantId,
-        caseId,
-        sourceId: caseId,
-        sourceSlot: `${subCategory}:${sourceIndex}:${item.type}`,
-        initiatedByUserId: actorUserId,
-        data,
-        currency: data.currency,
+      prepared.push({
+        sourceIndex,
+        sourceType: item.type,
+        data: {
+          tenantId,
+          caseId,
+          itemType,
+          ...claimItemCreationAmounts(amount),
+          currency: item.currency || 'TRY',
+          dueDate: item.dueDate ? new Date(item.dueDate) : null,
+          description: item.label,
+          isCalculated: item.isCalculated,
+          calculatedAt: item.isCalculated ? new Date() : null,
+          interestType: item.interestRule?.interestType,
+          interestRate: item.interestRule?.annualRate,
+          sortOrder: prepared.length + 1,
+        },
       });
-
-      createdItems.push(createdItem);
     }
 
-    return createdItems;
+    return prepared;
+  }
+
+  /**
+   * K3 — insan tarafından istenen ÇOKLU kalem üretiminin kabul kapısı. Her kalem `createFromUser` ile AYNI
+   * insan yazma kapısından geçer (reddedilen ilk kalemde durur); hiçbir kalem yazılmaz. Kalem yoksa aktörün
+   * dosya düzeyi yetkisi yine sorulur. Kapı onay gerektirdiğini söylerse, insan CREATE'inin mevcut politikası
+   * gereği oluşum (formation) bağlamı istenir — `createFromUser` ile birebir aynı sonuç.
+   */
+  private async assertHumanGeneratedCreatesAdmissible(
+    tenantId: string,
+    actorUserId: string,
+    caseId: string,
+    items: Array<Record<string, any>>,
+  ): Promise<ClaimItemMutationResult> {
+    const payloads = items.length > 0 ? items : [{ tenantId, caseId }];
+    for (const item of payloads) {
+      const payload = this.normalizePatchForIntent(this.stripUndefined({ ...item }));
+      const gateResult = await this.requireClaimItemWriterRouter().evaluateHuman({
+        operation: 'CREATE',
+        tenantId,
+        caseId,
+        actorUserId,
+        payload,
+        currency: String(item.currency ?? 'TRY'),
+      });
+      this.assertApprovalRequired(gateResult);
+    }
+    if (items.length === 0) {
+      return { applied: false, approvalRequired: false, data: [] };
+    }
+    throwClaimItemFormationContextRequired();
   }
 
   // Item type mapping

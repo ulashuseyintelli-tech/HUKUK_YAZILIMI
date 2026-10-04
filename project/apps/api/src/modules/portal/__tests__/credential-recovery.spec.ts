@@ -34,6 +34,8 @@ function extractTokenFromFragment(url: URL): string | null {
 
 function buildService(over: any = {}) {
   const prisma = {
+    // D5-DIAG-R01: birebir eşleşme yoksa biçim farkı (harf/boşluk) sorgusu çalışır; bu dosyada eşleşen hesap yok.
+    $queryRaw: jest.fn().mockResolvedValue([]),
     clientPortalUser: {
       findFirst: jest.fn().mockResolvedValue(over.foundUser ?? null),
       update: jest.fn().mockResolvedValue({}),

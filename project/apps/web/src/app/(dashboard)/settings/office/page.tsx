@@ -5,6 +5,7 @@ import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { Building2, Users, Plus, Pencil, Trash2, Check, X, Star, CreditCard, Loader2, Mail, MessageSquare, GripVertical, Clock, ChevronRight, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api";
 import { sanitizeLawyerIbanPayload } from "@/lib/lawyer-iban-payload";
+import { buildBankAccountCreatePayload, buildBankAccountUpdatePayload } from "@/lib/bank-account-payload";
 import { buildLawyerUpdatePayload } from "@/lib/lawyer-update-payload";
 import { ActionError } from "@/components/ui/action-error";
 import { toActionErrorMessage } from "@/lib/action-error";
@@ -14,7 +15,11 @@ import { SettingsSection, WorkbenchHeader, SettingsDrawer, CollectionHeader } fr
 import { PersonAccessInviteCard } from "@/components/settings/person-access-invite-card";
 import { PasswordInput } from "@/components/ui/PasswordInput";
 
-interface BankAccount { id: string; bankName: string; branchName?: string; iban: string; accountName?: string; isDefault: boolean; }
+// Okuma yüzeyi (owner kararı 2026-10-03, madde 6): hesap kimliği + varsayılan bilgisi + MASKELİ IBAN. Banka adı / şube /
+// hesap sahibi okuma yüzeyinde YOKTUR (undefined = bilinmiyor, boş değil).
+interface BankAccount { id: string; officeId?: string; bankName?: string; branchName?: string | null; iban?: string; accountName?: string | null; isDefault: boolean; }
+/** Satır başlığı: banka adı bilinmiyorsa maskeli IBAN, o da yoksa genel ad. */
+const bankAccountTitle = (acc: Pick<BankAccount, "bankName" | "iban">): string => acc.bankName || acc.iban || "Banka hesabı";
 interface Lawyer { 
   id: string; 
   name: string; 
@@ -546,10 +551,24 @@ function OfficeSettingsInner() {
   };
 
   const handleSaveBankAccount = async (data: any) => {
-    // PR-1 IBAN sözleşmesi banka hesapları için de geçerlidir: boş/whitespace/maskeli
-    // IBAN `""` olarak GÖNDERİLMEZ — alan payload'dan tamamen çıkarılır (mevcut değer
-    // korunur), doluysa normalize edilir. Aynı sanitizer yeniden kullanılır.
-    const payload = sanitizeLawyerIbanPayload(data);
+    // Düzenle MEVCUT hesabı günceller, YENİ hesap oluşturmaz: düzenleme kipinde kimlik yoksa istek ÇIKMAZ
+    // (eski kusur: kimliksiz satırda kaydet oluşturma dalına düşüp görünmez bir hesap daha ekliyordu).
+    if (editingBank && !editingBank.id) {
+      setBankActionError("Hesap kimliği okunamadı. Kayıt YAPILMADI; sayfayı yenileyip tekrar deneyin.");
+      return;
+    }
+    // PR-1 IBAN sözleşmesi: boş / maskeli IBAN GÖNDERİLMEZ. Düzenlemede YALNIZ değişen alan gider (okuma yüzeyi banka adı /
+    // şube / hesap sahibini bilmez; boş = değişmedi) — tam form gönderimi kayıtlı şube ve hesap sahibini siliyordu.
+    const payload = editingBank
+      ? buildBankAccountUpdatePayload(editingBank, data)
+      : buildBankAccountCreatePayload(data);
+    if (editingBank && Object.keys(payload).length === 0) {
+      // Değişen alan yok: sunucuya gidecek bir şey yok.
+      setShowBankModal(false);
+      setEditingBank(null);
+      setBankActionError(null);
+      return;
+    }
     const targetId = editingBank?.id ?? null;
     // Kilit işlem kapsamına göre: update → kararlı hesap kimliği, create → ofis yüzeyi.
     const lockKey = targetId ? `office:bank-account:save:${targetId}` : "office:bank-account:create";
@@ -764,8 +783,8 @@ function OfficeSettingsInner() {
                   <button onClick={() => goSection("bank")} className="flex-1 text-left px-4 py-3 hover:bg-blue-50/40 transition cursor-pointer">
                     {office?.bankAccounts?.[0]
                       ? <div className="space-y-1.5">
-                          <div className="flex items-center gap-1.5 text-[13px] font-medium text-gray-900"><Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" />{office.bankAccounts[0].bankName}</div>
-                          <div className="text-[12px] text-stone-500 font-mono">IBAN ···{office.bankAccounts[0].iban?.slice(-6)}</div>
+                          <div className="flex items-center gap-1.5 text-[13px] font-medium text-gray-900">{office.bankAccounts[0].isDefault && <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" />}{office.bankAccounts[0].bankName || "Banka hesabı"}</div>
+                          <div className="text-[12px] text-stone-500 font-mono">IBAN {office.bankAccounts[0].iban ?? "—"}</div>
                           <div className="text-[12px] text-stone-500">{office.bankAccounts.length} hesap</div>
                         </div>
                       : <span className="text-[13px] text-stone-400">Hesap yok</span>}
@@ -971,13 +990,13 @@ function OfficeSettingsInner() {
                     <div className="flex items-center gap-2 min-w-0">
                       {acc.isDefault && <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500 shrink-0" />}
                       <div className="min-w-0">
-                        <p className="text-[13px] font-semibold text-gray-900 truncate">{acc.bankName}</p>
+                        <p className="text-[13px] font-semibold text-gray-900 truncate">{acc.bankName || "Banka hesabı"}</p>
                         <p className="text-[11px] text-gray-500 font-mono truncate">{acc.iban}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       <button onClick={() => { setEditingBank(acc); setShowBankModal(true); }} className="p-1.5 hover:bg-blue-100 rounded-md" title="Düzenle"><Pencil className="h-3.5 w-3.5 text-gray-500" /></button>
-                      <button type="button" onClick={() => handleDeleteBankAccount(acc.id)} disabled={staleLockedIds.includes(`bank:${acc.id}`)} aria-label={`${acc.bankName} banka hesabını sil`} className="p-1.5 hover:bg-red-100 rounded-md disabled:opacity-40" title="Sil"><Trash2 className="h-3.5 w-3.5 text-red-500" /></button>
+                      <button type="button" onClick={() => handleDeleteBankAccount(acc.id)} disabled={staleLockedIds.includes(`bank:${acc.id}`)} aria-label={`${bankAccountTitle(acc)} banka hesabını sil`} className="p-1.5 hover:bg-red-100 rounded-md disabled:opacity-40" title="Sil"><Trash2 className="h-3.5 w-3.5 text-red-500" /></button>
                     </div>
                   </div>
                 ))}
@@ -1849,13 +1868,15 @@ function LawyerModal({ lawyer, onSave, onClose, saving }: { lawyer: any; onSave:
 }
 
 // Banka Modal
-function BankModal({ account, onSave, onClose, saving, errorMessage }: { account: any; onSave: (data: any) => void; onClose: () => void; saving: boolean; errorMessage?: string | null }) {
+function BankModal({ account, onSave, onClose, saving, errorMessage }: { account: BankAccount | null; onSave: (data: any) => void; onClose: () => void; saving: boolean; errorMessage?: string | null }) {
   const [form, setForm] = useState({
     bankName: account?.bankName || "", branchName: account?.branchName || "",
     iban: account?.iban || "", accountName: account?.accountName || "", isDefault: account?.isDefault || false,
   });
 
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave(form); };
+  // Bilinmeyen (okuma yüzeyinde olmayan) alan düzenlemede yer tutucuyla gösterilir; boş bırakmak değeri silmez.
+  const editHint = account ? "Değiştirmek için yazın" : undefined;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -1868,11 +1889,12 @@ function BankModal({ account, onSave, onClose, saving, errorMessage }: { account
           {/* PR-2A1: kaydetme hatasi MODAL ICINDE gorunur; modal acik ve form korunur. */}
           <ActionError message={errorMessage} />
           <div className="grid grid-cols-2 gap-2">
-            <div><label>Banka *</label><input value={form.bankName} onChange={e => setForm({...form, bankName: e.target.value})} required className="w-full border rounded px-2 py-1" /></div>
-            <div><label>Şube</label><input value={form.branchName} onChange={e => setForm({...form, branchName: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
+            <div><label>{account ? "Banka" : "Banka *"}</label><input value={form.bankName} onChange={e => setForm({...form, bankName: e.target.value})} required={!account} placeholder={editHint} className="w-full border rounded px-2 py-1" /></div>
+            <div><label>Şube</label><input value={form.branchName} onChange={e => setForm({...form, branchName: e.target.value})} placeholder={editHint} className="w-full border rounded px-2 py-1" /></div>
           </div>
-          <div><label>IBAN *</label><input value={form.iban} onChange={e => setForm({...form, iban: e.target.value.toUpperCase().replace(/\s/g, "")})} required className="w-full border rounded px-2 py-1 font-mono" /></div>
-          <div><label>Hesap Sahibi</label><input value={form.accountName} onChange={e => setForm({...form, accountName: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
+          <div><label>{account ? "IBAN" : "IBAN *"}</label><input value={form.iban} onChange={e => setForm({...form, iban: e.target.value.toUpperCase().replace(/\s/g, "")})} required={!account} className="w-full border rounded px-2 py-1 font-mono" /></div>
+          <div><label>Hesap Sahibi</label><input value={form.accountName} onChange={e => setForm({...form, accountName: e.target.value})} placeholder={editHint} className="w-full border rounded px-2 py-1" /></div>
+          {account && <p data-testid="bank-edit-hint" className="text-[11px] text-gray-500">Boş bıraktığınız alanlar değişmez. IBAN maskeli gösterilir; değiştirmek için tam IBAN girin.</p>}
           <label className="flex items-center gap-1"><input type="checkbox" checked={form.isDefault} onChange={e => setForm({...form, isDefault: e.target.checked})} />Varsayılan hesap</label>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="px-3 py-1 border rounded">İptal</button>

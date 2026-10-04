@@ -22,6 +22,9 @@ const RAW_PASSWORD = 'CokGizliSifre!9988';
 function build(over: any = {}) {
   const currentClient = over.beforeClient ?? { id: 'c1', hasPortalAccess: false, portalUserId: null };
   const tx = {
+    // D5-DIAG-R01: yazımdan önce transaction içinde adres kilidi + çakışma ölçümü (bu dosyada çakışma yok).
+    $executeRaw: jest.fn().mockResolvedValue(0),
+    $queryRaw: jest.fn().mockResolvedValue([]),
     client: {
       // Gerçek Prisma update TÜM satırı döndürür → mock da before ile birleştirir (sadık diff).
       findUniqueOrThrow: jest.fn().mockResolvedValue({ ...currentClient }),
@@ -41,13 +44,18 @@ function build(over: any = {}) {
       ...over.clientPortalUser,
     },
     $transaction: jest.fn().mockImplementation(async (cb: any) => cb(tx)),
+    // D5-DIAG-R01: hesap açma çakışma kapısının biçim farkı sorgusu; bu dosyada başka müvekkilde aynı adres yok.
+    $queryRaw: jest.fn().mockResolvedValue([]),
   };
   if (over.client) Object.assign(prisma.client, over.client);
   const audit: any = { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn() };
   if (over.audit) Object.assign(audit, over.audit);
   // Task 10-S: officeApproval eligible:true varsayılan (bu dosyanın odağı audit davranışı, capability
   // DEĞİL) — yalnız "actor yoksa" testi bilerek eligible kontrolüne HİÇ ULAŞMAZ (fail-closed önce).
-  const officeApproval = { isApproverEligible: jest.fn().mockResolvedValue(true) };
+  const officeApproval = {
+    isApproverEligible: jest.fn().mockResolvedValue(true),
+    isApproverEligibleInTx: jest.fn().mockResolvedValue(true), // K4-3: kilitli tx içi yetkili karar
+  };
   const svc = new PortalService(prisma as any, {} as any, audit as any, officeApproval as any, {} as any, {} as any);
   return { svc, prisma, tx, audit, officeApproval };
 }

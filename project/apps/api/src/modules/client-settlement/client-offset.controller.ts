@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Body, Param, Query, Request, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CpeRequired } from '../policy-engine/decorators/cpe-required.decorator';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { ClientOffsetService } from './client-offset.service';
@@ -17,7 +18,7 @@ interface AuthRequest {
  * service-level gate; tenantId/actorUserId daima req.user'dan (payload'dan ALINMAZ).
  */
 @Controller('client-offsets')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class ClientOffsetController {
   constructor(private readonly service: ClientOffsetService) {}
 
@@ -32,6 +33,7 @@ export class ClientOffsetController {
    * (after/net/netUnchanged); FE yalnız render. amount>max → OFFSET_EXCEEDS_AVAILABLE. Apply yetkisi GEREKMEZ.
    */
   @Post('preview')
+  @AllowViewerReadOnlyPost() // okuma/hesap: yazma YAPMAZ (kaynaktan dogrulandi)
   async preview(@Request() req: AuthRequest, @Body() dto: PreviewClientOffsetDto) {
     return this.service.previewOffset(req.user.tenantId, req.user.id, dto);
   }

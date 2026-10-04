@@ -89,6 +89,12 @@ const fakePrisma = {
       return { role: a.role, isActive: a.isActive, tenantId: a.tenantId, staffMember: a.staffMember, lawyer: a.lawyer };
     }),
   },
+  // B1: F01 hedef ofisi verilmezse tenant'ın tek ofisi (Office.tenantId @unique) okunur.
+  office: {
+    findUnique: jest.fn(async ({ where }: { where: { tenantId: string } }) =>
+      where.tenantId === TENANT_A ? { id: OFFICE_A } : where.tenantId === TENANT_B ? { id: OFFICE_B } : null,
+    ),
+  },
 };
 
 const ROUTES: Array<{ path: string; getter: keyof OfficeService & string; updater: keyof OfficeService & string; keys: string[] }> = [

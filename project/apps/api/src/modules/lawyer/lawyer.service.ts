@@ -5,6 +5,7 @@ import { normalizePersonName } from "@/common/name-match.util";
 import { maskTckn, maskIban } from "@/common/pii-mask.util";
 import { AuditService } from "../audit/audit.service";
 import { OfficeApprovalService } from "../office-approval/office-approval.service";
+import { lockExecutionActorRows } from "../office-approval/office-approval-execution-authority";
 import type { AuditActor } from "@/modules/client/client.service";
 import { toPublicLawyer, toPublicLawyers } from "./lawyer-public-projection";
 import { projectF01Lawyer, F01ProjectionAccess } from "../office/office-f01-projection";
@@ -307,6 +308,10 @@ export class LawyerService {
         const privileged = this.isPrivilegedLawyerRecord(dup);
         if (privileged) {
           await this.assertCanReactivatePrivilegedLawyer(actor, tenantId, db);
+        } else {
+          // B3: ayrıcalıksız pasif kayıt da create ile SESSİZCE etkinleşmez — pasifleştirmeyle AYNI yaşam
+          // döngüsü kuralı (CLIENT R1A emsali: create yetkisi lifecycle yetkisini İÇERMEZ).
+          await this.assertCanReactivateLawyerViaCreate(actor?.userId, tenantId);
         }
         // CLIENT R1A deseni: `dup` transaction DIŞINDA okundu → yazma, yetki kararının verildiği DURUMA
         // (tenant + isActive:false + değerlendirilen ayrıcalık değerleri) koşullu. Kayıt bu arada
@@ -616,6 +621,8 @@ export class LawyerService {
     const needsPrivilegeAudit = delegationChange !== null || privilegedChangedFields.length > 0;
     const lawyer = needsPrivilegeAudit
       ? await this.prisma.$transaction(async (tx) => {
+          // K4-2 (owner GO 2026-09-28): tx dışındaki kapı ucuz erken-fail; YETKİLİ karar burada, ilk yazmadan ÖNCE.
+          await this.assertPrivilegeAuthorityInTx(tx, actor, tenantId, delegationChange !== null, privilegedChangedFields.length > 0);
           const updated = await tx.lawyer.update({ where: { id }, data: writeData });
           // K1-4b: delegation kaydi MEVCUT eylem ve MEVCUT metadata bicimiyle, TEK kez yazilir (ham PII yok, from/to bool).
           if (delegationChange) {
@@ -651,6 +658,39 @@ export class LawyerService {
 
     // P01: credential alanlari public yanittan CIKARILIR.
     return this.projectLawyerResponse(tenantId, withDisplayName(lawyer) as Record<string, unknown>, actor);
+  }
+
+  /**
+   * K4-2 (owner GO 2026-09-28) — delegasyon (`canApproveOfficeActions`) ve rütbe/yetki alanı DEĞİŞİKLİĞİNİN yazma
+   * transaction'ı içindeki yetkili kontrolü. Aktörün `Lawyer` → `User` satırları `FOR SHARE` kilitlenir (iptal
+   * yollarıyla aynı sıra) ve AYNI kural (ADMIN VEYA aktif + aynı tenant + bağlı PARTNER) GÜNCEL satırdan yeniden
+   * değerlendirilir: ADMIN kısa yolu istek anındaki rol beyanıyla değil, kilitli satırdaki rol + aktiflik + tenant
+   * ile doğrulanır. Pasifleştirilmekte olan bir PARTNER/ADMIN'in eşzamanlı olarak kalıcı onaylayıcı ataması kapanır.
+   */
+  private async assertPrivilegeAuthorityInTx(
+    tx: Prisma.TransactionClient,
+    actor: LawyerUpdateActor | undefined,
+    tenantId: string,
+    delegationChanged: boolean,
+    privilegedFieldsChanged: boolean,
+  ): Promise<void> {
+    const message = delegationChanged
+      ? "Office approval delegation (canApproveOfficeActions) yalnızca ADMIN veya PARTNER tarafından değiştirilebilir"
+      : "Rütbe/yetki alanları (lawyerRank, defaultPermissions, permissionsLocked, canModifyOtherPermissions) yalnızca ADMIN veya PARTNER tarafından değiştirilebilir";
+    if (!actor?.userId || (!delegationChanged && !privilegedFieldsChanged)) {
+      throw new ForbiddenException(message);
+    }
+    await lockExecutionActorRows(tx, actor.userId);
+    const fresh = await tx.user.findUnique({
+      where: { id: actor.userId },
+      select: { role: true, tenantId: true, isActive: true, lawyer: { select: { lawyerRank: true } } },
+    });
+    const authorized =
+      !!fresh &&
+      fresh.isActive &&
+      fresh.tenantId === tenantId &&
+      (fresh.role === "ADMIN" || fresh.lawyer?.lawyerRank === "PARTNER");
+    if (!authorized) throw new ForbiddenException(message);
   }
 
   /**
@@ -871,8 +911,34 @@ export class LawyerService {
       await this.assertCanAssignPrivilegedFieldsOnCreate(actor, tenantId, db);
     }
     const dup = await this.findDuplicateLawyer(tenantId, data, db);
-    if (dup && dup.isActive === false && this.isPrivilegedLawyerRecord(dup)) {
-      await this.assertCanReactivatePrivilegedLawyer(actor, tenantId, db);
+    if (dup && dup.isActive === false) {
+      if (this.isPrivilegedLawyerRecord(dup)) {
+        await this.assertCanReactivatePrivilegedLawyer(actor, tenantId, db);
+      } else {
+        await this.assertCanReactivateLawyerViaCreate(actor?.userId, tenantId); // B3
+      }
+    }
+  }
+
+  /**
+   * B3 (owner GO 2026-09-27) — AYRICALIKSIZ pasif avukatın create/dedup yoluyla yeniden etkinleşmesi.
+   * Eşik, pasifleştirmeyle (`assertCanManageLawyerLifecycle`, DELETE /lawyers/:id) AYNI yüklemdir:
+   * `officeApproval.isApproverEligible` (aktif + aynı tenant + personel olmayan + PARTNER veya delege).
+   * CLIENT `assertCanReactivateViaCreate` (OWN-13 I02-R1A) ile birebir desen: create yetkisi yaşam döngüsü
+   * yetkisini İÇERMEZ; `UserRole.ADMIN` tek başına yetmez. Ayrıcalıklı kayıt AK-2 kuralında kalır.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - LawyerService.create() → mükerrer dal, eşleşen kayıt pasif ve ayrıcalıksız (POST /lawyers, POST /cases
+   * ///    dosya içi avukat, seed) — HER yazmadan ÖNCE.
+   * ///  - LawyerService.assertCreateAuthorized() → POST /cases ön kontrolü.
+   * /// </remarks>
+   */
+  private async assertCanReactivateLawyerViaCreate(userId: string | undefined, tenantId: string): Promise<void> {
+    if (!userId || !(await this.officeApproval.isApproverEligible(userId, tenantId))) {
+      throw new ForbiddenException(
+        "Eşleşen kayıt pasif bir avukat; yeniden etkinleştirme pasifleştirme ile aynı yetkiyi ister (PARTNER veya yetkilendirilmiş avukat).",
+      );
     }
   }
 

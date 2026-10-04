@@ -87,17 +87,33 @@ describe('ClaimItem writer three-amount contract', () => {
     });
   });
 
+  // Kaldırılan çağrısız addExpenseItem/addFeeItem/addAttorneyFeeItem yardımcılarının koruduğu beklenti
+  // (masraf/harç/vekâlet ücreti kalemi üç tutarı sıfır dahil eşitler) korunan sistem yazıcısında sürer.
+  // Gerçek üretim yolu DUE_BRIDGE için aynı beklenti: case/__tests__/due-to-claim-item.mapper.spec.ts.
   it.each([
-    ['addExpenseItem', ['t1', 'case-1', 0, 'Masraf']],
-    ['addFeeItem', ['t1', 'case-1', 0, 'Harç']],
-    ['addAttorneyFeeItem', ['t1', 'case-1', 0, 'Vekalet']],
-  ])('%s retained helper initializes all three fields', async (method, args) => {
-    const { service, claimItem } = makeWriterService();
+    ['COMMISSION', 'EXPENSE'],
+    ['FEE', 'FEE'],
+    ['ATTORNEY_FEE', 'ATTORNEY_FEE'],
+  ])('rule generator %s → %s initializes all three fields and preserves zero', async (engineType, itemType) => {
+    const { service, claimItem } = makeWriterService([{
+      type: engineType,
+      amount: 0,
+      required: true,
+      label: 'Fer\'i kalem',
+    }]);
 
-    await (service as any)[method](...args);
+    await service.generateFromRuleEngine('t1', 'requester-1', 'case-1', 'SUB', {}, {});
 
     expect(claimItem.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ originalAmount: 0, demandedAmount: 0, amount: 0 }),
+      data: expect.objectContaining({ itemType, originalAmount: 0, demandedAmount: 0, amount: 0 }),
     });
+  });
+
+  it('removed direct helpers are no longer part of the service surface', () => {
+    const { service } = makeWriterService();
+
+    for (const method of ['addExpenseItem', 'addFeeItem', 'addAttorneyFeeItem']) {
+      expect((service as any)[method]).toBeUndefined();
+    }
   });
 });

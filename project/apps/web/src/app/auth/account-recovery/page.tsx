@@ -7,6 +7,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Scale } from "lucide-react";
 import { api } from "@/lib/api";
+import { useHydrated } from "@/lib/use-hydrated";
 
 type Result =
   | { status: "NONE" }
@@ -15,6 +16,7 @@ type Result =
   | null;
 
 export default function AccountRecoveryPage() {
+  const hydrated = useHydrated();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<Result>(null);
@@ -60,7 +62,10 @@ export default function AccountRecoveryPage() {
           )}
 
           {!result && (
-            <form onSubmit={handleSubmit} className="space-y-4">
+            // Yerel (React dışı) gönderim e-postayı ADRESE yazmasın: yöntem POST; düğme React devralana dek
+            // kapalı (bkz. lib/use-hydrated.ts). Ölçülen kusur: `method` yokken hidrasyon öncesi gönderim
+            // `?email=…` üretiyordu (üretim derlemesinde de).
+            <form onSubmit={handleSubmit} method="post" className="space-y-4">
               <div>
                 <label htmlFor="email" className="block text-sm font-medium mb-2">
                   E-posta
@@ -77,7 +82,7 @@ export default function AccountRecoveryPage() {
 
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || !hydrated}
                 className="w-full bg-primary text-primary-foreground py-2 rounded-lg font-medium hover:bg-primary/90 disabled:opacity-50"
               >
                 {isLoading ? "Aranıyor..." : "Kurumumu Bul"}

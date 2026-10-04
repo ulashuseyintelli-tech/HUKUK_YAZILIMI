@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Body, Param, Request, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CpeRequired } from '../policy-engine/decorators/cpe-required.decorator';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { CaseFeeAgreementService } from './case-fee-agreement.service';
@@ -22,7 +23,7 @@ interface AuthRequest {
  * req.user'dan (body/query'den ALINMAZ). Servis davranışı bu controller ile DEĞİŞMEZ (ince HTTP kabuğu).
  */
 @Controller('case-fee-agreements')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class CaseFeeAgreementController {
   constructor(private readonly service: CaseFeeAgreementService) {}
 

@@ -21,7 +21,13 @@ const build = (opts: { self?: Record<string, unknown>; actorUser?: unknown } = {
       findMany: jest.fn().mockResolvedValue([]), // duplicate guard → eşleşme yok
       update: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ ...self, ...data })),
     },
-    user: { findUnique: jest.fn().mockResolvedValue(opts.actorUser ?? null) }, // actor PARTNER lookup
+    // actor PARTNER lookup. K4-2: tx içi yetkili kontrol ADMIN'i de kilitli güncel satırdan okur.
+    user: {
+      findUnique: jest.fn(async ({ where }: any) =>
+        where.id === "admin1" ? { role: "ADMIN", tenantId: TENANT, isActive: true, lawyer: null } : (opts.actorUser ?? null),
+      ),
+    },
+    $queryRaw: jest.fn(async () => []), // K4-2: aktör Lawyer → User FOR SHARE kilidi
     // B11: ayricalikli/delegation degisikligi artik $transaction icinde; tx = ayni mock (mevcut iddialar DEGISMEZ).
     $transaction: jest.fn(async (cb: any) => cb(prisma)),
   };
@@ -45,7 +51,7 @@ describe("K1-4b LawyerService — office approval delegation (canApproveOfficeAc
     await svc.update(TENANT, LAWYER_ID, { canApproveOfficeActions: true }, ADMIN);
     expect(prisma.lawyer.update).toHaveBeenCalledTimes(1);
     expect(prisma.lawyer.update.mock.calls[0][0].data.canApproveOfficeActions).toBe(true);
-    expect(prisma.user.findUnique).not.toHaveBeenCalled(); // ADMIN → lawyer-rank lookup gereksiz
+    expect(prisma.user.findUnique).toHaveBeenCalledTimes(1); // K4-2: yetkili kontrol yazma tx'inde kilitli GÜNCEL satırdan (ADMIN dahil); tx dışı kısa yol erken-fail
     // B11 (owner karari 2026-09-12): delegation audit'i guncellemeyle AYNI transaction'da (logInTransaction);
     // hata-yutan transaction-disi `audit.log` kanali ARTIK KULLANILMAZ. Eylem ve metadata bicimi DEGISMEDI.
     expect(audit.logInTransaction).toHaveBeenCalledTimes(1);
@@ -68,7 +74,7 @@ describe("K1-4b LawyerService — office approval delegation (canApproveOfficeAc
   it("linkli PARTNER avukat değiştirebilir → yazılır + audit", async () => {
     const { svc, prisma, audit } = build({ actorUser: partnerUser });
     await svc.update(TENANT, LAWYER_ID, { canApproveOfficeActions: true }, PARTNER_ACTOR);
-    expect(prisma.user.findUnique).toHaveBeenCalledTimes(1);
+    expect(prisma.user.findUnique).toHaveBeenCalledTimes(2); // K4-2: yetkili kontrol yazma tx'inde kilitli GÜNCEL satırdan (ADMIN dahil); tx dışı kısa yol erken-fail
     expect(prisma.lawyer.update.mock.calls[0][0].data.canApproveOfficeActions).toBe(true);
     expect(audit.logInTransaction).toHaveBeenCalledTimes(1);
     expect(audit.log).not.toHaveBeenCalled();

@@ -42,6 +42,7 @@ src/modules/auth/__tests__/auth-register-seed.spec.ts
 src/modules/auth/__tests__/auth-tenant-aware-login.spec.ts
 src/modules/auth/__tests__/auth-tokenversion-revocation.spec.ts
 src/modules/auth/guards/__tests__/credential-recovery-rate-limit.guard.spec.ts
+src/modules/auth/guards/__tests__/viewer-write-deny.guard.spec.ts
 src/modules/auth/invite/__tests__/user-invite.service.spec.ts
 src/modules/auth/password-reset/__tests__/password-reset.service.spec.ts
 src/modules/auth/__tests__/security-tenant-runtime-certification.spec.ts
@@ -339,6 +340,20 @@ src/modules/office/__tests__/office-settings-get-authorization.http.spec.ts
 src/modules/office/__tests__/office-settings-projection.spec.ts
 src/modules/office/__tests__/office-settings-update-semantics.spec.ts
 
+# OFFICE-PUT-BODY-BOUNDARY - OfficeController yazma uclari gövde sinirlari (SAF, DB YOK):
+#   Gövde satir-ici tip literaliyle tipliydi -> global ValidationPipe HIC calismiyor, servis gövdeyi aynen
+#   prisma.office.update'e veriyordu. (A) 7 yazma ucunun gövde parametresi DTO SINIFI; (B) ValidationPipe
+#   aynasi: ekranin / istemcinin gönderdigi her gövde kabul, haritada olmayan HER Office sütunu 400;
+#   (C) servis acik alan haritasi: prisma data + denetim kaydi harita disina cikmaz; ACT-02 sifreleme yolu korunur;
+#   (D) .http: gercek guard + ValidationPipe + controller + servis zincirinde 7 ucun her biri (gecerli / yasak alan / rol / kiraci).
+src/modules/office/__tests__/office-write-body-boundary.spec.ts
+src/modules/office/__tests__/office-write-body-boundary.http.spec.ts
+# OFFICE-BANK-ACCOUNT - banka hesabi uclari (owner karari 2026-10-03, madde 6) - SAF, DB YOK:
+#   Gercek guard + global ValidationPipe + controller + servis zincirinde (sahte prisma): govde siniri (5 alan; officeId/id/
+#   tenantId/iliski 400), maskeli/bos/null IBAN 400, Duzenle mevcut hesabi gunceller (degismeyen alan yazilmaz),
+#   varsayilan yazan yollar buro satiri kilidi ile tek islemde (ilk ifade = kilit), okuma yuzeyi B (kimlik+varsayilan+MASKELI IBAN).
+src/modules/office/__tests__/office-bank-account.http.spec.ts
+
 # VIEWER ONAY KARARI SINIRI (owner GO 2026-09-10, AK-1a eki) - SAF, DB YOK:
 #   (A) office-approval-viewer-decision-boundary.http: GERCEK Nest HTTP pipeline (gercek controller + gercek
 #       servis, sahte prisma). Genel kutunun 4 karar rotasi, dagitim onayi ve FD ofis/icerik onayi: bagli VIEWER
@@ -346,6 +361,7 @@ src/modules/office/__tests__/office-settings-update-semantics.spec.ts
 #   (B) office-approval-viewer-decision-boundary: tek yuklem + FD kopya paritesi; rol karar aninda DB'den okunur;
 #       baglam ayrimi (okuma, yurutme/kurtarma, kayitli kararin idempotent yaniti DEGISMEDI).
 src/modules/office-approval/__tests__/office-approval-viewer-decision-boundary.http.spec.ts
+src/modules/office-approval/__tests__/execution-authority-boundary.spec.ts
 src/modules/office-approval/__tests__/office-approval-viewer-decision-boundary.spec.ts
 
 # CLF-O0-01 (owner GO 2026-09-10) - PR-1.3 domain-owned kapisi GENEL KARAR YOLLARININ DORDUNDE DE (SAF, DB YOK):

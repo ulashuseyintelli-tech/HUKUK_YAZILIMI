@@ -76,7 +76,7 @@ export class CostPackageService {
    * Masraf talebini hesapla (computeExpenseRequest)
    * Case parametrelerine göre kalemleri hesaplar
    */
-  async computeExpenseRequest(params: ComputeExpenseParams): Promise<{
+  async computeExpenseRequest(tenantId: string, params: ComputeExpenseParams): Promise<{
     packageCode: string;
     packageName: string;
     items: ComputedExpenseItem[];
@@ -85,21 +85,29 @@ export class CostPackageService {
   }> {
     const { caseId, packageCode, debtorCount, tebligatCount, principalAmount } = params;
 
-    // Case bilgilerini al
-    const caseData = await this.prisma.case.findUnique({
-      where: { id: caseId },
-      include: {
-        debtors: true,
-        executionOffice: true,
-      },
-    });
+    // Case bilgilerini al — büro (tenant) sınırı: dosya çağıranın bürosunda aranır; başka büronun dosyası, var olmayan
+    // dosyayla AYNI "bulunamadı" yanıtını alır (anapara / borçlu sayısı / büroya özel paket sızmaz). `tenantId` yalnız
+    // doğrulanmış oturumdan gelir, istek gövdesinden DEĞİL. Çağıranlar: CostPackageController.computeExpenseRequest()
+    // (POST /cost-packages/compute) ve StageTriggerService.handleUyapPrepare() (POST /cases/:caseId/uyap/prepare,
+    // .../stage-trigger, .../operations). Kimlik metin değilse ya da boşsa sorguya gidilmez: Prisma tanımsız süzgeci yok
+    // sayar, gövdeden gelen nesne de süzgeç işleci gibi yorumlanırdı.
+    const caseData =
+      typeof caseId === 'string' && caseId && typeof tenantId === 'string' && tenantId
+        ? await this.prisma.case.findFirst({
+            where: { id: caseId, tenantId },
+            include: {
+              debtors: true,
+              executionOffice: true,
+            },
+          })
+        : null;
 
     if (!caseData) {
       throw new NotFoundException('Takip bulunamadı');
     }
 
-    // Paketi al
-    const pkg = await this.findByCode(packageCode, caseData.tenantId);
+    // Paketi al (çağıranın bürosu = dosyanın bürosu)
+    const pkg = await this.findByCode(packageCode, tenantId);
 
     // Hesaplama parametreleri
     const calcContext = {

@@ -61,6 +61,8 @@ const make = (opts: {
     user: { findUnique: userFindUnique },
   };
   (prisma as any).$transaction = jest.fn().mockImplementation(async (cb: any) => cb(prisma));
+  // K4-1: karar tx'i aktörün Lawyer → User satırlarını FOR SHARE kilitler (sahte: satır döndürmez).
+  (prisma as any).$queryRaw = jest.fn().mockResolvedValue([]);
   const audit = { log: jest.fn().mockResolvedValue(undefined) };
   const svc = new OfficeApprovalService(prisma as never, audit as never, opts.domainSync);
   return { svc, prisma, audit };
