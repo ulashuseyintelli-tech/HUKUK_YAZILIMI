@@ -76,6 +76,15 @@
 > hasPortalAccess okumaz; 200 beklenir — ürün bulgusu değil (…)". (F4) TI yalnız a = b = c; a = c ≠ b → T2 ADAY. (F5) b'den bağımsız ADAY hücreleri T0'dan
 > önce: T1 → **TG** (yeni: token claim'i geçersiz — guard her isteği reddeder, `portal-auth.guard.ts:42-45`) → T3. (F6) Bloğun bayat R03-d yorumu düzeltildi
 > (yalnız yorum). Canlı Run / Recover **koşulmadı**; bu revizyon hiçbir canlı koşum ya da Recover için yetki DEĞİLDİR.
+> **[R03-g'de değişti → §14.8:** Recover modunun açık erişim metni ölçülene bağlı; token JWT olarak okunamazsa TJ (ADAY); bloğun Recover bilgi metni koşula bağlı.**]**
+> **R03-g (2026-10-04) — R03-f iki bağımsız doğrulamasının MINOR kenarları; son tur (koşucu, sahte API, iki öz-test, owner bloğu ve bu belge değişti; koşucu
+> pini ve paket digest değişti) — §14.8:** (G1) Recover modunda açık erişim metni ölçülene bağlı: Recover kapatmayı 2xx ile yapıp P7-C2 PASS ölçtüyse ve
+> erişim HTTP ölçümleri sırasında yeniden açıldıysa "Recover kapattı (kapatma çağrısı 2xx, P7-C2 PASS) ama erişim HTTP ölçümleri sırasında yeniden açıldı
+> (P7-C5 FAIL) — açık erişim KAPANMADI; …"; "bu Recover kapatamadı" yalnız kapatma adımından sonra DB'de kapalı ölçülmemişken. (G2) Bloğun Recover bilgi
+> metni: "yetkili uç çağrılır (…, en çok 2 deneme); çağrı 2xx dönerse ürün şunları yazar: …; 401/403'te kapatma yapılmaz (sonuç Recover kanıtında …)". (G3)
+> Token JWT olarak okunamazsa (verilme sürümü s1'e düşse de) HTTP 200 → yeni hücre **TJ** (ADAY; ürün guard'ı bu token'ı DB'den önce reddeder,
+> `portal-auth.guard.ts:36`); T5'e ulaşmaz. (G4) T2'nin a = c ≠ b dalında b > c iken "ALTINDA" notu. (G5) Sıra girdileri (B / T1 → TG / TJ). (G6) §14.6 (v)
+> işaretlendi. Canlı Run / Recover **koşulmadı**; bu revizyon hiçbir canlı koşum ya da Recover için yetki DEĞİLDİR.
 
 ## 1. Ne ölçer ve ne yapmaz
 
@@ -410,12 +419,13 @@ kullanıcı adından ve test DB parolasından arındırılarak yazılır.
 
 | Dosya | sha256 |
 |---|---|
-| `d7-portal-messages-live-run.js` **R03-f** (son baytlar; §14.7: P7-C1 açıklaması ölçülene indi (`C1_DESC` + `dayanak=`), Recover metni `disableCalls`'a bağlı (`recoverCloseText`), kısmi durum metinleri (`openStateTxt`), karar sırası B → T1 → TG → T3 → T0, TI yalnız a = b = c, T5 metni; bloğun PkgPins'inde) | `23AB099FA6F8EE7B300504F42F2699241336ECDF97D5ED667614722456CC04DB` |
-| `d7-owner-live-block.ps1` **R03-f** (son baytlar; koşucu pini + `$ExpPackage` + YALNIZ YORUM (ADAY gösterim yorumu karar tablosunu adlandırır; bayat R03-d yorumu ve açık erişim satırı yorumundaki Recover'ın kapatabileceği iddiası kaldırıldı) + başlık notu; kapılar, sıra, Recover okuma kapısı, node çağrısı, gösterilen metin, çıkış kodları değişmedi; §14.7) | `A2C9F7D8DCFD3BCA7D006E689E3F5EAB8C0A7B8DF562DE5130C7F1198F7D1B2C` |
-| `d7-owner-block-selftest.ps1` **R03-f** (son baytlar; O-12 yeni; 74 ölçüt) | `92D655806625661F6B718536E05E4D52B019A1FE6B9A92B32EDAD90D57CA3743` |
-| `d7-fake-portal-api.js` **R03-f** (son baytlar; `portalToken badClaim` (tokenVersion claim'i -1) + guard NORMAL taklidi ürün gibi geçersiz claim'i DB'ye bakmadan reddeder) | `B2207C96AF7B9D3286290DAC4231B40449A94AD7BF5A8B76AB9364A95A4950E8` |
-| `d7-selftest.js` **R03-f** (son baytlar; Z22-a..e + T-12 yeni (6); Z16-b, Z16-c, Z16-d, Z16-f, Z18, Z19-a, Z20-a, Z20-b, Z20-c, Z21-a, Z21-c, Z21-d, Z21-g, Z21-h, Z21-i, Z21-j, T-11 değişti (17); 82 ölçüt) | `E394E62700ECA48BA66FAA6197EE594D3EBD2CB53394104C9B97D73DBEABAD71` |
+| `d7-portal-messages-live-run.js` **R03-g** (son baytlar; §14.8: Recover modunda açık erişim metni ölçülene bağlı (`recoverOpenAccessText`), token JWT olarak okunamazsa TJ (`sessionClass200` 5. girdi `claimUnreadable`; sıra B → T1 → TG → TJ → T3 → T0 …), T2 a = c ≠ b dalında ALTINDA notu; bloğun PkgPins'inde) | `4446C256EF83A0401B7C93F3FD28B6C1A14AF18F1FD04237349D6E37517A9001` |
+| `d7-owner-live-block.ps1` **R03-g** (son baytlar; koşucu pini + `$ExpPackage` + YALNIZ METİN (G2): `Invoke-RecoverMode` bilgi metninde ürünün kapatma yazımları "çağrı 2xx dönerse" koşuluna bağlandı, "401/403'te kapatma yapılmaz (sonuç Recover kanıtında: P7-C1 / P7-C2 satırları ve portalClose.acikErisim)" eklendi + başlık notu; kapılar, sıra, Recover okuma kapısı, node çağrısı, çıkış kodları değişmedi; §14.8) | `EF3FCF08A382B6B62C4B62307B06E4D204E89017AE0FD8CD141E43AD8577C1DA` |
+| `d7-owner-block-selftest.ps1` **R03-g** (son baytlar; O-13 yeni; 75 ölçüt) | `DDA5A722F8D157485130DA4B0E5F6A4E828E4727995D7546282213D5B24C3A8C` |
+| `d7-fake-portal-api.js` **R03-g** (son baytlar; guard NORMAL taklidi ürün guard'ı gibi JWT olmayan token'ı (`portalToken opaque`) DB'ye bakmadan reddeder (`portal-auth.guard.ts:36`; R03-e/f'de kabul ediyordu — ürün davranışı değildi) + `reopenOn extLogin` (yeniden açma tetiği başarılı kapatmadan sonraki İLK dış portal girişi yanıtlandıktan sonra; varsayılan `messages` = önceki davranış)) | `BEF6E73226DC50E2361C54A37299EA943B850B253243C960E006225A8C77740E` |
+| `d7-selftest.js` **R03-g** (son baytlar; Z23-a, Z23-b, Z23-c, Z23-d yeni (4); Z21-a, Z21-l, T-11 değişti (3); 86 ölçüt) | `82A0B53B11E7EDECB152E84B9A76EAD89D771DF1975E45E73018851557238BF3` |
 | `d7-qr-test.js` (değişmedi) | `15E6431396E978423BAE72F3B7511F3972F12847EF96AA02C12937E0F2233E15` |
+| önceki (**R03-f** son baytlar): koşucu · blok · blok öz-testi · sahte API · koşucu öz-testi | `23AB099FA6F8EE7B300504F42F2699241336ECDF97D5ED667614722456CC04DB` · `A2C9F7D8DCFD3BCA7D006E689E3F5EAB8C0A7B8DF562DE5130C7F1198F7D1B2C` · `92D655806625661F6B718536E05E4D52B019A1FE6B9A92B32EDAD90D57CA3743` · `B2207C96AF7B9D3286290DAC4231B40449A94AD7BF5A8B76AB9364A95A4950E8` · `E394E62700ECA48BA66FAA6197EE594D3EBD2CB53394104C9B97D73DBEABAD71` |
 | önceki (**R03-e** son baytlar): koşucu · blok · blok öz-testi · sahte API · koşucu öz-testi | `EE3704A4BECEDF9DA40F31A7362A526CA6D5539D4CF8A1573C548359CF7A0F0F` · `A26418795FF72805B663A6324A59F973D41AB5E7E6251079C6C1CC2823358B5F` · `50C375F6F42D5B3CE7FDA373D4689FDE8ED94778FC19A17DDD67BA7CE8CE55BC` · `1982837C8D68FD30CA4CE106070DD74BCFDCC4B9FF4CC68089E7CA835D2E4229` · `FCEBE8D0D923C98D84D83D8DFB47435FC056ACBDD38B116DF509CAD63EBD6BAA` |
 | önceki (**R03-d** son baytlar): koşucu · blok · blok öz-testi · sahte API · koşucu öz-testi | `27BFE5CE5427EA7BB0C68B86064972994513DBCA373155EDC38092A3F74326AA` · `9B409218FCB48532DDF56A72071A1D186CDE714200AD4F80A0B97C025F5DB63B` · `66FE3BFC0954C0CDA59BFE1945256E65060305EB58367DFEB69E0A5982147034` · `30B29115311EBF4663DA24F0A1A8748E968DD04AEC3EC16171B403AB524FD122` · `3EA4AAAC35D94E77FFB311A5ABBB53BFC044A25C6D9FA2D6EA3B473FBD27C203` |
 | önceki (**R03-c** son baytlar): koşucu · blok · blok öz-testi · sahte API · koşucu öz-testi | `08B5CA7A…E501` · `75B5E8E6…0DF6` · `A63945DE…2247` · `387A923B…2920` · `8AC501B7…8B1E` |
@@ -430,6 +440,13 @@ kullanıcı adından ve test DB parolasından arındırılarak yazılır.
 | önceki (R01/R02; R02'de değişmedi): `d7-fake-portal-api.js` | `7B9D32388A34E91088B316147BCCE6E7AC66EC30AEDFFA4C8F841FE9461EBD7D` |
 | önceki (**R02 kütüphane kökü düzeltmesi**; 2026-10-03; §6.4): `d7-selftest.js` | `2867FBC58282982F79218F2A468884677626B89D34BE91F963FB58FEAD32A1E3` |
 | önceki (R01 düzeltme baytları; R02'nin ilk iki turunda değişmedi): `d7-selftest.js` | `D5E12B00D1F708D056F1949CAE9EC76519DF3B71F4CBCDC0C67473CE630345DB` (kütüphane kökü sabit olarak canlı yayın dizini; yalnız ayna kopyada koşuldu) |
+
+**Paket digest (R03-g; blok içinde `$ExpPackage`): `78F626CD3C0FB47393521BAF4FB7BBB2A326D900EAB7C9EA968E49C5FB5F3A0D`** — pin listesindeki 9 dosyadan
+bloktan bağımsız betikle yeniden hesaplandı (9 pin, uyuşmazlık 0; R03-g'de pin listesinde değişen yalnız koşucu satırı;
+`r04\recover-dogrulugu\r5\d7\test\pin-dogrulama-son.log`). Blok öz-testi **PIN-1** bu eşitliği her koşumda ölçer (R03-g son koşumları: iki kabukta
+9/9, digest `78F626CD…` = `$ExpPackage`). Kanıttaki `revision` yine `R03` (C-1 ölçer); R03-g koşucusu `packageDigest` `78F626CD…` ile ayırt edilir;
+kanıtta yeni alan yok — `portalClose.sessionVersion.hucre` artık `TJ` olabilir; Recover kanıtında `portalClose.acikErisim` ve kurtarma nedeni §14.8'deki
+biçimdedir. Aşağıdaki paragraf R03-f kaydıdır.
 
 **Paket digest (R03-f; blok içinde `$ExpPackage`): `CD86CD77FA279B0A60FEA3B484D56427DEF66AC90463C99D4EB4E2CE9D9FEE51`** — pin listesindeki 9 dosyadan
 bloktan bağımsız betikle yeniden hesaplandı (9 pin, uyuşmazlık 0; R03-f'de pin listesinde değişen yalnız koşucu satırı;
@@ -1239,7 +1256,9 @@ hesabı açık (…) — açık erişim kapatılmalıdır (Recover kapatabilir)"
 "(Recover kapatabilir)" **yazılmaz**. **[R03-f'de değişti → §14.7:** "portal hesabı açık" ve "(Recover kapatabilir)" kaldırıldı — durum ölçülenle ("portal
 hesabı AKTİF (…)" / "portal kapanışı TAMAMLANMADI: hesap pasif ama müvekkil erişim bayrağı açık (…)"), Run'daki Recover metni kapatma çağrılarına bağlı.**]**
 (iv) AYRISTIRILAMADI ve SAYILMADI da kendi oturum satırını yazar. (v) **Verilme sürümü:** portal token'ının payload'ı
-**İMZASIZ** decode edilir (token kanıta / günlüğe yazılmaz); claim esas, yoksa guard kuralıyla 0, geçersizse bilinmiyor (T0), token JWT değilse s1;
+**İMZASIZ** decode edilir (token kanıta / günlüğe yazılmaz); claim esas, yoksa guard kuralıyla 0, geçersizse bilinmiyor (T0), token JWT değilse s1
+**[R03-f/g'de değişti:** claim geçersizse sınıflamada **TG** (ADAY; R03-f, §14.7); token JWT olarak okunamazsa verilme sürümü yine s1 (P7-C2V referansı) ama
+sınıflamada **TJ** (ADAY; R03-g, §14.8) — ikisi de T0'a / T5'e ulaşmaz.**]**;
 kanıtta `issuedVersion`; makbuzdaki `portalIssuedTokenVersion` esas değere güncellenir + `portalIssuedTokenVersionKaynak`. **Blok:** Run sonu ekranında
 `portalClose.acikErisim` ürün bulgusu satırından AYRI "PORTAL ERİŞİMİ: …" satırında (yalnız gösterim).
 
@@ -1319,3 +1338,71 @@ sahte API'nin claim doğrulamasıdır. F2: 401/403 sonrasında Recover'ın gerç
 açıldı (hesap pasif)" dalı, TG + pasif hesap, T3'ün b bilinmiyor / b aralık dışında varyantları ve TI'nın a = b = c açma girdisi yalnız birim ölçümüyle
 (Z22-e, Z21-a) sınandı. B3 açık (değişmedi). Recover'da mevcut oturum reddi (P7-C4) her zaman ölçülemez (değişmedi). Bu revizyon canlı Run / Recover'ı
 yetkilendirmez.
+
+### 14.8 R03-g — R03-f iki bağımsız doğrulamasının MINOR kenarları; son tur (2026-10-04)
+
+Kapsam: R03-f'nin iki bağımsız doğrulaması (ikisi de ok=true) yalnız MINOR kenarlar bıraktı; bunlar D-6 R03-g ile aynı ilkeyle dar kapatıldı (D-6 belgesi
+§13.8). Karar tablosunun aşağıdakiler dışındaki hücreleri ve onaylanmış metinler **değişmedi**. Her madde önce **kaynakta doğrulandı** (R03-f yerel ucu
+`61a5bd27`; ürün kaynağı `HY_WT_R27` @ `1b758d29`, salt okuma), sonra eski baytlarda negatif kontrolle ölçüldü. Canlı Run / Recover **koşulmadı**, owner bloğu
+**çalıştırılmadı** (yalnız blok öz-testi). Çıkış kodu fonksiyonları ve öncelik **değişmedi**; kanıttaki `revision` `R03` kalır.
+
+| Madde | Kaynakta (`61a5bd27`) — doğrulama | Düzeltme (R03-g) |
+|---|---|---|
+| G1 | Recover modunda `acikErisim` (`closePortal`) ve kurtarma nedeni son eki (`recoveryAdvice`) sabit "açık erişim KAPANMADI (bu Recover kapatamadı; …)" — kurtarma nedeninin "kapatmadan sonra DB'de kapalı ölçüldü (P7-C2=PASS) ama … yeniden AÇILDI (P7-C5 FAIL …)" dalında da; Recover kapatmayı 2xx ile yapıp P7-C2 PASS ölçtüyse "kapatamadı" kanıtsızdır — **doğrulandı** (eski baytlarda Z23-d (2): kapatma 201, P7-C2 PASS, P7-C3L/D 401, P7-C5 FAIL → "açık erişim KAPANMADI (bu Recover kapatamadı; …)") | `recoverOpenAccessText` (D-6 ile aynı; P7 kimlikleriyle): kapatmadan sonra DB'de kapalı **değilse** "açık erişim KAPANMADI (bu Recover kapatamadı; ikinci Recover bu paketle TANIMLI DEĞİL — owner kararı)" (R03-f metni korunur); kapalıysa (P7-C2 PASS) "Recover kapattı (kapatma çağrısı 2xx, P7-C2 PASS) ama erişim HTTP ölçümleri sırasında yeniden açıldı (P7-C5 FAIL) — açık erişim KAPANMADI; ikinci Recover bu paketle TANIMLI DEĞİL — owner kararı" · "hesap Recover başında zaten kapalıydı (kapatma çağrısı yapılmadı; P7-C2 PASS) ama …" · "kapatma çağrısı 2xx dönmedi ama kapatma adımından sonra DB'de kapalı ölçüldü (P7-C2 PASS); …". Run modu değişmedi (`recoverCloseText`) |
+| G2 | Bloğun `Invoke-RecoverMode` bilgi metni (0e04f4a6'dan kalma): "… yetkili uç çağrılır (admin/disable-user, en çok 2 deneme): portal hesabı pasif + sürüm artışı, müvekkil portal erişimi kapalı, kapatma audit satırı" — koşulsuz; Run'da kapatma 401/403 ile reddedilebilir ve ürün yetki reddinde yazmadan döner — **doğrulandı** (eski baytlarda O-13: kaynakta ve gösterilen Recover ekranında koşulsuz biçim) | "… yetkili uç çağrılır (admin/disable-user, en çok 2 deneme); çağrı 2xx dönerse ürün şunları yazar: portal hesabı pasif + sürüm artışı, müvekkil portal erişimi kapalı, kapatma audit satırı (aktör: sentetik personel); 401/403'te kapatma yapılmaz (sonuç Recover kanıtında: P7-C1 / P7-C2 satırları ve portalClose.acikErisim)." Blok öz-testine **O-13** (statik + gösterilen) |
+| G3 | `issuedVersionOf`: claim OKUNAMADI → verilme sürümü s1; `sessionClass200`'ün bu durum için girdisi yoktu → a = b = c ve iki uç aktifken **T5 "ürün bulgusu değil"**. Ürün guard'ı JWT olmayan token'ı `verifyAsync`'te (`portal-auth.guard.ts:36`) DB'den önce reddeder; ürünün verdiği token `jwtService.sign` ile JWT'dir (`portal.service.ts:438-446`) — **doğrulandı** (eski baytlarda Z23-a: `SAYILMADI/T5`; Z21-a: TJ girdileri T5 / T0 / T3 / T6) | Yeni hücre **TJ** (ADAY): "token JWT olarak okunamadı (üç parçalı JWT değil ya da payload JSON nesnesi değil) — ürün guard'ı bu token'ı DB'den önce reddeder (portal-auth.guard.ts:36 verifyAsync; hesap durumundan ve sürümden bağımsız)"; sıra B → T1 → TG → **TJ** → T3 → T0 …; T5'e ulaşmaz. `sessionClass200(issued, st1, st2, claimInvalid, claimUnreadable)`; Run 5. girdiyi `issuedVersion.claimDurum === 'OKUNAMADI'`'dan kurar. `issuedVersionOf` değerleri değişmedi (P7-C2V referansı aynı) |
+| G4 | T2'nin a = c ≠ b + `isActive` değişti (tiOut) dalında b > c iken "(DB sürümü verilme sürümünün ALTINDA — ürün dışı azaltma)" notu yoktu — **doğrulandı** (eski baytlarda Z21-a `T2-TIdışı-alt`) | Not tiOut dalına da eklendi |
+| G5 | Z21-a'da B'nin TG'den ve T1'in TG'den önce geldiğini sınayan girdi yoktu | Z21-a'ya sıra girdileri: B-TG, T1-TG, B-TJ, T1-TJ (+ TJ, TJ-b-yok, TJ-pasif, TJ-artış ve G4 girdisi `T2-TIdışı-alt`: b=3, st1 (aktif, 1), st2 (pasif, bayrak açık, 1) → T2 ADAY + ALTINDA) — 33 girdi, 14 hücre |
+| G6 | §14.6 (v) "claim … geçersizse bilinmiyor (T0)" R03-f'den beri bayattı | Cümleye "[R03-f/g'de değişti: … TG (ADAY; §14.7) … TJ (ADAY; §14.8) …]" işareti (onaylanmış metin silinmedi) |
+
+**Güncel karar sırası (R03-g).** B → T1 → TG → **TJ** → T3 → T0 → T1s → TA → TI → T2 → T2a → T5 → T4 → T6 (ilk tutan hücre); T2'nin a = c ≠ b dalı b > c iken
+ALTINDA notunu da yazar.
+
+**Sahte API (ürün değil).** (i) Guard NORMAL taklidi artık ürün guard'ı gibi JWT olmayan token'ı (`portalToken opaque`) DB'ye bakmadan reddeder
+(`portal-auth.guard.ts:36`); R03-e/f'de kabul ediyordu — **ürün davranışı değildi**. Bu yüzden Z21-l'nin beklentisi değişti (opaque token + guard kusur taklidi →
+T2 değil **TJ**; gerekçe: sahte API'nin opaque token'ı ürün davranışı değildir, ürün guard'ı bu token'ı DB'den önce reddeder ve 200'ün sınıfı sürümden
+bağımsızdır). Guard `stale` kusur taklidi değişmedi. (ii) `reopenOn extLogin`: yeniden açma tetiği başarılı kapatmadan sonraki İLK **dış** portal girişi
+yanıtlandıktan sonra (o giriş kapalı hesabı görür); Recover'ın HTTP ölçümleri yalnız yeni giriştir (mesaj listesi isteği yoktur). Varsayılan `messages`
+(önceki davranış aynen).
+
+**Öz-testler ve negatif kontroller (ölçülen).** Kanıt kökü `D:\Development\HUKUK_YAZILIMI\HY_R27_AGENT_EVIDENCE\r04\recover-dogrulugu\r5\` (`d7\test\`,
+`d7\neg\`, `dogrulama-ortak\`). Koşucu öz-testi ajanın **kendi** tek kullanımlık konteynerinde (`postgres:16-alpine`, adında `test`, loopback yüksek port,
+`_test` adlı veritabanı; şema `HY_WT_R27` `apps/api/prisma/schema.prisma` **kopyasından** `prisma db push --skip-generate`; iş sonunda yalnız o konteyner
+kaldırılır); `D7T_LIB_ROOT` = `HY_WT_R27\project`; ortak ağır koşu kilidi her koşumda alındı / bırakıldı (`dogrulama-ortak\kilit-olay.txt`); her koşumdan önce
+FreeVirtualMemory ölçüldü (≥ 4 GB; `dogrulama-ortak\bellek-olcum.txt`).
+
+| Koşum | Sonuç | Kanıt |
+|---|---|---|
+| `d7-selftest.js` — son baytlar (koşucu `4446C256…`, sahte API `BEF6E732…`, öz-test `82A0B53B…`, blok `EF3FCF08…`) | **86/86 PASS**, çıkış 0 (yeni 4: Z23-a, Z23-b, Z23-c, Z23-d; değişen 3: Z21-a, Z21-l, T-11; C-1, S-1 PASS) | `d7\test\d7-selftest-ilk1.log` (son baytlarla; `.sha-once` / `.sha-sonra` eşit) |
+| `d7-owner-block-selftest.ps1` — son baytlar (blok `EF3FCF08…`, öz-test `DDA5A722…`) | **75/75 PASS** Windows PowerShell 5.1 · **75/75 PASS** PowerShell 7 (PIN-1 9/9, digest `78F626CD…` = `$ExpPackage`; O-13 yeni) | `d7\test\blok-oz-test-ilk1-winps51.log`, `d7\test\blok-oz-test-ilk1-pwsh7.log`; belge güncellendikten sonra yeniden (G-2 belgenin §8'ini okur; §8 değişmedi): `d7\test\blok-oz-test-son-belgeli-*.log` |
+| **Negatif A — koşucu:** `git archive 61a5bd27` aynası (ESKİ koşucu `23AB099F…`, ESKİ blok `A2C9F7D8…`) + R03-g öz-test + R03-g sahte API | **80/86**, çıkış 1 — FAIL = tam olarak Z21-a, Z21-l, Z23-a, Z23-c, Z23-d, T-11 (6). **Z23-b PASS** — beklenen: özü sahte API'nin guard sadakatidir (JWT olmayan token → 401), koşucu değişikliğine bağlı değildir | `d7\neg\neg-A-eski-kosucu.log`, `d7\neg\neg-A-eski-gozlem.txt`, `d7\neg\ayna-kurulum.txt` |
+| **Negatif B — önceki yerel ucun TÜM paket baytları:** `git archive 61a5bd27` aynası (ESKİ koşucu, ESKİ blok, ESKİ sahte API `B2207C96…`) + yalnız R03-g koşucu öz-testi | **79/86**, çıkış 1 — FAIL = tam olarak Z21-a, Z21-l, Z23-a, Z23-b, Z23-c, Z23-d, T-11 (7 = yeni 4 + değişen 3) | `d7\neg\neg-B-eski-paket.log`, `d7\neg\neg-B-eski-gozlem.txt` |
+| **Negatif — blok:** ayna A (ESKİ blok) + R03-g blok öz-testi | iki kabukta **74/75**, çıkış 1 — FAIL = yalnız **O-13** (PIN-1 aynada eski koşucu + eski pinle tutarlı → PASS) | `d7\neg\neg-eski-blok-winps51.log`, `d7\neg\neg-eski-blok-pwsh7.log` |
+| Pin · ayrıştırma | 9 pin uyuşmazlık 0, digest `78F626CD…` = `$ExpPackage`; iki ps1 parse hatası 0 (WinPS 5.1 ve PS 7), `node --check` (koşucu, sahte API, öz-test) 0, iki ps1 UTF-8 BOM'lu | `d7\test\pin-dogrulama-son.log`, `d7\test\parse-iki-kabuk-son.log` |
+
+Eski davranış ölçüldü (`neg-A-eski-gozlem.txt`, `neg-B-eski-gozlem.txt`): Z21-a — `TJ` girdisi `SAYILMADI/T5`, `TJ-b-yok` T0, `TJ-pasif` T3, `TJ-artış` T6,
+`T2-TIdışı-alt` ALTINDA notsuz; Z21-l — opaque token + guard kusur taklidi `ADAY/T2`; Z23-a — `SAYILMADI/T5` "… 200 beklenir — ürün bulgusu değil …"; Z23-c —
+`recoverOpenAccessText` yok, Recover kurtarma nedeni "yeniden AÇILDI … : açık erişim KAPANMADI (bu Recover kapatamadı; …)"; Z23-d (2) — kapatma 201 + P7-C2
+PASS iken `acikErisim` "… (bu Recover kapatamadı; …)"; T-11 — 4 girdili çağrı; Z23-b (yalnız ayna B) — eski sahte API opaque token'ı kabul etti: P7-04D 200,
+gösterim yapıldı, P7-C4 200 → T5; O-13 — eski blokta koşulsuz "…, en çok 2 deneme): portal hesabı pasif …" (kaynakta ve gösterilen Recover ekranında).
+
+Yeni / değişen ölçütler: **Z23-a** (TJ uçtan uca, guard kusur taklidi; a = b = c, iki uç aktif — R03-f'de T5) · **Z23-b** (TJ ikizi, guard normal: dış zincir 401,
+P7-C4L/D 401 PASS, productFinding yok) · **Z23-c** (G1 birim: `recoverOpenAccessText` 7 girdi + Recover modunda kurtarma nedeni iki dal) · **Z23-d** (G1 uçtan
+uca, Z16-b makbuzu üzerinde iki Recover: kapatma 403 → "bu Recover kapatamadı" korunur; kapatma 201 + dış giriş ölçümünden sonra yeniden açma → "Recover
+kapattı (…) ama erişim … yeniden açıldı …", "kapatamadı" yok) · **Z21-a** (33 girdi, 14 hücre) · **Z21-l** (T2 → TJ) · **T-11** (5 girdili çağrı) · **O-13**
+(blok: Recover bilgi metni koşula bağlı — kaynak + gösterilen).
+
+**Ölçülmeyenler / sınır.** Canlıda hiçbiri koşulmadı. G1'in "hesap Recover başında zaten kapalıydı" ve "2xx dönmedi ama … kapalı ölçüldü" dalları yalnız birim
+ölçümüyle (Z23-c) sınandı; uçtan uca ölçülen dal 2xx + yeniden açmadır (sahte API dış müdahale taklidi). G2'nin "401/403'te kapatma yapılmaz" cümlesi ürün
+kaynağından (yetki reddi yazmadan önce döner — §13.2) ve sahte API'nin `disable forbidden` taklidinden gelir; canlı ürünün bu yolu koşulmadı. TJ'nin uçtan uca
+ölçümü sahte API'nin opaque token'ıyla yapıldı; ürünün JWT olmayan token verdiği bir durum bilinmiyor.
+
+**Doğrulayıcıların bulgu SAYMADIĞI ama owner'a açık bilinen sınırlar.** (1) **TG ve TJ yalnız sahte API'de ölçüldü:** ürünün imzaladığı token'da claim DB'deki
+tam sayıdır ve token JWT'dir (`portal.service.ts:438-446`) — canlıda bu iki hücrenin tutması pratikte beklenmez; sahte API'nin `badClaim` / `opaque` token'ları ve
+guard normal taklidi ürünün kendisi değildir. (2) **Recover bitiş ekranı `acikErisim`'i göstermez** (önceki tasarım; değişmedi): bloğun Recover bitiş satırı yalnız
+çıkış kodunu açıklar; açık erişim metni Recover kanıtındadır — owner kanıtı okumadan Recover'dan sonra erişimin açık kalıp kalmadığını ekranda görmez. (3) **B
+hücresinin bulgu metnindeki "portal erişimi kapatıldıktan" ifadesi** DB kapanışı HTTP ölçümlerinden önce ve sonra ölçülmüşken (P7-C2 PASS + P7-C5 PASS)
+yazılır; kapanışın dayanağı (2xx / hesap zaten kapalıydı / 2xx olmadan DB'de kapalı görüldü) bu metinde ayrışmaz — P7-C1 gözlemindeki `dayanak=` alanındadır.
+(4) Bu belgenin **§8.1** maddesi 1 (Recover yazma kümesi; R02 metni) ürünün kapatma yazımlarını çağrının 2xx dönmesine bağlamadan anlatır — G2 kapsamı bloğun
+gösterilen metniydi; belge metni **değiştirilmedi** (blok metni artık koşula bağlı). Dördü de bu turda kapsam dışı bırakıldı (owner kararı). B3 açık
+(değişmedi). Recover'da mevcut oturum reddi (P7-C4) her zaman ölçülemez (değişmedi). Bu revizyon canlı Run / Recover'ı yetkilendirmez.

@@ -42,6 +42,10 @@
 # R03-f  : (R03-e iki bağımsız doğrulamasının MINOR bulguları; blokta YALNIZ yorum + pin; D-6 O-18'in ikizi) O-12 — blok kaynağında (yorumlar dahil) Recover'ın
 #          açık erişimi kapatabileceğine dair kesin ifade YOK (F2) ve R03-d'den kalma bayat "P7-C2 PASS + P7-C5 FAIL iken sürüm sınıflaması" yorumu YOK (F6); ADAY
 #          yorumu sessionClass200 karar tablosunu adlandırır. PIN-1 yeni koşucu pini + $ExpPackage ile. R03-e blok baytlarında (68cfae80 aynası) O-12 FAIL verir.
+# R03-g  : (R03-f iki bağımsız doğrulamasının MINOR kenarları; son tur) O-13 (G2) — Invoke-RecoverMode bilgi metni (kaynak + GÖSTERİLEN Recover ekranı) ürünün
+#          kapatma yazımlarını YALNIZ "çağrı 2xx dönerse" koşuluyla söyler, 401/403'te kapatma yapılmadığını ve sonucun Recover kanıtında olduğunu yazar; eski
+#          koşulsuz "…, en çok 2 deneme): portal hesabı pasif …" biçimi YOK. PIN-1 yeni koşucu pini + $ExpPackage ile. R03-f blok baytlarında (61a5bd27 aynası)
+#          O-13 FAIL verir.
 # KULLANIM: powershell.exe -NoProfile -ExecutionPolicy Bypass -File d7-owner-block-selftest.ps1   (ve pwsh)
 # ÇIKIŞ  : 0 hepsi PASS · 1 en az bir FAIL · 2 ölçülemedi
 $ErrorActionPreference = 'Stop'
@@ -582,6 +586,19 @@ try {
   $o12Kap = ([regex]::Matches($o12Src, 'Recover kapatabilir')).Count; $o12Eski = ([regex]::Matches($o12Src, [regex]::Escape('P7-C2 PASS + P7-C5 FAIL iken sürüm sınıflaması'))).Count
   $o12Ok = ($o12Src.Length -gt 1000 -and $o12Kap -eq 0 -and $o12Eski -eq 0 -and $o12Src.Contains('sessionClass200 karar tablosunun ADAY hücreleri'))
   Check 'O-12' 'R03-f (F2 + F6): blok kaynağında (yorumlar dahil) "Recover kapatabilir" YOK; R03-d''den kalma bayat yorum ("P7-C2 PASS + P7-C5 FAIL iken sürüm sınıflaması") YOK; ADAY gösterim yorumu "sessionClass200 karar tablosunun ADAY hücreleri" der' $o12Ok "kaynak=$($o12Src.Length) karakter · Recover-kapatabilir sayısı=$o12Kap · bayat R03-d yorumu=$o12Eski · karar tablosu yorumu=$($o12Src.Contains('sessionClass200 karar tablosunun ADAY hücreleri'))"
+
+  # ---- R03-g: O-13 (G2; statik + GÖSTERİLEN) — Invoke-RecoverMode bilgi metni koşulsuz yetenek İDDİA ETMEZ: yetkili uç çağrısından (en çok 2 deneme) sonra ürünün
+  #      yazdıkları YALNIZ "çağrı 2xx dönerse" koşuluyla; 401/403'te kapatma yapılmadığı ve sonucun Recover kanıtında olduğu yazılır. Eski koşulsuz biçim
+  #      ("…, en çok 2 deneme): portal hesabı pasif …") kaynakta ve gösterilen Recover metninde (G-5'te yakalanan Recover çıkış 6 ekranı) YOK.
+  $o13Src = [IO.File]::ReadAllText($wrapper, [Text.Encoding]::UTF8)
+  $o13i = $o13Src.IndexOf('function Invoke-RecoverMode'); $o13j = $(if ($o13i -ge 0) { $o13Src.IndexOf("`nfunction ", $o13i + 10) } else { -1 })
+  $o13Fn = $(if ($o13i -ge 0 -and $o13j -gt $o13i) { $o13Src.Substring($o13i, $o13j - $o13i) } else { '' })
+  $o13Old = 'en çok 2 deneme): portal hesabı pasif'
+  $o13New = '(admin/disable-user, en çok 2 deneme); çağrı 2xx dönerse ürün şunları yazar: portal hesabı pasif + sürüm artışı, müvekkil portal erişimi kapalı, kapatma audit satırı (aktör: sentetik personel); 401/403''te kapatma yapılmaz (sonuç Recover kanıtında: P7-C1 / P7-C2 satırları ve portalClose.acikErisim).'
+  $o13Shown = [string]$g5rAll   # G-5'te yakalanan Recover (çıkış 6) ekran metni (boşluklar tekleştirilmiş)
+  $o13Ok = ($o13Fn.Length -gt 500 -and $o13Fn.Contains('çağrı 2xx dönerse ürün şunları yazar: portal hesabı') -and $o13Fn.Contains("401/403''te kapatma yapılmaz") -and -not $o13Src.Contains($o13Old) -and
+            $o13Shown.Length -gt 200 -and $o13Shown.Contains($o13New) -and -not $o13Shown.Contains($o13Old))
+  Check 'O-13' 'R03-g (G2): Recover bilgi metni (GÖSTERİLEN + kaynak) koşulsuz yetenek İDDİA ETMEZ — "… yetkili uç çağrılır (admin/disable-user, en çok 2 deneme); çağrı 2xx dönerse ürün şunları yazar: portal hesabı pasif + sürüm artışı, müvekkil portal erişimi kapalı, kapatma audit satırı (aktör: sentetik personel); 401/403''te kapatma yapılmaz (sonuç Recover kanıtında: P7-C1 / P7-C2 satırları ve portalClose.acikErisim)."; eski koşulsuz biçim ("…, en çok 2 deneme): portal hesabı pasif …") kaynakta ve gösterilen metinde YOK' $o13Ok "Invoke-RecoverMode=$($o13Fn.Length) karakter · koşullu metin kaynakta=$($o13Fn.Contains('çağrı 2xx dönerse ürün şunları yazar: portal hesabı')) · 401/403 kaynakta=$($o13Fn.Contains("401/403''te kapatma yapılmaz")) · eski biçim kaynakta=$($o13Src.Contains($o13Old)) · gösterilen metin=$($o13Shown.Length) karakter, koşullu=$($o13Shown.Contains($o13New)), eski=$($o13Shown.Contains($o13Old))"
 }
 catch {
   # Beklenmeyen istisna öz-testi SESSİZCE kesmez: FAIL satırı olarak kaydedilir (kalan ölçütler koşulmadı → sonuç PASS olamaz).

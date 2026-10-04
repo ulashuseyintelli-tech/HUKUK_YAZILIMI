@@ -31,6 +31,11 @@
 #          T1 → TG → T3 → T0, TI yalnız a = b = c) → koşucu pini + $ExpPackage güncellendi. Blokta YALNIZ YORUM: ürün bulgusu ADAYI ve "PORTAL ERİŞİMİ:"
 #          satırlarının yorumları R03-e/f karar tablosuna göre düzeltildi (bayat R03-d yorumu kaldırıldı). Gösterilen metin koşucudan gelir; kapılar, sıra,
 #          Recover okuma kapısı, node çağrısı, çıkış kodları DEĞİŞMEDİ.
+# R03-g (2026-10-04; R03-f iki bağımsız doğrulamasının MINOR kenarları; son tur; D-6 R03-g ile aynı ilke): koşucu değişti (Recover modunda açık erişim metni
+#          ölçülene bağlı; JWT olarak okunamayan token → TJ; T2 a = c ≠ b dalında ALTINDA notu) → koşucu pini + $ExpPackage güncellendi. Blokta YALNIZ METİN
+#          (G2): Invoke-RecoverMode bilgi metnindeki koşulsuz "yetkili uç çağrılır …: portal hesabı pasif + sürüm artışı, …" ifadesi koşula bağlandı ("çağrı 2xx
+#          dönerse ürün şunları yazar: …; 401/403'te kapatma yapılmaz (sonuç Recover kanıtında …)"). Recover bitiş ekranı acikErisim'i göstermez (önceki tasarım;
+#          metin kanıtta). Kapılar, sıra, Recover okuma kapısı, node çağrısı, çıkış kodları DEĞİŞMEDİ.
 # MODLAR
 #   -Mode Preflight  SALT OKUMA: tüm kapılar (canlı dist = R27 pini); GO sorulmaz; kanıt/ortam/DB/canlı dosya yazılmaz; koşucu çağrılmaz (yalnız `node --version`). Kapılardaki `git fetch` yerel repodaki uzak izleme ref'lerini günceller (iş verisi değildir).
 #   -Mode QrTest     Canlı veri YOK: portal MESAJ sayfasının QR'ı yerel konsolda gösterilir (d7-qr-test.js); owner telefonla okutur.
@@ -83,7 +88,7 @@ $ExpEnvSha   = '5C776BBEEE018EA5CC8192378D42D742FD4ABC1B6D0E9A3EA671CF463206908D
 $ExpBaseUrl  = $null   # R05 public portal adresi: canlı .env PUBLIC_PORTAL_BASE_URL'den okunur (Invoke-ReadOnlyGates, biçim kapısı) ve Run/QrTest'te owner'ın konsola yazdığı R05 adresiyle birebir doğrulanır (Confirm-PortalBaseUrlR05). Public repoya host literali YAZILMAZ.
 # Koşucunun YÜKLEDİĞİ tüm governance dosyaları + D-7 QR denemesi (require ağacı ölçüldü).
 $PkgPins = [ordered]@{
-  'client-extacc-portal-d7-r01\scripts\d7-portal-messages-live-run.js'                = '23AB099FA6F8EE7B300504F42F2699241336ECDF97D5ED667614722456CC04DB'
+  'client-extacc-portal-d7-r01\scripts\d7-portal-messages-live-run.js'                = '4446C256EF83A0401B7C93F3FD28B6C1A14AF18F1FD04237349D6E37517A9001'
   'client-extacc-portal-d7-r01\scripts\d7-qr-test.js'                                 = '15E6431396E978423BAE72F3B7511F3972F12847EF96AA02C12937E0F2233E15'
   'client-extacc-intake-chain-r01\scripts\extacc-display.js'                          = 'F257188DF66C429472C214D38D965C1E6F5A2EA490D348369AC68C5DC6F26867'
   'client-extacc-intake-chain-r01\scripts\vendor\qrcode-generator-1.4.4\qrcode.js'    = '18AE399F81182BC9DE916E9C77B195DF20CC58D6F2D55A62B085A299F1BF1780'
@@ -93,7 +98,7 @@ $PkgPins = [ordered]@{
   'client-acceptance-runners-i3-r01\scripts\i3-lib.js'                                = '56F3788E9F84746CFFEE384D8C18B9B9A28130CC8E2285F9570AB69CC6EE74A3'
   'client-acceptance-harness-r01\scripts\ah-lib.js'                                   = 'DF882DB7F33A667092F126F01E518C1A8292C8C0B3C4C039BF73D71F3ACCBFD7'
 }
-$ExpPackage = 'CD86CD77FA279B0A60FEA3B484D56427DEF66AC90463C99D4EB4E2CE9D9FEE51'
+$ExpPackage = '78F626CD3C0FB47393521BAF4FB7BBB2A326D900EAB7C9EA968E49C5FB5F3A0D'
 $SecretEnv  = @('AH_DATABASE_URL', 'AH_PRISMA_ROOT', 'AH_BCRYPT_PATH', 'D7_LIVE_CONFIRM', 'D7_RECOVER_CONFIRM', 'D7_LIVE_GO_REF',
                 'D7_RUNID', 'D7_MODE', 'D7_EXPECT_DB', 'D7_EXPECT_TENANT_SLUG', 'D7_API_BASE', 'D7_EXPECT_API',
                 'D7_EXPECT_BASE_URL', 'D7_LIVE_LOGIN_PW', 'D7_RECEIPT', 'D7_EVID_FILE', 'D7_DISPLAY', 'EXA_QRTEST_URL', 'D7_TEST_DISPLAY_SINK',
@@ -483,8 +488,9 @@ function Invoke-RecoverMode($g, [string]$receiptPath) {
   Write-Host '  Blok bu onayı SORMAZ ve ÖLÇMEZ; "BİR KEZ" kuralı kodla ZORLANMAZ (blok ve koşucu ikinci bir Recover''ı engellemez).' -ForegroundColor Yellow
   Write-Host '  Recover canlıya şunları YAZAR (koşucu kaynağından okundu; canlıda koşulmadı):'
   Write-Host '   1) Portal hâlâ açıksa: makbuzdaki sentetik personel GEÇİCİ olarak yeniden aktifleştirilir ve parola özeti yeniden yazılır; o personelle yerel'
-  Write-Host '      API''de oturum açılır ve yetkili uç çağrılır (admin/disable-user, en çok 2 deneme): portal hesabı pasif + sürüm artışı, müvekkil portal'
-  Write-Host '      erişimi kapalı, kapatma audit satırı (aktör: sentetik personel).'
+  Write-Host '      API''de oturum açılır ve yetkili uç çağrılır (admin/disable-user, en çok 2 deneme); çağrı 2xx dönerse ürün şunları yazar: portal hesabı'
+  Write-Host '      pasif + sürüm artışı, müvekkil portal erişimi kapalı, kapatma audit satırı (aktör: sentetik personel); 401/403''te kapatma yapılmaz'
+  Write-Host '      (sonuç Recover kanıtında: P7-C1 / P7-C2 satırları ve portalClose.acikErisim).'
   Write-Host '   2) Portal DB''de kapalı durumdaysa (1. adımla ya da önceden): pasif portal hesabına YALNIZ ölçüm için yeni rastgele parola özeti yazılır'
   Write-Host '      (hesap pasif kalır); bu parolayla yerel ve dış adresten giriş DENENİR (401 beklenir).'
   Write-Host '   3) Personel/dosya kapanışı (closeAccess): iki sentetik tenantın TÜM kullanıcıları pasif + sürüm artışı (her Recover''da yeniden artar),'

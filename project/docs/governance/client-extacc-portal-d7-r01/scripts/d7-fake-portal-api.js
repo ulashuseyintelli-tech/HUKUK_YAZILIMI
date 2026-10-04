@@ -40,6 +40,11 @@
  *             token'da claim DB'deki tam sayıdır (portal.service.ts:443) — bu varyant ürün değildir, koşucunun TG hücresini sınar. Guard NORMAL taklidi artık
  *             ürün guard'ı gibi claim'i doğrular: tam sayı ≥ 0 değilse DB'ye bakmadan reddeder (portal-auth.guard.ts:42-45, :98-104); claim yoksa 0 (değişmedi).
  *             Guard 'stale' kusur taklidi claim'e bakmaz (değişmedi).
+ * R03-g     : (D-6 R03-g ile aynı) Guard NORMAL taklidi ürün guard'ı gibi JWT olmayan token'ı (portalToken opaque: iki parçalı) DB'ye bakmadan reddeder
+ *             (portal-auth.guard.ts:36 verifyAsync) — R03-e/f'de normal taklit opaque token'ı kabul ediyordu; bu ürün davranışı DEĞİLDİ (ürünün verdiği token
+ *             jwtService.sign ile JWT'dir, portal.service.ts:438-446). Guard 'stale' kusur taklidi değişmedi. reopenOn extLogin → yeniden açma tetiği (reopen
+ *             afterDisable* ile) başarılı disable-user'dan SONRAKİ İLK DIŞ portal girişi YANITLANDIKTAN sonra (o giriş kapalı hesabı görür); Recover'ın HTTP
+ *             ölçümleri yalnız yeni giriştir (P7-C3L yerel, P7-C3D dış) — mesaj listesi isteği yoktur. Varsayılan reopenOn messages (önceki davranış AYNEN).
  * KOŞUCU YASAĞI: forgot-password/reset-password/change-password/documents çağrıları FORBIDDEN olarak işaretlenir (500).
  */
 const http = require('http'); const https = require('https'); const fs = require('fs'); const path = require('path'); const crypto = require('crypto');
@@ -54,7 +59,7 @@ const CASE_REF_INVALID = 'Geçersiz dosya referansı';
 const MSG_SELECT = { id: true, content: true, senderType: true, senderName: true, isRead: true, createdAt: true };
 
 const DEFAULT = { create: 'normal', disable: 'normal', guard: 'normal', ext: 'normal', extLogin: 'normal', wrongPw: 'normal', cases: 'normal', send: 'normal', list: 'normal', reply: 'normal', markRead: 'normal', unread: 'normal',
-  staffAuth: 'normal', relogin: 'normal', reopen: 'normal', portalToken: 'jwt', login: 'normal', pwChange: 'normal', rowDelete: 'normal' };
+  staffAuth: 'normal', relogin: 'normal', reopen: 'normal', portalToken: 'jwt', login: 'normal', pwChange: 'normal', rowDelete: 'normal', reopenOn: 'messages' };
 // R03-c: reopen afterDisable — kapatılan müvekkil (başarılı disable-user) ve yeniden açmanın yapılıp yapılmadığı (tek sefer)
 let reopenClientId = null; let reopenDone = false; let reopenRevertTv = null;   // R03-d: kapatma ÖNCESİ sürüm (afterDisableRevert)
 const REOPEN_MODES = ['afterDisable', 'afterDisableRevert', 'afterDisableNoBump'];
@@ -90,14 +95,15 @@ function portalClaimOf(req) {
   const h = String(req.headers.authorization || ''); if (!h.startsWith('Bearer pfake.')) return null;
   const parts = h.slice('Bearer '.length).split('.');
   try {
-    if (parts.length === 3) { const p = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')); return { sub: p.sub, cid: p.clientId, tid: p.tenantId, type: p.type, tv: p.tokenVersion === undefined ? 0 : p.tokenVersion }; }
-    if (parts.length === 2) return JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    if (parts.length === 3) { const p = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')); return { sub: p.sub, cid: p.clientId, tid: p.tenantId, type: p.type, tv: p.tokenVersion === undefined ? 0 : p.tokenVersion, jwt: true }; }
+    if (parts.length === 2) return Object.assign(JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')), { jwt: false });   // R03-g: opaque = JWT DEĞİL
   } catch (e) { return null; }
   return null;
 }
 async function portalUser(req) {
   const c = portalClaimOf(req); if (!c || c.type !== 'portal') return null;
   if (scenario.guard === 'stale') return { clientId: c.cid, tenantId: c.tid }; // KUSUR TAKLİDİ — yalnız negatif test
+  if (c.jwt !== true) return null;   // R03-g: ürün guard'ı gibi JWT olmayan token → DB'ye bakmadan ret (portal-auth.guard.ts:36 verifyAsync)
   if (!(Number.isInteger(c.tv) && c.tv >= 0)) return null;   // R03-f: ürün guard'ı gibi geçersiz claim → DB'ye bakmadan ret (portal-auth.guard.ts:42-45)
   const u = await prisma.clientPortalUser.findUnique({ where: { id: c.sub }, select: { isActive: true, clientId: true, tokenVersion: true, client: { select: { tenantId: true } } } });
   if (!u || !u.isActive || u.clientId !== c.cid || u.client.tenantId !== c.tid || u.tokenVersion !== c.tv) return null;
@@ -188,6 +194,16 @@ async function adminClientMessages(u, clientId) {
   return { status: 200, body: { client, messages } };
 }
 
+// R03-c/d/e: yeniden açma (KUSUR/DIŞ MÜDAHALE TAKLİDİ; tek sefer). R03-g: tetik noktası reopenOn ile seçilir; yazım AYNI.
+const reopenPending = () => REOPEN_MODES.includes(scenario.reopen) && !!reopenClientId && !reopenDone;
+async function doReopen() {
+  reopenDone = true;
+  // R03-e: afterDisableNoBump — sürüm DEĞİŞMEZ (ürün dışı yeniden açma; ürün yeniden açması :315'te sürümü artırır)
+  const tvData = scenario.reopen === 'afterDisableRevert' && Number.isInteger(reopenRevertTv) ? { tokenVersion: reopenRevertTv } : (scenario.reopen === 'afterDisableNoBump' ? {} : { tokenVersion: { increment: 1 } });
+  await prisma.clientPortalUser.updateMany({ where: { clientId: reopenClientId }, data: Object.assign({ isActive: true }, tvData) });
+  await prisma.client.update({ where: { id: reopenClientId }, data: { hasPortalAccess: true } });
+}
+
 async function apiHandler(req, res) {
   const p = new URL(req.url, 'http://127.0.0.1').pathname;
   if (p.startsWith('/__')) {
@@ -259,13 +275,8 @@ async function apiHandler(req, res) {
   }
   // R03-c: reopen — kapanıştan sonraki İLK yerel mesaj listesi isteğinde hesap DB'de yeniden açılır (KUSUR/DIŞ MÜDAHALE TAKLİDİ).
   // R03-d: afterDisable sürümü ÜRÜN GİBİ artırır (reactivate: tokenVersion increment); afterDisableRevert sürümü kapatma ÖNCESİ değere geri döndürür.
-  if (REOPEN_MODES.includes(scenario.reopen) && reopenClientId && !reopenDone && req.method === 'GET' && p === '/api/portal/messages') {
-    reopenDone = true;
-    // R03-e: afterDisableNoBump — sürüm DEĞİŞMEZ (ürün dışı yeniden açma; ürün yeniden açması :315'te sürümü artırır)
-    const tvData = scenario.reopen === 'afterDisableRevert' && Number.isInteger(reopenRevertTv) ? { tokenVersion: reopenRevertTv } : (scenario.reopen === 'afterDisableNoBump' ? {} : { tokenVersion: { increment: 1 } });
-    await prisma.clientPortalUser.updateMany({ where: { clientId: reopenClientId }, data: Object.assign({ isActive: true }, tvData) });
-    await prisma.client.update({ where: { id: reopenClientId }, data: { hasPortalAccess: true } });
-  }
+  // R03-g: tetik reopenOn'a bağlı — messages (varsayılan; önceki davranış) burada, extLogin dış sunucuda (extHandler).
+  if (scenario.reopenOn !== 'extLogin' && reopenPending() && req.method === 'GET' && p === '/api/portal/messages') await doReopen();
   const am = p.match(/^\/api\/portal\/admin\/messages\/([^/]+)$/);
   if (am && am[1] === 'clients' && req.method === 'GET') {
     const u = await staffUser(req); if (!u) return send(res, 401, { message: 'Unauthorized' });
@@ -288,7 +299,12 @@ async function extHandler(req, res) {
   if (scenario.ext === '503') return send(res, 503, 'unavailable');
   if (/^\/api\/portal\/admin(\/|$)/.test(p)) return send(res, 403, 'forbidden');
   if (req.method === 'GET' && (p === '/portal/login' || p === '/portal/messages')) return send(res, 200, '<!doctype html><title>portal</title>');
-  if (req.method === 'POST' && p === '/api/portal/login') { if (scenario.extLogin === '503') return send(res, 503, 'unavailable'); const r = await portalLogin(await readBody(req)); return send(res, r.status, r.body); }
+  if (req.method === 'POST' && p === '/api/portal/login') {
+    if (scenario.extLogin === '503') return send(res, 503, 'unavailable');
+    const r = await portalLogin(await readBody(req));
+    if (scenario.reopenOn === 'extLogin' && reopenPending()) await doReopen();   // R03-g: giriş kapalı hesabı gördükten SONRA yeniden açma
+    return send(res, r.status, r.body);
+  }
   if (req.method === 'GET' && p === '/api/portal/cases') { const r = await portalCases(req); return send(res, r.status, r.body); }
   if (req.method === 'GET' && p === '/api/portal/messages') { const r = await listMessages(req); return send(res, r.status, r.body); }
   if (req.method === 'POST' && p === '/api/portal/messages') { const r = await sendFromClient(req, await readBody(req)); return send(res, r.status, r.body); }
