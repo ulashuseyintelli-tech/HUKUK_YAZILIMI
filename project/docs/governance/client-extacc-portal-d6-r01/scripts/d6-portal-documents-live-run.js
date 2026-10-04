@@ -73,6 +73,14 @@
  *          verilme sürümünden farklı; ölçülen ürün dışı yazım sürüme dokunmadı …"). (F5) b'den bağımsız ADAY hücreleri T0'dan ÖNCE: T1 (st1 satırı yok) → TG (token
  *          claim'i geçersiz; guard :42-45 her isteği reddeder) → T3 (st1 ve st2 pasif, sürüm iki uçta aynı; b'den ve hasPortalAccess'ten bağımsız) → T0. Çıkış kodu
  *          fonksiyonları ve öncelik DEĞİŞMEDİ; kanıttaki `revision` R03 kalır.
+ * R03-g  : (R03-f iki bağımsız doğrulamasının MINOR kenarları; son tur) (G1) Recover modunda açık erişim metni ölçülene bağlı (`recoverOpenAccessText`):
+ *          Recover'ın kapatma adımından sonra DB'de kapalı ölçülmüşken (P6-C2 PASS) erişim HTTP ölçümleri sırasında yeniden açıldıysa "Recover kapattı
+ *          (kapatma çağrısı 2xx, P6-C2 PASS) ama erişim HTTP ölçümleri sırasında yeniden açıldı (P6-C5 FAIL) — açık erişim KAPANMADI; …" (2xx yoksa dayanak
+ *          ölçülenle: hesap zaten kapalıydı / 2xx dönmedi ama kapatma adımından sonra DB'de kapalı); "bu Recover kapatamadı" YALNIZ kapatma adımından sonra
+ *          DB'de kapalı ölçülmemişken (P6-C2 FAIL). (G3) token JWT olarak OKUNAMADI (üç parça yok ya da payload JSON nesnesi değil) iken HTTP 200 → yeni
+ *          hücre TJ (ADAY; ürün guard'ı bu token'ı DB'den önce reddeder — portal-auth.guard.ts:36 verifyAsync); sıra B → T1 → TG → TJ → T3 → T0 …; T5'e
+ *          ulaşmaz. Verilme sürümü bu durumda yine s1 (P6-C2V referansı değişmedi). (G4) T2'nin a = c ≠ b dalında b > c iken "(DB sürümü verilme sürümünün
+ *          ALTINDA — ürün dışı azaltma)" notu. Çıkış kodu fonksiyonları ve öncelik DEĞİŞMEDİ; kanıttaki `revision` R03 kalır.
  */
 const fs = require('fs'); const crypto = require('crypto'); const path = require('path');
 const H5 = require('../../client-h5-intake-url-r01/scripts/h5-url-live-run');
@@ -265,6 +273,21 @@ function recoverCloseText(disableCalls) {
   return 'Recover kapatmayı yeniden dener (sonuç Recover kanıtında ölçülür)';
 }
 /**
+ * R03-g (G1) — RECOVER MODUNDA açık kalan erişimin metni ÖLÇÜLENE bağlı (saf fonksiyon; öz-test Z25-c birim, Z25-d/e uçtan uca). Girdi: closePortal sonucu
+ * (`after` = kapatma adımından sonraki DB = P6-C2 okuması, `before` = kapanış başı, `disable2xx`). "bu Recover kapatamadı" YALNIZ kapatma adımından sonra
+ * DB'de kapalı ölçülmemişken (P6-C2 FAIL) yazılır. P6-C2 PASS iken erişim HTTP ölçümleri sırasında yeniden açılmıştır (st2 açık → P6-C5 FAIL); dayanak
+ * ölçülenle: 2xx kapatma çağrısı · hesap Recover başında zaten kapalıydı (çağrı yok) · 2xx yok ama kapatma adımından sonra DB'de kapalı. Run modunda
+ * KULLANILMAZ (Run'ın metni recoverCloseText). İkinci Recover her dalda TANIMLI DEĞİL.
+ */
+function recoverOpenAccessText(pc) {
+  const p = pc || {}; const closedRow = (s) => !!s && s.exists !== false && s.isActive === false && s.hasPortalAccess === false;
+  const tail = 'açık erişim KAPANMADI; ikinci Recover bu paketle TANIMLI DEĞİL — owner kararı';
+  if (!closedRow(p.after)) return 'açık erişim KAPANMADI (bu Recover kapatamadı; ikinci Recover bu paketle TANIMLI DEĞİL — owner kararı)';
+  if (p.disable2xx === true) return `Recover kapattı (kapatma çağrısı 2xx, P6-C2 PASS) ama erişim HTTP ölçümleri sırasında yeniden açıldı (P6-C5 FAIL) — ${tail}`;
+  if (closedRow(p.before)) return `hesap Recover başında zaten kapalıydı (kapatma çağrısı yapılmadı; P6-C2 PASS) ama erişim HTTP ölçümleri sırasında yeniden açıldı (P6-C5 FAIL) — ${tail}`;
+  return `kapatma çağrısı 2xx dönmedi ama kapatma adımından sonra DB'de kapalı ölçüldü (P6-C2 PASS); erişim HTTP ölçümleri sırasında yeniden açıldı (P6-C5 FAIL) — ${tail}`;
+}
+/**
  * R03-e — KOŞUCU OTURUMUNUN HER HTTP 200 YANITININ TEK SINIFLAMASI (saf fonksiyon; P6-C2 PASS ve P6-C2 FAIL dalları buradan geçer; öz-test Z23-a birim).
  * Girdiler: issued = oturumun verildiği sürüm (token claim'i; okunamazsa girişten önce okunan s1) · st1 = HTTP ölçümlerinden ÖNCE DB (P6-C2 okuması) ·
  * st2 = HTTP ölçümlerinden SONRA DB (P6-C5 okuması). İSTEK ANINDAKİ DB DURUMU ÖLÇÜLMEDİ.
@@ -274,7 +297,9 @@ function recoverCloseText(disableCalls) {
  *   B    st1 ve st2 kapalı (isActive=false + hasPortalAccess=false), c = a        → BULGU (R03-c kuralı P6-C2 PASS + P6-C5 PASS; verilme sürümünden bağımsız)
  *   T1   st1 satırı YOK                                                         → ADAY (guard satır yokken reddeder; b'den bağımsız — R03-f: T0'dan ÖNCE)
  *   TG   token claim'i GEÇERSİZ (tam sayı ≥ 0 değil; issuedVersionOf GECERSIZ)    → ADAY (guard her isteği DB'den önce reddeder, :42-45 — R03-f: yeni)
- *   T3   st1 ve st2 pasif, c = a                                                → ADAY (pasif hesap reddi; b'den ve hasPortalAccess'ten bağımsız — R03-f: T0'dan
+ *   TJ   token JWT olarak OKUNAMADI (üç parça yok / payload JSON nesnesi değil)  → ADAY (ürün guard'ı DB'den önce reddeder, :36 verifyAsync — R03-g: yeni;
+ *                                                                                  b = s1 olsa da T5'e ULAŞMAZ)
+ *   T3  st1 ve st2 pasif, c = a                                                → ADAY (pasif hesap reddi; b'den ve hasPortalAccess'ten bağımsız — R03-f: T0'dan
  *                                                                                  ÖNCE; R03-e'de yalnız a = b = c iken)
  *   T0   b bilinmiyor                                                           → AYRISTIRILAMADI
  *   T1s  st1 var, st2 satırı YOK: a > b ya da (a = b ve st1 pasif)               → ADAY · a = b ve st1 açık, ya da a < b → AYRISTIRILAMADI
@@ -288,9 +313,11 @@ function recoverCloseText(disableCalls) {
  *   T6   a = b < c, st1 aktif                                                   → AYRISTIRILAMADI (sürüm istek sırasında değişti)
  * R03-d'nin "sürüm geri dönüşü → adayı DEĞİL" dalı kaldırıldı (TA); R03-d'nin st1'e bakmayan kuralı ve R03-b'nin P6-C2 FAIL'de koşulsuz "SAYILMADI" metni
  * bu tabloyla değiştirildi. `claimInvalid` = koşucunun token claim'i GEÇERSİZ ölçüldü (Run: `issuedVersion.claimDurum === 'GECERSIZ'`); ürünün imzaladığı token'da
- * claim DB'deki tam sayıdır (portal.service.ts:443) — canlıda pratikte beklenmez.
+ * claim DB'deki tam sayıdır (portal.service.ts:443) — canlıda pratikte beklenmez. R03-g: `claimUnreadable` = koşucunun token'ı JWT olarak OKUNAMADI (Run:
+ * `issuedVersion.claimDurum === 'OKUNAMADI'`; verilme sürümü o durumda s1'dir ama sınıf sürümden bağımsız TJ'dir); ürünün verdiği token `jwtService.sign`
+ * ile imzalanmış JWT'dir (portal.service.ts:438-446) — canlıda pratikte beklenmez (sahte API `portalToken opaque` ürün davranışı değildir).
  */
-function sessionClass200(issued, st1, st2, claimInvalid) {
+function sessionClass200(issued, st1, st2, claimInvalid, claimUnreadable) {
   const has = (s) => !!s && s.exists !== false; const act = (s) => s.isActive === true;
   const closed = (s) => has(s) && s.isActive === false && s.hasPortalAccess === false;
   const r = (sinif, hucre, neden, ifade) => {
@@ -302,9 +329,11 @@ function sessionClass200(issued, st1, st2, claimInvalid) {
     return { sinif, hucre, neden, ifade: null, gozlem: `HTTP 200 — ürün bulgusu AYRIŞTIRILAMADI (${hucre}; ÖLÇÜLEMEDİ: ${neden})`, bulgu: null };
   };
   if (closed(st1) && closed(st2) && st2.tokenVersion === st1.tokenVersion) return r('BULGU', 'B', `HTTP öncesi ve sonrası hesap kapalı (isActive=false hasPortalAccess=false) ve sürüm aralıkta değişmedi (${st1.tokenVersion}) — guard pasif hesabı reddeder (portal-auth.guard.ts:58-60)`);
-  // R03-f (F5): verilme sürümünden (b) BAĞIMSIZ ADAY hücreleri T0'dan ÖNCE — T1 → TG → T3; ancak bunlar tutmazsa b bilinmiyorsa T0.
+  // R03-f (F5): verilme sürümünden (b) BAĞIMSIZ ADAY hücreleri T0'dan ÖNCE — T1 → TG → T3 (R03-g: TG'den sonra TJ); ancak bunlar tutmazsa b bilinmiyorsa T0.
   if (!has(st1)) return r('ADAY', 'T1', `hesap satırı HTTP ölçümlerinden ÖNCE DB'de YOK — guard satır yokken reddeder (portal-auth.guard.ts:58-60); ürün silinen satırı aynı kimlikle geri getirmez`, 'hesap satırı yokken');
   if (claimInvalid === true) return r('ADAY', 'TG', 'oturumun token\'ındaki tokenVersion claim\'i tam sayı ≥ 0 değil — guard her isteği reddeder (portal-auth.guard.ts:42-45; DB okumasından önce, hesap durumundan ve sürümden bağımsız)', 'geçersiz sürüm claim\'ine rağmen');
+  // R03-g (G3): token JWT olarak okunamadı → ürün guard'ı verifyAsync'te (DB'den önce) reddeder; TG ile aynı ilke, T5'e ulaşmaz (b = s1 olsa da).
+  if (claimUnreadable === true) return r('ADAY', 'TJ', 'token JWT olarak okunamadı (üç parçalı JWT değil ya da payload JSON nesnesi değil) — ürün guard\'ı bu token\'ı DB\'den önce reddeder (portal-auth.guard.ts:36 verifyAsync; hesap durumundan ve sürümden bağımsız)', 'JWT olarak okunamayan token\'a rağmen');
   if (has(st2) && !act(st1) && !act(st2) && st2.tokenVersion === st1.tokenVersion) return r('ADAY', 'T3', `HTTP öncesi ve sonrası hesap pasif (isActive=${st1.isActive}→${st2.isActive}; hasPortalAccess=${st1.hasPortalAccess}→${st2.hasPortalAccess}) ve sürüm aralıkta değişmedi (${st1.tokenVersion}; verilme ${Number.isInteger(issued) ? issued : 'bilinmiyor'}) — guard pasif hesabı verilme sürümünden bağımsız reddeder (portal-auth.guard.ts:58-60); hasPortalAccess guard'da okunmaz`, 'pasif hesap reddine rağmen');
   const b = issued;
   if (!Number.isInteger(b)) return r('AYRISTIRILAMADI', 'T0', 'oturumun verildiği sürüm bilinmiyor');
@@ -321,7 +350,8 @@ function sessionClass200(issued, st1, st2, claimInvalid) {
   if (c === a && b === a && act(st1) !== act(st2)) return r('AYRISTIRILAMADI', 'TI', `sürüm aralıkta değişmeden (${a}) isActive ${st1.isActive}→${st2.isActive} — ürün isActive'i yalnız sürüm artışıyla değiştirir (yeniden açma :307-317, kapatma :765-770); ürün dışı ${act(st2) ? 'yeniden açma' : 'kapatma'} ölçüldü, istek anındaki isActive ölçülmedi`);
   if (b < a || b > c) {
     const tiOut = c === a && act(st1) !== act(st2);   // R03-f (F4): a = c ≠ b + isActive değişti (R03-e'de TI AYRISTIRILAMADI yazılıyordu)
-    return r('ADAY', 'T2', tiOut ? `oturumun verildiği sürüm ${b}, HTTP öncesi ve sonrası DB sürümü ${a} — sürüm iki uçta verilme sürümünden farklı; ölçülen ürün dışı yazım (isActive ${st1.isActive}→${st2.isActive}, sürüm artmadan) sürüme dokunmadı (aralıkta sürüm değişimi ölçülmedi — varsayım: ürün yazıcıları yalnız artırır); guard sürüm farkında isActive'ten bağımsız reddeder (portal-auth.guard.ts:66-68)`
+    // R03-g (G4): tiOut dalında da b > c iken ALTINDA notu (tiOut'ta c = a; not tiOut dışı T2 ile aynı metin)
+    return r('ADAY', 'T2', tiOut ? `oturumun verildiği sürüm ${b}, HTTP öncesi ve sonrası DB sürümü ${a}${b > c ? ' (DB sürümü verilme sürümünün ALTINDA — ürün dışı azaltma)' : ''} — sürüm iki uçta verilme sürümünden farklı; ölçülen ürün dışı yazım (isActive ${st1.isActive}→${st2.isActive}, sürüm artmadan) sürüme dokunmadı (aralıkta sürüm değişimi ölçülmedi — varsayım: ürün yazıcıları yalnız artırır); guard sürüm farkında isActive'ten bağımsız reddeder (portal-auth.guard.ts:66-68)`
       : `oturumun verildiği sürüm ${b}, HTTP öncesi DB sürümü ${a}, sonrası ${c}${b > c ? ' (DB sürümü verilme sürümünün ALTINDA — ürün dışı azaltma)' : ''} — ürün yazıcıları yalnız artırdığından istek anında da farklıydı; guard sürüm farkında isActive'ten bağımsız reddeder (portal-auth.guard.ts:66-68)`, 'sürüm reddine rağmen');
   }
   if (a < b) return r('AYRISTIRILAMADI', 'T2a', `HTTP öncesi DB sürümü ${a} verilme sürümünün (${b}) ALTINDA, sonrası ${c} — ürün yazıcıları sürümü azaltmaz (ürün dışı yazım ölçüldü); istek anında sürüm verilme sürümüne eşit olabilir, istek anındaki durum ölçülmedi`);
@@ -344,7 +374,8 @@ function portalTokenClaimVersion(token) {
   if (Number.isInteger(p.tokenVersion) && p.tokenVersion >= 0) return { durum: 'OKUNDU', value: p.tokenVersion, neden: null };
   return { durum: 'GECERSIZ', value: null, neden: 'tokenVersion claim tam sayı ≥ 0 değil — guard bu oturumu her istekte reddeder (portal-auth.guard.ts:42-45)' };
 }
-/** R03-e — verilme sürümü: claim okunduysa ESAS claim (s1 farklıysa ikisi de yazılır); okunamadıysa s1; claim geçersizse bilinmiyor (R03-f: sınıflamada TG — ADAY). */
+/** R03-e — verilme sürümü: claim okunduysa ESAS claim (s1 farklıysa ikisi de yazılır); okunamadıysa s1 (P6-C2V referansı; R03-g: sınıflamada TJ — ADAY, T5'e
+ *  ulaşmaz); claim geçersizse bilinmiyor (R03-f: sınıflamada TG — ADAY). Değerler R03-g'de DEĞİŞMEDİ; sınıflama girdisi Run'da claimDurum'dan kurulur. */
 function issuedVersionOf(token, s1v) {
   const c = portalTokenClaimVersion(token); const s1 = Number.isInteger(s1v) ? s1v : null;
   if (c.durum === 'OKUNDU') return { value: c.value, kanit: { esas: c.value, kaynak: 'claim', claim: c.value, s1, fark: s1 !== null && s1 !== c.value, claimDurum: c.durum, claimNeden: c.neden } };
@@ -435,11 +466,12 @@ async function closePortal(R, prisma, base, origin, receipt, P, opts) {
   // "ürün bulgusu SAYILMADI" metni ve R03-d'nin yalnız P6-C2 PASS + P6-C5 FAIL dalındaki sürüm kuralı kaldırıldı (açıkken sürüm artıp kapatma reddedilirse
   // guard eski oturumu sürümle reddetmeliydi → ADAY). P6-C4 satırı sınıfı + iki DB ölçümünü + kapatma metnini yazar.
   // AYRI satır: HTTP ölçümlerinden sonra portal erişimi açıksa `acikErisim` (ürün bulgusu metninden ayrı). R03-f (F2 + F3): durum ölçülenle (openStateTxt);
-  // Run'da Recover metni `disableCalls`'a bağlı (recoverCloseText) — "(Recover kapatabilir)" kesin ifadesi YOK.
-  res.acikErisim = isOpenAccess(st2) ? `${openStateTxt(st2, { pre: 'HTTP ölçümlerinden sonra ', post: ` sürüm=${st2.tokenVersion}` })} — ${o.mode === 'recover' ? 'açık erişim KAPANMADI (bu Recover kapatamadı; ikinci Recover bu paketle TANIMLI DEĞİL — owner kararı)' : `${st2.isActive === true ? 'açık erişim kapatılmalıdır' : 'kapatılmalıdır'}; ${recoverCloseText(res.disableCalls)}`}` : null;
+  // Run'da Recover metni `disableCalls`'a bağlı (recoverCloseText) — "(Recover kapatabilir)" kesin ifadesi YOK. R03-g (G1): Recover modunda metin ölçülene
+  // bağlı (recoverOpenAccessText) — "bu Recover kapatamadı" yalnız kapatma adımından sonra DB'de kapalı ölçülmemişken.
+  res.acikErisim = isOpenAccess(st2) ? `${openStateTxt(st2, { pre: 'HTTP ölçümlerinden sonra ', post: ` sürüm=${st2.tokenVersion}` })} — ${o.mode === 'recover' ? recoverOpenAccessText(res) : `${st2.isActive === true ? 'açık erişim kapatılmalıdır' : 'kapatılmalıdır'}; ${recoverCloseText(res.disableCalls)}`}` : null;
   const judgeSession = (id, desc, r) => { if (!r) return R.unmeasured(id, desc, o.noSessionWhy || 'koşumda portal oturumu alınmadı — mevcut oturum ölçülemez'); if (r.indeterminate) return R.unmeasured(id, desc, 'yanıt alınamadı');
     if (r.status === 200) {
-      const sc = sessionClass200(issued, st1, st2, o.issuedClaimInvalid === true);   // R03-f (F5): token claim'i geçersizse TG
+      const sc = sessionClass200(issued, st1, st2, o.issuedClaimInvalid === true, o.issuedClaimUnreadable === true);   // R03-f (F5): claim geçersizse TG · R03-g (G3): JWT okunamadıysa TJ
       res.sessionVersion = { sinif: sc.sinif, hucre: sc.hucre, verilen: issued, verilenKaynak: o.issuedSource || null, httpOncesi: st1.exists ? st1.tokenVersion : null, olcumSonrasi: st2.exists ? st2.tokenVersion : null, ifade: sc.ifade || null, neden: sc.neden };
       if (sc.bulgu) res.productFinding = sc.bulgu;
       return R.check(id, desc, false, `${sc.gozlem} · DB: HTTP öncesi ${dbTxt(st1)} → sonrası ${dbTxt(st2)}${res.closeText ? ` · kapatma: ${res.closeText}` : ''}`);
@@ -513,7 +545,9 @@ function recoveryAdvice(out, receiptPath, mode, evidPath) {
     else if (!pc.portalDbClosed) {
       const a = pc.after || null; const m = pc.afterMeasure || null;
       const chg = !!a && !!m && (a.exists !== m.exists || a.isActive !== m.isActive || a.hasPortalAccess !== m.hasPortalAccess || a.tokenVersion !== m.tokenVersion);
-      const suffix = mode === 'recover' ? 'açık erişim KAPANMADI (bu Recover kapatamadı; ikinci Recover bu paketle TANIMLI DEĞİL — owner kararı)'
+      // R03-g (G1): Recover modunda son ek ölçülene bağlı (recoverOpenAccessText) — "bu Recover kapatamadı" yalnız kapatma adımından sonra DB'de kapalı
+      // ölçülmemişken (aşağıdaki ilk dal); kapatmadan sonra kapalı + HTTP sonrası açık dalında "Recover kapattı (…) ama erişim … yeniden açıldı …".
+      const suffix = mode === 'recover' ? recoverOpenAccessText(pc)
         : `${m && m.isActive === true ? 'açık erişim kapatılmalıdır' : 'müvekkil erişim bayrağı kapatılmalıdır (hesap pasif)'}; ${recoverCloseText(pc.disableCalls)}`;
       let stTxt = '';
       if (a && (a.exists === false || isOpenAccess(a))) {
@@ -753,7 +787,8 @@ async function runMode() {
       out.portalClose = receipt ? await closePortal(R, prisma, base, origin, receipt, P, { session, staffReauth, mode: 'run', creds: createOutcome ? { email: portalEmail, password: portalPw } : null, portalToken, issuedVersion, issuedSource: out.issuedVersion ? out.issuedVersion.kaynak : null, knownFiles,
         sessionRequired: !!portalToken || displayed, createUncertain: createOutcome === 'attempted' || createOutcome === 'uncertain',
         noSessionWhy: displayed ? 'gösterim yapıldı ama koşucu oturumu yok — mevcut oturum ölçülemez' : 'koşumda portal oturumu alınmadı — mevcut oturum ölçülemez',
-        issuedClaimInvalid: !!(out.issuedVersion && out.issuedVersion.claimDurum === 'GECERSIZ') }) : { ok: true, nothingCreated: true };   // R03-f (F5): TG girdisi
+        issuedClaimInvalid: !!(out.issuedVersion && out.issuedVersion.claimDurum === 'GECERSIZ'),   // R03-f (F5): TG girdisi
+        issuedClaimUnreadable: !!(out.issuedVersion && out.issuedVersion.claimDurum === 'OKUNAMADI') }) : { ok: true, nothingCreated: true };   // R03-g (G3): TJ girdisi
       out.createOutcome = createOutcome;
     } catch (e) { out.portalClose = { ok: false, reason: errText(e, 200) }; }
     if (receipt) { try { out.foreignCleanup = await foreignCleanup(R, prisma, receipt); } catch (e) { out.foreignCleanup = { error: errText(e, 160) }; } }
@@ -839,5 +874,6 @@ function recoverStepText(out) {
 }
 if (require.main === module) { const mode = String(process.env.D6_MODE || 'run').toLowerCase(); if (mode === 'run') runMode(); else if (mode === 'recover') recoverMode(); else { console.error(`REDDEDİLDİ: bilinmeyen D6_MODE '${mode}'`); process.exit(1); } }
 module.exports = { commonGates, runGates, LIVE_PARAMS, effectiveParams, FORBIDDEN, RECEIPT_RECORD, MAX_PDF_BYTES, buildPdf, multipart, caseListMatches, docListMatches, recoverExitCode, exitCodeOf, fileState,
-  recoveryAdvice, recoverStepText, receiptFileState, readReceiptForRecover, sessionClass200, portalTokenClaimVersion, issuedVersionOf, receiptFromEvidenceCommand, recoverCloseText, C1_DESC };
+  recoveryAdvice, recoverStepText, receiptFileState, readReceiptForRecover, sessionClass200, portalTokenClaimVersion, issuedVersionOf, receiptFromEvidenceCommand, recoverCloseText, C1_DESC,
+  recoverOpenAccessText };
 void scrub;
