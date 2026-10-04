@@ -96,6 +96,11 @@ describeWithDisposableDb('Aşama masraf seti istek anahtarı — tekrar, çakı�
     const nest = moduleRef.createNestApplication();
     nest.useGlobalPipes(new ValidationPipe(PRODUCTION_VALIDATION_OPTIONS));
     await nest.init();
+    // supertest dinlemeyen sunucuyu her istekte kendisi açar (listen(0)) ve O isteğin yanıtı gelince paylaşılan sunucuyu
+    // kapatır (supertest 7.2.2 lib/test.js). Eşzamanlı isteklerde (Promise.all) bu, henüz kabul edilmemiş / boştaki
+    // bağlantıları koparır: Linux'ta ECONNRESET (CI'da ölçüldü). Uygulama test boyunca kendi portunda dinler; supertest
+    // sunucuyu sahiplenmez, kapatmaz. İstekler eşzamanlı kalır; kapanış afterAll ve yeniden başlatma testindeki app.close().
+    await nest.listen(0, '127.0.0.1');
     // Bu testler zamanlayıcıya bağlı değildir: dönemsel taramalar ölçümü etkilemesin diye bu süreçte durdurulur.
     for (const job of nest.get(SchedulerRegistry, { strict: false }).getCronJobs().values()) job.stop();
     return nest;
