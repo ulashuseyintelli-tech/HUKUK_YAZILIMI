@@ -3,6 +3,39 @@
 #          Run çıkış 5/6 Recover yetkisi değildir; Recover'ın canlı yazma kümesi gösterilir; beyan seçenekleri ana sayfa/özeti hata sayfasından ayırır.
 #          R02 inceleme düzeltmeleri (yine yalnız metin): kalıntı satırının altındaki not, kanıttaki "sentetik tenant CLOSED" ifadesinin koşucunun
 #          SABİT metni olduğunu ve kapanışın doğrulandığını göstermediğini söyler; Recover bitiş metni ikinci bir Recover için yol TANIMLAMAZ.
+# R03 (2026-10-03): koşucu değişti (makbuz kurulumdan hemen sonra; Run kapanışında 401/403'te tek yeniden giriş; kapanış metinleri ölçülenden) →
+#          PkgPins'teki koşucu pini + $ExpPackage güncellendi. Blokta değişenler: Run kapanış satırı parçaları kanıttaki verdict'lerden PASS / FAIL /
+#          ÖLÇÜLMEDİ olarak kurulur (önceki SABİT "DB + yeni giriş + mevcut oturum mesaj ucunda reddi" metni yerine) + satır rengi notu; kalıntı
+#          satırının altındaki not koşucunun yeni (ölçülen) kapanış özetini anlatır; Recover bitiş satırı 0 / 1 / 2 / 3 kodlarını yalnız ölçüleni
+#          söyleyerek açıklar; Run'da kanıttaki kurulum durumu (setup) TAMAM değilse bilgi satırı gösterilir. Kapılar, mod sırası, node çağrısı,
+#          çıkış kodları DEĞİŞMEDİ; `owner-block.json` `revision` alanı R01 kalır.
+# R03-c (2026-10-03; owner talimatı: kapanış / Recover doğruluğu): koşucu yine değişti → koşucu pini + $ExpPackage güncellendi. Blokta yalnız METİN:
+#          (a) Recover bitiş satırı, mevcut oturum reddinin (P7-C4L/D) Recover'da HER ZAMAN ölçülemediğini ve yeni giriş reddinin P7-C3L/D
+#          satırlarından okunduğunu kodlardan ÖNCE, her kod için geçerli olarak yazar; 1 ve 2 neyin doğrulandığını adlandırır (portal DB kapanışı
+#          ya da hesap yok + personel/dosya kapanışı). (b) Run çıkış 5/6 metni `-Mode Recover -ReceiptFile <makbuz>` önerisini YALNIZ kanıt
+#          dizinindeki makbuz dosyası Recover'ın okuma kapısını geçiyorsa yazar (Get-ReceiptFileState); yoksa kanıttaki receipt nesnesinden yeni
+#          makbuz dosyası yolu ya da (kanıtta da yoksa) SOMUT ENGEL yazılır. Kapılar, sıra, Recover okuma kapısı, çıkış kodları DEĞİŞMEDİ.
+# R03-d (2026-10-04; R03-c bağımsız doğrulaması; D-6 R03-d ile aynı ilke): koşucu değişti → koşucu pini + $ExpPackage güncellendi. Blokta: (a) Recover
+#          bitiş satırı kod açıklamalarını YALNIZ okunabilir kanıt VARKEN yazar (Get-RecoverEvidenceState: dosya + kayıt türü EXTACC-D7-RECOVER + kanıttaki
+#          exitCode = süreç kodu); kanıt yoksa kırmızı "KAPANIŞ DOĞRULANMADI — kanıt yok …" (koşucu yakalanmamış hatayla kanıtsız 1 verebilir — D-6'da
+#          ölçüldü; D-7'de aynı yapı); 3'ün metni ölçülenle ("P7-C2 / P7-C5 ölçüldü; P7-C2V FAIL değil (ÖLÇÜLEMEYEN olabilir)"), 2 / 1 buna atıf yapar.
+#          (b) Run çıkış 5/6: makbuz dosyası kanıttaki son makbuz metniyle (recovery.makbuzJson) EŞİT değilse BAYAT sayılır ve ÖNERİLMEZ; yok / okunamıyor /
+#          bayat → iki kabukta ölçülmüş TEK komut (kanıttaki makbuzJson → yeni makbuz dosyası) + AYRI owner onayıyla Recover. (c) Ürün bulgusu ADAYI
+#          "ADAYIDIR" diye gösterilir. Kapılar, sıra, Recover okuma kapısı, node çağrısı, çıkış kodları DEĞİŞMEDİ.
+# R03-e (2026-10-04; R03-d iki bağımsız doğrulaması, B1; D-6 R03-e ile aynı ilke): koşucu değişti (oturum 200'ünün tek sınıflaması; ölçülen kapatma metni;
+#          token claim'i) → koşucu pini + $ExpPackage güncellendi. Blokta yalnız GÖSTERİM: kanıttaki portalClose.acikErisim (HTTP ölçümlerinden sonra portal
+#          erişimi açık) ürün bulgusu satırından AYRI "PORTAL ERİŞİMİ: …" satırında gösterilir (birleşik tek satır değil). Kapılar, sıra, Recover okuma
+#          kapısı, node çağrısı, çıkış kodları DEĞİŞMEDİ.
+# R03-f (2026-10-04; R03-e iki bağımsız doğrulamasının MINOR bulguları; D-6 R03-f ile aynı ilke): koşucu değişti (P7-C1 açıklaması ölçülene indi; açık erişim
+#          satırındaki Recover metni Run'ın kapatma çağrılarına bağlı — Recover'ın kapatabileceği kesin dille İDDİA EDİLMEZ; kısmi durum metinleri; karar sırası
+#          T1 → TG → T3 → T0, TI yalnız a = b = c) → koşucu pini + $ExpPackage güncellendi. Blokta YALNIZ YORUM: ürün bulgusu ADAYI ve "PORTAL ERİŞİMİ:"
+#          satırlarının yorumları R03-e/f karar tablosuna göre düzeltildi (bayat R03-d yorumu kaldırıldı). Gösterilen metin koşucudan gelir; kapılar, sıra,
+#          Recover okuma kapısı, node çağrısı, çıkış kodları DEĞİŞMEDİ.
+# R03-g (2026-10-04; R03-f iki bağımsız doğrulamasının MINOR kenarları; son tur; D-6 R03-g ile aynı ilke): koşucu değişti (Recover modunda açık erişim metni
+#          ölçülene bağlı; JWT olarak okunamayan token → TJ; T2 a = c ≠ b dalında ALTINDA notu) → koşucu pini + $ExpPackage güncellendi. Blokta YALNIZ METİN
+#          (G2): Invoke-RecoverMode bilgi metnindeki koşulsuz "yetkili uç çağrılır …: portal hesabı pasif + sürüm artışı, …" ifadesi koşula bağlandı ("çağrı 2xx
+#          dönerse ürün şunları yazar: …; 401/403'te kapatma yapılmaz (sonuç Recover kanıtında …)"). Recover bitiş ekranı acikErisim'i göstermez (önceki tasarım;
+#          metin kanıtta). Kapılar, sıra, Recover okuma kapısı, node çağrısı, çıkış kodları DEĞİŞMEDİ.
 # MODLAR
 #   -Mode Preflight  SALT OKUMA: tüm kapılar (canlı dist = R27 pini); GO sorulmaz; kanıt/ortam/DB/canlı dosya yazılmaz; koşucu çağrılmaz (yalnız `node --version`). Kapılardaki `git fetch` yerel repodaki uzak izleme ref'lerini günceller (iş verisi değildir).
 #   -Mode QrTest     Canlı veri YOK: portal MESAJ sayfasının QR'ı yerel konsolda gösterilir (d7-qr-test.js); owner telefonla okutur.
@@ -55,7 +88,7 @@ $ExpEnvSha   = '5C776BBEEE018EA5CC8192378D42D742FD4ABC1B6D0E9A3EA671CF463206908D
 $ExpBaseUrl  = $null   # R05 public portal adresi: canlı .env PUBLIC_PORTAL_BASE_URL'den okunur (Invoke-ReadOnlyGates, biçim kapısı) ve Run/QrTest'te owner'ın konsola yazdığı R05 adresiyle birebir doğrulanır (Confirm-PortalBaseUrlR05). Public repoya host literali YAZILMAZ.
 # Koşucunun YÜKLEDİĞİ tüm governance dosyaları + D-7 QR denemesi (require ağacı ölçüldü).
 $PkgPins = [ordered]@{
-  'client-extacc-portal-d7-r01\scripts\d7-portal-messages-live-run.js'                = 'E752DA1EFCA9B8C7529CC0EC66B4F90530025FBF9918F4A9B56DBB3A6916D2B6'
+  'client-extacc-portal-d7-r01\scripts\d7-portal-messages-live-run.js'                = '4446C256EF83A0401B7C93F3FD28B6C1A14AF18F1FD04237349D6E37517A9001'
   'client-extacc-portal-d7-r01\scripts\d7-qr-test.js'                                 = '15E6431396E978423BAE72F3B7511F3972F12847EF96AA02C12937E0F2233E15'
   'client-extacc-intake-chain-r01\scripts\extacc-display.js'                          = 'F257188DF66C429472C214D38D965C1E6F5A2EA490D348369AC68C5DC6F26867'
   'client-extacc-intake-chain-r01\scripts\vendor\qrcode-generator-1.4.4\qrcode.js'    = '18AE399F81182BC9DE916E9C77B195DF20CC58D6F2D55A62B085A299F1BF1780'
@@ -65,7 +98,7 @@ $PkgPins = [ordered]@{
   'client-acceptance-runners-i3-r01\scripts\i3-lib.js'                                = '56F3788E9F84746CFFEE384D8C18B9B9A28130CC8E2285F9570AB69CC6EE74A3'
   'client-acceptance-harness-r01\scripts\ah-lib.js'                                   = 'DF882DB7F33A667092F126F01E518C1A8292C8C0B3C4C039BF73D71F3ACCBFD7'
 }
-$ExpPackage = '7C42FCCD6349F95E42128F78CA1A86DF36EB20E246FD0D9936A8B1098DBA7BDD'
+$ExpPackage = '78F626CD3C0FB47393521BAF4FB7BBB2A326D900EAB7C9EA968E49C5FB5F3A0D'
 $SecretEnv  = @('AH_DATABASE_URL', 'AH_PRISMA_ROOT', 'AH_BCRYPT_PATH', 'D7_LIVE_CONFIRM', 'D7_RECOVER_CONFIRM', 'D7_LIVE_GO_REF',
                 'D7_RUNID', 'D7_MODE', 'D7_EXPECT_DB', 'D7_EXPECT_TENANT_SLUG', 'D7_API_BASE', 'D7_EXPECT_API',
                 'D7_EXPECT_BASE_URL', 'D7_LIVE_LOGIN_PW', 'D7_RECEIPT', 'D7_EVID_FILE', 'D7_DISPLAY', 'EXA_QRTEST_URL', 'D7_TEST_DISPLAY_SINK',
@@ -238,33 +271,85 @@ function Confirm-LiveDataProcessing {
   Write-Host '  uygulama günlüğünde portal hesabı / portal girişi / mesaj gönderimi satırları (maskeli sentetik adres ya da müvekkil kimliği ile).'
   Write-Host '  Kaynaktan okundu: mesaj akışı e-posta/SMS üretmez. API günlüğünün tam içeriği bu blokla ÖLÇÜLMEZ.'
   Write-Host '  Kapanış: portal hesabı pasif + sürüm artırılır, erişim kapalı, personel pasif, dosyalar CLOSED. Tenant yaşam döngüsü DEĞİŞMEZ'
-  Write-Host '  (tenant kaydı kapatılmaz; koşucunun kanıt metnindeki "sentetik tenant CLOSED" = dosyalar CLOSED + personel pasif + portal pasif).'
+  Write-Host '  (tenant kaydı kapatılmaz; hedeflenen kapanış = dosyalar CLOSED + personel pasif + portal pasif; sonuç kanıttaki U-CLOSE ve P7-C* satırlarından okunur).'
   Write-Host '  MESAJ ve BİLDİRİM SATIRLARI SİLİNMEZ (ürünte silme ucu yok); kanıtta "saklandı: n satır" olarak raporlanır.'
   Write-Host '  Diğer tenantlar için ölçülen yalnız U-ISO''dur: tenant başına kullanıcı ve müvekkil SAYISI önce/sonra aynı (içerik karşılaştırılmaz).'
   $a = Read-Answer 'Bu işlemeyi onaylıyor musunuz? Onay için büyük harfle EVET yazın'
   if ($a -cne 'EVET') { Fail 'canlı veri işleme onaylanmadı — koşum başlamadı' }
 }
+# R03-c: Run sonu metni Recover komutunu YALNIZ makbuz dosyası Recover'ın okuma kapısını geçiyorsa önerir — Invoke-RecoverMode ile aynı denetim
+# (dosya var + JSON + kayıt türü + runId biçimi). Kimlik bağı (DB) koşucunun Recover'ında ölçülür; burada ölçülmez. Salt okuma; dosyaya yazmaz.
+function Get-ReceiptFileState([string]$path, [object]$expectedJson = $null) {
+  if (-not $path -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return [pscustomobject]@{ usable = $false; stale = $false; why = 'YOK' } }
+  $j = $null
+  try { $j = Get-Content -Raw -Encoding UTF8 -LiteralPath $path | ConvertFrom-Json } catch { return [pscustomobject]@{ usable = $false; stale = $false; why = 'OKUNAMIYOR (okunamadı / JSON değil)' } }
+  if (-not $j -or $j.record -ne 'EXTACC-D7-SETUP-RECEIPT' -or [string]$j.runId -notmatch '^[0-9a-f]{8}$') { return [pscustomobject]@{ usable = $false; stale = $false; why = 'OKUNAMIYOR (kayıt türü / runId tanınmadı)' } }
+  # R03-d (m7): kanıttaki son makbuz metniyle (recovery.makbuzJson) METİN eşitliği (BOM hariç). Eşit değilse dosya BAYATtır: makbuzun sonraki bir yazımı
+  # başarısız olmuştur ve dosya sonradan eklenen kimlikleri (ör. runnerMessageIds) içermeyebilir — önerilmez. Kanıtta metin yoksa güncellik ÖLÇÜLEMEZ (yazılır).
+  if ($null -ne $expectedJson) {
+    $txt = [IO.File]::ReadAllText($path, [Text.UTF8Encoding]::new($false))
+    if ($txt.Length -gt 0 -and $txt[0] -eq [char]0xFEFF) { $txt = $txt.Substring(1) }
+    if ($txt -cne [string]$expectedJson) { return [pscustomobject]@{ usable = $false; stale = $true; why = 'BAYAT (kanıttaki son makbuz metniyle — recovery.makbuzJson — EŞİT DEĞİL: makbuzun sonraki bir yazımı başarısız olmuş; sonradan eklenen kimlikleri içermeyebilir → bu dosyayla Recover eksik kapanış yapabilir; yazma hatası kanıttaki receiptWriteError alanında)' } }
+    return [pscustomobject]@{ usable = $true; stale = $false; why = 'VAR — kanıttaki son makbuz metniyle (recovery.makbuzJson) EŞİT' }
+  }
+  return [pscustomobject]@{ usable = $true; stale = $null; why = 'VAR — güncelliği ÖLÇÜLEMEDİ (kanıtta recovery.makbuzJson yok ya da kanıt okunamadı)' }
+}
+# R03-d (M2): Recover kanıtı OKUNABİLİR mi — dosya var + JSON + kayıt türü EXTACC-D7-RECOVER + kanıttaki exitCode = süreç çıkış kodu. Kod açıklamaları
+# (0/1/2/3/5/6) yalnız bu durumda geçerlidir: koşucu yakalanmamış hatayla (ör. kütüphane yüklenemedi) kanıt YAZMADAN 1 ile çıkabilir (D-6'da bağımsız
+# doğrulamada ölçüldü; D-7 koşucusunda aynı yapı: loadPrisma try dışında) ve bu durumda hiçbir kapanış ölçülmemiştir. Salt okuma.
+function Get-RecoverEvidenceState([string]$evidFile, [object]$rc) {
+  if (-not (Test-Path -LiteralPath $evidFile -PathType Leaf)) {
+    $w = if ("$rc" -eq '1') { 'kanıt yok; koşucu yakalanmamış hatayla bitti, hiçbir kapanış ölçülmedi' } else { "kanıt yok (d7-evidence.json yazılmadı; çıkış $rc) — hiçbir kapanış bu kanıttan ölçülmüş DEĞİL" }
+    return [pscustomobject]@{ valid = $false; state = 'YOK'; why = $w }
+  }
+  $ev = $null
+  try { $ev = Get-Content -Raw -Encoding UTF8 -LiteralPath $evidFile | ConvertFrom-Json } catch { $ev = $null }
+  if (-not $ev -or $ev.record -ne 'EXTACC-D7-RECOVER') { return [pscustomobject]@{ valid = $false; state = 'OKUNAMIYOR'; why = 'kanıt dosyası var ama OKUNAMIYOR (JSON değil ya da kayıt türü EXTACC-D7-RECOVER değil) — kapanış kanıttan okunamadı' } }
+  if ("$($ev.exitCode)" -ne "$rc") { return [pscustomobject]@{ valid = $false; state = 'KOD_FARKLI'; why = "kanıttaki exitCode ($($ev.exitCode)) süreç çıkış koduyla ($rc) EŞİT DEĞİL — kod açıklaması bu kanıta dayanmaz" } }
+  return [pscustomobject]@{ valid = $true; state = 'VAR'; why = 'VAR' }
+}
 # Kapanış durumu kanıttan okunur; metin KOŞULSUZ "kapatıldı" demez.
 function Get-ClosureStatus([string]$evidFile, [object]$rc) {
-  $st = [ordered]@{ verified = $false; text = ''; finding = $null; waitVerdict = $null; keptVerdict = $null; keptText = $null; reply2Verdict = $null; residue = $null }
+  $st = [ordered]@{ verified = $false; text = ''; finding = $null; waitVerdict = $null; keptVerdict = $null; keptText = $null; reply2Verdict = $null; residue = $null
+                    setupDurum = $null; setupAsama = $null; setupMakbuz = $null; receiptInEvidence = $false; makbuzJson = $null; findingCandidate = $false; acikErisim = $null }
+  $ev = $null
   try {
     $ev = Get-Content -Raw -Encoding UTF8 -LiteralPath $evidFile | ConvertFrom-Json   # node kanıtı UTF-8 (BOM'suz); WinPS 5.1 varsayılanı ANSI
+    $st.receiptInEvidence = [bool]($ev.receipt -and $ev.receipt.record -eq 'EXTACC-D7-SETUP-RECEIPT')   # R03-c: makbuz dosyası yoksa kullanılabilir yolun kaynağı
+    $st.makbuzJson = $(if ($ev.recovery -and $ev.recovery.makbuzJson -is [string]) { [string]$ev.recovery.makbuzJson } else { $null })   # R03-d: makbuzun birebir JSON metni
+    $st.findingCandidate = [bool]($ev.portalClose -and $ev.portalClose.sessionVersion -and $ev.portalClose.sessionVersion.sinif -eq 'ADAY')   # R03-d: ürün bulgusu ADAYI
+    $st.acikErisim = $(if ($ev.portalClose -and $ev.portalClose.acikErisim -is [string]) { [string]$ev.portalClose.acikErisim } else { $null })   # R03-e: açık portal erişimi (AYRI satır)
     $d9 = ($ev.results | Where-Object { $_.id -eq 'P7-D9' }).verdict
     $st.waitVerdict = ($ev.results | Where-Object { $_.id -eq 'P7-WAIT' }).verdict
     $st.reply2Verdict = ($ev.results | Where-Object { $_.id -eq 'D7-3B' }).verdict
     $kept = ($ev.results | Where-Object { $_.id -eq 'P7-MSG-KEPT' })
     $st.keptVerdict = $kept.verdict; $st.keptText = $kept.observed
     $st.finding = $ev.productFinding; $st.residue = $ev.messageResidue
+    $st.setupDurum = $ev.setup.durum; $st.setupAsama = $ev.setup.asama; $st.setupMakbuz = $ev.setup.makbuzDosyasi   # R03: kurulum durumu (koşucu kanıtı)
     $st.verified = ($d9 -eq 'PASS')
   } catch { $st.verified = $false }
-  $st.text = if ($st.verified) { 'Portal erişim kapanışı koşucu tarafından DOĞRULANDI (DB + yeni giriş + mevcut oturum mesaj ucunda reddi).' }
+  # R03: DOĞRULANDI metni parça İDDİA ETMEZ — her parça kanıttaki ölçüt verdict'lerinden kurulur (D-6 R02 kalıbı). Gruptaki TÜM ölçütler PASS ise
+  # "PASS"; biri FAIL ise "FAIL"; aksi halde (satır yok / UNMEASURED) "ÖLÇÜLMEDİ". Birleşik P7-D9 PASS iken de DB/HTTP ret ölçütleri koşulmamış olabilir:
+  # portal hesabı hiç açılmadıysa (P7-C2..C5 satırı yok) ya da koşucunun portal oturumu yoksa (P7-C4 UNMEASURED). "Mevcut oturum" koşucunun KENDİ portal
+  # oturumudur (P7-C4L/D); telefondaki oturumu koşucu ölçmez (owner beyanı). Parçalar aynı satırın devamındadır.
+  $st.text = if ($st.verified) {
+               $parts = foreach ($p in @(@('DB kapalı + sürüm arttı [P7-C2/C2V/C5]', 'P7-C2', 'P7-C2V', 'P7-C5'), @('yeni giriş reddi, yerel + dış [P7-C3L/D]', 'P7-C3L', 'P7-C3D'),
+                                         @('mevcut oturum reddi, koşucunun kendi portal oturumu, mesaj ucunda, yerel + dış [P7-C4L/D]', 'P7-C4L', 'P7-C4D'),
+                                         @('personel/dosya kapanışı [U-CLOSE]', 'U-CLOSE'))) {
+                 $vs = @($p | Select-Object -Skip 1 | ForEach-Object { $id = $_; $hit = @($ev.results | Where-Object { $_.id -eq $id }); if ($hit.Count -eq 1) { [string]$hit[0].verdict } else { '' } })
+                 '{0}: {1}' -f $p[0], $(if (@($vs | Where-Object { $_ -ne 'PASS' }).Count -eq 0) { 'PASS' } elseif (@($vs | Where-Object { $_ -eq 'FAIL' }).Count -gt 0) { 'FAIL' } else { 'ÖLÇÜLMEDİ' })
+               }
+               'Portal erişim kapanışı: koşucunun birleşik ölçütü P7-D9 PASS — DOĞRULANDI yalnız bu satırın devamında PASS yazan parçalar içindir (kanıttan): ' + ($parts -join ' · ') + '. Telefondaki oturumun reddini koşucu ÖLÇMEZ (yenileme sorusu beyandır).'
+             }
              else { "Portal erişim kapanışı DOĞRULANAMADI (çıkış $rc) — telefondaki erişim açık kalmış olabilir; sonucu CLIENT'a bildirin." }
   return [pscustomobject]$st
 }
 function Write-OwnerDeclaration([string]$evDir, [string]$runId, $closure) {
   Write-Host ''
   $c = if ($closure -and $closure.verified) { 'Green' } else { 'Red' }
+  # Satır rengi yalnız $closure.verified (= P7-D9 PASS) değerine bağlıdır; parçaların ayrı sonucu (PASS / FAIL / ÖLÇÜLMEDİ) rengi DEĞİŞTİRMEZ.
   Write-Host ("Koşum bitti. {0}" -f $(if ($closure) { $closure.text } else { 'Portal erişim kapanışı DOĞRULANAMADI (kanıt okunamadı).' })) -ForegroundColor $c
+  Write-Host '  Not: satır rengi yalnız birleşik ölçütü (P7-D9) gösterir (yeşil = P7-D9 PASS; kırmızı = PASS değil ya da kanıt okunamadı); parçaların ayrı sonucu satırın metnindedir.'
   Write-Host 'Şimdi telefonda açık portal sayfasını bir kez YENİLEYİN, sonra aşağıdaki soruları ekranda gördüğünüze göre yanıtlayın.' -ForegroundColor Cyan
   Write-Host 'OWNER BEYANI (makine ölçümünden AYRI kaydedilir). Emin değilseniz ? yazın. Parola ve mesaj içeriği YAZMAYIN.' -ForegroundColor Cyan
   $d = [ordered]@{
@@ -338,12 +423,22 @@ function Invoke-RunMode($g) {
   $waitV = $closure.waitVerdict; $finding = $closure.finding
   Write-Host "EXTACC D-7 KOŞUM BİTTİ - RUNID=$RunId · çıkış=$rc" -ForegroundColor $(if ($rc -eq 0) { 'Green' } else { 'Yellow' })
   Write-Host '  0 PASS · 2 FAIL · 3 ÖLÇÜLEMEYEN · 1 DURDU · 4 KİMLİK/HEDEF REDDİ · 7 KANIT YAZILAMADI · 5 PERSONEL/DOSYA KAPANIŞI · 6 PORTAL ERİŞİMİ KAPANDIĞI DOĞRULANMADI · 91 NODE BAŞLATILAMADI'
-  if ($finding) { Write-Host "  $finding — bu bir ÜRÜN BULGUSUDUR; kapanış PASS SAYILMAZ. CLIENT'a bildirin." -ForegroundColor Red }
+  # R03-e/f: ürün bulgusu ADAYI (koşucu: sessionClass200 karar tablosunun ADAY hücreleri — T1, TG, T3, T1s, T2, T4; P7-C2 PASS / FAIL ayrımı yok; kanıtta
+  # portalClose.sessionVersion.sinif=ADAY) "ADAYI" diye gösterilir — kesin bulgu (B hücresi: P7-C2 PASS + P7-C5 PASS) gibi yazılmaz.
+  if ($finding) { Write-Host ("  $finding — " + $(if ($closure.findingCandidate) { 'bu bir ÜRÜN BULGUSU ADAYIDIR (CLIENT doğrular)' } else { 'bu bir ÜRÜN BULGUSUDUR' }) + "; kapanış PASS SAYILMAZ. CLIENT'a bildirin.") -ForegroundColor Red }
+  # R03-e: portal erişimi HTTP ölçümlerinden sonra AÇIKSA (kanıttaki portalClose.acikErisim) AYRI satır — ürün bulgusu satırıyla BİRLEŞTİRİLMEZ (oturum reddini
+  # Recover düzeltemez). R03-f: satırın Recover metni koşucudan gelir ve Run'ın kapatma çağrılarına bağlıdır — son çağrı 401/403 ise Recover'ın kapatabildiği
+  # ÖLÇÜLMEDİ, aksi halde Recover kapatmayı yeniden dener (sonuç Recover kanıtında); Recover yalnız AYRI owner onayıyla, aşağıdaki öneriye bakın.
+  if ($closure.acikErisim) { Write-Host ("  PORTAL ERİŞİMİ: {0}" -f $closure.acikErisim) -ForegroundColor Yellow }
+  # R03: kurulum yarıda kaldıysa (koşucu kanıtındaki setup.durum TAMAM değil) bilgi satırı — kapanışın sonucu yukarıdaki kapanış satırındadır.
+  if ($closure.setupDurum -and $closure.setupDurum -ne 'TAMAM') {
+    Write-Host ("  KURULUM YARIM KALDI (kanıttaki setup alanı): durum={0} · son aşama={1} · makbuz dosyası={2} — Run'ın kendi kapanışının sonucu yukarıdaki kapanış satırındadır; ayrıntı kanıttaki setup ve fatal alanlarında. Bu bilgi Recover yetkisi DEĞİLDİR." -f $closure.setupDurum, $closure.setupAsama, $closure.setupMakbuz) -ForegroundColor Yellow
+  }
   if ($closure.keptText) {
     Write-Host "  Mesaj kalıntısı: $($closure.keptText)" -ForegroundColor Cyan
-    Write-Host '  (Kanıt metnindeki "sentetik tenant CLOSED" koşucunun SABİT ifadesidir; kapanışın doğrulandığını GÖSTERMEZ. Kapanış durumu yukarıdaki' -ForegroundColor Cyan
-    Write-Host '   "Portal erişim kapanışı ... DOĞRULANDI / DOĞRULANAMADI" satırındadır. Anlamı: hedeflenen kapanış = dosyalar CLOSED + personel pasif +' -ForegroundColor Cyan
-    Write-Host '   portal pasif; tenant yaşam döngüsü DEĞİŞMEZ.)' -ForegroundColor Cyan
+    Write-Host '  (Parantez içindeki kapanış özeti koşucunun kanıttaki U-CLOSE ve portal DB ölçümünden kurulur (R03; sabit ifade değildir). Kapanışın tamamı' -ForegroundColor Cyan
+    Write-Host '   yukarıdaki "Portal erişim kapanışı ..." satırındadır (parçalar kanıttaki verdict''lerden). Hedeflenen kapanış = dosyalar CLOSED + personel' -ForegroundColor Cyan
+    Write-Host '   pasif + portal pasif; tenant yaşam döngüsü DEĞİŞMEZ.)' -ForegroundColor Cyan
   } else { Write-Host '  Mesaj kalıntısı ÖLÇÜLEMEDİ (kanıt satırı yok) — satırlar silinmiş DEĞİLDİR; CLIENT inceler.' -ForegroundColor Yellow }
   if ($waitV -eq 'UNMEASURED' -and $decl) {
     if ($decl.girisSonrasiEkran -ceq 'M') { Write-Host '  Koşucu telefon girişi görmedi ama owner girişten sonra portalın açıldığını (ana sayfa/mesaj sayfası) beyan etti — İNCELEME GEREKİR (FAIL adayı).' -ForegroundColor Yellow }
@@ -354,7 +449,23 @@ function Invoke-RunMode($g) {
   if ($rc -eq 5 -or $rc -eq 6) {
     Write-Host '  KAPANIŞ DOĞRULANMADI: Run kendi kapanış adımlarını koşucu İÇİNDE denedi; bu çıkış kodu Recover YETKİSİ DEĞİLDİR ve bu blok Recover BAŞLATMAZ.' -ForegroundColor Yellow
     Write-Host '  Önce kanıtı inceleyin (d7-evidence.json: kurtarma/inceleme nedeni ve açık kalan kaynaklar) ve sonucu CLIENT''a bildirin. Kanıttaki kurtarma adımı' -ForegroundColor Yellow
-    Write-Host '  bir ÖNERİDİR: -Mode Recover -ReceiptFile <makbuz> yalnız AYRI owner onayıyla, BİR KEZ (ürün bulgusu varsa Recover onu DÜZELTMEZ). Kabulü TEKRARLAMAYIN.' -ForegroundColor Yellow
+    # R03-c: Recover komutu yalnız makbuz dosyası Recover'ın okuma kapısını geçiyorsa önerilir (uygulanamayan komut önerilmez). R03-d: ve dosya kanıttaki son
+    # makbuz metniyle (recovery.makbuzJson) EŞİTSE — BAYAT dosya önerilmez. Aksi halde iki kabukta ölçülmüş TEK komut (kanıttaki makbuzJson → yeni dosya).
+    $rs = Get-ReceiptFileState (Join-Path $EvDir 'd7-setup-receipt.json') $closure.makbuzJson
+    if ($rs.usable) {
+      Write-Host '  bir ÖNERİDİR: -Mode Recover -ReceiptFile <makbuz> yalnız AYRI owner onayıyla, BİR KEZ (ürün bulgusu varsa Recover onu DÜZELTMEZ). Kabulü TEKRARLAMAYIN.' -ForegroundColor Yellow
+      Write-Host ('  Makbuz dosyası: {0} (kanıt dizinindeki d7-setup-receipt.json; kayıt türü + runId okundu — kimlik bağını koşucu Recover''da DB''de doğrular).' -f $rs.why) -ForegroundColor Yellow
+    } else {
+      Write-Host ("  bir ÖNERİDİR — ama MAKBUZ DOSYASI {0} (kanıt dizinindeki d7-setup-receipt.json): bu dosyayla Recover ÖNERİLMEZ{1}." -f $rs.why, $(if ($rs.stale) { '' } else { ' — bu makbuzla bloktan Recover BAŞLATILAMAZ (Recover makbuzu dosyadan okur; -ReceiptFile mevcut bir makbuz dosyası ister)' })) -ForegroundColor Yellow
+      if ($closure.makbuzJson) {
+        $evQ = (Join-Path $EvDir 'd7-evidence.json').Replace("'", "''"); $newQ = (Join-Path $EvDir 'd7-setup-receipt-kanittan.json').Replace("'", "''")
+        Write-Host '  Kullanılabilir yol: makbuzun son hâli d7-evidence.json içindeki recovery.makbuzJson alanıdır (makbuzun birebir JSON metni; parola/token içermez). Şu TEK komut onu yeni bir makbuz dosyasına yazar (blok öz-testinde Windows PowerShell 5.1 ve PowerShell 7 ile koşuldu):' -ForegroundColor Yellow
+        Write-Host ("    (Get-Content -Raw -Encoding UTF8 -LiteralPath '{0}' | ConvertFrom-Json).recovery.makbuzJson | Set-Content -Encoding UTF8 -NoNewline -LiteralPath '{1}'" -f $evQ, $newQ) -ForegroundColor Yellow
+        Write-Host ("  Ardından Recover yalnız kanıt incelendikten sonra AYRI owner onayıyla, BİR KEZ: -Mode Recover -ReceiptFile '{0}' (koşucu makbuzu kayıt türü, runId ve DB kimlik bağıyla doğrular; doğrulanmazsa yazmadan çıkış 4). Kabulü TEKRARLAMAYIN." -f $newQ) -ForegroundColor Yellow
+      } else {
+        Write-Host '  SOMUT ENGEL: kanıtta makbuz metni (recovery.makbuzJson) YOK ya da kanıt okunamadı — bu paketle Recover BAŞLATILAMAZ; makbuzsuz kapanış yolu tanımlı değildir (K-7). Açık kalan sentetik kaynaklar için karar owner/CLIENT''a aittir: kanıt dizinini ve d7-run.log''u CLIENT''a iletin.' -ForegroundColor Red
+      }
+    }
     Write-Host '  Recover ayrı bir CANLI YAZMA işlemidir (sentetik personeli geçici yeniden aktifleştirme + parola özeti, pasif portal hesabına ölçüm parolası özeti,' -ForegroundColor Yellow
     Write-Host '  kapatma audit satırı, personel/dosya kapanışı); "BİR KEZ" kuralı kodla ZORLANMAZ; ikinci bir Recover bu paketle TANIMLI DEĞİLDİR (owner kararı' -ForegroundColor Yellow
     Write-Host '  gerektirir) — ayrıntı paket belgesi §8.1.' -ForegroundColor Yellow
@@ -377,8 +488,9 @@ function Invoke-RecoverMode($g, [string]$receiptPath) {
   Write-Host '  Blok bu onayı SORMAZ ve ÖLÇMEZ; "BİR KEZ" kuralı kodla ZORLANMAZ (blok ve koşucu ikinci bir Recover''ı engellemez).' -ForegroundColor Yellow
   Write-Host '  Recover canlıya şunları YAZAR (koşucu kaynağından okundu; canlıda koşulmadı):'
   Write-Host '   1) Portal hâlâ açıksa: makbuzdaki sentetik personel GEÇİCİ olarak yeniden aktifleştirilir ve parola özeti yeniden yazılır; o personelle yerel'
-  Write-Host '      API''de oturum açılır ve yetkili uç çağrılır (admin/disable-user, en çok 2 deneme): portal hesabı pasif + sürüm artışı, müvekkil portal'
-  Write-Host '      erişimi kapalı, kapatma audit satırı (aktör: sentetik personel).'
+  Write-Host '      API''de oturum açılır ve yetkili uç çağrılır (admin/disable-user, en çok 2 deneme); çağrı 2xx dönerse ürün şunları yazar: portal hesabı'
+  Write-Host '      pasif + sürüm artışı, müvekkil portal erişimi kapalı, kapatma audit satırı (aktör: sentetik personel); 401/403''te kapatma yapılmaz'
+  Write-Host '      (sonuç Recover kanıtında: P7-C1 / P7-C2 satırları ve portalClose.acikErisim).'
   Write-Host '   2) Portal DB''de kapalı durumdaysa (1. adımla ya da önceden): pasif portal hesabına YALNIZ ölçüm için yeni rastgele parola özeti yazılır'
   Write-Host '      (hesap pasif kalır); bu parolayla yerel ve dış adresten giriş DENENİR (401 beklenir).'
   Write-Host '   3) Personel/dosya kapanışı (closeAccess): iki sentetik tenantın TÜM kullanıcıları pasif + sürüm artışı (her Recover''da yeniden artar),'
@@ -399,14 +511,24 @@ function Invoke-RecoverMode($g, [string]$receiptPath) {
   }
   finally { Clear-SecretEnv; Write-Manifest $EvDir }
   $closure = Get-ClosureStatus (Join-Path $EvDir 'd7-evidence.json') $rc
-  Write-Host "EXTACC D-7 KURTARMA BİTTİ - RUNID=$($rcpt.runId) · çıkış=$rc (0 kapanış + HTTP reddi doğrulandı · 3 DB kapalı ama bazı HTTP kontrolleri ÖLÇÜLEMEDİ (PASS SAYILMAZ) · 6 portal DB/HTTP kapanışı doğrulanmadı · 5 personel/dosya · 4 kimlik reddi · 7 kanıt yok · 91 node başlatılamadı)" -ForegroundColor $(if ($rc -eq 0) { 'Green' } else { 'Yellow' })
+  # R03-d (M2): kod açıklamaları YALNIZ okunabilir kanıt VARKEN (Get-RecoverEvidenceState) — kanıt yoksa "… doğrulandı" türü hiçbir açıklama yazılmaz.
+  $es = Get-RecoverEvidenceState (Join-Path $EvDir 'd7-evidence.json') $rc
+  if (-not $es.valid) {
+    Write-Host ("EXTACC D-7 KURTARMA BİTTİ - RUNID={0} · çıkış={1} — KAPANIŞ DOĞRULANMADI — {2}. Bu Recover'ın kanıtından hiçbir kapanış okunamaz; çıkış kodu açıklamaları (0/1/2/3/5/6) yalnız okunabilir kanıt VARKEN geçerlidir (4 = koşucu kapısı / kimlik reddi, yazma yok · 7 = kanıt yazılamadı · 91 = node başlatılamadı). Neden: recover dizinindeki d7-recover.log." -f $rcpt.runId, $rc, $es.why) -ForegroundColor Red
+  } else {
+  # R03: çıkış kodu açıklaması yalnız koşucunun recoverExitCode kuralını söyler (sabit "doğrulandı" iddiası yok; 1 ve 2 dahil).
+  # R03-c: mevcut oturum reddinin Recover'da HER ZAMAN ölçülemediği ve yeni giriş reddinin P7-C3L/D'den okunduğu kodlardan ÖNCE, her kod için yazılır;
+  #        1 ve 2 neyin doğrulandığını adlandırır (portal DB kapanışı ya da hesap yok + personel/dosya kapanışı; HTTP reddi DEĞİL).
+  # R03-d (m3): 3'ün metni ölçülenle — portalDbClosed P7-C2V için yalnız "FAIL değil" ister (ÖLÇÜLEMEYEN olabilir); 2 ve 1 "3'teki portal ölçütleri" ile buna atıf yapar.
+  Write-Host "EXTACC D-7 KURTARMA BİTTİ - RUNID=$($rcpt.runId) · çıkış=$rc (HER KODDA: mevcut oturum reddi Recover'da ÖLÇÜLEMEZ — HER ZAMAN (P7-C4L/D; koşumun portal oturumu saklanmaz; Run kanıtındaki P7-C4 satırlarına bakın; PASS SAYILMAZ); yeni giriş reddinin ölçülüp ölçülmediği kanıttaki P7-C3L/D satırlarından okunur · 0 = FAIL ve ÖLÇÜLEMEYEN satır yok — koşucu mantığında fiilen beklenmez: portal hesabı varken mevcut oturum reddi ölçülemediği için en iyi sonuç 3'tür, hesap yoksa mesaj kalıntısı ÖLÇÜLEMEYEN olur (paket belgesi §9) · 3 = FAIL yok, en az bir ölçüt ÖLÇÜLEMEYEN — P7-C2 / P7-C5 ölçüldü; P7-C2V FAIL değil (ÖLÇÜLEMEYEN olabilir — kanıttaki satır) ya da portal hesabı yok; personel/dosya kapanışı doğrulandı · 2 = 3'teki portal ölçütleri (ya da portal hesabı yok) ve personel/dosya kapanışı doğrulandı, hazırlık hatası yok, en az bir satır FAIL (Recover'da yalnız P7-MSG-KEPT: makbuzdaki koşucu mesaj satırlarından biri yerinde değil) · 1 = DURDU: 3'teki portal ölçütleri (ya da portal hesabı yok) ve personel/dosya kapanışı doğrulandı ama hazırlık adımında hata (kanıttaki fatal alanı; HTTP reddinin doğrulandığı anlamına GELMEZ — satırlar ayrıca okunur) · 6 portal DB/HTTP kapanışı doğrulanmadı · 5 personel/dosya kapanışı doğrulanmadı · 4 kimlik reddi (yazma yok) · 7 kanıt yok · 91 node başlatılamadı)" -ForegroundColor $(if ($rc -eq 0) { 'Green' } else { 'Yellow' })
+  }
   if ($closure.keptText) {
     Write-Host "  Mesaj kalıntısı: $($closure.keptText)" -ForegroundColor Cyan
-    Write-Host '  (Kanıt metnindeki "sentetik tenant CLOSED" koşucunun SABİT ifadesidir; kapanışın doğrulandığını GÖSTERMEZ. Kapanış durumu yukarıdaki çıkış' -ForegroundColor Cyan
-    Write-Host '   kodu satırındadır (Recover''da ayrı bir DOĞRULANDI / DOĞRULANAMADI satırı gösterilmez). Anlamı: hedeflenen kapanış = dosyalar CLOSED +' -ForegroundColor Cyan
+    Write-Host '  (Parantez içindeki kapanış özeti koşucunun kanıttaki U-CLOSE ve portal DB ölçümünden kurulur (R03; sabit ifade değildir). Kapanış durumu' -ForegroundColor Cyan
+    Write-Host '   yukarıdaki çıkış kodu satırındadır (Recover''da ayrı bir DOĞRULANDI / DOĞRULANAMADI satırı gösterilmez). Hedeflenen kapanış = dosyalar CLOSED +' -ForegroundColor Cyan
     Write-Host '   personel pasif + portal pasif; tenant yaşam döngüsü DEĞİŞMEZ.)' -ForegroundColor Cyan
   }
-  if ($rc -eq 3) { Write-Host '  Recover TEKRARLANMAZ; ölçülemeyen satırlar Run kanıtıyla birlikte CLIENT tarafından değerlendirilir.' -ForegroundColor Yellow }
+  if ($rc -eq 3 -and $es.valid) { Write-Host '  Recover TEKRARLANMAZ; ölçülemeyen satırlar Run kanıtıyla birlikte CLIENT tarafından değerlendirilir.' -ForegroundColor Yellow }
   Write-Host '  Bu çıkış kodu yeni bir Recover için yetki DEĞİLDİR; Recover BİR KEZ koşulur (kodla zorlanmaz); sonuç CLIENT''a bildirilir.' -ForegroundColor Yellow
   Write-Host '  İkinci bir Recover bu paketle TANIMLI DEĞİLDİR; owner kararı gerektirir.' -ForegroundColor Yellow
   Write-Host "  kanıt dizini: $EvDir"
