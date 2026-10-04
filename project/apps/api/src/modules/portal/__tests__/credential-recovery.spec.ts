@@ -38,6 +38,8 @@ function buildService(over: any = {}) {
     $queryRaw: jest.fn().mockResolvedValue([]),
     clientPortalUser: {
       findFirst: jest.fn().mockResolvedValue(over.foundUser ?? null),
+      // KR-4: birebir eşleşme en çok iki aktif kayıt okur (findMany, take: 2); bu dosyada en çok bir hesap.
+      findMany: jest.fn().mockResolvedValue(over.foundUser ? [over.foundUser] : []),
       update: jest.fn().mockResolvedValue({}),
       // D5-SEC-R01: talep token'ı koşullu `updateMany` ile yazar (hesap hâlâ aktifse count 1); kullanıcı bulunduğunda
       // varsayılan 1, aksi 0. Açık `updateManyResult` her iki çağrı (talep yazımı + tüketim) için geçerlidir.
