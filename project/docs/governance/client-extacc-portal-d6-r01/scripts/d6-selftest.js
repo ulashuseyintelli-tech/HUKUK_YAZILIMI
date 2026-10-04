@@ -58,6 +58,9 @@
  *           sıra girdileri B-TG, T1-TG, B-TJ, T1-TJ; T2 a = c ≠ b dalında b > c → ALTINDA notu; 33 girdi, 14 hücre) · Z23-l (G3: opaque token + guard kusur
  *           taklidi → T2 değil TJ; sahte API opaque token ürün davranışı değildir — ürün guard'ı JWT olmayan token'ı :36'da DB'den önce reddeder) · T-9 (çağrı
  *           5 bağımsız değişkenli; Run TJ girdisini claimDurum OKUNAMADI'dan kurar).
+ * R04     : (owner talimatı madde 5 — "R04-recover-girdi") YENİ: T-11 (birim + statik; STATİK bölümde, disposable DB / sahte API senaryosu GEREKTİRMEZ)
+ *           ret ölçütlerinde (P6-C3L/D · P6-C4L/D) 503 / 429 dışındaki 5xx gözlemi "ret kanıtlanmadı; neden kesinleşmedi (ürün kusuru olarak sınıflanmadı)";
+ *           verdict ve çıkış kodu değişmedi (koşum sonucu paket belgesi §13.9'da).
  */
 const { spawn, spawnSync, execFileSync } = require('child_process');
 const fs = require('fs'); const path = require('path'); const os = require('os'); const crypto = require('crypto');
@@ -1001,6 +1004,20 @@ const CLOSE_NO_S = CLOSE.filter((id) => id !== 'P6-C4L' && id !== 'P6-C4D' && id
   check('T-10', 'R03-f: yorum dışı koşucu kaynağında "Recover kapatabilir", "DB\'ye yansımadı", "portal hesabı açık", "DB\'de AÇIK" ve eski "\'AÇIK\' : \'kapanış TAMAMLANMADI\'" biçimi YOK; P6-C1 yazan tüm R.check / R.unmeasured çağrıları (≥ 4) açıklamayı C1_DESC ya da "portal hesabı YOK (DB\'de ölçüldü) …" ile verir, "kapatıldı" geçmez; C1_DESC "DB kapanışı P6-C2 / P6-C5 satırlarında" der',
     t10Bad.length === 0 && c1Calls.length >= 4 && c1Calls.every((c) => /'P6-C1', C1_DESC,$/.test(c) || /'P6-C1', 'portal hesabı YOK \(DB\\'de ölçüldü\)/.test(c)) && !c1Calls.some((c) => /kapatıldı/.test(c)) && /DB kapanışı P6-C2 \/ P6-C5 satırlarında/.test(EX.C1_DESC || ''),
     `yasak dize=${t10Bad.join(',') || 'yok'} · P6-C1 çağrısı=${c1Calls.length}: ${c1Calls.map((c) => c.slice(0, 48)).join(' | ')}`);
+  // T-11 (R04, owner talimatı madde 5; birim + statik — disposable DB / sahte API GEREKMEZ): ret ölçütlerinde (P6-C3L/D yeni giriş · P6-C4L/D mevcut oturum)
+  // 503 / 429 DIŞINDAKİ 5xx gözlemi "ret kanıtlanmadı; neden kesinleşmedi (ürün kusuru olarak sınıflanmadı)" der; verdict ifadesi (`r.status === 401`) ve
+  // 503 / 429 → ÖLÇÜLEMEYEN dalı DEĞİŞMEDİ; eski yalın "HTTP ${r.status}" gözlemi iki ret ölçütünde kalmadı.
+  const t11Txt = 'ret kanıtlanmadı; neden kesinleşmedi (ürün kusuru olarak sınıflanmadı)';
+  const t11Fn = typeof EX.rejectObs === 'function';
+  const t11Five = t11Fn && [500, 502, 504, 599].every((s) => EX.rejectObs(s) === `HTTP ${s} — ${t11Txt}`);
+  const t11Other = t11Fn && [401, 403, 404, 200, 201, 429, 503, 600].every((s) => EX.rejectObs(s) === `HTTP ${s}`);
+  const t11New = (src.match(/return R\.check\(id, desc, r\.status === 401, rejectObs\(r\.status\)\); \};/g) || []).length;
+  const t11Old = (src.match(/return R\.check\(id, desc, r\.status === 401, `HTTP \$\{r\.status\}`\); \};/g) || []).length;
+  const t11Unm = (src.match(/if \(r\.status === 503 \|\| r\.status === 429\) return R\.unmeasured\(id, desc, `HTTP \$\{r\.status\} — neden UNKNOWN`\); return R\.check\(id, desc, r\.status === 401, rejectObs\(r\.status\)\); \};/g) || []).length;
+  const t11Calls = ['judge401(\'P6-C3L\'', 'judge401(\'P6-C3D\'', 'judgeSession(\'P6-C4L\'', 'judgeSession(\'P6-C4D\''].every((c) => src.includes(c));
+  check('T-11', 'R04 (owner madde 5): ret ölçütlerinde 503 / 429 dışındaki 5xx gözlemi "HTTP <kod> — ret kanıtlanmadı; neden kesinleşmedi (ürün kusuru olarak sınıflanmadı)" (birim: 500/502/504/599); 5xx dışı kodlar ve 503 "HTTP <kod>" aynen; judge401 (P6-C3L/D) ve judgeSession (P6-C4L/D) son dalı `R.check(id, desc, r.status === 401, rejectObs(r.status))` — verdict ifadesi ve 503 / 429 → ÖLÇÜLEMEYEN dalı değişmedi; eski yalın "HTTP ${r.status}" ret gözlemi YOK',
+    t11Fn && t11Five && t11Other && t11New === 2 && t11Old === 0 && t11Unm === 2 && t11Calls,
+    `fonksiyon=${t11Fn} · 5xx metni=${t11Five} · diğer kodlar=${t11Other} · yeni son dal=${t11New} · eski son dal=${t11Old} · 503/429 dalı + yeni son dal=${t11Unm} · dört ölçüt çağrısı=${t11Calls} · örnek=${t11Fn ? EX.rejectObs(502) : '-'}`);
   const sinkLines = src.split('\n').filter((l) => /D6_TEST_DISPLAY_SINK/.test(l));
   check('T-2', 'gösterimsiz test dosyası (sink) kaynakta TEK yerde ve yalnız `display === \'none\'` koşuluyla (konsol varken asla)', sinkLines.length === 1 && /g\.display === 'none' && process\.env\.D6_TEST_DISPLAY_SINK/.test(sinkLines[0]) && /if \(con\) return DISPLAY\.show/.test(sinkLines[0]), `satır=${sinkLines.length}`);
   const liveEnv = { AH_DATABASE_URL: 'postgresql://u:p@127.0.0.1:5432/hukuk_db', D6_EXPECT_DB: 'hukuk_db', D6_WAIT_MS: '1', D6_POLL_MS: '1', D6_VIEW_MS: '1', D6_HTTP_TIMEOUT_MS: '1', D6_CALL_TIMEOUT_MS: '1', D6_LATE_CREATE_MS: '1', D6_RESIDUE_WAIT_MS: '1' };

@@ -81,6 +81,10 @@
  *          hücre TJ (ADAY; ürün guard'ı bu token'ı DB'den önce reddeder — portal-auth.guard.ts:36 verifyAsync); sıra B → T1 → TG → TJ → T3 → T0 …; T5'e
  *          ulaşmaz. Verilme sürümü bu durumda yine s1 (P6-C2V referansı değişmedi). (G4) T2'nin a = c ≠ b dalında b > c iken "(DB sürümü verilme sürümünün
  *          ALTINDA — ürün dışı azaltma)" notu. Çıkış kodu fonksiyonları ve öncelik DEĞİŞMEDİ; kanıttaki `revision` R03 kalır.
+ * R04    : (2026-10-04; owner talimatı madde 5 — "R04-recover-girdi") Ret ölçütlerinde (yeni giriş P6-C3L/D · mevcut oturum P6-C4L/D) 503 / 429
+ *          DIŞINDAKİ 5xx gözlemi artık "HTTP <kod> — ret kanıtlanmadı; neden kesinleşmedi (ürün kusuru olarak sınıflanmadı)" der (`rejectObs`; önceki
+ *          gözlem yalnız "HTTP <kod>"). Verdict (FAIL: 401 beklenirken 401 gelmedi), 503 / 429 → ÖLÇÜLEMEYEN kuralı, çıkış kodu fonksiyonları ve öncelik
+ *          DEĞİŞMEDİ; kanıttaki `revision` R03 kalır. Diğer 5xx gözlemleri (yükleme, liste, indirme, kapsam dışı 404) bu kapsamda DEĞİL — değişmedi.
  */
 const fs = require('fs'); const crypto = require('crypto'); const path = require('path');
 const H5 = require('../../client-h5-intake-url-r01/scripts/h5-url-live-run');
@@ -252,6 +256,12 @@ async function foreignCleanup(R, prisma, receipt) {
 //   AYNI id ile yeniden açar (:289-317), yeni satır yalnız satır yokken (:345); satırı silen ürün yolu yalnız Client cascade (schema onDelete: Cascade).
 const SESSION_EP = 'belge listesine';
 const isOpenAccess = (s) => !!s && s.exists !== false && (s.isActive === true || s.hasPortalAccess === true);
+// R04 (owner talimatı madde 5): ret ölçütlerinin (P6-C3L/D yeni giriş · P6-C4L/D mevcut oturum) 503 / 429 DIŞINDAKİ 5xx gözlemi. Verdict DEĞİŞMEZ (çağıran
+// `r.status === 401` ile FAIL yazar); metin yalnız ölçüleni söyler: 401 (ret) GELMEDİ → ret kanıtlanmadı; 5xx'in hangi katmanda üretildiği ölçülmez (paket belgesi
+// B3: guard'dan sonra mı önce mi, dış uçta kenar katmanı mı) → neden kesinleşmedi; ürün kusuru / ürün bulgusu olarak SINIFLANMAZ (sessionVersion / productFinding
+// yazılmaz — değişmedi). 5xx dışındaki kodlar ve 503 eskisi gibi "HTTP <kod>" (503 / 429 çağıranda önceden ÖLÇÜLEMEYEN'dir).
+const rejectObs = (status) => (Number.isInteger(status) && status >= 500 && status <= 599 && status !== 503
+  ? `HTTP ${status} — ret kanıtlanmadı; neden kesinleşmedi (ürün kusuru olarak sınıflanmadı)` : `HTTP ${status}`);
 const dbTxt = (s) => (!s ? 'ölçülmedi' : (s.exists === false ? `hesap satırı DB'de YOK (hasPortalAccess=${s.hasPortalAccess})` : `isActive=${s.isActive} hasPortalAccess=${s.hasPortalAccess} sürüm=${s.tokenVersion}`));
 // R03-f (F3): açık portal erişiminin ÖLÇÜLEN durumu tek yerde. isActive=true → "portal hesabı AKTİF (…)"; isActive=false + hasPortalAccess=true → "portal kapanışı
 // TAMAMLANMADI: hesap pasif ama müvekkil erişim bayrağı açık (…)" — "portal hesabı açık" YAZILMAZ (guard pasif hesabı reddeder, giriş isActive=true ister:
@@ -454,7 +464,7 @@ async function closePortal(R, prisma, base, origin, receipt, P, opts) {
   if (!creds && o.credsForClosed && flags) { try { creds = await o.credsForClosed(st1); res.measureCreds = 'pasif hesaba YALNIZ ölçüm için yeni rastgele parola yazıldı (hesap pasif kaldı)'; } catch (e) { res.measureCreds = `ölçüm parolası kurulamadı: ${errText(e, 120)}`; } }
   const nl = creds ? await L.AH.httpJson('POST', `${base}/portal/login`, { body: { email: creds.email, password: creds.password }, timeoutMs: tmo }) : null;
   const nd = creds ? await L.AH.httpJson('POST', `${origin}/api/portal/login`, { body: { email: creds.email, password: creds.password }, timeoutMs: tmo }) : null;
-  const judge401 = (id, desc, r) => { if (!r) return R.unmeasured(id, desc, `kimlik bilgisi yok${res.measureCreds ? ' (' + res.measureCreds + ')' : ''} — ölçülemez`); if (r.indeterminate) return R.unmeasured(id, desc, 'yanıt alınamadı'); if (r.status === 503 || r.status === 429) return R.unmeasured(id, desc, `HTTP ${r.status} — neden UNKNOWN`); return R.check(id, desc, r.status === 401, `HTTP ${r.status}`); };
+  const judge401 = (id, desc, r) => { if (!r) return R.unmeasured(id, desc, `kimlik bilgisi yok${res.measureCreds ? ' (' + res.measureCreds + ')' : ''} — ölçülemez`); if (r.indeterminate) return R.unmeasured(id, desc, 'yanıt alınamadı'); if (r.status === 503 || r.status === 429) return R.unmeasured(id, desc, `HTTP ${r.status} — neden UNKNOWN`); return R.check(id, desc, r.status === 401, rejectObs(r.status)); };
   judge401('P6-C3L', 'kapanış sonrası YENİ portal girişi YEREL 401', nl); judge401('P6-C3D', 'kapanış sonrası YENİ portal girişi DIŞ HTTPS 401', nd);
   // Mevcut oturum: belge listesi ucu (bu paketin korumalı ucu) yerel + dış
   const el = o.portalToken ? await L.AH.httpJson('GET', `${base}/portal/documents`, { token: o.portalToken, timeoutMs: tmo }) : null;
@@ -476,7 +486,7 @@ async function closePortal(R, prisma, base, origin, receipt, P, opts) {
       if (sc.bulgu) res.productFinding = sc.bulgu;
       return R.check(id, desc, false, `${sc.gozlem} · DB: HTTP öncesi ${dbTxt(st1)} → sonrası ${dbTxt(st2)}${res.closeText ? ` · kapatma: ${res.closeText}` : ''}`);
     }
-    if (r.status === 503 || r.status === 429) return R.unmeasured(id, desc, `HTTP ${r.status} — neden UNKNOWN`); return R.check(id, desc, r.status === 401, `HTTP ${r.status}`); };
+    if (r.status === 503 || r.status === 429) return R.unmeasured(id, desc, `HTTP ${r.status} — neden UNKNOWN`); return R.check(id, desc, r.status === 401, rejectObs(r.status)); };
   judgeSession('P6-C4L', 'kapanış sonrası MEVCUT portal oturumu belge listesinde YEREL 401', el); judgeSession('P6-C4D', 'kapanış sonrası MEVCUT portal oturumu belge listesinde DIŞ HTTPS 401', ed);
   R.check('P6-C5', 'HTTP ölçümlerinden SONRA DB hâlâ kapalı (pasif + erişim kapalı + sürüm geri gitmedi)', c5ok, `isActive=${st2.isActive} hasPortalAccess=${st2.hasPortalAccess} sürüm=${st2.tokenVersion}`);
   res.docResidue = await documentResidue(R, prisma, receipt, o.knownFiles, o.residueCleanup);
@@ -875,5 +885,5 @@ function recoverStepText(out) {
 if (require.main === module) { const mode = String(process.env.D6_MODE || 'run').toLowerCase(); if (mode === 'run') runMode(); else if (mode === 'recover') recoverMode(); else { console.error(`REDDEDİLDİ: bilinmeyen D6_MODE '${mode}'`); process.exit(1); } }
 module.exports = { commonGates, runGates, LIVE_PARAMS, effectiveParams, FORBIDDEN, RECEIPT_RECORD, MAX_PDF_BYTES, buildPdf, multipart, caseListMatches, docListMatches, recoverExitCode, exitCodeOf, fileState,
   recoveryAdvice, recoverStepText, receiptFileState, readReceiptForRecover, sessionClass200, portalTokenClaimVersion, issuedVersionOf, receiptFromEvidenceCommand, recoverCloseText, C1_DESC,
-  recoverOpenAccessText };
+  recoverOpenAccessText, rejectObs };
 void scrub;

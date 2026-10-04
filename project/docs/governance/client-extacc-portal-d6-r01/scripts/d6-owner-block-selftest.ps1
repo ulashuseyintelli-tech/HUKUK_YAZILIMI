@@ -41,6 +41,18 @@
 # R03-f  : (R03-e iki bağımsız doğrulamasının MINOR bulguları; blokta YALNIZ yorum + pin) O-18 — blok kaynağında (yorumlar dahil) Recover'ın açık erişimi
 #          kapatabileceğine dair kesin ifade YOK (F2) ve R03-d'den kalma bayat "P6-C2 PASS + P6-C5 FAIL iken sürüm sınıflaması" yorumu YOK (F6); ADAY yorumu
 #          sessionClass200 karar tablosunu adlandırır. PIN-1 yeni koşucu pini + $ExpPackage ile. R03-e blok baytlarında (4b75bbe7 aynası) O-18 FAIL verir.
+# R04    : (owner kararı 2026-10-04, madde 5 + 6 — "R04-recover-girdi") YENİ RG-1..RG-10: `-Mode Recover -RunEvidenceDir` — makbuzu blok, AYRI Recover onayından
+#          (modu ayrıca başlatma + mevcut kalıntı kararı) SONRA Run kanıtındaki recovery.makbuzJson alanından Run kanıt dizininin DIŞINA (kardeş dizin) yazar ve
+#          Recover başlamadan doğrular: RG-1 geçerli çıkarma (baytlar = sahte koşucunun makbuz metni, BOM yok, LF, ek satır sonu yok, kayıt dosyası, Run dizini ve
+#          manifest değişmedi, Recover yeni dosyayla başladı, GERÇEK koşucunun okuma kapısı "ok") · RG-2 değiştirilmiş kaynak (manifest uyuşmaz / yazım sırasında
+#          değişti) · RG-3 yanlış koşum ve yanlış kayıt türü · RG-4 kimlik alanı · RG-5 eksik kaynak (kanıt / manifest / manifest satırı / makbuzJson / GO defteri
+#          satırı) · RG-6 ezme yok (hedef dizin ya da aynı adlı dosya) · RG-7 yazma hatası (gerçek ACL reddi + kısmi yazım taklidi) · RG-8 geri okuma uyuşmazlığı
+#          taklidi + KULLANILMAZ işaretli dizindeki makbuzun -ReceiptFile ile de reddi · RG-9 Recover bitiş ekranı AÇIK / KAPALI / ÖLÇÜLEMEDİ · RG-10 çift kaynak reddi + statik (sıra, otomatik Recover yok, silme yok, CreateNew,
+#          kodlama tanımı). O-13 DEĞİŞTİ: kanıtta makbuz metni varsa Run sonu ekranı elle komut yerine "-Mode Recover -RunEvidenceDir '<kanıt dizini>'" gösterir.
+#          O-15 KALDIRILDI (blok artık elle TEK komutu göstermez; makbuzu blok yazar → RG-1 iki kabukta). Sahte koşucu kanıta runId + tam receipt yazar;
+#          EXSTUB_PC ile kanıttaki portalClose verilir. Her RG kalemi kendi istisnasını yakalar ve SOMUT ret nedenini ister. 83 − 1 + 10 = 92 test.
+#          origin/main blok baytlarında (549b8344 aynası; blok 194816C5…) O-13 ve RG-1..RG-10 FAIL verir (11; negatif kontrol, iki kabukta); PIN-1 aynada PASS
+#          (eski blok + eski koşucu tutarlı).
 # KULLANIM: powershell.exe -NoProfile -ExecutionPolicy Bypass -File d6-owner-block-selftest.ps1   (ve pwsh)
 # ÇIKIŞ  : 0 hepsi PASS · 1 en az bir FAIL · 2 ölçülemedi
 $ErrorActionPreference = 'Stop'
@@ -104,11 +116,12 @@ if (process.env.EXSTUB_WRITE_EVID === '1') {
   const pc = Object.assign({}, process.env.EXSTUB_DOCDURUM ? { docResidue: { durum: process.env.EXSTUB_DOCDURUM } } : {}, process.env.EXSTUB_SV ? { sessionVersion: { sinif: process.env.EXSTUB_SV } } : {},
     process.env.EXSTUB_ACIK ? { acikErisim: process.env.EXSTUB_ACIK } : {});   // R03-e: açık portal erişimi (koşucu portalClose.acikErisim)
   const noRc = process.env.EXSTUB_EV_RECEIPT === '0';
-  fs.writeFileSync(process.env.D6_EVID_FILE, JSON.stringify({ record: process.env.D6_MODE === 'recover' ? 'EXTACC-D6-RECOVER' : 'EXTACC-D6-PORTAL-DOCUMENTS-LIVE-RUN',
+  // R04: kanıtta runId + koşucu gibi TAM receipt nesnesi (makbuzJson ile aynı alanlar); EXSTUB_PC → kanıttaki portalClose (Recover bitiş ekranı ölçümü).
+  fs.writeFileSync(process.env.D6_EVID_FILE, JSON.stringify({ record: process.env.D6_MODE === 'recover' ? 'EXTACC-D6-RECOVER' : 'EXTACC-D6-PORTAL-DOCUMENTS-LIVE-RUN', runId: String(process.env.D6_RUNID || ''),
     exitCode: Number(process.env.EXSTUB_EV_EXITCODE !== undefined ? process.env.EXSTUB_EV_EXITCODE : (process.env.EXSTUB_RC || 0)), productFinding: process.env.EXSTUB_FINDING || null,
-    receipt: noRc ? undefined : { record: 'EXTACC-D6-SETUP-RECEIPT', runId: String(process.env.D6_RUNID || ''), createdAt: '2026-10-03T20:15:25.123Z' },
+    receipt: noRc ? undefined : JSON.parse(rcptText),
     recovery: noRc ? undefined : { gerekli: true, makbuzJson: process.env.EXSTUB_STALE === '1' ? rcptText.replace('"clientId": "k",', '"clientId": "k",\n "documentId": "d",') : rcptText },
-    portalClose: Object.keys(pc).length ? pc : undefined,
+    portalClose: process.env.EXSTUB_PC ? JSON.parse(process.env.EXSTUB_PC) : (Object.keys(pc).length ? pc : undefined),
     results:[{ id: 'P6-WAIT', verdict: process.env.EXSTUB_WAIT || 'PASS' }, { id: 'P6-C-DOC', verdict: process.env.EXSTUB_DOC || 'PASS' }, { id: 'D6-1', verdict: 'PASS' }, { id: 'P6-PHONE-DOC', verdict: 'PASS' }, { id: 'P6-D9', verdict: process.env.EXSTUB_D9 || 'PASS' }]
       .concat(JSON.parse(process.env.EXSTUB_EXTRA || '[]')) }));
 }
@@ -139,7 +152,7 @@ function Set-RunEnv { & $script:RealSetRunEnv @args; Set-PriorZero; $script:Prio
 function Node-Calls { @(if (Test-Path -LiteralPath $marker) { Get-Content -LiteralPath $marker }) }
 $okAnswers = @('E', 'https://example.invalid', 'EVET', 'B', '1', 'E', 'A', 'H', 'Y', 'B', 'M', 'G')   # pencere · R05 adresi · onay · beyan x9
 $okChain = [pscustomobject]@{ loopbackCount = 1; otherAddresses = ''; loopbackPids = '4242'; caddyServiceState = 'Running'; caddyServicePid = 4242; cloudflaredStatus = 'Running' }
-function Invoke-Mode([string]$mode, [string]$nodeExe, [int]$stubRc, [bool]$writeEvid, [string]$receipt = '', [string[]]$answers = $okAnswers, [string]$waitVerdict = 'PASS', $chain = $okChain) {
+function Invoke-Mode([string]$mode, [string]$nodeExe, [int]$stubRc, [bool]$writeEvid, [string]$receipt = '', [string[]]$answers = $okAnswers, [string]$waitVerdict = 'PASS', $chain = $okChain, [string]$runDir = '') {
   $env:EXSTUB_RC = [string]$stubRc; $env:EXSTUB_WRITE_EVID = $(if ($writeEvid) { '1' } else { '0' }); $env:EXSTUB_WAIT = $waitVerdict
   Set-Answers $answers
   $g = [ordered]@{ head = 'test'; pkg = 'test'; dist = 'test'; envSha = 'test'; apiPid = 0; baseHost = 'example.invalid'; dataRootState = 'test'; bucketState = 'test-okunabilir'
@@ -148,7 +161,7 @@ function Invoke-Mode([string]$mode, [string]$nodeExe, [int]$stubRc, [bool]$write
   $ledgerBefore = if (Test-Path -LiteralPath $GoLedger) { @(Get-Content -LiteralPath $GoLedger).Count } else { 0 }
   Set-PriorZero
   $threw = $null; $out = $null
-  try { if ($mode -eq 'Run') { $out = Invoke-RunMode $g } else { $out = Invoke-RecoverMode $g $receipt } } catch { $threw = $_.Exception.Message }
+  try { if ($mode -eq 'Run') { $out = Invoke-RunMode $g } else { $out = Invoke-RecoverMode $g $receipt $runDir } } catch { $threw = $_.Exception.Message }
   $calls = @(Node-Calls)
   $ledgerAfter = if (Test-Path -LiteralPath $GoLedger) { @(Get-Content -LiteralPath $GoLedger).Count } else { 0 }
   return @{ out = $out; count = @($out).Count; threw = $threw; prior = $script:PriorAtNode; nodeCalls = $calls.Count - $before
@@ -495,6 +508,10 @@ try {
 
   # ---- R03-c: O-13 — Run çıkış 5/6 metni Recover komutunu YALNIZ kanıt dizinindeki makbuz dosyası Recover'ın okuma kapısını geçiyorsa önerir
   # R03-d: m4 (kanıttaki makbuzJson → yeni dosya: TEK komut) + m7 (BAYAT makbuz önerilmez) ile beklentiler değişti; 'bayat' durumu eklendi.
+  # R04 (DEĞİŞTİ; owner kararı 2026-10-04): kanıtta makbuz metni (recovery.makbuzJson) VARSA — kanıt dizinindeki makbuz dosyası VAR / YOK / bozuk / BAYAT fark
+  #   etmeksizin — öneri elle komut yerine "-Mode Recover -RunEvidenceDir '<kanıt dizini>'" (SOMUT yol; AYRI owner onayıyla, BİR KEZ, otomatik DEĞİL); elle TEK komut
+  #   ve "-ReceiptFile <makbuz>" / "-ReceiptFile '<yol>'" önerisi GÖSTERİLMEZ; dosyanın durumu bilgi olarak yazılır + "-ReceiptFile ile VERMEYİN". Kanıtta makbuz
+  #   metni yoksa SOMUT ENGEL (değişmedi). Run tek node çağrısı yapar (mod run) — otomatik Recover YOK.
   $o13 = [ordered]@{}; $script:goN = 30   # 31..35 başka ölçütte kullanılmaz (GO defteri tekrar kullanımı reddeder; GO biçimi iki haneli R\d{2})
   foreach ($case in @(@('var', '0', '1', 6, '0'), @('yok', '1', '1', 6, '0'), @('bozuk', 'B', '1', 5, '0'), @('yok-kanitta-yok', '1', '0', 6, '0'), @('bayat', '0', '1', 6, '1'))) {
     $env:EXSTUB_NO_RECEIPT = $case[1]; $env:EXSTUB_EV_RECEIPT = $case[2]; $env:EXSTUB_STALE = $case[4]
@@ -502,56 +519,23 @@ try {
     $o13[$case[0]] = [pscustomobject]@{ tail = $(if ($iEnd -ge 0) { $o13Txt.Substring($iEnd) } else { '' }); r = $script:capR; rc = $case[3]; ev = (Last-EvDir).FullName }
   }
   Remove-Item 'Env:EXSTUB_NO_RECEIPT', 'Env:EXSTUB_EV_RECEIPT', 'Env:EXSTUB_STALE' -ErrorAction SilentlyContinue
-  $cmd13 = '-Mode Recover -ReceiptFile <makbuz>'
   $o13Var = $o13['var']; $o13Yok = $o13['yok']; $o13Boz = $o13['bozuk']; $o13Eng = $o13['yok-kanitta-yok']; $o13Bay = $o13['bayat']
-  # Kanıttaki makbuzJson yolu: GÖSTERİLEN TEK komut + -ReceiptFile '<kanıt dizini>\d6-setup-receipt-kanittan.json' (somut yol; yer tutucu değil)
-  $pathOf = { param($x) [string]$x.ev }
-  $cmdOk = { param($x) $e = (Join-Path (& $pathOf $x) 'd6-evidence.json').Replace("'", "''"); $n = (Join-Path (& $pathOf $x) 'd6-setup-receipt-kanittan.json').Replace("'", "''")
-             $x.tail.Contains("(Get-Content -Raw -Encoding UTF8 -LiteralPath '$e' | ConvertFrom-Json).recovery.makbuzJson | Set-Content -Encoding UTF8 -NoNewline -LiteralPath '$n'") -and $x.tail.Contains("-Mode Recover -ReceiptFile '$n'") -and $x.tail.Contains('AYRI owner onayıyla, BİR KEZ') }
+  $optOk = { param($x, [string]$state) $q = ([string]$x.ev).Replace("'", "''")
+             $x.tail.Contains("    -Mode Recover -RunEvidenceDir '$q'") -and $x.tail.Contains('AYRI owner onayıyla, BİR KEZ') -and $x.tail.Contains('otomatik DEĞİL') -and
+             $x.tail.Contains('Run kanıt dizininin DIŞINDA kardeş bir dizine') -and $x.tail.Contains('biri tutmazsa Recover BAŞLAMAZ') -and
+             $x.tail.Contains("Kanıt dizinindeki makbuz dosyası (d6-setup-receipt.json): $state") -and $x.tail.Contains('-ReceiptFile ile VERMEYİN') -and
+             -not $x.tail.Contains('makbuzJson | Set-Content') -and -not $x.tail.Contains('-ReceiptFile <makbuz>') -and -not $x.tail.Contains("-ReceiptFile '") -and $x.tail -cnotmatch 'SOMUT ENGEL' }
+  # Dört durumun sonucu önce değişkene alınır (çift tırnaklı gözlem dizgesinin içinde tek tırnaklı, parantezi kapanmayan metin ayrıştırılamaz).
+  $o13sVar = [bool](& $optOk $o13Var 'VAR — kanıttaki son makbuz metniyle (recovery.makbuzJson) EŞİT'); $o13sYok = [bool](& $optOk $o13Yok 'YOK'); $o13sBoz = [bool](& $optOk $o13Boz 'OKUNAMIYOR')
+  $o13sBay = [bool](& $optOk $o13Bay 'BAYAT (kanıttaki son makbuz metniyle — recovery.makbuzJson — EŞİT DEĞİL')
   $o13Ok = (@($o13.Values | Where-Object { $_.r.out -ne $_.rc -or $_.r.nodeCalls -ne 1 -or $_.r.last.mode -ne 'run' }).Count -eq 0 -and
-            $o13Var.tail.Contains("ÖNERİDİR: $cmd13") -and $o13Var.tail.Contains('Makbuz dosyası: VAR — kanıttaki son makbuz metniyle (recovery.makbuzJson) EŞİT') -and $o13Var.tail.Contains("Recover'da DB'de doğrular") -and $o13Var.tail -cnotmatch 'BAŞLATILAMAZ' -and -not $o13Var.tail.Contains('makbuzJson | Set-Content') -and
-            -not $o13Yok.tail.Contains($cmd13) -and $o13Yok.tail.Contains('MAKBUZ DOSYASI YOK') -and $o13Yok.tail.Contains('bloktan Recover BAŞLATILAMAZ') -and (& $cmdOk $o13Yok) -and $o13Yok.tail -cnotmatch 'SOMUT ENGEL' -and
-            -not $o13Boz.tail.Contains($cmd13) -and $o13Boz.tail.Contains('MAKBUZ DOSYASI OKUNAMIYOR') -and (& $cmdOk $o13Boz) -and
-            -not $o13Eng.tail.Contains('-ReceiptFile <') -and -not $o13Eng.tail.Contains("-ReceiptFile '") -and -not $o13Eng.tail.Contains('makbuzJson | Set-Content') -and $o13Eng.tail.Contains('SOMUT ENGEL: kanıtta makbuz metni (recovery.makbuzJson) YOK') -and $o13Eng.tail.Contains('owner/CLIENT') -and
-            -not $o13Bay.tail.Contains($cmd13) -and -not $o13Bay.tail.Contains('Makbuz dosyası: VAR') -and $o13Bay.tail.Contains('MAKBUZ DOSYASI BAYAT (kanıttaki son makbuz metniyle — recovery.makbuzJson — EŞİT DEĞİL') -and $o13Bay.tail.Contains('eksik kapanış') -and $o13Bay.tail.Contains('bu dosyayla Recover ÖNERİLMEZ') -and (& $cmdOk $o13Bay))
-  Check 'O-13' 'Run çıkış 5/6 metni (GÖSTERİLEN): makbuz dosyası okuma kapısını geçiyor VE kanıttaki son makbuz metniyle (recovery.makbuzJson) EŞİTSE "ÖNERİDİR: -Mode Recover -ReceiptFile <makbuz>" + "Makbuz dosyası: VAR — … EŞİT"; R03-d: makbuz YOK (6) / bozuk (5) / BAYAT (6; m7) → diskteki dosya ÖNERİLMEZ (bayatta neden: "EŞİT DEĞİL … eksik kapanış") ve kanıttaki makbuzJson''dan yeni dosya yazan TEK komut SOMUT yollarla + "-Mode Recover -ReceiptFile ''<kanıt dizini>\d6-setup-receipt-kanittan.json''" (AYRI owner onayıyla, BİR KEZ); kanıtta makbuz metni yoksa "SOMUT ENGEL" (komut YOK) + owner/CLIENT; çıkış kodu değişmeden, tek node çağrısı' $o13Ok "istisna=$(@($o13.Values | ForEach-Object { $_.r.threw } | Where-Object { $_ }) -join ' | ') · var: rc=$($o13Var.r.out) komut=$($o13Var.tail.Contains($cmd13)) · yok: rc=$($o13Yok.r.out) komut=$($o13Yok.tail.Contains($cmd13)) tek komut=$(& $cmdOk $o13Yok) · bozuk: rc=$($o13Boz.r.out) tek komut=$(& $cmdOk $o13Boz) · kanıtta-yok: rc=$($o13Eng.r.out) engel=$($o13Eng.tail.Contains('SOMUT ENGEL')) · bayat: rc=$($o13Bay.r.out) disk önerisi=$($o13Bay.tail.Contains($cmd13)) BAYAT=$($o13Bay.tail.Contains('MAKBUZ DOSYASI BAYAT')) tek komut=$(& $cmdOk $o13Bay)"
+            $o13sVar -and $o13sYok -and $o13sBoz -and $o13sBay -and
+            -not $o13Eng.tail.Contains('-RunEvidenceDir') -and -not $o13Eng.tail.Contains('-ReceiptFile <') -and -not $o13Eng.tail.Contains("-ReceiptFile '") -and -not $o13Eng.tail.Contains('makbuzJson | Set-Content') -and
+            $o13Eng.tail.Contains('SOMUT ENGEL: kanıtta makbuz metni (recovery.makbuzJson) YOK') -and $o13Eng.tail.Contains('owner/CLIENT'))
+  Check 'O-13' 'R04 (DEĞİŞTİ): Run çıkış 5/6 metni (GÖSTERİLEN) — kanıtta makbuz metni (recovery.makbuzJson) varken (kanıt dizinindeki makbuz dosyası VAR / YOK (6) / bozuk (5) / BAYAT (6)) elle komut yerine "    -Mode Recover -RunEvidenceDir ''<kanıt dizini>''" SOMUT yolla, "AYRI owner onayıyla, BİR KEZ", "otomatik DEĞİL", makbuzun Run kanıt dizininin DIŞINDA kardeş bir dizine yazılacağı ve doğrulama tutmazsa Recover''ın BAŞLAMAYACAĞI yazılır; dosyanın durumu (VAR — … EŞİT / YOK / OKUNAMIYOR / BAYAT …) bilgi olarak + "-ReceiptFile ile VERMEYİN"; elle TEK komut ("makbuzJson | Set-Content"), "-ReceiptFile <makbuz>" ve "-ReceiptFile ''<yol>''" önerisi YOK; kanıtta makbuz metni yoksa "SOMUT ENGEL" (seçenek / komut YOK) + owner/CLIENT; çıkış kodu değişmeden, tek node çağrısı (mod run; otomatik Recover YOK)' $o13Ok "istisna=$(@($o13.Values | ForEach-Object { $_.r.threw } | Where-Object { $_ }) -join ' | ') · var: rc=$($o13Var.r.out) seçenek=$o13sVar · yok: rc=$($o13Yok.r.out) seçenek=$o13sYok · bozuk: rc=$($o13Boz.r.out) seçenek=$o13sBoz · bayat: rc=$($o13Bay.r.out) seçenek=$o13sBay · kanıtta-yok: rc=$($o13Eng.r.out) engel=$($o13Eng.tail.Contains('SOMUT ENGEL')) seçenek=$($o13Eng.tail.Contains('-RunEvidenceDir'))"
 
-  # ---- R03-d: O-15 (m4 kapı kalemi) — bloğun GÖSTERDİĞİ TEK komut Windows PowerShell 5.1 VE PowerShell 7'de GERÇEKTEN koşulur; üretilen dosya bloğun Recover
-  #      okuma kapısından (Get-ReceiptFileState + Invoke-RecoverMode okuma kısmı) VE GERÇEK koşucunun Recover kapısından (readReceiptForRecover; BOM atılır) geçer.
-  #      PowerShell 7'nin ConvertFrom-Json'u tarih biçimli dizgeleri DateTime'a çevirir (kanıttaki receipt.createdAt — gözlem); makbuzJson DİZGE alanı birebir kalmalı.
-  function Invoke-ShellCmd([string]$shell, [string]$cmd) {
-    $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd)); $saved = $env:PSModulePath; $oldE = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    try {
-      $exe = if ($shell -eq 'ps51') { $env:PSModulePath = $null; Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe' } else { [string](@(Get-Command pwsh -CommandType Application -ErrorAction SilentlyContinue) | Select-Object -First 1).Source }
-      if (-not $exe -or -not (Test-Path -LiteralPath $exe -PathType Leaf)) { return [pscustomobject]@{ rc = -1; out = "kabuk yok: $shell" } }
-      $o = & $exe -NoProfile -NonInteractive -EncodedCommand $enc 2>&1; return [pscustomobject]@{ rc = $LASTEXITCODE; out = (($o | ForEach-Object { [string]$_ }) -join ' ') }
-    } finally { $env:PSModulePath = $saved; $ErrorActionPreference = $oldE }
-  }
-  $expCopy = Join-Path $T 'o15-beklenen-makbuz.txt'; $env:EXSTUB_EXPECT_COPY = $expCopy; $env:EXSTUB_NO_RECEIPT = '1'; $env:EXSTUB_EV_RECEIPT = '1'; $script:goN = 36
-  $o15Txt = Get-HostText { $script:capR = Invoke-Mode 'Run' $real.Exe 6 $true }; $o15Run = $script:capR; $o15Ev = (Last-EvDir).FullName
-  Remove-Item 'Env:EXSTUB_EXPECT_COPY', 'Env:EXSTUB_NO_RECEIPT', 'Env:EXSTUB_EV_RECEIPT' -ErrorAction SilentlyContinue
-  $o15Cmd = @($o15Txt -split "`n" | Where-Object { $_ -cmatch '^\s+\(Get-Content -Raw -Encoding UTF8 -LiteralPath ' } | ForEach-Object { $_.Trim() })
-  $o15Exp = if (Test-Path -LiteralPath $expCopy) { [IO.File]::ReadAllText($expCopy, [Text.UTF8Encoding]::new($false)) } else { $null }
-  $o15New = Join-Path $o15Ev 'd6-setup-receipt-kanittan.json'; $o15Res = [ordered]@{}
-  $env:EXSTUB_REAL_RUNNER = Join-Path $here 'd6-portal-documents-live-run.js'
-  foreach ($sh in 'ps51', 'ps7') {
-    if (Test-Path -LiteralPath $o15New) { Remove-Item -LiteralPath $o15New -Force }
-    $x = if ($o15Cmd.Count -eq 1) { Invoke-ShellCmd $sh $o15Cmd[0] } else { [pscustomobject]@{ rc = -2; out = "komut satırı sayısı $($o15Cmd.Count)" } }
-    $dst = Join-Path $o15Ev "d6-setup-receipt-kanittan-$sh.json"; $bytes = $null; $txt = $null
-    if (Test-Path -LiteralPath $o15New -PathType Leaf) { Move-Item -LiteralPath $o15New -Destination $dst -Force; $bytes = [IO.File]::ReadAllBytes($dst); $txt = [IO.File]::ReadAllText($dst, [Text.UTF8Encoding]::new($false)) }
-    $bom = ($null -ne $bytes -and $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
-    $dateType = (Invoke-ShellCmd $sh ("(Get-Content -Raw -Encoding UTF8 -LiteralPath '{0}' | ConvertFrom-Json).receipt.createdAt.GetType().Name" -f (Join-Path $o15Ev 'd6-evidence.json').Replace("'", "''"))).out.Trim()
-    $gs1 = if ($bytes) { Get-ReceiptFileState $dst } else { $null }; $gs2 = if ($bytes) { Get-ReceiptFileState $dst $o15Exp } else { $null }
-    $rv = if ($bytes) { Invoke-Mode 'Recover' $real.Exe 0 $true $dst @('H') } else { $null }
-    $o15Res[$sh] = [pscustomobject]@{ rc = $x.rc; out = $x.out; bom = $bom; same = ($null -ne $txt -and $null -ne $o15Exp -and $txt -ceq $o15Exp); gate1 = ($gs1 -and $gs1.usable); gate2 = ($gs2 -and $gs2.usable)
-                                      recThrew = $(if ($rv) { $rv.threw } else { 'koşulmadı' }); recNode = $(if ($rv) { $rv.nodeCalls } else { 0 }); rgate = $(if ($rv -and $rv.last) { $rv.last.rgate } else { $null }); recPath = $(if ($rv -and $rv.last) { $rv.last.receiptPath } else { $null }); dateType = $dateType }
-  }
-  Remove-Item 'Env:EXSTUB_REAL_RUNNER' -ErrorAction SilentlyContinue
-  $p51 = $o15Res['ps51']; $p7 = $o15Res['ps7']
-  $o15Ok = ($o15Run.out -eq 6 -and $o15Cmd.Count -eq 1 -and $null -ne $o15Exp -and $o15Exp.Contains('"createdAt": "2026-10-03T20:15:25.123Z"') -and
-            $p51.rc -eq 0 -and $p51.bom -and $p51.same -and $p51.gate1 -and $p51.gate2 -and -not $p51.recThrew -and $p51.recNode -eq 1 -and $p51.rgate -eq 'ok' -and $p51.recPath -eq (Join-Path $o15Ev 'd6-setup-receipt-kanittan-ps51.json') -and
-            $p7.rc -eq 0 -and -not $p7.bom -and $p7.same -and $p7.gate1 -and $p7.gate2 -and -not $p7.recThrew -and $p7.recNode -eq 1 -and $p7.rgate -eq 'ok')
-  Check 'O-15' 'kanıttaki makbuzJson → yeni makbuz: bloğun GÖSTERDİĞİ TEK komut Windows PowerShell 5.1 ve PowerShell 7''de koşuldu (çıkış 0); 5.1 dosyası UTF-8 BOM''lu, 7 dosyası BOM''suz; iki dosyanın metni (BOM hariç) sahte koşucunun yazdığı makbuz metnine BİREBİR eşit (tarih biçimli createdAt + ASCII dışı karakter dahil — dizge alanı tarih dönüşümüne UĞRAMADI); iki dosya bloğun Recover okuma kapısından geçer (Get-ReceiptFileState; makbuzJson eşitliği dahil) ve Invoke-RecoverMode okuma kısmı DUR vermeden koşucuyu bu dosyayla çağırır; GERÇEK koşucunun Recover okuma kapısı (readReceiptForRecover, BOM atılır) iki dosyada "ok"' $o15Ok "Run rc=$($o15Run.out) komut satırı=$($o15Cmd.Count) · ps51: rc=$($p51.rc) BOM=$($p51.bom) birebir=$($p51.same) blok kapısı=$($p51.gate1)/$($p51.gate2) Recover istisna=[$($p51.recThrew)] node=$($p51.recNode) koşucu kapısı=$($p51.rgate) receipt.createdAt türü=$($p51.dateType) çıktı=[$($p51.out)] · ps7: rc=$($p7.rc) BOM=$($p7.bom) birebir=$($p7.same) blok kapısı=$($p7.gate1)/$($p7.gate2) Recover istisna=[$($p7.recThrew)] node=$($p7.recNode) koşucu kapısı=$($p7.rgate) receipt.createdAt türü=$($p7.dateType) çıktı=[$($p7.out)]"
+  # ---- R03-d: O-15 KALDIRILDI (R04): blok artık elle TEK komutu göstermez; makbuzu -RunEvidenceDir ile blok yazar ve doğrular → RG-1 (iki kabukta, GERÇEK koşucunun
+  #      readReceiptForRecover kapısı dahil). O-15'in ölçtüğü TEK komut kanıttaki kurtarma adımı metninde (koşucu) kalır; bloğun öneri yolu değildir.
 
   # ---- R03-d: O-16 (M1, blok tarafı) — ürün bulgusu ADAYI (kanıtta portalClose.sessionVersion.sinif=ADAY) "ADAYIDIR (CLIENT doğrular)" diye gösterilir; kesin bulgu metni korunur
   $env:EXSTUB_FINDING = 'ÜRÜN BULGUSU ADAYI: x'; $env:EXSTUB_SV = 'ADAY'; $env:EXSTUB_D9 = 'FAIL'; $script:goN = 37
@@ -583,10 +567,259 @@ try {
   $o18Kap = ([regex]::Matches($o18Src, 'Recover kapatabilir')).Count; $o18Eski = ([regex]::Matches($o18Src, [regex]::Escape('P6-C2 PASS + P6-C5 FAIL iken sürüm sınıflaması'))).Count
   $o18Ok = ($o18Src.Length -gt 1000 -and $o18Kap -eq 0 -and $o18Eski -eq 0 -and $o18Src.Contains('sessionClass200 karar tablosunun ADAY hücreleri'))
   Check 'O-18' 'R03-f (F2 + F6): blok kaynağında (yorumlar dahil) "Recover kapatabilir" YOK; R03-d''den kalma bayat yorum ("P6-C2 PASS + P6-C5 FAIL iken sürüm sınıflaması") YOK; ADAY gösterim yorumu "sessionClass200 karar tablosunun ADAY hücreleri" der' $o18Ok "kaynak=$($o18Src.Length) karakter · Recover-kapatabilir sayısı=$o18Kap · bayat R03-d yorumu=$o18Eski · karar tablosu yorumu=$($o18Src.Contains('sessionClass200 karar tablosunun ADAY hücreleri'))"
+
+  # ================================================================ R04 — RG-1..RG-10: `-Mode Recover -RunEvidenceDir` (owner kararı 2026-10-04, madde 5 + 6)
+  # KAYNAK: sahte koşucuyla GERÇEK Invoke-RunMode'un ürettiği tamamlanmış Run kanıt dizini (kanıt + owner-block.json + goref-consumed.json + owner-declaration.json +
+  #   makbuz + log + SHA256-MANIFEST.txt; GO defteri satırı). Ret kalemleri bu dizinin KOPYALARI üzerinde koşar (her kopya AYRI üst dizinde → kardeş dizinler
+  #   karışmaz); kopyada bir dosya değiştirilirse manifest bloğun kendi Write-Manifest'iyle yeniden yazılır ("manifest uyuşmaz" kalemleri hariç).
+  # YÖNTEM: her kalem kendi istisnasını yakalar (Invoke-RgItem) — eski blok baytlarında fonksiyon yoksa kalem FAIL verir, öz-test "ölçülemedi"ye düşmez. Fonksiyon /
+  #   değişken gölgeleri (yazma hatası, geri okuma, zaman damgası, GO defteri) kalemin KENDİ kapsamında tanımlanır ve kalem bitince kendiliğinden kalkar (R-7'deki
+  #   `node` gölgesiyle aynı yöntem). Her ret kalemi SOMUT neden metnini ister (yalnız "DUR" yetmez) → eski blokta rastlantıyla PASS vermez.
+  function Invoke-RgItem([string]$id, [string]$desc, [scriptblock]$body) {
+    $res = $null; $err = $null
+    try { $res = @(& $body) | Select-Object -Last 1 } catch { $err = $_.Exception.Message }
+    Check $id $desc ([bool]($null -eq $err -and $res -and $res.ok -eq $true)) ($(if ($res) { [string]$res.obs } else { 'sonuç yok' }) + $(if ($err) { " · istisna=$err" } else { '' }))
+  }
+  function Get-RgSnap([string]$dir) {
+    if (-not (Test-Path -LiteralPath $dir -PathType Container)) { return 'DİZİN-YOK' }
+    return ((@(Get-ChildItem -LiteralPath $dir -Force | Sort-Object Name | ForEach-Object { if ($_.PSIsContainer) { "D:$($_.Name)" } else { "F:$($_.Name):$(Sha $_.FullName)" } })) -join '|')
+  }
+  function New-RgCase([string]$name, [string[]]$skip = @(), [string]$leaf = '') {
+    $up = Join-Path $rgRoot $name; New-Item -ItemType Directory -Path $up | Out-Null
+    $dst = Join-Path $up $(if ($leaf) { $leaf } else { Split-Path -Leaf $rgSrc }); New-Item -ItemType Directory -Path $dst | Out-Null
+    foreach ($f in @(Get-ChildItem -LiteralPath $rgSrc -File -Force)) { if ($skip -notcontains $f.Name) { [IO.File]::WriteAllBytes((Join-Path $dst $f.Name), [IO.File]::ReadAllBytes($f.FullName)) } }
+    return $dst
+  }
+  function Edit-RgFile([string]$dir, [string]$name, [string]$old, [string]$new, [bool]$manifest = $true) {
+    $p = Join-Path $dir $name; $enc = [Text.UTF8Encoding]::new($false); $txt = [IO.File]::ReadAllText($p, $enc)
+    if (-not $txt.Contains($old)) { throw "RG düzeneği: $name içinde beklenen metin yok [$old]" }
+    [IO.File]::WriteAllText($p, $txt.Replace($old, $new), $enc)
+    if ($manifest) { Write-Manifest $dir }
+  }
+  # Recover'ı -RunEvidenceDir ile koşar; gösterilen metni, sonucu, kardeş dizinlerin durumunu ve kaynak dizinin değişip değişmediğini (ad + sha256 dökümü) döndürür.
+  function Invoke-RgRecover([string]$dir, [string[]]$answers = @('H'), [string]$receipt = '', [int]$stubRc = 0) {
+    $up = Split-Path -Parent $dir; $snapBefore = Get-RgSnap $dir
+    $txt = Get-HostText { $script:capR = Invoke-Mode 'Recover' $real.Exe $stubRc $true $receipt $answers 'PASS' $okChain $dir }; $r = $script:capR
+    $sib = @(if (Test-Path -LiteralPath $up -PathType Container) { Get-ChildItem -LiteralPath $up -Force | Where-Object { $_.Name -like '*.recover-girdi-*' } })
+    $sibDirs = @($sib | Where-Object { $_.PSIsContainer })
+    $inSib = { param([string]$n) @($sibDirs | Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName $n) -PathType Leaf }).Count }
+    return [pscustomobject]@{ r = $r; txt = $txt; msg = [string]$r.threw; dur = ($r.threw -like 'EXTACC-D6-DUR:*'); node = $r.nodeCalls; sib = $sib.Count; sibDirs = $sibDirs
+      receipts = (& $inSib 'd6-setup-receipt-kanittan.json'); records = (& $inSib 'RECOVER-GIRDI-KAYDI.json'); marks = (& $inSib 'RECOVER-GIRDI-KULLANILMAZ.txt')
+      recDirs = @($sibDirs | ForEach-Object { Get-ChildItem -LiteralPath $_.FullName -Directory -Filter 'recover-*' }).Count; same = ((Get-RgSnap $dir) -ceq $snapBefore); ledger = $r.ledgerDelta }
+  }
+  # Yazımdan ÖNCE ret: DUR + somut neden + "Recover başlamadı" + node çağrısı 0 + kardeş dizin OLUŞMADI + kaynak dizin değişmedi + GO defteri değişmedi.
+  $rgPre = { param($x, [string]$needle) [bool]($x.dur -and $x.msg.Contains($needle) -and $x.msg.Contains('Recover başlamadı') -and $x.node -eq 0 -and $x.sib -eq 0 -and $x.same -and $x.ledger -eq 0) }
+  # Hedef dizin oluştuktan SONRA ret: DUR + somut neden + "Recover BAŞLAMADI (başarı sayılmaz)" + dizin SİLİNMEDİ + KULLANILMAZ işareti + kayıt dosyası yok + recover-* yok + node 0.
+  $rgPost = { param($x, [string]$needle) [bool]($x.dur -and $x.msg.Contains($needle) -and $x.msg.Contains('Recover BAŞLAMADI (başarı sayılmaz)') -and $x.msg.Contains('Hedef dizin SİLİNMEDİ') -and $x.msg.Contains('KULLANILMAZ diye işaretlendi (RECOVER-GIRDI-KULLANILMAZ.txt)') -and
+                                           $x.node -eq 0 -and $x.sib -eq 1 -and $x.marks -eq 1 -and $x.records -eq 0 -and $x.recDirs -eq 0 -and $x.ledger -eq 0) }
+  $rgRoot = Join-Path $T 'rg'; New-Item -ItemType Directory -Path $rgRoot | Out-Null
+  $rgExpFile = Join-Path $T 'rg-beklenen-makbuz.txt'; $rgSrc = $null; $rgRunId = $null; $rgExp = $null; $rgSetupErr = $null; $rgOther = 'ffffffff'
+  try {
+    # Beklenen baytlar: sahte koşucunun yazdığı makbuz metni (node, UTF-8) — PowerShell'in JSON ayrıştırmasından BAĞIMSIZ kaynak.
+    $env:EXSTUB_EXPECT_COPY = $rgExpFile; $script:goN = 20
+    $null = Get-HostText { $script:capR = Invoke-Mode 'Run' $real.Exe 6 $true }
+    if ($script:capR.out -ne 6) { throw "RG kaynağı Run çıkışı $($script:capR.out) (6 bekleniyor) · $($script:capR.threw)" }
+    $rgSrc = (Last-EvDir).FullName; $rgRunId = [regex]::Match((Split-Path -Leaf $rgSrc), '^extacc-d6-live-([0-9a-f]{8})-').Groups[1].Value
+    $rgExp = [IO.File]::ReadAllBytes($rgExpFile); if ($rgRunId -ceq $rgOther) { $rgOther = 'eeeeeeee' }
+  } catch { $rgSetupErr = $_.Exception.Message } finally { Remove-Item 'Env:EXSTUB_EXPECT_COPY' -ErrorAction SilentlyContinue }
+
+  Invoke-RgItem 'RG-1' 'R04 geçerli çıkarma (GERÇEK Run kanıt dizini, -RunEvidenceDir, kalıntı kararı H): hedef Run dizininin KARDEŞİ "<Run dizini>.recover-girdi-<UTC yyyyMMddTHHmmssZ>" (Run dizininin İÇİNDE değil); yeni makbuzun baytları sahte koşucunun yazdığı makbuz metninin UTF-8 baytlarına BİREBİR eşit (tarih biçimli alan + ASCII dışı karakter + ters bölü dahil), BOM YOK ("{" ile başlar), satır sonu yalnız LF (CR yok), sonda ek satır sonu YOK ("}" ile biter); RECOVER-GIRDI-KAYDI.json (BOM''suz): kaynak dizin adı + kanıt adı + kanıt sha256 + manifest sha256 + manifest satırı + runId + yeni dosyanın sha256''sı / bayt sayısı + kodlama tanımı + bağımsız çapa durumu (manifest ve kanıt için YOK; runId için GO defteri); Run kanıt dizini (dosya adları + her dosyanın sha256''sı, alt dizin yok) ve manifest DEĞİŞMEDİ; Recover (sahte koşucu) YENİ dosyayla başladı (mod recover, kalıntı=0, tek node çağrısı) ve GERÇEK koşucunun readReceiptForRecover kapısı "ok"; recover-* kanıt dizini kardeş dizinde; ekranda kaynak özeti + "SINIR: manifestin bağımsız çapası YOK" Recover bitiş satırından ÖNCE; GO defteri değişmedi' {
+    if ($rgSetupErr -or -not $rgSrc) { throw "RG kaynağı kurulamadı: $rgSetupErr" }
+    $snap0 = Get-RgSnap $rgSrc; $evSha0 = Sha (Join-Path $rgSrc 'd6-evidence.json'); $manSha0 = Sha (Join-Path $rgSrc 'SHA256-MANIFEST.txt')
+    $manAll = @(Get-Content -LiteralPath (Join-Path $rgSrc 'SHA256-MANIFEST.txt') | Where-Object { $_ }); $manLine = @($manAll | Where-Object { $_ -cmatch '  d6-evidence\.json$' })
+    $env:EXSTUB_REAL_RUNNER = Join-Path $here 'd6-portal-documents-live-run.js'
+    try { $x = Invoke-RgRecover $rgSrc @('H') } finally { Remove-Item 'Env:EXSTUB_REAL_RUNNER' -ErrorAction SilentlyContinue }
+    $tgt = if ($x.sibDirs.Count -eq 1) { [string]$x.sibDirs[0].FullName } else { '' }; $tgtLeaf = if ($tgt) { Split-Path -Leaf $tgt } else { '' }
+    $nameOk = ($tgt -and $tgtLeaf -cmatch ('^' + [regex]::Escape((Split-Path -Leaf $rgSrc)) + '\.recover-girdi-\d{8}T\d{6}Z$') -and (Split-Path -Parent $tgt) -eq (Split-Path -Parent $rgSrc))
+    $np = if ($tgt) { Join-Path $tgt 'd6-setup-receipt-kanittan.json' } else { '' }
+    $nb = if ($np -and (Test-Path -LiteralPath $np -PathType Leaf)) { [IO.File]::ReadAllBytes($np) } else { $null }
+    $bytesOk = ($null -ne $nb -and $null -ne $rgExp -and $rgExp.Length -gt 150 -and [Convert]::ToBase64String($nb) -ceq [Convert]::ToBase64String($rgExp))
+    $bomOk = ($null -ne $nb -and $nb[0] -eq 0x7B -and -not ($nb[0] -eq 0xEF -and $nb[1] -eq 0xBB -and $nb[2] -eq 0xBF))
+    $lfN = if ($nb) { @($nb | Where-Object { $_ -eq 10 }).Count } else { -1 }; $crN = if ($nb) { @($nb | Where-Object { $_ -eq 13 }).Count } else { -1 }; $hiN = if ($nb) { @($nb | Where-Object { $_ -gt 127 }).Count } else { -1 }
+    $eolOk = ($lfN -ge 8 -and $crN -eq 0 -and $hiN -gt 0 -and $nb[$nb.Length - 1] -eq 0x7D)
+    $kp = if ($tgt) { Join-Path $tgt 'RECOVER-GIRDI-KAYDI.json' } else { '' }; $k = $null; $kb = $null
+    if ($kp -and (Test-Path -LiteralPath $kp -PathType Leaf)) { $kb = [IO.File]::ReadAllBytes($kp); $k = [IO.File]::ReadAllText($kp, [Text.UTF8Encoding]::new($false)) | ConvertFrom-Json }
+    $recOk = ($k -and $k.record -ceq 'EXTACC-D6-RECOVER-INPUT' -and $k.runId -ceq $rgRunId -and $k.kaynakDizinAdi -ceq (Split-Path -Leaf $rgSrc) -and $k.kaynakKanit -ceq 'd6-evidence.json' -and $k.kaynakKanitSha256 -ceq $evSha0 -and
+               $k.kaynakKayitTuru -ceq 'EXTACC-D6-PORTAL-DOCUMENTS-LIVE-RUN' -and $k.manifestSha256 -ceq $manSha0 -and $manLine.Count -eq 1 -and $k.manifestSatiri -ceq $manLine[0] -and [int]$k.manifestDogrulananDosya -eq $manAll.Count -and
+               $k.makbuzDosyasi -ceq 'd6-setup-receipt-kanittan.json' -and $k.makbuzSha256 -ceq (Sha $np) -and [int]$k.makbuzBayt -eq $rgExp.Length -and ([string]$k.kodlama).Contains('BOM YOK') -and ([string]$k.kodlama).Contains('sonda ek satır sonu YOK') -and
+               ([string]$k.bagimsizCapa.manifestVeKanit).StartsWith('YOK') -and ([string]$k.bagimsizCapa.runId).Contains("runId=$rgRunId") -and [string]$k.atUtc -and $kb[0] -eq 0x7B)
+    $rp = [string]$x.r.last.receiptPath
+    $startOk = (-not $x.r.threw -and $x.r.out -eq 0 -and $x.node -eq 1 -and $x.r.last.mode -eq 'recover' -and $x.r.last.residue -eq '0' -and $x.r.last.rgate -eq 'ok' -and $rp -and (Split-Path -Leaf $rp) -ceq 'd6-setup-receipt-kanittan.json' -and
+                 (Split-Path -Leaf (Split-Path -Parent $rp)) -ceq $tgtLeaf -and $x.recDirs -eq 1 -and $x.receipts -eq 1 -and $x.records -eq 1 -and $x.marks -eq 0 -and $x.ledger -eq 0 -and $x.r.secretsLeft -eq 0)
+    $srcOk = ($x.same -and (Get-RgSnap $rgSrc) -ceq $snap0 -and $snap0 -cnotmatch '(^|\|)D:' -and (Sha (Join-Path $rgSrc 'd6-evidence.json')) -ceq $evSha0 -and (Sha (Join-Path $rgSrc 'SHA256-MANIFEST.txt')) -ceq $manSha0)
+    $iH = $x.txt.IndexOf('RECOVER GİRDİSİ HAZIR'); $iS = $x.txt.IndexOf('SINIR: manifestin bağımsız çapası YOK'); $iE = $x.txt.IndexOf('KURTARMA BİTTİ')
+    $txtOk = ($iH -ge 0 -and $iS -gt $iH -and $iE -gt $iS -and $x.txt.Contains('UTF-8 BOM YOK, satır sonları dönüştürülmedi, sonda ek satır sonu YOK') -and $x.txt.Contains('Run kanıt dizinine yazılmadı'))
+    [pscustomobject]@{ ok = ($nameOk -and $bytesOk -and $bomOk -and $eolOk -and $recOk -and $startOk -and $srcOk -and $txtOk)
+      obs = "hedef adı=$nameOk [$tgtLeaf] · baytlar birebir=$bytesOk ($(if ($nb) { $nb.Length } else { '-' })/$(if ($rgExp) { $rgExp.Length } else { '-' }) bayt) · BOM yok=$bomOk · LF=$lfN CR=$crN ASCII dışı bayt=$hiN son bayt }=$eolOk · kayıt dosyası=$recOk · Recover yeni dosyayla=$startOk (rc=$($x.r.out) node=$($x.node) mod=$($x.r.last.mode) koşucu kapısı=$($x.r.last.rgate) recover dizini=$($x.recDirs)) · Run dizini + manifest değişmedi=$srcOk · ekran=$txtOk · istisna=[$($x.r.threw)]" }
+  }
+
+  Invoke-RgItem 'RG-2' 'R04 DEĞİŞTİRİLMİŞ kaynak → RED, Recover başlamaz: (kontrol) değiştirilmemiş kopya kaynak doğrulamasını geçer; (a) kanıttaki recovery.makbuzJson değiştirilmiş, manifest eski → "manifest uyuşmuyor: d6-evidence.json"; (b) manifestteki kanıt satırının özeti değiştirilmiş → aynı ret; (c) manifestteki BAŞKA bir dosya (owner-block.json) değiştirilmiş → "manifest uyuşmuyor: owner-block.json" (a–c: kardeş dizin OLUŞMAZ, node çağrısı 0); (d) kaynak kanıt makbuz yazılırken değişirse (taklit: yazımdan hemen sonra kanıta bayt eklenir) → "yazım sırasında DEĞİŞTİ", hedef dizin KULLANILMAZ diye işaretlenir, kayıt dosyası yazılmaz, node çağrısı 0' {
+    $c0 = New-RgCase 'rg2-kontrol'; $s0 = Test-RunEvidenceSource $c0
+    $ctl = ($s0.runId -ceq $rgRunId -and [Convert]::ToBase64String($s0.bytes) -ceq [Convert]::ToBase64String($rgExp) -and @(Get-ChildItem -LiteralPath (Split-Path -Parent $c0) -Force).Count -eq 1)
+    $ca = New-RgCase 'rg2-makbuz'; Edit-RgFile $ca 'd6-evidence.json' '\"clientId\": \"k\"' '\"clientId\": \"x\"' $false; $xa = Invoke-RgRecover $ca
+    $cb = New-RgCase 'rg2-satir'; $mp = Join-Path $cb 'SHA256-MANIFEST.txt'
+    [IO.File]::WriteAllLines($mp, @([IO.File]::ReadAllLines($mp) | ForEach-Object { if ($_ -cmatch '  d6-evidence\.json$') { ('0' * 64) + '  d6-evidence.json' } else { $_ } }), [Text.Encoding]::ASCII); $xb = Invoke-RgRecover $cb
+    $cc = New-RgCase 'rg2-diger'; [IO.File]::AppendAllText((Join-Path $cc 'owner-block.json'), ' '); $xc = Invoke-RgRecover $cc
+    $rgDirD = New-RgCase 'rg2-yazimda'; $rgRealW = ${function:Write-NewFileBytes}; $script:rgW = 0
+    function Write-NewFileBytes([string]$path, [byte[]]$bytes) { & $rgRealW $path $bytes; $script:rgW++; if ($script:rgW -eq 1) { [IO.File]::AppendAllText((Join-Path $rgDirD 'd6-evidence.json'), ' ') } }
+    $xd = Invoke-RgRecover $rgDirD
+    $okA = (& $rgPre $xa 'manifest uyuşmuyor: d6-evidence.json'); $okB = (& $rgPre $xb 'manifest uyuşmuyor: d6-evidence.json'); $okC = (& $rgPre $xc 'manifest uyuşmuyor: owner-block.json')
+    $okD = ((& $rgPost $xd 'yazım sırasında DEĞİŞTİ') -and -not $xd.same -and $script:rgW -ge 2)
+    [pscustomobject]@{ ok = ($ctl -and $okA -and $okB -and $okC -and $okD); obs = "kontrol=$ctl · (a) makbuzJson=$okA [$($xa.msg)] · (b) manifest satırı=$okB · (c) başka dosya=$okC [$($xc.msg)] · (d) yazımda değişti=$okD (işaret=$($xd.marks) kayıt=$($xd.records) node=$($xd.node)) [$($xd.msg)]" }
+  }
+
+  Invoke-RgItem 'RG-3' 'R04 BOZULMUŞ / YANLIŞ KOŞUMA ait makbuz → RED, Recover başlamaz (manifest her kopyada yeniden yazıldı → ret nedeni hash değil içerik): (a) makbuzJson içindeki runId başka koşum → "makbuz BAŞKA bir koşuma ait"; (b) kanıt kayıt türü Recover kanıtı → "kayıt türü Run kanıtı DEĞİL"; (c) dizin adındaki runId kanıttakiyle farklı → "dizin adındaki runId"; (d) makbuzJson JSON değil → "JSON olarak ayrıştırılamadı"; (e) makbuzJson kayıt türü makbuz değil → "Recover okuma kapısını geçmez"; hepsinde kardeş dizin OLUŞMAZ, node çağrısı 0, kaynak değişmez' {
+    $ca = New-RgCase 'rg3-baska-kosum'; Edit-RgFile $ca 'd6-evidence.json' ('\"runId\": \"' + $rgRunId + '\"') ('\"runId\": \"' + $rgOther + '\"'); $xa = Invoke-RgRecover $ca
+    $cb = New-RgCase 'rg3-recover-kaniti'; Edit-RgFile $cb 'd6-evidence.json' '"record":"EXTACC-D6-PORTAL-DOCUMENTS-LIVE-RUN"' '"record":"EXTACC-D6-RECOVER"'; $xb = Invoke-RgRecover $cb
+    $cc = New-RgCase 'rg3-dizin-adi' @() ('extacc-d6-live-' + $rgOther + '-20000101-000000'); $xc = Invoke-RgRecover $cc
+    $cd = New-RgCase 'rg3-bozuk'; Edit-RgFile $cd 'd6-evidence.json' '"makbuzJson":"{' '"makbuzJson":"['; $xd = Invoke-RgRecover $cd
+    $ce = New-RgCase 'rg3-makbuz-turu'; Edit-RgFile $ce 'd6-evidence.json' '\"record\": \"EXTACC-D6-SETUP-RECEIPT\"' '\"record\": \"BASKA\"'; $xe = Invoke-RgRecover $ce
+    $okA = (& $rgPre $xa 'makbuz BAŞKA bir koşuma ait'); $okB = (& $rgPre $xb 'kayıt türü Run kanıtı DEĞİL'); $okC = (& $rgPre $xc 'dizin adındaki runId'); $okD = (& $rgPre $xd 'JSON olarak ayrıştırılamadı'); $okE = (& $rgPre $xe 'Recover okuma kapısını geçmez')
+    [pscustomobject]@{ ok = ($okA -and $okB -and $okC -and $okD -and $okE); obs = "(a) başka koşum=$okA [$($xa.msg)] · (b) Recover kanıtı=$okB · (c) dizin adı=$okC · (d) bozuk JSON=$okD [$($xd.msg)] · (e) makbuz türü=$okE" }
+  }
+
+  Invoke-RgItem 'RG-4' 'R04 KİMLİK alanı uyuşmaz → RED, Recover başlamaz (manifest yeniden yazıldı): makbuzJson içindeki tenantId / tenantSlug / clientId / elevUserId / elevEmail kanıttaki receipt nesnesinden farklı → her biri "kimlik alanı uyuşmuyor: <alan>"; makbuz ve receipt birbirine eşit ama tenantSlug runId''den türetilen değer değil → "tenantSlug runId''den türetilen"; owner-block.json başka koşumun kaydı → "owner-block.json bu Run''ın blok kaydı DEĞİL"; hepsinde kardeş dizin OLUŞMAZ, node çağrısı 0' {
+    $bad = @(); $n = 0
+    foreach ($c in @(@('tenantId', '\"tenantId\": \"t\"', '\"tenantId\": \"z\"'), @('tenantSlug', ('\"tenantSlug\": \"ah-' + $rgRunId + '\"'), ('\"tenantSlug\": \"ah-' + $rgOther + '\"')), @('clientId', '\"clientId\": \"k\"', '\"clientId\": \"x\"'),
+                     @('elevUserId', '\"elevUserId\": \"u\"', '\"elevUserId\": \"v\"'), @('elevEmail', '\"elevEmail\": \"e@example.invalid\"', '\"elevEmail\": \"x@example.invalid\"'))) {
+      $cx = New-RgCase ('rg4-' + $c[0]); Edit-RgFile $cx 'd6-evidence.json' $c[1] $c[2]; $xx = Invoke-RgRecover $cx; $n++
+      if (-not (& $rgPre $xx ('kimlik alanı uyuşmuyor: ' + $c[0] + ' '))) { $bad += ($c[0] + ': ' + $xx.msg) }
+    }
+    $cs = New-RgCase 'rg4-turetilen'; Edit-RgFile $cs 'd6-evidence.json' ('\"tenantSlug\": \"ah-' + $rgRunId + '\"') ('\"tenantSlug\": \"ah-' + $rgOther + '\"') $false
+    Edit-RgFile $cs 'd6-evidence.json' ('"tenantSlug":"ah-' + $rgRunId + '"') ('"tenantSlug":"ah-' + $rgOther + '"'); $xs = Invoke-RgRecover $cs
+    $co = New-RgCase 'rg4-blok-kaydi'; Edit-RgFile $co 'owner-block.json' $rgRunId $rgOther; $xo = Invoke-RgRecover $co
+    $okS = (& $rgPre $xs "tenantSlug runId'den türetilen"); $okO = (& $rgPre $xo "owner-block.json bu Run'ın blok kaydı DEĞİL")
+    [pscustomobject]@{ ok = ($n -eq 5 -and $bad.Count -eq 0 -and $okS -and $okO); obs = "alan kalemi=$n · uyuşmayan=$(if ($bad.Count) { $bad -join ' | ' } else { 'yok' }) · türetilen slug=$okS [$($xs.msg)] · blok kaydı=$okO [$($xo.msg)]" }
+  }
+
+  Invoke-RgItem 'RG-5' 'R04 EKSİK kaynak → RED, Recover başlamaz: (a) Run kanıt dizini yok / (b) yol bir dosya → "Run kanıt dizini yok ya da dizin değil"; (c) kanıt dosyası yok (manifestte satırı var) → "manifestteki dosya YOK: d6-evidence.json"; (d) manifest yok → "SHA256-MANIFEST.txt YOK"; (e) manifestte kanıt satırı yok → "d6-evidence.json satırı YOK"; (f) kanıtta recovery.makbuzJson yok → "makbuz metni (recovery.makbuzJson) YOK"; (g) manifestte goref-consumed.json satırı yok → "goref-consumed.json satırı YOK"; (h) GO defterinde bu Run''ın satırı yok (kanıt dizini DIŞINDAKİ runId çapası) → "GO defterinde bu Run''ın satırı"; hepsinde kardeş dizin OLUŞMAZ, node çağrısı 0' {
+    $upA = Join-Path $rgRoot 'rg5-yok'; New-Item -ItemType Directory -Path $upA | Out-Null; $xa = Invoke-RgRecover (Join-Path $upA (Split-Path -Leaf $rgSrc))
+    $upB = Join-Path $rgRoot 'rg5-dosya'; New-Item -ItemType Directory -Path $upB | Out-Null; $fb = Join-Path $upB (Split-Path -Leaf $rgSrc); [IO.File]::WriteAllText($fb, 'dizin değil'); $xb = Invoke-RgRecover $fb
+    $cc = New-RgCase 'rg5-kanit' @('d6-evidence.json'); $xc = Invoke-RgRecover $cc
+    $cd = New-RgCase 'rg5-manifest' @('SHA256-MANIFEST.txt'); $xd = Invoke-RgRecover $cd
+    $ce = New-RgCase 'rg5-satir'; $mp = Join-Path $ce 'SHA256-MANIFEST.txt'; [IO.File]::WriteAllLines($mp, @([IO.File]::ReadAllLines($mp) | Where-Object { $_ -cnotmatch '  d6-evidence\.json$' }), [Text.Encoding]::ASCII); $xe = Invoke-RgRecover $ce
+    $cf = New-RgCase 'rg5-makbuzjson'; Edit-RgFile $cf 'd6-evidence.json' '"recovery":{' '"recoveryX":{'; $xf = Invoke-RgRecover $cf
+    $cg = New-RgCase 'rg5-goref' @('goref-consumed.json'); Write-Manifest $cg; $xg = Invoke-RgRecover $cg
+    $ch = New-RgCase 'rg5-defter'; $xh = & { $GoLedger = Join-Path $T 'rg-bos-defter.txt'; Invoke-RgRecover $ch }
+    $okA = (& $rgPre $xa 'Run kanıt dizini yok ya da dizin değil'); $okB = (& $rgPre $xb 'Run kanıt dizini yok ya da dizin değil'); $okC = (& $rgPre $xc 'manifestteki dosya YOK: d6-evidence.json'); $okD = (& $rgPre $xd 'SHA256-MANIFEST.txt YOK')
+    $okE = (& $rgPre $xe "SHA256-MANIFEST.txt'de d6-evidence.json satırı YOK"); $okF = (& $rgPre $xf 'kanıtta makbuz metni (recovery.makbuzJson) YOK'); $okG = (& $rgPre $xg "SHA256-MANIFEST.txt'de goref-consumed.json satırı YOK"); $okH = (& $rgPre $xh "GO defterinde bu Run'ın satırı")
+    [pscustomobject]@{ ok = ($okA -and $okB -and $okC -and $okD -and $okE -and $okF -and $okG -and $okH); obs = "(a) dizin yok=$okA · (b) dosya=$okB · (c) kanıt yok=$okC [$($xc.msg)] · (d) manifest yok=$okD · (e) kanıt satırı yok=$okE · (f) makbuzJson yok=$okF [$($xf.msg)] · (g) goref satırı yok=$okG · (h) GO defteri satırı yok=$okH [$($xh.msg)]" }
+  }
+
+  Invoke-RgItem 'RG-6' 'R04 EZME YOK: (a) hedef kardeş dizin ZATEN VAR (içinde eski bir makbuz dosyası) → "hedef ZATEN VAR (ezilmez)", eski dosyanın baytları DEĞİŞMEDİ, kayıt / işaret dosyası yazılmadı, node çağrısı 0; (b) hedef yol bir DOSYA → aynı ret, dosya değişmedi; (c) Write-NewFileBytes var olan dosyaya yazmaz (CreateNew → istisna; içerik değişmedi); (d) gerçek zaman damgası biçimi yyyyMMddTHHmmssZ (UTC)' {
+    $stampReal = [string](Get-RecoverInputStamp); $utcNow = (Get-Date).ToUniversalTime().ToString('yyyyMMdd')
+    function Get-RecoverInputStamp { return '20000101T000000Z' }
+    $ca = New-RgCase 'rg6-dizin'; $ta = $ca + '.recover-girdi-20000101T000000Z'; New-Item -ItemType Directory -Path $ta | Out-Null; $oldF = Join-Path $ta 'd6-setup-receipt-kanittan.json'; [IO.File]::WriteAllText($oldF, 'ESKI-MAKBUZ')
+    $xa = Invoke-RgRecover $ca
+    $okA = ($xa.dur -and $xa.msg.Contains('hedef ZATEN VAR (ezilmez)') -and $xa.msg.Contains('Recover başlamadı') -and $xa.node -eq 0 -and $xa.same -and $xa.sib -eq 1 -and $xa.records -eq 0 -and $xa.marks -eq 0 -and $xa.recDirs -eq 0 -and
+            [IO.File]::ReadAllText($oldF) -ceq 'ESKI-MAKBUZ' -and @(Get-ChildItem -LiteralPath $ta -Force).Count -eq 1)
+    $cb = New-RgCase 'rg6-dosya'; $tb = $cb + '.recover-girdi-20000101T000000Z'; [IO.File]::WriteAllText($tb, 'DOSYA'); $xb = Invoke-RgRecover $cb
+    $okB = ($xb.dur -and $xb.msg.Contains('hedef ZATEN VAR (ezilmez)') -and $xb.node -eq 0 -and $xb.same -and $xb.sib -eq 1 -and $xb.sibDirs.Count -eq 0 -and (Test-Path -LiteralPath $tb -PathType Leaf) -and [IO.File]::ReadAllText($tb) -ceq 'DOSYA')
+    $wErr = $null; try { Write-NewFileBytes $oldF ([byte[]](1, 2, 3)) } catch { $ie = $_.Exception; while ($ie.InnerException) { $ie = $ie.InnerException }; $wErr = $ie.GetType().Name }
+    $okC = ($wErr -ceq 'IOException' -and [IO.File]::ReadAllText($oldF) -ceq 'ESKI-MAKBUZ')
+    $okD = ($stampReal -cmatch '^\d{8}T\d{6}Z$' -and $stampReal.StartsWith($utcNow.Substring(0, 6)))
+    [pscustomobject]@{ ok = ($okA -and $okB -and $okC -and $okD); obs = "(a) hedef dizin var=$okA [$($xa.msg)] · (b) hedef yol dosya=$okB · (c) CreateNew var olan dosyada=$wErr, içerik aynı=$okC · (d) gerçek damga=$stampReal ($okD)" }
+  }
+
+  Invoke-RgItem 'RG-7' 'R04 YAZMA HATASI → RED, Recover başlamaz, başarı sayılmaz: (a) GERÇEK ACL reddi — üst dizinde alt dizin oluşturma (AD) reddedilmiş → "hedef dizin oluşturulamadı", kardeş dizin YOK, node çağrısı 0, kaynak değişmedi; (b) kısmi yazım taklidi (makbuzun yarısı yazılır, sonra G/Ç hatası) → "makbuz dosyası yazılamadı", hedef dizin SİLİNMEZ, eksik dosya yerinde kalır ve RECOVER-GIRDI-KULLANILMAZ.txt (neden) ile işaretlenir, kayıt dosyası YOK, node çağrısı 0; (c) kayıt dosyası yazılamaz → "RECOVER-GIRDI-KAYDI.json yazılamadı", işaretlenir, node çağrısı 0; (d) işaret dosyası da yazılamazsa metin bunu söyler ("işaret dosyası da YAZILAMADI — dizin elle KULLANILMAZ sayılır"), node çağrısı 0' {
+    $ca = New-RgCase 'rg7-acl'; $upA = Split-Path -Parent $ca; $denied = $false; $xa = $null
+    try { & icacls.exe $upA /deny "$($env:USERNAME):(AD)" *> $null; $denied = ($LASTEXITCODE -eq 0); $xa = Invoke-RgRecover $ca } finally { & icacls.exe $upA /remove:d "$env:USERNAME" *> $null }
+    $okA = ($denied -and (& $rgPre $xa 'hedef dizin oluşturulamadı'))
+    $rgRealW = ${function:Write-NewFileBytes}
+    $cb = New-RgCase 'rg7-kismi'; $script:rgW = 0
+    $xb = & { function Write-NewFileBytes([string]$path, [byte[]]$bytes) { $script:rgW++; if ($script:rgW -eq 1) { & $rgRealW $path ([byte[]]($bytes[0..([int][Math]::Floor($bytes.Length / 2))])); throw [IO.IOException]::new('RG taklidi: disk dolu') }; & $rgRealW $path $bytes }
+              Invoke-RgRecover $cb }
+    $pf = if ($xb.sibDirs.Count -eq 1) { Join-Path $xb.sibDirs[0].FullName 'd6-setup-receipt-kanittan.json' } else { '' }; $mf = if ($xb.sibDirs.Count -eq 1) { Join-Path $xb.sibDirs[0].FullName 'RECOVER-GIRDI-KULLANILMAZ.txt' } else { '' }
+    $pLen = if ($pf -and (Test-Path -LiteralPath $pf -PathType Leaf)) { ([IO.File]::ReadAllBytes($pf)).Length } else { -1 }; $mTxt = if ($mf -and (Test-Path -LiteralPath $mf -PathType Leaf)) { [IO.File]::ReadAllText($mf, [Text.UTF8Encoding]::new($false)) } else { '' }
+    $okB = ((& $rgPost $xb 'makbuz dosyası yazılamadı (IOException)') -and $xb.same -and $pLen -gt 0 -and $pLen -lt $rgExp.Length -and $mTxt.Contains('KULLANILMAZ') -and $mTxt.Contains('neden: makbuz dosyası yazılamadı') -and $mTxt.Contains('-ReceiptFile ile vermeyin'))
+    $cc = New-RgCase 'rg7-kayit'; $script:rgW = 0
+    $xc = & { function Write-NewFileBytes([string]$path, [byte[]]$bytes) { $script:rgW++; if ($script:rgW -eq 2) { throw [IO.IOException]::new('RG taklidi: kayıt yazılamadı') }; & $rgRealW $path $bytes }
+              Invoke-RgRecover $cc }
+    $okC = ((& $rgPost $xc 'RECOVER-GIRDI-KAYDI.json yazılamadı') -and $xc.same -and $xc.receipts -eq 1)
+    $cd = New-RgCase 'rg7-isaret'
+    $xd = & { function Write-NewFileBytes([string]$path, [byte[]]$bytes) { throw [IO.IOException]::new('RG taklidi: hiçbir yazım olmuyor') }
+              Invoke-RgRecover $cd }
+    $okD = ($xd.dur -and $xd.msg.Contains('makbuz dosyası yazılamadı') -and $xd.msg.Contains('Recover BAŞLAMADI (başarı sayılmaz)') -and $xd.msg.Contains('işaret dosyası da YAZILAMADI — dizin elle KULLANILMAZ sayılır') -and $xd.node -eq 0 -and $xd.sib -eq 1 -and $xd.marks -eq 0 -and $xd.receipts -eq 0 -and $xd.same)
+    [pscustomobject]@{ ok = ($okA -and $okB -and $okC -and $okD); obs = "(a) ACL reddi uygulandı=$denied ret=$okA [$(if ($xa) { $xa.msg } else { '-' })] · (b) kısmi yazım=$okB (eksik dosya=$pLen/$($rgExp.Length) bayt, işaret=$($xb.marks)) [$($xb.msg)] · (c) kayıt yazılamadı=$okC · (d) işaret de yazılamadı=$okD" }
+  }
+
+  Invoke-RgItem 'RG-8' 'R04 GERİ OKUMA uyuşmazlığı (taklit) → RED, Recover başlamaz: (a) geri okunan baytlardan biri farklı → "geri okunan baytlar … EŞİT DEĞİL"; (b) geri okunan bayt sayısı eksik → aynı ret; (c) geri okuma istisna verir → "makbuz dosyası geri okunamadı"; üçünde de hedef dizin SİLİNMEZ ve KULLANILMAZ diye işaretlenir, kayıt dosyası YOK, node çağrısı 0, kaynak değişmedi; (d) işaret ZORLANIR: KULLANILMAZ işaretli dizinde kalan (diskte sağlam, yalın okuma kapısından geçen) makbuz -ReceiptFile ile verilirse de DUR ("KULLANILMAZ diye işaretlenmiş …"), node çağrısı 0, recover-* dizini açılmaz' {
+    $ca = New-RgCase 'rg8-bayt'
+    $xa = & { function Read-FileBytesForCheck([string]$path) { $rb = [IO.File]::ReadAllBytes($path); $rb[5] = [byte]($rb[5] -bxor 1); return , $rb }
+              Invoke-RgRecover $ca }
+    $cb = New-RgCase 'rg8-eksik'
+    $xb = & { function Read-FileBytesForCheck([string]$path) { $rb = [IO.File]::ReadAllBytes($path); return , ([byte[]]($rb[0..($rb.Length - 2)])) }
+              Invoke-RgRecover $cb }
+    $cc = New-RgCase 'rg8-istisna'
+    $xc = & { function Read-FileBytesForCheck([string]$path) { throw [IO.IOException]::new('RG taklidi: okunamadı') }
+              Invoke-RgRecover $cc }
+    $okA = ((& $rgPost $xa 'geri okunan baytlar recovery.makbuzJson dizgesinin UTF-8 baytlarıyla EŞİT DEĞİL') -and $xa.same -and $xa.receipts -eq 1)
+    $okB = ((& $rgPost $xb 'geri okunan baytlar recovery.makbuzJson dizgesinin UTF-8 baytlarıyla EŞİT DEĞİL') -and $xb.same -and $xb.msg.Contains("okunan=$($rgExp.Length - 1) bayt · beklenen=$($rgExp.Length) bayt"))
+    $okC = ((& $rgPost $xc 'makbuz dosyası geri okunamadı (IOException)') -and $xc.same)
+    # (d) İşaret ZORLANIR: (a)'dan kalan makbuz dosyası diskte sağlamdır (bloğun yalın okuma kapısından geçer) ama dizini KULLANILMAZ işaretlidir → -ReceiptFile ile de DUR.
+    $flagged = if ($xa.sibDirs.Count -eq 1) { Join-Path $xa.sibDirs[0].FullName 'd6-setup-receipt-kanittan.json' } else { '' }
+    $plain = [bool]($flagged -and (Get-ReceiptFileState $flagged).usable)
+    $null = Get-HostText { $script:capR = Invoke-Mode 'Recover' $real.Exe 0 $true $flagged @('H') }; $rF = $script:capR
+    $okD = ($plain -and $rF.threw -like 'EXTACC-D6-DUR:*' -and ([string]$rF.threw).Contains('KULLANILMAZ diye işaretlenmiş bir Recover girdisi dizininde') -and $rF.nodeCalls -eq 0 -and
+            @(Get-ChildItem -LiteralPath $xa.sibDirs[0].FullName -Directory -Filter 'recover-*').Count -eq 0)
+    [pscustomobject]@{ ok = ($okA -and $okB -and $okC -and $okD); obs = "(a) bayt farkı=$okA [$($xa.msg)] · (b) eksik bayt=$okB · (c) okuma istisnası=$okC [$($xc.msg)] · (d) işaretli dizindeki makbuz -ReceiptFile ile: yalın okuma kapısı=$plain ret=$okD [$($rF.threw)]" }
+  }
+
+  Invoke-RgItem 'RG-9' 'R04 Recover BİTİŞ EKRANI (GÖSTERİLEN; -ReceiptFile yolu, sahte koşucunun Recover kanıtındaki portalClose): "PORTAL ERİŞİMİ (son ölçüme göre, bu Recover''ın kanıtından; DB durumu): <AÇIK / KAPALI / ÖLÇÜLEMEDİ> — …" tek satır — AÇIK: son ölçüm (afterMeasure) aktif (kapatma sonrası "after" kapalı olsa da SON ölçüm esas) + kanıttaki açık erişim metni; AÇIK: hesap pasif ama müvekkil erişim bayrağı açık ("kapanış TAMAMLANMADI"; afterMeasure yokken "after"); KAPALI: hesap pasif + bayrak kapalı; KAPALI: hesap satırı DB''de YOK; ÖLÇÜLEMEDİ: portalClose yok / geç oluşma dışlanamadı / kapanış adımı hatası / Recover kanıtı yok; değerler küçük harfle (isActive=true); çıkış kodu değişmeden, tek node çağrısı; mevcut kod açıklamaları ve "mevcut oturum reddi Recover''da ÖLÇÜLEMEZ" korunur' {
+    $run9 = { param([string]$pc, [int]$rc, [bool]$evid = $true)
+      if ($pc) { $env:EXSTUB_PC = $pc } else { Remove-Item 'Env:EXSTUB_PC' -ErrorAction SilentlyContinue }
+      try { $txt9 = Get-HostText { $script:capR = Invoke-Mode 'Recover' $real.Exe $rc $evid $rcpt @('H') } } finally { Remove-Item 'Env:EXSTUB_PC' -ErrorAction SilentlyContinue }
+      $ln = @($txt9 -split "`n" | Where-Object { $_ -cmatch 'PORTAL ERİŞİMİ \(son ölçüme göre' }); $en = @($txt9 -split "`n" | Where-Object { $_ -cmatch 'KURTARMA BİTTİ' })
+      [pscustomobject]@{ r = $script:capR; n = $ln.Count; line = $(if ($ln.Count -eq 1) { [string]$ln[0] } else { '' }); end = $(if ($en.Count -eq 1) { [string]$en[0] } else { '' }); rc = $rc } }
+    $pOpen = '{"exists":true,"isActive":true,"hasPortalAccess":true,"tokenVersion":1}'; $pShut = '{"exists":true,"isActive":false,"hasPortalAccess":false,"tokenVersion":2}'
+    $head = "PORTAL ERİŞİMİ (son ölçüme göre, bu Recover'ın kanıtından; DB durumu): "; $tail = "Yeni giriş reddi kanıttaki P6-C3L/D satırlarından okunur; mevcut oturum reddi Recover'da ÖLÇÜLEMEZ."
+    $c1 = & $run9 ('{"before":' + $pOpen + ',"after":' + $pShut + ',"afterMeasure":{"exists":true,"isActive":true,"hasPortalAccess":true,"tokenVersion":2},"acikErisim":"RG-9 açık erişim metni"}') 6
+    $c2 = & $run9 ('{"before":' + $pOpen + ',"after":{"exists":true,"isActive":false,"hasPortalAccess":true,"tokenVersion":2}}') 6
+    $c3 = & $run9 ('{"before":' + $pOpen + ',"after":' + $pShut + ',"afterMeasure":' + $pShut + '}') 3
+    $c4 = & $run9 '{"before":{"exists":false,"hasPortalAccess":false}}' 0
+    $c5 = & $run9 '' 0
+    $c6 = & $run9 '{"before":{"exists":false,"hasPortalAccess":false},"lateCreateRisk":true}' 6
+    $c7 = & $run9 '{"ok":false,"reason":"RG-9 hata"}' 6
+    $c8 = & $run9 '' 1 $false
+    $all = @($c1, $c2, $c3, $c4, $c5, $c6, $c7, $c8)
+    $base = (@($all | Where-Object { $_.n -ne 1 -or $_.r.out -ne $_.rc -or $_.r.nodeCalls -ne 1 -or $_.r.threw -or -not $_.line.Contains($head) -or -not $_.line.Contains($tail) }).Count -eq 0)
+    $ok1 = $c1.line.Contains($head + 'AÇIK — portal hesabı AKTİF (isActive=true hasPortalAccess=true sürüm=2; son ölçüm: HTTP ölçümlerinden sonraki DB okuması (P6-C5)) — kanıttaki açık erişim metni: RG-9 açık erişim metni. ')
+    $ok2 = $c2.line.Contains($head + 'AÇIK — portal kapanışı TAMAMLANMADI: hesap pasif ama müvekkil erişim bayrağı açık (isActive=false hasPortalAccess=true sürüm=2; son ölçüm: kapatma adımından sonraki DB okuması (P6-C2)). ')
+    $ok3 = $c3.line.Contains($head + 'KAPALI — hesap pasif + müvekkil erişim bayrağı kapalı (isActive=false hasPortalAccess=false sürüm=2; son ölçüm: HTTP ölçümlerinden sonraki DB okuması (P6-C5)). ')
+    $ok4 = $c4.line.Contains($head + "KAPALI — portal hesabı satırı DB'de YOK (hasPortalAccess=false; son ölçüm: Recover başındaki DB okuması). ")
+    $ok5 = $c5.line.Contains($head + "ÖLÇÜLEMEDİ — Recover kanıtında portalClose yok — portal erişimi bu Recover'da ölçülmedi. ")
+    $ok6 = $c6.line.Contains($head + 'ÖLÇÜLEMEDİ — portal hesabı oluşturma sonucu belirsiz ve hesap Recover penceresinde görülmedi — geç oluşma DIŞLANAMADI. ')
+    $ok7 = $c7.line.Contains($head + 'ÖLÇÜLEMEDİ — portal DB durumu Recover kanıtında yok (kapanış adımı hatası: RG-9 hata). ')
+    $ok8 = ($c8.line.Contains($head + "ÖLÇÜLEMEDİ — Recover kanıtı okunabilir değil (YOK) — son portal ölçümü bu Recover'dan okunamaz. ") -and $c8.end.Contains('KAPANIŞ DOĞRULANMADI — kanıt yok'))
+    $keep = ($c3.end.Contains("HER KODDA: mevcut oturum reddi Recover'da ÖLÇÜLEMEZ — HER ZAMAN (P6-C4L/D") -and $c3.end.Contains('3 = DB kapalı, FAIL yok, en az bir ölçüt ÖLÇÜLEMEYEN') -and $c4.end.Contains("0 = Recover anında portal hesabı DB'de YOK (ölçüldü)"))
+    [pscustomobject]@{ ok = ($base -and $ok1 -and $ok2 -and $ok3 -and $ok4 -and $ok5 -and $ok6 -and $ok7 -and $ok8 -and $keep)
+      obs = "ortak (tek satır, çıkış kodu, tek node, baş + son metin)=$base · AÇIK aktif=$ok1 · AÇIK bayrak=$ok2 · KAPALI=$ok3 · KAPALI hesap yok=$ok4 · ÖLÇÜLEMEDİ portalClose yok=$ok5 / geç oluşma=$ok6 / adım hatası=$ok7 / kanıt yok=$ok8 · eski metin korundu=$keep · örnek=[$($c1.line.Trim())]" }
+  }
+
+  Invoke-RgItem 'RG-10' 'R04 AYRI ONAY + sıra + statik: (a) -ReceiptFile ile -RunEvidenceDir BİRLİKTE → "BİRLİKTE verilemez", kardeş dizin OLUŞMAZ, node çağrısı 0; (b) kalıntı kararı E/H değilse (owner yanıtı "x" / yanıt yok) DUR ve makbuz YAZILMAZ (kardeş dizin yok) — yazım owner kararından SONRA; (c) statik: Invoke-RecoverMode içinde Read-ResidueDecision çağrısı New-RecoverInputFromRun çağrısından ÖNCE; New-RecoverInputFromRun içinde kaynak doğrulama → dizin oluşturma → yazım sırası; Invoke-RunMode Recover / makbuz çıkarma fonksiyonlarını ÇAĞIRMAZ (otomatik Recover yok); R04 fonksiyonlarında dosya / dizin silen, taşıyan ya da üzerine yazan çağrı YOK (yalnız CreateNew); blokta Remove-Item yalnız ortam değişkeni içindir; kodlama tanımı kaynakta ("BOM YOK", "DÖNÜŞTÜRÜLMEZ", "sonda EK satır sonu YOK"); param bloğunda $RunEvidenceDir ve akış onu Invoke-RecoverMode''a geçirir; -ReceiptFile yolu korunur (V-0..V-5, RG-9)' {
+    $ca = New-RgCase 'rg10-cift'; $xa = Invoke-RgRecover $ca @('H') $rcpt
+    $okA = ($xa.dur -and $xa.msg.Contains('BİRLİKTE verilemez') -and $xa.node -eq 0 -and $xa.sib -eq 0 -and $xa.same)
+    $cb = New-RgCase 'rg10-karar'; $xb = Invoke-RgRecover $cb @('x'); $xb2 = Invoke-RgRecover $cb @()
+    $okB = ($xb.dur -and $xb.msg.Contains('kalıntı kararı E ya da H olmalı') -and $xb.node -eq 0 -and $xb.sib -eq 0 -and $xb.same -and $xb2.dur -and $xb2.msg.Contains('kalıntı kararı E ya da H olmalı') -and $xb2.sib -eq 0)
+    $fn = { param([string]$n) [string](($funcs | Where-Object { $_.Name -eq $n } | Select-Object -First 1).Extent.Text) }
+    $recT = & $fn 'Invoke-RecoverMode'; $runT = & $fn 'Invoke-RunMode'; $newT = & $fn 'New-RecoverInputFromRun'; $srcT = & $fn 'Test-RunEvidenceSource'; $wT = & $fn 'Write-NewFileBytes'
+    $i1 = $recT.IndexOf('$Residue = Read-ResidueDecision'); $i2 = $recT.IndexOf('$receiptPath = New-RecoverInputFromRun $runEvidenceDir'); $i3 = $recT.IndexOf('Invoke-Node')
+    $j1 = $newT.IndexOf('Test-RunEvidenceSource $runDir'); $j2 = $newT.IndexOf('New-Item -ItemType Directory'); $j3 = $newT.IndexOf('Write-NewFileBytes $rcptPath')
+    $ordOk = ($i1 -ge 0 -and $i1 -lt $i2 -and $i2 -lt $i3 -and $j1 -ge 0 -and $j1 -lt $j2 -and $j2 -lt $j3)
+    $autoOk = ($runT.Length -gt 1000 -and $runT -notmatch 'Invoke-RecoverMode|New-RecoverInputFromRun|Test-RunEvidenceSource|Write-NewFileBytes' -and $runT -notmatch "D6_MODE\s*=\s*'recover'")
+    $delRe = 'Remove-Item|Move-Item|Rename-Item|Clear-Content|Set-Content|Add-Content|Out-File|::Delete\(|\.Delete\(|::Move\(|WriteAllText|WriteAllBytes|WriteAllLines|\[IO\.FileMode\]::(Create|OpenOrCreate|Truncate|Append)\b'
+    $delHit = @(@($newT, $srcT, $wT) | Where-Object { $_.Length -lt 100 -or $_ -match $delRe })
+    $rmAll = ([regex]::Matches($src0, 'Remove-Item')).Count; $rmEnv = ([regex]::Matches($src0, 'Remove-Item "Env:')).Count
+    $noDel = ($delHit.Count -eq 0 -and $wT.Contains('[IO.FileMode]::CreateNew') -and $rmAll -ge 1 -and $rmAll -eq $rmEnv -and $src0 -notmatch '::Delete\(|\.Delete\(|\brmdir\b|\brd /s')
+    $encOk = ($src0.Contains('BOM YOK') -and $src0.Contains('DÖNÜŞTÜRÜLMEZ') -and $src0.Contains('sonda EK satır sonu YOK') -and $src0.Contains('BAĞIMSIZ ÇAPA: manifest ve kanıt içeriği için YOK'))
+    $parOk = ($src0 -match '\[string\]\$RunEvidenceDir = ''''' -and $src0.Contains('else { $rc = Invoke-RecoverMode $g $ReceiptFile $RunEvidenceDir }') -and $src0.Contains("[string]`$ReceiptFile = '',"))
+    [pscustomobject]@{ ok = ($okA -and $okB -and $ordOk -and $autoOk -and $noDel -and $encOk -and $parOk)
+      obs = "(a) çift kaynak=$okA [$($xa.msg)] · (b) karar önce=$okB · sıra: karar@$i1 < çıkarma@$i2 < node@$i3, doğrulama@$j1 < dizin@$j2 < yazım@$j3 → $ordOk · Run otomatik Recover yok=$autoOk · silme / üzerine yazma yok=$noDel (R04 fonksiyon eşleşmesi=$($delHit.Count), Remove-Item=$rmAll, Env=$rmEnv) · kodlama tanımı=$encOk · param + akış=$parOk" }
+  }
 }
 finally {
   foreach ($k in 'EXSTUB_RC', 'EXSTUB_WRITE_EVID', 'EXSTUB_MARKER', 'EXSTUB_WAIT', 'EXSTUB_QR_RC', 'EXSTUB_FINDING', 'EXSTUB_D9', 'EXSTUB_DOC', 'EXSTUB_EXTRA', 'EXSTUB_DOCDURUM', 'EXSTUB_NO_RECEIPT', 'EXSTUB_EV_RECEIPT',
-             'EXSTUB_STALE', 'EXSTUB_EV_EXITCODE', 'EXSTUB_SV', 'EXSTUB_EXPECT_COPY', 'EXSTUB_REAL_RUNNER', 'EXSTUB_ACIK') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
+             'EXSTUB_STALE', 'EXSTUB_EV_EXITCODE', 'EXSTUB_SV', 'EXSTUB_EXPECT_COPY', 'EXSTUB_REAL_RUNNER', 'EXSTUB_ACIK', 'EXSTUB_PC') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
   Clear-SecretEnv
 }
 
