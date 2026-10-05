@@ -422,6 +422,22 @@ describeWithDisposableDb('K4-1 — genel onay kararı ile yetki iptali gerçek P
   // Satır 8 (owner kararı 7): ödeme talebinde "değiştirerek onay" kapalı. Kapı SUNUCUDA; yetki / durum / öz-onay kapıları
   // bu kapıdan ÖNCE çalışır ve değişmez. Arayüzü atlayan doğrudan çağrı (servis) burada denenir.
   describe('CLIENT_PAYOUT_POST: değiştirerek onay kapalı; yetki / durum / öz-onay kuralları korunur', () => {
+    // ÜRETİM BİÇİMİ: client-payout.service.ts requestPayout() ile AYNI hedef türü / hedef referansı / niyet şekli / anahtar
+    // (önceden genel 'LegalCase' fikstürüyle kuruluyordu → üretim biçimi + yeni kapı birleşimi yalnız birim testteydi).
+    async function payoutRequest(s: Seed): Promise<string> {
+      const idempotencyKey = `k-${randomUUID().slice(0, 8)}`;
+      const req = await approvals.createPendingRequest({
+        tenantId: s.tenantId,
+        actionCode: 'CLIENT_PAYOUT_POST' as any,
+        targetType: 'CLIENT_PAYOUT_REQUEST',
+        targetRef: idempotencyKey,
+        requesterUserId: s.requester.userId,
+        savedIntent: { caseId: 'case-x', caseClientId: 'cc-x', amount: '400', currency: 'TRY', note: null, idempotencyKey },
+        idempotencyKey: `client-payout-request:${idempotencyKey}`,
+      });
+      return req.id;
+    }
+
     const payoutDecisionState = async (requestId: string) => {
       const req = await prisma.officeApprovalRequest.findUniqueOrThrow({ where: { id: requestId } });
       const audits = await prisma.auditLog.count({ where: { entityId: requestId, action: { in: DECISION_AUDIT_ACTIONS } } });
@@ -430,7 +446,7 @@ describeWithDisposableDb('K4-1 — genel onay kararı ile yetki iptali gerçek P
 
     it('yetkili onaylayıcı (MANAGER) doğrudan değiştirerek onay dener → 400; talep PENDING kalır, karar / denetim yazılmaz', async () => {
       const s = await seed('payout-awc', { lawyerRank: 'MANAGER', canApprove: false });
-      const requestId = await genericRequest(s, 'CLIENT_PAYOUT_POST');
+      const requestId = await payoutRequest(s);
 
       await expect(approvals.approveWithChanges(requestId, s.approver.userId, { amount: '1' }, 'deneme')).rejects.toMatchObject({
         status: 400,
@@ -441,7 +457,7 @@ describeWithDisposableDb('K4-1 — genel onay kararı ile yetki iptali gerçek P
 
     it('reddedilen değiştirerek onaydan sonra talep ÇIKIŞSIZ kalmaz: aynı talep normal onaylanır', async () => {
       const s = await seed('payout-awc-then-ok', { lawyerRank: 'MANAGER', canApprove: false });
-      const requestId = await genericRequest(s, 'CLIENT_PAYOUT_POST');
+      const requestId = await payoutRequest(s);
       await expect(approvals.approveWithChanges(requestId, s.approver.userId, { amount: '1' })).rejects.toMatchObject({ status: 400 });
 
       await expect(approvals.approve(requestId, s.approver.userId)).resolves.toEqual(expect.objectContaining({ status: OfficeApprovalStatus.APPROVED }));
@@ -449,7 +465,7 @@ describeWithDisposableDb('K4-1 — genel onay kararı ile yetki iptali gerçek P
 
     it('yetkisiz kullanıcı (delegesiz LAWYER) değiştirerek onay dener → 403 (yetki kapısı değişmedi; 400 değil)', async () => {
       const s = await seed('payout-awc-ineligible', { lawyerRank: 'LAWYER', canApprove: false });
-      const requestId = await genericRequest(s, 'CLIENT_PAYOUT_POST');
+      const requestId = await payoutRequest(s);
 
       await expect(approvals.approveWithChanges(requestId, s.approver.userId, { amount: '1' })).rejects.toBeInstanceOf(ForbiddenException);
       expect((await payoutDecisionState(requestId)).status).toBe(OfficeApprovalStatus.PENDING_APPROVAL);
@@ -477,7 +493,7 @@ describeWithDisposableDb('K4-1 — genel onay kararı ile yetki iptali gerçek P
 
     it('durum kapısı değişmedi: onaylanmış talepte değiştirerek onay → 409 (400 değil)', async () => {
       const s = await seed('payout-awc-status', { lawyerRank: 'MANAGER', canApprove: false });
-      const requestId = await genericRequest(s, 'CLIENT_PAYOUT_POST');
+      const requestId = await payoutRequest(s);
       await approvals.approve(requestId, s.approver.userId);
 
       await expect(approvals.approveWithChanges(requestId, s.approver.userId, { amount: '1' })).rejects.toMatchObject({ status: 409 });
@@ -486,14 +502,14 @@ describeWithDisposableDb('K4-1 — genel onay kararı ile yetki iptali gerçek P
     // "Geri Çek" düğmesi görünür kılındı (kart): sunucu kuralı arayüzü atlayan doğrudan istekte de geçerli.
     it('geri çekme kuralı değişmedi: talep sahibi olmayan çekemez (403); onaylanmış talep çekilemez (409); sahibi bekleyeni çeker', async () => {
       const s = await seed('payout-cancel');
-      const requestId = await genericRequest(s, 'CLIENT_PAYOUT_POST');
+      const requestId = await payoutRequest(s);
 
       await expect(approvals.cancel(requestId, s.approver.userId)).rejects.toBeInstanceOf(ForbiddenException);
       expect((await payoutDecisionState(requestId)).status).toBe(OfficeApprovalStatus.PENDING_APPROVAL);
 
       await expect(approvals.cancel(requestId, s.requester.userId)).resolves.toEqual(expect.objectContaining({ status: OfficeApprovalStatus.CANCELLED }));
 
-      const approvedOne = await genericRequest(s, 'CLIENT_PAYOUT_POST');
+      const approvedOne = await payoutRequest(s);
       await approvals.approve(approvedOne, s.partner.userId);
       await expect(approvals.cancel(approvedOne, s.requester.userId)).rejects.toMatchObject({ status: 409 });
     });

@@ -5,7 +5,8 @@
  * tıklama finalize ucuna onaylanan niyetle gider; sunucu reddi aynen gösterilir.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 vi.mock("@/lib/api/office-approval", () => ({
   officeApprovalApi: { getDetail: vi.fn() },
@@ -102,17 +103,84 @@ describe("PayoutFinalizeAction — eylem", () => {
     expect(screen.getByRole("button", { name: "Kesinleştir" })).not.toBeDisabled();
   });
 
-  it("double-submit koruması: istek beklerken ikinci tıklama finalize'ı TEKRAR çağırmaz", async () => {
+  it("double-submit koruması: AYNI anda gelen iki tıklama finalize'ı TEK kez çağırır (düğme henüz devre dışı olmadan)", async () => {
     let release!: (v: unknown) => void;
     finalizePayout.mockReturnValue(new Promise((r) => (release = r)));
     getDetail.mockResolvedValue({ ...DETAIL, executionStatus: "SUCCEEDED" });
     render(<PayoutFinalizeAction detail={DETAIL} currentUserId="approver-9" onFinalized={vi.fn()} />);
 
-    const btn = screen.getByRole("button", { name: "Kesinleştir" });
-    fireEvent.click(btn);
-    await waitFor(() => expect(screen.getByRole("button", { name: /Kesinleştiriliyor/ })).toBeDisabled());
-    fireEvent.click(screen.getByRole("button", { name: /Kesinleştiriliyor/ }));
+    const btn = screen.getByRole("button", { name: "Kesinleştir" }) as HTMLButtonElement;
+    // Aynı act içinde iki tıklama: React durumu (disabled) güncellenmeden ikinci tıklama da işleyiciye ulaşır → yalnız ref koruması keser.
+    act(() => {
+      btn.click();
+      btn.click();
+    });
+    expect(finalizePayout).toHaveBeenCalledTimes(1);
     release({ created: true });
-    await waitFor(() => expect(finalizePayout).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(getDetail).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe("PayoutFinalizeAction — kesinleştirme başarılı, yenileme düşerse", () => {
+  it("kesinleştirme 2xx + detay okuması HATA → 'başarısız' DEĞİL: ödeme yapıldı uyarısı, düğme kapalı, onFinalized çağrılmaz", async () => {
+    finalizePayout.mockResolvedValue({ created: true, payoutId: "p1" });
+    getDetail.mockRejectedValue(new Error("ağ koptu"));
+    const onFinalized = vi.fn();
+    render(<PayoutFinalizeAction detail={DETAIL} currentUserId="approver-9" onFinalized={onFinalized} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Kesinleştir" }));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Ödeme kesinleştirildi"));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Kesinleştir/ })).toBeNull(); // tekrar kesinleştirme yönlendirilmez
+    expect(onFinalized).not.toHaveBeenCalled();
+    expect(finalizePayout).toHaveBeenCalledTimes(1);
+  });
+
+  it("kesinleştirme HATA → hata gösterilir ve detay hiç okunmaz (yenileme hatasından ayrı)", async () => {
+    finalizePayout.mockRejectedValue(new Error("Tutar borcu aşıyor"));
+    render(<PayoutFinalizeAction detail={DETAIL} currentUserId="approver-9" onFinalized={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Kesinleştir" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Tutar borcu aşıyor"));
+    expect(getDetail).not.toHaveBeenCalled();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("başarıda muhasebe sorguları (borç, ödemeler, ekstre, defter, talep kartı) tazelenir", async () => {
+    finalizePayout.mockResolvedValue({ created: true });
+    getDetail.mockResolvedValue({ ...DETAIL, executionStatus: "SUCCEEDED" });
+    const qc = new QueryClient();
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+    render(
+      <QueryClientProvider client={qc}>
+        <PayoutFinalizeAction detail={DETAIL} currentUserId="approver-9" onFinalized={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Kesinleştir" }));
+    await waitFor(() => expect(invalidate).toHaveBeenCalled());
+    const keys = invalidate.mock.calls.map((c) => (c[0] as { queryKey: string[] }).queryKey[0]);
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        "client-accounting-outstanding",
+        "client-accounting-payouts",
+        "client-statement",
+        "financial-statement",
+        "client-payout-approval-requests",
+        "client-payout-approval-request-details",
+      ]),
+    );
+  });
+
+  it("kesinleştirme HATAsında sorgular tazelenmez", async () => {
+    finalizePayout.mockRejectedValue(new Error("reddedildi"));
+    const qc = new QueryClient();
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+    render(
+      <QueryClientProvider client={qc}>
+        <PayoutFinalizeAction detail={DETAIL} currentUserId="approver-9" onFinalized={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Kesinleştir" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+    expect(invalidate).not.toHaveBeenCalled();
   });
 });

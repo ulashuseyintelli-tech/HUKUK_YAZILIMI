@@ -85,6 +85,7 @@ function renderWidget(props?: { caseId?: string; caseClientId?: string }) {
 describe('PendingPayoutRequests', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    cancelMock.mockReset();
   });
 
   it('mine listesi boşsa hiçbir şey render etmez', async () => {
@@ -187,6 +188,7 @@ describe('PendingPayoutRequests — kesinleşmiş talep (yürütme işareti SUCC
     getMineMock.mockReset();
     getDetailMock.mockReset();
     approveMock.mockReset();
+    cancelMock.mockReset();
     finalizePayoutMock.mockReset();
   });
 
@@ -364,6 +366,9 @@ describe('PendingPayoutRequests — kesinleşmiş talep (yürütme işareti SUCC
       await waitFor(() => expect(screen.getByRole('button', { name: 'Geri Çek' })).toBeTruthy());
       const before = getMineMock.mock.calls.length;
       fireEvent.click(screen.getByRole('button', { name: 'Geri Çek' }));
+      // Tek tıkla geri çekilmez: onay adımı istenir, sunucu çağrısı henüz YOK.
+      expect(cancelMock).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Evet, geri çek' }));
       await waitFor(() => expect(cancelMock).toHaveBeenCalledWith('oar-p'));
       await waitFor(() => expect(getMineMock.mock.calls.length).toBeGreaterThan(before));
       expect(approveMock).not.toHaveBeenCalled();
@@ -377,8 +382,22 @@ describe('PendingPayoutRequests — kesinleşmiş talep (yürütme işareti SUCC
       renderWidget();
       await waitFor(() => expect(screen.getByRole('button', { name: 'Geri Çek' })).toBeTruthy());
       fireEvent.click(screen.getByRole('button', { name: 'Geri Çek' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Evet, geri çek' }));
       await waitFor(() => expect(screen.getByText('Yalnız talep sahibi geri çekebilir.')).toBeTruthy());
       expect(screen.getByRole('button', { name: 'Geri Çek' })).toBeTruthy();
+    });
+
+    it('onay adımında "Vazgeç": sunucu çağrılmaz, düğme eski haline döner', async () => {
+      getMineMock.mockResolvedValue([summaryRow({ id: 'oar-p', status: 'PENDING_APPROVAL' })]);
+      getDetailMock.mockResolvedValue(pendingDetail({ id: 'oar-p' }));
+      renderWidget();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Geri Çek' })).toBeTruthy());
+      fireEvent.click(screen.getByRole('button', { name: 'Geri Çek' }));
+      expect(screen.getByRole('button', { name: 'Evet, geri çek' })).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Vazgeç' }));
+      expect(cancelMock).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Geri Çek' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Evet, geri çek' })).toBeNull();
     });
   });
 });

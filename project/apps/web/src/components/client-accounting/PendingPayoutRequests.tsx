@@ -58,6 +58,8 @@ interface PendingPayoutRequestsProps {
 export function PendingPayoutRequests({ caseId, caseClientId }: PendingPayoutRequestsProps) {
   const queryClient = useQueryClient();
   const [payoutActionError, setPayoutActionError] = useState<string | null>(null);
+  // Geri çekme geri alınamaz: tek tıkla yapılmaz, satırda onay adımı istenir (çekmecedeki akışla aynı).
+  const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
 
   const mineQ = useQuery({
     queryKey: ['client-payout-approval-requests'],
@@ -145,10 +147,12 @@ export function PendingPayoutRequests({ caseId, caseClientId }: PendingPayoutReq
     mutationFn: (approvalRequestId: string) => officeApprovalApi.cancel(approvalRequestId),
     onSuccess: () => {
       setPayoutActionError(null);
+      setConfirmCancelId(null);
       queryClient.invalidateQueries({ queryKey: ['client-payout-approval-requests'] });
       queryClient.invalidateQueries({ queryKey: ['client-payout-approval-request-details'] });
     },
     onError: (e: unknown) => {
+      setConfirmCancelId(null);
       setPayoutActionError((e as Error)?.message || 'Talep geri çekilemedi.');
     },
   });
@@ -189,18 +193,37 @@ export function PendingPayoutRequests({ caseId, caseClientId }: PendingPayoutReq
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant="secondary">{STATUS_LABELS[detail.status] ?? detail.status}</Badge>
-                {detail.status === 'PENDING_APPROVAL' && (
+                {detail.status === 'PENDING_APPROVAL' && confirmCancelId !== detail.id && (
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={() => {
                       setPayoutActionError(null);
-                      cancelMutation.mutate(detail.id);
+                      setConfirmCancelId(detail.id);
                     }}
                     disabled={anyPending}
                   >
-                    {isCancellingThis ? <Spinner className="w-4 h-4" /> : 'Geri Çek'}
+                    Geri Çek
                   </Button>
+                )}
+                {detail.status === 'PENDING_APPROVAL' && confirmCancelId === detail.id && (
+                  <>
+                    <span className="text-xs text-gray-600">Talep geri çekilsin mi? Bu işlem geri alınamaz.</span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setPayoutActionError(null);
+                        cancelMutation.mutate(detail.id);
+                      }}
+                      disabled={anyPending}
+                    >
+                      {isCancellingThis ? <Spinner className="w-4 h-4" /> : 'Evet, geri çek'}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setConfirmCancelId(null)} disabled={anyPending}>
+                      Vazgeç
+                    </Button>
+                  </>
                 )}
                 {detail.status === 'PENDING_APPROVAL' && (
                   <Button
