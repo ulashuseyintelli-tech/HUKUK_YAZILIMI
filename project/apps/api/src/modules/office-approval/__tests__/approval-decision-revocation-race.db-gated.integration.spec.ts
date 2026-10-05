@@ -418,4 +418,92 @@ describeWithDisposableDb('K4-1 — genel onay kararı ile yetki iptali gerçek P
       expect(req.status).toBe(OfficeApprovalStatus.PENDING_APPROVAL);
     });
   });
+
+  // Satır 8 (owner kararı 7): ödeme talebinde "değiştirerek onay" kapalı. Kapı SUNUCUDA; yetki / durum / öz-onay kapıları
+  // bu kapıdan ÖNCE çalışır ve değişmez. Arayüzü atlayan doğrudan çağrı (servis) burada denenir.
+  describe('CLIENT_PAYOUT_POST: değiştirerek onay kapalı; yetki / durum / öz-onay kuralları korunur', () => {
+    const payoutDecisionState = async (requestId: string) => {
+      const req = await prisma.officeApprovalRequest.findUniqueOrThrow({ where: { id: requestId } });
+      const audits = await prisma.auditLog.count({ where: { entityId: requestId, action: { in: DECISION_AUDIT_ACTIONS } } });
+      return { status: req.status, approverUserId: req.approverUserId, decidedAt: req.decidedAt, audits };
+    };
+
+    it('yetkili onaylayıcı (MANAGER) doğrudan değiştirerek onay dener → 400; talep PENDING kalır, karar / denetim yazılmaz', async () => {
+      const s = await seed('payout-awc', { lawyerRank: 'MANAGER', canApprove: false });
+      const requestId = await genericRequest(s, 'CLIENT_PAYOUT_POST');
+
+      await expect(approvals.approveWithChanges(requestId, s.approver.userId, { amount: '1' }, 'deneme')).rejects.toMatchObject({
+        status: 400,
+        message: expect.stringContaining('değiştirilerek onaylanamaz'),
+      });
+      expect(await payoutDecisionState(requestId)).toEqual({ status: OfficeApprovalStatus.PENDING_APPROVAL, approverUserId: null, decidedAt: null, audits: 0 });
+    });
+
+    it('reddedilen değiştirerek onaydan sonra talep ÇIKIŞSIZ kalmaz: aynı talep normal onaylanır', async () => {
+      const s = await seed('payout-awc-then-ok', { lawyerRank: 'MANAGER', canApprove: false });
+      const requestId = await genericRequest(s, 'CLIENT_PAYOUT_POST');
+      await expect(approvals.approveWithChanges(requestId, s.approver.userId, { amount: '1' })).rejects.toMatchObject({ status: 400 });
+
+      await expect(approvals.approve(requestId, s.approver.userId)).resolves.toEqual(expect.objectContaining({ status: OfficeApprovalStatus.APPROVED }));
+    });
+
+    it('yetkisiz kullanıcı (delegesiz LAWYER) değiştirerek onay dener → 403 (yetki kapısı değişmedi; 400 değil)', async () => {
+      const s = await seed('payout-awc-ineligible', { lawyerRank: 'LAWYER', canApprove: false });
+      const requestId = await genericRequest(s, 'CLIENT_PAYOUT_POST');
+
+      await expect(approvals.approveWithChanges(requestId, s.approver.userId, { amount: '1' })).rejects.toBeInstanceOf(ForbiddenException);
+      expect((await payoutDecisionState(requestId)).status).toBe(OfficeApprovalStatus.PENDING_APPROVAL);
+    });
+
+    it('öz-onay yasağı değişmedi: yetkili talep sahibi KENDİ talebini değiştirerek onaylayamaz (SELF_APPROVAL_FORBIDDEN); öz-onay istisnası yalnız normal onay', async () => {
+      const s = await seed('payout-awc-self');
+      const own = await approvals.createPendingRequest({
+        tenantId: s.tenantId,
+        actionCode: 'CLIENT_PAYOUT_POST' as any,
+        targetType: 'CLIENT_PAYOUT_REQUEST',
+        targetRef: `req-${randomUUID().slice(0, 8)}`,
+        requesterUserId: s.partner.userId,
+        savedIntent: { amount: '10' },
+      });
+
+      await expect(approvals.approveWithChanges(own.id, s.partner.userId, { amount: '1' })).rejects.toMatchObject({
+        status: 400,
+        message: expect.stringContaining('SELF_APPROVAL_FORBIDDEN'),
+      });
+      expect((await payoutDecisionState(own.id)).status).toBe(OfficeApprovalStatus.PENDING_APPROVAL);
+      // Kontrol: öz-onay istisnası (yalnız approve) korunuyor.
+      await expect(approvals.approve(own.id, s.partner.userId)).resolves.toEqual(expect.objectContaining({ status: OfficeApprovalStatus.APPROVED }));
+    });
+
+    it('durum kapısı değişmedi: onaylanmış talepte değiştirerek onay → 409 (400 değil)', async () => {
+      const s = await seed('payout-awc-status', { lawyerRank: 'MANAGER', canApprove: false });
+      const requestId = await genericRequest(s, 'CLIENT_PAYOUT_POST');
+      await approvals.approve(requestId, s.approver.userId);
+
+      await expect(approvals.approveWithChanges(requestId, s.approver.userId, { amount: '1' })).rejects.toMatchObject({ status: 409 });
+    });
+
+    // "Geri Çek" düğmesi görünür kılındı (kart): sunucu kuralı arayüzü atlayan doğrudan istekte de geçerli.
+    it('geri çekme kuralı değişmedi: talep sahibi olmayan çekemez (403); onaylanmış talep çekilemez (409); sahibi bekleyeni çeker', async () => {
+      const s = await seed('payout-cancel');
+      const requestId = await genericRequest(s, 'CLIENT_PAYOUT_POST');
+
+      await expect(approvals.cancel(requestId, s.approver.userId)).rejects.toBeInstanceOf(ForbiddenException);
+      expect((await payoutDecisionState(requestId)).status).toBe(OfficeApprovalStatus.PENDING_APPROVAL);
+
+      await expect(approvals.cancel(requestId, s.requester.userId)).resolves.toEqual(expect.objectContaining({ status: OfficeApprovalStatus.CANCELLED }));
+
+      const approvedOne = await genericRequest(s, 'CLIENT_PAYOUT_POST');
+      await approvals.approve(approvedOne, s.partner.userId);
+      await expect(approvals.cancel(approvedOne, s.requester.userId)).rejects.toMatchObject({ status: 409 });
+    });
+
+    it('başka onay türü etkilenmez: CHANGE_STATUS talebi değiştirerek onaylanabilir', async () => {
+      const s = await seed('payout-awc-other-type');
+      const requestId = await genericRequest(s, 'CHANGE_STATUS');
+      await expect(approvals.approveWithChanges(requestId, s.approver.userId, { status: 'DERDEST' })).resolves.toEqual(
+        expect.objectContaining({ status: OfficeApprovalStatus.APPROVED_WITH_CHANGES }),
+      );
+    });
+  });
 });
