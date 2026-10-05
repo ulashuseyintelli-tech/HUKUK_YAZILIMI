@@ -224,6 +224,119 @@ describe('belge PDF — hukuki metin ve hesap DEĞİŞMEZ (belge tanımındaki m
   });
 });
 
+describe('ödeme / icra emri — dinamik uzun satır SAYFA İÇİNDE kalır (geometri: her kelimenin sağ kenarı)', () => {
+  // Kullanıcı verisinde kazara çift boşluk yaygındır; şablon satırında 2+ boşluk ızgara sütun sınırıdır. Sabit genişlikli,
+  // kırılmayan sütunlar uzun veride sayfa dışına taşıyordu (kalem TUTARI dahil). Metnin varlığına DEĞİL, konumuna bakılır.
+  const unit = (n: number, s = 'uzun kalem açıklaması '): string => s.repeat(Math.ceil(n / s.length)).slice(0, n);
+  const MARGIN = 40; // textToPdf pageMargins sol / sağ
+  const TOL = 0.6;
+
+  const withItem = (description: string, amount = 1250.5): TemplateData => baseData({ claimItems: [claimItem(0, amount, description)] });
+
+  const CASES: Array<[string, () => TemplateData]> = [
+    ['(a) uzun satırın sonuna doğru çift boşluk', () => withItem(`${unit(80)}  ek: önemli`)],
+    ['(b) iki ayrı çift boşluk içeren uzun satır', () => withItem(`${unit(40)}  orta kısım  ${unit(40)}  son`)],
+    ['(c) çift boşluklu uzun kalem açıklaması + tutar', () => withItem(`${unit(95)}  (ek açıklama)`)],
+    ['(c2) kısa ama çift boşluklu kalem', () => withItem('Kısa  ama çift boşluklu', 2500)],
+    ['(d) satır içi / satır başı sekme', () => baseData({
+      claimItems: [claimItem(0, 1250.5, `Başlık\tsekmeli\tkalem ${unit(60)}`)],
+      debtors: [{ type: 'INDIVIDUAL', name: 'Ömer\tÇınar Yağız', identityNo: '10000000146', role: 'ASIL_BORCLU', address: `\tGökçeler Mah.\t${unit(60)}`, district: 'Çankaya', city: 'Ankara' }],
+    })],
+    ['(e) çift boşluklu uzun ad / adres', () => baseData({
+      debtors: [{ type: 'INDIVIDUAL', name: 'Ömer  Çınar  Yağız', identityNo: '10000000146', role: 'ASIL_BORCLU', address: `Gökçeler Mahallesi  Yıldız Sokak  ${unit(70)}`, district: 'Çankaya', city: 'Ankara' }],
+    })],
+    ['(f) çift boşluklu uzun alacaklı adı ve mahkeme adı', () => ({
+      ...ilamliData(),
+      creditors: [{ type: 'COMPANY', name: `${unit(70, 'ÖRNEK GIDA SANAYİ ')}  A.Ş.`, taxNo: '1234567890', address: 'x', district: 'Şişli', city: 'İstanbul' }],
+      courtInfo: { name: `${unit(60, 'Bakırköy Asliye Hukuk ')}  Mahkemesi  ${unit(30)}`, caseNumber: '2025/123', decisionNumber: '2026/45', decisionDate: '2026-03-15' },
+    })],
+    ['(g) 2+ boşluk ~86. sütundan sonra', () => withItem(`${unit(84)}  hemen sonra tutar`)],
+    ['(h) yalnız tek boşluklu çok uzun satır (doğal kırılır)', () => withItem(unit(260))],
+    ['(i) satır başında yüzlerce boşluk', () => withItem(`${' '.repeat(150)}girintili uzun satır ${unit(60)}`)],
+  ];
+
+  const insideMargins = (out: ReturnType<typeof extractPdfText>) =>
+    out.placed.filter((w) => w.text.trim().length > 0 && (w.x < MARGIN - TOL || w.x1 > out.pageWidth - MARGIN + TOL));
+
+  it('çıkarıcı kör değil: gömülü yazı tipinde kelime genişlikleri okunur (x1 > x) ve sayfa genişliği bilinir', async () => {
+    const out = extractPdfText(await buildService(baseData()).generatePdfFromCase('case-1', 'odeme-emri', 't1'));
+
+    expect(out.pageWidth).toBeGreaterThan(590);
+    expect(out.placed.length).toBeGreaterThan(30);
+    expect(out.placed.filter((w) => w.x1 > w.x).length).toBe(out.placed.length);
+  });
+
+  it.each(CASES.flatMap(([ad, veri]) => (['odeme-emri', 'icra-emri'] as const).map((tur) => [`${ad} — ${tur}`, veri, tur] as const)))(
+    '%s: hiçbir kelime / tutar sayfa kenar boşluğunun dışına düşmez; metin eksilmez',
+    async (_ad, veri, tur) => {
+      const service = buildService(veri());
+
+      const out = extractPdfText(await service.generatePdfFromCase('case-1', tur, 't1'));
+
+      expect(insideMargins(out)).toEqual([]);
+      expect(out.text).toBe(sourceText());
+      expect(out.text).toMatch(/1\.250,50|2\.500,00/u); // kalem tutarı (sayfa içinde ve okunur)
+    },
+  );
+
+  it('şablonun kendi hizası bozulmaz: etiket sütunu ve imza bloğu eski ızgara konumlarında', async () => {
+    const out = extractPdfText(await buildService(baseData()).generatePdfFromCase('case-1', 'odeme-emri', 't1'));
+
+    const x = (kelime: string): number => out.placed.find((w) => w.text.trim().startsWith(kelime))!.x;
+    // "DOSYA NO        : …" → ":" 16. sütunda (40 + 16 × 6 pt); imza bloğu 42. sütunda (40 + 42 × 6 = 292 pt)
+    expect(x('DOS')).toBeCloseTo(40, 0); // pdfmake kerning'de "DOSY" + "A" böler
+    expect(out.placed.filter((w) => w.text.startsWith(':')).every((w) => Math.abs(w.x - 136) < 0.6)).toBe(true);
+    expect(x('Icr')).toBeCloseTo(292, 0); // pdfmake "Icra" kelimesini kerning'de iki parçaya böler
+  });
+});
+
+describe('büyük "Ğ" ve şablon varyantları (nafaka icra emri, kambiyo ödeme emri)', () => {
+  const gData = (): TemplateData =>
+    baseData({
+      creditors: [{ type: 'INDIVIDUAL', name: 'ĞÜLŞEN ĞÖKÇE ĞAZİ', identityNo: '10000000146', address: 'Ğ Mah. Ğaranti Sok. Ğ Apt.', district: 'Ğ', city: 'Ğ' }],
+      debtors: [{ type: 'INDIVIDUAL', name: 'Ğamze Ğülizar Çağlar', identityNo: '10000000146', role: 'ASIL_BORCLU', address: 'Ğ Mah. Ğ Sok.', district: 'Ğ', city: 'Ğ' }],
+      claimItems: [claimItem(0, 1250.5, 'Ğ ĞÜNEŞ Ğaranti ğ')],
+      totals: { principal: 1250.5, interest: 0, fees: 0, total: 1250.5, currency: 'TRY' },
+    });
+
+  it.each<[string, (s: TemplateEngineService) => Promise<Buffer>]>([
+    ['taslak (POST takip-talebi/pdf)', (s) => s.generateTakipTalebiPdf(gData())],
+    ['dosya takip talebi', (s) => s.generatePdfFromCase('case-1', 'takip-talebi', 't1')],
+    ['dosya ödeme emri', (s) => s.generatePdfFromCase('case-1', 'odeme-emri', 't1')],
+    ['dosya icra emri', (s) => s.generatePdfFromCase('case-1', 'icra-emri', 't1')],
+    ['merkezi üretim', async (s) => (await s.generateDocumentFromCase('case-1', 'PDF', 'takip-talebi', 'v1', 't1', 'user-1')).buffer],
+  ])('%s: büyük Ğ içeren ad / adres / kalem PDF\'te okunur (kaynakla birebir)', async (_ad, run) => {
+    const service = buildService(gData(), { documentArtifact: { findFirst: jest.fn(async () => null), create: jest.fn(async ({ data }: any) => ({ id: 'a', ...data })) } });
+
+    const out = extractPdfText(await run(service));
+
+    expect(out.text).toBe(sourceText());
+    expect(out.text).toContain('ĞÜLŞEN');
+    expect(out.text).toContain('Ğamze');
+    expect(out.text).toContain('ĞÜNEŞ');
+  });
+
+  it('nafaka icra emri (Örnek 5): şablon gerçekten nafaka şablonu; Türkçe harfler okunur; sayfa içinde', async () => {
+    const service = buildService({ ...gData(), proceedingKind: 'NAFAKA' });
+
+    const out = extractPdfText(await service.generatePdfFromCase('case-1', 'icra-emri', 't1'));
+
+    expect(out.text).toContain('NAFAKAALACAGI');
+    expect(out.text).toBe(sourceText());
+    expect(out.placed.filter((w) => w.text.trim() && (w.x < 39.4 || w.x1 > out.pageWidth - 39.4))).toEqual([]);
+  });
+
+  it('kambiyo ödeme emri (Örnek 10): şablon gerçekten kambiyo şablonu; Türkçe harfler okunur; sayfa içinde', async () => {
+    const service = buildService({ ...gData(), proceedingKind: 'KAMBIYO_CEK' });
+
+    const out = extractPdfText(await service.generatePdfFromCase('case-1', 'odeme-emri', 't1'));
+
+    expect(out.text).toContain('KAMBIYOSENETLERINEMAHSUSHACIZYOLU');
+    expect(out.text).toBe(sourceText());
+    expect(out.placed.filter((w) => w.text.trim() && (w.x < 39.4 || w.x1 > out.pageWidth - 39.4))).toEqual([]);
+  });
+});
+
 describe('gömülü yazı tipi tanımı — fail-closed', () => {
   it('Roboto dört stil de TrueType Buffer olarak gelir; ad PDF üreticilerinin kullandığıyla aynı', () => {
     const fonts = getTemplatePdfFonts();

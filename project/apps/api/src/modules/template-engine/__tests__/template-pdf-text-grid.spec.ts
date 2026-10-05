@@ -4,7 +4,7 @@
  * Şablonlar boşlukla hizalıdır; orantılı yazı tipinde boşluk genişliği değişir. buildGridLine her satırı ESKİ ızgaradaki aynı
  * sütun konumlarına (sütun = 0,6 × yazı boyutu) oturtur; metin değişmez, yalnız boşluk sayısı konuma çevrilir.
  */
-import { MONOSPACE_CELL_EM, buildGridLine, parseGridLine } from '../template-pdf-text-grid';
+import { MAX_GRID_START_FRACTION, MONOSPACE_CELL_EM, TEXT_PDF_USABLE_WIDTH, buildGridLine, parseGridLine } from '../template-pdf-text-grid';
 
 const SIZE = 10;
 const CELL = SIZE * MONOSPACE_CELL_EM; // 6 pt
@@ -74,10 +74,10 @@ describe('buildGridLine', () => {
     });
   });
 
-  it('çok segmentli satır: ara sütun sabit genişlik + noWrap, son sütun kalan genişlik; sol boşluk = offset', () => {
+  it('çok segmentli satır: ara sütun sabit genişlik (KIRILABİLİR), son sütun kalan genişlik; sol boşluk = offset', () => {
     expect(buildGridLine('DOSYA NO        : 2026/123', SIZE, 'content')).toEqual({
       columns: [
-        { text: 'DOSYA NO', style: 'content', width: 16 * CELL, noWrap: true },
+        { text: 'DOSYA NO', style: 'content', width: 16 * CELL },
         { text: ': 2026/123', style: 'content', width: '*' },
       ],
       columnGap: 0,
@@ -98,5 +98,46 @@ describe('buildGridLine', () => {
     const node: any = buildGridLine(satir, SIZE, 'content');
     const metin = node.columns.map((c: { text: string }) => c.text).join(' ');
     expect(metin.split(/\s+/u)).toEqual(satir.split(/\s+/u));
+  });
+  describe('dinamik uzun veri: ızgara sığmıyorsa tek paragraf (sayfa dışına taşma yok, metin eksilmez)', () => {
+    const MAX_COLS = Math.floor((TEXT_PDF_USABLE_WIDTH * MAX_GRID_START_FRACTION) / CELL);
+
+    it('son segment kullanılabilir genişliğin yarısından SONRA başlıyorsa: columns DEĞİL, segmentler tek boşlukla birleşen paragraf', () => {
+      const satir = `  3. ${'x'.repeat(80)}  ek: 1.250,50 TL`;
+      const node: any = buildGridLine(satir, SIZE, 'content');
+
+      expect(node.columns).toBeUndefined();
+      expect(node.text).toBe(`3. ${'x'.repeat(80)} ek: 1.250,50 TL`);
+      expect(node.margin).toEqual([2 * CELL, 0, 0, 0]);
+    });
+
+    it('ızgara sınırında: son segment tam MAX sütunda başlarsa sütun, bir sonrakinde paragraf', () => {
+      const sutun = (c: number): any => buildGridLine(`${'a'.repeat(c - 2)}  son`, SIZE, 'content');
+
+      expect(sutun(MAX_COLS).columns).toHaveLength(2);
+      expect(sutun(MAX_COLS + 1).columns).toBeUndefined();
+      expect(sutun(MAX_COLS + 1).text).toBe(`${'a'.repeat(MAX_COLS - 1)} son`);
+    });
+
+    it('satır başı boşluk kullanılabilir genişliğin yarısıyla sınırlanır (yüzlerce boşluk kâğıt dışına itmez)', () => {
+      const node: any = buildGridLine(`${' '.repeat(300)}girintili`, SIZE, 'content');
+
+      expect(node.margin[0]).toBe(MAX_COLS * CELL);
+      expect(node.margin[0]).toBeLessThanOrEqual(TEXT_PDF_USABLE_WIDTH / 2);
+    });
+
+    it('sınırı aşan girintiyle çok segmentli satır da paragrafa düşer (sütunlar kaydığı için ızgara kullanılmaz)', () => {
+      const node: any = buildGridLine(`${' '.repeat(MAX_COLS + 5)}etiket  değer`, SIZE, 'content');
+
+      expect(node.columns).toBeUndefined();
+      expect(node.text).toBe('etiket değer');
+    });
+
+    it('ara sütunlar noWrap DEĞİL: uzun ara segment kendi sütununda sarar (kâğıt dışına çıkmaz)', () => {
+      const node: any = buildGridLine(`${'k'.repeat(30)}  değer`, SIZE, 'content');
+
+      expect(node.columns[0].noWrap).toBeUndefined();
+      expect(node.columns[0].width).toBe(32 * CELL);
+    });
   });
 });

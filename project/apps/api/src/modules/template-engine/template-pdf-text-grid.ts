@@ -19,6 +19,16 @@ import type { Content } from 'pdfmake/interfaces';
 /** Önceki standart Courier yazı tipinin karakter hücresi genişliği (yazı tipi boyutunun katı). */
 export const MONOSPACE_CELL_EM = 0.6;
 
+/** textToPdf kullanılabilir satır genişliği: A4 (595,28 pt) − sol / sağ 40 pt kenar boşluğu. */
+export const TEXT_PDF_USABLE_WIDTH = 595.28 - 80;
+
+/**
+ * Izgaranın kullanabileceği en uzak sütun = kullanılabilir genişliğin bu oranı. Şablon sütunları (etiket : değer, imza bloğu)
+ * bunun çok içindedir; DİNAMİK veri (kullanıcının yazdığı uzun ad / adres / kalem açıklaması, kazara çift boşluk) bunu
+ * aşarsa ızgara KULLANILMAZ: aksi hâlde son sütunun kalan genişliği ≤ 0 olur ve metin / tutar sayfa dışına düşer.
+ */
+export const MAX_GRID_START_FRACTION = 0.5;
+
 export interface GridSegment {
   /** Segmentin ızgara sütunu (0 tabanlı; satır başı boşluklar dahil) */
   col: number;
@@ -58,27 +68,36 @@ export function parseGridLine(line: string): GridLine | null {
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 
 /**
- * Tek metin satırı → pdfmake içeriği. Tek segmentli satır: sol boşluklu paragraf (uzun satır doğal kırılır).
- * Çok segmentli satır: ara sütunlar sabit genişlikli + `noWrap` (taşarsa kelime parçalanmaz), son sütun kalan genişlik.
+ * Tek metin satırı → pdfmake içeriği.
+ *
+ * - Tek segmentli satır: sol boşluklu paragraf (uzun satır doğal kırılır).
+ * - Çok segmentli satır, ızgara sığıyorsa (son segment kullanılabilir genişliğin yarısından önce başlıyor): sabit genişlikli
+ *   sütunlar; ara sütunlar KIRILABİLİR (kendi sütununda sarar, sayfa dışına çıkamaz), son sütun kalan genişlik.
+ * - Izgara sığmıyorsa (dinamik uzun veri): segmentler TEK boşlukla birleşen tek paragraf — metin eksilmez, sayfa dışına çıkmaz.
+ * - Satır başı boşluk kullanılabilir genişliğin yarısıyla sınırlanır.
  */
-export function buildGridLine(line: string, fontSize: number, style: string): Content {
+export function buildGridLine(line: string, fontSize: number, style: string, usableWidth: number = TEXT_PDF_USABLE_WIDTH): Content {
   const parsed = parseGridLine(line);
   if (!parsed) return { text: ' ', style };
   const cell = fontSize * MONOSPACE_CELL_EM;
-  const marginLeft = round2(parsed.offset * cell);
+  const maxCols = Math.floor((usableWidth * MAX_GRID_START_FRACTION) / cell);
+  const marginLeft = round2(Math.min(parsed.offset, maxCols) * cell);
   const { segments } = parsed;
+  const margin: [number, number, number, number] = [marginLeft, 0, 0, 0];
   if (segments.length === 1) {
-    return marginLeft > 0
-      ? { text: segments[0].text, style, margin: [marginLeft, 0, 0, 0] }
-      : { text: segments[0].text, style };
+    return marginLeft > 0 ? { text: segments[0].text, style, margin } : { text: segments[0].text, style };
+  }
+  const gridFits = parsed.offset <= maxCols && segments[segments.length - 1].col <= maxCols;
+  if (!gridFits) {
+    return { text: segments.map((s) => s.text).join(' '), style, ...(marginLeft > 0 ? { margin } : {}) };
   }
   return {
     columns: segments.map((s, i) =>
       i < segments.length - 1
-        ? { text: s.text, style, width: round2((segments[i + 1].col - s.col) * cell), noWrap: true }
+        ? { text: s.text, style, width: round2((segments[i + 1].col - s.col) * cell) }
         : { text: s.text, style, width: '*' as const },
     ),
     columnGap: 0,
-    margin: [marginLeft, 0, 0, 0],
+    margin,
   };
 }

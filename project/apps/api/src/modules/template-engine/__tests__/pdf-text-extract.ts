@@ -20,9 +20,21 @@ export interface PdfFontInfo {
   standard: boolean;
 }
 
+/** Sayfaya yerleşmiş kelime: sol kenar `x`, sağ kenar `x1` (glif genişlikleri `/W` dizisinden; bilinmiyorsa `x1 === x`), pt. */
+export interface PlacedWord {
+  text: string;
+  x: number;
+  x1: number;
+  size: number;
+}
+
 export interface PdfTextExtraction {
   /** Akış sırasıyla çözülmüş kelime parçaları */
   words: string[];
+  /** Konumlu kelimeler (geometri testleri için); `words` ile aynı sırada */
+  placed: PlacedWord[];
+  /** İlk sayfanın `/MediaBox` genişliği (pt) */
+  pageWidth: number;
   /** words birleşimi (boşluksuz) */
   text: string;
   fonts: PdfFontInfo[];
@@ -105,15 +117,26 @@ export function extractPdfText(pdf: Buffer): PdfTextExtraction {
   const objects = parseObjects(pdf);
   const byId = new Map(objects.map((o) => [o.id, o]));
 
-  // Font nesneleri: id → { baseFont, cmap | standart }
-  const fontById = new Map<number, { info: PdfFontInfo; cmap: Map<number, string> | null }>();
+  // Font nesneleri: id → { baseFont, cmap | standart, glif genişlikleri }
+  const fontById = new Map<number, { info: PdfFontInfo; cmap: Map<number, string> | null; widths: Map<number, number> | null }>();
   for (const o of objects) {
     if (!/\/Type\s*\/Font\b/u.test(o.dict) || /\/Subtype\s*\/CIDFontType2\b/u.test(o.dict)) continue;
     const baseFont = /\/BaseFont\s*\/([^\s/>\[]+)/u.exec(o.dict)?.[1] ?? '';
     const tu = /\/ToUnicode\s+(\d+)\s+0\s+R/u.exec(o.dict)?.[1];
     const cmapObj = tu ? byId.get(Number(tu)) : undefined;
     const cmap = cmapObj?.stream ? parseToUnicode(cmapObj.stream.toString('latin1')) : null;
-    fontById.set(o.id, { info: { baseFont, standard: !cmap && /\/Subtype\s*\/Type1\b/u.test(o.dict) }, cmap });
+    // Glif genişlikleri: Type0 → DescendantFonts → CIDFontType2 `/W [0 [w0 w1 …]]` (1000'de birim)
+    const descendant = /\/DescendantFonts\s*\[\s*(\d+)\s+0\s+R/u.exec(o.dict)?.[1];
+    const widthArray = descendant ? /\/W\s*\[([\s\S]*?\])\s*\]/u.exec(byId.get(Number(descendant))?.dict ?? '')?.[1] : undefined;
+    let widths: Map<number, number> | null = null;
+    if (widthArray) {
+      const table = new Map<number, number>();
+      for (const range of widthArray.matchAll(/(\d+)\s*\[([^\]]*)\]/gu)) {
+        range[2].trim().split(/\s+/u).forEach((w, i) => table.set(Number(range[1]) + i, Number(w)));
+      }
+      widths = table;
+    }
+    fontById.set(o.id, { info: { baseFont, standard: !cmap && /\/Subtype\s*\/Type1\b/u.test(o.dict) }, cmap, widths });
   }
 
   // Kaynak adı (F1 …) → font nesnesi
@@ -125,36 +148,57 @@ export function extractPdfText(pdf: Buffer): PdfTextExtraction {
   }
 
   const words: string[] = [];
+  const placed: PlacedWord[] = [];
   for (const o of objects) {
     if (!o.stream) continue;
     const content = o.stream.toString('latin1');
     if (!/\bBT\b/u.test(content) || !/\bTf\b/u.test(content)) continue; // yalnız metin içeren sayfa içerik akışları
-    let current: { cmap: Map<number, string> | null } | undefined;
-    const tokenRe = /\/([A-Za-z0-9_]+)\s+[-\d.]+\s+Tf|\[((?:[^\]\\]|\\.)*)\]\s*TJ|(<[0-9a-fA-F]*>|\((?:\\.|[^)\\])*\))\s*Tj/gu;
+    let current: { cmap: Map<number, string> | null; widths: Map<number, number> | null } | undefined;
+    let size = 0;
+    let x = 0;
+    // Tm: `1 0 0 1 x y Tm` (pdfmake her kelimeyi ayrı BT bloğunda konumlar) · Tf: `/F2 10 Tf` · TJ / Tj: metin
+    const tokenRe =
+      /[-\d.]+\s+[-\d.]+\s+[-\d.]+\s+[-\d.]+\s+([-\d.]+)\s+[-\d.]+\s+Tm|\/([A-Za-z0-9_]+)\s+([-\d.]+)\s+Tf|\[((?:[^\]\\]|\\.)*)\]\s*TJ|(<[0-9a-fA-F]*>|\((?:\\.|[^)\\])*\))\s*Tj/gu;
     let t: RegExpExecArray | null;
     while ((t = tokenRe.exec(content))) {
-      if (t[1]) {
-        const fid = nameToFont.get(t[1]);
-        current = fid !== undefined ? fontById.get(fid) : undefined;
+      if (t[1] !== undefined) {
+        x = Number(t[1]);
         continue;
       }
-      const strings = t[2] !== undefined ? [...t[2].matchAll(/<([0-9a-fA-F]*)>|\(((?:\\.|[^)\\])*)\)/gu)] : [...t[3].matchAll(/<([0-9a-fA-F]*)>|\(((?:\\.|[^)\\])*)\)/gu)];
+      if (t[2]) {
+        const fid = nameToFont.get(t[2]);
+        current = fid !== undefined ? fontById.get(fid) : undefined;
+        size = Number(t[3]);
+        continue;
+      }
+      const strings = t[4] !== undefined ? [...t[4].matchAll(/<([0-9a-fA-F]*)>|\(((?:\\.|[^)\\])*)\)/gu)] : [...t[5].matchAll(/<([0-9a-fA-F]*)>|\(((?:\\.|[^)\\])*)\)/gu)];
       for (const sm of strings) {
         const raw = sm[1] !== undefined ? Buffer.from(sm[1], 'hex') : Buffer.from((sm[2] ?? '').replace(/\\(.)/gu, '$1'), 'latin1');
         if (current?.cmap) {
           let w = '';
-          for (let i = 0; i + 1 < raw.length; i += 2) w += current.cmap.get(raw.readUInt16BE(i)) ?? '�';
+          let advance = 0;
+          for (let i = 0; i + 1 < raw.length; i += 2) {
+            const code = raw.readUInt16BE(i);
+            w += current.cmap.get(code) ?? '\uFFFD';
+            advance += ((current.widths?.get(code) ?? 0) * size) / 1000;
+          }
           words.push(w);
+          placed.push({ text: w, x, x1: x + advance, size });
         } else {
-          words.push(win1252.decode(raw)); // standart yazı tipi: tek bayt (Türkçe harfler burada bozuk görünür)
+          const w = win1252.decode(raw); // standart yazı tipi: tek bayt (Türkçe harfler burada bozuk görünür)
+          words.push(w);
+          placed.push({ text: w, x, x1: x, size });
         }
       }
     }
   }
 
   const infos = [...fontById.values()].map((f) => f.info);
+  const mediaBox = /\/MediaBox\s*\[\s*[-\d.]+\s+[-\d.]+\s+([-\d.]+)\s+[-\d.]+\s*\]/u.exec(pdf.toString('latin1'));
   return {
     words,
+    placed,
+    pageWidth: mediaBox ? Number(mediaBox[1]) : 0,
     text: stripWhitespace(words.join('')),
     fonts: infos,
     pageCount: (pdf.toString('latin1').match(/\/Type\s*\/Page(?![s\w])/gu) ?? []).length,

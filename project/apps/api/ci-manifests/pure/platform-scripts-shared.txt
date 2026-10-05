@@ -335,7 +335,8 @@ src/modules/template-engine/__tests__/template-engine-controller-no-pii-log.stat
 # Belge PDF'i Turkce harfler (ı İ ş Ş ğ Ğ): standart Courier yerine gomulu Roboto (owner karari 2026-10-04, karar 2). Uc PDF yolu
 # (taslak / dosya / merkezi uretim) PDF'in ICINDEKI metni okuyup pdfmake'e verilen belge tanimiyla esitler; metin cikarici
 # yalniz test yardimcisi. Izgara yerlesimi (odeme / icra emri) birim testi. Saf (DB yok). Duzeltmesiz servis koduyla
-# 16 testin 10'u DUSER (standart Courier + bozuk metin).
+# 45 testin 38'i DUSER (standart Courier + bozuk metin); dinamik uzun satirlarin (cift bosluk / sekme / uzun kalem) sayfa disina
+# tasmamasi geometri olarak (kelime sag kenari) sinanir.
 src/modules/template-engine/__tests__/template-engine-pdf-turkish.spec.ts
 src/modules/template-engine/__tests__/template-pdf-text-grid.spec.ts
 src/modules/validation-gate/__tests__/validation-gate-authz-tenant.spec.ts
