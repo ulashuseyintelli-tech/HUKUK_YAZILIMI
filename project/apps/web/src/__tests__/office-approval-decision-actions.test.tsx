@@ -177,3 +177,30 @@ describe("OfficeApprovalDecisionActions", () => {
     expect(officeApprovalApi.reject).not.toHaveBeenCalled();
   });
 });
+
+describe("OfficeApprovalDecisionActions — müvekkile ödeme talebi (CLIENT_PAYOUT_POST)", () => {
+  const PAYOUT = {
+    ...DETAIL,
+    actionCode: "CLIENT_PAYOUT_POST",
+    targetType: "CLIENT_PAYOUT_REQUEST",
+    savedIntent: { caseId: "c1", caseClientId: "cc1", amount: "400", currency: "TRY", note: null, idempotencyKey: "k1" },
+  };
+
+  it("değiştirerek onay GÖRÜNMEZ (sunucu zaten 400 döner); onay / revizyon / ret görünür", () => {
+    render(<OfficeApprovalDecisionActions detail={PAYOUT} currentUserId="approver-9" onDecided={vi.fn()} />);
+    expect(screen.queryByText("Değiştirerek Onayla")).toBeNull();
+    expect(screen.getByText("Onayla")).toBeInTheDocument();
+    expect(screen.getByText("Revizyon İste")).toBeInTheDocument();
+    expect(screen.getByText("Reddet")).toBeInTheDocument();
+  });
+
+  it("başka onay türünde değiştirerek onay AYNEN görünür (etkilenmez)", () => {
+    render(<OfficeApprovalDecisionActions detail={DETAIL} currentUserId="approver-9" onDecided={vi.fn()} />);
+    expect(screen.getByText("Değiştirerek Onayla")).toBeInTheDocument();
+  });
+
+  it("talep sahibi için geri çekme görünür (ödeme talebinde de)", () => {
+    render(<OfficeApprovalDecisionActions detail={PAYOUT} currentUserId="user-1" onDecided={vi.fn()} />);
+    expect(screen.getByText("Talebi Geri Çek")).toBeInTheDocument();
+  });
+});

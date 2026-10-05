@@ -9,6 +9,7 @@ import { relativeTime } from "@/lib/relative-time";
 import { useAuth } from "@/lib/auth-context";
 import { STATUS_LABELS } from "./status-labels";
 import { OfficeApprovalDecisionActions } from "./OfficeApprovalDecisionActions";
+import { PayoutFinalizeAction } from "./PayoutFinalizeAction";
 import { ApprovalIntentSummary } from "./ApprovalIntentSummary";
 
 interface Props {
@@ -148,6 +149,15 @@ export function OfficeApprovalDetailDrawer({ requestId, onClose, onDecided }: Pr
               detail={detail}
               currentUserId={user?.id ?? null}
               onDecided={(updated) => {
+                setDetail(updated);
+                onDecided?.();
+              }}
+            />
+
+            <PayoutFinalizeAction
+              detail={detail}
+              currentUserId={user?.id ?? null}
+              onFinalized={(updated) => {
                 setDetail(updated);
                 onDecided?.();
               }}
