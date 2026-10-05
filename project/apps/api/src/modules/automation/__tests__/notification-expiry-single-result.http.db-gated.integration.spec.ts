@@ -139,9 +139,10 @@ describeWithDisposableDb('Otomasyon tebligat süresi doldu — (büro, olay, eyl
   afterAll(async () => {
     for (const app of apps) await app.close();
     for (const id of [tenantId, otherTenantId]) {
-      await prisma.auditLog.deleteMany({ where: { tenantId: id } }).catch(() => undefined);
-      await prisma.tenant.deleteMany({ where: { id } }).catch(() => undefined);
+      await prisma.auditLog.deleteMany({ where: { tenantId: id } });
+      await prisma.tenant.delete({ where: { id } }); // hata YUTULMAZ: temizlik gerçekten silmiyorsa test kırılır
     }
+    expect(await prisma.tenant.count({ where: { id: { in: [tenantId, otherTenantId] } } })).toBe(0); // temizlik kanıtı
     await prisma.$disconnect();
   });
 
@@ -257,6 +258,27 @@ describeWithDisposableDb('Otomasyon tebligat süresi doldu — (büro, olay, eyl
       await processVia(first, adminId, caseId);
       await processVia(second, adminId, caseId);
       expect(await effects(caseId)).toEqual(afterBoth);
+    });
+
+    it('AYNI tebligatta iki FARKLI eylem: ikisi de çalışır (toptan "tüketildi" yok); her biri kendi eylemi için bir kez', async () => {
+      const caseId = await openCase('iki-eylem');
+      const eventId = await seedEvent(caseId);
+      const eventRef = { type: 'NOTIFICATION_EXPIRY' as const, id: eventId };
+      const otherRule = { shouldTrigger: true, action: 'BASKA_EYLEM', reason: 'sentetik ikinci olay kuralı', priority: 2, eventRef };
+      const runOther = async () => {
+        const context = await first.engine.buildContext(caseId, tenantId);
+        await (first.engine as any).applyEventRule(caseId, otherRule, context, eventRef, undefined);
+      };
+
+      await processVia(first, adminId, caseId); // NOTIFICATION_EXPIRED
+      await runOther(); // aynı tebligat, FARKLI eylem
+      await runOther(); // aynı eylem tekrar: yan etki yok
+      await processVia(second, adminId, caseId); // ilk eylem tekrar: yan etki yok
+
+      expect(await marker(eventId)).toEqual([ACTION, 'BASKA_EYLEM'].sort());
+      expect(await prisma.decisionLog.count({ where: { caseId, decision: ACTION } })).toBe(1);
+      expect(await prisma.decisionLog.count({ where: { caseId, decision: 'BASKA_EYLEM' } })).toBe(1);
+      expect(await effects(caseId)).toMatchObject({ decisions: 1, lifecycles: 1, sets: 1, counter: 2, stage: 'ENFORCEMENT' }); // sayaç: iki eylem × bir kez
     });
 
     it('süresi dolmamış / EXPIRED (tarihsel) / PAYMENT_ORDER olmayan tebligat işlenmez; işaret yazılmaz', async () => {
