@@ -1,7 +1,8 @@
 # EXTACC D-8 — PERSONEL YÜZEYİ DIŞARIDAN KAPALI · D-6/D-7 TANIMI · BİRLEŞİK D-9 (R01)
 
-> **DURUM: HAZIR — CANLIDA KOŞULMADI.** D-8 kısmi kaydı (owner telefonu, 5 GET → 403, 2026-09-27 21:14–21:15) **tamamlanmış
-> sayılmaz**: katman ölçülmedi; diğer yöntem/yollar açık. Bu paket makine ölçümünü ve telefon beyanını ayırır.
+> **DURUM: HAZIRLIK R05 — izole prova ve owner kararları bekliyor (§3b); CANLIDA KOŞULMADI.** D-8 kısmi kaydı (owner telefonu, 5 GET →
+> 403, 2026-09-27 21:14–21:15) **tamamlanmış sayılmaz**: katman ölçülmedi; diğer yöntem/yollar açık. Bu paket makine ölçümünü ve
+> telefon beyanını ayırır.
 >
 > **R05 (2026-10-05) — ad başına koşum, iki ayrı hüküm.** Owner talimatı (2026-10-05, aynen): "D-8 hazırlığında birincil adı ve
 > sahipliği doğrulanmış diğer yayın adlarını ayrı satırlarda göster. Bir adın sonucu diğerine taşınmasın; ret sonucu ile reddeden
@@ -14,6 +15,16 @@
 > "`suspectAppOrigin403 > 0` ise PASS düşmez", "D-8 PASS = sonda çıkış 0 ve telefon 5/5". DEĞİŞMEYENLER: vektör listeleri (59 ret +
 > 9 pozitif), kimlik bilgisi göndermeme, ham yol sadakati, `design` / `measured` ayrımı, `d8-staff-` dosya adı öneki. Canlı sonda
 > **çalıştırılmadı**; bu revizyon GO, kapsam ya da kabul kararı **değildir** (bekleyen owner kararları §3b); pinler değişti (§7).
+>
+> **R05 düzeltme turu (2026-10-05; üç bağımsız doğrulamanın bulguları üzerine; canlıda yine koşulmadı).** Sınıflama: **(a)** eşleşen
+> yankı, kalibrasyon `GECERSIZ` olmadıkça API kanıtıdır — ileri kalibrasyon eksikken de yankıyla kanıtlı 403 dışı yanıt **çıkış 2**
+> verir (önce "kanıtsız" diye 5 / 3'e düşüyordu) · **(b)** ters kalibrasyon yalnız **aynı değerin** yansımasına bakar ve ön uçuş
+> (OPTIONS) yanıtlarını da kapsar; farklı değerli başlık (damga) yalnız "API değil" çıkarımını kapatır · **(c)** sınama (challenge)
+> işaretli 403 ret kararı sayılmaz: ayrı ret sonucu sınıfı, **çıkış 5** (önce `KAPALI` çıkıyordu) · **(d)** "karar bekliyor" eşlemesi
+> ve işareti tek satırda; kalibrasyon ve farklı değer nedenleri aynı karara bağlandı (§3b-2) · **(e)** tanınmayan hüküm değeri ve
+> geçersiz zaman aşımı değeri kapıda durur; hiçbir neden varken `KAPALI` verilmez. Sızıntı / güvenlik: **(f)** konum etiketinde adın
+> parçası da aranır · **(g)** ret hükmü `KAPALI` olmayan adın sayıları public tabloya yazılmaz (§1b) · **(h)** öz-testin blok düzeneği
+> ikamesi kanıtlanmamış bloğu koşturmaz. Öz-test 66 → **86 kalem**. Pinler değişti (§7).
 >
 > Önceki revizyon notları (tarihsel; R05'le çelişen kural cümleleri yukarıdaki nota göre okunur):
 > R01 gözden geçirme düzeltmeleri (2026-09-29): (a) katman yalnız `Server` başlığından; boş 403 gövdesi tek başına `caddy` demez ·
@@ -70,8 +81,9 @@ başlık adları, gövde ve gönderilen istek kimliği `sent` alanındadır). He
 **R05'te istek profiline eklenen tek şey:** her istekte tek kullanımlık bir `x-request-id` başlığı (kimlik bilgisi değildir; API'nin
 kabul ettiği biçimde; her istekte yeni değer). İstek uygulamaya ulaşırsa bu değer o isteğin kimliği olur; uygulama o istekte 5xx
 üretirse değer uygulamanın hata kaydına yazılır. Sondanın vektör listesindeki uçlarda başka bir etkisi kaynakta görülmedi (başlığı
-yinelenme anahtarı olarak da okuyan bir iç yönetim denetleyicisi vardır; sondanın listesinde o uçlar yoktur). Bu istek profili canlı
-sonda GO'sunun kapsamındadır (§3b).
+ayrıca okuyan üç yer aynı iç modüldedir — yinelenme anahtarı, bağlam ve iz kimliği; hiçbiri genel kayıtlı değildir ve sondanın
+listesinde o modülün ucu yoktur). Bu istek profili, canlı sonda GO'su verilirken **ayrıca onaylanacak** kapsam kalemidir (§3b-3); GO
+verilmemiştir.
 
 **Ham request-target korunur:** istek `https.request({host, port, path, method, servername})` ile atılır; `path` vektördeki ham
 dizedir (`/api/portal/./admin/...`, `%2F`, `?x=1` normalize edilmez). Öz-test S1-p bunu kenarın gördüğü `req.url` ile birebir
@@ -83,10 +95,16 @@ Aynı durum kodunu birden çok katman üretebilir (403: kenar varsayılan reddi 
 web · API; 5xx: zincir hatası · uygulama). Bu yüzden sonda iki soruyu **ayrı alanlarda** yanıtlar ve ikisini tek bir "PASS"ta
 birleştirmez.
 
-**(1) Ret sonucu** — satırda `outcome`; yalnız durum kodundan türer, katman bu alana girmez:
-`RET-403` (403 ile reddedildi) · `DORTYUZ-403-DISI` (403 dışı 4xx) · `HIZ-SINIRI-429` · `REDDEDILMEDI-2XX` · `YONLENDIRME-3XX` ·
-`SUNUCU-HATASI-5XX` · `SONUC-YOK` (taşıma hatası; yalnız hata **sınıfı** `errorClass`: `AD-COZULMEDI` / `BAGLANTI` / `TLS` /
-`ZAMAN-ASIMI` / `DIGER`) · `SINIFLANAMADI`. Hata iletisi metni ve yönlendirme hedefi kanıta yazılmaz.
+**(1) Ret sonucu** — satırda `outcome`; durum kodundan türer, katman bu alana girmez:
+`RET-403` (403 ile reddedildi) · `SINAMA-ISARETLI-403` · `DORTYUZ-403-DISI` (403 dışı 4xx) · `HIZ-SINIRI-429` · `REDDEDILMEDI-2XX` ·
+`YONLENDIRME-3XX` · `SUNUCU-HATASI-5XX` · `SONUC-YOK` (taşıma hatası; yalnız hata **sınıfı** `errorClass`: `AD-COZULMEDI` /
+`BAGLANTI` / `TLS` / `ZAMAN-ASIMI` / `DIGER`) · `SINIFLANAMADI`. Hata iletisi metni ve yönlendirme hedefi kanıta yazılmaz.
+Durum kodunun tek istisnası `SINAMA-ISARETLI-403`'tür: yanıt, sağlayıcının **sınama (challenge) sayfası** işaretini taşıyan bir 403
+ise bu bir ret **kararı** değildir — "tarayıcı olduğunu göster" yanıtıdır; ziyaretçi sınamayı geçerse asıl istek hedefe gider
+(sağlayıcı belgesi, 2026-10-05 okundu: işaret her sınama sayfası türünde bulunur; sınama yanıtının durum kodu o belgede yazmıyor —
+**ölçülmedi**). İşaret yalnız ret sonucunu **düşürmek** için okunur; katman kimliğine ve katman hükmüne girmez, hiçbir katman bu
+işaretle adlandırılmaz. Yalnız bilinen işaret tanınır: işaretsiz bir sınama yanıtı bu sondayla ayırt edilemez (`KAPALI` kaydının
+"bu istek profili için" eki bu sınırı da taşır).
 
 **(2) Katman kimliği** — satırda `layerId`; **yalnız kanıtla**. Dışarıdan gösterilebilen tek imza API'nin istek kimliği yankısıdır:
 sonda gönderdiği tek kullanımlık değerin yanıtta **aynen** dönüp dönmediğine bakar (`echo`: `ESLESTI` / `FARKLI-DEGER` / `YOK`).
@@ -94,19 +112,30 @@ Aynı değer dönerse o yanıtı API üretmiştir. Başlığın yalnız var olma
 imzası, boş / dolu gövde **ipucudur** (`hints`, `layerHint`, `hintsOnly`; yalnız kısıtlı ham kanıtta) ve katman kimliğine girmez.
 Kenar, tünel ya da sağlayıcı bu sondayla **hiçbir koşulda adlandırılamaz**; sonda adlandırmaz.
 
-- **Kalibrasyon (aynı ad, aynı koşum):** API pozitiflerinin **tamamında** yankı eşleşmeli **ve** API öneki dışındaki hiçbir yanıtta
-  (web pozitifleri dahil) kimlik başlığı bulunmamalıdır (ters kalibrasyon). Önek dışı bir yanıtta başlık görülürse başlık API'ye özgü
-  değildir → kalibrasyon `GECERSIZ` → o koşumda **bütün** katman kimlikleri `OLCULEMEDI`. Kalibrasyon `VAR` değilse hiçbir satır
-  adlandırılmaz ve "API değil" çıkarımı yapılmaz.
-- **`UYGULAMA-API`:** kalibrasyon `VAR` + yankı `ESLESTI` (yol sınıfından bağımsız).
+- **Kalibrasyon (aynı ad, aynı koşum) — iki ayrı soru.** "Yankısız bölge" = API'nin yankılayamayacağı yanıtlar (kaynak okuması):
+  API öneki dışındaki yollar (web pozitifleri dahil) ve ön uçuş (OPTIONS) yanıtları.
+  - **Ters kalibrasyon:** yankısız bölgede **aynı değer** görülürse zincirde isteğin kimliğini **yansıtan** başka bir katman vardır;
+    yankı API'ye özgü değildir → kalibrasyon `GECERSIZ` → o koşumda **bütün** katman kimlikleri `OLCULEMEDI` (eşleşen yankı da kanıt
+    sayılmaz).
+  - **İleri kalibrasyon:** API pozitiflerinin **tamamında** yankı eşleşmeli **ve** yankısız bölgede hiç kimlik başlığı bulunmamalı
+    (farklı değerli başlık = kendi değerini yazan bir katman). İkisi de sağlanırsa `VAR`; değilse `YOK`.
+- **`UYGULAMA-API`:** yankı `ESLESTI` **ve** kalibrasyon `GECERSIZ` değil (yol sınıfından bağımsız; kalibrasyon `YOK` iken de).
+  Gerekçe: tek kullanımlık değeri aynen döndürebilen yalnız API ya da yansıtan bir katmandır; ikincisini ters kalibrasyon arar.
+  **Varsayım (ölçülemez):** yalnız API önekli ve ön uçuş olmayan yanıtlarda yansıtan bir katman yoktur — böyle bir katman bu sondayla
+  ayırt edilemez; şablonlarda yanıt başlığı yazan yönerge yoktur (okundu), canlı kenar ölçülmedi.
 - **`API-DEGIL-CIKARIM`** yalnız bir **çıkarımdır** ve yalnız güvenle söylenebildiği yerde yapılır: kalibrasyon `VAR` + yanıtta
-  başlık yok + istek ön uçuş (OPTIONS) değil + yol `API-KESIN`. Hangi üst katmanın yanıtladığı her durumda ölçülemez.
+  başlık yok + istek ön uçuş (OPTIONS) değil + yol `API-KESIN`. Hangi üst katmanın yanıtladığı her durumda ölçülemez. Kalibrasyon
+  `VAR` değilse bu çıkarım hiçbir satırda yapılmaz.
 - **Yol sınıfı (`pathClass`):** `API-KESIN` = ham yol tam `/api` önekli ve normalleştirilecek bir yanı yok (yüzde dizisi, nokta
-  segmenti, çift eğik çizgi, noktalı virgül, büyük harfli önek içermez; sorgu etkilemez) — API bu isteği işleseydi istek kimliği ara
-  katmanı kesin çalışırdı. `API-BELIRSIZ` = ham ya da çözülmüş / sadeleştirilmiş biçimi API önekine düşen diğer her yol; çıkarım
-  yapılmaz → `OLCULEMEDI` (örnekler: çift eğik çizgili yol API'de önek dışına düşer; çözülemeyen yüzde dizisinde ara katman çalışmaz;
-  ikisinde de API yanıtı yankısız olur). `ONEK-DISI` = web yolu → `UYGULANAMAZ` (web'in imzası yok).
-- **OPTIONS:** ön uçuş, istek kimliği ara katmanından önce yanıtlanır → API önekli yolda `OLCULEMEDI`.
+  segmenti, çift eğik çizgi, noktalı virgül, büyük harfli önek içermez; sorgu ve sondaki tek eğik çizgi etkilemez) — API bu isteği
+  işleseydi istek kimliği ara katmanı kesin çalışırdı. `API-BELIRSIZ` = ham ya da çözülmüş / sadeleştirilmiş biçimi API önekine düşen
+  diğer her yol; çıkarım yapılmaz → `OLCULEMEDI` (örnekler: çift eğik çizgili yol API'de önek dışına düşer; çözülemeyen yüzde
+  dizisinde ara katman çalışmaz; ikisinde de API yanıtı yankısız olur). `ONEK-DISI` = web yolu → `UYGULANAMAZ` (web'in imzası yok).
+- **OPTIONS:** ön uçuş, istek kimliği ara katmanından önce yanıtlanır → API önekli yolda başlıksız yanıt `OLCULEMEDI`; aynı değeri
+  taşıyan ön uçuş yanıtı API'den gelemez → ters kalibrasyon girdisidir (`GECERSIZ`).
+- **Çıkarımın kapsamı (sağlıklı koşumda, bu vektör kümesiyle; öz-testte ölçüldü):** 59 ret satırının **30**'unda "API değil" çıkarımı
+  yapılır; **16**'sında (API önekli 2 OPTIONS + yolu belirsiz 14 satır) ve **13** web yolu satırında katman hakkında hiçbir şey
+  söylenemez — web uygulamasının ürettiği bir 403, kenar reddinden bu yöntemle **ayırt edilemez**.
 
 **Bu kural KAYNAK OKUMASIDIR; izole prova bekliyor.** Dayanak: `apps/api/src/common/request-id.middleware.ts` (başlık adı, kabul edilen
 biçim, gelen değer geçerliyse aynen yanıta yazılır), `app.module.ts` (ara katman `forRoutes('*')`), `main.ts` (genel önek `api`,
@@ -125,53 +154,71 @@ bekleyen iştir. Canlı zincirin başlığı değiştirmeden geçirdiği ancak k
 
 | # | Gözlem | Ret sonucu | Katman kimliği | Ad düzeyi ret hükmüne etkisi |
 |---|---|---|---|---|
-| 1 | 403, yankı eşleşti | `RET-403` | `UYGULAMA-API` | **DEĞERLENDİRME GEREKİR (5) — OWNER KARARI BEKLİYOR**: kenar geçirmiş, uygulama reddetmiş demektir; bulgu mu sayılacağı, kabul mü edileceği kararı verilmedi (§3b) |
-| 2 | 403, başlık yok, yol `API-KESIN`, OPTIONS değil | `RET-403` | `API-DEGIL-CIKARIM` | reddedildi; KAPALI'yı engellemez |
-| 3 | 403, başlık yok, yol API öneki dışında | `RET-403` | `UYGULANAMAZ` | reddedildi; KAPALI'yı engellemez |
-| 4 | 403, başlık yok, OPTIONS ya da yol `API-BELIRSIZ` | `RET-403` | `OLCULEMEDI` | reddedildi; KAPALI'yı engellemez |
-| 5 | 403, kalibrasyon `YOK` / `GECERSIZ` | `RET-403` | `OLCULEMEDI` (bütün satırlar) | **DEĞERLENDİRME GEREKİR (5)**: API kaynaklı 403 denetimi bu koşumda yapılamadı |
-| 6 | 403, kimlik başlığı var ama farklı değer | `RET-403` | `OLCULEMEDI` | **DEĞERLENDİRME GEREKİR (5)**: kaynak okumasıyla açıklanamayan gözlem |
+| 1 | 403, yankı eşleşti (kalibrasyon `GECERSIZ` değil) | `RET-403` | `UYGULAMA-API` | **DEĞERLENDİRME GEREKİR (5) — OWNER KARARI BEKLİYOR**: kenar geçirmiş, uygulama reddetmiş demektir; bulgu mu sayılacağı, kabul mü edileceği kararı verilmedi (§3b-2) |
+| 2 | 403, başlık yok, yol `API-KESIN`, OPTIONS değil, kalibrasyon `VAR` | `RET-403` | `API-DEGIL-CIKARIM` | reddedildi; KAPALI'yı engellemez |
+| 3 | 403, başlık yok, yol API öneki dışında, kalibrasyon `VAR` | `RET-403` | `UYGULANAMAZ` | reddedildi; KAPALI'yı engellemez |
+| 4 | 403, başlık yok, OPTIONS ya da yol `API-BELIRSIZ`, kalibrasyon `VAR` | `RET-403` | `OLCULEMEDI` | reddedildi; KAPALI'yı engellemez |
+| 5 | 403, kalibrasyon `YOK` / `GECERSIZ` | `RET-403` | `GECERSIZ`: bütün satırlar `OLCULEMEDI` · `YOK`: eşleşen yankılı satır `UYGULAMA-API`, diğerleri `OLCULEMEDI` | **DEĞERLENDİRME GEREKİR (5) — karar 2'ye BAĞLI**: API kaynaklı 403 denetimi bu koşumda yapılamadı (API'nin ürettiği 403 sayılacaksa, onu denetleyememek de KAPALI'yı engeller) |
+| 6 | 403, kimlik başlığı var ama farklı değer | `RET-403` | `OLCULEMEDI` | **DEĞERLENDİRME GEREKİR (5) — karar 2'ye BAĞLI**: kaynak okumasıyla açıklanamayan gözlem (zincirde kendi değerini yazan bir katman) |
 | 7 | bütün istekler 403 (pozitifler dahil) | `RET-403` | `OLCULEMEDI` | **ÖLÇÜLEMEDİ (3)**: tekdüze ret — "personel kapalı, portal açık" gözlemi değildir |
-| 8 | 403 dışı yanıt (3xx / 4xx / 429 / 5xx), yankı eşleşti | ilgili sınıf | `UYGULAMA-API` | **KAPALI DEĞİL (2)**: istek uygulamaya ulaştı |
-| 9 | 3xx ya da 403 dışı 4xx, API'den geldiği kanıtsız | `YONLENDIRME-3XX` / `DORTYUZ-403-DISI` | çıkarım ya da `OLCULEMEDI` | **DEĞERLENDİRME GEREKİR (5)**: KAPALI sayılmaz, otomatik bulgu da sayılmaz (tünel varsayılanı da, kenarı geçen istek de aynı kodu verebilir) |
+| 8 | 403 dışı yanıt (3xx / 4xx / 429 / 5xx), yankı eşleşti, kalibrasyon `GECERSIZ` değil (**`YOK` olsa da**) | ilgili sınıf | `UYGULAMA-API` | **KAPALI DEĞİL (2)**: istek uygulamaya ulaştı |
+| 9 | 3xx ya da 403 dışı 4xx, API'den geldiği kanıtsız (yankı yok / farklı değer / kalibrasyon `GECERSIZ`) | `YONLENDIRME-3XX` / `DORTYUZ-403-DISI` | çıkarım ya da `OLCULEMEDI` | **DEĞERLENDİRME GEREKİR (5)**: KAPALI sayılmaz, otomatik bulgu da sayılmaz (tünel varsayılanı da, kenarı geçen istek de aynı kodu verebilir) |
 | 10 | 2xx (OPTIONS 204 dahil) | `REDDEDILMEDI-2XX` | yankı varsa `UYGULAMA-API` | **KAPALI DEĞİL (2)** |
-| 11 | 5xx ya da 429, API'den geldiği kanıtsız | `SUNUCU-HATASI-5XX` / `HIZ-SINIRI-429` | çıkarım ya da `OLCULEMEDI` | **ÖLÇÜLEMEDİ (3)**: ret sayılmaz, bulgu da sayılmaz |
+| 11 | 5xx, 429 ya da hiçbir sınıfa girmeyen kod; API'den geldiği kanıtsız | `SUNUCU-HATASI-5XX` / `HIZ-SINIRI-429` / `SINIFLANAMADI` | çıkarım ya da `OLCULEMEDI` | **ÖLÇÜLEMEDİ (3)**: ret sayılmaz, bulgu da sayılmaz |
 | 12 | taşıma hatası (ad çözülmedi / bağlantı / TLS / zaman aşımı) | `SONUC-YOK` + hata sınıfı | `SONUC-YOK` | **ÖLÇÜLEMEDİ (3)** |
+| 13 | 403, sınama (challenge) işareti taşıyor | `SINAMA-ISARETLI-403` | işaret katman kimliğine girmez (satır 2–4 gibi) | **DEĞERLENDİRME GEREKİR (5)**: ret kararı değildir; KAPALI sayılmaz (sayılışı karar girdisi, §3b-6) |
+| 14 | yankısız bölgede (önek dışı yol / OPTIONS) **aynı değer** | ilgili sınıf | bütün satırlar `OLCULEMEDI` (kalibrasyon `GECERSIZ`) | satır 5 gibi; eşleşen yankılı 403 / 403 dışı yanıtlar "API'den geldiği kanıtlı" **sayılmaz** |
 
-Pozitif vektörler: beklenen kod + (API pozitifinde) yankı = kalibrasyon girdisi · pozitif **403** aldıysa ÖLÇÜLEMEDİ (3) · beklenmeyen ve
-403 olmayan yanıt (ör. token'sız 200) **POZİTİF BULGU (2)** · API'den geldiği kanıtsız 5xx / 429 ya da taşıma hatası ÖLÇÜLEMEDİ (3).
+Pozitif vektörler: beklenen kod + (API pozitifinde) yankı = kalibrasyon girdisi · pozitif **403** aldıysa (tek bir pozitif de olsa)
+ÖLÇÜLEMEDİ (3) · beklenmeyen ve 403 olmayan yanıt (ör. token'sız 200) **POZİTİF BULGU (2)** · API'den geldiği kanıtsız 5xx / 429 ya da
+taşıma hatası ÖLÇÜLEMEDİ (3).
 
 **Ad düzeyinde iki ayrı hüküm** (kanıtta `nameVerdict { ret, layer }`):
 
 - **RET HÜKMÜ** — öncelik sırasıyla ilk karşılanan: `KAPALI-DEGIL` (2) → `POZITIF-BULGU` (2) → `OLCULEMEDI` (3) →
-  `DEGERLENDIRME-GEREKIR` (5) → `KAPALI` (0). `KAPALI` = bütün ret vektörleri 403, hiçbirinin API'den geldiği kanıtlı değil,
-  pozitifler beklendiği gibi, kalibrasyon `VAR`; kayıt eki zorunludur: **"yalnız bu istek profili, bu konum, bu vektör kümesi için"**.
-  Hükmün nedenleri (`reasons`) ayrı ayrı yazılır; sınıflanamayan her durum `OLCULEMEDI`'dir — hiçbir belirsiz durum `KAPALI` sayılmaz.
+  `DEGERLENDIRME-GEREKIR` (5) → `KAPALI` (0). **Bulgu ölçülemeyenin önündedir:** aynı koşumda taşıma hatası ya da pozitif reddi olsa
+  da kanıtlı bulgu çıkış 2 verir; öteki nedenler kayıtta kalır. `KAPALI` = bütün ret vektörleri 403 (sınama işaretsiz), hiçbirinin
+  API'den geldiği kanıtlı değil, pozitifler beklendiği gibi, kalibrasyon `VAR` ve **hiçbir neden yok**; kayıt eki zorunludur:
+  **"yalnız bu istek profili, bu konum, bu vektör kümesi için"** ve **varsayım**: "API'nin ürettiği 403 yanıtında kimlik başlığı
+  zincirde düşürülmüyor" (kalibrasyon bunu yalnız pozitiflerin yanıtında gösterir; kaynakta ve şablonda başlığı silen satır yok —
+  okundu; canlı zincir ölçülmedi). Hükmün nedenleri (`reasons`) ayrı ayrı yazılır; sınıflanamayan her durum (tanınmayan hüküm değeri
+  dahil) `OLCULEMEDI`'dir — hiçbir belirsiz durum `KAPALI` sayılmaz. `pendingOwnerDecision` (çıktıda `D8-KARAR-BEKLIYOR`) yalnız
+  **hükmü belirleyen** sınıfta owner kararına bağlı bir neden varsa `EVET`'tir.
 - **KATMAN HÜKMÜ** — yalnız `ADLANDIRILDI-API` / `ADLANDIRILAMADI` / `OLCULEMEDI`; **PASS / FAIL değeri almaz** ve çıkış kodunu
   etkilemez. "Ret `KAPALI` + katman `ADLANDIRILAMADI`" **olağan sonuçtur** (403'ü hangi üst katmanın ürettiği bu yöntemle
   gösterilemez); kabulü owner kararıdır (§3b).
 
-**Çıkış kodu** yalnız ret hükmünden türer: **0** `KAPALI` · **2** `KAPALI-DEGIL` / `POZITIF-BULGU` · **3** `OLCULEMEDI` · **4** kapı
-(origin https değil · TLS doğrulaması kapalı · takma ad / konum etiketi yok ya da geçersiz · parametre yinelenmiş · kanıt dosyası
-zaten var · etiket ana makine adını içeriyor) · **5** `DEGERLENDIRME-GEREKIR` · **7** kanıt / özet yazılamadı. Çıkış 0 tek başına
-"D-8 kapandı" demek **değildir** (§3).
+**Çıkış kodu** yalnız ret hükmünden türer: **0** `KAPALI` · **2** `KAPALI-DEGIL` / `POZITIF-BULGU` · **3** `OLCULEMEDI` · **4** kapı —
+istek atılmaz (origin https değil ya da içinde kimlik / sorgu / parça var · TLS doğrulaması kapalı · takma ad / konum etiketi yok ya da
+geçersiz · `--origin` / `--alias` / `--out` / `--vantage` yinelenmiş · `--out` yok · `--phone-list` ile `--out` birlikte · kanıt ya da
+özet dosyası zaten var · konum etiketi ana makine adını ya da bir etiketini içeriyor · `D8_HTTP_TIMEOUT_MS` geçersiz · hüküm eşlemesi
+tanınmıyor) · **5** `DEGERLENDIRME-GEREKIR` · **7** kanıt / özet yazılamadı (ölçüm yapıldı; ham kanıtı olmayan özet kanıt sayılmaz) ·
+**1** sonda beklenmeyen biçimde durdu — **ÖLÇÜLEMEDİ** sayılır, kapanış değildir. Çıkış 0 tek başına "D-8 kapandı" demek
+**değildir** (§3).
 
 **"Kimliksiz istekte uygulama 403 üretmez" bir genelleme değildir.** Bu, yalnız sondanın vektör listesindeki uçlar için kaynak
 okumasıdır (çalışma zamanında ölçülmedi); uygulamanın başka uçları kimlik kontrolünden önce 403 üretebilir. Uygulamanın ürettiği 403
 bu yüzden yukarıdaki tabloda ayrı satırdır (1) ve varsayımla değil yankı kanıtıyla sınıflanır.
 
-**Tasarım kaydındaki tabloya eklenen sınıflar** (uygulama ayrıntısıdır; owner kararı değildir, §3b'deki kararların yerine geçmez):
-kalibrasyon `VAR` değilken ret hükmü `KAPALI` verilmez (satır 5) · farklı değerli kimlik başlığı ayrı neden (satır 6) · 429 ayrı sınıf
-(satır 8 / 11) · pozitif vektör bulgusu `KAPALI-DEGIL` ile karıştırılmaz (`POZITIF-BULGU`) · önek dışı **herhangi** bir yanıtta kimlik
-başlığı kalibrasyonu `GECERSIZ` yapar · `API-BELIRSIZ` yol sınıfı.
+**Görev tablosuna eklenen kardeş dallar** (R05 öncesi tasarım kaydı depo dışındadır; aşağıdakiler bu paketin eklemesidir ve **owner
+kararı yerine geçmez** — karara bağlı olanlar §3b'de karar ya da karar girdisi olarak ayrıca listelidir): kalibrasyon `VAR` değilken
+ve farklı değerli kimlik başlığı görülünce ret hükmü `KAPALI` verilmez (satır 5 / 6; **karar 2'ye bağlı**, §3b-2) · sınama işaretli
+403 ayrı sınıf (satır 13; §3b-6) · 429 ve sınıflanamayan durum kodu ayrı sınıf (satır 8 / 11) · pozitif vektör bulgusu `KAPALI-DEGIL`
+ile karıştırılmaz (`POZITIF-BULGU`) · yansıma (aynı değer) ile damga (farklı değer) ayrı: yalnız yansıma `GECERSIZ` yapar · ön uçuş
+yanıtı ters kalibrasyon girdisidir · `API-BELIRSIZ` yol sınıfı.
 
 **Adsız özet.** Sonda ham kanıtın (`<kanıt>.json`; ana makine adını içerir, **kısıtlı**, depoya girmez) yanına ad içermeyen ayrı bir
 özet yazar (`<kanıt>.ozet.json`): takma ad, revizyon, sondanın kendi SHA-256'sı, vektör kümesi kimliği, yöntem kapsamı sayıları (beş yöntem
-· HEAD n/3 · OPTIONS n/3 · varyant n/18), ret sonucu sayıları, hata sınıfı sayıları, katman kimliği sayıları, kalibrasyon, iki hüküm
-ve nedenleri, zaman, çıkış kodu, beyan edilen konum etiketi, gönderilen başlık **adları**. İçermez: ad, hata metni, yönlendirme
-hedefi, yol / yöntem düzeyinde bulgu, ipuçları. Sonda özeti yazmadan önce içinde ana makine adının geçmediğini kendisi denetler;
-geçiyorsa yazmaz (etiket adı içeriyorsa istek atmadan durur). **Public tablo (§1b) yalnız bu özetten dolar ve public belgeye yalnız
-bu özetin SHA-256'sı yazılır**; ham kanıtın özeti yazılmaz (ad düşük entropilidir; ham kanıt özeti adı doğrulamaya yarar).
+· HEAD n/3 · OPTIONS n/3 · varyant n/18), ret sonucu sayıları, hata sınıfı sayıları, yankı sayıları, katman kimliği sayıları,
+kalibrasyon, iki hüküm ve nedenleri, zaman, çıkış kodu, beyan edilen konum etiketi, gönderilen başlık **adları**. İçermez: ad, hata
+metni, yönlendirme hedefi, yol düzeyinde bulgu, ipuçları. **Yöntem sınıfı düzeyinde sayı içerir** (HEAD / OPTIONS / varyant kaç
+tanesi reddedildi) — bu yüzden özet dosyası da depoya konmaz ve ret hükmü `KAPALI` olmayan bir adın sayıları public tabloya yazılmaz
+(§1b). **Ad denetiminin ölçülen kapsamı:** (a) istek atılmadan — owner'ın verdiği konum etiketi ana makine adının tam dizgisini ya
+da nokta ile ayrılmış bir **etiketini** (harf / rakam dışı karakterler atıldıktan sonra en az 3 karakter; noktası tireye çevrilmiş
+türev dahil) içeriyorsa sonda koşmaz (çıkış 4); (b) özet yazılmadan — özet metninde adın **tam dizgisi** geçiyorsa özet yazılmaz
+(çıkış 7). (b) parça yakalamaz; adın parçası yalnız (a)'da ve yalnız owner etiketinde aranır. **Public tablo (§1b) yalnız bu özetten
+dolar ve public belgeye yalnız bu özetin SHA-256'sı yazılır**; ham kanıtın özeti yazılmaz (ad düşük entropilidir; ham kanıt özeti adı
+doğrulamaya yarar).
 **Vektör kümesi kimliği** (`vectorSetId`) vektör listesinden türetilir (sırayla "grup yöntem hamYol beklenenKodlar" satırlarının
 SHA-256'sı): adlar arasında aynı listenin koşulduğunu gösterir (bu revizyonun değeri §7).
 
@@ -214,11 +261,20 @@ da izole ölçüm çıkarımları hiçbir satırın gerekçesi olamaz. Ortak / t
 | **AD-1** (birincil ad) | birincil yayın adı — canlı yapılandırmadan okunur; sahiplik kanıtı ölçütü **owner kararı bekliyor** (§3b) | **GO YOK** | — | — | — | — | — | **ÖLÇÜLMEDİ** | **ÖLÇÜLMEDİ** | bu revizyon için YOK (2026-09-27 beyanı R27 öncesidir; ada bağlanmadı) | — |
 | diğer yayın adları | satır yalnız sahipliği doğrulanınca açılır; **bugün doğrulanmış ek ad yok** | — | — | — | — | — | — | — | — | — | — |
 
-Doldurma kuralları: hücreler özetteki alanlardan birebir alınır (`outcomeCounts.deny`, `coverage`, `calibration`, `layerCounts.deny`,
-`nameVerdict.ret.value` + nedenler, `nameVerdict.layer.value`, `vantage`, `probeSha256`, `vectorSetId`) · özeti olmayan ad
-**ÖLÇÜLMEDİ** kalır · bir adda farklı vektör kümesi koşulursa `vectorSetId` farklıdır ve o satırın kapsamı ayrıca yazılır · ret hükmü
-`DEGERLENDIRME-GEREKIR` ise satıra "owner değerlendirmesi bekliyor" yazılır, hüküm yorumlanarak değiştirilmez · bulgu ayrıntısı (yol,
-yöntem) public tabloya **yazılmaz**, kısıtlı kayıtta kalır.
+Doldurma kuralları:
+- Hücreler özetteki alanlardan birebir alınır (`outcomeCounts.deny`, `coverage`, `calibration`, `layerCounts.deny`,
+  `nameVerdict.ret.value` + nedenler, `nameVerdict.layer.value`, `vantage`, `probeSha256`, `vectorSetId`) · özeti olmayan ad
+  **ÖLÇÜLMEDİ** kalır · bir adda farklı vektör kümesi koşulursa `vectorSetId` farklıdır ve o satırın kapsamı ayrıca yazılır.
+- **Ret hükmü `KAPALI` DEĞİLSE** (`KAPALI-DEGIL`, `POZITIF-BULGU`, `OLCULEMEDI`, `DEGERLENDIRME-GEREKIR`) public satıra **yalnız**
+  şunlar yazılır: takma ad · koşum (tarih, konum, sonda pini, vektör kümesi) · ret hükmünün **değeri** · katman hükmünün değeri ·
+  "ayrıntı ve özet SHA-256'sı kısıtlı kayıtta" notu. Ret sonucu sayıları, yöntem kapsamı, kalibrasyon, katman kimliği sayıları,
+  neden sayıları **ve özetin SHA-256'sı** o satıra **yazılmaz**: özet yöntem sınıfı düzeyinde sayı taşır (HEAD / OPTIONS / varyant)
+  ve sondanın vektör listesi public'tir — kapatılmamış bir bulgunun hangi sınıfta olduğu public tablodan okunmamalıdır; özet düşük
+  entropili olduğundan SHA-256'sı da sayıların denenerek sınanmasına yarar. Sayılar ve özet SHA-256'sı ancak ret hükmü `KAPALI` olan
+  bir koşumun özetinden yazılır. (Bu kural bu paketin tutucu varsayılanıdır; gevşetilmesi owner kararıdır — §3b-7.)
+- Ret hükmü `DEGERLENDIRME-GEREKIR` ise satıra "owner değerlendirmesi bekliyor" yazılır, hüküm yorumlanarak değiştirilmez.
+- Bulgu ayrıntısı (yol, yöntem, durum) public tabloya **yazılmaz**, kısıtlı kayıtta kalır. Elle yazılan konum etiketi adı ya da
+  bir parçasını içeremez (sonda reddeder; §1.1 "ad denetiminin ölçülen kapsamı").
 
 ### 1c. Öz-test (`scripts/d8-selftest.js`)
 
@@ -234,64 +290,130 @@ reddedilir); `D8_SELFTEST_PROBE` başka bir sonda dosyasını sınar (negatif ay
 | Kalem | Girdi → ölçülen sınıf |
 |---|---|
 | K-SRC · K-PORT | ürün kaynağındaki dayanaklar okunabildi · öz-test port kapısı |
-| S1 · K-1 · L-1 | sağlıklı kenar → çıkış 0, RET `KAPALI` + KATMAN `ADLANDIRILAMADI` iki ayrı satır, birleşik PASS yok · 6 API pozitifi yankılı + 3 web pozitifi başlıksız → kalibrasyon `VAR` · "API değil" çıkarımı yalnız düz `/api` yolunda; OPTIONS, çift eğik çizgi, çözülemeyen yüzde dizisi → `OLCULEMEDI`; web yolu → `UYGULANAMAZ` |
+| S1 · K-1 · L-1 | sağlıklı kenar → çıkış 0, RET `KAPALI` + KATMAN `ADLANDIRILAMADI` iki ayrı satır, birleşik PASS yok · 6 API pozitifi yankılı + 3 web pozitifi başlıksız → kalibrasyon `VAR` · "API değil" çıkarımı yalnız düz `/api` yolunda; OPTIONS, çift eğik çizgi, çözülemeyen yüzde dizisi, nokta segmenti, noktalı virgül, büyük harfli önek, yüzde kodlu segment → `OLCULEMEDI`; web yolu → `UYGULANAMAZ` |
 | S1-p · S1-c · Y-1 · S7 | ham yol birebir (68/68) · kimlik başlığı yok, gövde 0 / 2 bayt · istek kimliği 68 istekte var, ürün kaynağındaki biçime uyar, tek kullanımlık · 3 HEAD + 3 OPTIONS + 18 varyant ve özetteki yöntem kapsamı |
 | S2 · N-5 | bozuk kenar (ikinci ad AD-2) → çıkış 2 `KAPALI-DEGIL`; 20 sızan istek: yankılı 401 / 404 → `UYGULAMA-API`, OPTIONS 204 → reddedilmedi, çift eğik çizgili yankısız 404 → API'den geldiği kanıtsız · AD-2 koşumu AD-1'in dosyalarını değiştirmez; sonda kendi kaynağından başka dosya okumaz |
-| S3 · S3-b · S3-c | sağlayıcı imzası · başlıksız boş 403 · sağlayıcı `Server` + boş gövde → ipuçları değişir, katman kimliği ve iki hüküm S1 ile aynı kalır |
-| **S3-dN · S3-dY** | gövdesi dolu ama **yankısız** 403 (kenar üretir) → çıkış 0 · **yankılı** 403 (API üretir) → çıkış 5 `DEGERLENDIRME-GEREKIR` + "owner kararı bekliyor"; ne `KAPALI` ne `KAPALI-DEGIL`. (R04'ün S3-d kalemi "uygulama-403 taklidinde çıkış 0" bekliyordu; iki ayrı girdiye bölündü.) |
-| K-2 · K-3 · K-4 | web yanıtında yankı → `GECERSIZ`, 68 satırın hepsi `OLCULEMEDI`, çıkış 5 · API pozitifleri yankısız → kalibrasyon `YOK`, çıkarım yok, çıkış 5 · biçime uymayan kimlik (API kendi değerini üretir) → `FARKLI-DEGER`, çıkış 5 |
-| F-1 · F-2 | farklı değerli başlık bütün ret yanıtlarında → yankı sayılmaz, `GECERSIZ`, çıkış 5, yanıt değeri kanıta yazılmaz · yalnız API önekli ret yanıtlarında → kalibrasyon `VAR` ama o satırlar `OLCULEMEDI`, çıkış 5 |
-| L-2 · L-2b · L-3 · L-4 · L-5 · L-6 | yankılı 5xx → 2 · yankılı 429 → 2 · yankısız 5xx → 3 · yankısız 404 → 5 · yönlendirme → 5 (hedef kanıta yazılmaz) · yankısız 429 → 3 |
+| S3 · S3-b · S3-c | sağlayıcı **engelleme** imzası (sınama işareti yok) · başlıksız boş 403 · sağlayıcı `Server` + boş gövde → ipuçları değişir, katman kimliği ve iki hüküm S1 ile aynı kalır |
+| **S3-ch** | **sınama (challenge) işaretli** 403: durum kodları S3 ile aynı ama ret sonucu `SINAMA-ISARETLI-403` → çıkış 5; `KAPALI` değil; işaret katman kimliğine girmez (katman kimliği S1 ile aynı); işaret yalnız birkaç vektördeyse de çıkış 5. (İlk R05 baytlarında S3 fikstürü engelleme gövdesiyle sınama işaretini birlikte taşıyor ve çıkış 0 bekliyordu; iki ayrı girdiye bölündü.) |
+| **S3-dN · S3-dY · L-7** | gövdesi dolu ama **yankısız** 403 (kenar üretir) → çıkış 0 · **yankılı** 403 (API üretir) → çıkış 5 `DEGERLENDIRME-GEREKIR` + "owner kararı bekliyor"; ne `KAPALI` ne `KAPALI-DEGIL` · yankılı 403 yalnız **yolu belirsiz** bir vektörde (kodlama varyantı) → yine `UYGULAMA-API`, çıkış 5. (R04'ün S3-d kalemi "uygulama-403 taklidinde çıkış 0" bekliyordu; iki ayrı girdiye bölündü.) |
+| K-2 · K-3 · K-4 | **yansıtan** katman (web yanıtında aynı değer) → `GECERSIZ`, 68 satırın hepsi `OLCULEMEDI`, çıkış 5 · API pozitifleri yankısız → kalibrasyon `YOK`, çıkarım yok, çıkış 5 · biçime uymayan kimlik (API kendi değerini üretir) → `FARKLI-DEGER`, çıkış 5 |
+| F-1 · F-2 · **F-3** | **damga**: farklı değerli başlık bütün ret yanıtlarında → yankı sayılmaz; kalibrasyon `YOK` (`GECERSIZ` değil — yansıma yok), API pozitiflerindeki eşleşen yankı hâlâ `UYGULAMA-API`; çıkış 5; yanıt değeri kanıta yazılmaz · farklı değer yalnız API önekli, ön uçuş olmayan ret yanıtlarında → kalibrasyon `VAR` ama o satırlar `OLCULEMEDI`, çıkış 5 · farklı değer yalnız önek dışı (web) ret yanıtlarında → kalibrasyon `YOK`; yankısız API önekli satırlarda da "API değil" çıkarımı yapılmaz |
+| **K-5 · K-6 · K-7 · K-8** | **kısmi** kalibrasyon (API yankı 5/6 ve 1/6) → `YOK`, çıkarım yok, çıkış 5 (6/6 → çıkış 0) · kalibrasyon `YOK` iken ret vektöründe **yankılı 401** → eşleşen yankı yine API kanıtı → çıkış 2 · bir API pozitifi 403 + yankılı 401 → bulgu ölçülemeyenin önünde → çıkış 2 · damgalayan katman + yankılı 401 → `YOK` (`GECERSIZ` değil), yankılı satır `UYGULAMA-API` → çıkış 2 |
+| **K-9 · K-10 · K-11** | ön uçuş ters kalibrasyonu: kenar yalnız API önekli kendi 403'lerine isteğin kimliğini yansıtıyor (API önekli OPTIONS yanıtında aynı değer) → `GECERSIZ`; kenarın eşleşen yankılı 403'leri "API kanıtlı" sayılmaz; ön uçuşta farklı değer → `YOK` · bir web pozitifi ölçülemedi → `YOK`, çıkarım yok, çıkış 3 · aynı değer **tek** bir önek dışı (ön uçuş olmayan) ret yanıtında → `GECERSIZ`, API pozitifleri 6/6 yankılı olduğu halde hiçbir satır adlandırılmaz |
+| L-2 · L-2b · L-3 · L-4 · L-5 · L-6 · L-8 | yankılı 5xx → 2 · yankılı 429 → 2 · yankısız 5xx → 3 · yankısız 404 → 5 · yönlendirme → 5 (hedef kanıta yazılmaz) · yankısız 429 → 3 · hiçbir sınıfa girmeyen durum kodu (600) → 3 |
 | U-1 · P-1 | tekdüze 403 (68/68) → çıkış 3; ret vektörü sayıları S1 ile aynı ama hüküm `KAPALI` değil · pozitifte token'sız 200 → çıkış 2 `POZITIF-BULGU` |
+| **P-2 · P-3 · P-4** | hüküm önceliği: 2xx + bağlantı kopması · yankılı 401 + zaman aşımı · pozitif 200 + bağlantı kopması → üçünde çıkış 2 (bulgu ölçülemeyenin önünde; hata sınıfları `BAGLANTI` / `ZAMAN-ASIMI`) · **tek** bir pozitif 403 (web / API; tekdüze değil) → çıkış 3 · pozitifte API'den geldiği kanıtsız 5xx (web / API) → çıkış 3 |
 | G-1 | kenar her şeyi geçirir: API'nin ürettiği hiçbir yanıt "API değil" diye sınıflanmaz; yankısız API yanıtları `OLCULEMEDI`; yankı varsa yol sınıfından bağımsız `UYGULAMA-API` |
-| N-1 … N-4 · O-1 | takma ad kapısı · yinelenen `--origin` / `--alias` · konum etiketi kapısı · var olan kanıtın üzerine yazmama · etiket ana makine adını içeriyorsa istek atmadan durma |
-| O-2 · O-3 · V-1 · V-2 | adsız özette ad / yol / hata metni / yönlendirme hedefi / satır düzeyi bulgu yok, alan kümesi sabit · özet SHA-256'sı bağımsız hesapla eşleşir · vektör kümesi kimliği kaynaktan bağımsız hesapla eşleşir · bir vektörü değişen kopyada kimlik değişir |
-| S4 · S4-b · S5-a…d · S6 | kenar kapalı → 3 (`BAGLANTI`) · doğrulanamayan sertifika → 3 (`TLS`) · kapılar 4 / 4 / 7 / 4 · `--phone-list` ayrı çağrı (istek atmaz) |
-| T-1 … T-4 · D-1 · B-0 | statik: pozitif liste · seçenek nesnesi, `ifPassed`, katman ve hüküm işlevleri ipucu okumaz · D8-E1/E2 kaynak kapsamı · "karar bekliyor" eşlemesi tek satırda · pinler · belgedeki iki blok tek satır, yalnız ASCII, yalnız AD-1 |
-| **B-1 … B-T2** (her biri iki kabukta) | belgeden çıkarılan blok metni, yalnız test için `.env` yolu / sonda yolu / pin ikamesi ve sahte kullanıcı köküyle, sahte `.env` ve sahte kenara karşı: olağan akış (çıkış 0, özet SHA'sı) · satır sayısı 0 ve 2 → sonda hiç koşmaz · https olmayan / yollu değer → koşmaz · pin uyuşmazlığı → koşmaz · bozuk kenarda blok çıkış 2'yi aktarır · telefon listesi bloğu istek atmaz · telefon bloğunda pin uyuşmazlığı. Kabuk yoksa kalem **ÖLÇÜLEMEDİ**'dir (geçti değil) |
+| N-1 … N-4 · O-1 · **O-1b** | takma ad kapısı · yinelenen `--origin` / `--alias` · konum etiketi kapısı · var olan kanıtın üzerine yazmama · etiket ana makine adını içeriyorsa istek atmadan durma · etiket adın bir **parçasını** / tireli türevini içeriyorsa da durma (adın hiçbir etiketini içermeyen etiket geçer) |
+| O-2 · O-3 · V-1 · V-2 | adsız özette ad / yol / hata metni / yönlendirme hedefi / satır düzeyi bulgu / sağlayıcı adı yok, alan kümesi sabit, sayılar ham kanıtla ve zemin gerçeğiyle uyumlu (10 koşumda) · özet SHA-256'sı bağımsız hesapla eşleşir · vektör kümesi kimliği kaynaktan bağımsız hesapla eşleşir · bir vektörü değişen kopyada kimlik değişir |
+| S4 · S4-b · S5-a…e · S6 | kenar kapalı → 3 (`BAGLANTI`) · doğrulanamayan sertifika → 3 (`TLS`) · kapılar 4 / 4 / 7 / 4 · geçersiz zaman aşımı değeri → 4 · `--phone-list` ayrı çağrı (istek atmaz) |
+| T-1 … T-4 · D-1 · B-0 | statik: pozitif liste · seçenek nesnesi, `ifPassed`, katman ve hüküm işlevleri ipucu okumaz · D8-E1/E2 kaynak kapsamı · "karar bekliyor" eşlemesi **ve işareti** tek satırda · pinler · belgedeki iki blok tek satır, yalnız ASCII, yalnız AD-1 |
+| **KD-1 · KD-2 · KD-3** | karar dalları — **yalnız eşleme satırı** değişen sonda kopyaları (hiçbir dal seçilmiş değildir; "tek satır" beyanının ölçümü): "bulgu" → yankılı 403 çıkış 2, bekleme işareti yok, kalibrasyonsuz koşum çıkış 5 kalır · "kabul" → yankılı 403 çıkış 0 ama katman hükmü ayrı kalır (`ADLANDIRILDI-API`), kalibrasyonsuz / farklı değerli koşum da çıkış 0, bozuk kenar yine çıkış 2 · tanınmayan değer ya da tutarsız çift → kapı çıkışı 4, istek yok (çıkış 0 vermez) |
+| **B-G** | blok düzeneğinin kapısı: test ikamesi **kanıtlanamayan** (belgedeki biçimden kaymış: çift tırnak · değişmez dize değil · iki atama · ikinci mutlak `.env` yolu · sonda yolu kaymış · yalnız telefon bloğunda kayma) blok kümesi **hiç koşturulmaz** (kabuk başlatılmaz, betik dosyası yazılmaz, kenara istek gitmez); gerçek bloklardan hazırlanan dokuz metinde canlı kök adı, `.env` uzantılı değer ya da sahte dosyalar dışında mutlak yol yok |
+| **B-1 … B-T2** (her biri iki kabukta) | belgeden çıkarılan blok metni, yalnız test için `.env` yolu / sonda yolu / pin ikamesi ve sahte kullanıcı köküyle, sahte `.env` ve sahte kenara karşı: olağan akış (çıkış 0, özet SHA'sı; kabuğun **ölçülen** tam sürümü gözleme yazılır) · satır sayısı 0 ve 2 → sonda hiç koşmaz · https olmayan / yollu değer → koşmaz · pin uyuşmazlığı → koşmaz · bozuk kenarda blok çıkış 2'yi aktarır · telefon listesi bloğu istek atmaz · telefon bloğunda pin uyuşmazlığı. Kabuk yoksa kalem **ÖLÇÜLEMEDİ**'dir (geçti değil) |
 
-**Son koşu (R05 baytları, 2026-10-05; Windows, node 24.18.0, Windows PowerShell 5.1 + pwsh 7.6):** 66 kalem — **PASS 66 · FAIL 0 ·
-ÖLÇÜLEMEDİ 0**, çıkış 0 (iki kabuktaki 14 blok kalemi dahil).
+**Son koşu (R05 düzeltme turu baytları, 2026-10-05; Windows, node 24.18.0; kabuk sürümleri öz-testin kendi çıktısından: Windows
+PowerShell 5.1.26100.9549 [Desktop] · pwsh 7.6.6 [Core]):** 86 kalem — **PASS 86 · FAIL 0 · ÖLÇÜLEMEDİ 0**, çıkış 0 (iki kabuktaki 14
+blok kalemi dahil).
 
-**Negatif ayna:** R04 sondası (`origin/main` baytları, `E150EEDA…514C`) bu öz-testte **20 / 66** (çıkış 1). Düşen 46 kalem: S1, K-1,
-L-1, S1-c, Y-1, S7, S2, N-5, S3, S3-b, S3-c, S3-dN, S3-dY, K-2, K-3, K-4, F-1, F-2, L-2, L-2b, L-3, L-4, L-5, L-6, U-1, P-1, G-1, N-1,
-N-2, N-3, N-4, O-1, S6, O-2, O-3, V-1, V-2, T-2, T-4, D-1, B-1 ve B-5 (iki kabukta), S4-b, S4 — R04 sondası takma ad almaz, yankı
-ölçmez, iki hüküm ve adsız özet üretmez. Geçen 20 kalem: K-SRC, K-PORT, S1-p, S5-a…d, T-1, T-3, B-0 ve bloğun kendi kapıları (B-2, B-3,
-B-4, B-T, B-T2 iki kabukta) — bunlar sondanın yeni kurallarına değil vektör listesine, eski kapılara ve blok metnine bakar.
+**Negatif ayna (iki eski sonda, yeni öz-testte):**
+- **R04 sondası** (`origin/main` baytları, `E150EEDA…514C`): **21 / 86** (çıkış 1). Düşen 65 kalem: S1, K-1, L-1, S1-c, Y-1, S7, S2,
+  N-5, S3, S3-b, S3-c, S3-ch, S3-dN, S3-dY, L-7, K-2 … K-11, F-1, F-2, F-3, L-2, L-2b, L-3, L-4, L-5, L-6, L-8, U-1, P-1 … P-4, G-1,
+  N-1 … N-4, O-1, O-1b, S5-e, S6, O-2, O-3, V-1, V-2, T-2, T-4, KD-1 … KD-3, D-1, B-1 ve B-5 (iki kabukta), S4-b, S4 — R04 sondası
+  takma ad almaz, yankı ölçmez, iki hüküm ve adsız özet üretmez. Geçen 21 kalem: K-SRC, K-PORT, S1-p, S5-a…d, T-1, T-3, B-0, B-G ve
+  bloğun kendi kapıları (B-2, B-3, B-4, B-T, B-T2 iki kabukta) — bunlar sondanın yeni kurallarına değil vektör listesine, eski
+  kapılara, blok metnine ve düzeneğin kendi kapısına bakar.
+- **R05 ilk baytları** (düzeltme turundan önceki sonda, `DDC882FF…A876`): **62 / 86** (çıkış 1). Düşen 24 kalem: S1, K-1, S3-ch, K-2,
+  K-3, K-5 … K-11, F-1, F-2, F-3, P-4, O-1b, S5-e, O-2, T-4, KD-1 … KD-3, D-1 — yani bu turda değişen kurallar (eşleşen yankının
+  kanıt sayılması, sınama işareti, ön uçuş ve damga / yansıma ayrımı, karar eşlemesi ve işareti, etiket parçası, zaman aşımı kapısı,
+  kayıt eki, özetteki yankı sayıları, bir neden adının düzeltilmesi). İlk baytların doğru sınıfladığı ama o turda **ölçülmeyen**
+  girdiler (hüküm önceliği P-2, tek pozitif reddi P-3, belirsiz yolda yankılı 403 L-7) bu aynada geçer; artık kalemle sabittir.
 
-**Mutasyon provası:** R05 sondasının tek bir kuralı bozulmuş **19 kopyasının 19'u yakalandı**. "Yakalandı" = öz-testin 66 kalemi koştu
-**ve** mutasyonla ilgili kalem FAIL oldu (öz-test çıkışının ≠ 0 olması tek başına sayılmadı; her alternatif sondada düşen pin kalemi
-D-1 sayılmadı):
+**Mutasyon provası:** son sondanın tek bir kuralı bozulmuş **53 kopyasının 53'ü yakalandı**. "Yakalandı" = öz-testin 86 kaleminin
+hepsi raporlandı (senaryolar koştu; öz-test çıkışı 1) **ve** mutasyonla ilgili kalem FAIL oldu — öz-test çıkışının ≠ 0 olması tek
+başına sayılmadı; her alternatif sondada düşen pin kalemi D-1 hiçbir mutantta "ilgili" sayılmadı; hedefi kaynakta tam bir kez
+bulunmayan mutant üretilmez (uygulanamayan: 0). İlk 19 satır ilk R05 turundaki mutasyonların yeni baytlara uyarlanmış hâlidir;
+kalanı düzeltme turunda eklendi (doğrulayıcıların hayatta kalan mutantları dahil).
 
 | Mutasyon | FAIL olan ilgili kalem |
 |---|---|
 | yankısız yanıtı API say | S1, L-1, S3-dN, G-1 |
 | farklı değerli başlığı yankı say | K-4, F-1, F-2 |
-| tekdüze 403'ü `KAPALI` say | U-1 (mutant çıkış 0 verdi) |
+| tekdüze 403'ü `KAPALI` say | U-1 |
 | "API değil" çıkarımını API önekine düşen her yolda yap | L-1, G-1 |
 | "API değil" çıkarımını OPTIONS'ta da yap | L-1, G-1 |
-| API'nin ürettiği yankılı 403'ü hükme katma | S3-dY, T-4 |
-| kalibrasyon yokken `KAPALI` ver | K-2, K-3 |
-| ters kalibrasyonu yok say | K-2, F-1 |
+| API'nin ürettiği yankılı 403'ü hükme katma (eşleme sessizce "kabul"e çevrilmiş) | S3-dY, T-4, L-7 |
+| kalibrasyon yokken `KAPALI` ver | K-3, K-5 |
+| ters kalibrasyonu yok say | K-2, K-9 |
 | ham yolu göndermeden önce normalleştir | S1-p, T-2 |
 | adsız özete adı yaz, sondanın ad denetimini kapat | O-2 |
 | adsız özete adı yaz (ad denetimi açık) | S1, O-2, O-3 — sonda özeti yazmadı, çıkış 7 |
 | takma ad kapısını kaldır | N-1 |
 | API'den geldiği kanıtsız 5xx'i ret say | L-3 |
 | var olan kanıtın üzerine yaz | N-4 |
-| yankıyla kanıtlı 403 dışı yanıtı bulgu sayma | S2, L-2, L-2b (hüküm kapalı biçimde `OLCULEMEDI`'ye düştü) |
+| yankıyla kanıtlı 403 dışı yanıtı bulgu sayma | S2, L-2, L-2b, K-6 |
 | API'den geldiği kanıtsız 404'ü ret say | L-4 |
 | pozitif vektördeki beklenmeyen yanıtı yok say | P-1 |
-| taşıma hatasında hata iletisini kanıta yaz | S4, S4-b |
+| taşıma hatasında hata iletisini kanıta yaz | S4, S4-b, P-2 |
 | yönlendirme hedefini kanıta yaz | L-5 |
+| (ilk turdaki kural) eşleşen yankıyı yalnız kalibrasyon `VAR` iken API say | K-6, K-7, K-8 |
+| kısmi kalibrasyon yeter (API yankı ≥ 1/6 → `VAR`) | K-5 |
+| API'nin ürettiği yankılı 403 yalnız `API-KESIN` yolda hükme katılır | L-7 |
+| öncelik: `OLCULEMEDI` bulgunun önüne geçer | P-2, K-7 |
+| pozitif reddi `OLCULEMEDI` yerine `DEGERLENDIRME-GEREKIR` | P-3 |
+| `API-KESIN` genişletilir (nokta segmenti, noktalı virgül, büyük harfli önek) | L-1 |
+| kalibrasyon: web pozitifleri ölçülmese de `VAR` | K-10 |
+| sınama işaretli 403'ü olağan ret say | S3-ch |
+| ön uçuş yanıtını ters kalibrasyona katma | K-9 |
+| (ilk turdaki geniş kural) yankısız bölgedeki farklı değeri de yansıma say → `GECERSIZ` | F-1, K-8 |
+| pozitifte API'den geldiği kanıtsız 5xx'i yok say | P-4 |
+| "karar bekliyor" işaretini eşlemeden bağımsız sabit yaz (ilk turdaki kusur) | KD-1, T-4 |
+| kalibrasyon nedenini karar eşlemesine bağlama | KD-2, K-2, K-3 |
+| hüküm eşlemesi kapısını kaldır (tanınmayan değer hükme karışır) | KD-3 |
+| konum etiketinde ad parçası denetimini kaldır | O-1b |
+| zaman aşımı ortam değeri kapısını kaldır | S5-e |
+| "karar bekliyor" bayrağını hükmü belirlemeyen nedenden de üret | K-6 |
+| yöntem kapsamında sınama işaretli 403'ü "reddedildi" say | S3-ch |
+| farklı değerli kimlik başlığı nedenini kaldır | F-2 |
+| katman hükmü: kalibrasyon yokken / farklı değer varken de `ADLANDIRILAMADI` de | K-3, K-5, F-2 |
+| reddedilmeyen (2xx) ret vektörü yalnız yankı varsa bulgu sayılır | S2 |
+| yönlendirme (3xx) ret sayılır | L-5 |
+| sınıflanamayan durum kodunu ret say | L-8 |
+| `GECERSIZ` kalibrasyonda da eşleşen yankıyı API say | K-2, K-9 |
+| farklı değerli başlık nedeninde "karar bekliyor" işaretini düşür | F-2 |
+| farklı değerli başlık nedenini karar eşlemesine bağlama | KD-2, F-2 |
+| ileri kalibrasyonda ön uçuştaki farklı değerli başlığı yok say | K-9 |
+| ileri kalibrasyonda önek dışındaki farklı değerli başlığı yok say | F-3 |
+| ters kalibrasyonda önek dışı yanıttaki aynı değeri yok say (yalnız ön uçuşa bak) | K-11 |
+| farklı değerli başlık taşıyan satırda da "API değil" çıkarımı yap | F-2 |
+| taşıma hatasını (sonuç yok) hükme katma | S4, S4-b, P-2, K-10 |
+| konum etiketi kapısını kaldır | N-3 |
+| yinelenen parametre kapısını kaldır | N-2 |
+| `KAPALI` kaydından varsayım cümlesini çıkar | S1 |
 
 **Kabuk yokluğu provası:** kabuk adı var olmayan bir yürütülebilire çevrildiğinde (iki kabuk için ayrı ayrı denendi) o kabuğun 7
-kalemi ÖLÇÜLEMEDİ oldu ve öz-test çıkışı 2 verdi (0 değil; 59 PASS · 0 FAIL · 7 ÖLÇÜLEMEDİ).
+kalemi ÖLÇÜLEMEDİ oldu ve öz-test çıkışı 2 verdi (0 değil; 79 PASS · 0 FAIL · 7 ÖLÇÜLEMEDİ).
 
-**Öz-testin ölçmediği:** özet yazımından hemen önceki ikinci ad denetimi dürüst girdiyle tetiklenemez (yalnız mutasyonla gösterildi) ·
-gerçek API ve gerçek kenar (§1.1: izole prova bekliyor) · canlı zincirin başlığı geçirip geçirmediği. Günlükler depo dışındadır
-(`HY_R27_AGENT_EVIDENCE\r04\d8-hazirlik\r05\`). Önceki turların kanıtları (R04 `r04\d8-probe-r02\`; R03 `extacc-d8-r01-is3-fix\`,
-`extacc-d8-r01-is3\`) korunur.
+**Blok düzeneği deneyi (depo dışı, yalıtılmış kopya):** belge kopyasındaki iki bloğun `.env` yolu var olmayan bir yola çevrilip
+öz-test o kopyada koşturuldu. İlk R05 öz-testi 18 blok betiğinin 18'ini **ikamesiz** (belgedeki yolla) kabuğa verdi; son öz-test 0 —
+bloklar sahte `.env` ile koştu, kaymayı B-0 FAIL olarak gösterdi.
+
+**Öz-testin ölçmediği** (hiçbiri "geçti" sayılmaz):
+- gerçek API ve gerçek kenar (§1.1: izole prova bekliyor); canlı zincirin kimlik başlığını geçirip geçirmediği, canlı kenarın şablonla
+  eşitliği; `KAPALI` kaydındaki iki varsayım (API'nin 403 yanıtında başlık düşürülmüyor · yalnız API önekli yanıtlarda yansıtan
+  katman yok) bu yüzden ölçüm değil varsayımdır.
+- özet yazımından hemen önceki ikinci ad denetimi (çıkış 7) dürüst girdiyle tetiklenemez (yalnız mutasyonla gösterildi).
+- özet ile ham kanıttan **yalnız birinin** yazılamadığı durumlar tetiklenemedi (yalnız "ikisi de yazılamadı" ölçüldü: S5-c).
+- hata sınıflarından `AD-COZULMEDI` ve `DIGER` için senaryo yok (`BAGLANTI`, `TLS`, `ZAMAN-ASIMI` ölçülüyor).
+- hüküm eşlemesi kapısının ardındaki ikinci savunma ("neden varken `KAPALI` verme") kapı yüzünden ayrı ölçülemiyor (kapı tek başına
+  ölçülüyor: KD-3).
+- pozitif vektörde **yankılı** (API'den geldiği kanıtlı) 5xx / 429 → `POZITIF-BULGU` dalı ve sınama işaretinin 403 dışı bir durum
+  kodunda görülmesi (ipucu olarak kalır) senaryosuz.
+- owner blokları betik dosyasından (`-File`) koşturuldu; konsola yapıştırma davranışı ve canlı `.env`'e karşı koşum ölçülmedi.
+- öz-test CI'da koşmaz; elle koşuldu.
+
+Günlükler depo dışındadır (`HY_R27_AGENT_EVIDENCE\r04\d8-hazirlik\r05\` ve `…\r05\duzeltme\`). Önceki turların kanıtları (R04
+`r04\d8-probe-r02\`; R03 `extacc-d8-r01-is3-fix\`, `extacc-d8-r01-is3\`) korunur.
 
 ### 1d. Owner blokları — yalnız AD-1 (canlıda ÇALIŞTIRILMADI)
 
@@ -305,16 +427,18 @@ verir, sondanın çıkış kodunu ve **adsız özetin SHA-256'sını** yazdırı
 
 Ölçüm (normal pencere):
 ```powershell
-& { $ErrorActionPreference='Stop'; $e='C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\.env'; $l=@([IO.File]::ReadAllLines($e) | Where-Object { $_ -match '^\s*PUBLIC_PORTAL_BASE_URL\s*=' }); if($l.Count -ne 1){ throw 'PUBLIC_PORTAL_BASE_URL satiri 1 degil - DUR' }; $ExpBaseUrl=($l[0] -replace '^\s*PUBLIC_PORTAL_BASE_URL\s*=\s*','').Trim().Trim('"').Trim("'"); if($ExpBaseUrl -cnotmatch '^https://[A-Za-z0-9.-]+(:\d+)?$'){ throw 'PUBLIC_PORTAL_BASE_URL https/yolsuz origin degil - DUR' }; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-extacc-d8-staff-surface-r01\scripts\d8-staff-surface-probe.js'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne 'DDC882FFCEF71CE20A8CD8FA583BD2BC392266A99394B6860AF80C233F75A876'){ throw 'D8 SONDA SHA UYUSMUYOR - DUR' }; $o=Join-Path $env:USERPROFILE ('Documents\CLIENT-EVIDENCE-20260911\extacc-d8-AD-1-' + (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss') + 'Z'); New-Item -ItemType Directory -Force -Path $o | Out-Null; & node $f --alias AD-1 --vantage canli-ana-makine-cikisi --origin $ExpBaseUrl --out "$o\d8-probe.json"; $c=$LASTEXITCODE; 'D8 AD-1 cikis=' + $c; $s="$o\d8-probe.ozet.json"; if(Test-Path -LiteralPath $s){ 'D8 AD-1 adsiz ozet SHA256=' + (Get-FileHash -Algorithm SHA256 -LiteralPath $s).Hash } else { 'D8 AD-1 adsiz ozet YOK' } }
+& { $ErrorActionPreference='Stop'; $e='C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\.env'; $l=@([IO.File]::ReadAllLines($e) | Where-Object { $_ -match '^\s*PUBLIC_PORTAL_BASE_URL\s*=' }); if($l.Count -ne 1){ throw 'PUBLIC_PORTAL_BASE_URL satiri 1 degil - DUR' }; $ExpBaseUrl=($l[0] -replace '^\s*PUBLIC_PORTAL_BASE_URL\s*=\s*','').Trim().Trim('"').Trim("'"); if($ExpBaseUrl -cnotmatch '^https://[A-Za-z0-9.-]+(:\d+)?$'){ throw 'PUBLIC_PORTAL_BASE_URL https/yolsuz origin degil - DUR' }; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-extacc-d8-staff-surface-r01\scripts\d8-staff-surface-probe.js'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne '5BBC86B4A803B8165F6C45822F14AF9A5F2582D9554E85A96A71EA81EA2FC5AB'){ throw 'D8 SONDA SHA UYUSMUYOR - DUR' }; $o=Join-Path $env:USERPROFILE ('Documents\CLIENT-EVIDENCE-20260911\extacc-d8-AD-1-' + (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss') + 'Z'); New-Item -ItemType Directory -Force -Path $o | Out-Null; & node $f --alias AD-1 --vantage canli-ana-makine-cikisi --origin $ExpBaseUrl --out "$o\d8-probe.json"; $c=$LASTEXITCODE; 'D8 AD-1 cikis=' + $c; $s="$o\d8-probe.ozet.json"; if(Test-Path -LiteralPath $s){ 'D8 AD-1 adsiz ozet SHA256=' + (Get-FileHash -Algorithm SHA256 -LiteralPath $s).Hash } else { 'D8 AD-1 adsiz ozet YOK' } }
 ```
 
 Telefon listesi (ayrı çağrı; istek atmaz, kanıt yazmaz; ölçüm bloğu listeyi yazdırmaz):
 ```powershell
-& { $ErrorActionPreference='Stop'; $e='C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\.env'; $l=@([IO.File]::ReadAllLines($e) | Where-Object { $_ -match '^\s*PUBLIC_PORTAL_BASE_URL\s*=' }); if($l.Count -ne 1){ throw 'PUBLIC_PORTAL_BASE_URL satiri 1 degil - DUR' }; $ExpBaseUrl=($l[0] -replace '^\s*PUBLIC_PORTAL_BASE_URL\s*=\s*','').Trim().Trim('"').Trim("'"); if($ExpBaseUrl -cnotmatch '^https://[A-Za-z0-9.-]+(:\d+)?$'){ throw 'PUBLIC_PORTAL_BASE_URL https/yolsuz origin degil - DUR' }; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-extacc-d8-staff-surface-r01\scripts\d8-staff-surface-probe.js'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne 'DDC882FFCEF71CE20A8CD8FA583BD2BC392266A99394B6860AF80C233F75A876'){ throw 'D8 SONDA SHA UYUSMUYOR - DUR' }; & node $f --alias AD-1 --origin $ExpBaseUrl --phone-list; 'D8 AD-1 telefon listesi cikis=' + $LASTEXITCODE }
+& { $ErrorActionPreference='Stop'; $e='C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\.env'; $l=@([IO.File]::ReadAllLines($e) | Where-Object { $_ -match '^\s*PUBLIC_PORTAL_BASE_URL\s*=' }); if($l.Count -ne 1){ throw 'PUBLIC_PORTAL_BASE_URL satiri 1 degil - DUR' }; $ExpBaseUrl=($l[0] -replace '^\s*PUBLIC_PORTAL_BASE_URL\s*=\s*','').Trim().Trim('"').Trim("'"); if($ExpBaseUrl -cnotmatch '^https://[A-Za-z0-9.-]+(:\d+)?$'){ throw 'PUBLIC_PORTAL_BASE_URL https/yolsuz origin degil - DUR' }; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-extacc-d8-staff-surface-r01\scripts\d8-staff-surface-probe.js'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne '5BBC86B4A803B8165F6C45822F14AF9A5F2582D9554E85A96A71EA81EA2FC5AB'){ throw 'D8 SONDA SHA UYUSMUYOR - DUR' }; & node $f --alias AD-1 --origin $ExpBaseUrl --phone-list; 'D8 AD-1 telefon listesi cikis=' + $LASTEXITCODE }
 ```
 
 Konum etiketi `canli-ana-makine-cikisi` bir **beyandır**: blok canlı ana makinede koşar ve istek o makinenin çıkışından gider; sonda
-konumu ölçmez. Dış ağ ayağı yalnız telefon beyanıdır (§2).
+konumu ölçmez. Dış ağ ayağı yalnız telefon beyanıdır (§2). Blok çıktısındaki `cikis=` değeri §1.1'deki çıkış kodudur: 4'te sonda istek
+atmamıştır (blok önceden açtığı kanıt dizinini boş bırakır; boş dizin kanıt değildir — ör. konum etiketi adın bir etiketini içeriyorsa);
+1'de sonda beklenmeyen biçimde durmuştur (ölçülemedi); 7'de özet ya da ham kanıt yazılamamıştır.
 
 ## 2. D-8 telefon adımı (owner beyanı; makine ölçümü değildir)
 
@@ -329,12 +453,16 @@ yazmaz) ve **hangi ad için** verildiğini takma adla taşır. S = ürün/kenar 
 D-8 **ad başına** değerlendirilir; "D-8 PASS" diye tek bir hüküm **yoktur** ve bir adın sonucu başka bir ad için söylenmez. Bir adın
 satırı şu dört şey **ayrı ayrı** yazılarak kapanır; hiçbiri diğerinin yerine geçmez:
 
-1. **Ret hükmü** `KAPALI` (çıkış 0) ve kayıt eki: "yalnız bu istek profili, bu konum, bu vektör kümesi için". `OLCULEMEDI` (3) ya da
-   `DEGERLENDIRME-GEREKIR` (5) kapanış **değildir**; `KAPALI-DEGIL` / `POZITIF-BULGU` (2) bulgudur.
+1. **Ret hükmü** `KAPALI` (çıkış 0) ve kayıt eki: "yalnız bu istek profili, bu konum, bu vektör kümesi için" + **varsayım**: "API'nin
+   ürettiği 403 yanıtında kimlik başlığı zincirde düşürülmüyor" (kalibrasyon bunu yalnız pozitiflerin 401 yanıtında gösterir; izole
+   prova — gerçek API + şablon kenar — yapıldığında bu satır ölçümle değiştirilir). `OLCULEMEDI` (3), `DEGERLENDIRME-GEREKIR` (5) ya da
+   sondanın beklenmeyen biçimde durması (1) kapanış **değildir**; `KAPALI-DEGIL` / `POZITIF-BULGU` (2) bulgudur.
 2. **Katman hükmü** ayrı satırda, olduğu gibi: `ADLANDIRILDI-API` / `ADLANDIRILAMADI` / `OLCULEMEDI`. PASS / FAIL değeri almaz. "Ret
    `KAPALI` + katman `ADLANDIRILAMADI`" olağan sonuçtur; **kabulü owner kararıdır** — sonda ya da bu belge o kabulü vermez.
-3. **Dış ağ beyanı** (telefon; §2) — makine ölçümü değildir; ayrı dosyada, takma adla.
-4. **Owner kabulü** — o ad için, yukarıdaki üç kayıt görülerek.
+3. **Dış ağ beyanı** (telefon; §2) — makine ölçümü değildir; ayrı dosyada, takma adla. Beyanın **her ad için ayrı** alınıp
+   alınmayacağı karar bekliyor (§3b-5): karar gelene kadar beyanı olmayan adın satırında "dış ağ ayağı YOK" yazılır ve o satır
+   kapanmış sayılmaz; bu madde, kararın "her ad için" olacağını **varsaymaz** — karar başka gelirse bu madde ona göre yeniden yazılır.
+4. **Owner kabulü** — o ad için, yukarıdaki kayıtlar görülerek.
 
 Kurallar:
 - Ölçülemeyen kontrol PASS sayılmaz; kanıt yoksa satır **ÖLÇÜLMEDİ** / `OLCULEMEDI` kalır. İpucu (`hints`, `layerHint`) katman kimliği
@@ -351,10 +479,12 @@ Kurallar:
 | # | Karar | Neden gerekli | Bu revizyondaki durum |
 |---|---|---|---|
 | 1 | **Sahiplik kanıtı ölçütü** — hangi kanıt bir adı "sahipliği doğrulanmış" yapar | owner talimatı ek adları bu koşula bağlıyor; bir adın yapılandırmada yazılı olması sahiplik değildir | ölçüt tanımlı değil; kodda sahiplik kapısı **yok** (biçimsel bir "alan dolu mu" kapısı geçiş dikte ederdi); §1b'de ek ad satırı açılmadı |
-| 2 | **API'nin ürettiği 403'ün sayılışı** — yankıyla kanıtlı 403 bulgu mu sayılsın, kabul mü edilsin | 403 "reddedildi" demektir ama isteğin kenarı geçip uygulamaya ulaştığını da gösterir | kodda **karar bekliyor**: çıkış 5, `DEGERLENDIRME-GEREKIR`, `pendingOwnerDecision`; ne `KAPALI` ne otomatik bulgu. Eşleme sondada tek satırdadır (`API_KAYNAKLI_403_HUKMU`); karar gelince yalnız o satır değişir |
-| 3 | **Canlı sonda kapsamı ve ad başına GO** — hangi adlar, hangi vektör kümesi, hangi pencere | hüküm yalnız koşulan ada verilir; 68 istek × ad; istek profili her istekte tek kullanımlık kimlik başlığı içerir | GO yok; kapsam kesinleşmedi; blok yalnız AD-1 için yazıldı ve çalıştırılmadı |
-| 4 | **"Ret `KAPALI` + katman `ADLANDIRILAMADI`" kabulü** | reddeden üst katman bu yöntemle adlandırılamaz; kenara işaret başlığı eklemek ya da kenar günlüğü okumak canlı değişiklik / canlı okumadır ve kapsam dışıdır | iki hüküm ayrı yazılır; kabul verilmedi |
-| 5 | **Telefon beyanı ad başına mı** | kapanış tanımı dış ağ beyanı ister; mevcut tek beyan R27 öncesidir ve ada bağlı değildir | karar yok; §1b'de "dış ağ beyanı" sütunu ad başınadır ve boştur |
+| 2 | **API'nin ürettiği 403'ün sayılışı** — yankıyla kanıtlı 403 bulgu mu sayılsın, kabul mü edilsin. **Bu karara bağlı alt soru:** API'nin ürettiği 403 sayılacaksa, o denetimin **yapılamadığı** koşum (kalibrasyon `VAR` değil ya da farklı değerli kimlik başlığı görüldü) `KAPALI` verebilir mi | 403 "reddedildi" demektir ama isteğin kenarı geçip uygulamaya ulaştığını da gösterir; denetlenemeyen koşumda bu ayrım yapılamaz | kodda **karar bekliyor**: üç neden (`API-KANITLI-403` · `KALIBRASYON-YOK / -GECERSIZ` · `FARKLI-DEGERLI-KIMLIK-BASLIGI`) çıkış 5, `DEGERLENDIRME-GEREKIR`, "karar bekliyor" işaretli; ne `KAPALI` ne otomatik bulgu. Eşleme **ve** bekleme işareti sondada tek satırdadır (`API_KAYNAKLI_403 = { hukum, kararBekliyor }`). Karar gelince sondada yalnız o satır değişir — **ölçüldü** (öz-test KD-1 / KD-2, yalnız o satırı değişen kopyalarla): "bulgu" → kanıtlı API 403'ü çıkış 2, işaret kalkar, denetlenemeyen koşum çıkış 5 kalır (işaretsiz) · "kabul" → üç neden hükme girmez; ret hükmü yalnız durum kodlarından ve yankıyla kanıtlı 403 dışı yanıtlardan verilir, katman hükmü ayrı kalır. Aynı anda değişmesi gerekenler: pin, bu belge ve öz-testte bu üç nedeni ölçen kalemler (T-4, KD-\*, S3-dY, L-7, K-2 … K-5, K-9, K-11, F-1 … F-3). "Bulgu" dalında denetlenemeyen koşumun 5 mi 3 mü olacağı da o kararla birlikte netleşmelidir (bugünkü kod: 5) |
+| 3 | **Canlı sonda kapsamı ve ad başına GO** — hangi adlar, hangi vektör kümesi, hangi pencere, **hangi istek profili** | hüküm yalnız koşulan ada verilir; 68 istek × ad; istek profili her istekte tek kullanımlık kimlik başlığı içerir (R05'te eklendi) | GO yok; kapsam kesinleşmedi; istek profili onaylanmadı; blok yalnız AD-1 için yazıldı ve çalıştırılmadı |
+| 4 | **"Ret `KAPALI` + katman `ADLANDIRILAMADI`" kabulü** | reddeden üst katman bu yöntemle adlandırılamaz; kenara işaret başlığı eklemek ya da kenar günlüğü okumak canlı değişiklik / canlı okumadır ve kapsam dışıdır. Karar girdisi (§1.1): sağlıklı koşumda 59 ret satırının 30'unda yalnız "API değil" **çıkarımı** yapılır; 16'sında (API önekli 2 OPTIONS + yolu belirsiz 14 satır) ve 13 web yolu satırında katman hakkında hiçbir şey söylenemez — web uygulamasının ürettiği 403 kenar reddinden ayırt edilemez; ters kalibrasyon yalnız önek dışını ve ön uçuşu sınar; `KAPALI`, "API'nin 403 yanıtında kimlik başlığı düşürülmüyor" varsayımına dayanır | iki hüküm ayrı yazılır; kabul verilmedi |
+| 5 | **Telefon beyanı ad başına mı** | kapanış tanımı dış ağ beyanı ister; mevcut tek beyan R27 öncesidir ve ada bağlı değildir | karar yok; §1b'de "dış ağ beyanı" sütunu ad başınadır ve boştur; §3 madde 3 kararı varsaymaz |
+| 6 | *(düzeltme turunda eklenen karar girdisi)* **Sınama (challenge) işaretli 403'ün sayılışı** | sınama yanıtı ret kararı değildir: tarayıcı sınamayı geçerse istek hedefe gider; durum kodu ise ret ile aynı olabilir | bugünkü kod **tutucu**: ayrı ret sonucu sınıfı, çıkış 5, `KAPALI` sayılmaz; "kabul edilir" denmedi. Yalnız bilinen işaret tanınır |
+| 7 | *(düzeltme turunda eklenen karar girdisi)* **Ret hükmü `KAPALI` olmayan adın public satırında ne yayımlanır** | adsız özet yöntem sınıfı düzeyinde sayı taşır; vektör listesi public'tir | bugünkü kural **tutucu** (§1b): yalnız iki hükmün değeri; sayılar ve özet SHA-256'sı kısıtlı kayıtta. Gevşetme owner kararıdır |
 
 ## 4. D-6 belge akışı — tanım ve paket eşlemesi (koşucu + owner bloğu HAZIR: `client-extacc-portal-d6-r01`; canlıda koşulmadı)
 
@@ -416,9 +546,10 @@ Kurallar:
 
 ## 7. Pinler
 
-`d8-staff-surface-probe.js` `DDC882FFCEF71CE20A8CD8FA583BD2BC392266A99394B6860AF80C233F75A876` · `d8-selftest.js` `65CA8A4F98B52C28EF03DF2A828C369EE45BD6DCD0CDB1D05EB65B4FF5D55757`.
+`d8-staff-surface-probe.js` `5BBC86B4A803B8165F6C45822F14AF9A5F2582D9554E85A96A71EA81EA2FC5AB` · `d8-selftest.js` `7249C7B13DD23106E5367985A6EECE096380BF2D069ED190A1D0EBC7B50C977D`.
 Vektör kümesi kimliği (59 ret + 9 pozitif; vektörler R04 ile aynı): `83AD1AB6DF5E52FD4FD028C5C6A411CDD9D22BCAB53194ABD9915D47920FF0F2`.
-(R05, 2026-10-05: ad başına koşum · ret sonucu ve katman kimliği iki ayrı hüküm · adsız özet · çıkış kodu 5 · öz-test 66 kalem;
-canlıda koşulmadı. Önceki pinler: R01 ilk `DD6448A5…` / `E50EAE0C…`; birinci tur düzeltme `51B78C3B…` / `F9E9BD65…` [13/13]; ikinci tur
-`6400223…` / `A311CF00…` [15/15]; R27-R03 katman ipucu `D5FA37D1…` / `AD7B0759…` [15/15, 2026-09-30]; R04 D8-E1/E2 `E150EEDA…` /
-`45FC0B5E…` [17/17, 2026-10-03].)
+(R05 düzeltme turu, 2026-10-05: ad başına koşum · ret sonucu ve katman kimliği iki ayrı hüküm · adsız özet · çıkış kodu 5 · eşleşen
+yankı ileri kalibrasyon olmadan da API kanıtı · sınama işaretli 403 ayrı sınıf · karar eşlemesi ve işareti tek satırda · öz-test 86
+kalem; canlıda koşulmadı. Önceki pinler: R01 ilk `DD6448A5…` / `E50EAE0C…`; birinci tur düzeltme `51B78C3B…` / `F9E9BD65…` [13/13];
+ikinci tur `6400223…` / `A311CF00…` [15/15]; R27-R03 katman ipucu `D5FA37D1…` / `AD7B0759…` [15/15, 2026-09-30]; R04 D8-E1/E2
+`E150EEDA…` / `45FC0B5E…` [17/17, 2026-10-03]; R05 ilk baytlar `DDC882FF…` / `65CA8A4F…` [66/66, 2026-10-05; düzeltme turuyla geçersiz].)
