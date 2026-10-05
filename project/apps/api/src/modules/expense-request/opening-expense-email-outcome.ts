@@ -254,3 +254,68 @@ export function buildOpeningExpenseEmailNotSentStatus(failure: OpeningExpenseEma
     attemptedAt: attemptedAt.toISOString(),
   };
 }
+
+/**
+ * Masraf talebi penceresinden ("Oluştur ve Gönder" / "Yeniden Dene") istenen e-posta denemesinin sonucu.
+ * Mevcut sonuç sözleşmesi (`status` + `reasonCode` + `message` + `requiredInfo`) AYNEN kullanılır; başarı için yalnız şu iki
+ * alan eklenir: sağlayıcı (SMTP sunucusu) KABULÜ ile alıcıya TESLİM ayrı ifade edilir — teslim bilgisi bu sistemde bilinmez
+ * (SMTP teslim makbuzu yok), bu yüzden başarıda `deliveryConfirmed` her zaman false'tur.
+ */
+export interface ExpenseEmailAcceptedOutcome {
+  readonly status: 'EMAIL_ACCEPTED';
+  readonly deliveryConfirmed: false;
+  readonly message: string;
+}
+
+/** Sonucu belirsiz denemeler: gönderilmiş olabilir; başarı sayılmaz ve mükerrer e-posta riski yüzünden tekrar gönderilmez. */
+export const EXPENSE_EMAIL_UNCERTAIN_REASON_CODES = ['DELIVERY_UNCERTAIN', 'DELIVERY_NOT_CONFIRMED'] as const;
+
+/**
+ * Aynı talep üzerinden yeniden denemenin sonuç değiştirmeyeceği nedenler: belirsiz sonuçlar + talebin kalemleri e-posta için geçersiz
+ * (kalem satırı yok / tutar <= 0 — talep oluşunca düzeltilemez; yeniden deneme her seferinde aynı reddi üretir).
+ */
+export const EXPENSE_EMAIL_NOT_RETRYABLE_REASON_CODES = [...EXPENSE_EMAIL_UNCERTAIN_REASON_CODES, 'REQUEST_ITEMS_INVALID'] as const;
+
+export interface ExpenseEmailNotSentResult extends OpeningExpenseEmailFailureOutcomeFields {
+  readonly success: false;
+  readonly status: 'EMAIL_NOT_SENT';
+  /** Aynı talep üzerinden yeniden denenebilir mi (kesin başarısızlık). Belirsiz sonuçta false. */
+  readonly retryable: boolean;
+}
+
+interface OpeningExpenseEmailFailureOutcomeFields {
+  readonly reasonCode: OpeningExpenseEmailReasonCode;
+  readonly message: string;
+  readonly requiredInfo: readonly string[];
+}
+
+/**
+ * <remarks>
+ * Çağrıldığı yerler:
+ * - ExpenseRequestService.sendExpenseEmailWithOutcome() → POST /expense-requests/:id/send-email (başarı)
+ * </remarks>
+ */
+export function buildExpenseEmailAcceptedOutcome(): ExpenseEmailAcceptedOutcome {
+  return {
+    status: 'EMAIL_ACCEPTED',
+    deliveryConfirmed: false,
+    message: 'E-posta gönderim sunucusu tarafından kabul edildi. Alıcıya teslim edildiği doğrulanmaz.',
+  };
+}
+
+/**
+ * <remarks>
+ * Çağrıldığı yerler:
+ * - ExpenseRequestService.sendExpenseEmailWithOutcome() → POST /expense-requests/:id/send-email (başarısızlık)
+ * </remarks>
+ */
+export function buildExpenseEmailNotSentResult(failure: OpeningExpenseEmailFailure): ExpenseEmailNotSentResult {
+  return {
+    success: false,
+    status: 'EMAIL_NOT_SENT',
+    reasonCode: failure.reasonCode,
+    message: failure.message,
+    requiredInfo: failure.requiredInfo,
+    retryable: !(EXPENSE_EMAIL_NOT_RETRYABLE_REASON_CODES as readonly string[]).includes(failure.reasonCode),
+  };
+}
