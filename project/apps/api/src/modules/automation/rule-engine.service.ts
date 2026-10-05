@@ -1,6 +1,9 @@
 import { Injectable, Logger, Inject, Optional } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { WorkflowStage, EnforcementType } from "@prisma/client";
+import { isEventConsumed } from "./event-consumption";
+
+const NOTIFICATION_EXPIRED_ACTION = "NOTIFICATION_EXPIRED";
 
 // Forward reference to avoid circular dependency
 let deprecatedTracker: any = null;
@@ -39,6 +42,11 @@ export interface RuleResult {
   enforcementType?: EnforcementType;
   reason: string;
   priority: number;
+  /**
+   * Kuralı tetikleyen OLAY (ör. süresi dolan tebligat). Verilirse motor (büro, olay, eylem) başına tek sonuç yazar
+   * (owner kararı 11); verilmezse kural aşama / durum koşullarıyla çalışmaya devam eder.
+   */
+  eventRef?: { type: "NOTIFICATION_EXPIRY"; id: string };
 }
 
 /**
@@ -157,24 +165,31 @@ export class RuleEngine {
     return results.sort((a, b) => a.priority - b.priority);
   }
 
-  // Tebligat süresi kontrolü
+  // Tebligat süresi kontrolü — her süresi dolmuş tebligat OLAYI eylem başına bir kez işlenir (owner kararı 11):
+  // bu eylem için tüketilmiş olanlar atlanır, sıradaki tüketilmemiş en eski olay döner (işleme başına bir olay).
   async checkNotificationExpiry(caseId: string): Promise<RuleResult | null> {
-    const notification = await this.prisma.notificationQueue.findFirst({
+    const notifications = await this.prisma.notificationQueue.findMany({
       where: {
         caseId,
         type: "PAYMENT_ORDER",
         status: "DELIVERED",
         expiresAt: { lte: new Date() },
       },
+      orderBy: [{ expiresAt: "asc" }, { id: "asc" }],
     });
+
+    const notification = notifications.find(
+      (n) => !isEventConsumed(n.metadata, NOTIFICATION_EXPIRED_ACTION),
+    );
 
     if (notification) {
       return {
         shouldTrigger: true,
-        action: "NOTIFICATION_EXPIRED",
+        action: NOTIFICATION_EXPIRED_ACTION,
         nextStage: WorkflowStage.ENFORCEMENT,
         reason: "Ödeme emri süresi doldu",
         priority: 1,
+        eventRef: { type: "NOTIFICATION_EXPIRY", id: notification.id },
       };
     }
 

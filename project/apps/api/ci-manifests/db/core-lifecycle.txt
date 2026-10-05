@@ -14,6 +14,9 @@ src/modules/automation/__tests__/automation-stats-tenant-scope.db-gated.integrat
 src/modules/automation/__tests__/automation-toggle-tenant-scope.db-gated.integration.spec.ts
 src/modules/automation/__tests__/enforcement-action-guarded-write-path.db-gated.integration.spec.ts
 src/modules/automation/__tests__/enforcement-action-tenant-case-debtor-fk.db-gated.integration.spec.ts
+# Otomasyon: suresi dolan tebligat olayi (buro, olay, eylem) basina TEK sonuc (owner karari 11): GERCEK HTTP + disposable PostgreSQL;
+#   esz zamanlilik (3 cagri + iki surec, bariyerli), surec yeniden baslatma, isaret-yan etki yarim kalma, 9 mutant.
+src/modules/automation/__tests__/notification-expiry-single-result.http.db-gated.integration.spec.ts
 src/modules/automation/__tests__/workflow-engine-build-context-tenant-guard.db-gated.integration.spec.ts
 src/modules/automation/__tests__/workflow-engine-legal-time-cutover.db-gated.integration.spec.ts
 src/modules/automation/__tests__/workflow-engine-remaining-tenant-boundaries.db-gated.integration.spec.ts

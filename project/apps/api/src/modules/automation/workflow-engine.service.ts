@@ -1,6 +1,7 @@
-import { Injectable, Logger, Optional, Inject, forwardRef, NotFoundException, BadRequestException } from "@nestjs/common";
+import { Injectable, Logger, Optional, Inject, forwardRef, NotFoundException, BadRequestException, ConflictException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import {
+  Prisma,
   WorkflowStage,
   TriggerType,
   EnforcementType,
@@ -14,6 +15,7 @@ import { CasePolicyEngine } from "../policy-engine/case-policy-engine.service";
 import { ActionCode } from "../policy-engine/types/action-code.enum";
 import { LegalPeriodCalculationService } from "../legal-deadline/legal-period-calculation.service";
 import { sumConfirmedCollections } from "../../common/collection-confirmed.util";
+import { claimNotificationEvent, eventIdempotencyKey } from "./event-consumption";
 
 // Workflow stage to expense stage code mapping
 const STAGE_TO_EXPENSE_CODE: Partial<Record<WorkflowStage, string>> = {
@@ -30,6 +32,23 @@ const ACTION_TO_CPE_CODE: Record<string, ActionCode> = {
   'EVICTION_REQUEST': ActionCode.UYAP_SEND,
   'CLOSE_CASE': ActionCode.CLOSE_CASE,
 };
+
+/**
+ * Aşama masraf seti reddi KESİN (tekrar denemekle değişmeyen iş kuralı reddi) mi? Yalnız kimliği AÇIKÇA bilinen sınıflar kesindir:
+ * - `BadRequestException` / `NotFoundException`: geçersiz aşama kodu, geçersiz istek anahtarı, müvekkil atanmamış, dosya bulunamadı;
+ * - YAPISAL `code` taşıyan `ConflictException`: matrah hesaplanamıyor (dövizli dosya), istek anahtarı çakışması / iptal edilmiş talep.
+ * Tanınmayan HER hata GEÇİCİ sayılır (olay sahiplenilmez). Özellikle `code` taşımayan `ConflictException`: masraf servisi muhasebe günlüğü
+ * adımındaki HER hatayı (Prisma zaman aşımı, bağlantı kopması dahil) düz iletiyle `ConflictException`'a sarar — sınıfı tek başına kesinlik
+ * kanıtı DEĞİLDİR; ileti metnine bakılmaz (kırılgan), yapısal `code` yokluğu "geçici" demektir.
+ */
+function isDefiniteExpenseSetRejection(err: unknown): boolean {
+  if (err instanceof BadRequestException || err instanceof NotFoundException) return true;
+  if (err instanceof ConflictException) {
+    const response = err.getResponse();
+    return typeof response === "object" && response !== null && typeof (response as { code?: unknown }).code === "string";
+  }
+  return false;
+}
 
 // PR-EA-4: guarded write-path input contract. tenantId zorunlu (üst çağrı zincirinden taşınır,
 // caseId'den yeniden tahmin edilmez); caseDebtorId yalnız çağıran zaten belirli bir CaseDebtor
@@ -255,6 +274,14 @@ export class WorkflowEngine {
       }
     }
 
+    // Olay kuralı (tebligat süresi doldu): (büro, tebligat, eylem) başına TEK sonuç — işaret + yan etkiler tek transaction'da
+    // (owner kararı 11). Bu olay kuralı politika motoruna EŞLENMEMİŞTİR (ACTION_TO_CPE_CODE'da yok): yukarıdaki kapı bloğu bu olay
+    // için atlanır; CPE'ye eşlenen bir olay kuralı eklenirse kapı aynen çalışır, olay yolu yalnız yan etkilerin yazımını devralır.
+    if (rule.eventRef) {
+      await this.applyEventRule(caseId, rule, context, rule.eventRef, cpeTraceId);
+      return;
+    }
+
     // Karar logu oluştur
     await this.prisma.decisionLog.create({
       data: {
@@ -292,6 +319,147 @@ export class WorkflowEngine {
       data: {
         autoActionsCount: { increment: 1 },
         lastAutoActionAt: new Date(),
+      },
+    });
+  }
+
+  /**
+   * Olay kuralının yan etkilerini ATOMİK ve tek sefer yazar (owner kararı 11, 2026-10-05).
+   *
+   * Sıra bilinçlidir:
+   * 1) Masraf seti, olaya bağlı SABİT istek anahtarıyla (`automation:<eylem>:<tebligatId>`) işaretten ÖNCE yazılır: işaret yazıldıysa
+   *    set vardır; set yazılıp işaret yazılamadıysa (süreç öldü) yeniden denemede aynı anahtar mevcut seti döndürür — ikinci set yok.
+   * 2) Tek transaction: olayı sahiplen (koşullu UPDATE) → karar kaydı → aşama değişikliği + yaşam döngüsü kaydı → sayaç. Hepsi birlikte
+   *    kalıcı olur ya da hiçbiri; sahiplenemeyen çağrı (eşzamanlı kazanan var) HİÇBİR yan etki yazmaz.
+   *
+   * Olay kuralları `enforcementType` taşımaz (NOTIFICATION_EXPIRED yalnız aşama değiştirir); taşıyan bir olay kuralı eklenirse icra
+   * işlemi de bu transaction'a alınmalıdır — aşağıdaki kontrol bunu sessizce atlamak yerine reddeder.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - WorkflowEngine.executeRule() → `rule.eventRef` taşıyan kurallar (RuleEngine.checkNotificationExpiry)
+   * </remarks>
+   */
+  private async applyEventRule(
+    caseId: string,
+    rule: RuleResult,
+    context: RuleContext,
+    eventRef: NonNullable<RuleResult['eventRef']>,
+    cpeTraceId: string | undefined,
+  ): Promise<void> {
+    if (rule.enforcementType) {
+      throw new BadRequestException('Olay kuralı icra işlemi taşıyamaz (aynı transaction\'a alınmamış)');
+    }
+    const tenantId = context.tenantId;
+
+    const expenseStageCode = rule.nextStage ? STAGE_TO_EXPENSE_CODE[rule.nextStage] : undefined;
+    if (expenseStageCode) {
+      const mayProceed = await this.ensureEventExpenseSet(caseId, tenantId, expenseStageCode, rule.action, eventRef.id);
+      if (!mayProceed) {
+        return; // geçici hata: olay SAHİPLENİLMEDİ, sonraki işlemede yeniden denenir
+      }
+    }
+
+    const consumed = await this.prisma.$transaction(async (tx) => {
+      const claimed = await claimNotificationEvent(tx, {
+        tenantId,
+        caseId,
+        notificationId: eventRef.id,
+        action: rule.action,
+      });
+      if (!claimed) {
+        return false;
+      }
+
+      await tx.decisionLog.create({
+        data: {
+          caseId,
+          decisionType: this.mapActionToDecisionType(rule.action),
+          decision: rule.action,
+          reasoning: rule.reason,
+          inputData: { ...context, cpeTraceId, eventRef } as any,
+          isAutomatic: true,
+        },
+      });
+
+      if (rule.nextStage) {
+        await this.applyStageChangeInTx(tx, caseId, tenantId, rule.nextStage, rule.reason);
+      }
+
+      await tx.case.update({
+        where: { id: caseId },
+        data: {
+          autoActionsCount: { increment: 1 },
+          lastAutoActionAt: new Date(),
+        },
+      });
+      return true;
+    });
+
+    if (!consumed) {
+      this.logger.log(`Olay zaten tüketilmiş (case ${caseId}, ${rule.action}, ${eventRef.type} ${eventRef.id}); yan etki yazılmadı`);
+    }
+  }
+
+  /**
+   * Olaya bağlı aşama masraf setini sabit istek anahtarıyla yazar. Dönüş: `true` = devam edilebilir (set var ya da yazılamayacağı
+   * KESİN: `isDefiniteExpenseSetRejection` — eski davranış gibi aşama değişikliği engellenmez); `false` = tanınmayan / geçici hata →
+   * olay sahiplenilmez, sonraki işlemede yeniden denenir. SINIR: "sonraki işleme" olay DELIVERED + süresi dolmuş kaldığı sürece
+   * gelir; saatlik tebligat denetimi tebligatı EXPIRED yaptığında olay kural için kaybolur (AutomationService.checkNotificationExpiries).
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - WorkflowEngine.applyEventRule()
+   * </remarks>
+   */
+  private async ensureEventExpenseSet(
+    caseId: string,
+    tenantId: string,
+    expenseStageCode: string,
+    action: string,
+    notificationId: string,
+  ): Promise<boolean> {
+    const caseRow = await this.prisma.case.findFirst({ where: { id: caseId, tenantId }, select: { clientId: true } });
+    if (!caseRow?.clientId) {
+      return true; // eski davranış: müvekkilsiz dosyada set yazılmaz
+    }
+    try {
+      await this.expenseRequestService.createStageExpenseSet(caseId, expenseStageCode, tenantId, 'system', {
+        idempotencyKey: eventIdempotencyKey(action, notificationId),
+      });
+      return true;
+    } catch (err) {
+      if (isDefiniteExpenseSetRejection(err)) {
+        // Kesin (tekrar denemekle değişmeyen) iş kuralı reddi: eski davranış gibi günlüğe yazılır, aşama değişikliği engellenmez.
+        this.logger.warn(`Otomatik masraf seti yazılamadı (${expenseStageCode}): ${(err as Error).message}`);
+        return true;
+      }
+      this.logger.error(`Otomatik masraf seti geçici hatayla yazılamadı (${expenseStageCode}); olay yeniden denenecek:`, err);
+      return false;
+    }
+  }
+
+  // Aşama değişikliği — çağıranın transaction'ında (tenant boundary: caseId yalnız verilen tenantId altında aranır).
+  // Masraf seti burada YAZILMAZ: olay yolunda anahtarlı olarak işaretten önce yazılır (applyEventRule).
+  private async applyStageChangeInTx(
+    tx: Prisma.TransactionClient,
+    caseId: string,
+    tenantId: string,
+    newStage: WorkflowStage,
+    reason: string,
+  ): Promise<void> {
+    const caseRow = await tx.case.findFirst({ where: { id: caseId, tenantId }, select: { id: true } });
+    if (!caseRow) {
+      throw new NotFoundException("Dosya bulunamadı");
+    }
+    await tx.case.update({ where: { id: caseId }, data: { workflowStage: newStage } });
+    await tx.caseLifecycle.create({
+      data: {
+        caseId,
+        stage: newStage,
+        action: `Aşama değişikliği: ${newStage}`,
+        description: reason,
+        triggeredBy: TriggerType.AUTO,
       },
     });
   }
