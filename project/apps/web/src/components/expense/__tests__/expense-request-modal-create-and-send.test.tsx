@@ -352,7 +352,7 @@ describe("ExpenseRequestModal — Oluştur ve Gönder", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("kabul / belirsiz sonuçta kapatma onay istemez", async () => {
+  it("kabul sonucunda kapatma onay istemez", async () => {
     mocked.sendExpenseEmail.mockResolvedValue(ACCEPTED);
     const onClose = vi.fn();
     renderModal({ onClose });
@@ -363,6 +363,122 @@ describe("ExpenseRequestModal — Oluştur ve Gönder", () => {
     fireEvent.click(screen.getByRole("button", { name: "Kapat" }));
     expect(window.confirm).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  // Yeniden denenemeyen sonuçlar: "bu talep buradan yeniden gönderilemez" uyarısı anlamsızdır (zaten Yeniden Dene yok) → onay istenmez.
+  it.each([
+    ["belirsiz sonuç (zaman aşımı)", UNCERTAIN_TIMEOUT, "uncertain"],
+    [
+      "kalemleri e-posta için geçersiz talep",
+      {
+        success: false,
+        status: "EMAIL_NOT_SENT",
+        reasonCode: "REQUEST_ITEMS_INVALID",
+        message: "Masraf talebinde geçerli kalem ya da tutar yok; masraf e-postası gönderilmedi.",
+        requiredInfo: ["Masraf talebinin kalemleri ve tutarları"],
+        retryable: false,
+      },
+      "not-sent",
+    ],
+  ])("%s: kapatma onay İSTEMEZ (yeniden denenemeyen sonuç)", async (_title, response, state) => {
+    mocked.sendExpenseEmail.mockResolvedValue(response);
+    const onClose = vi.fn();
+    renderModal({ onClose });
+    await fillManualAndCheckSend();
+    fireEvent.click(sendButton());
+    const box = await screen.findByTestId("expense-send-result");
+    expect(box.getAttribute("data-state")).toBe(state);
+    expect(screen.queryByRole("button", { name: "Yeniden Dene" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Kapat" }));
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  describe("X düğmesi ve arka plan tıklaması aynı kapatma yolunu kullanır", () => {
+    const xButton = () => document.querySelector('button[class~="p-1.5"]') as HTMLButtonElement;
+    const backdrop = () => document.querySelector('div[class~="bg-black/40"]') as HTMLElement;
+
+    it("yeniden denenebilir başarısızlıkta X onay ister; reddedilirse açık kalır, kabul edilirse kapanır", async () => {
+      mocked.sendExpenseEmail.mockResolvedValue(NOT_SENT_NO_SMTP);
+      const onClose = vi.fn();
+      renderModal({ onClose });
+      await fillManualAndCheckSend();
+      fireEvent.click(sendButton());
+      await screen.findByTestId("expense-send-result");
+
+      (window.confirm as unknown as Fn).mockReturnValueOnce(false);
+      fireEvent.click(xButton());
+      expect(window.confirm).toHaveBeenCalledTimes(1);
+      expect(onClose).not.toHaveBeenCalled();
+      fireEvent.click(xButton());
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("yeniden denenebilir başarısızlıkta arka plana tek tıklama onay ister; reddedilirse pencere sessizce kapanmaz", async () => {
+      mocked.sendExpenseEmail.mockResolvedValue(NOT_SENT_NO_SMTP);
+      const onClose = vi.fn();
+      renderModal({ onClose });
+      await fillManualAndCheckSend();
+      fireEvent.click(sendButton());
+      await screen.findByTestId("expense-send-result");
+
+      (window.confirm as unknown as Fn).mockReturnValueOnce(false);
+      fireEvent.click(backdrop());
+      expect(window.confirm).toHaveBeenCalledTimes(1);
+      expect(onClose).not.toHaveBeenCalled();
+      fireEvent.click(backdrop());
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("gönderim sürerken X ve arka plan tıklaması yok sayılır", async () => {
+      let releaseSend: (v: unknown) => void = () => undefined;
+      mocked.sendExpenseEmail.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            releaseSend = resolve;
+          }),
+      );
+      const onClose = vi.fn();
+      renderModal({ onClose });
+      await fillManualAndCheckSend();
+      fireEvent.click(sendButton());
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Gönderiliyor…" })).toBeTruthy();
+      });
+
+      fireEvent.click(xButton());
+      fireEvent.click(backdrop());
+      expect(onClose).not.toHaveBeenCalled();
+
+      releaseSend(ACCEPTED);
+      await screen.findByTestId("expense-send-result");
+    });
+
+    it("oluşturma isteği sürerken Kapat / X / arka plan yok sayılır (talep kimliği henüz yok; sonuç kaybolmasın)", async () => {
+      let releaseCreate: (v: { id: string }) => void = () => undefined;
+      mocked.createExpenseRequest.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            releaseCreate = resolve;
+          }),
+      );
+      mocked.sendExpenseEmail.mockResolvedValue(ACCEPTED);
+      const onClose = vi.fn();
+      renderModal({ onClose });
+      await fillManualAndCheckSend();
+      fireEvent.click(sendButton());
+      // oluşturma henüz dönmedi: createdRequestId yok, düğme "İptal"
+      fireEvent.click(screen.getByRole("button", { name: "İptal" }));
+      fireEvent.click(xButton());
+      fireEvent.click(backdrop());
+      expect(onClose).not.toHaveBeenCalled();
+
+      releaseCreate({ id: "talep-elle" });
+      await screen.findByTestId("expense-send-result");
+      expect(mocked.createExpenseRequest).toHaveBeenCalledTimes(1);
+      expect(mocked.sendExpenseEmail).toHaveBeenCalledWith("talep-elle");
+    });
   });
 
   it("kalemleri e-posta için geçersiz talep: 'belirsiz' DEĞİL, kesin başarısızlık; Yeniden Dene sunulmaz", async () => {
