@@ -589,8 +589,11 @@ export class ClientSettlementReadService {
 
   /**
    * G1 — özetin istenen para biriminin DIŞINDA kalan kayıt gözlemleri. Yalnız okur; tutar toplamaz, çevirmez.
-   * Her sorgu `getClientAccountingSummary()`nin toplamlarda okuduğu kümenin AYNISINI (aynı durum süzgeci, tenant + müvekkil
-   * kapsamı) para birimi "istenenden farklı" olacak biçimde gruplar. Boş / belirlenemeyen para birimi de "farklı" sayılır.
+   * Her sorgu `getClientAccountingSummary()`nin toplamlarda okuduğu kümeyi (durum süzgeci, tenant + müvekkil kapsamı) para birimi
+   * "istenenden farklı" olacak biçimde gruplar. Boş / belirlenemeyen para birimi de "farklı" sayılır.
+   * TEK FARK: `CollectionDisposition` sorgusu iptal işaretini (`manualReversalRequiredAt`) UYGULAMAZ — tahsilatı iptal edilmiş
+   * dağıtım da "başka para biriminde kayıt var" bildirimine girer (toplamlar onu dışlar). Bu bilinçli bırakıldı / hizalanması ayrı
+   * karar (ekstredeki eş sorgular işareti uygular); bu satırdaki davranış bu PR'da DEĞİŞMEDİ.
    *
    * Çağrıldığı yerler:
    * - ClientSettlementReadService.getClientAccountingSummary() → `paraBirimiDurumu` / `paraBirimiKapsami`

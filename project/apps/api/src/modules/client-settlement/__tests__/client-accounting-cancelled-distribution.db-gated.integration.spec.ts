@@ -26,6 +26,8 @@ interface SeedCollection {
   status: 'CONFIRMED' | 'CANCELLED';
   /** Dağıtım: kesinleşmiş (canlı / iptal işaretli) ya da kesinleşmemiş taslak. */
   disposition?: { state: 'POSTED_LIVE' | 'POSTED_MARKED' | 'DRAFT'; payable: number; fee: number };
+  /** Müvekkile kaydedilmiş (RECORDED) ödeme — aynı dosya ve müvekkil için. */
+  recordedPayout?: number;
 }
 
 describeDb('Genel Cari "Dağıtım Bekleyen": iptal işaretli kesinleşmiş dağıtım (gerçek PostgreSQL)', () => {
@@ -74,6 +76,20 @@ describeDb('Genel Cari "Dağıtım Bekleyen": iptal işaretli kesinleşmiş dağ
           },
           select: { id: true },
         });
+        if (c.recordedPayout !== undefined) {
+          await prisma.clientPayout.create({
+            data: {
+              tenantId: tenant.id,
+              caseId: kase.id,
+              caseClientId: caseClient.id,
+              amount: D(c.recordedPayout),
+              currency: 'TRY',
+              status: 'RECORDED',
+              idempotencyKey: `dagitim-odeme-${sfx}-${n}`,
+              paidById: `test-${sfx}`,
+            },
+          });
+        }
         if (!c.disposition) continue;
         const { state, payable, fee } = c.disposition;
         await prisma.collectionDisposition.create({
@@ -84,7 +100,8 @@ describeDb('Genel Cari "Dağıtım Bekleyen": iptal işaretli kesinleşmiş dağ
             beneficiaryScope: 'SINGLE_CASE_CLIENT',
             caseClientId: caseClient.id,
             status: state === 'DRAFT' ? 'HELD_PENDING_DISTRIBUTION' : 'POSTED',
-            totalAmount: D(payable + fee),
+            // Ürün taslağı tahsilat tutarıyla açar (satırlar henüz yok); kesinleşmişte toplam = müvekkil payı + vekâlet ücreti.
+            totalAmount: state === 'DRAFT' ? D(c.amount) : D(payable + fee),
             currency: 'TRY',
             ...(state === 'DRAFT' ? {} : { postedAt: new Date('2026-03-02T00:00:00.000Z') }),
             ...(state === 'POSTED_MARKED'
@@ -188,11 +205,50 @@ describeDb('Genel Cari "Dağıtım Bekleyen": iptal işaretli kesinleşmiş dağ
     const res = await summaryOf(s);
     expect(outstanding.toString()).toBe('700');
     expect(res.clientScoped.payableNet).toBe(outstanding.toString());
+    // Eşitlik tek başına düzeltmeyi kilitlemez (iki taraf da işaret koşulunu zaten uygular); düzeltmeyi kilitleyen: özet bekleyen = 0.
+    expect(res.caseScopedContext.pendingDistribution).toBe('0');
+  });
+
+  // ── BİLİNEN AÇIK durumlar ─────────────────────────────────────────────────────────────────────────────────────────
+  // Aşağıdaki iki test DÜZELTİLMEMİŞ davranışı belgeler; ürün davranışını DEĞİŞTİRMEZ. Owner kararı gelince bu testler
+  // bilinçli olarak değişir (karar: ara durum kuralı; ödemesi yapılmış dağıtımın iptali). Geçmeleri 'doğru' demek değildir.
+
+  it('BİLİNEN AÇIK (i) ara durum: tahsilat iptal ama işaret HENÜZ yazılmamış (outbox tüketilmedi) → gerçek bekleyen 1.000 yerine 400, UYARISIZ (gizleme bu aralıkta sürüyor)', async () => {
+    const s = await seed([
+      [
+        { amount: 600, status: 'CANCELLED', disposition: { state: 'POSTED_LIVE', payable: 400, fee: 200 } },
+        { amount: 1000, status: 'CONFIRMED', disposition: { state: 'DRAFT', payable: 0, fee: 0 } },
+      ],
+    ]);
+    const res = await summaryOf(s);
+    // İşaret yazıldığında bu değer 1.000 olur (test 3). İşaretten ÖNCE: iptal edilen dağıtım hâlâ canlı sayılır → net 1.000 − 600.
+    expect(res.caseScopedContext.pendingDistribution).toBe('400');
+    expect(res.needsReview).toBe(false);
+  });
+
+  it('BİLİNEN AÇIK (i-b) ara durum: işaretsiz iptal + başka tahsilat yok → negatif ve uyarı (bugünkü davranış)', async () => {
+    const s = await seed([[{ amount: 3000, status: 'CANCELLED', disposition: { state: 'POSTED_LIVE', payable: 2200, fee: 800 } }]]);
+    const res = await summaryOf(s);
+    expect(res.caseScopedContext.pendingDistribution).toBe('-3000');
+    expect(res.needsReview).toBe(true);
+  });
+
+  it('BİLİNEN AÇIK (ii) ÖDEMESİ YAPILMIŞ dağıtımın iptali: işaretli dağıtım + RECORDED ödeme → bekleyen 0, uyarı YOK; Müvekkile Borç (Net) eksi ve uyarısız', async () => {
+    const s = await seed([
+      [{ amount: 3000, status: 'CANCELLED', recordedPayout: 2200, disposition: { state: 'POSTED_MARKED', payable: 2200, fee: 800 } }],
+    ]);
+    const res = await summaryOf(s);
+    expect(res.caseScopedContext.pendingDistribution).toBe('0');
+    expect(res.needsReview).toBe(false);
+    expect(res.caseBreakdown[0].needsReview).toBe(false);
+    // Ödenmiş 2.200 müvekkilden geri alınacak bir tutardır; özetin tek uyarısı bu PR ile kalkıyor, eksi bakiye uyarısız görünür.
+    expect(res.clientScoped.payableNet).toBe('-2200');
   });
 });
 
 async function cleanupTenant(prisma: PrismaClient, tenantId: string): Promise<void> {
   const steps: Array<() => Promise<unknown>> = [
+    () => prisma.clientPayout.deleteMany({ where: { tenantId } }),
     () => prisma.collectionDispositionLine.deleteMany({ where: { disposition: { tenantId } } }),
     () => prisma.collectionDisposition.deleteMany({ where: { tenantId } }),
     () => prisma.collection.deleteMany({ where: { tenantId } }),
