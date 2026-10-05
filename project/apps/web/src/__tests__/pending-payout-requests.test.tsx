@@ -27,7 +27,7 @@ vi.mock('@/lib/api/office-approval', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api/office-approval')>();
   return {
     ...actual,
-    officeApprovalApi: { ...actual.officeApprovalApi, getMine: vi.fn(), getDetail: vi.fn(), approve: vi.fn() },
+    officeApprovalApi: { ...actual.officeApprovalApi, getMine: vi.fn(), getDetail: vi.fn(), approve: vi.fn(), cancel: vi.fn() },
   };
 });
 
@@ -42,6 +42,7 @@ vi.mock('@/lib/api/client-accounting', async (importOriginal) => {
 const getMineMock = officeApprovalApi.getMine as unknown as ReturnType<typeof vi.fn>;
 const getDetailMock = officeApprovalApi.getDetail as unknown as ReturnType<typeof vi.fn>;
 const approveMock = officeApprovalApi.approve as unknown as ReturnType<typeof vi.fn>;
+const cancelMock = officeApprovalApi.cancel as unknown as ReturnType<typeof vi.fn>;
 const finalizePayoutMock = clientAccountingApi.finalizePayout as unknown as ReturnType<typeof vi.fn>;
 
 const summaryRow = (over: Partial<Record<string, unknown>> = {}) => ({
@@ -84,6 +85,7 @@ function renderWidget(props?: { caseId?: string; caseClientId?: string }) {
 describe('PendingPayoutRequests', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    cancelMock.mockReset();
   });
 
   it('mine listesi boşsa hiçbir şey render etmez', async () => {
@@ -186,6 +188,7 @@ describe('PendingPayoutRequests — kesinleşmiş talep (yürütme işareti SUCC
     getMineMock.mockReset();
     getDetailMock.mockReset();
     approveMock.mockReset();
+    cancelMock.mockReset();
     finalizePayoutMock.mockReset();
   });
 
@@ -336,5 +339,65 @@ describe('PendingPayoutRequests — kesinleşmiş talep (yürütme işareti SUCC
     await waitFor(() => expect(screen.getByText(/600,00/)).toBeTruthy());
     expect(screen.queryByText(/700,00/)).toBeNull();
     expect(screen.getAllByRole('button', { name: /Kesinleştir/ })).toHaveLength(1);
+  });
+
+  // Satır 8 (owner kararı 7): talep sahibi kendi BEKLEYEN talebini kartta geri çekebilir. Kural sunucudadır
+  // (yalnız talep sahibi, yalnız PENDING_APPROVAL); görünürlük yetkinin yerine geçmez.
+  describe('Geri Çek (kendi bekleyen talep)', () => {
+    const pendingDetail = (over: Partial<Record<string, unknown>> = {}) => detailRow({ status: 'PENDING_APPROVAL', approverUserId: null, decidedAt: null, ...over });
+
+    it('yalnız PENDING_APPROVAL satırında görünür; onaylı satırda YOK', async () => {
+      getMineMock.mockResolvedValue([summaryRow({ id: 'oar-p', status: 'PENDING_APPROVAL' }), summaryRow({ id: 'oar-a', status: 'APPROVED' })]);
+      getDetailMock.mockImplementation(async (id: string) =>
+        id === 'oar-p' ? pendingDetail({ id: 'oar-p' }) : detailRow({ id: 'oar-a', savedIntent: { caseId: 'case-1', caseClientId: 'cc-1', amount: '700', currency: 'TRY', note: null, idempotencyKey: 'k2' } }),
+      );
+      renderWidget();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Kesinleştir' })).toBeTruthy());
+      expect(screen.getAllByRole('button', { name: 'Geri Çek' })).toHaveLength(1);
+      const approvedRow = screen.getByText(/700,00/).closest('div.border') as HTMLElement;
+      expect(approvedRow.textContent).not.toContain('Geri Çek');
+    });
+
+    it('tıklayınca officeApprovalApi.cancel(id) çağrılır ve talep listeleri yenilenir', async () => {
+      getMineMock.mockResolvedValue([summaryRow({ id: 'oar-p', status: 'PENDING_APPROVAL' })]);
+      getDetailMock.mockResolvedValue(pendingDetail({ id: 'oar-p' }));
+      cancelMock.mockResolvedValue({ ...pendingDetail({ id: 'oar-p' }), status: 'CANCELLED' });
+      renderWidget();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Geri Çek' })).toBeTruthy());
+      const before = getMineMock.mock.calls.length;
+      fireEvent.click(screen.getByRole('button', { name: 'Geri Çek' }));
+      // Tek tıkla geri çekilmez: onay adımı istenir, sunucu çağrısı henüz YOK.
+      expect(cancelMock).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Evet, geri çek' }));
+      await waitFor(() => expect(cancelMock).toHaveBeenCalledWith('oar-p'));
+      await waitFor(() => expect(getMineMock.mock.calls.length).toBeGreaterThan(before));
+      expect(approveMock).not.toHaveBeenCalled();
+      expect(finalizePayoutMock).not.toHaveBeenCalled();
+    });
+
+    it('sunucu reddederse mesaj aynen gösterilir; talep satırı kalır', async () => {
+      getMineMock.mockResolvedValue([summaryRow({ id: 'oar-p', status: 'PENDING_APPROVAL' })]);
+      getDetailMock.mockResolvedValue(pendingDetail({ id: 'oar-p' }));
+      cancelMock.mockRejectedValue(new Error('Yalnız talep sahibi geri çekebilir.'));
+      renderWidget();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Geri Çek' })).toBeTruthy());
+      fireEvent.click(screen.getByRole('button', { name: 'Geri Çek' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Evet, geri çek' }));
+      await waitFor(() => expect(screen.getByText('Yalnız talep sahibi geri çekebilir.')).toBeTruthy());
+      expect(screen.getByRole('button', { name: 'Geri Çek' })).toBeTruthy();
+    });
+
+    it('onay adımında "Vazgeç": sunucu çağrılmaz, düğme eski haline döner', async () => {
+      getMineMock.mockResolvedValue([summaryRow({ id: 'oar-p', status: 'PENDING_APPROVAL' })]);
+      getDetailMock.mockResolvedValue(pendingDetail({ id: 'oar-p' }));
+      renderWidget();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Geri Çek' })).toBeTruthy());
+      fireEvent.click(screen.getByRole('button', { name: 'Geri Çek' }));
+      expect(screen.getByRole('button', { name: 'Evet, geri çek' })).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Vazgeç' }));
+      expect(cancelMock).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Geri Çek' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Evet, geri çek' })).toBeNull();
+    });
   });
 });
