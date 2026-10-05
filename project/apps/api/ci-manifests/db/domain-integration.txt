@@ -456,10 +456,16 @@ src/modules/accounting-journal/__tests__/accounting-journal-financial-statement.
 #     sorgu ve bagimsiz islemler etkilenmez; ret yolunda masraf / muhasebe / bakiye / UYAP istegi kaydi yazilmaz (politika
 #     karari denetim izi korunur; politika motorunun baska gerekcesi — dosya arsivde — degistirilmez); TL dosya DEGISMEZ.
 #     Duzeltmesiz uretim koduyla 32 testin 18'i DUSER (RED kanitlandi); TL, okuma / sorgu, gecmis kayit ve muvekkilsiz dosya
-#     testleri duzeltmesiz kodla da GECER. UYAP gonderim hazirligi bugun politika motorunca HER dosyada reddedilir (bu yola
-#     buro / kullanici baglami gecmiyor): o genel durum burada degistirilmez ve sabitlenmez; hazirligin masraf kosulu
-#     politika karari sabitlenerek olculur.
+#     testleri duzeltmesiz kodla da GECER. Hazirlik yoluna buro / kullanici baglami artik gecer (bkz. uyap-prepare-context testi);
+#     bu testteki "politika motoru izin verdiginde" bolumu politika kararini yine sabitler.
 src/modules/stage-trigger/__tests__/uyap-prepare-opening-expense-requirement.http.db-gated.integration.spec.ts
+# UYAP gonderim hazirligi: buro / kullanici baglami + GERCEK ret gerekcesi (owner karari 9, 2026-10-05), GERCEK HTTP + disposable
+#   PostgreSQL. Olculen kusur (main cafb9b16d): hazirlik politika motoruna yalniz userId / debtorId veriyordu; buro ve dogrulanmis
+#   kullanici baglami gitmedigi icin HER dosyada "Odenmemis masraf talebi var" ile reddediliyordu (odenmis, talepsiz ve NON_BLOCKING
+#   dosyada da; durum ucu "engel yok" derken). Odenmemis BLOCKING talebin engel olma davranisi DEGISMEZ (gerekce durum ucuyla
+#   ayni); avans yoklugu "0 TL" diye yazilmaz. Duzeltmesiz kodla 14 testin 11i DUSER, 3 kontrol GECER (RED kanitlandi). Gercek UYAP
+#   gonderimi YOK. Bu konum bilerek dosya sonu DEGIL: es zamanli PR lar sona ekler.
+src/modules/stage-trigger/__tests__/uyap-prepare-context.http.db-gated.integration.spec.ts
 
 # ── MUHASEBE DEFTERI: ACILIS DEVRI (owner karari 2026-10-02 "O1 + O2") ──
 #   Ekstre acilisi sabit 0,00 idi; kapanis yalniz donem ici hareketlerin toplamiydi. Donem baslangicindan ONCEKI
