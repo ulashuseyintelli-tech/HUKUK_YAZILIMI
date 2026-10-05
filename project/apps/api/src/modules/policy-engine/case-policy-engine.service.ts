@@ -19,7 +19,7 @@ import {
 import { FactStoreService, FactMap, ComputedFactRegistry, CLOSING_CASE_STATUSES } from './fact-store';
 import { DecisionLoggerService, ExecutionRecorderService } from './decision-logger';
 import { StateMachineService, StateInfo, IcraType } from './state-machine';
-import { GateCheckerService } from './gate-checker';
+import { GateCheckerService, COMPILED_GATES } from './gate-checker';
 import { RuleEngineService, ComputedMetrics, RecommendedAction } from './rule-engine';
 
 /**
@@ -204,7 +204,8 @@ export class CasePolicyEngine {
           const gateCode = closedByFreshRow ? 'CASE_CLOSED' : 'CASE_ARCHIVED';
           const decision = this.buildDecision(
             false,
-            closedByFreshRow ? 'Dosya kapalı. İşlem yapılamaz.' : 'Dosya arşivde. Önce arşivden çıkarın.',
+            // Ret metni kapı tanımından okunur (ikinci yazım yok)
+            COMPILED_GATES.find((gate) => gate.gateCode === gateCode)?.reason ?? 'Dosya kapalı / arşivde. İşlem yapılamaz.',
             DecisionCode.GATE_BLOCKED,
             { blockedBy: { gateCode, severity: 'HARD' }, state },
           );
