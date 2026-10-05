@@ -227,6 +227,12 @@ src/modules/uyap/official/__tests__/official-dtd-codelist-conformance.spec.ts
 src/modules/uyap/official/__tests__/official-canonical-serializer.spec.ts
 src/modules/uyap/official/__tests__/official-dtd-record-correction.spec.ts
 src/modules/uyap/official/__tests__/official-serializer-architecture-guard.spec.ts
+# UYAP GERCEK TASIMA KAPISI — STATIK koruma kilidi (owner karari 10, 2026-10-05): gercek tasima, politika ve vekalet kontrolleri
+#   tamamlanmadan baglanamaz / acilamaz. UYAP modulunde ag ilkeli, tasima acma anahtari, uykudaki gonderim hattinin uretime baglanmasi,
+#   sahte tasima dogruluk isaretinin dusmesi ve mevcut vekalet / politika korumalarinin kaldirilmasi CI yi kirar. 8 mutantin 8i yakalandi;
+#   kural sentetik pozitiflerle kor degil kanitli. SINIR: statik testtir, RUNTIME YETKI ACIGINI KAPATMAZ (belge / evrak / dava
+#   gonderim uclari politika motorunu cagirmiyor; bos musteri / avukatta vekalet gecerli doner — ACIK urun isi).
+src/modules/uyap/__tests__/uyap-real-transport-gate.static-guard.spec.ts
 src/modules/uyap/official/__tests__/official-alacakkalemi-structured-emission.spec.ts
 src/modules/uyap/official/__tests__/official-alacakkalemi-structured-emission-boundary.spec.ts
 src/modules/uyap/official/__tests__/official-exchange-builder.spec.ts
