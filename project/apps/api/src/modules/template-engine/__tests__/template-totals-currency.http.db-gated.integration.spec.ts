@@ -41,6 +41,12 @@ import { TemplateEngineModule } from '../template-engine.module';
  * ALTIN DEĞERLER: tek para birimli dosyaların `GOLDEN` parmak izleri bu değişiklikten ÖNCEKİ kodla (main 6681b1d5) üretildi;
  * yani "aynı" iddiası düzeltmesiz kodla da geçer. Belge şablonu bilinçli olarak değiştirilirse düşen karşılaştırmadaki alınan
  * değerlerle güncellenir. Parmak izine girmeyenler: üretim zamanı (XML `CreatedAt`, UDF `createdAt` / imza zamanı, DOCX
+ * PDF PARMAK İZLERİ (`pdf:*` ve `MERKEZI_*.pdf`) 2026-10-05'te bilinçli olarak güncellendi (PR: belge PDF'lerinde Türkçe harfler):
+ * standart Courier yerine gömülü Roboto → PDF içerik akışı değişti. Aynı koşuda metin / XML / UDF / Word / dilekçe parmak izleri
+ * ve yanıt biçimi DEĞİŞMEDİ (düşen 4 testte yalnız `pdf` anahtarları farklıydı). Yeni değerler yerelde ve CI'da bağımsız olarak
+ * aynı çıktı (Windows = Linux). PDF metninin doğruluğu template-engine-pdf-turkish.spec.ts'te ayrıca sınanır.
+ * `pdf:odeme-emri` / `pdf:icra-emri` ayrıca ızgara düzeltmesiyle (template-pdf-text-grid.ts: ara sütunlar artık kırılabilir, dinamik
+ * uzun satır sayfa içinde kalır) yeniden güncellendi: görünüm aynı, pdfmake o satırlarda metni kelime kelime yazar → içerik akışı baytları farklı.
  * `docProps/core.xml`, PDF bilgi sözlüğü) ve dilekçelerdeki günün tarihi. Faiz oranı tarifeden ve günden bağımsız
  * sabitlendi (TRY %24, döviz %9 — ölçüm günündeki değerler); belge üretim yolunun geri kalanı gerçektir.
  */
@@ -118,17 +124,17 @@ const GOLDEN: Record<string, Fingerprints> = {
     'xml:takip-talebi': 'e145e7ea83cfa74a89b035f042145b559bb55b7049f173241460f977a1bdf21d',
     'udf:takip-talebi': '2cdc5791a1158791a2375803cd15e037a6769b89996ce57f18928b654e96398c',
     'word:takip-talebi': 'e08bd8413607bef9d101393b57ecd7553c8e049499d2c31190d3a0d6c0738619',
-    'pdf:takip-talebi': '6f282c6b20ae160f53248371b05918957805300eadabc2d65ea95c36708fb812',
+    'pdf:takip-talebi': '49c75e73554eed4c179e6c41b2b93c98752d71074d20ef96a4891626119f9b1b',
     'metin:odeme-emri': '6591c2be5b2c039d231e93ca4a9cfffd671a42e72bfaf12ae184044b6cfa43e0',
     'xml:odeme-emri': '5ee9f4915d0c2740610b62377f5f6ed93375ed48d81d4f63dad8e0c5ad462e07',
     'udf:odeme-emri': '0d24f8786d6aa545b1c47e613b5daea09a78259e99c746d4da7707a0c7f3486e',
     'word:odeme-emri': '3d1312465b3376f6ed762b7f089003c5d1beb4796a6995525a0babbdb48e8548',
-    'pdf:odeme-emri': 'a72bbec3d5ed9f39e85d0ea3a52be73bef768b75475d3d89d2c84f4e5aa31f8b',
+    'pdf:odeme-emri': '36fbda3432aa633e1eb5e95ebc185ca5036128c6c5eaa140063f1c6552c20ee3',
     'metin:icra-emri': '4955095f14914c49477346d1554940092f97573817a360bdaf85d6de6df37af6',
     'xml:icra-emri': '3ed0c759185a532f5469bb4d5645e5c305aa4ea1c0e720dd6cd0aa9601f6201a',
     'udf:icra-emri': '1468e301efbadac9214927104034b3aa8f9a985723a54a298ba414b6dc6d8fa9',
     'word:icra-emri': 'e9429dc8f888fb2893a9c5c62a46d48c856b1de484b23dd6ad82fdb9a9c6af54',
-    'pdf:icra-emri': '7e4204c480252ff921f081c641f37791e2ef28e3f4fb386fbb27912944b7ae31',
+    'pdf:icra-emri': 'ea5418c37402f9e42816fc8e9f80eebe372fb5528b1828200f73a32c130edca1',
     'dilekce:itirazin-iptali': '4b99d48c12b168d5a2c1c7ee6692405fc606e2b398fefd6a88f7a7da298c95bb',
     'dilekce-word:itirazin-iptali': 'c1e9ca87149b327a84c4d2b439f14230db336077cfd37dd0480b4826f2ea1e6a',
     'dilekce:tasarrufun-iptali': '4128d2a923c85caee93154fff48ceea03b67c8b2e5ff703b108f32ab1a31e24c',
@@ -141,28 +147,28 @@ const GOLDEN: Record<string, Fingerprints> = {
     'xml:takip-talebi': '265de0a7764b548a431a39efee1b54afcc02a366e7b28fc067940bd24637f7fc',
     'udf:takip-talebi': '726d469c8014c8c6984200595875ae4d08bb829df2b25292927016c5e270a2eb',
     'word:takip-talebi': 'c6210bbc137e94b548eb21720845dece86eaf179a2a7357dce226638576ee859',
-    'pdf:takip-talebi': 'fd7f193bdf0f2477eef75031df7ee504551421ee8afe22f09c565fb841496d0e',
+    'pdf:takip-talebi': '35519e5d2bf64df5aaa0aae87a32a7828dd32ebe12c48c5e85d91c3de204cfa6',
     'metin:odeme-emri': '70b7e88967903eae740c6cc7339f97f0e8069e6457f13027ef2d5dd8bf560617',
     'xml:odeme-emri': '2683cde64fdf8179e9f24c78a2e6e20a980bd09730f6e0ade9a4be0e6b05962c',
     'udf:odeme-emri': 'f429761c988079efa6c0d959d746f70e0fb515f0191243b46dc47a95cf9ebf7c',
     'word:odeme-emri': '5a753daf621589dca102e5cf2bf077c6fa5cc87ea302be2c8b738347020fba4e',
-    'pdf:odeme-emri': '70b9bbce3a7b02714beae6ba5d97f1253484fe89f3bf3478aee6ee65ea368296',
+    'pdf:odeme-emri': '1f414f446830a2c663f1180d63b7bf36998d28f279200d6ba665200f10cb5327',
     'metin:icra-emri': '55302895b065eb5f4d82c1d5dda5cbec48d9051895fc5d34e1d7692abc584c5d',
     'xml:icra-emri': 'decc9b07ad5a29a354c4da44f5c74b4295d9f75918598a8a3fc75c436a17c777',
     'udf:icra-emri': '1f3683933d456203722b849bb3d10b55da1cce587452e18b9427b1b8487b4486',
     'word:icra-emri': '3d967d77159f0fef49b895418b3fe99f2ba567ebf8ad4971513b9eb3381ede22',
-    'pdf:icra-emri': 'e59e566fecb5390981081be0c29056fd95d20b9e9a6394b7f21532dc02c4b8a6',
+    'pdf:icra-emri': 'd43c7d324da3dd7af1795259d74433f8e8cd79cb5eecd5392713e0febcfe2c30',
   },
   MERKEZI_TRY: {
     'xml': 'ce388662b8af1e6e09e044dbfb15bd7cddaf133dae657632e25fb6a47c2d67b3',
     'docx': 'e08bd8413607bef9d101393b57ecd7553c8e049499d2c31190d3a0d6c0738619',
-    'pdf': '6f282c6b20ae160f53248371b05918957805300eadabc2d65ea95c36708fb812',
+    'pdf': '49c75e73554eed4c179e6c41b2b93c98752d71074d20ef96a4891626119f9b1b',
     'dataHash': '059909485d151caf',
   },
   MERKEZI_USD: {
     'xml': '00cfc25fec8a18815b79a380b130f9b200acddd4bcefc81151688801b5e88c37',
     'docx': 'c6210bbc137e94b548eb21720845dece86eaf179a2a7357dce226638576ee859',
-    'pdf': 'fd7f193bdf0f2477eef75031df7ee504551421ee8afe22f09c565fb841496d0e',
+    'pdf': '35519e5d2bf64df5aaa0aae87a32a7828dd32ebe12c48c5e85d91c3de204cfa6',
     'dataHash': '0267e081cb2136a4',
   },
 };
