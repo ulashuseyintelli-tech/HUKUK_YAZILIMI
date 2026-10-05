@@ -17,12 +17,17 @@ const authState: { user: { id: string } | null } = { user: { id: "approver-9" } 
 vi.mock("@/lib/auth-context", () => ({
   useAuth: () => authState,
 }));
+vi.mock("@/lib/api/client-accounting", () => ({
+  clientAccountingApi: { finalizePayout: vi.fn() },
+}));
 import { officeApprovalApi } from "@/lib/api/office-approval";
+import { clientAccountingApi } from "@/lib/api/client-accounting";
 import { OfficeApprovalDetailDrawer } from "@/components/office-approval/OfficeApprovalDetailDrawer";
 
 beforeEach(() => {
   (officeApprovalApi.getDetail as any).mockReset();
   (officeApprovalApi.approve as any).mockReset();
+  (clientAccountingApi.finalizePayout as any).mockReset();
   authState.user = { id: "approver-9" };
 });
 afterEach(() => vi.restoreAllMocks());
@@ -199,5 +204,60 @@ describe("OfficeApprovalDetailDrawer (Decision UI entegrasyonu)", () => {
     expect(onDecided).toHaveBeenCalledTimes(1);
     // karar sonrası aksiyon paneli kaybolur (statü artık PENDING değil)
     expect(screen.queryByTestId("decision-actions")).toBeNull();
+  });
+});
+
+// Satır 8: ödeme talebi çekmecede — "Değiştirerek Onayla" yok; onaylandıktan sonra KAYITLI karar sahibine "Kesinleştir".
+const PAYOUT_INTENT = { caseId: "case-1", caseClientId: "cc-1", amount: "400", currency: "TRY", note: "not", idempotencyKey: "k1" };
+const PAYOUT_PENDING = {
+  ...PENDING_DETAIL,
+  actionCode: "CLIENT_PAYOUT_POST",
+  targetType: "CLIENT_PAYOUT_REQUEST",
+  targetRef: "k1",
+  savedIntent: PAYOUT_INTENT,
+};
+const PAYOUT_APPROVED = { ...PAYOUT_PENDING, status: "APPROVED", approverUserId: "approver-9", decidedAt: "2026-07-03T00:00:00Z" };
+
+describe("OfficeApprovalDetailDrawer — müvekkile ödeme talebi (satır 8)", () => {
+  it("PENDING ödeme talebi: 'Onayla / Revizyon İste / Reddet' var, 'Değiştirerek Onayla' YOK", async () => {
+    (officeApprovalApi.getDetail as any).mockResolvedValue(PAYOUT_PENDING);
+    render(<OfficeApprovalDetailDrawer requestId="req1" onClose={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText("Onayla")).toBeInTheDocument());
+    expect(screen.getByText("Revizyon İste")).toBeInTheDocument();
+    expect(screen.getByText("Reddet")).toBeInTheDocument();
+    expect(screen.queryByText("Değiştirerek Onayla")).toBeNull();
+  });
+
+  it("APPROVED + kayıtlı karar sahibi: çekmecede 'Kesinleştir' görünür; tıklama finalize'ı onaylanan niyetle çağırır, çekmece güncel durumu gösterir ve onDecided tetiklenir", async () => {
+    (officeApprovalApi.getDetail as any)
+      .mockResolvedValueOnce(PAYOUT_APPROVED)
+      .mockResolvedValueOnce({ ...PAYOUT_APPROVED, executionStatus: "SUCCEEDED" });
+    (clientAccountingApi.finalizePayout as any).mockResolvedValue({ created: true });
+    const onDecided = vi.fn();
+    render(<OfficeApprovalDetailDrawer requestId="req1" onClose={vi.fn()} onDecided={onDecided} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Kesinleştir" })).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Kesinleştir" }));
+    await waitFor(() =>
+      expect(clientAccountingApi.finalizePayout).toHaveBeenCalledWith("req1", {
+        caseId: "case-1",
+        caseClientId: "cc-1",
+        amount: "400",
+        currency: "TRY",
+        note: "not",
+        idempotencyKey: "k1",
+      }),
+    );
+    await waitFor(() => expect(onDecided).toHaveBeenCalledTimes(1));
+    // Kesinleşmiş talepte düğme artık yok.
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Kesinleştir" })).toBeNull());
+  });
+
+  it("APPROVED ama karar sahibi BAŞKASI → çekmecede 'Kesinleştir' YOK", async () => {
+    authState.user = { id: "baska-kullanici" };
+    (officeApprovalApi.getDetail as any).mockResolvedValue(PAYOUT_APPROVED);
+    render(<OfficeApprovalDetailDrawer requestId="req1" onClose={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText("CLIENT_PAYOUT_POST")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Kesinleştir" })).toBeNull();
   });
 });
