@@ -13,6 +13,7 @@ import {
   ExecutionResponse,
   getActionMatrixEntry,
   isLockRequired,
+  isStageIndependent,
   getFailMode,
 } from './types';
 import { FactStoreService, FactMap, ComputedFactRegistry } from './fact-store';
@@ -189,7 +190,10 @@ export class CasePolicyEngine {
       // 6. State transition kontrolü (StateMachine ile)
       const icraType = this.mapCaseTypeToIcraType(caseExists.type, caseExists.subType ?? undefined);
       const transitionResult = this.stateMachine.canTransition(state, actionCode, icraType);
-      if (!transitionResult.allowed) {
+      // Aşamadan bağımsız eylem (owner kararı 8; yalnız matriste `stageIndependent` işaretli eylemler): durum makinesinin
+      // "geçersiz aşama / bu aşamada yapılamaz" reddi uygulanmaz. Kapılar (yukarıda) ve sonraki karar günlüğü AYNEN çalışır.
+      const stageIndependentOverride = !transitionResult.allowed && isStageIndependent(actionCode);
+      if (!transitionResult.allowed && !stageIndependentOverride) {
         const decision = this.buildDecision(
           false,
           transitionResult.reason,
@@ -207,10 +211,10 @@ export class CasePolicyEngine {
         return decision;
       }
 
-      // 7. İzin ver
+      // 7. İzin ver (aşama denetimi yok sayıldıysa gerekçe bunu açıkça söyler; karar günlüğünde aşama anlık görüntüsü kalır)
       const decision = this.buildDecision(
         true,
-        'OK',
+        stageIndependentOverride ? 'OK (aşamadan bağımsız eylem)' : 'OK',
         DecisionCode.OK,
         {
           state,

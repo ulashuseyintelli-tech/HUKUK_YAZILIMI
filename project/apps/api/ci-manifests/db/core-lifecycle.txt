@@ -241,6 +241,14 @@ src/modules/expense-request/__tests__/opening-expense-fx-basis.http.db-gated.int
 #   es zamanli PR'lar sona ekler. Duzeltmesiz servis koduyla 17 testin 8'i DUSER; kendi burosu yanitlarini birebir
 #   sabitleyen 9 test duzeltmesiz kodla da GECER (RED kanitlandi).
 src/modules/expense-request/__tests__/expense-tenant-boundary.http.db-gated.integration.spec.ts
+#
+# Masraf kesinlestirme / onaylama / reddetme: dosya ASAMASINDAN BAGIMSIZ (owner karari 8, 2026-10-05), GERCEK HTTP + disposable
+#   PostgreSQL. Olculen kusur (main 99368b6c): karar motorunun durum makinesi asama kodlari ile veritabani WorkflowStage degerleri
+#   yalniz INITIAL da kesisir; dosya ilk asamadan cikinca uc 403 Gecersiz asama verir (12/13 asama). Korunanlar AYRI AYRI kilitli:
+#   kapali / arsiv dosya reddi, buro siniri, aktor yetkisi (VIEWER), talebin kendi durum gecisleri, denetim + karar gunlugu.
+#   Odeme kaydi ucu bu teslimde ACILMADI (ayri karar maddesi; testte kapali kaldigi sabit). Duzeltmesiz kodla 20 testin 14u DUSER,
+#   6 kontrol GECER (RED kanitlandi). Bu konum bilerek dosya sonu DEGIL: es zamanli PR lar sona ekler.
+src/modules/expense-request/__tests__/expense-stage-independent-actions.http.db-gated.integration.spec.ts
 
 # Alacak ozeti para birimi baglami (GET /claim-items/case/:caseId/summary), GERCEK HTTP + disposable PostgreSQL. Olculen
 #   kusur (main 6917e8aa): ozet etkin kalem tutarlarini para birimine bakmadan topluyor ve yaniti SON kalemin para birimiyle

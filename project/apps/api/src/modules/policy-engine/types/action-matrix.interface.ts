@@ -55,6 +55,14 @@ export interface ActionMatrixEntry {
   
   /** Notlar */
   notes?: string;
+
+  /**
+   * Aşamadan bağımsız eylem: durum makinesinin AŞAMA denetimi bu eylem için uygulanmaz (owner kararı 8, 2026-10-05).
+   * Kapılar (kapalı / arşiv), büro sınırı, aktör yetkisi ve karar günlüğü AYNEN uygulanır; yalnız "bu aşamada bu eylem
+   * yapılamaz / geçersiz aşama" reddi kalkar. Varsayılan: yok (= aşamaya bağlı). Bu alan yalnız owner'ın adıyla anıp
+   * açtığı eylemlere verilir; "48 eylemi topluca açma" yasaktır (bkz. case-policy-engine-stage-independence.spec.ts).
+   */
+  stageIndependent?: boolean;
 }
 
 /**
@@ -183,6 +191,10 @@ export const ACTION_MATRIX: ActionMatrixEntry[] = [
     gateSeverity: 'HARD',
     cpeRequiredMandatory: true,
     scope: Scope.EXPENSE,
+    // Owner kararı 8 (2026-10-05): masraf kesinleştirme / onaylama / reddetme dosya aşamasından bağımsızdır
+    // (POST /expense-requests/:id/{finalize,approve,reject}). Masraf ÖDEME KAYDI bu karara girer ama o uç ayrı karar
+    // maddesidir (RECORD_COLLECTION'a bağlı kalır; bu alan ona verilmedi).
+    stageIndependent: true,
     notes: 'Masraf onaylama, müvekkile maliyet oluşturur',
   },
 
@@ -404,6 +416,16 @@ export function getFailMode(actionCode: ActionCode): FailMode {
 export function isLockRequired(actionCode: ActionCode): boolean {
   const entry = getActionMatrixEntry(actionCode);
   return entry?.lockRequired ?? false;
+}
+
+/**
+ * ActionCode aşamadan bağımsız mı? (durum makinesinin aşama denetimi uygulanmaz; kapılar uygulanır)
+ *
+ * Çağrıldığı yerler:
+ * - CasePolicyEngine.evaluateDecision() → durum makinesi reddi bu eylem için yok sayılır
+ */
+export function isStageIndependent(actionCode: ActionCode): boolean {
+  return getActionMatrixEntry(actionCode)?.stageIndependent === true;
 }
 
 /**
