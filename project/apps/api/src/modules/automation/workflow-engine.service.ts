@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional, Inject, forwardRef, NotFoundException, BadRequestException, HttpException } from "@nestjs/common";
+import { Injectable, Logger, Optional, Inject, forwardRef, NotFoundException, BadRequestException, ConflictException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import {
   Prisma,
@@ -32,6 +32,23 @@ const ACTION_TO_CPE_CODE: Record<string, ActionCode> = {
   'EVICTION_REQUEST': ActionCode.UYAP_SEND,
   'CLOSE_CASE': ActionCode.CLOSE_CASE,
 };
+
+/**
+ * Aşama masraf seti reddi KESİN (tekrar denemekle değişmeyen iş kuralı reddi) mi? Yalnız kimliği AÇIKÇA bilinen sınıflar kesindir:
+ * - `BadRequestException` / `NotFoundException`: geçersiz aşama kodu, geçersiz istek anahtarı, müvekkil atanmamış, dosya bulunamadı;
+ * - YAPISAL `code` taşıyan `ConflictException`: matrah hesaplanamıyor (dövizli dosya), istek anahtarı çakışması / iptal edilmiş talep.
+ * Tanınmayan HER hata GEÇİCİ sayılır (olay sahiplenilmez). Özellikle `code` taşımayan `ConflictException`: masraf servisi muhasebe günlüğü
+ * adımındaki HER hatayı (Prisma zaman aşımı, bağlantı kopması dahil) düz iletiyle `ConflictException`'a sarar — sınıfı tek başına kesinlik
+ * kanıtı DEĞİLDİR; ileti metnine bakılmaz (kırılgan), yapısal `code` yokluğu "geçici" demektir.
+ */
+function isDefiniteExpenseSetRejection(err: unknown): boolean {
+  if (err instanceof BadRequestException || err instanceof NotFoundException) return true;
+  if (err instanceof ConflictException) {
+    const response = err.getResponse();
+    return typeof response === "object" && response !== null && typeof (response as { code?: unknown }).code === "string";
+  }
+  return false;
+}
 
 // PR-EA-4: guarded write-path input contract. tenantId zorunlu (üst çağrı zincirinden taşınır,
 // caseId'den yeniden tahmin edilmez); caseDebtorId yalnız çağıran zaten belirli bir CaseDebtor
@@ -258,7 +275,8 @@ export class WorkflowEngine {
     }
 
     // Olay kuralı (tebligat süresi doldu): (büro, tebligat, eylem) başına TEK sonuç — işaret + yan etkiler tek transaction'da
-    // (owner kararı 11). CPE kapısı yukarıda aynen çalıştı; olay yolu yalnız yan etkilerin yazımını devralır.
+    // (owner kararı 11). Bu olay kuralı politika motoruna EŞLENMEMİŞTİR (ACTION_TO_CPE_CODE'da yok): yukarıdaki kapı bloğu bu olay
+    // için atlanır; CPE'ye eşlenen bir olay kuralı eklenirse kapı aynen çalışır, olay yolu yalnız yan etkilerin yazımını devralır.
     if (rule.eventRef) {
       await this.applyEventRule(caseId, rule, context, rule.eventRef, cpeTraceId);
       return;
@@ -385,8 +403,9 @@ export class WorkflowEngine {
 
   /**
    * Olaya bağlı aşama masraf setini sabit istek anahtarıyla yazar. Dönüş: `true` = devam edilebilir (set var ya da yazılamayacağı
-   * KESİN: iş kuralı reddi / müvekkil yok — eski davranış gibi aşama değişikliği engellenmez); `false` = geçici altyapı hatası →
-   * olay sahiplenilmez, sonraki işlemede yeniden denenir (para yan etkisi sessizce kaybolmaz).
+   * KESİN: `isDefiniteExpenseSetRejection` — eski davranış gibi aşama değişikliği engellenmez); `false` = tanınmayan / geçici hata →
+   * olay sahiplenilmez, sonraki işlemede yeniden denenir. SINIR: "sonraki işleme" olay DELIVERED + süresi dolmuş kaldığı sürece
+   * gelir; saatlik tebligat denetimi tebligatı EXPIRED yaptığında olay kural için kaybolur (AutomationService.checkNotificationExpiries).
    *
    * <remarks>
    * Çağrıldığı yerler:
@@ -410,9 +429,9 @@ export class WorkflowEngine {
       });
       return true;
     } catch (err) {
-      if (err instanceof HttpException) {
-        // Kesin (tekrar denemekle değişmeyen) ret: eski davranış gibi günlüğe yazılır, aşama değişikliği engellenmez.
-        this.logger.warn(`Otomatik masraf seti yazılamadı (${expenseStageCode}): ${err.message}`);
+      if (isDefiniteExpenseSetRejection(err)) {
+        // Kesin (tekrar denemekle değişmeyen) iş kuralı reddi: eski davranış gibi günlüğe yazılır, aşama değişikliği engellenmez.
+        this.logger.warn(`Otomatik masraf seti yazılamadı (${expenseStageCode}): ${(err as Error).message}`);
         return true;
       }
       this.logger.error(`Otomatik masraf seti geçici hatayla yazılamadı (${expenseStageCode}); olay yeniden denenecek:`, err);

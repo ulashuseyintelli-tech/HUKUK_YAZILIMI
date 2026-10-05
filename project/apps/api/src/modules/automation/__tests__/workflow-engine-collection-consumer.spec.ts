@@ -102,7 +102,8 @@ describe("RCV-COL-CONSUMER-AUTO-01 — lifecycle ve legal-balance authority ayri
         findFirst: jest.fn().mockResolvedValue(row),
         update: jest.fn(),
       },
-      notificationQueue: { findFirst: jest.fn().mockResolvedValue(null) },
+      // checkNotificationExpiry artık findMany ile süresi dolmuş tebligatları okur (olay başına tek sonuç, owner kararı 11)
+      notificationQueue: { findMany: jest.fn().mockResolvedValue([]) },
       decisionLog: { create: jest.fn() },
       enforcementAction: { create: jest.fn() },
     } as any;
@@ -112,8 +113,14 @@ describe("RCV-COL-CONSUMER-AUTO-01 — lifecycle ve legal-balance authority ayri
       {} as any,
     );
 
+    const loggedErrors = jest.spyOn((workflow as any).logger, "error").mockImplementation(() => undefined);
+
     await workflow.processCase(caseId, tenantId);
 
+    // Kural yürütme döngüsüne GERÇEKTEN ulaşıldığının kanıtı: processCase'in dış catch'i hata yutmadı ve tebligat süresi sorgusu çalıştı
+    // (sahte sorguyla uyuşmazlık TypeError üretip aşağıdaki "yazım yok" iddialarını boş geçirirdi).
+    expect(loggedErrors).not.toHaveBeenCalled();
+    expect(prisma.notificationQueue.findMany).toHaveBeenCalledTimes(1);
     expect(prisma.case.findFirst).toHaveBeenCalledTimes(2);
     expect(prisma.case.update).not.toHaveBeenCalled();
     expect(prisma.decisionLog.create).not.toHaveBeenCalled();

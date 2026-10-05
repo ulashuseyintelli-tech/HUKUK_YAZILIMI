@@ -6,7 +6,7 @@ jest.mock('pdf-poppler', () => ({
   },
 }));
 
-import { BadRequestException, CanActivate, ExecutionContext, INestApplication, UnauthorizedException, ValidationPipe } from '@nestjs/common';
+import { BadRequestException, CanActivate, ConflictException, ExecutionContext, ForbiddenException, INestApplication, NotFoundException, UnauthorizedException, ValidationPipe } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AuthGuard } from '@nestjs/passport';
 import { SchedulerRegistry } from '@nestjs/schedule';
@@ -168,6 +168,12 @@ describeWithDisposableDb('Otomasyon tebligat süresi doldu — (büro, olay, eyl
       });
     expect({ label, status: res.status }).toEqual({ label, status: 201 });
     const caseId = res.body.id as string;
+    // Arka planda yazılan açılış masraf talebi görünene dek sınırlı bekleme: sonraki enjeksiyonlar (günlük yazıcısı vb.) o çağrıyı DEĞİL
+    // olayın işlenmesini etkilemeli
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if ((await prisma.expenseRequest.count({ where: { caseId } })) > 0) break;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
     // Otomatik mod açık, ödeme emri tebliği sonrası bekleme aşaması; ilk karar günlüğü / aşama kayıtları bu noktadan sonra sayılır.
     await prisma.case.update({ where: { id: caseId }, data: { isAutoMode: true, workflowStage: 'WAITING_RESPONSE' } });
     return caseId;
@@ -279,6 +285,20 @@ describeWithDisposableDb('Otomasyon tebligat süresi doldu — (büro, olay, eyl
       expect(await prisma.decisionLog.count({ where: { caseId, decision: ACTION } })).toBe(1);
       expect(await prisma.decisionLog.count({ where: { caseId, decision: 'BASKA_EYLEM' } })).toBe(1);
       expect(await effects(caseId)).toMatchObject({ decisions: 1, lifecycles: 1, sets: 1, counter: 2, stage: 'ENFORCEMENT' }); // sayaç: iki eylem × bir kez
+    });
+
+    it('DOLU metadata: işaret yazılırken tebligatın öteki anahtarları (iç içe nesne dahil) ve önceki işaretler KORUNUR', async () => {
+      const caseId = await openCase('dolu-metadata');
+      const eventId = await seedEvent(caseId, { metadata: { gonderen: 'ptt', ayrinti: { barkod: 'X-1', adet: 2 }, automationConsumed: { ESKI_EYLEM: '2026-01-01T00:00:00.000Z' } } });
+
+      await processVia(first, adminId, caseId);
+
+      const row = await prisma.notificationQueue.findUniqueOrThrow({ where: { id: eventId } });
+      const metadata = row.metadata as Record<string, any>;
+      expect(metadata.gonderen).toBe('ptt');
+      expect(metadata.ayrinti).toEqual({ barkod: 'X-1', adet: 2 });
+      expect(Object.keys(metadata.automationConsumed).sort()).toEqual([ACTION, 'ESKI_EYLEM'].sort());
+      expect(metadata.automationConsumed.ESKI_EYLEM).toBe('2026-01-01T00:00:00.000Z');
     });
 
     it('süresi dolmamış / EXPIRED (tarihsel) / PAYMENT_ORDER olmayan tebligat işlenmez; işaret yazılmaz', async () => {
@@ -398,6 +418,44 @@ describeWithDisposableDb('Otomasyon tebligat süresi doldu — (büro, olay, eyl
       expect(await marker(eventId)).toEqual([ACTION]);
     });
 
+    it('GERÇEK sınıf: muhasebe günlüğü adımında geçici veritabanı hatası (masraf servisi bunu düz iletili ConflictException\'a sarar) → olay SAHİPLENİLMEZ, set geri alınır; sonraki işlemede tek set', async () => {
+      const caseId = await openCase('gunluk-gecici');
+      const eventId = await seedEvent(caseId);
+      const journalWriter = (first.expense as any).journalWriter;
+      jest.spyOn(journalWriter, 'write').mockRejectedValueOnce(new Error('connection terminated unexpectedly'));
+
+      await processVia(first, adminId, caseId);
+      expect(await effects(caseId)).toMatchObject({ decisions: 0, lifecycles: 0, sets: 0, counter: 0, stage: 'WAITING_RESPONSE' });
+      expect(await marker(eventId)).toEqual([]);
+
+      await processVia(first, adminId, caseId); // sarmalanmış geçici hata TEKRAR DENENİR
+      expect(await effects(caseId)).toMatchObject({ decisions: 1, lifecycles: 1, sets: 1, counter: 1, stage: 'ENFORCEMENT' });
+      expect(await marker(eventId)).toEqual([ACTION]);
+    });
+
+    it.each([
+      ['BadRequestException (düz ileti): geçersiz girdi', () => new BadRequestException('geçersiz aşama kodu'), true],
+      ['NotFoundException: dosya bulunamadı', () => new NotFoundException('Takip bulunamadı'), true],
+      ['ConflictException + yapısal code: matrah hesaplanamıyor / istek anahtarı çakışması', () => new ConflictException({ code: 'STAGE_EXPENSE_BASIS_NOT_CALCULABLE', message: 'm' }), true],
+      ['ConflictException düz ileti (günlük adımı sarmalayıcısı biçimi): TANINMAYAN → geçici', () => new ConflictException('ExpenseRequest journal write failed: WRITER_EXCEPTION (timeout)'), false],
+      ['ForbiddenException: tanınmayan HttpException → geçici', () => new ForbiddenException('x'), false],
+      ['düz Error (altyapı): geçici', () => new Error('ECONNRESET'), false],
+    ])('masraf seti reddi sınıflaması — %s', async (_label, makeError, definite) => {
+      const caseId = await openCase(`siniflama-${randomUUID().slice(0, 6)}`);
+      const eventId = await seedEvent(caseId);
+      jest.spyOn(first.expense, 'createStageExpenseSet').mockRejectedValueOnce(makeError() as never);
+
+      await processVia(first, adminId, caseId);
+
+      if (definite) {
+        expect(await effects(caseId)).toMatchObject({ decisions: 1, lifecycles: 1, sets: 0, counter: 1, stage: 'ENFORCEMENT' });
+        expect(await marker(eventId)).toEqual([ACTION]);
+      } else {
+        expect(await effects(caseId)).toMatchObject({ decisions: 0, lifecycles: 0, sets: 0, counter: 0, stage: 'WAITING_RESPONSE' });
+        expect(await marker(eventId)).toEqual([]);
+      }
+    });
+
     it('masraf seti anahtarı olaya bağlıdır: aynı olay + eylem için sabit, farklı olay için farklı', async () => {
       const caseId = await openCase('anahtar');
       const eventId = await seedEvent(caseId);
@@ -417,14 +475,29 @@ describeWithDisposableDb('Otomasyon tebligat süresi doldu — (büro, olay, eyl
       expect(await marker(eventId)).toEqual([]);
     });
 
-    it('aynı turda başka kurallar (REQUEST_ENFORCEMENT) çalışsa da olay işaretini onlar tüketmez; işaret yalnız kendi eylem anahtarını taşır', async () => {
+    it('aynı turda başka kural (REQUEST_ENFORCEMENT) GERÇEKTEN tetiklenir ve olay işaretini tüketmez; işaret yalnız kendi eylem anahtarını taşır', async () => {
       const caseId = await openCase('ayni-tur');
       const eventId = await seedEvent(caseId);
-      // REQUEST_ENFORCEMENT koşulu: WAITING_RESPONSE + son işlemden ≥ 10 gün + itiraz / ödeme yok
-      await prisma.caseLifecycle.updateMany({ where: { caseId }, data: { createdAt: new Date(Date.now() - 12 * 24 * 60 * 60 * 1000) } });
+      // REQUEST_ENFORCEMENT koşulu: WAITING_RESPONSE + son işlemden ≥ 10 gün + itiraz / ödeme yok. Dosya açılışı yaşam döngüsü kaydı yazmaz:
+      // koşulu kurmak için 12 gün öncesine tarihli bir kayıt eklenir (güncellenecek satır YOKSA koşul sağlanmazdı).
+      await prisma.caseLifecycle.create({ data: { caseId, stage: 'WAITING_RESPONSE', action: 'test: tebligat teslim', description: 'test', triggeredBy: 'AUTO', createdAt: new Date(Date.now() - 12 * 24 * 60 * 60 * 1000) } });
+      const context = await first.engine.buildContext(caseId, tenantId);
+      const evaluated = await (first.engine as any).ruleEngine.evaluateRules(context);
+      expect(evaluated.map((rule: { action: string }) => rule.action)).toContain('REQUEST_ENFORCEMENT'); // koşul gerçekten kuruldu (boş kanıt değil)
+
       await processVia(first, adminId, caseId);
-      await processVia(first, adminId, caseId);
+
+      const decisions = (await prisma.decisionLog.findMany({ where: { caseId } })).map((d) => d.decision).sort();
+      expect(decisions).toContain(ACTION);
+      expect(decisions.some((d) => d.includes('REQUEST_ENFORCEMENT'))).toBe(true); // öteki kural da çalıştı (izinli ya da CPE engelli kaydı)
+      expect(decisions.filter((d) => d === ACTION)).toHaveLength(1);
+      // ÖLÇÜM (inceleme C3): REQUEST_ENFORCEMENT bu dosyada politika motoru tarafından ENGELLENİR (TRIGGER_HACIZ, aşama sözlüğü) → aşama
+      // değişikliği ve ikinci (anahtarsız) masraf seti YAZILMAZ: tek ENFORCEMENT geçişi + tek set. Kural bir gün izin verilirse aynı geçiş için
+      // iki set (biri updateCaseStage'in anahtarsız yolu) çıkabilir — bilinen açık (PR metni), bu iddia o gün bilinçle güncellenir.
+      expect(decisions).toContain('BLOCKED: REQUEST_ENFORCEMENT');
+      expect(await effects(caseId)).toMatchObject({ decisions: 1, lifecycles: 1, sets: 1, counter: 1, stage: 'ENFORCEMENT' });
       expect(await marker(eventId)).toEqual([ACTION]);
+      await processVia(first, adminId, caseId);
       expect(await prisma.decisionLog.count({ where: { caseId, decision: ACTION } })).toBe(1);
     });
   });
