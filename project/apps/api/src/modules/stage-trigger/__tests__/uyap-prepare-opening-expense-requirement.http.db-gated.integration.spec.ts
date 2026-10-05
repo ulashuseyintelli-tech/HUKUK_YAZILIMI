@@ -656,9 +656,8 @@ describeWithDisposableDb('Açılış masrafı şartı — belirlenemeyen masraf 
 
     it('TL dosya (kontrol): bakiye paket toplamını karşılamıyorsa masraf penceresi, karşılıyorsa hazır — mevcut davranış', async () => {
       const caseId = await openCase('izin-try', { currency: 'TRY', dues: [principal(10_000)] });
-      // Açılış talebi ödenmemişken hazırlık, politika kararından bağımsız olarak masraf kapısında durur (bkz. uyap-prepare-context
-      // testi: ödenmemiş BLOCKING talep UYAP hazırlığını engeller). Bu test bakiye karşılaştırmasını sabitler: talep karşılanmış.
-      await prisma.expenseRequest.updateMany({ where: { caseId }, data: { status: 'PAID', paidTotal: 1431.1 } });
+      // Müvekkilsiz dosya: otomatik açılış talebi YOKTUR (masraf kapısı talepsiz dosyada geçer); bu test bakiye ↔ paket toplamı
+      // karşılaştırmasını sabitler. (Ödenmemiş BLOCKING talebin hazırlığı engellediği uyap-prepare-context testindedir.)
 
       expect((await prepare(caseId)).body).toEqual({
         action: 'OPEN_EXPENSE_MODAL',

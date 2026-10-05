@@ -159,12 +159,14 @@ describeWithDisposableDb('UYAP hazırlığı — büro / kullanıcı bağlamı v
     if (previousUyapAvailable === undefined) delete process.env.UYAP_AVAILABLE;
     else process.env.UYAP_AVAILABLE = previousUyapAvailable;
     await app?.close();
-    await prisma.costPackage.deleteMany({ where: { id: costPackageId } }).catch(() => undefined);
+    await prisma.costPackage.deleteMany({ where: { id: costPackageId } });
     for (const id of [tenantId, otherTenantId]) {
-      await prisma.uyapRequestLog.deleteMany({ where: { tenantId: id } }).catch(() => undefined);
-      await prisma.auditLog.deleteMany({ where: { tenantId: id } }).catch(() => undefined);
-      await prisma.tenant.deleteMany({ where: { id } }).catch(() => undefined);
+      await prisma.expenseBlockReason.deleteMany({ where: { tenantId: id } });
+      await prisma.uyapRequestLog.deleteMany({ where: { tenantId: id } });
+      await prisma.auditLog.deleteMany({ where: { tenantId: id } });
+      await prisma.tenant.delete({ where: { id } }); // hata YUTULMAZ: temizlik gerçekten silmiyorsa test kırılır
     }
+    expect(await prisma.tenant.count({ where: { id: { in: [tenantId, otherTenantId] } } })).toBe(0); // temizlik kanıtı
     await prisma.$disconnect();
   });
 
@@ -370,6 +372,64 @@ describeWithDisposableDb('UYAP hazırlığı — büro / kullanıcı bağlamı v
       expect(res.status).toBe(201);
       expect(res.body.action).toBe('BLOCKED');
       expect(String(res.body.blockReason)).not.toContain('Ödenmemiş masraf talebi');
+    });
+  });
+
+  describe('KARAR MADDESİ senaryosu ve BİLİNEN AÇIKLAR (mevcut davranış sabitlenir; ürün kararı gelince ilgili test bilinçle güncellenir)', () => {
+    const credit = async (caseId: string, amount: number) => {
+      const res = await as(adminId).post(`/cases/${caseId}/balance/credit`, { amount, source: 'manual', description: 'masraf avansı' });
+      expect(res.status).toBe(201);
+    };
+
+    it('ödenmemiş engelleyici talep + avans paket toplamından FAZLA: hazırlık yine BLOCKED (kuralın özü: avans, ödenmemiş talebi aşmaz)', async () => {
+      const caseId = await openCase('odenmemis-avansli');
+      await credit(caseId, 5_000);
+
+      const prepared = await prepare(caseId);
+
+      expect(prepared.body).toEqual({
+        action: 'BLOCKED',
+        blockReason: REASON.unpaidTotal,
+        suggestion: { title: 'Masraf karşılanmadı', description: REASON.unpaidTotal },
+      });
+      // Politika motoru bu dosyada izin veriyor (karar günlüğünde "izinli" satırı); ret masraf kapısındandır
+      expect(await lastEngineDecision(caseId)).toEqual({ allowed: true, gate: null, reason: 'OK' });
+    });
+
+    it('BİLİNEN AÇIK: OVERDUE (vadesi geçmiş) ödenmemiş engelleyici talep masraf kapısınca SAYILMAZ — taban da durum uçları da aynı; hazırlık engellemez', async () => {
+      const caseId = await openCase('overdue');
+      await settleOpening(caseId, { status: 'OVERDUE' }); // yalnız create-overdue-task ucu yazar (web'de çağıranı yok)
+      await credit(caseId, 1_000);
+
+      // Kapı servisi (üç durum ucunun ortak kaynağı) yalnız PENDING / SENT / REMINDED / PARTIAL sayar: OVERDUE "engel yok"
+      expect(await gateStatus(caseId)).toMatchObject({ isBlocked: false });
+      const prepared = await prepare(caseId);
+      expect(prepared.body.action).toBe('READY'); // avans ≥ paket toplamı
+      expect(JSON.stringify(prepared.body)).not.toContain('Masraf karşılanmadı');
+    });
+
+    it('BİLİNEN AÇIK: eksik tutarla "ödeme alındı" (RECEIVED) engel kaldırır; ödenen tutar avansa yazıldığı için hazırlık HAZIR döner (#2890 kabul edilmiş kural; eksik tutar doğrulaması markAsReceived açığıdır)', async () => {
+      const caseId = await openCase('received-eksik');
+      const opening = await prisma.expenseRequest.findFirstOrThrow({ where: { tenantId, caseId } });
+      const received = await as(adminId).post(`/expense-requests/${opening.id}/receive`, { paidAmount: 1_000 });
+      expect(received.status).toBe(201);
+      const row = await prisma.expenseRequest.findUniqueOrThrow({ where: { id: opening.id } });
+      expect(row.status).toBe('RECEIVED');
+      expect(Number(row.totalAmount)).toBeGreaterThan(1_000); // talebin 431,10 TL'si açık
+
+      expect(await gateStatus(caseId)).toMatchObject({ isBlocked: false });
+      expect((await prepare(caseId)).body.action).toBe('READY'); // 1000 ≥ 957,90
+    });
+
+    it('BİLİNEN AÇIK: ilk aşama dışındaki dosyada motor UYAP gönderim eylemini aşama sözlüğünden reddeder; hazırlık ham "Geçersiz aşama: <kod>" gösterir (satır 1 sözlük kusurunun bu eyleme yansıması; sözlük bu PR dışında)', async () => {
+      const caseId = await openPaidCase('asama');
+      await credit(caseId, 1_000);
+      await prisma.case.update({ where: { id: caseId }, data: { workflowStage: 'SEIZURE' } });
+
+      const prepared = await prepare(caseId);
+
+      expect(prepared.body).toMatchObject({ action: 'BLOCKED', blockReason: 'Geçersiz aşama: SEIZURE' });
+      expect(await lastEngineDecision(caseId)).toMatchObject({ allowed: false, reason: 'Geçersiz aşama: SEIZURE' });
     });
   });
 
