@@ -353,7 +353,7 @@ describe("Alacak kalemi formu — Hesap Özeti para birimi gösterimi", () => {
 
     expect(masrafIstekleri.length).toBeGreaterThan(0);
     for (const istek of masrafIstekleri) {
-      expect(istek).toEqual({ principalAmount: 10000, caseType: "ASIL_ALACAK", debtorCount: 1, currency: "USD", caseCurrency: "USD" });
+      expect(istek).toEqual({ principalAmount: 10000, takipTuruCode: "ILAMSIZ_GENEL", debtorCount: 1, currency: "USD", caseCurrency: "USD" });
     }
     expect(faizIstekleri.length).toBeGreaterThan(0);
     for (const istek of faizIstekleri) expect(istek).toMatchObject({ principalAmount: 10000, currency: "USD" });
@@ -363,7 +363,7 @@ describe("Alacak kalemi formu — Hesap Özeti para birimi gösterimi", () => {
     await goster({ dosya: "TRY", kalem: "TRY" });
 
     for (const istek of masrafIstekleri) {
-      expect(istek).toEqual({ principalAmount: 10000, caseType: "ASIL_ALACAK", debtorCount: 1, currency: "TRY", caseCurrency: "TRY" });
+      expect(istek).toEqual({ principalAmount: 10000, takipTuruCode: "ILAMSIZ_GENEL", debtorCount: 1, currency: "TRY", caseCurrency: "TRY" });
     }
     for (const istek of faizIstekleri) {
       expect(istek).toMatchObject({ principalAmount: 10000, currency: "TRY", interestType: "LEGAL_3095", startDate: "2026-09-01", endDate: "2026-10-01" });

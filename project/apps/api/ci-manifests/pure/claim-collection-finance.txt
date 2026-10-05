@@ -382,5 +382,15 @@ src/modules/expense-request/__tests__/stage-expense-basis.spec.ts
 #   Dovizli alacakta harc / vekalet ucreti kurali (tutar ve kur) owner karari.
 src/modules/fee-engine/__tests__/fee-preview-currency.spec.ts
 src/modules/fee-engine/__tests__/fee-preview-currency.http.spec.ts
+# Sihirbaz harc onizlemesi (POST /fee-engine/preview) - takip turu kodu dogru tasinir, dokum kodlari tek kaynaktan gelir,
+#   tarife / takip turu / tarife kalemi bulunamayinca "hesaplanamadi" doner (sessiz 0 DEGIL; owner karari 12). Olculdu: form
+#   takip turu yerine KALEM TURU yolluyordu, katalogdaki 11 takip turu kodunun hicbiri profille eslesmiyordu, breakdown her
+#   durumda 0'di, tarife yokken success:true + 0 donuyordu; panel 0,00, dosya ozeti 1.431,10. Gercek Nest HTTP (DB yok) +
+#   gercek 2026 tarife dosyasi; dosya hesap ozeti (gercek CaseService, sahte Prisma) ile masraf esitligi. Gercek 0 (ilamlida
+#   pesin harc) ile hesaplanamadi AYRI kilitli; dovizli kalemde para birimi kapilari korunur. Vekalet ucreti formulu
+#   SECILMEDI (hukuki karar): bu testler vekalet ucretini karsilastirmaz. Duzeltmesiz kodla DUSER (mutant 7/7 yakalandi).
+src/modules/fee-engine/__tests__/fee-case-type.spec.ts
+src/modules/fee-engine/__tests__/fee-preview-hesaplanamadi.http.spec.ts
+src/modules/fee-engine/__tests__/fee-preview-case-summary-parity.spec.ts
 # Asama masraf seti ISTEK ANAHTARI saf kararlari (anahtar dogrulama, parmak izi, tekrar / cakisma / iptal karari).
 src/modules/expense-request/__tests__/stage-expense-idempotency.spec.ts

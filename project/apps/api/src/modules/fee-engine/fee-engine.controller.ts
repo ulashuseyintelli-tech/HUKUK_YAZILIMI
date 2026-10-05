@@ -19,6 +19,15 @@ interface CalculateFeesDto {
  */
 interface FeePreviewDto {
   principalAmount: number;
+  /**
+   * Takip türü kodu (lookup `takipTuru.code`: ILAMSIZ_GENEL, ILAMSIZ_KIRA, KAMBIYO_CEK …). Sihirbaz bunu gönderir; sunucu
+   * masraf profiline `fee-case-type.ts` eşlemesiyle çevirir. Bilinmeyen / profili olmayan kod "hesaplanamadı" döner.
+   */
+  takipTuruCode?: string;
+  /**
+   * Doğrudan masraf profili kodu (ILAMSIZ, KIRA, TAHLIYE, KAMBIYO, ILAMLI, REHIN, IFLAS). `takipTuruCode` yoksa kullanılır.
+   * KALEM TÜRÜ (ASIL_ALACAK, FATURA …) takip türü DEĞİLDİR: eşleşmez, "hesaplanamadı" döner (eskiden sessiz 0 idi).
+   */
   caseType?: string;
   debtorCount?: number;
   /** Alacak kaleminin para birimi. Verilirse yanıt `data.paraBirimiDurumu` kararını taşır; sayısal alanlar DEĞİŞMEZ. */
@@ -47,8 +56,18 @@ interface FeePreviewResponse {
      */
     paraBirimiDurumu?: FeePreviewCurrencyStatus;
   };
+  /**
+   * `success: false` = masraflar HESAPLANAMADI (sıfır DEĞİL). `CASE_TYPE_UNRESOLVED` takip türü yok / eşleşmedi,
+   * `TARIFF_NOT_FOUND` tarife yok, `FEE_PROFILE_NOT_FOUND` profil yok, `TARIFF_ITEM_MISSING` tarifede gerekli kalem yok.
+   */
   error?: {
-    code: 'INVALID_INPUT' | 'SERVICE_UNAVAILABLE';
+    code:
+      | 'INVALID_INPUT'
+      | 'SERVICE_UNAVAILABLE'
+      | 'CASE_TYPE_UNRESOLVED'
+      | 'TARIFF_NOT_FOUND'
+      | 'FEE_PROFILE_NOT_FOUND'
+      | 'TARIFF_ITEM_MISSING';
     message: string;
   };
   cached: boolean;
@@ -87,34 +106,35 @@ export class FeeEngineController {
         };
       }
 
-      const debtorCount = dto.debtorCount || 1;
-      const caseType = dto.caseType || 'ILAMSIZ_GENEL';
-      const tariffYear = this.feeEngineService.getCurrentTariffYear();
+      // Takip türü hiç verilmezse eski varsayılana (`ILAMSIZ_GENEL`) DÜŞÜLMEZ: eksik bilgi sıfır sayılmaz.
+      if (!String(dto.takipTuruCode ?? '').trim() && !String(dto.caseType ?? '').trim()) {
+        return {
+          success: false,
+          error: { code: 'CASE_TYPE_UNRESOLVED', message: 'Takip türü belirtilmedi; masraflar hesaplanamadı.' },
+          cached: false,
+        };
+      }
 
-      // Calculate fees
-      const items = this.feeEngineService.calculateOpeningFees(
-        caseType,
-        dto.principalAmount,
-        0,
-        debtorCount,
-        'NORMAL',
-        tariffYear,
-      );
+      // Hesap TEK kaynakta: FeeEngineService.previewCalculation() (takip türü çözümü, tarife, profil, döküm kodları,
+      // dosya gideri). Denetleyicide ikinci bir döküm kodu listesi ya da vekalet tablosu KALMADI (§15.2, REC-FEE-002).
+      const result = this.feeEngineService.previewCalculation({
+        principalAmount: dto.principalAmount,
+        takipTuruCode: dto.takipTuruCode,
+        caseType: dto.caseType,
+        debtorCount: dto.debtorCount || 1,
+        postageType: 'NORMAL',
+      });
 
-      const estimatedFees = this.feeEngineService.calculateTotalFees(items);
-
-      // Calculate attorney fee
-      const estimatedAttorneyFee = this.calculateAttorneyFeePreview(dto.principalAmount);
-
-      // Extract breakdown
-      const breakdown = {
-        basvurmaHarci: items.find(i => i.type === 'BASVURMA_HARCI' || i.tariffCode === 'BASVURMA_HARCI')?.amount || 0,
-        vekaletHarci: items.find(i => i.type === 'VEKALET_HARCI' || i.tariffCode === 'VEKALET_HARCI')?.amount || 0,
-        pesinHarc: items.find(i => i.type === 'PESIN_HARC' || i.tariffCode === 'PESIN_HARC')?.amount || 0,
-        dosyaGideri: items.find(i => i.type === 'DOSYA_GIDERI' || i.tariffCode === 'DOSYA_GIDERI')?.amount || 0,
-        tebligatGideri: items.find(i => i.type === 'TEBLIGAT_GIDERI' || i.tariffCode === 'TEBLIGAT_GIDERI')?.amount || 0,
-        vekaletPulu: items.find(i => i.type === 'VEKALET_PULU' || i.tariffCode === 'VEKALET_PULU')?.amount || 0,
-      };
+      if (!result.success || !result.data) {
+        return {
+          success: false,
+          error: {
+            code: (result.error?.code ?? 'SERVICE_UNAVAILABLE') as NonNullable<FeePreviewResponse['error']>['code'],
+            message: result.error?.message ?? 'Fee calculation service is temporarily unavailable',
+          },
+          cached: false,
+        };
+      }
 
       // Para birimi bağlamı (eklemeli; hesap ve çevirme YOK). İstek para birimi taşımıyorsa blok üretilmez.
       const paraBirimiDurumu = buildFeePreviewCurrencyStatus({
@@ -129,10 +149,10 @@ export class FeeEngineController {
       return {
         success: true,
         data: {
-          estimatedFees,
-          estimatedAttorneyFee,
-          tariffYear,
-          breakdown,
+          estimatedFees: result.data.estimatedFees,
+          estimatedAttorneyFee: result.data.estimatedAttorneyFee,
+          tariffYear: result.data.tariffYear,
+          breakdown: result.data.breakdown,
           ...(paraBirimiDurumu ? { paraBirimiDurumu } : {}),
         },
         cached: false, // TODO: Implement caching
@@ -149,32 +169,6 @@ export class FeeEngineController {
         cached: false,
       };
     }
-  }
-
-  /**
-   * Calculate attorney fee for preview
-   * Based on 2025 tariff
-   */
-  private calculateAttorneyFeePreview(takipTutari: number): number {
-    const tarifeler = [
-      { min: 0, max: 55000, fixed: 11000, rate: 0 },
-      { min: 55000, max: 130000, fixed: 11000, rate: 0.14 },
-      { min: 130000, max: 390000, fixed: 21500, rate: 0.12 },
-      { min: 390000, max: 780000, fixed: 52700, rate: 0.08 },
-      { min: 780000, max: 1950000, fixed: 83900, rate: 0.04 },
-      { min: 1950000, max: Infinity, fixed: 130700, rate: 0.01 },
-    ];
-    const minimum = 11000;
-    
-    for (const tarife of tarifeler) {
-      if (takipTutari <= tarife.max) {
-        const ucret = tarife.fixed + ((takipTutari - tarife.min) * tarife.rate);
-        return Math.max(ucret, minimum);
-      }
-    }
-    
-    const sonTarife = tarifeler[tarifeler.length - 1];
-    return sonTarife.fixed + ((takipTutari - sonTarife.min) * sonTarife.rate);
   }
 
   /**

@@ -424,6 +424,8 @@ interface HesapOzetiSatir {
   tutar: number;
   bold?: boolean;
   color?: string;
+  /** Masraf önizlemesi alınamadı: `tutar` 0 yer tutucudur, GERÇEK SIFIR DEĞİLDİR (tüketiciler 0'ı tutar saymamalı). */
+  hesaplanamadi?: boolean;
 }
 
 interface IhtiyatiHacizKarari {
@@ -559,7 +561,9 @@ const faizTuruToEngineType = (faizTuru: string): EngineInterestTypeCode => {
  */
 const hesaplaMasrafFromBackend = async (
   principalAmount: number,
-  caseType: string,
+  // TAKİP TÜRÜ kodu (lookup `takipTuru.code`). KALEM TÜRÜ takip türü DEĞİLDİR: eskiden `kalem.kalemTuru` gidiyor, sunucuda
+  // hiçbir masraf profiliyle eşleşmeyip sessiz "harç yok" (0) üretiyordu. Kod yoksa sunucu "hesaplanamadı" döner.
+  takipTuruCode: string | undefined,
   debtorCount: number,
   // Kalemin ve dosyanın para birimi: sunucu tutarların para birimi kararını (`paraBirimiDurumu`) buna göre bildirir
   currency: string,
@@ -571,7 +575,7 @@ const hesaplaMasrafFromBackend = async (
 
   return feeEngineApi.preview({
     principalAmount,
-    caseType,
+    takipTuruCode,
     debtorCount,
     currency,
     caseCurrency,
@@ -802,6 +806,9 @@ export function ProfessionalClaimItemForm({
     paraBirimiDurumu: FeePreviewParaBirimiDurumu | null;
     kalemParaBirimi: string;
     dosyaParaBirimi: string;
+    // Masraf önizlemesi alınamadıysa (takip türü yok / eşleşmedi, tarife yok / eksik, sunucuya ulaşılamadı) nedeni: ilgili
+    // satırlar "hesaplanamadı", masrafa bağlı toplamlar "gösterilemez" yazılır; 0,00 gerçek sıfır gibi sunulmaz.
+    masrafHesaplanamadi: { kod: string; mesaj: string } | null;
   } | null>(null);
   // K3-L KP-11: hesap tarihi sihirbaz tarafından verilirse o kullanılır (taslakta saklanır, yeniden açılışta korunur);
   // verilmezse yeni hesapta Türkiye takvimine göre bugün.
@@ -1087,7 +1094,7 @@ export function ProfessionalClaimItemForm({
     
     const masrafResult = await hesaplaMasrafFromBackend(
       takipTutari,
-      kalem.kalemTuru,
+      takipTuruCode,
       borcluSayisi,
       kalem.currency,
       currency
@@ -1106,8 +1113,8 @@ export function ProfessionalClaimItemForm({
     } else {
       // API erişilemez - fallback değerler (sadece development'ta)
       masrafUnavailable = true;
-      console.warn('[hesapla] Masraf hesaplanamadı - API erişilemez');
-      satirlar.push({ key: "icra_masraflari", label: "İcra Masrafları (Hesaplanamadı)", tutar: 0, color: "red" });
+      console.warn('[hesapla] Masraf hesaplanamadı:', masrafResult.error?.code ?? 'bilinmiyor');
+      satirlar.push({ key: "icra_masraflari", label: "İcra Masrafları (Hesaplanamadı)", tutar: 0, color: "red", hesaplanamadi: true });
     }
 
     // 8. İhtiyati Haciz Masrafları
@@ -1124,8 +1131,8 @@ export function ProfessionalClaimItemForm({
     const pesinHarc = masrafResult.success && masrafResult.data ? masrafResult.data.breakdown.pesinHarc : 0;
     const pesinHarcDahilTahsilHarci = (takipTutari + icraMasraflari + ihtiyatiHacizToplam) * 0.0455;
     const pesinHarcHaricTahsilHarci = (takipTutari + icraMasraflari + ihtiyatiHacizToplam - pesinHarc) * 0.0455;
-    satirlar.push({ key: "pesin_harc_dahil_tahsil", label: "Peşin Harç Dahil Tahsil Harcı", tutar: pesinHarcDahilTahsilHarci });
-    satirlar.push({ key: "pesin_harc_haric_tahsil", label: "Peşin Harç Hariç Tahsil Harcı", tutar: pesinHarcHaricTahsilHarci });
+    satirlar.push({ key: "pesin_harc_dahil_tahsil", label: "Peşin Harç Dahil Tahsil Harcı", tutar: pesinHarcDahilTahsilHarci, ...(masrafUnavailable ? { hesaplanamadi: true } : {}) });
+    satirlar.push({ key: "pesin_harc_haric_tahsil", label: "Peşin Harç Hariç Tahsil Harcı", tutar: pesinHarcHaricTahsilHarci, ...(masrafUnavailable ? { hesaplanamadi: true } : {}) });
 
     // 10. Vekalet Ücreti - BACKEND API KULLANIMI
     let vekaletUcreti = 0;
@@ -1133,7 +1140,7 @@ export function ProfessionalClaimItemForm({
       vekaletUcreti = masrafResult.data.estimatedAttorneyFee;
       satirlar.push({ key: "vekalet_ucreti", label: "Vekalet Ücreti", tutar: vekaletUcreti, bold: true });
     } else {
-      satirlar.push({ key: "vekalet_ucreti", label: "Vekalet Ücreti (Hesaplanamadı)", tutar: 0, color: "red", bold: true });
+      satirlar.push({ key: "vekalet_ucreti", label: "Vekalet Ücreti (Hesaplanamadı)", tutar: 0, color: "red", bold: true, hesaplanamadi: true });
     }
 
     // 11. Takip Sonrası Faiz - BACKEND API KULLANIMI
@@ -1172,11 +1179,11 @@ export function ProfessionalClaimItemForm({
 
     // 12. Toplam Borç
     const toplamBorc = takipTutari + icraMasraflari + ihtiyatiHacizToplam + vekaletUcreti + takipSonrasiFaiz;
-    satirlar.push({ key: "toplam_borc", label: "Toplam Borç Tutarı", tutar: toplamBorc, bold: true, color: "blue" });
+    satirlar.push({ key: "toplam_borc", label: "Toplam Borç Tutarı", tutar: toplamBorc, bold: true, color: "blue", ...(masrafUnavailable ? { hesaplanamadi: true } : {}) });
 
     // 13. Son Borç
     const sonBorc = toplamBorc + pesinHarcHaricTahsilHarci;
-    satirlar.push({ key: "son_borc", label: "Son Borç Tutarı", tutar: sonBorc, bold: true, color: "green" });
+    satirlar.push({ key: "son_borc", label: "Son Borç Tutarı", tutar: sonBorc, bold: true, color: "green", ...(masrafUnavailable ? { hesaplanamadi: true } : {}) });
 
     // 14. Tahsil Oranları
     const tahsilOranlari = [
@@ -1188,7 +1195,7 @@ export function ProfessionalClaimItemForm({
     ];
     tahsilOranlari.forEach((t, index) => {
       const borcTutari = toplamBorc * (1 + t.oran);
-      satirlar.push({ key: `tahsil_${index}`, label: `${t.label}`, tutar: borcTutari, color: "gray" });
+      satirlar.push({ key: `tahsil_${index}`, label: `${t.label}`, tutar: borcTutari, color: "gray", ...(masrafUnavailable ? { hesaplanamadi: true } : {}) });
     });
 
     // Yeni girdiyle geçersizleşmiş (ya da sökülmüş editöre ait) hesap ekrana da yazılmaz: geç dönen eski hesap, yeni
@@ -1201,6 +1208,12 @@ export function ProfessionalClaimItemForm({
       paraBirimiDurumu: (masrafResult.success && masrafResult.data?.paraBirimiDurumu) || null,
       kalemParaBirimi: kalem.currency,
       dosyaParaBirimi: currency,
+      masrafHesaplanamadi: masrafUnavailable
+        ? {
+            kod: masrafResult.error?.code ?? 'SERVICE_UNAVAILABLE',
+            mesaj: masrafResult.error?.message || 'Masraflar hesaplanamadı.',
+          }
+        : null,
     });
     setIsCalculated(true);
 
@@ -1208,7 +1221,7 @@ export function ProfessionalClaimItemForm({
       // PR-i3: ilamYanAlacaklar artık emit EDİLMEZ (nested emekli; standalone fer'i kalemler).
       onItemsChange([{ ...kalem, hesapOzeti: satirlar, cekTazminatOnizleme }]);
     }
-  }, [kalem, currency, takipTarihi, hesapTarihi, borcluSayisi, hasIhtiyatiHaciz, ihtiyatiHacizMasraflari, checkZorunluAlanlar, onItemsChange, faizBaslangicTercih, caseDebtors]);
+  }, [kalem, currency, takipTuruCode, takipTarihi, hesapTarihi, borcluSayisi, hasIhtiyatiHaciz, ihtiyatiHacizMasraflari, checkZorunluAlanlar, onItemsChange, faizBaslangicTercih, caseDebtors]);
 
   // OTOMATİK HESAPLAMA - değişiklik olduğunda 500ms sonra hesapla
   useEffect(() => {
@@ -1336,17 +1349,27 @@ export function ProfessionalClaimItemForm({
   const paraBirimiKisitli = paraBirimiDurumu ? !paraBirimiDurumu.toplamGosterilebilir : false;
   const satirAlani = (key: string): ParaBirimiAlani | undefined =>
     paraBirimiKisitli ? paraBirimiDurumu?.alanlar?.[ozetSatiriAlani(key) ?? ""] ?? GOSTERILEMEZ_ALAN : undefined;
+  // Masraf önizlemesi alınamadı (takip türü yok / eşleşmedi, tarife yok / eksik, sunucuya ulaşılamadı): masrafın kendisi ve masrafa
+  // bağlı tahsil harcı "hesaplanamadı", eksik kalemle toplanmış TOPLAM / SON BORÇ ve oran tablosu "gösterilemez" yazılır.
+  const masrafHesaplanamadi = ozetBaglami?.masrafHesaplanamadi ?? null;
+  const masrafaBagliHesaplanamadi = (key: string): boolean =>
+    masrafHesaplanamadi !== null &&
+    ["icra_masraflari", "vekalet_ucreti", "pesin_harc_dahil_tahsil", "pesin_harc_haric_tahsil"].includes(key);
+  const masrafaBagliToplam = (key: string): boolean =>
+    masrafHesaplanamadi !== null && (key === "toplam_borc" || key === "son_borc" || key.startsWith("tahsil_"));
   const satirTutari = (satir: HesapOzetiSatir): string => {
+    if (masrafaBagliHesaplanamadi(satir.key)) return "hesaplanamadı";
+    if (masrafaBagliToplam(satir.key)) return "gösterilemez";
     const alan = satirAlani(satir.key);
     if (!alan) return formatCurrency(satir.tutar, kalem.currency);
     if (alan.durum === "HESAPLANAMADI") return "hesaplanamadı";
     if (alan.durum !== "GECERLI" || !alan.paraBirimi) return "gösterilemez";
     return formatBildirilenParaBirimi(satir.tutar, alan.paraBirimi);
   };
-  const tahsilOranlariGecerli = !paraBirimiKisitli || satirAlani("tahsil_0")?.durum === "GECERLI";
+  const tahsilOranlariGecerli = (!paraBirimiKisitli || satirAlani("tahsil_0")?.durum === "GECERLI") && !masrafHesaplanamadi;
   // Tutar yerine "gösterilemez" / "hesaplanamadı" yazılan toplam satırı vurgulu tutar biçimiyle (büyük, renkli) basılmaz
   const toplamSinifi = (key: string, vurgulu: string): string =>
-    paraBirimiKisitli && satirAlani(key)?.durum !== "GECERLI" ? "font-medium text-gray-500" : vurgulu;
+    masrafaBagliToplam(key) || (paraBirimiKisitli && satirAlani(key)?.durum !== "GECERLI") ? "font-medium text-gray-500" : vurgulu;
 
 
   // ============================================================================
@@ -2218,6 +2241,12 @@ export function ProfessionalClaimItemForm({
             {paraBirimiKisitli && paraBirimiDurumu?.mesaj && (
               <div data-testid="kalem-hesap-para-birimi-uyari" className="mb-1 p-1.5 bg-amber-50 border border-amber-200 rounded text-[9px] text-amber-800">
                 {paraBirimiDurumu.mesaj}
+              </div>
+            )}
+            {/* Masraf hesaplanamadı: neden (sunucu metni); satırlar 0,00 yerine "hesaplanamadı" yazar */}
+            {masrafHesaplanamadi && (
+              <div data-testid="kalem-hesap-masraf-hesaplanamadi" className="mb-1 p-1.5 bg-amber-50 border border-amber-200 rounded text-[9px] text-amber-800">
+                {masrafHesaplanamadi.mesaj}
               </div>
             )}
             {/* Hesap Özeti Satırları */}

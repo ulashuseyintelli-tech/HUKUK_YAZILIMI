@@ -28,6 +28,7 @@ const TARIFF: Tariff = {
     application_fee: { amount: 700, label: 'Başvurma Harcı', itemType: 'FEE', appliesTo: ['ILAMSIZ', 'ILAMLI', 'KAMBIYO'] },
     poa_copy_fee: { amount: 100, label: 'Vekalet Suret Harcı', itemType: 'FEE', appliesTo: ['ILAMSIZ', 'ILAMLI', 'KAMBIYO'] },
     bar_stamp_fee: { amount: 150, label: 'Vekalet Pulu', itemType: 'STAMP', appliesTo: ['ILAMSIZ', 'ILAMLI', 'KAMBIYO'] },
+    file_expense: { amount: 50, label: 'Dosya Gideri', itemType: 'EXPENSE', appliesTo: ['ILAMSIZ', 'ILAMLI', 'KAMBIYO'] },
   },
   rateFees: {
     ilamsiz_pesin_harc: { rate: 0.005, label: 'Peşin Harç', itemType: 'FEE', base: 'principal_plus_interest', appliesTo: ['ILAMSIZ'], minAmount: 100 },
@@ -86,11 +87,13 @@ describe('POST /fee-engine/preview — para birimi bağlamı', () => {
     expect(Object.keys(res.body).sort()).toEqual(['cacheExpiry', 'cached', 'data', 'success']);
     expect(Object.keys(res.body.data).sort()).toEqual(NUMERIC_KEYS);
     expect(res.body.success).toBe(true);
-    // Sabit tarife: 700 + 100 + 150 + peşin harç max(10.000 × 0,005; 100) + tebligat 250
-    expect(res.body.data.estimatedFees).toBe(1300);
+    // Sabit tarife: 700 + 100 + 150 + dosya gideri 50 + peşin harç max(10.000 × 0,005; 100) + tebligat 250
+    expect(res.body.data.estimatedFees).toBe(1350);
   });
 
-  it.each(['ILAMSIZ', 'KAMBIYO', 'ILAMLI', 'ASIL_ALACAK'])(
+  // Not: kalem türü (ASIL_ALACAK …) takip türü DEĞİLDİR; artık sessiz 0 değil "hesaplanamadı" döner
+  // (bkz. fee-preview-hesaplanamadi.http.spec.ts). Eski sözleşmedeki ASIL_ALACAK → 0 satırı kaldırıldı.
+  it.each(['ILAMSIZ', 'KAMBIYO', 'ILAMLI'])(
     'mevcut sayısal alanlar para biriminden bağımsızdır ve DEĞİŞMEDİ (%s): hesap ve çevirme yok',
     async (caseType) => {
       const base = { principalAmount: 250_000, caseType, debtorCount: 2 };
