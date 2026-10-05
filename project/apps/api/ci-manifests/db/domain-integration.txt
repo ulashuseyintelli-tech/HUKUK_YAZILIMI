@@ -471,3 +471,6 @@ src/modules/accounting-journal/__tests__/accounting-journal-financial-statement.
 # Masraf/avans bakiyesi (owner GO 2026-10-05, karar 5): VIEWER avans yazamaz + okuma isteği bakiye satırı oluşturmaz (açık yokluk `exists:false`).
 #   GERÇEK HTTP + disposable PostgreSQL; düzeltmesiz main'de 13 testin 8'i düşer (VIEWER 201 yazar; GET /balance ve /ledger satır oluşturur).
 src/modules/case-balance/__tests__/case-balance-write-safety.http.db-gated.integration.spec.ts
+# Genel Cari "Dağıtım Bekleyen" (owner GO 2026-10-05, karar 6): tahsilatı iptal edilen KESİNLEŞMİŞ dağıtım, diğer okuyucularla aynı iptal işaretiyle hesaptan çıkar (negatif kırpılmaz).
+#   Gerçek ClientSettlementReadService + disposable PostgreSQL; düzeltmesiz kodda 7 testin 4'ü düşer (tahsilat iptali, kısmi dağıtım, gerçek bekleyen, iki dosyalı müvekkil).
+src/modules/client-settlement/__tests__/client-accounting-cancelled-distribution.db-gated.integration.spec.ts
