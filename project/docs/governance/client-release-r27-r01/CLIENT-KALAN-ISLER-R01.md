@@ -51,7 +51,7 @@ Kabul ölçütlerinin kanonik tanımı `client-external-access-r01` §7'dir; pak
 | **D-5** portal parola sıfırlama uçtan uca | **Kabul yok.** runId `00c96bd5`: çıkış 3 · 21 PASS / 0 FAIL / 8 ÖLÇÜLEMEYEN [Ö]; "e-posta gelmedi" [O] | (a) uçtan uca sıfırlama hiç ölçülmedi (8 ölçüt) · (b) kök neden **kanıtlanmadı** · (c) bu koşumun kanıt paketi manifestsiz — **tamamlanamaz** (§3.2) | teşhis: UNKNOWN düzeyinde tamam · API yaması #2884: `main`'de (`be08dbe9`) ve adayda · web yaması #2900: `main`'de (`8b9a9989`) · aday doğrulaması: koordinatörde · yayın: **GO yok** | doğrulanmış aday (API + web) → onaylı yayın → pin güncellemesi → yeni D-5 GO'su | §3.3 sırası | yayın GO'su · yeni D-5 GO'su · alıcı adresi · tek gönderim onayı |
 | **D-6** belge yükleme/indirme/silme | **Kabul yok** — canlı koşum yok | canlı Run + owner beyanı (D6-*, P6-C*) | blok R02 `main`'de (#2880 → `6744abff`) · kapanış düzeltmesi R03 … R03-g `main`'de (**#2904** → `039f4137`; koşucu öz-testi 102/102 R03-g baytlarında; son commit yalnız bloğun onay metnini değiştirdi ve blok öz-testi son baytlarda 83/83 iki kabukta — koşucu öz-testi bu commit'ten sonra yeniden koşulmadı; R03-g bağımsız doğrulamasında blocker/major yok; §4.4) | ayrı GO · dış zincir · canlı dist pini (yayından önce ya da pin güncellemesinden sonra) | Preflight → QrTest → Run | D-6 GO · telefon yüklemesi · kalıcı izlerin kabulü · kalıntıda sıra · OK-5 / OK-6 · makbuz kurtarma dosyasının yazarı ve yeri (§4.4) |
 | **D-7** mesaj gönderme/okuma | **Kabul yok** — canlı koşum yok | canlı Run + owner beyanı (D7-*, P7-C*) | blok R02 `main`'de (#2882 → `0e04f4a6`) · kapanış düzeltmesi R03 … R03-g `main`'de (**#2905** → `95a35711`; öz-test 86/86, blok öz-testi 75/75 iki kabukta; son bağımsız doğrulamada blocker/major yok; §4.4) | ayrı GO · dış zincir · canlı dist pini · SEC-PORTAL-ADMIN-MSG-01 açık (engel değil) | Preflight → QrTest → Run | D-7 GO · kalan mesaj/bildirim satırları "saklandı" · kapsam dışı dosya referansında 400'ün ölçüt sayılması · Recover kuralı · K-8 (Run kapanışında tek yeniden giriş) · makbuz kurtarma dosyasının yazarı ve yeri |
-| **D-8** personel yüzeyi dışarıdan kapalı | **Kısmi**: yalnız 2026-09-27 telefon beyanı, 5 GET 403 [O]; R27 öncesi | sonda canlıda koşulmadı; telefon beyanı R27 sonrası yinelenmedi; katman ölçülmez | sonda R04 `main`'de (**#2906** → `45d47143`): HEAD / OPTIONS + izole provadaki 18 kodlama varyantı, 68 istek (pin `E150EEDA…514C`); öz-test 17/17, eski sondada yeni kalemler düşüyor; canlı istek yok (§5) | ayrı GO · dış zincir · ad kapsamı kararı | GO → sonda + telefon beyanı | D-8 GO + ad kapsamı (§5) |
+| **D-8** personel yüzeyi dışarıdan kapalı | **Kısmi**: yalnız 2026-09-27 telefon beyanı, 5 GET 403 [O]; R27 öncesi; bir ada bağlanmadı | sonda canlıda koşulmadı; ad başına satır tablosunda AD-1 (birincil ad) **ÖLÇÜLMEDİ**, sahipliği doğrulanmış ek ad yok; telefon beyanı R27 sonrası yinelenmedi | sonda **R05** (2026-10-05; R04 tabanı **#2906** → `45d47143`): ad başına koşum (zorunlu takma ad) · ret sonucu ile katman kimliği **iki ayrı hüküm**, birleşik PASS yok · ad içermeyen özet · çıkış kodu 5 "değerlendirme gerekir"; 68 istek (vektörler R04 ile aynı), pin `DDC882FF…A876`; öz-test 66 kalem (owner blokları iki kabukta), R04 sondası yeni öz-testte 20/66; canlı istek yok (§5) | ad başına ayrı GO · dış zincir · beş bekleyen karar (§5 R05) | kararlar → GO → AD-1 koşumu + telefon beyanı | sahiplik kanıtı ölçütü · API'nin ürettiği 403'ün sayılışı · canlı sonda kapsamı ve ad başına GO · "ret kapalı + katman adlandırılamadı" kabulü · telefon beyanı ad başına mı (§5 R05) |
 | **D-9 (intake)** | **Kabul — dar**: `cff5c692` [B] | yok | tamam | — | yok | — |
 | **D-9 (portal, D-4 koşumu)** | **Kabul — dar**: `e34b7e6d` [B] | yok | tamam | — | yok | — |
 | **D-9 (birleşik)** | **Açık** | D-5 bileşeni ölçülemeyenli; D-6/D-7 bileşenleri yok (§6) | — | D-5, D-6, D-7 koşumları | koşumlardan sonra kayıt | birleşik kabul onayı; dar kanıt genel kapanış sayılmaz |
@@ -191,6 +191,18 @@ iki kabukta yeşil). Son değerler paket belgelerindedir (D-6 §6, D-7 §7) ve P
 
 ## 5. D-8 sondası — istek kapsamı, yan etkiler, kapsam boşluklarının kabule etkisi (**çalıştırılmadı**)
 
+> **R05 revizyonu (2026-10-05; canlıya uygulanmadı, canlı istek yok).** Owner talimatı: "D-8 hazırlığında birincil adı ve sahipliği
+> doğrulanmış diğer yayın adlarını ayrı satırlarda göster. Bir adın sonucu diğerine taşınmasın; ret sonucu ile reddeden katmanın
+> kimliği ayrı değerlendirilsin. Canlı sonda kapsamı ve GO'su ayrıca kesinleşecek." Sonda artık **ad başına** koşar (zorunlu takma
+> ad; bir süreç = bir ad = bir kanıt) ve **iki ayrı hüküm** üretir — ret hükmü (kapalı / kapalı değil / pozitif bulgu / ölçülemedi /
+> değerlendirme gerekir) ve katman hükmü (adlandırıldı: API / adlandırılamadı / ölçülemedi; PASS / FAIL değeri almaz); ikisini
+> birleştiren tek bir "PASS" yoktur. Katman kimliği yalnız API'nin istek kimliği yankısıyla kanıtlanır (her isteğe tek kullanımlık
+> `x-request-id` eklenir — istek profilindeki tek değişiklik); kenar / tünel / sağlayıcı adlandırılmaz. Sonda ad içermeyen ayrı bir özet
+> yazar; public tablo yalnız o özetten dolar. Vektör listesi (68 istek) **değişmedi**. Yeni pin `DDC882FF…A876`. Ayrıntı, ad başına
+> satır tablosu ve bekleyen karar tablosu paket belgesindedir (`client-extacc-d8-staff-surface-r01` §1.1, §1b, §3, §3b). **Bu bölümde
+> aşağıda kalan "403 sonucu tamam", "katman daima `unknown`", "bulgu listesi boş" ifadeleri R04 ve öncesini anlatır; R05 ile
+> geçersizdir.**
+>
 > **R04 revizyonu (PR #2906 → `45d47143`, `main`'de; canlıya uygulanmadı):** HEAD / OPTIONS (D8-E1) ve izole provadaki 18 kodlama varyantının tamamı (D8-E2)
 > sondaya alındı → **68 istek** (59 ret + 9 pozitif; GET 41 · POST 11 · PUT 3 · PATCH 1 · DELETE 6 · HEAD 3 · OPTIONS 3; boş JSON gövde
 > 15, gövdesiz 53; kimlik başlığı yok; tekrar denemesiz; istek başına 15 sn), yeni pin `E150EEDA…514C`. Yeni vektörlerin "kenar
@@ -198,7 +210,8 @@ iki kabukta yeşil). Son değerler paket belgelerindedir (D-6 §6, D-7 §7) ve P
 > yazma / audit / giriş sayacı yok). 68 istek tablosu ve yan etkiler paket belgesindedir. Aşağıdaki 46 istek tablosu birleştirilmiş
 > **R02** sondasına aittir ve #2906 ile geçersizdir (tarihsel). 403 sonucu kesin katman kanıtı sayılmaz.
 
-Sonda `client-extacc-d8-staff-surface-r01/scripts/d8-staff-surface-probe.js` (pin `D5FA37D1…579B`; belge ve blok pini ile eşit [Ö]).
+Sonda `client-extacc-d8-staff-surface-r01/scripts/d8-staff-surface-probe.js` (R05 pini `DDC882FF…A876`; paket belgesi §7 ve iki owner
+bloğundaki pinle eşit [Ö 2026-10-05]. Aşağıdaki 46 istek tablosunun ait olduğu R02 sondasının pini `D5FA37D1…579B` idi; tarihsel).
 Durum açmaz: sentetik veri, hesap, token, veritabanı erişimi yoktur; kapanış/Recover gerekmez; yeniden koşulabilir.
 
 **İstekler: 46, sıralı, tekrar denemesiz, istek başına 15 sn.** 37 ret vektörü (403 beklenir) + 9 pozitif (3 sayfa 200, 6 API 401).
@@ -245,9 +258,11 @@ kimliği ve metrik sayacı üretir; DB yazımı, audit, hız sınırı sayacı, 
 Yerelde tek kanıt dosyası yazılır (ana makine adını içerir; ham hâliyle depoya konmaz). Sağlayıcı kenarının kendi kayıtları ve canlı
 kenar günlüğü **ölçülemedi (UNKNOWN)**.
 
-**Katman sınırı.** 403'te kesin katman alanı daima `unknown`'dır; başlık ve gövde imzası yalnız ipucudur. Ret vektöründe "tamam"
-yalnız durum 403'tür: kenar reddi ile uygulama 403'ü ayrışmaz. Sonda sunucunun kendi çıkışından koşar; dış ağ ayağı yalnız telefon
-beyanıdır.
+**Katman sınırı (R05).** Ret sonucu ile katman kimliği ayrı değerlendirilir. Katman kimliği yalnız API'nin istek kimliği yankısıyla
+kanıtlanır; başlık ve gövde imzası yalnız ipucudur. Yankıyla kanıtlı uygulama 403'ü kenar reddinden ayrı sınıflanır (sayılışı owner
+kararı bekliyor); 403'ü hangi üst katmanın ürettiği bu yöntemle **adlandırılamaz**. Sonda sunucunun kendi çıkışından koşar (konum
+etiketi beyandır); dış ağ ayağı yalnız telefon beyanıdır. (R04'te kesin katman alanı daima `unknown` idi ve ret vektöründe "tamam"
+yalnız durum 403'tü.)
 
 **Üç kapsam boşluğu ve kabule etkisi** (üçü de koşumdan önce karar ister):
 
@@ -268,13 +283,29 @@ revizyonu yolunda pin, öz-test ve belge birlikte değişir ve koşum ondan sonr
 - **HEAD / OPTIONS ve 18 kodlama varyantı (D8-E1 / D8-E2)** PR #2906'da sondaya alındı (bu bölümün başındaki R04 notu); öz-test
   17/17, eski sondada yeni kalemler düşüyor; canlı sonda çalıştırılmadı. 403 sonucu kesin katman kanıtı sayılmaz.
 
-Diğer sınırlar (minor; koşumu engellemez; kimlikler bu belgede tanımlıdır): uygulama katmanını ayırt eden başlık kanıta alınmıyor
-(D8-E4) · 403 dışı kenar hataları "bulgu" diye sınıflanır, dış zincir ön ölçümü yok (D8-E5) · canlı kenar yapılandırmasının
-şablonla eşitliği ölçülmüyor (D8-E6) · dış ağdan makine koşumu yok (D8-E7) · blok kanıtı mühürlemiyor (D8-E8) · telefon beyanı
-için dosya şablonu yok (D8-E11).
+**R05 (2026-10-05):**
+- **Ad başına koşum (D8-E3):** sonda her ad için ayrı süreçte, zorunlu takma adla koşar; başka bir adın kanıtını okumaz, var olan
+  kanıtın üzerine yazmaz. Ad başına satır tablosunda AD-1 (birincil ad) **ÖLÇÜLMEDİ**; ek ad satırı yalnız sahipliği doğrulanınca
+  açılır — bugün doğrulanmış ek ad yok. Owner bloğu yalnız AD-1 için yazıldı; çalıştırılmadı.
+- **Katmanı ayırt eden kanıt (D8-E4) ve 403 dışı yanıtların sınıflanması (D8-E5):** istek kimliği yankısı kanıta alındı; 403 dışı
+  yanıtlar tek "bulgu" sınıfı değildir (API'den geldiği kanıtlı → kapalı değil · kanıtsız 3xx / 4xx → değerlendirme gerekir · kanıtsız
+  5xx / 429 ve taşıma hatası → ölçülemedi). Yankı kuralı kaynak okumasıdır; çerçeve düzeyinde ölçüldü, **gerçek API + şablon kenar ile
+  izole prova bekliyor**.
+- **Bekleyen owner kararları (hiçbiri verilmedi):** sahiplik kanıtı ölçütü · API'nin ürettiği 403'ün sayılışı (kodda "karar
+  bekliyor": çıkış 5) · canlı sonda kapsamı ve ad başına GO · "ret kapalı + katman adlandırılamadı" kabulü · telefon beyanının ad
+  başına olup olmadığı. §11'deki KR-9 bu beş kararla birlikte okunur.
 
-Kanıt kabul kontrol listesi (koşulduğunda): satır 46 (37 + 9) · kimlik başlıklı istek 0 · boş olmayan gövde 0 · boş JSON gövde 14,
-gövdesiz 32 · ölçülemeyen 0 · bulgu listesi boş. 403 dışı ret bulgusu kısıtlı kayda alınır; public PR'a ayrıntı yazılmaz.
+Diğer sınırlar (minor; koşumu engellemez; kimlikler bu belgede tanımlıdır): dış zincir ön ölçümü yok (D8-E5'in kalanı; D8-E4 ve
+D8-E5'in sınıflama kısmı R05'te ele alındı) · canlı kenar yapılandırmasının şablonla eşitliği ölçülmüyor (D8-E6) · dış ağdan makine
+koşumu yok (D8-E7) · blok kanıtı mühürlemiyor (D8-E8; R05'te blok adsız özetin SHA-256'sını gösterir) · telefon beyanı için dosya
+şablonu yok (D8-E11).
+
+Kanıt kabul kontrol listesi (koşulduğunda; **ad başına**, R05): adsız özette sonda SHA-256'sı = paket pini ve vektör kümesi kimliği =
+paket değeri (paket belgesi §7) · satır 68 (59 + 9) · kimlik başlıklı istek 0 · boş olmayan gövde 0 · boş JSON gövde 15, gövdesiz 53
+(ham kanıtta) · tekil istek kimliği 68 · kalibrasyon VAR (API yankı 6/6, web yankı 0/3, önek dışı başlıklı yanıt 0) · sonuç yok 0 ·
+ret hükmü ve katman hükmü **ayrı ayrı** yazılır (çıkış 0 tek başına kapanış değildir; çıkış 3 ve 5 kapanış değildir). Bulgu ve
+değerlendirme gerektiren satırlar kısıtlı kayda alınır; public PR'a yol / yöntem ayrıntısı yazılmaz. (R02 sondasına ait eski liste —
+satır 46 · boş JSON gövde 14 · gövdesiz 32 · "bulgu listesi boş" — geçersizdir.)
 
 ## 6. D-9 — her koşumun kapanışı ayrı değerlendirilir
 
