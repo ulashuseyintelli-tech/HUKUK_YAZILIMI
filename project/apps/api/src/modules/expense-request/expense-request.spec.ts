@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { NotFoundException } from '@nestjs/common';
 import { ExpenseRequestService, PaymentInput } from './expense-request.service';
 import { ExpenseGateService, GateCheckResult } from './expense-gate.service';
 import { ExpenseCalculatorService } from './expense-calculator.service';
@@ -322,6 +323,98 @@ describe('ExpenseRequestService - Property Tests', () => {
       expect(result.id).toBe('package-exp-1');
       expect(mockPrismaService.$transaction).toHaveBeenCalledTimes(1);
       expectLastRecordedJournalDraft('package-exp-1', '275');
+    });
+
+    describe('createFromPackage — kalem satırları ve gönderim ("Oluştur ve Gönder")', () => {
+      beforeEach(() => {
+        mockPrismaService.case.findFirst.mockResolvedValue(mockCase);
+        mockPrismaService.client.findFirst.mockResolvedValue({ id: 'client-1' });
+        mockPrismaService.costPackage.findFirst.mockResolvedValue(null);
+        mockPrismaService.expenseRequest.create.mockResolvedValue({ ...mockExpenseRequest, id: 'package-exp-2', totalAmount: new Decimal(630.4) });
+      });
+
+      const packageItems = [
+        { itemCode: 'BASVURMA_HARCI', label: 'Başvurma Harcı', suggestedAmount: 615.4, finalAmount: 615.4 },
+        { itemCode: 'TEBLIGAT_GIDERI', label: 'Tebligat Gideri', suggestedAmount: 15, finalAmount: 12, wasOverridden: true },
+      ];
+
+      it('paket talebi kalem SATIRI yazmaz (kalem yazım sözleşmesi owner kararı bekliyor; bugünkü davranış korunur)', async () => {
+        await service.createFromPackage('tenant-1', 'user-1', { caseId: 'case-1', clientId: 'client-1', packageCode: 'UYAP_PRE', items: packageItems } as never);
+
+        expect(mockPrismaService.expenseRequestItem.create).not.toHaveBeenCalled();
+        expect(mockPrismaService.expenseRequest.create.mock.calls[0][0].data.totalAmount).toBeCloseTo(627.4, 2);
+      });
+
+      it('sendEmail:true talebi "gönderildi" YAPMAZ ve e-posta göndermez (eski sahte işaretleme kaldırıldı)', async () => {
+        // Eski kod markAsSent → findOne ile talebi okuyup update çağırırdı: okunabilir PENDING talep hazırlanır ki geri dönüş testi DÜŞÜRSÜN
+        mockPrismaService.expenseRequest.findFirst.mockResolvedValue({ ...mockExpenseRequest, id: 'package-exp-2', status: 'PENDING' });
+        mockPrismaService.expenseRequest.update.mockResolvedValue({ ...mockExpenseRequest, id: 'package-exp-2', status: 'SENT', sentVia: 'EMAIL' });
+        const result = await service.createFromPackage('tenant-1', 'user-1', {
+          caseId: 'case-1',
+          clientId: 'client-1',
+          packageCode: 'UYAP_PRE',
+          items: packageItems,
+          sendEmail: true,
+        } as never);
+
+        expect(mockPrismaService.expenseRequest.update).not.toHaveBeenCalled();
+        expect(mockExpenseNotificationService.sendExpenseRequest).not.toHaveBeenCalled();
+        expect(result.status).toBe('PENDING');
+        expect((result as any).sentVia).toBeUndefined();
+      });
+    });
+
+    describe('sendExpenseEmailWithOutcome — pencerenin gönderim sonucu', () => {
+      const lastAudit = (action: string, details: unknown) =>
+        mockPrismaService.expenseRequest.findFirst.mockResolvedValue({ auditLogs: [{ action, details }] });
+
+      it('başarı: sağlayıcı kabulü bildirilir, alıcıya teslim doğrulanmaz', async () => {
+        mockExpenseNotificationService.sendExpenseRequest.mockResolvedValue({ success: true, notificationId: 'bildirim-1' });
+
+        const result: any = await service.sendExpenseEmailWithOutcome('tenant-1', 'exp-1', 'user-1');
+
+        expect(result).toMatchObject({ success: true, notificationId: 'bildirim-1', status: 'EMAIL_ACCEPTED', deliveryConfirmed: false });
+        expect(result.message).toContain('Alıcıya teslim edildiği doğrulanmaz');
+        expect(mockPrismaService.expenseRequest.findFirst).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['kapalı kapı: varsayılan hesap yok', { via: 'dispatcher', outcome: 'default-account-missing' }, 'PAYMENT_ACCOUNT_MISSING', true],
+        ['kapalı kapı: IBAN yok', { via: 'dispatcher', outcome: 'iban-missing-fail-closed' }, 'PAYMENT_IBAN_MISSING', true],
+        ['kalem satırı yok (paket talebi)', { via: 'dispatcher', outcome: 'items-missing' }, 'REQUEST_ITEMS_INVALID', false],
+        ['kalem tutarı <= 0', { via: 'dispatcher', outcome: 'non-positive-amount' }, 'REQUEST_ITEMS_INVALID', false],
+        ['müvekkil e-postası yok', { via: 'dispatcher', outcome: 'delivery-not-confirmed', reason: 'RECIPIENT_MISSING' }, 'RECIPIENT_MISSING', true],
+        ['büro SMTP ayarı yok', { via: 'dispatcher', outcome: 'delivery-not-confirmed', reason: 'SMTP_NOT_CONFIGURED' }, 'SMTP_NOT_CONFIGURED', true],
+        ['şablon yok', { via: 'dispatcher', outcome: 'delivery-not-confirmed', reason: 'TEMPLATE_MISSING' }, 'TEMPLATE_MISSING', true],
+        ['sağlayıcı reddi', { via: 'dispatcher', outcome: 'delivery-not-confirmed', reason: 'DELIVERY_REJECTED' }, 'DELIVERY_REJECTED', true],
+        ['zaman aşımı / belirsiz', { via: 'dispatcher', outcome: 'delivery-not-confirmed', reason: 'DELIVERY_UNCERTAIN' }, 'DELIVERY_UNCERTAIN', false],
+        ['nedensiz eski kayıt', { via: 'dispatcher', outcome: 'delivery-not-confirmed' }, 'DELIVERY_NOT_CONFIRMED', false],
+      ])('başarısızlık — %s → neden kodu + yeniden denenebilirlik', async (_title, details, reasonCode, retryable) => {
+        mockExpenseNotificationService.sendExpenseRequest.mockResolvedValue({ success: false, reason: 'ham-kod' });
+        lastAudit('EMAIL_FAILED', details);
+
+        const result: any = await service.sendExpenseEmailWithOutcome('tenant-1', 'exp-1', 'user-1');
+
+        expect(result).toMatchObject({ success: false, status: 'EMAIL_NOT_SENT', reasonCode, retryable, reason: 'ham-kod' });
+        expect(typeof result.message).toBe('string');
+        expect(result.message.length).toBeGreaterThan(10);
+        expect(Array.isArray(result.requiredInfo)).toBe(true);
+      });
+
+      it('başarısızlık ama denetim kaydı okunamadı: tahmin edilmez, belirsiz (yeniden gönderilmez)', async () => {
+        mockExpenseNotificationService.sendExpenseRequest.mockResolvedValue({ success: false });
+        mockPrismaService.expenseRequest.findFirst.mockResolvedValue(null);
+
+        const result: any = await service.sendExpenseEmailWithOutcome('tenant-1', 'exp-1', 'user-1');
+
+        expect(result).toMatchObject({ success: false, reasonCode: 'DELIVERY_NOT_CONFIRMED', retryable: false });
+      });
+
+      it('talep bulunamazsa istisna aynen yayılır (başarı gibi sunulmaz)', async () => {
+        mockExpenseNotificationService.sendExpenseRequest.mockRejectedValue(new NotFoundException('Masraf talebi bulunamadı'));
+
+        await expect(service.sendExpenseEmailWithOutcome('tenant-1', 'yok', 'user-1')).rejects.toThrow('Masraf talebi bulunamadı');
+      });
     });
 
     describe('createFromPackage — boş / eksik tutar reddi (eksik tutar 0 sayılmaz)', () => {

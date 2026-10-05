@@ -529,12 +529,28 @@ describeWithDisposableDb('Masraf kapısı ve paket hesabı — büro (tenant) s�
       expect(computed.body.items.find((item: { itemCode: string }) => item.itemCode === 'PESIN_HARC').calcParams.baseValue).toBe(B_PRINCIPAL);
       expect(computed.body.totalSuggested).toBeGreaterThan(0);
 
-      const prepared = await post(office.b, `/cases/${caseOfB}/uyap/prepare`);
+      // Hazırlık artık önce masraf kapısını uygular (ödenmemiş BLOCKING talep → "Masraf karşılanmadı", satır 2 / owner kararı 9);
+      // paket hesabına ulaşmak için açılış talebi bu testte karşılanmış işaretlenir ve test sonunda eski haline döner.
+      const openingRows = await prisma.expenseRequest.findMany({
+        where: { tenantId: office.b.tenantId, caseId: caseOfB },
+        select: { id: true, status: true, paidTotal: true },
+      });
+      await prisma.expenseRequest.updateMany({ where: { tenantId: office.b.tenantId, caseId: caseOfB }, data: { status: 'PAID', paidTotal: 1 } });
+      // Bu dosyada avans satırı YOK: mesaj "0 TL" değil "avans kaydı yok" der (owner kararı 5)
+      expect(await prisma.caseBalance.findUnique({ where: { caseId: caseOfB } })).toBeNull();
+      let prepared: Awaited<ReturnType<typeof post>>;
+      try {
+        prepared = await post(office.b, `/cases/${caseOfB}/uyap/prepare`);
+      } finally {
+        for (const row of openingRows) {
+          await prisma.expenseRequest.update({ where: { id: row.id }, data: { status: row.status, paidTotal: row.paidTotal } });
+        }
+      }
       expect(outcome(prepared)).toEqual({
         status: 201,
         body: {
           action: 'OPEN_EXPENSE_MODAL',
-          blockReason: `Yetersiz bakiye. Gerekli: ${computed.body.totalSuggested} TL, Mevcut: 0 TL`,
+          blockReason: `Yetersiz bakiye. Gerekli: ${computed.body.totalSuggested} TL, Mevcut: avans kaydı yok`,
           suggestion: {
             title: `${computed.body.packageName} için masraf gerekiyor`,
             description: expect.stringMatching(/^Toplam: .+ TL$/),

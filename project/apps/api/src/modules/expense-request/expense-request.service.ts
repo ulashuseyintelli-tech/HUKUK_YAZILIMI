@@ -21,6 +21,8 @@ import {
 import { findExpenseCatalogEntry } from './expense-item-catalog';
 import { incompleteSuggestionConflictBody, loadIncompleteSuggestion } from '@/modules/cost-package/cost-package-basis';
 import {
+  buildExpenseEmailAcceptedOutcome,
+  buildExpenseEmailNotSentResult,
   buildOpeningExpenseEmailNotSentStatus,
   describeOpeningExpenseEmailFailure,
   EXPENSE_EMAIL_ATTEMPT_ACTIONS,
@@ -428,14 +430,10 @@ export class ExpenseRequestService {
         console.error('Bakiye kredisi eklenemedi:', error);
       }
     }
-    // Eğer sendEmail true ise otomatik gönder (avukat karşılamadıysa)
-    else if (dto.sendEmail) {
-      try {
-        await this.markAsSent(tenantId, expenseRequest.id, 'EMAIL');
-      } catch (error) {
-        console.error('E-posta gönderimi başarısız:', error);
-      }
-    }
+    // `dto.sendEmail` bu uçta E-POSTA GÖNDERMEZ ve talebi "gönderildi" YAPMAZ: önceden burada `markAsSent` çağrılıyordu
+    // (e-posta gönderilmeden SENT / sentVia EMAIL yazılıyor, hata yutuluyordu). Paket talebi kalem SATIRI yazmaz (yalnız JSON +
+    // toplam; kalem yazım sözleşmesi owner kararı bekliyor), bu yüzden e-posta kapısı ITEMS_MISSING ile reddeder: paket kipinde
+    // gönderim bu yoldan yapılamaz ve pencere bunu sunmaz.
 
     return expenseRequest;
   }
@@ -1841,6 +1839,41 @@ export class ExpenseRequestService {
    */
   async sendExpenseEmail(tenantId: string, requestId: string, userId: string) {
     return this.expenseNotification.sendExpenseRequest(tenantId, requestId, userId);
+  }
+
+  /**
+   * Masraf talebi penceresinin gönderim denemesi: gerçek gönderim (`sendExpenseRequest`) + sonucun mevcut sonuç
+   * sözleşmesiyle adlandırılması. Başarıda sağlayıcı KABULÜ bildirilir (alıcıya teslim doğrulanmaz); başarısızlıkta neden son
+   * e-posta denemesinin denetim kaydından çözülür (dosya açılış sonucuyla aynı eşleme) ve yeniden denenebilirlik bildirilir.
+   * Talep durumunu ve gönderim kurallarını DEĞİŞTİRMEZ; yeniden deneme aynı talep üzerinden aynı uçla yapılır (ikinci talep yok).
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ExpenseRequestController.sendExpenseEmail() → POST /expense-requests/:id/send-email
+   * </remarks>
+   */
+  async sendExpenseEmailWithOutcome(tenantId: string, requestId: string, userId: string) {
+    const result = await this.expenseNotification.sendExpenseRequest(tenantId, requestId, userId);
+    if (result.success === true) {
+      return { ...result, ...buildExpenseEmailAcceptedOutcome() };
+    }
+
+    const request = await this.prisma.expenseRequest.findFirst({
+      where: { id: requestId, tenantId },
+      select: {
+        auditLogs: {
+          where: { action: { in: [...EXPENSE_EMAIL_ATTEMPT_ACTIONS] } },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { action: true, details: true },
+        },
+      },
+    });
+    const last = request?.auditLogs?.[0];
+    const failure = describeOpeningExpenseEmailFailure(
+      last?.action === 'EMAIL_FAILED' ? openingExpenseEmailReasonOfAuditDetails(last.details) : 'DELIVERY_NOT_CONFIRMED',
+    );
+    return { ...result, ...buildExpenseEmailNotSentResult(failure) };
   }
 
   /**

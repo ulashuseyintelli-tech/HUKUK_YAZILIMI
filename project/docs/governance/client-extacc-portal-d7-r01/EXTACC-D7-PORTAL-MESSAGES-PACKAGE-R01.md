@@ -85,6 +85,36 @@
 > Token JWT olarak okunamazsa (verilme sürümü s1'e düşse de) HTTP 200 → yeni hücre **TJ** (ADAY; ürün guard'ı bu token'ı DB'den önce reddeder,
 > `portal-auth.guard.ts:36`); T5'e ulaşmaz. (G4) T2'nin a = c ≠ b dalında b > c iken "ALTINDA" notu. (G5) Sıra girdileri (B / T1 → TG / TJ). (G6) §14.6 (v)
 > işaretlendi. Canlı Run / Recover **koşulmadı**; bu revizyon hiçbir canlı koşum ya da Recover için yetki DEĞİLDİR.
+> **R04-recover-girdi (2026-10-04) — owner kararı madde 5 + 6 (koşucu, koşucu öz-testi, owner bloğu, blok öz-testi ve bu belge değişti; koşucu pini ve paket
+> digest'i YENİ; sahte API DEĞİŞMEDİ) — §14.9:** (i) Yeni Recover girdisi `-Mode Recover -RunEvidenceDir '<tamamlanmış Run kanıt dizini>'`: makbuzu blok, ayrı Recover onayından (owner bu modu ayrıca başlatır; blok bu onayı sormaz ve ölçmez — değişmedi) sonra,
+> Run kanıtındaki `recovery.makbuzJson` alanından Run kanıt dizininin **dışına** (kardeş dizin) yazar ve Recover başlamadan doğrular (manifest / hash bağı, runId /
+> kimlik bağı, GO defteri satırı, geri okuma, kaynağın değişmediği); biri tutmazsa Recover başlamaz ve başarı sayılmaz. Var olan makbuz ezilmez; `-ReceiptFile` yolu
+> korunur; Run başarısız oldu diye otomatik Recover yoktur. (ii) Recover bitiş ekranı portal erişimini son ölçüme göre AÇIK / KAPALI / ÖLÇÜLEMEDİ diye gösterir.
+> (iii) Ret ölçütlerinde (P7-C3L/D, P7-C4L/D) 503 / 429 dışındaki 5xx gözlemi "ret kanıtlanmadı; neden kesinleşmedi (ürün kusuru olarak sınıflanmadı)" der; sonuç
+> (verdict) ve çıkış kodları değişmedi. Manifestin bağımsız çapası **yoktur** (sınır; ekrana ve kayda yazılır). Aşama 1'de koşucu öz-testi koşulmamıştı (yalnız blok
+> öz-testi, iki kabukta); aşama 2'de koşuldu — aşağıdaki not. Canlı Run / Recover **koşulmadı**; bu revizyon hiçbir canlı koşum ya da Recover için yetki DEĞİLDİR.
+>
+> **R04-b (2026-10-04) — aşama 2: kurtarma adımının hizalanması + koşucu öz-testlerinin koşulması (koşucu, koşucu öz-testi, owner bloğu, blok öz-testi ve bu belge
+> değişti; koşucu pini ve paket digest'i YENİ; sahte API DEĞİŞMEDİ) — §14.9 "R04-b":** (a) **Kurtarma adımı hizalandı:** koşucunun kanıta yazdığı kurtarma adımı
+> (`recovery.adim`) artık bloğun Run sonu ekranıyla aynı seçeneği gösterir — kanıtta makbuz metni varken `-Mode Recover -RunEvidenceDir '<bu koşumun kanıt dizini>'`.
+> Önceki baytlar elle TEK komut veriyor ve yeni makbuzu Run kanıt dizininin **içine** yazdırıyordu; makbuz güncelken de `-ReceiptFile <makbuz>` öneriyordu. İkisi de
+> kaldırıldı; kanıtta makbuz yoksa "makbuz YOK … (K-7)" metni aynen. Blokta yalnız metin (Run sonu satırı) + pin. (b) **Recover makbuza yazmaz (ölçüldü):** D-7 koşucusunun
+> Recover'ında makbuz yazımı yoktur (kaynak) ve bloğun kardeş dizine yazdığı makbuzun baytları gerçek Recover'dan önce = sonra (koşucu öz-testi Z19-b, iki kabuk) —
+> `RECOVER-GIRDI-KAYDI.json`'daki `makbuzSha256` Recover'dan sonra da tutar; D-6'daki salt okunur bayrağın D-7'de karşılığı yoktur. (c) **Ölçülen (son baytlar):** koşucu
+> öz-testi **88/88**, blok öz-testi **84/84** iki kabukta; gerçek koşucu kanıtıyla çıkarma iki kabukta ve o makbuzla gerçek Recover (kimlik bağı OK) koşucu öz-testinin
+> kalıcı kalemi. Sonuç (verdict) ve çıkış kodları **değişmedi**. Pinler: **§7**. Canlı Run / Recover **koşulmadı**; bu revizyon hiçbir canlı koşum ya da Recover için yetki DEĞİLDİR.
+>
+> **R04-c (2026-10-05) — aşama 3: odak doğrulamanın beş somut noktası (yalnız owner bloğu, blok öz-testi ve bu belge değişti; koşucu, koşucu öz-testi, sahte API,
+> `PkgPins` ve paket digest'i DEĞİŞMEDİ; D-6 R04-c ile aynı ilke) — §14.9 "R04-c":** **K1** Recover bitiş ekranındaki PORTAL ERİŞİMİ satırı DB kapalıyken artık yalnız DB
+> durumundan kurulmaz: aynı Recover kanıtındaki yeni giriş reddi ölçütleri (P7-C3L / P7-C3D) satıra yazılır; yeşil "KAPALI (DB + yeni giriş reddi PASS)" **yalnız** ikisi
+> PASS iken; biri FAIL (ör. kapanıştan sonra giriş kabul edildi) → kırmızı "DB'de kapalı AMA yeni giriş reddi FAIL (…) — erişim kapalı SAYILMAZ"; ölçülemeyen / satır yok →
+> sarı "DB'de kapalı; yeni giriş reddi ÖLÇÜLEMEDİ (…)". **K2** `-ReceiptFile`, manifesti olan (tamamlanmış) Run kanıt dizinindeki makbuzla ve o dizindeki kanıtta makbuz
+> metni varken **reddedilir** (DUR; `-RunEvidenceDir`'e yönlendirir) — orijinal kanıt dizinine yazılmaz; kanıtta makbuz metni yoksa bu paketle tanımlı tek yol olduğu için
+> sürer ve kanıt dizininin değişeceği açıkça yazılır. **K3** `-RunEvidenceDir` yolunda makbuz node'dan önce iki noktada yeniden ölçülür; kayda yazılan özetten farklıysa
+> Recover başlamaz ve dizin KULLANILMAZ diye işaretlenir; Recover'dan sonra makbuz yeniden ölçülür ve "RECOVER GİRDİSİ (makbuz): … DEĞİŞMEDİ / DEĞİŞTİ" satırıyla gösterilir.
+> **K4** manifest yokken DUR metni kalan yolu ve makbuz dosyasının ölçülen durumunu yazar. **K5** makbuz yazımından sonraki beklenmeyen istisna da KULLANILMAZ işareti + DUR
+> üretir. Çıkış kodları **değişmedi**; Recover yine soru sormaz. **Ölçülen (son baytlar):** blok öz-testi **88/88** iki kabukta; koşucu öz-testi bu aşamada **koşulmadı**
+> (koşucu değişmedi — R04-b baytlarında 88/88 ölçülmüştü). Pinler: **§7**. Canlı Run / Recover **koşulmadı**; bu revizyon hiçbir canlı koşum ya da Recover için yetki DEĞİLDİR.
 
 ## 1. Ne ölçer ve ne yapmaz
 
@@ -205,6 +235,25 @@ veri işleme "EVET" → GO (yerel) → defter (sha256) → koşum → ekran temi
 soru/GO yok. `owner-block.json`: `emailSendsPlanned=0`, `messageRowsDeleted=false`. Canlı süreler bloğun içinden zorlanır (20 dk bekleme · 5 sn yoklama ·
 120 sn inceleme · 120 sn geç oluşma). Kanıt JSON'ları **UTF-8** olarak okunur (WinPS 5.1 varsayılanı ANSI; kalıntı metni bozulmasın).
 
+**R04 — Recover girdisi (2026-10-04; §14.9).** Recover artık `-ReceiptFile <makbuz>` **ya da** `-RunEvidenceDir <tamamlanmış Run kanıt dizini>` ile başlatılır (biri;
+ikisi birlikte DUR). `-RunEvidenceDir` yolunda makbuzu blok, owner bu modu ayrıca başlattıktan sonra, Run kanıtındaki `recovery.makbuzJson` alanından Run kanıt
+dizininin **dışına** (kardeş dizin) yazar ve Recover başlamadan doğrular; biri tutmazsa Recover başlamaz. Recover yine soru sormaz; blok AYRI owner onayını sormaz ve
+ölçmez (değişmedi). Run çıkış 5/6 ekranı kanıtta makbuz metni varsa bu seçeneği gösterir (blok Recover'ı kendiliğinden başlatmaz). Recover bitiş
+ekranı portal erişimini son ölçüme göre AÇIK / KAPALI / ÖLÇÜLEMEDİ diye gösterir. Kapılar, Run sırası, node çağrısı ve çıkış kodları değişmedi.
+
+**R04-b (2026-10-04; §14.9 "R04-b").** Koşucunun kanıta yazdığı kurtarma adımı (`recovery.adim`) da aynı seçeneği gösterir (elle komut koşucudan kaldırıldı); blokta yalnız
+Run sonu satırının metni değişti ("kanıttaki kurtarma adımı da bu seçeneği gösterir"). D-7 koşucusu Recover'da makbuz dosyasına yazmaz (ölçüldü — Z19-b); kapılar, Run
+sırası, Recover okuma kapısı, node çağrısı ve çıkış kodları değişmedi.
+
+**R04-c (2026-10-05; §14.9 "R04-c").** (K1) Recover bitiş ekranındaki PORTAL ERİŞİMİ satırı DB kapalıyken kanıttaki yeni giriş reddi ölçütlerine (P7-C3L/D) bağlıdır —
+yeşil "KAPALI (DB + yeni giriş reddi PASS)" yalnız ikisi PASS iken; biri FAIL → kırmızı, ölçülemeyen / satır yok → sarı. (K2) `-ReceiptFile` ile verilen makbuz manifesti
+olan (tamamlanmış) bir Run kanıt dizinindeyse ve o dizindeki kanıtta makbuz metni varsa blok **DURUR** (90; node çağrılmaz, Recover bilgi metni gösterilmez) ve
+`-RunEvidenceDir`'e yönlendirir; kanıtta makbuz metni yoksa (tek kalan yol) sürer ve kanıt dizininin değişeceği Recover başında, bitişinde ve Run sonu ekranında yazılır.
+(K3) `-RunEvidenceDir` yolunda makbuzun sha256'sı Recover kanıt dizini açılmadan önce ve node çağrısından hemen önce yeniden ölçülür; kayıttaki özetten farklıysa Recover
+başlamaz; Recover'dan sonra "RECOVER GİRDİSİ (makbuz): Recover'dan sonra DEĞİŞMEDİ / DEĞİŞTİ …" satırı gösterilir (D-6'daki satırın ikizi; çıkış kodunu değiştirmez).
+(K4) Manifest yokken DUR metni kalan yolu söyler. (K5) Yazımdan sonraki beklenmeyen istisna da KULLANILMAZ işareti + DUR üretir. Recover yine soru sormaz; kapılar, Run
+sırası, node çağrısı ve çıkış kodları değişmedi.
+
 **R02 — Recover (yalnız metin).** Recover, Run'ın koşucu içindeki kendi kapanış adımlarından AYRI bir canlı yazma işlemidir; otomatik değildir,
 blok onu Run'dan sonra kendiliğinden başlatmaz (öz-test G-4: Run çıkış 5/6'da tek node çağrısı, mod `run`; AST: `Invoke-RecoverMode` yalnız
 akıştaki mod dalında). Recover başlarken blok, canlı yazma kümesini (§8.1) ve yetki kuralını konsola yazar (yalnız bilgi: soru sorulmaz, akış
@@ -252,6 +301,19 @@ değiştirilirse mantık eşitliği bozulurdu). Koşumun hangi blok baytlarıyla
    KEZ** koşulur; canlıya ne yazdığı §8.1'dedir; ürün bulgusu varsa Recover onu düzeltmez; kabul tekrarlanmaz. "BİR KEZ" kodla zorlanmaz:
    ikinci bir Recover'ı blok da koşucu da engellemez. Recover'ın çıkış kodu (3/5/6 dahil) yeni bir Recover için yetki değildir; **ikinci bir
    Recover bu paketle tanımlı değildir; owner kararı gerektirir** (§8.1, §10 K-6). Recover sonucu CLIENT'a/owner'a bildirilir.
+   **R04 (2026-10-04; §14.9) — Recover girdisi:** `-ReceiptFile` yerine **`-Mode Recover -RunEvidenceDir <Run kanıt dizini>`** kullanılır (Run çıkış 5/6 ekranı, kanıtta
+   makbuz metni varsa bu seçeneği somut yoluyla gösterir): makbuzu blok, Run kanıt dizininin **dışına** (kardeş dizin `<Run dizini>.recover-girdi-<UTC zaman>`) yazar ve
+   doğrular; doğrulama tutmazsa Recover başlamaz (blok 90 ile durur) ve Run kanıt dizini değişmez. Kanıt dizinindeki `d7-setup-receipt.json` dosyasını `-ReceiptFile`
+   ile vermeyin (Recover `recover-*` dizinini makbuzun yanında açar). AYRI owner onayı ve "BİR KEZ" kuralı aynen geçerlidir; blok Recover'ı kendiliğinden başlatmaz.
+   **R04-b (§14.9 "R04-b"):** kanıttaki `recovery.adim` metni de bu seçeneği gösterir (elle komut artık yoktur).
+   **R04-c (§14.9 "R04-c"):** Recover bitiş ekranındaki "PORTAL ERİŞİMİ (son ölçüme göre …)" satırını **rengiyle birlikte** okuyun: yeşil "KAPALI (DB + yeni giriş reddi
+   PASS)" = DB kapalı ve kanıttaki P7-C3L + P7-C3D PASS; kırmızı "DB'de kapalı AMA yeni giriş reddi FAIL (…) — erişim kapalı SAYILMAZ" = DB kapalı görünüyor ama kapanıştan
+   sonra giriş reddedilmedi → CLIENT'a bildirin; sarı "DB'de kapalı; yeni giriş reddi ÖLÇÜLEMEDİ (…)" = ret ölçülemedi (portal hesabı satırı DB'de yokken de böyledir).
+   Satır çıkış kodunu değiştirmez. "RECOVER GİRDİSİ (makbuz): Recover'dan sonra DEĞİŞMEDİ (sha256 önce = sonra = …)" satırı beklenir; kırmızı "… DEĞİŞTİ ya da okunamadı …"
+   görülürse kardeş dizindeki `RECOVER-GIRDI-KAYDI.json` özeti artık dosyayı anlatmaz — kanıt dizinini CLIENT'a iletin (bu satır Recover yetkisi değildir). "Kanıt dizinindeki
+   makbuzu `-ReceiptFile` ile vermeyin" kuralını blok artık **zorlar**: o dizindeki kanıtta makbuz metni varken blok 90 ile durur ve `-Mode Recover -RunEvidenceDir '<dizin>'`
+   yolunu gösterir. Kanıtta makbuz metni yoksa `-ReceiptFile` tek kalan yoldur ve **Run kanıt dizinini değiştirir** (`recover-*` dizini orada açılır) — bu yolu kullanma
+   kararı owner / CLIENT'a aittir.
 
 ## 6. Öz-testler (canlıya dokunmadan; 2026-09-29; disposable DB `5449/d67_test`, sahte API 8200/8459, gerçek TLS)
 
@@ -419,12 +481,16 @@ kullanıcı adından ve test DB parolasından arındırılarak yazılır.
 
 | Dosya | sha256 |
 |---|---|
-| `d7-portal-messages-live-run.js` **R03-g** (son baytlar; §14.8: Recover modunda açık erişim metni ölçülene bağlı (`recoverOpenAccessText`), token JWT olarak okunamazsa TJ (`sessionClass200` 5. girdi `claimUnreadable`; sıra B → T1 → TG → TJ → T3 → T0 …), T2 a = c ≠ b dalında ALTINDA notu; bloğun PkgPins'inde) | `4446C256EF83A0401B7C93F3FD28B6C1A14AF18F1FD04237349D6E37517A9001` |
-| `d7-owner-live-block.ps1` **R03-g** (son baytlar; koşucu pini + `$ExpPackage` + YALNIZ METİN (G2): `Invoke-RecoverMode` bilgi metninde ürünün kapatma yazımları "çağrı 2xx dönerse" koşuluna bağlandı, "401/403'te kapatma yapılmaz (sonuç Recover kanıtında: P7-C1 / P7-C2 satırları ve portalClose.acikErisim)" eklendi + başlık notu; kapılar, sıra, Recover okuma kapısı, node çağrısı, çıkış kodları değişmedi; §14.8) | `EF3FCF08A382B6B62C4B62307B06E4D204E89017AE0FD8CD141E43AD8577C1DA` |
-| `d7-owner-block-selftest.ps1` **R03-g** (son baytlar; O-13 yeni; 75 ölçüt) | `DDA5A722F8D157485130DA4B0E5F6A4E828E4727995D7546282213D5B24C3A8C` |
-| `d7-fake-portal-api.js` **R03-g** (son baytlar; guard NORMAL taklidi ürün guard'ı gibi JWT olmayan token'ı (`portalToken opaque`) DB'ye bakmadan reddeder (`portal-auth.guard.ts:36`; R03-e/f'de kabul ediyordu — ürün davranışı değildi) + `reopenOn extLogin` (yeniden açma tetiği başarılı kapatmadan sonraki İLK dış portal girişi yanıtlandıktan sonra; varsayılan `messages` = önceki davranış)) | `BEF6E73226DC50E2361C54A37299EA943B850B253243C960E006225A8C77740E` |
-| `d7-selftest.js` **R03-g** (son baytlar; Z23-a, Z23-b, Z23-c, Z23-d yeni (4); Z21-a, Z21-l, T-11 değişti (3); 86 ölçüt) | `82A0B53B11E7EDECB152E84B9A76EAD89D771DF1975E45E73018851557238BF3` |
+| `d7-portal-messages-live-run.js` **R04-b** (son baytlar; **R04-c'de DEĞİŞMEDİ**; §14.9 "R04-b": kurtarma adımı bloğun `-RunEvidenceDir` seçeneğiyle hizalandı — elle komut ve `receiptFromEvidenceCommand` kaldırıldı; verdict ve çıkış kodları aynı; bloğun PkgPins'inde) | `20DC82E2EE807F480E02BF9EC4BAF409F847489972B466D16955BB4F5DF51965` |
+| `d7-owner-live-block.ps1` **R04-c** (son baytlar; §14.9 "R04-c": K1 Recover bitiş ekranındaki PORTAL ERİŞİMİ satırı DB kapalıyken kanıttaki P7-C3L/D verdict'lerine bağlı (ad + renk: `Get-RecoverPortalAccess` `goster` / `renk`); K2 `-ReceiptFile` manifesti olan Run kanıt dizinindeki makbuzla ve kanıtta makbuz metni varken DUR + `-RunEvidenceDir` yönlendirmesi (`Assert-ReceiptFileRoute`), kanıtta makbuz metni yokken izin + "orijinal kanıt dizini DEĞİŞİR" metni (`Get-RunDirWriteNote`: Recover başı, Recover bitişi, Run sonu ekranı); K3 `New-RecoverInputFromRun` yol + makbuz özeti döndürür, makbuz node'dan önce iki noktada yeniden ölçülür (`Assert-RecoverInputUnchanged`; fark → DUR + KULLANILMAZ işareti) ve Recover'dan sonra "RECOVER GİRDİSİ (makbuz): … DEĞİŞMEDİ / DEĞİŞTİ" satırı; K4 manifest yokken DUR metni kalan yolu ve makbuz dosyasının durumunu yazar; K5 yazımdan sonraki adımlar tek try/catch içinde (beklenmeyen istisna → işaret + DUR; `Set-RecoverInputUnusable`); başlık notu; **`PkgPins` ve `$ExpPackage` DEĞİŞMEDİ**; kapılar, Run sırası, node çağrısı, çıkış kodları değişmedi; Recover soru sormaz) | `04BE4AC46CA5BA238566C76AADBD65C2D27839A05CF9374D2756DAF4C355718C` |
+| önceki (**R04-b**; §14.9 "R04-b": Run sonu metni "kanıttaki kurtarma adımı da bu seçeneği gösterir" (yalnız METİN) + koşucu pini + `$ExpPackage` + başlık notu): `d7-owner-live-block.ps1` | `01D5EA53C1E8FC6BC3EB8F433083FB537D24CDFA9C472D5B107DC8E86D4F1113` |
+| `d7-owner-block-selftest.ps1` **R04-c** (son baytlar; RG-12, RG-13, RG-14, RG-15 yeni (4) + RG-1, RG-9, RG-10 değişti → 88 ölçüt; satır rengi `Get-HostLines` ile ölçülür; sahte koşucuya `EXSTUB_REWRITE=force` eklendi (Recover'da makbuza bayt ekleme taklidi — D-7 gerçek koşucusu yazmaz); §14.9 "R04-c") | `94C315E873BD5B654CCBE5AAAC7CAF46DDF21060173AEAE0C717507CE1E93391` |
+| önceki (**R04-b**; O-8 değişti — Run sonu metni; 84 ölçüt; §14.9 "R04-b"): `d7-owner-block-selftest.ps1` | `8A5CE9F3081E3A1EF0C871BF234E88C8C20091172B7D1B3EEB97E71A5172657F` |
+| `d7-fake-portal-api.js` **R03-g** (son baytlar; **R04, R04-b ve R04-c'de DEĞİŞMEDİ**; guard NORMAL taklidi ürün guard'ı gibi JWT olmayan token'ı (`portalToken opaque`) DB'ye bakmadan reddeder (`portal-auth.guard.ts:36`; R03-e/f'de kabul ediyordu — ürün davranışı değildi) + `reopenOn extLogin` (yeniden açma tetiği başarılı kapatmadan sonraki İLK dış portal girişi yanıtlandıktan sonra; varsayılan `messages` = önceki davranış)) | `BEF6E73226DC50E2361C54A37299EA943B850B253243C960E006225A8C77740E` |
+| `d7-selftest.js` **R04-b** (son baytlar; **R04-c'de DEĞİŞMEDİ ve yeniden KOŞULMADI** — koşucu değişmedi; sonuç R04-b baytlarında ölçülmüştür; T-14 yeni (1) + Z18, Z19-b, Z20-d, C-1 değişti (4); 88 ölçüt — R04-b baytlarında **88/88 PASS**; §14.9 "R04-b") | `466EC3EF37A748DCA3032AA40D66FD1179B0EF75DE7D5F42BA6CC6F142AD3440` |
 | `d7-qr-test.js` (değişmedi) | `15E6431396E978423BAE72F3B7511F3972F12847EF96AA02C12937E0F2233E15` |
+| önceki (**R04 aşama 1** baytları, commit `553f199b`; §14.9): koşucu (5xx gözlem metni `rejectObs`) · blok (`-RunEvidenceDir`, Recover bitiş ekranında PORTAL ERİŞİMİ satırı) · blok öz-testi (RG-1 … RG-10 yeni + O-8 değişti + O-9 kaldırıldı; 84 ölçüt) · sahte API (değişmedi) · koşucu öz-testi (T-13 yeni; 87 ölçüt — aşama 1'de koşulmamıştı; aşama 2'de aşama 1 baytlarında 87/87 PASS ölçüldü) | `AB38AC97DD400B13A2BD71F561EEC7C3EA8A37AB937DC02DE31BA992810F41C2` · `C52CBDA8EACC8B0EABACF4256D3B14DD10E58E1F2904D5C1919889185FA3978E` · `7EEBCB6C0924FCE4BD081A684E72F171ACA42DF40077BE52FBC6F68A88B587D9` · `BEF6E73226DC50E2361C54A37299EA943B850B253243C960E006225A8C77740E` · `BF699CFF766E13737D1F80EED916050B97C13892DCB9545CC8CDB4D2B4D8EEFD` |
+| önceki (**R03-g** son baytlar; §14.8): koşucu · blok · blok öz-testi (75 ölçüt) · sahte API (R04'te değişmedi) · koşucu öz-testi (86 ölçüt) | `4446C256EF83A0401B7C93F3FD28B6C1A14AF18F1FD04237349D6E37517A9001` · `EF3FCF08A382B6B62C4B62307B06E4D204E89017AE0FD8CD141E43AD8577C1DA` · `DDA5A722F8D157485130DA4B0E5F6A4E828E4727995D7546282213D5B24C3A8C` · `BEF6E73226DC50E2361C54A37299EA943B850B253243C960E006225A8C77740E` · `82A0B53B11E7EDECB152E84B9A76EAD89D771DF1975E45E73018851557238BF3` |
 | önceki (**R03-f** son baytlar): koşucu · blok · blok öz-testi · sahte API · koşucu öz-testi | `23AB099FA6F8EE7B300504F42F2699241336ECDF97D5ED667614722456CC04DB` · `A2C9F7D8DCFD3BCA7D006E689E3F5EAB8C0A7B8DF562DE5130C7F1198F7D1B2C` · `92D655806625661F6B718536E05E4D52B019A1FE6B9A92B32EDAD90D57CA3743` · `B2207C96AF7B9D3286290DAC4231B40449A94AD7BF5A8B76AB9364A95A4950E8` · `E394E62700ECA48BA66FAA6197EE594D3EBD2CB53394104C9B97D73DBEABAD71` |
 | önceki (**R03-e** son baytlar): koşucu · blok · blok öz-testi · sahte API · koşucu öz-testi | `EE3704A4BECEDF9DA40F31A7362A526CA6D5539D4CF8A1573C548359CF7A0F0F` · `A26418795FF72805B663A6324A59F973D41AB5E7E6251079C6C1CC2823358B5F` · `50C375F6F42D5B3CE7FDA373D4689FDE8ED94778FC19A17DDD67BA7CE8CE55BC` · `1982837C8D68FD30CA4CE106070DD74BCFDCC4B9FF4CC68089E7CA835D2E4229` · `FCEBE8D0D923C98D84D83D8DFB47435FC056ACBDD38B116DF509CAD63EBD6BAA` |
 | önceki (**R03-d** son baytlar): koşucu · blok · blok öz-testi · sahte API · koşucu öz-testi | `27BFE5CE5427EA7BB0C68B86064972994513DBCA373155EDC38092A3F74326AA` · `9B409218FCB48532DDF56A72071A1D186CDE714200AD4F80A0B97C025F5DB63B` · `66FE3BFC0954C0CDA59BFE1945256E65060305EB58367DFEB69E0A5982147034` · `30B29115311EBF4663DA24F0A1A8748E968DD04AEC3EC16171B403AB524FD122` · `3EA4AAAC35D94E77FFB311A5ABBB53BFC044A25C6D9FA2D6EA3B473FBD27C203` |
@@ -441,7 +507,28 @@ kullanıcı adından ve test DB parolasından arındırılarak yazılır.
 | önceki (**R02 kütüphane kökü düzeltmesi**; 2026-10-03; §6.4): `d7-selftest.js` | `2867FBC58282982F79218F2A468884677626B89D34BE91F963FB58FEAD32A1E3` |
 | önceki (R01 düzeltme baytları; R02'nin ilk iki turunda değişmedi): `d7-selftest.js` | `D5E12B00D1F708D056F1949CAE9EC76519DF3B71F4CBCDC0C67473CE630345DB` (kütüphane kökü sabit olarak canlı yayın dizini; yalnız ayna kopyada koşuldu) |
 
-**Paket digest (R03-g; blok içinde `$ExpPackage`): `78F626CD3C0FB47393521BAF4FB7BBB2A326D900EAB7C9EA968E49C5FB5F3A0D`** — pin listesindeki 9 dosyadan
+**R04-c pin ölçümü (son baytlar):** bu aşamada koşucu, sahte API ve koşucu öz-testi değişmedi → `PkgPins` ve `$ExpPackage` **DEĞİŞMEDİ**. Ölçüm (iki kabukta;
+`r04\d6-d7-recover-hazirlik\asama3\pin-degismedi.log`): bloktaki `$PkgPins` ve `$ExpPackage` atamalarının metni aşama 2 ucu (`bcea51c1`) bloğundaki atamalarla **aynı**;
+9 pinli dosya bu dalın dosyalarından yeniden hesaplandı → uyuşmazlık 0; paket digest'i yeniden hesap = `16D95F54…D1C5` = `$ExpPackage`; pinli dosyalarda `git status`
+farkı yok. Blok öz-testi **PIN-1** aynı eşitliği her koşumda ölçer (R04-c son koşumları: iki kabukta 9/9, digest `16D95F54…` = `$ExpPackage`). Blok ve blok öz-testi
+PkgPins'te **değildir**; yukarıdaki tabloda yalnız bu iki dosyanın özeti değişti. Koşucu değişmediği için kanıt alanları, `revision` (`R03`) ve `packageDigest`
+(`16D95F54…`) aynıdır; R04-b ile R04-c **yalnız blok dosyasının sha256'sıyla** ayırt edilir (owner koşumdan önce blok dosyasının sha256'sını kaydeder).
+
+**Paket digest (R04-b; R04-c'de DEĞİŞMEDİ — son; blok içinde `$ExpPackage`): `16D95F54DB430D3E113DA86DF36719BC68C19DD934E8D32170D44682014AD1C5`** — pin listesindeki 9 dosyadan bloğun kendi `Sha` + `Digest`
+fonksiyonlarıyla (AST'den yüklenerek; bloğun akışı çalışmadan) yeniden hesaplandı (9 pin, uyuşmazlık 0; R04-b'de pin listesinde değişen yalnız koşucu satırı;
+`r04\d6-d7-recover-hazirlik\asama2\d7\test\son-pin-dogrulama.log`). Blok öz-testi **PIN-1** bu eşitliği her koşumda ölçer (R04-b son koşumları: iki kabukta 9/9, digest
+`16D95F54…` = `$ExpPackage`). Kanıttaki `revision` yine `R03` (C-1 son baytlarda ölçtü); R04-b koşucusu `packageDigest` `16D95F54…` ile ayırt edilir; kanıtta yeni alan yok —
+Run kanıtındaki `recovery.adim` metni §14.9 "R04-b"deki biçimdedir. Aşağıdaki paragraf R04 (aşama 1) kaydıdır.
+
+**Paket digest (R04 aşama 1; R04-b'de geçersiz): `01DFD77FE88240A0BCBF8A986FBF4F80F759C975D233D9BB68B00B93118CA789`** — pin listesindeki 9 dosyadan bloğun kendi `Sha` + `Digest`
+fonksiyonlarıyla (AST'den yüklenerek; bloğun akışı çalışmadan) yeniden hesaplandı (9 pin, uyuşmazlık 0; R04'te pin listesinde değişen yalnız koşucu satırı;
+`r04\d6-d7-recover-hazirlik\asama1\d7\test\pin-dogrulama-son.log`). Blok öz-testi **PIN-1** bu eşitliği her koşumda ölçer (R04 aşama 1 koşumları: iki kabukta 9/9, digest
+`01DFD77F…` = `$ExpPackage`). Kanıttaki `revision` yine `R03` (C-1 ölçer — aşama 2'de ölçüldü); R04 (aşama 1) koşucusu `packageDigest` `01DFD77F…` ile ayırt edilir; kanıtta yeni
+alan yok — P7-C3L/D ve P7-C4L/D gözlemi 503 / 429 dışındaki 5xx'te §14.9 (iii)'teki metindir. `-RunEvidenceDir` ile hazırlanan Recover girdisi dizinindeki
+`RECOVER-GIRDI-KAYDI.json` bloğun yazdığı yeni bir kayıttır (kayıt türü `EXTACC-D7-RECOVER-INPUT`, `revision` `R04`); `owner-block.json` `revision` alanı yine `R01`.
+Aşağıdaki paragraf R03-g kaydıdır.
+
+**Paket digest (R03-g; R04'te geçersiz): `78F626CD3C0FB47393521BAF4FB7BBB2A326D900EAB7C9EA968E49C5FB5F3A0D`** — pin listesindeki 9 dosyadan
 bloktan bağımsız betikle yeniden hesaplandı (9 pin, uyuşmazlık 0; R03-g'de pin listesinde değişen yalnız koşucu satırı;
 `r04\recover-dogrulugu\r5\d7\test\pin-dogrulama-son.log`). Blok öz-testi **PIN-1** bu eşitliği her koşumda ölçer (R03-g son koşumları: iki kabukta
 9/9, digest `78F626CD…` = `$ExpPackage`). Kanıttaki `revision` yine `R03` (C-1 ölçer); R03-g koşucusu `packageDigest` `78F626CD…` ile ayırt edilir;
@@ -530,6 +617,9 @@ Recover kabul ölçütlerini koşmaz; yalnız kapanışı yeniden dener ve **can
    dosyalar CLOSED. 1. adımda aktifleştirilen personel burada yeniden pasifleştirilir; bu adım doğrulanmazsa personel **aktif kalmış olabilir**
    (çıkış 5; portal da doğrulanmadıysa 6).
 4. Makbuzun yanında yeni bir `recover-<zaman>-<id>` kanıt dizini (`d7-evidence.json`, `d7-recover.log`, `SHA256-MANIFEST.txt`).
+   **R04 (§14.9):** `-RunEvidenceDir` ile başlatıldıysa blok bundan önce Run kanıt dizininin **kardeşi** olan `<Run dizini>.recover-girdi-<UTC zaman>` dizinini açar ve
+   içine makbuzu (`d7-setup-receipt-kanittan.json`) ile `RECOVER-GIRDI-KAYDI.json` dosyasını yazar (yerel dosya; canlıya yazma değildir); `recover-*` dizini de oradadır.
+   Bu yolda Run kanıt dizinine ve manifestine yazılmaz.
 
 Recover'ın **yazmadıkları**: GO defteri değişmez, GO sorulmaz; mesaj/bildirim satırları silinmez; `Tenant` satırına yazma yoktur; kimlik bağı
 (makbuz ↔ tenant/slug/runId) doğrulanmazsa koşucu canlı DB'ye yazmadan durur (çıkış 4). Recover **U-ISO ölçmez**. Canlı API uygulama günlüğüne
@@ -1400,9 +1490,261 @@ kaynağından (yetki reddi yazmadan önce döner — §13.2) ve sahte API'nin `d
 **Doğrulayıcıların bulgu SAYMADIĞI ama owner'a açık bilinen sınırlar.** (1) **TG ve TJ yalnız sahte API'de ölçüldü:** ürünün imzaladığı token'da claim DB'deki
 tam sayıdır ve token JWT'dir (`portal.service.ts:438-446`) — canlıda bu iki hücrenin tutması pratikte beklenmez; sahte API'nin `badClaim` / `opaque` token'ları ve
 guard normal taklidi ürünün kendisi değildir. (2) **Recover bitiş ekranı `acikErisim`'i göstermez** (önceki tasarım; değişmedi): bloğun Recover bitiş satırı yalnız
-çıkış kodunu açıklar; açık erişim metni Recover kanıtındadır — owner kanıtı okumadan Recover'dan sonra erişimin açık kalıp kalmadığını ekranda görmez. (3) **B
+çıkış kodunu açıklar; açık erişim metni Recover kanıtındadır — owner kanıtı okumadan Recover'dan sonra erişimin açık kalıp kalmadığını ekranda görmez [**R04'te kapandı:** Recover bitiş ekranı artık "PORTAL ERİŞİMİ (son ölçüme göre …)" satırını gösterir — §14.9 (ii)]. (3) **B
 hücresinin bulgu metnindeki "portal erişimi kapatıldıktan" ifadesi** DB kapanışı HTTP ölçümlerinden önce ve sonra ölçülmüşken (P7-C2 PASS + P7-C5 PASS)
 yazılır; kapanışın dayanağı (2xx / hesap zaten kapalıydı / 2xx olmadan DB'de kapalı görüldü) bu metinde ayrışmaz — P7-C1 gözlemindeki `dayanak=` alanındadır.
 (4) Bu belgenin **§8.1** maddesi 1 (Recover yazma kümesi; R02 metni) ürünün kapatma yazımlarını çağrının 2xx dönmesine bağlamadan anlatır — G2 kapsamı bloğun
 gösterilen metniydi; belge metni **değiştirilmedi** (blok metni artık koşula bağlı). Dördü de bu turda kapsam dışı bırakıldı (owner kararı). B3 açık
 (değişmedi). Recover'da mevcut oturum reddi (P7-C4) her zaman ölçülemez (değişmedi). Bu revizyon canlı Run / Recover'ı yetkilendirmez.
+
+### 14.9 R04-recover-girdi — Recover girdisini blok yazar ve doğrular; Recover bitiş ekranı; 5xx gözlem metni (2026-10-04; owner kararı madde 5 + 6)
+
+Kapsam (owner kararı 2026-10-04, madde 5 — üç iş, tek teslim; D-6 §13.9 ile aynı ilke): (i) ayrı Recover onayından sonra makbuzu **blok** yazar ve Recover başlamadan
+bütünlüğünü doğrular; (ii) Recover bitiş ekranı portal erişimini **son ölçüme göre** AÇIK / KAPALI / ÖLÇÜLEMEDİ diye gösterir; (iii) ret ölçütlerinde 5xx gözlem metni ret
+kanıtlanmadığını ve nedenin kesinleşmediğini söyler — **sonuç (verdict) ve çıkış kodları değişmedi**. Ayrı Recover onayı korunur; Run başarısız oldu diye otomatik
+Recover **yoktur**. Canlı Run / Recover **koşulmadı**, owner bloğu **çalıştırılmadı** (yalnız blok öz-testi). Bu revizyon hiçbir canlı koşum ya da Recover için yetki
+DEĞİLDİR. Taban: origin/main `549b8344`. Aşama 1'de (commit `553f199b`) koşucu öz-testi (`d7-selftest.js`) koşulmamıştı; **aşama 2'de koşuldu** ve kurtarma adımı
+hizalandı — bu bölümün sonundaki **"R04-b (aşama 2)"**. Aşağıdaki (i)–(iii) aşama 1'in metnidir; aşama 2'de değişen yerler **[R04-b: …]** diye işaretlendi.
+
+**(i) Yeni Recover girdisi — `-Mode Recover -RunEvidenceDir '<tamamlanmış Run kanıt dizini>'`.** `-ReceiptFile` yolu korunur; ikisi birlikte verilemez (DUR). Sıra:
+salt okuma kapıları (değişmedi) → kaynak doğrulama → yazım → geri okuma → Recover bilgi metni (§8.1; değişmedi) → koşucu (Recover). D-7'de Recover **soru sormaz**
+(değişmedi; öz-test G-3 ve RG-10): ayrı onay, owner'ın bu modu ayrıca başlatmasıdır; blok bu onayı sormaz ve ölçmez. Makbuz bu başlatmadan **sonra** yazılır.
+
+| Adım | Blok ne yapar | Tutmazsa |
+|---|---|---|
+| Kaynak doğrulama (yazımdan ÖNCE) | Dizin adı `extacc-d7-live-<runId>-<zaman>`; `SHA256-MANIFEST.txt` var ve biçimli; manifestte `d7-evidence.json`, `owner-block.json`, `goref-consumed.json` satırları; **manifestteki her dosyanın** sha256'sı satırına eşit (dosya bir kez okunur; aynı baytlar hem özetlenir hem ayrıştırılır); kanıt kayıt türü Run kanıtı (`EXTACC-D7-PORTAL-MESSAGES-LIVE-RUN` — Recover kanıtından makbuz çıkarılmaz); runId = dizin adı = makbuz = `owner-block.json` (mod Run) = `goref-consumed.json` = **GO defteri satırı** (GO sha256 + runId; kanıt dizininin dışında); `recovery.makbuzJson` dizge + JSON + Recover okuma kapısı alanları (kayıt türü, runId biçimi, `elevUserId`, `elevEmail`); kimlik alanları (`record`, `runId`, `tenantId`, `tenantSlug`, `foreignTenantId`, `clientId`, `foreignClientId`, `caseId`, `elevUserId`, `elevEmail`) kanıttaki `receipt` nesnesiyle eşit; `tenantSlug` = `ah-<runId>` | DUR (çıkış 90) — makbuz yazılmaz, kardeş dizin oluşmaz, Recover başlamaz; ekranda somut neden |
+| Yazım | Hedef = Run kanıt dizininin **kardeşi** `<Run dizini>.recover-girdi-<UTC yyyyMMddTHHmmssZ>`; içinde `d7-setup-receipt-kanittan.json`. Dizin ya da dosya **zaten varsa DUR** (ezme yok; dosyalar yalnız "yeni oluştur" kipiyle açılır) | DUR — var olan dizin / dosya değişmez |
+| Yazımdan sonra | Dosya bayt olarak **geri okunur** ve beklenen baytlarla karşılaştırılır; bloğun Recover okuma kapısı (`Get-ReceiptFileState`, `recovery.makbuzJson` metin eşitliği dahil) koşulur; `d7-evidence.json` ve `SHA256-MANIFEST.txt` sha256'sı **yeniden ölçülür** (önce = sonra); yanına `RECOVER-GIRDI-KAYDI.json` yazılır (kaynak dizin adı, kanıt adı + sha256, manifest sha256, manifest satırı, runId, yeni dosyanın sha256'sı / bayt sayısı, kodlama tanımı, bağımsız çapa durumu, zaman) | DUR — Recover başlamaz, başarı sayılmaz; hedef dizin **silinmez**, `RECOVER-GIRDI-KULLANILMAZ.txt` (neden) ile işaretlenir; yarım / doğrulanamamış makbuz yerinde kalır ve **`-ReceiptFile` ile verilse de reddedilir** (işaret dosyası varsa DUR). İşaret dosyası da yazılamazsa ekran bunu söyler (o durumda kodla zorlanamaz). **[R04-c — K5:** bu adımlarda adımın kendi yakalamadığı **beklenmeyen** bir istisna da (ör. okuma kapısında dosya kilidi) aynı yola düşer: "Recover girdisi hazırlanamadı: yazımdan sonraki adımda BEKLENMEYEN hata (…)" + işaret + DUR (önceki baytlarda işaret yazılmıyordu)**]** |
+| Node'dan önce **[R04-c — K3]** | Makbuzun sha256'sı **iki noktada** yeniden ölçülür ve `RECOVER-GIRDI-KAYDI.json`'a yazılan `makbuzSha256` ile karşılaştırılır: (1) Recover kanıt dizini (`recover-*`) açılmadan önce, (2) node çağrısından hemen önce | DUR (çıkış 90) — node çağrılmaz, başarı sayılmaz; dizin `RECOVER-GIRDI-KULLANILMAZ.txt` ile işaretlenir: "Recover girdisi artık doğrulanmış girdi DEĞİL: makbuz doğrulamadan SONRA, node başlamadan ÖNCE DEĞİŞTİ ya da okunamadı (…; sha256 kayıttaki=… · şimdi=…)". (1)'de `recover-*` dizini açılmaz; (2)'de boş bir `recover-*` dizini kalır (kanıt / log yok) |
+| Recover | Koşucu yeni dosyayla çağrılır; `recover-*` kanıt dizini makbuzun yanında, yani **kardeş dizinde** açılır. Run kanıt dizinine ve manifestine **yazılmaz** | — |
+| Recover'dan sonra **[R04-c — K3; D-6 R04-b satırının ikizi]** | Blok makbuzun sha256'sını yeniden ölçer: önce = sonra ise "RECOVER GİRDİSİ (makbuz): Recover'dan sonra DEĞİŞMEDİ (sha256 önce = sonra = …; D-7 koşucusu Recover'da makbuz dosyasına yazmaz)"; değilse kırmızı "… DEĞİŞTİ ya da okunamadı (sha256 önce=… · sonra=…) — RECOVER-GIRDI-KAYDI.json'daki makbuzSha256 Recover'dan ÖNCEKİ baytlara aittir" | çıkış kodu **değişmez** (Recover koşmuştur); satır kırmızı — kanıt dizini CLIENT'a iletilir |
+
+**Kodlama tanımı (açık).** Yeni makbuz dosyasının baytları = `recovery.makbuzJson` **dizgesinin UTF-8 kodlaması**: BOM **yok**; satır sonları dizgede ne ise o (koşucunun
+`JSON.stringify(…, null, 1)` çıktısı LF'dir; **dönüştürülmez**); sonda ek satır sonu **yok**. Geçersiz UTF-16 (eşlenmemiş vekil) ya da BOM karakteriyle başlayan dizge
+yazılmaz (DUR). `RECOVER-GIRDI-KAYDI.json` ve `RECOVER-GIRDI-KULLANILMAZ.txt` de UTF-8 BOM'suzdur.
+
+**Bağımsız çapa (ölçüldü — uydurulmadı).** Manifest ve kanıt **içeriği** için bağımsız çapa **yoktur**: bloğun Run kayıtları (`owner-block.json`, `goref-consumed.json`,
+`owner-declaration.json`, GO defteri) manifest ya da kanıt özeti taşımaz; ilk üçü kanıtla aynı dizindedir ve aynı manifestle örtülüdür. GO defteri (kanıt dizininin
+dışında) yalnız runId ↔ GO sha256 bağını taşır → **runId çapası** olarak doğrulanır. Sonuç: manifest kanıtla **birlikte** değiştirilirse bu doğrulama bunu
+**yakalayamaz**; sınır ekrana ("SINIR: manifestin bağımsız çapası YOK …") ve `RECOVER-GIRDI-KAYDI.json`'a (`bagimsizCapa`) yazılır. Yeni dosyanın yanındaki iki özetin
+eşitliği kaynak bütünlüğü kanıtı sayılmaz; kaynak bağı manifest + runId / kimlik bağı + GO defteri satırıdır.
+
+**Run sonu ekranı (çıkış 5/6).** Kanıtta makbuz metni (`recovery.makbuzJson`) varsa elle komut yerine `-Mode Recover -RunEvidenceDir '<kanıt dizini>'` gösterilir
+(somut yol; "AYRI owner onayıyla, BİR KEZ", "otomatik DEĞİL"; blok Recover'ı kendiliğinden başlatmaz); kanıt dizinindeki makbuz dosyasının durumu (VAR … EŞİT / YOK /
+OKUNAMIYOR / BAYAT) bilgi olarak yazılır ve "-ReceiptFile ile VERMEYİN" denir (Recover `recover-*` dizinini makbuzun yanında açar; Run kanıt dizini değişir). Kanıtta
+makbuz metni yoksa R03-d dalları aynen (dosya okunabiliyorsa `-ReceiptFile <makbuz>` önerisi; değilse SOMUT ENGEL). "Recover ayrı bir CANLI YAZMA işlemidir … ikinci bir
+Recover bu paketle TANIMLI DEĞİLDİR" satırları aynen. **[R04-b:** aşama 1'de koşucunun kanıta yazdığı kurtarma adımı metni (elle TEK komut; yeni makbuzu Run kanıt
+dizininin içine yazdırıyordu) değişmemişti ve bloğun önerisiyle çelişiyordu; R04-b'de koşucu metni bloğun seçeneğiyle hizalandı ve ekran metni "(kanıttaki kurtarma adımı
+da bu seçeneği gösterir)" oldu — aşağıda "R04-b (aşama 2)".**]** **[R04-c — K2:** "-ReceiptFile ile VERMEYİN" satırı artık "…; blok bu durumda o yolu REDDEDER (DUR)" diye
+biter ve blok o yolu gerçekten reddeder; kanıtta makbuz metni yokken gösterilen `-ReceiptFile <makbuz>` dalına "DİKKAT: kanıtta makbuz metni (recovery.makbuzJson) yok →
+-RunEvidenceDir kullanılamaz; bu yol recover-* dizinini Run kanıt dizinine açar — orijinal kanıt dizini DEĞİŞİR; manifest kapsamı dışında kalır. Bu yolu kullanma kararı
+owner / CLIENT'a aittir." satırı eklendi — aşağıda "R04-c (aşama 3)".**]**
+
+**(ii) Recover bitiş ekranı.** Kod açıklamalarından ayrı tek satır: `PORTAL ERİŞİMİ (son ölçüme göre, bu Recover'ın kanıtından; DB durumu): <durum> — <ölçülen>.
+Yeni giriş reddi kanıttaki P7-C3L/D satırlarından okunur; mevcut oturum reddi Recover'da ÖLÇÜLEMEZ.` Son ölçüm sırası: HTTP ölçümlerinden sonraki DB okuması
+(`afterMeasure`, P7-C5) → kapatma adımından sonraki (`after`, P7-C2) → Recover başındaki (`before`).
+
+| Durum | Koşul (Recover kanıtındaki `portalClose`) | Gösterilen |
+|---|---|---|
+| AÇIK | son ölçümde `isActive=true` | "portal hesabı AKTİF (isActive=… hasPortalAccess=… sürüm=…; son ölçüm: …)" + varsa "kanıttaki açık erişim metni: …" (`acikErisim`) |
+| AÇIK | son ölçümde hesap pasif, `hasPortalAccess=true` | "portal kapanışı TAMAMLANMADI: hesap pasif ama müvekkil erişim bayrağı açık (…)" (koşucunun `isOpenAccess` / `openStateTxt` ayrımı) |
+| KAPALI | son ölçümde hesap pasif + bayrak kapalı | "hesap pasif + müvekkil erişim bayrağı kapalı (…)" |
+| KAPALI | son ölçümde hesap satırı yok | "portal hesabı satırı DB'de YOK (hasPortalAccess=…; son ölçüm: …)" |
+| ÖLÇÜLEMEDİ | Recover kanıtı okunamıyor (yok / kayıt türü / exitCode farklı) · `portalClose` yok · geç oluşma dışlanamadı · kapanış adımı hatası (DB değeri yok) | somut neden |
+
+Mevcut kod açıklamaları, "mevcut oturum reddi Recover'da ÖLÇÜLEMEZ" ve ikinci Recover'ın bu paketle tanımlı olmadığı satırları korunur; çıkış kodu değişmez. §14.8
+"bilinen sınır (2)" (Recover bitiş ekranı `acikErisim`'i göstermez) bu değişiklikle **kapandı**.
+
+**[R04-c — K1:** yukarıdaki satır biçimi ve tablo **R04 / R04-b baytlarının** davranışıdır. Son baytlarda satırın başlığı "…; DB durumu + yeni giriş reddi ölçütleri): "
+oldu ve iki KAPALI satırı değişti: DB kapalıyken gösterilen ad ve **renk** aynı kanıttaki P7-C3L / P7-C3D verdict'lerine bağlıdır (önceki baytlarda satır yalnız DB
+durumundan kuruluyor ve yeni giriş reddi FAIL / ölçülemeyen iken de yeşil "KAPALI" basılıyordu — odak doğrulamada ölçüldü). AÇIK ve ÖLÇÜLEMEDİ satırlarının metni aynı.
+Güncel tablo: aşağıda "R04-c (aşama 3)".**]**
+
+**(iii) 5xx gözlem metni (koşucu).** Ret ölçütlerinde (yeni giriş P7-C3L/D — `judge401`; mevcut oturum P7-C4L/D — `judgeSession`) 503 / 429 **dışındaki** 5xx gözlemi artık
+"HTTP <kod> — ret kanıtlanmadı; neden kesinleşmedi (ürün kusuru olarak sınıflanmadı)" (`rejectObs`; önce yalnız "HTTP <kod>"; P7-C3L/D'deki ölçüm parolası notu aynen
+eklenir). Değişmeyenler: verdict (401 beklenirken 401 gelmedi → FAIL), 503 / 429 → ÖLÇÜLEMEYEN ("neden UNKNOWN"), çıkış kodu fonksiyonları ve öncelik, kanıttaki
+`revision` (`R03`), `sessionVersion` / `productFinding` (5xx'te yazılmaz — değişmedi). Diğer 5xx gözlemleri (mesaj uçları, kapsam ölçümleri, kapatma çağrıları) owner
+kapsamında **değil** — dokunulmadı.
+
+**Öz-testler ve negatif kontrol (ölçülen) — AŞAMA 1 BAYTLARI.** Bu tablodaki her sayı **aşama 1 baytlarında** (blok `C52CBDA8…`, blok öz-testi `7EEBCB6C…`, koşucu
+`AB38AC97…`, koşucu öz-testi `BF699CFF…`) ölçülmüştür; **son baytların** (R04-b) sonuçları aşağıdaki "R04-b (aşama 2)" tablosundadır. Kanıt kökü
+`D:\Development\HUKUK_YAZILIMI\HY_R27_AGENT_EVIDENCE\r04\d6-d7-recover-hazirlik\asama1\` (`d7\test\`, `d7\neg\`, `taban\`); aşama 2'de eklenen satırın kanıtı `…\asama2\`.
+
+| Koşum | Sonuç | Kanıt |
+|---|---|---|
+| `d7-owner-block-selftest.ps1` — aşama 1 baytları (blok `C52CBDA8…`, blok öz-testi `7EEBCB6C…`, koşucu `AB38AC97…`; belgenin aşama 1 hâliyle — G-2 / G-6 belgeyi okur) | **84/84 PASS** Windows PowerShell 5.1 · **84/84 PASS** PowerShell 7 (PIN-1 9/9, digest `01DFD77F…` = `$ExpPackage`); 75 − 1 (O-9 kaldırıldı) + 10 (RG-1 … RG-10) = 84; O-8 değişti | `d7\test\blok-oz-test-son-winps51.log`, `d7\test\blok-oz-test-son-pwsh7.log` (`son-sha-once.txt` = `son-sha-sonra.txt`: koşum sırasında dosya değişmedi) |
+| **Negatif — blok:** `git archive 549b8344` (origin/main) aynası (ESKİ blok `EF3FCF08…`, ESKİ koşucu `4446C256…`, ESKİ belge) + R04 blok öz-testi | **73/84**, çıkış 1 — FAIL = tam olarak O-8, RG-1, RG-2, RG-3, RG-4, RG-5, RG-6, RG-7, RG-8, RG-9, RG-10 (11), iki kabukta aynı küme; PIN-1 PASS (aynada eski pin + eski koşucu tutarlı) | `d7\neg\neg-eski-blok-winps51.log`, `d7\neg\neg-eski-blok-pwsh7.log`, `d7\neg\ayna-kurulum.txt`, `d7\neg\neg-blok-sha.txt` |
+| Taban (değişiklik öncesi, origin/main baytları) | 75/75 PASS iki kabukta | `taban\d7-blok-oz-test-taban-winps51.log`, `taban\d7-blok-oz-test-taban-pwsh7.log`, `taban\taban-sha256.txt` |
+| `d7-selftest.js` (koşucu öz-testi; T-13 yeni → 87 ölçüt) — **aşama 1 baytları** (koşucu `AB38AC97…`, öz-test `BF699CFF…`; `git archive 553f199b` aynasında, öz-test `git show 553f199b` baytlarıyla) | aşama 1'de koşulmamıştı; **aşama 2'de ölçüldü: 87/87 PASS** (T-13 dahil), çıkış 0; kendi tek kullanımlık Postgres (postgres:16-alpine, loopback, `_test` adlı DB), `D7T_LIB_ROOT` = canlı olmayan R27 çalışma ağacı; koşum öncesi = sonrası betik sha256'ları | `asama2\d7\test\d7-selftest-asama1-ucu.log` (+ `.bellek`, `.sha-once`, `.sha-sonra`), `asama2\neg-ayna\asama1-ucu-553f199b-kurulum.txt` |
+| T-13'ün ifadeleri (ad-hoc; Postgres / sahte API gerekmez; **öz-testin kendisi değildir**) | yeni koşucu baytlarında (`AB38AC97…`) TUTTU; origin/main koşucu baytlarında (`4446C256…`) TUTMADI (`rejectObs` yok; eski yalın son dal 2) | `d7\test\t13-adhoc-yeni-kosucu.log`, `d7\neg\t13-adhoc-eski-kosucu.log`, `d7\test\t13-adhoc.js` |
+| Koşucu öz-testinin bloğa bakan statik kalemlerinin (T-3 … T-6) ad-hoc eşdeğeri (**öz-testin kendisi değildir**) | TUTTU — pin listesi = koşucunun require ağacı + `d7-qr-test.js`; BOM / `exit $rc` / finally; Preflight dalı yazmaz; Run kapıları | `d7\test\blok-statik-adhoc-son.log`, `d7\test\blok-statik-adhoc.js` |
+| Pin · ayrıştırma | 9 pin uyuşmazlık 0, digest `01DFD77F…` = `$ExpPackage`; iki ps1 ayrıştırma hatası 0 (WinPS 5.1 ve PS 7), `node --check` (koşucu, koşucu öz-testi, sahte API, qr-test) 0, iki ps1 UTF-8 BOM'lu, satır sonu LF | `d7\test\pin-dogrulama-son.log`, `d7\test\parse-iki-kabuk-son.log` |
+
+Yeni / değişen blok öz-testi ölçütleri (her ret kalemi **somut neden metnini** ister; kaynak sahte koşucuyla GERÇEK `Invoke-RunMode`'un ürettiği Run kanıt dizinidir, ret
+kalemleri onun kopyalarında koşar): **RG-1** geçerli çıkarma — hedef kardeş dizinde, baytlar = sahte koşucunun yazdığı makbuz metni (tarih biçimli alan + ASCII dışı
+karakter dahil), BOM yok, yalnız LF, ek satır sonu yok, kayıt dosyası doğru, Run dizini (dosya adları + her dosyanın sha256'sı) ve manifest değişmedi, Recover yeni
+dosyayla başladı, GERÇEK koşucunun `readReceiptForRecover` kapısı "ok" · **RG-2** değiştirilmiş kaynak (makbuzJson / manifest satırı / başka dosya → "manifest uyuşmuyor";
+yazım sırasında kaynak değişirse "yazım sırasında DEĞİŞTİ" + işaret) · **RG-3** bozulmuş / yanlış koşuma ait makbuz, Recover kanıtı, dizin adı, JSON olmayan metin, makbuz
+olmayan kayıt · **RG-4** kimlik alanı (beş alan + türetilen slug + başka koşumun blok kaydı) · **RG-5** eksik kaynak (dizin, dosya yolu, kanıt, manifest, manifest
+satırları, makbuzJson, GO defteri satırı) · **RG-6** ezme yok (hedef dizin / aynı adlı dosya; "yeni oluştur" var olan dosyada istisna) · **RG-7** yazma hatası (gerçek ACL
+reddi; kısmi yazım, kayıt yazımı ve işaret yazımı taklitleri) · **RG-8** geri okuma uyuşmazlığı taklitleri + işaretli dizindeki sağlam makbuzun `-ReceiptFile` ile de
+reddi · **RG-9** Recover bitiş ekranı (AÇIK ×2, KAPALI ×2, ÖLÇÜLEMEDİ ×4) · **RG-10** çift kaynak reddi, Recover yeni soru sormaz (kuyruktaki yanıtlar tüketilmez; AST),
+statik (çıkarma bilgi metninden ve node çağrısından önce; Run'da otomatik Recover yok; silme / üzerine yazma çağrısı yok; kodlama tanımı kaynakta) · **O-8** (değişti) Run
+sonu ekranı yeni seçeneği gösterir · O-9 kaldırıldı (blok artık elle TEK komutu göstermez; makbuzu blok yazar → RG-1 iki kabukta).
+
+**Ölçülmeyenler / sınır (aşama 1 metni; aşama 2'de kapananlar işaretlendi).** (1) ~~Koşucu öz-testi koşulmadı~~ **[R04-b: KAPANDI — aşama 1 baytlarında 87/87, son
+baytlarda 88/88 ölçüldü (aşağıda)]**; kalan kısım: sahte API kaynağında
+ret ölçütünün ucuna (portal girişi / mesaj listesi) 503 dışında 5xx döndüren bir senaryo anahtarı **görülmedi** (500 yalnız yasak uç, oluşturma, kapatma ve işleyici
+hatasında) — 5xx metni uçtan uca ölçülmedi (birim + statik: T-13). (2) ~~Gerçek koşucu kanıtıyla çıkarma ölçülmedi~~ **[R04-b: KAPANDI — koşucu öz-testi Z19-b gerçek
+koşucu kanıtıyla çıkarmayı iki kabukta ölçer (aşağıda)]**; aşama 1'deki durum: blok öz-testi sahte koşucunun kanıtını
+kullanır (alan adları koşucu kaynağından: `record`, `runId`, `receipt`, `recovery.makbuzJson` = makbuzun `JSON.stringify(…, null, 1)` metni). (3) Manifestin bağımsız çapası yok (yukarıda). (4) `-RunEvidenceDir` yalnız manifesti yazılmış
+(tamamlanmış) Run kanıt dizini içindir; manifest yoksa bu yol kapalıdır ve yalnız `-ReceiptFile` yolu kalır (o yol Run kanıt dizinine `recover-*` dizini açar)
+**[R04-c — K4: DUR metni artık bunu söyler ve makbuz dosyasının ölçülen durumunu yazar; K2: manifest VARKEN ve kanıtta makbuz metni varken `-ReceiptFile` Run dizinindeki
+makbuzla reddedilir]**.
+(5) D-7 koşucusunun Recover'ı makbuz dosyasını yeniden yazmaz (kaynaktan okundu: makbuz yazımları yalnız Run'dadır; ~~ölçülmedi~~ **[R04-b: ÖLÇÜLDÜ — Z19-b: makbuz
+baytları gerçek Recover'dan önce = sonra, iki kabukta; T-14: recoverMode kaynağında makbuz / dosya yazımı yok]**); `RECOVER-GIRDI-KAYDI.json`'daki
+`makbuzSha256` yazım anındaki değerdir ve Recover'dan sonra da dosyayı anlatır. (6) İkinci bir çıkarma / ikinci Recover kodla **engellenmez** (her çıkarma yeni zaman damgalı kardeş dizin açar; ikinci bir Recover
+bu paketle tanımlı değildir, owner kararı gerektirir — değişmedi). (7) ~~PORTAL ERİŞİMİ satırı bir DB durumudur; HTTP reddi kanıt satırlarından okunur~~ **[R04-c — K1:
+DEĞİŞTİ — DB kapalıyken satır yeni giriş reddi ölçütlerini (P7-C3L/D) de taşır ve rengi onlara bağlıdır]**; mevcut oturum reddi
+Recover'da ölçülemez (değişmedi). (8) Canlıda hiçbiri koşulmadı; B3 açık (değişmedi).
+
+#### R04-b (aşama 2; 2026-10-04) — kurtarma adımının hizalanması + koşucu öz-testlerinin koşulması
+
+Kapsam (owner: "Yeni genel inceleme turları açma. Yalnız bulunan somut kusurun gerektirdiği düzeltme ve testi yap"; D-6 §13.9 "R04-b" ile aynı ilke): aşama 1'in bıraktığı
+**somut kusur** (kurtarma adımı bloğun önerisiyle çelişiyordu) giderildi, D-6'da bulunan ikinci kusurun D-7'deki karşılığı **ölçüldü** (yok) ve aşama 1'de koşulmayan
+koşucu öz-testi koşuldu. Sonuç (verdict), çıkış kodu fonksiyonları, kapılar, Run sırası ve kanıttaki `revision` (`R03`) **değişmedi**. Canlı Run / Recover **koşulmadı**,
+owner bloğu **çalıştırılmadı** (yalnız öz-testler); canlı ağaç, canlı DB, canlı `.env`, canlı portlar ve canlı kanıt dizinlerine dokunulmadı. Kanıt kökü:
+`D:\Development\HUKUK_YAZILIMI\HY_R27_AGENT_EVIDENCE\r04\d6-d7-recover-hazirlik\asama2\` (`d7\test\`, `d7\neg\`, `neg-ayna\`, `ortak\`).
+
+**Kusur — kurtarma adımı bloğun önerisiyle çelişiyordu (kaynakta + ölçümle doğrulandı).** Aşama 1 baytlarında blok Run sonunda `-Mode Recover -RunEvidenceDir '<kanıt dizini>'`
+gösterirken koşucunun kanıta yazdığı `recovery.adim` (a) makbuz dosyası yok / okunamıyor / bayatken elle TEK komut veriyor ve yeni makbuzu Run kanıt dizininin **içine**
+(`<kanıt dizini>\d7-setup-receipt-kanittan.json`) yazdırıyordu; (b) makbuz güncelken `-Mode Recover -ReceiptFile <makbuz>` öneriyordu — blok aynı durumda "bu dosyayı -ReceiptFile ile
+VERMEYİN" der (Recover `recover-*` dizinini Run kanıt dizininde açar). Ölçüm: aşama 1 baytlarının koşumunda makbuz metni taşıyan 24 Run kanıtının 23'ünde (b), 1'inde (a) vardı.
+
+| Durum (Run kanıtı) | Aşama 1 koşucu metni | R04-b koşucu metni (`recovery.adim`) | Blok Run sonu ekranı |
+|---|---|---|---|
+| kanıtta makbuz metni VAR, makbuz dosyası güncel | `-Mode Recover -ReceiptFile <makbuz>` | `… Recover yalnız AYRI owner onayıyla başlatılır — owner bloğunun şu seçeneğiyle: -Mode Recover -RunEvidenceDir '<bu koşumun kanıt dizini>'` + "Run kanıt dizininin DIŞINDA kardeş bir dizine yazar; doğrulama tutmazsa Recover BAŞLAMAZ" + "Run kanıt dizinine dosya YAZILMAZ" + "(durumu: VAR — koşucunun bellekteki son makbuzuyla EŞİT) `-ReceiptFile` ile VERİLMEZ" | aynı seçenek + "… VAR — … EŞİT — bu dosyayı -ReceiptFile ile VERMEYİN" |
+| kanıtta makbuz metni VAR, dosya YOK / OKUNAMIYOR / BAYAT | elle TEK komut (Run dizininin içine) + `-ReceiptFile '<yeni makbuz>'` | aynı seçenek; durum yalnız bilgi: "YOK (… · setup.durum=…)" / "OKUNAMIYOR (…)" / "BAYAT (… farklı alan(lar): …; sonradan eklenen kimlikleri içermeyebilir → bu dosyayla Recover eksik kapanış yapabilir)" | aynı seçenek + dosyanın durumu |
+| kanıtta makbuz metni YOK, dosya okunabilir | `-Mode Recover -ReceiptFile <makbuz>` | değişmedi (bloğun aynı dalı; koşucunun kendi Run'ında oluşmaz — makbuz yokken makbuz yolu da verilmez; saf fonksiyon dalı) | `-Mode Recover -ReceiptFile <makbuz>` |
+| kanıtta makbuz metni YOK, dosya yok | "bu koşumda makbuz YOK … (K-7)" | **aynen** (seçenek / komut yok) | SOMUT ENGEL |
+
+Elle komut ve `receiptFromEvidenceCommand` koşucudan **kaldırıldı**; Run kanıt dizininin içine dosya yazdıran komut **hiçbir dalda** yoktur. Blokta yalnız METİN: Run sonu satırı
+"(kanıttaki kurtarma adımı da bu seçeneği gösterir)". **Elle komutu iki kabukta koşan eski kalemin kaldırılma gerekçesi:** komut artık hiçbir çıktıda yok; ölçtüğü yol (makbuzun
+kanıttaki `recovery.makbuzJson`'dan yazılması) bloğa geçti ve blok öz-testi RG-1'de (sahte koşucu kanıtı; iki kabuk) ölçülüyor. Koşucu öz-testindeki kalem (Z19-b) kaldırılmadı,
+**yeniden yazıldı**: RG-1'in ölçmediği şeyi — **gerçek koşucunun yazdığı kanıtla** çıkarmayı — ölçer (aşağıda).
+
+**D-6'daki ikinci kusurun D-7 karşılığı (kaynak + ölçüm): YOK.** D-6 koşucusu Recover'da makbuza `residueFiles` yazıyordu; D-7 koşucusunun `recoverMode`'unda makbuz yazımı
+yoktur (makbuz yazımlarının tamamı Run'dadır; T-14 statik: `recoverMode` kaynağında `writeJson` / `saveReceipt` / `writeFileSync` / `appendFileSync` yok) ve bloğun kardeş dizine
+yazdığı makbuzun baytları gerçek Recover'dan önce = sonra ölçüldü (Z19-b, iki kabukta). Bu nedenle D-7 bloğuna salt okunur bayrak ve Recover sonrası makbuz ölçümü **eklenmedi**
+(blokta yalnız metin + pin).
+
+**Öz-testler — R04-b BAYTLARI** (koşucu `20DC82E2…`, koşucu öz-testi `466EC3EF…`, blok `01D5EA53…`, blok öz-testi `8A5CE9F3…`, sahte API `BEF6E732…` — değişmedi).
+**[R04-c:** bu tablodaki "son baytlar" ifadesi **R04-b baytları** demektir. Koşucu, koşucu öz-testi ve sahte API R04-c'de değişmedi (bu satırların sonuçları o dosyaların
+bugünkü baytları için de geçerlidir; yeniden koşulmadı); **blok ve blok öz-testi R04-c'de değişti** — bu tablodaki blok öz-testi sayıları (84/84, negatif 83/84 ve 73/84)
+R04-b blok baytlarına aittir; son baytların sonuçları aşağıdaki "R04-c (aşama 3)" tablosundadır.**]**
+
+| Koşum | Sonuç | Kanıt (`asama2\`) |
+|---|---|---|
+| `d7-selftest.js` — son baytlar | **88/88 PASS**, çıkış 0 (87 + T-14; Z18, Z19-b, Z20-d, C-1 değişti; T-13 PASS); kendi tek kullanımlık Postgres (postgres:16-alpine, 127.0.0.1 yüksek port, `_test` adlı DB; şema R27 çalışma ağacının `schema.prisma` kopyasından `db push --skip-generate`), `D7T_LIB_ROOT` = canlı olmayan R27 çalışma ağacı; koşum öncesi FreeVirtualMemory ≈ 31 GB; betik sha256'ları önce = sonra | `d7\test\d7-selftest-son.log` (+ `.bellek`, `.sha-once`, `.sha-sonra`) |
+| `d7-owner-block-selftest.ps1` — son baytlar, bu belgenin son hâliyle (G-2 / G-6 belgeyi okur) | **84/84 PASS** Windows PowerShell 5.1 · **84/84 PASS** PowerShell 7 (PIN-1 9/9, digest `16D95F54…` = `$ExpPackage`); sayı değişmedi; O-8 değişti; betik sha256'ları önce = sonra | `d7\test\blok-oz-test-son2-winps51.log`, `…-pwsh7.log`, `…-sha-once.txt`, `…-sha-sonra.txt` (belge R04-b eklerinden ÖNCE aynı betik baytlarıyla: `blok-oz-test-son-*.log`, 84/84 ×2) |
+| Pin · ayrıştırma — son baytlar | 9 pin uyuşmazlık 0, digest `16D95F54…` = `$ExpPackage`; iki ps1 ayrıştırma hatası 0 (iki kabuk), `node --check` 0 (dört js), ps1 UTF-8 BOM'lu, tüm betiklerde CR 0 (LF) | `d7\test\son-pin-dogrulama.log`, `d7\test\son-parse-iki-kabuk.log` |
+| **Negatif — koşucu öz-testi (yeni) · aşama 1 ucu aynası** (`git archive 553f199b`: koşucu `AB38AC97…`, blok `C52CBDA8…`) | **83/88**, çıkış 1 — FAIL = tam olarak **Z18, Z19-b, Z20-d, C-1, T-14** (5; yeni + değişen kalemlerin tamamı) | `d7\neg\neg-kosucu-asama1-ucu-553f199b.log`, `neg-ayna\asama1-ucu-553f199b-kurulum.txt` |
+| **Negatif — koşucu öz-testi (yeni) · taban aynası** (`git archive 549b8344`: koşucu `4446C256…`, blok `EF3FCF08…`) | **82/88**, çıkış 1 — FAIL = **Z18, Z19-b, Z20-d, C-1, T-13, T-14** (6; aşama 1'in T-13'ü dahil) | `d7\neg\neg-kosucu-taban-549b8344.log`, `neg-ayna\taban-549b8344-kurulum.txt` |
+| **Negatif — blok öz-testi (yeni) · aşama 1 ucu aynası** (aynadaki ESKİ belgeyle) | **83/84**, çıkış 1, iki kabukta aynı küme — FAIL = **O-8**; PIN-1 PASS (aynada eski pin + eski koşucu tutarlı) | `d7\neg\neg-blok-asama1-ucu-553f199b-winps51.log`, `…-pwsh7.log` |
+| **Negatif — blok öz-testi (yeni) · taban aynası** (aynadaki ESKİ belgeyle) | **73/84**, çıkış 1, iki kabukta aynı küme — FAIL = **O-8, RG-1 … RG-10** (11); PIN-1 PASS | `d7\neg\neg-blok-taban-549b8344-winps51.log`, `…-pwsh7.log` |
+| Ara koşum (son baytlar DEĞİL; sonuç sayılmaz) | koşucu öz-testi ara 1: 88/88 (C-1'in "seçenek ölçülen Run kanıtı" eşiği 5 iken; ölçülen 24 → eşik 15'e çıkarıldı, başka değişiklik yok); blok öz-testi ara 1: 84/84 iki kabukta | `d7\test\d7-selftest-ara1.log`, `d7\test\blok-oz-test-ara1-*.log` |
+
+**Gerçek Run kanıtıyla çıkarma (kalıcı öz-test kalemi — Z19-b; ad-hoc değil).** Koşucu öz-testinin ürettiği GERÇEK Run kanıtı (çıkış 6: makbuz dosyası gösterimden sonra yazılamaz
+hale geldi, kapatma 500 → portal açık) kopyalanarak tamamlanmış bir Run kanıt dizini kurulur — `owner-block.json`, `goref-consumed.json` ve GO defteri satırı bloğun Run'da yazdığı
+biçimde, `SHA256-MANIFEST.txt` bloğun **kendi** `Write-Manifest` fonksiyonuyla. Bloğun çıkarma fonksiyonları (AST ile yüklenir; bloğun akışı çalışmaz) **iki kabukta** koşulur.
+Ölçülen (son baytlar, iki kabukta da): kaynak doğrulama (`Test-RunEvidenceSource`) geçti (manifestte 3 dosya); `New-RecoverInputFromRun` makbuzu Run dizininin **kardeşine** yazdı
+(tek kardeş dizin); dosyanın baytları = kanıttaki `recovery.makbuzJson`'un UTF-8 baytları (991 bayt; `runnerMessageIds` dahil; BOM yok, CR yok); `RECOVER-GIRDI-KAYDI.json` kaynak
+kanıt sha256 + makbuz sha256 / bayt + runId + kayıt türünü taşıyor; Run kanıt dizini (dört dosya, alt dizin yok) ve öz-testin kanıt dosyası **değişmedi**; GERÇEK koşucunun
+`readReceiptForRecover` kapısı dosyayı kabul etti; GERÇEK koşucunun Recover'ı bu dosyayla (test Postgres'ine karşı) **kimlik bağı OK** ile koştu (çıkış 3: portal pasif + erişim
+kapalı, yeni giriş 401, P7-MSG-KEPT makbuzdaki koşucu id'leriyle PASS, personel pasif); makbuz baytları Recover'dan önce = sonra.
+
+Yeni / değişen ölçütler: **Z18** (değişti; (v) birim — dört durumun adımı; elle komut ve `-ReceiptFile` önerisi makbuz güncelken de yok) · **Z19-b** (değişti; yukarıdaki uçtan uca
+ölçüm) · **Z20-d** (değişti; BAYAT makbuz: aynı seçenek + durum bilgisi) · **C-1** (değişti; taranan tüm kanıtlarda elle komut yok ve makbuz metni olan her Run adımı seçeneği
+gösterir — son koşumda 24 Run kanıtı) · **T-14** (yeni; statik: koşucuda elle komut / `receiptFromEvidenceCommand` yok, Recover makbuza yazmaz; blok aynı seçeneği gösterir, yorum dışı
+blok kaynağında "elle komut" ifadesi yok) · **O-8** (değişti; Run sonu metni "kanıttaki kurtarma adımı da bu seçeneği gösterir", "elle komut" ifadesi yok).
+
+**Ölçülmeyenler / sınır (R04-b).** (1) **Gerçek `Invoke-RecoverMode` ile gerçek koşucunun TEK zincirde koşumu ölçülmedi:** blok canlı DB adını (`hukuk_db`) ve canlı yolları kendisi
+kurar; zincir iki yarıda ölçüldü — blok → sahte koşucu (RG-1) ve bloğun çıkarma fonksiyonları + gerçek koşucu (Z19-b). (2) Tamamlanmış Run kanıt dizinindeki `owner-block.json`,
+`goref-consumed.json` ve GO defteri satırı Z19-b'de öz-testin yazdığı eşdeğerlerdir (bloğun gerçek Run'ı gerçek koşucuyla koşulmadı); manifest bloğun kendi fonksiyonuyla yazıldı.
+(3) Kanıtta makbuz yokken `-ReceiptFile` dalı (bloğun `elseif` dalı) yalnız kanıt okunamadığında / makbuz metni yokken görülür; koşucunun kendi Run'ında oluşmaz (birim: Z18 (v)).
+(4) 5xx gözlem metni uçtan uca ölçülmedi (birim + statik: T-13 — değişmedi). (5) Manifestin bağımsız çapası yok; ikinci çıkarma / ikinci Recover kodla engellenmez — değişmedi.
+(6) Canlıda hiçbiri koşulmadı; B3 açık (değişmedi).
+
+#### R04-c (aşama 3; 2026-10-05) — odak doğrulamanın beş somut noktası (K1–K5)
+
+Kapsam (owner: "Yeni genel inceleme turları açma. Yalnız bulunan somut kusurun gerektirdiği düzeltme ve testi yap"; D-6 §13.9 "R04-c" ile aynı ilke): aşama 2 uç baytlarının
+(`bcea51c1`) odak doğrulaması beş somut nokta bıraktı (kanıt: `…\asama2\dogrulama-odak\` — `tur2-*.log`, `odak-probe.ps1`). Beşi de bu aşamada önce kaynakta ve o günlüklerde
+doğrulandı (iki kabukta), sonra giderildi. **Değişen: yalnız owner bloğu, blok öz-testi ve bu belge.** Koşucu, sahte API ve koşucu öz-testi **değişmedi** → `PkgPins` ve
+`$ExpPackage` **değişmedi** (§7 "R04-c pin ölçümü"); Postgres açılmadı, koşucu öz-testi **koşulmadı**. Kapılar, Run sırası, node çağrısı ve **çıkış kodları değişmedi** (yeni
+DUR'lar mevcut kapı kodu 90 ile biter); Recover yine **soru sormaz**. Canlı Run / Recover **koşulmadı**, owner bloğu canlı modda **çalıştırılmadı**; canlı ağaç, canlı DB,
+canlı `.env`, canlı portlar ve canlı kanıt dizinlerine dokunulmadı. Kanıt kökü: `D:\Development\HUKUK_YAZILIMI\HY_R27_AGENT_EVIDENCE\r04\d6-d7-recover-hazirlik\asama3\`
+(`d7\`, `d7\neg\`, `neg-ayna\`, `odak-yeniden\`).
+
+| # | Odak bulgusu (aşama 2 baytları; probe kalemi) | Düzeltme (blok) | Blok öz-testi |
+|---|---|---|---|
+| K1 | Recover bitiş ekranındaki "PORTAL ERİŞİMİ … KAPALI" satırı yalnız DB durumundan kuruluyor ve **her zaman yeşil** basılıyordu; aynı kanıtta yeni giriş reddi FAIL (kapanıştan sonra giriş HTTP 200) ya da ölçülemeyen iken de (A13-m, A13-m-akis: çıkış 6, satır yeşil) | `Get-RecoverPortalAccess` DB KAPALI iken kanıttaki P7-C3L / P7-C3D verdict'lerini okur; gösterilen ad (`goster`) ve renk (`renk`) bunlara bağlıdır (aşağıdaki tablo). "Mevcut oturum reddi Recover'da ÖLÇÜLEMEZ" metni ve çıkış kodu aynı | **RG-9** (değişti): 16 koşum; metin + satır rengi; yeşil satır sayısı = 1 |
+| K2 | `-ReceiptFile <Run dizinindeki makbuz>` reddedilmiyordu: node 1, `recover-*` Run dizininde açıldı → **Run kanıt dizini değişti** (A12-c) | `Assert-ReceiptFileRoute`: makbuzun dizininde `SHA256-MANIFEST.txt` varsa ve o dizindeki kanıtta makbuz metni (`recovery.makbuzJson` — Run sonu ekranının `-RunEvidenceDir` önerdiği koşulun aynısı) varsa **DUR** (90; node çağrılmaz, Recover bilgi metni gösterilmez) + "-Mode Recover -RunEvidenceDir '<dizin>' kullanın". Manifest var ama kanıtta makbuz metni yok / kanıt okunamıyor (tek kalan yol) → izin; "bu yol recover-* dizinini Run kanıt dizinine açar — orijinal kanıt dizini DEĞİŞİR; manifest kapsamı dışında kalır" Recover başında (UYARI / DİKKAT), Recover bitişinde (NOT) ve Run sonu ekranının `-ReceiptFile <makbuz>` dalında yazılır (D-7 koşucusu Recover'da makbuza yazmaz — D-6'daki "makbuzu yerinde yeniden yazabilir" ifadesi bu pakette yoktur). Manifesti olmayan dizin: davranış değişmedi | **RG-12** (yeni) |
+| K3 | Makbuz geri okuma doğrulamasından sonra, node başlamadan önce değişirse fark edilmiyordu: node 1, kayıttaki `makbuzSha256` ≠ koşucunun okuduğu (A9-e); D-7'de Recover'dan sonra makbuzun değişip değişmediği ekranda gösterilmiyordu | `New-RecoverInputFromRun` yol + kayda yazılan makbuz özetini döndürür; `Assert-RecoverInputUnchanged` makbuzu **iki noktada** yeniden ölçer (Recover kanıt dizini açılmadan önce · `Invoke-Node` satırının hemen öncesinde); fark / okunamadı → dizin KULLANILMAZ + DUR (90; node çağrılmaz). Recover'dan sonra "RECOVER GİRDİSİ (makbuz): Recover'dan sonra DEĞİŞMEDİ / DEĞİŞTİ …" satırı (D-6 R04-b satırının ikizi; çıkış kodu değişmez) | **RG-13** (yeni); **RG-1**, **RG-10** (değişti) |
+| K4 | Manifest yokken (Run beyan adımında kesilmiş) DUR metni kalan yolu söylemiyordu (A4-p-metin) | DUR metnine eklendi: "Run tamamlanmamış olabilir (manifest yazılmadan kesilmiş): bu durumda bu paketle tanımlı tek yol, kanıt dizinindeki makbuz dosyası okunabiliyorsa '-Mode Recover -ReceiptFile <makbuz>' — bu yol Run kanıt dizinine yazar; karar owner / CLIENT." + kanıt dizinindeki makbuz dosyasının ölçülen durumu (VAR … EŞİT / YOK / OKUNAMIYOR / BAYAT; kullanılamıyorsa "bu paketle Recover BAŞLATILAMAZ", bayatsa "Recover ÖNERİLMEZ"). Kapı aynı (yalnız metin + salt okuma ölçümü) | **RG-14** (yeni) |
+| K5 | Makbuz yazıldıktan sonraki adımda **beklenmeyen** istisna (ör. okuma kapısında dosya kilidi) olursa dizin KULLANILMAZ diye işaretlenmiyor ve o dizindeki makbuz sonradan `-ReceiptFile` ile kabul edilebiliyordu (A16-a) | `New-RecoverInputFromRun` içinde yazımdan sonraki tüm adımlar (yazım, geri okuma, okuma kapısı, kaynağın yeniden ölçümü, kayıt yazımı) **tek try/catch** içinde: "Recover girdisi hazırlanamadı: yazımdan sonraki adımda BEKLENMEYEN hata (<tür>) …" + işaret + DUR. İşaretleme tek fonksiyonda (`Set-RecoverInputUnusable`) | **RG-15** (yeni) |
+
+**K1 — Recover bitiş ekranı (güncel).** `PORTAL ERİŞİMİ (son ölçüme göre, bu Recover'ın kanıtından; DB durumu + yeni giriş reddi ölçütleri): <ad> — <ölçülen>. Yeni giriş reddi
+kanıttaki P7-C3L/D satırlarından okunur; mevcut oturum reddi Recover'da ÖLÇÜLEMEZ.` Son ölçüm sırası değişmedi (`afterMeasure` → `after` → `before`).
+
+| Gösterilen ad | Renk | Koşul |
+|---|---|---|
+| `AÇIK` — "portal hesabı AKTİF (…)" / "portal kapanışı TAMAMLANMADI: hesap pasif ama müvekkil erişim bayrağı açık (…)" | kırmızı | son ölçümde `isActive=true` ya da `hasPortalAccess=true` (P7-C3L/D ne olursa olsun) — metin değişmedi |
+| `KAPALI (DB + yeni giriş reddi PASS)` — "<DB metni>; P7-C3L=PASS, P7-C3D=PASS" | **yeşil** | DB kapalı (hesap pasif + bayrak kapalı) **ve** iki ölçüt PASS — yeşil **yalnız** bu durumda |
+| `DB'de kapalı AMA yeni giriş reddi FAIL (P7-C3L=…, P7-C3D=…) — erişim kapalı SAYILMAZ` — "<DB metni>" | **kırmızı** | DB kapalı; ölçütlerden biri FAIL (aynı kimlikli birden çok satır varsa biri FAIL ise FAIL) |
+| `DB'de kapalı; yeni giriş reddi ÖLÇÜLEMEDİ (P7-C3L=…, P7-C3D=…)` — "<DB metni>" | **sarı** | DB kapalı; FAIL yok ve en az biri PASS değil: ÖLÇÜLEMEYEN / satır yok / satır tek değil / tanınmayan değer. **Portal hesabı satırı DB'de yokken** de bu satır gösterilir (koşucu hesap yokken giriş reddini ölçmez — kaynaktan: `closePortal` hesap-yok dalı C3 satırı üretmeden döner) |
+| `ÖLÇÜLEMEDİ` — somut neden | sarı | Recover kanıtı okunamıyor · `portalClose` yok · geç oluşma dışlanamadı · kapanış adımı hatası · DB değeri yok — değişmedi |
+
+**Öz-testler — SON BAYTLAR** (blok `04BE4AC4…`, blok öz-testi `94C315E8…`; koşucu `20DC82E2…`, koşucu öz-testi `466EC3EF…`, sahte API `BEF6E732…` — **değişmedi**):
+
+| Koşum | Sonuç | Kanıt (`asama3\`) |
+|---|---|---|
+| `d7-owner-block-selftest.ps1` — son baytlar, bu belgenin son hâliyle (G-2 / G-6 belgeyi okur) | **88/88 PASS** Windows PowerShell 5.1 · **88/88 PASS** PowerShell 7 (PIN-1 9/9, digest `16D95F54…` = `$ExpPackage`); 84 + 4 (RG-12 … RG-15) = 88; RG-1, RG-9 ve RG-10 değişti; betik sha256'ları önce = sonra | `d7\blok-oz-test-son-winps51.log`, `…-pwsh7.log`, `…-sha-once.txt`, `…-sha-sonra.txt` |
+| **Negatif — blok öz-testi (yeni) · aşama 2 ucu aynası** (`git archive bcea51c1`: blok `01D5EA53…`, koşucu `20DC82E2…`; aynadaki ESKİ belgeyle) | **81/88**, çıkış 1, iki kabukta aynı küme — FAIL = tam olarak **RG-1, RG-9, RG-10, RG-12, RG-13, RG-14, RG-15** (7; yeni + değişen kalemlerin tamamı; her biri senaryonun ölçülen eski davranışıyla FAIL: ör. RG-1 "DEĞİŞMEDİ" satırı yok, RG-12 node 1 + Run dizini değişti, RG-13 node 1, RG-15 işaret 0); PIN-1 PASS (aynada pin + koşucu tutarlı) | `d7\neg\neg-blok-bcea51c1-winps51.log`, `…-pwsh7.log`, `…-sha-once.txt`, `neg-ayna\bcea51c1-kurulum.txt` |
+| Odak probe'un yeniden koşumu (`asama2\dogrulama-odak\odak-probe.ps1` **değiştirilmeden**; yeni blok baytlarına karşı; 109 kalem) | PowerShell 7: DİKKAT **1** (A1-portal — K1'in beklenen sonucu: probe, kapalı DB + C3 satırı olmayan kanıt için yeşil bekliyordu; artık sarı) · Windows PowerShell 5.1: DİKKAT **2** (A1-portal + A4-i — aşağıda "ölçülmeyenler (5)"). **A9-e, A12-c, A16-a artık BEKLENEN** (node 0, çıkış 90 · Run dizini değişmedi · KULLANILMAZ işareti var); A13-m-akis satırı kırmızı; çapraz kabuk (Run bir kabukta, `-RunEvidenceDir` Recover diğerinde) iki yönde başladı. Aşama 2 baytlarında aynı probe: PS 7 DİKKAT 3 (A9-e, A12-c, A16-a), WinPS 5.1 DİKKAT 4 (+ A4-i) | `odak-yeniden\asama3-d7-pwsh7.log`, `…-winps51.log`, `…-capraz.log`, `NOT.txt` |
+| Ayrıştırma — son baytlar | iki ps1: ayrıştırma hatası 0 (Windows PowerShell 5.1 ve PowerShell 7); UTF-8 BOM'lu, CR 0 (LF) | `parse-iki-kabuk-son.log` |
+| `PkgPins` / `$ExpPackage` | **DEĞİŞMEDİ** — iki kabukta ölçüldü (§7 "R04-c pin ölçümü") | `pin-degismedi.log` |
+| `d7-selftest.js` (koşucu öz-testi) | bu aşamada **KOŞULMADI** — koşucu, sahte API ve koşucu öz-testi değişmedi (sha256'ları aşama 2 ile aynı: `00-baslangic-durum.txt`); son ölçüm **R04-b baytlarında** 88/88 (yukarıdaki R04-b tablosu). Postgres açılmadı | — |
+| Ara koşumlar (belge düzenlenmeden önce; sonuç sayılmaz) | deneme 1: 88/88 iki kabukta · ara: 88/88 iki kabukta (son ps1 baytları; belge R04-c eklerinden önce) | `d7\deneme1-*.log`, `d7\ara-blok-oz-test-*.log` |
+
+Yeni / değişen ölçütler (her ret kalemi **somut neden metnini** ister; kaynak sahte koşucuyla GERÇEK `Invoke-RunMode`'un ürettiği Run kanıt dizinidir): **RG-1** (değişti; K3) —
+Recover'dan sonra makbuz baytları / sha256 = kayıt ve "RECOVER GİRDİSİ (makbuz): Recover'dan sonra DEĞİŞMEDİ (sha256 önce = sonra = <özet>" satırı bitiş satırından sonra ·
+**RG-9** (değişti; K1) — sahte koşucunun Recover kanıtına `EXSTUB_EXTRA` ile P7-C3L / P7-C3D satırları verilir; 16 koşumda tek satır, çıkış kodu değişmeden (0 / 1 / 3 / 6), tek
+node çağrısı; AÇIK ×2 kırmızı (P7-C3L/D PASS olsa da), KAPALI + PASS/PASS yeşil, FAIL varyantları ×4 kırmızı (FAIL/FAIL · PASS/FAIL · FAIL/ÖLÇÜLEMEYEN · aynı kimlikli iki
+satırdan biri FAIL), ÖLÇÜLEMEDİ varyantları ×4 sarı (ÖLÇÜLEMEYEN/PASS · satır yok · tek satır eksik · aynı kimlikli iki PASS satırı), hesap yok sarı, ÖLÇÜLEMEDİ ×4 sarı; yeşil
+satır sayısı 1; renk `Write-Host` kaydının `ForegroundColor` alanından ölçülür · **RG-10** (değişti; statik) — `$rin = New-RecoverInputFromRun $runEvidenceDir`; silme / üzerine
+yazma taraması ve "soru komutu yok" (AST) taraması yeni üç yardımcı fonksiyonu da kapsar; `Invoke-RunMode` bunları çağırmaz · **RG-12** (yeni; K2) — (a) manifest + makbuz metni
+var → DUR, node 0, Recover bilgi metni gösterilmedi, Run dizini (dosya adları + sha256) değişmedi, somut `-RunEvidenceDir '<dizin>'` yönlendirmesi; (a2) yönlendirilen yol aynı
+dizinle çalışır (node 1, makbuz kardeş dizinde); (b) GERÇEK Run (kanıtta makbuz metni yok): Run sonu ekranı `-ReceiptFile <makbuz>` + DİKKAT cümlesi; `-ReceiptFile` Recover
+başlar (node 1), UYARI / DİKKAT bitiş satırından önce, NOT sonra; ölçüm: `recover-*` Run dizininde açıldı → Run dizini değişti (makbuz dosyasının baytları değişmedi);
+(b2) kanıt okunamıyor → aynı uyarıyla izin · **RG-13** (yeni; K3) — (a) kayıt dosyası yazılırken makbuza bayt eklenir → ilk ölçüm noktası: DUR, node 0, `recover-*` açılmaz,
+işaret + neden, kayıttaki özet eski baytlara ait; o makbuz sonradan `-ReceiptFile` ile de reddedilir; (b) `Set-RunEnv` sırasında bayt eklenir → ikinci ölçüm noktası ("node
+çağrısından hemen önce"): node 0, işaret, ortam temiz; (c) özet ölçülemezse "şimdi=okunamadı"; (d) statik: iki ölçüm, ikincisi `$rc = Invoke-Node` satırının hemen öncesinde;
+(e) koşucu taklidi makbuzu Recover'da yeniden yazarsa (`EXSTUB_REWRITE=force`) bitiş ekranı kırmızı "… DEĞİŞTİ ya da okunamadı (sha256 önce=<kayıttaki> · sonra=<yeni>) …" der,
+çıkış kodu değişmez · **RG-14** (yeni; K4) — DUR metni + makbuz dosyasının dört durumu (okunabilir / yok / bozuk / bayat); kapı aynı (kardeş dizin yok, node 0); (e) yönlendirilen
+`-ReceiptFile` manifesti olmayan dizinde başlar (davranış değişmedi) · **RG-15** (yeni; K5) — okuma kapısı (IOException) ve geri okuma karşılaştırması
+(InvalidOperationException) istisna taklitleri → işaret + DUR, kayıt yok, node 0; işaretli dizindeki TAM makbuz `-ReceiptFile` ile de reddedilir; statik: dış try/catch.
+
+**Ölçülmeyenler / sınır (R04-c).** (1) **K3'ün kapatamadığı aralık:** bloğun son ölçümü ile koşucunun makbuzu kendi okuması arasındaki aralık blokla kapatılamaz (koşucu
+değişmedi); Recover'dan sonraki ölçüm ayrıca gösterir. Ölçüm sha256 eşitliğidir: dosya değiştirilip **aynı baytlara** geri getirilirse görülmez. (2) **K2 kapısı makbuzun kendi
+dizinine bakar:** makbuz Run kanıt dizininin bir **alt dizinindeyse** kapı devreye girmez (`recover-*` o alt dizinde açılır); makbuz başka bir dizine kopyalandıysa Run dizini
+zaten değişmez. Makbuz yalnız dosya adıyla (dizinsiz) verilirse blok dizini çözemez ve node çağrılmadan durur (önceki davranış; odak A10-c). (3) **K2'nin izin verdiği iki
+durumda** (manifest yok · manifest var + kanıtta makbuz metni yok / kanıt okunamıyor) `-ReceiptFile` **Run kanıt dizinine yazar** (`recover-*` dizini): owner şartı "makbuz
+tamamlanmış Run kanıt dizininin dışına yazılır, orijinal kanıt ve manifest değişmez" bu yolda **karşılanmaz**; blok bunu ekrana yazar ama engellemez (bu paketle tanımlı tek
+yol). Karar owner / CLIENT'a aittir. (4) **K1 — hesap satırı yok → sarı** bir tasarım kararıdır (satır "giriş reddi ölçülmedi" der; yeşil yalnız ölçülmüş ret içindir). Hesap
+satırı yokken müvekkil erişim bayrağı açık (`hasPortalAccess=true`) durumu ayrıca adlandırılmadı (odak A13-g2 gözlemi; bu aşamanın beş noktasında değil) — satır sarıdır ve değer
+metindedir. (5) **A4-i (odak probe; yalnız Windows PowerShell 5.1):** manifestte aynı dosya büyük/küçük harf farkıyla iki kez geçerse PowerShell 7 reddeder, Windows PowerShell
+5.1 kabul eder (iki satırın özeti de dosyaya eşit olmak zorundadır — atlatma değil, fazladan girdi). Beş nokta arasında değildir; **dokunulmadı**. (6) Doğrulanmış (işaretsiz)
+kardeş dizindeki makbuzun sonradan `-ReceiptFile` ile verilmesi (odak A17-b) ve aynı Run dizini ile ikinci `-RunEvidenceDir` (A17-a) kodla engellenmez — değişmedi. (7) Gerçek
+`Invoke-RecoverMode` ile gerçek koşucunun tek zincirde koşumu ölçülmedi (R04-b sınırı; değişmedi): K1'in okuduğu P7-C3L/D satırları blok öz-testinde sahte koşucunun
+kanıtındadır (kimlik ve verdict değerleri koşucu kaynağından okundu: `judge401` → PASS / FAIL / UNMEASURED; hesap yokken satır yok); "… DEĞİŞTİ" satırı yalnız koşucu taklidiyle
+ölçüldü (D-7 gerçek koşucusu Recover'da makbuza yazmaz — Z19-b). (8) Canlıda hiçbiri koşulmadı; owner bloğu canlı modda çalıştırılmadı; B3 açık (değişmedi).

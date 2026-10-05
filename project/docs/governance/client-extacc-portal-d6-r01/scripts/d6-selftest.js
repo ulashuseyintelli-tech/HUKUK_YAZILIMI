@@ -58,6 +58,18 @@
  *           sıra girdileri B-TG, T1-TG, B-TJ, T1-TJ; T2 a = c ≠ b dalında b > c → ALTINDA notu; 33 girdi, 14 hücre) · Z23-l (G3: opaque token + guard kusur
  *           taklidi → T2 değil TJ; sahte API opaque token ürün davranışı değildir — ürün guard'ı JWT olmayan token'ı :36'da DB'den önce reddeder) · T-9 (çağrı
  *           5 bağımsız değişkenli; Run TJ girdisini claimDurum OKUNAMADI'dan kurar).
+ * R04     : (owner talimatı madde 5 — "R04-recover-girdi") YENİ: T-11 (birim + statik; STATİK bölümde, disposable DB / sahte API senaryosu GEREKTİRMEZ)
+ *           ret ölçütlerinde (P6-C3L/D · P6-C4L/D) 503 / 429 dışındaki 5xx gözlemi "ret kanıtlanmadı; neden kesinleşmedi (ürün kusuru olarak sınıflanmadı)";
+ *           verdict ve çıkış kodu değişmedi (koşum sonucu paket belgesi §13.9'da).
+ * R04-b   : (aşama 2; iki somut kusur) DEĞİŞEN: Z21-b (kanıtta makbuz varken adım `-Mode Recover -RunEvidenceDir '<kanıt dizini>'`; diskteki makbuzun durumu
+ *           yalnız bilgi; kanıtta makbuz yokken dosya okunabiliyorsa `-ReceiptFile <makbuz>`, değilse SOMUT ENGEL) · Z21-c (elle TEK komut KALDIRILDI; yerine
+ *           GERÇEK koşucu kanıtının kopyasından kurulan tamamlanmış Run kanıt dizininde bloğun çıkarma fonksiyonları — AST ile; Write-Manifest +
+ *           Test-RunEvidenceSource + New-RecoverInputFromRun — Windows PowerShell 5.1 VE PowerShell 7'de koşulur; kardeş dizindeki makbuzla GERÇEK Recover
+ *           kimlik bağı OK ile koşar) · Z22-e (BAYAT makbuz: aynı seçenek + durum bilgisi) · C-1 (hiçbir Run kanıtında elle komut yok; kanıtta makbuz metni
+ *           varsa adım -RunEvidenceDir seçeneğini gösterir). YENİ: Z26 (doğrulanmış Recover girdisi `D6_RECEIPT_READONLY=1` ile Recover'da YENİDEN YAZILMAZ;
+ *           kalan yollar Recover kanıtında; bayrak yokken eski davranış) · T-12 (statik: koşucuda elle komut / `receiptFromEvidenceCommand` yok; bayrak yalnız
+ *           Recover'da okunur; blok aynı seçeneği gösterir ve bayrağı yalnız -RunEvidenceDir yolunda verir). Elle komutu iki kabukta koşan eski ölçüm
+ *           kaldırıldı: komut artık hiçbir çıktıda yok; makbuzu bloğun yazdığı yol blok öz-testi RG-1'de (sahte koşucu kanıtı) ve burada (gerçek koşucu kanıtı) ölçülür.
  */
 const { spawn, spawnSync, execFileSync } = require('child_process');
 const fs = require('fs'); const path = require('path'); const os = require('os'); const crypto = require('crypto');
@@ -562,46 +574,101 @@ const CLOSE_NO_S = CLOSE.filter((id) => id !== 'P6-C4L' && id !== 'P6-C4D' && id
     const aOk = adimOf(out21({ receipt: memR }), okP, 'run');
     const aGone = adimOf(out21({ receipt: memR, receiptWriteError: 'ENOENT: yazılamadı' }), goneP, 'run'); const aDir = adimOf(out21({ receipt: memR }), dirP, 'run'); const aBad = adimOf(out21({ receipt: memR }), badP, 'run');
     const aNone = adimOf(out21({}), null, 'run'); const aRec = adimOf(out21({}), goneP, 'recover');
+    const aFileOnly = adimOf(out21({}), okP, 'run');   // R04-b: kanıtta makbuz YOK ama makbuz dosyası okunabilir (koşucunun kendi Run'ında oluşmaz; bloğun aynı durumdaki dalı)
     const noCmd = (a) => !String(a.adim || '').includes('-ReceiptFile <makbuz>');
-    // R03-d (m4): "kullanılabilir yol" artık kanıttaki recovery.makbuzJson'dan yeni dosya yazan TEK komut + AYRI owner onayıyla -ReceiptFile '<yeni makbuz>'
-    const altPath = (a) => /— ama makbuz dosyası (YOK|OKUNAMIYOR|BAYAT) \(/.test(a.adim || '') && /bu makbuz dosyasıyla Recover ÖNERİLMEZ/.test(a.adim || '') && /Kullanılabilir yol: makbuzun son hâli bu kanıttaki `recovery\.makbuzJson` alanıdır/.test(a.adim || '')
-      && String(a.adim || '').includes('`(Get-Content -Raw -Encoding UTF8 -LiteralPath ') && String(a.adim || '').includes(').recovery.makbuzJson | Set-Content -Encoding UTF8 -NoNewline -LiteralPath ')
-      && /AYRI owner onayıyla `-Mode Recover -ReceiptFile '/.test(a.adim || '') && /^ÖNERİ \(yetki DEĞİL\)/.test(a.adim || '') && typeof a.makbuzJson === 'string';
+    // R04-b (aşama 2): kanıtta makbuz metni varken adım owner bloğunun Run sonu ekranıyla AYNI seçeneği gösterir — `-Mode Recover -RunEvidenceDir '<kanıt dizini>'`;
+    // elle komut (Get-Content … | Set-Content …), Run kanıt dizininin içindeki '…-setup-receipt-kanittan.json' yolu ve `-ReceiptFile <makbuz>` / `-ReceiptFile '<yol>'`
+    // önerisi YOK. Diskteki makbuz dosyasının durumu "(durumu: …)" içinde yalnız bilgi olarak yazılır.
+    const psq1 = (s) => `'${String(s).replace(/'/g, "''")}'`;
+    const rgOpt = (a, evDirTxt) => { const t = String(a.adim || '');
+      return t.startsWith('ÖNERİ (yetki DEĞİL): çıkış kodu Recover yetkisi değildir; önce kanıt incelenir. Recover yalnız AYRI owner onayıyla başlatılır — owner bloğunun şu seçeneğiyle: ')
+        && t.includes(`\`-Mode Recover -RunEvidenceDir ${evDirTxt}\``) && t.includes('Run kanıt dizininin DIŞINDA kardeş bir dizine yazar; doğrulama tutmazsa Recover BAŞLAMAZ') && t.includes('Run kanıt dizinine dosya YAZILMAZ')
+        && t.includes('`-ReceiptFile` ile VERİLMEZ') && !/Set-Content|Get-Content|setup-receipt-kanittan|-ReceiptFile <makbuz>|-ReceiptFile '/.test(t) && typeof a.makbuzJson === 'string'; };
+    const durumOf = (a) => (String(a.adim || '').match(/kanıt dizinindeki makbuz dosyası \(durumu: (.*)\) `-ReceiptFile` ile VERİLMEZ/) || [])[1] || '';
     const st21 = rfs ? [rfs(okP, memR), rfs(goneP, memR), rfs(dirP, memR), rfs(badP, memR), rfs(null, memR), rfs(okP, Object.assign({}, memR, { runId: '00000000' }))] : [];
-    check('Z21-b', 'makbuz dosyası durumu (birim): receiptFileState var → KULLANILABILIR (güncel) · yok → YOK · klasör → OKUNAMADI · bozuk / kayıt türü yanlış → OKUNAMADI · yol yok → YOL_YOK · başka runId → OKUNAMADI; Run adımı: makbuz kullanılabilir ve güncel → `-Mode Recover -ReceiptFile <makbuz>` önerilir (kanıtta makbuzJson); R03-d: makbuz YOK / klasör / bozuk → uygulanamayan komut ÖNERİLMEZ, "makbuz dosyası YOK|OKUNAMIYOR … bu makbuz dosyasıyla Recover ÖNERİLMEZ … bloktan Recover BAŞLATILAMAZ" + kanıttaki `recovery.makbuzJson`dan yeni dosya yazan TEK komut + AYRI owner onayıyla `-Mode Recover -ReceiptFile \'<yeni makbuz>\'` + yazma hatası metni; kanıtta makbuz da yoksa "SOMUT ENGEL" (komut yok); Recover adımı komut önermez',
+    check('Z21-b', 'makbuz dosyası durumu (birim): receiptFileState var → KULLANILABILIR (güncel) · yok → YOK · klasör → OKUNAMADI · bozuk / kayıt türü yanlış → OKUNAMADI · yol yok → YOL_YOK · başka runId → OKUNAMADI; R04-b Run adımı (bloğun Run sonu ekranıyla AYNI yön): kanıtta makbuz VAR → "… AYRI owner onayıyla başlatılır — owner bloğunun şu seçeneğiyle: `-Mode Recover -RunEvidenceDir \'<bu koşumun kanıt dizini>\'`" + "Run kanıt dizininin DIŞINDA kardeş bir dizine yazar; doğrulama tutmazsa Recover BAŞLAMAZ" + "Run kanıt dizinine dosya YAZILMAZ" + diskteki makbuzun durumu yalnız BİLGİ ("durumu: VAR — … EŞİT" / "YOK (dosya yok (ENOENT) · makbuz yazma hatası: …)" / "OKUNAMIYOR (…)") + "`-ReceiptFile` ile VERİLMEZ"; elle komut (Get-Content / Set-Content), "…-setup-receipt-kanittan.json" yolu, `-ReceiptFile <makbuz>` ve `-ReceiptFile \'<yol>\'` HİÇBİR dalda YOK (makbuz güncelken de); kanıtta makbuz YOK + dosya okunabilir → `-Mode Recover -ReceiptFile <makbuz>` (bloğun aynı dalı; makbuzJson yok); kanıtta makbuz YOK + dosya yok → "SOMUT ENGEL" (seçenek / komut yok); Recover adımı komut önermez',
       !!rfs && st21.map((x) => x.durum).join(',') === 'KULLANILABILIR,YOK,OKUNAMADI,OKUNAMADI,YOL_YOK,OKUNAMADI' && st21[0].guncel === true
-        && String(aOk.adim || '').includes('-Mode Recover -ReceiptFile <makbuz>') && aOk.makbuzDurumu === 'KULLANILABILIR' && !/BAYAT|FARKLI/.test(aOk.adim || '') && aOk.makbuzJson === JSON.stringify(memR, null, 1)
-        && [aGone, aDir, aBad].every((a) => noCmd(a) && altPath(a) && /bloktan Recover BAŞLATILAMAZ/.test(a.adim || '')) && /ENOENT: yazılamadı/.test(aGone.adim || '') && aGone.makbuzDurumu === 'YOK' && aDir.makbuzDurumu === 'OKUNAMADI' && aGone.makbuzDiskte === false
-        && noCmd(aNone) && !/-ReceiptFile/.test(aNone.adim || '') && /SOMUT ENGEL/.test(aNone.adim || '') && noCmd(aRec) && /İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR/.test(aRec.adim || '') && aRec.makbuzJson === undefined,
-      `fonksiyon=${!!rfs} · durumlar=${st21.map((x) => x.durum).join(',')} · var=${String(aOk.adim || '').slice(0, 90)} · yok=${String(aGone.adim || '').slice(0, 260)} · makbuzsuz=${String(aNone.adim || '').slice(0, 140)}`);
+        && rgOpt(aOk, '\'<bu koşumun kanıt dizini>\'') && durumOf(aOk) === 'VAR — koşucunun bellekteki son makbuzuyla EŞİT' && aOk.makbuzDurumu === 'KULLANILABILIR' && aOk.makbuzGuncel === true && !/BAYAT|FARKLI/.test(aOk.adim || '') && aOk.makbuzJson === JSON.stringify(memR, null, 1)
+        && [aGone, aDir, aBad].every((a) => rgOpt(a, '\'<bu koşumun kanıt dizini>\'')) && durumOf(aGone) === 'YOK (dosya yok (ENOENT) · makbuz yazma hatası: ENOENT: yazılamadı)' && /^OKUNAMIYOR \(/.test(durumOf(aDir)) && /^OKUNAMIYOR \(/.test(durumOf(aBad))
+        && aGone.makbuzDurumu === 'YOK' && aDir.makbuzDurumu === 'OKUNAMADI' && aGone.makbuzDiskte === false
+        && String(aFileOnly.adim || '').includes('(owner bloğu `-Mode Recover -ReceiptFile <makbuz>`)') && !/-RunEvidenceDir|Set-Content/.test(aFileOnly.adim || '') && aFileOnly.makbuzJson === undefined && aFileOnly.makbuzDurumu === 'KULLANILABILIR'
+        && noCmd(aNone) && !/-ReceiptFile|-RunEvidenceDir|Set-Content/.test(aNone.adim || '') && /SOMUT ENGEL/.test(aNone.adim || '') && aNone.makbuzJson === undefined
+        && noCmd(aRec) && !/-RunEvidenceDir/.test(aRec.adim || '') && /İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR/.test(aRec.adim || '') && aRec.makbuzJson === undefined,
+      `fonksiyon=${!!rfs} · durumlar=${st21.map((x) => x.durum).join(',')} · var: seçenek=${rgOpt(aOk, '\'<bu koşumun kanıt dizini>\'')} durum=[${durumOf(aOk)}] · yok: seçenek=${rgOpt(aGone, '\'<bu koşumun kanıt dizini>\'')} durum=[${durumOf(aGone)}] · klasör=[${durumOf(aDir).slice(0, 60)}] · yalnız dosya=${String(aFileOnly.adim || '').slice(110, 190)} · makbuzsuz=${String(aNone.adim || '').slice(0, 140)} · adım=${String(aOk.adim || '').slice(0, 420)}`);
 
     // Gösterimden sonra makbuz dosyası silinir (koşucu gösterimden sonra makbuza yazmaz); ürün DELETE'i dosyayı bırakır (noUnlink) → kapanış kalıntı → çıkış 6.
-    // R03-d (m4): kanıttaki adımın verdiği TEK komut Windows PowerShell 5.1 VE PowerShell 7 ile GERÇEKTEN koşulur; iki dosyanın her biriyle Recover koşar.
-    const runShell = (sh, cmd) => {
-      const exe = sh === 'ps51' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : 'pwsh';
-      const env = Object.assign({}, process.env); for (const k of Object.keys(env)) if (k.toLowerCase() === 'psmodulepath') delete env[k];   // WinPS 5.1: devralınan PS 7 modül yolu yerleşik cmdlet'leri bozabilir
-      const r = spawnSync(exe, ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(cmd, 'utf16le').toString('base64')], { env, encoding: 'utf8', timeout: 60000, windowsHide: true });
-      return { rc: r.status, out: `${r.stdout || ''}${r.stderr || ''}`.replace(/\s+/g, ' ').trim().slice(0, 300), err: r.error ? String(r.error.message).slice(0, 120) : null };
+    // R04-b (aşama 2): R03-d'nin "adımın verdiği TEK komut iki kabukta koşulur" ölçümü KALDIRILDI — komut artık hiçbir çıktıda yok (yeni makbuzu Run kanıt dizininin
+    // İÇİNE yazdırıyordu). Yerine GERÇEK KOŞUCU KANITIYLA ÇIKARMA: bu Run'ın kanıt dosyasının KOPYASINDAN tamamlanmış bir Run kanıt dizini kurulur (blok Run sonunda
+    // ne yazıyorsa: owner-block.json + goref-consumed.json + GO defteri satırı; SHA256-MANIFEST.txt bloğun KENDİ Write-Manifest fonksiyonuyla yazılır) ve bloğun
+    // çıkarma fonksiyonları (AST ile yüklenir; bloğun akışı ÇALIŞMAZ) Windows PowerShell 5.1 VE PowerShell 7'de koşulur: Test-RunEvidenceSource (kaynak doğrulama) +
+    // New-RecoverInputFromRun (kardeş dizine yazım + geri okuma + kayıt). Kardeş dizindeki makbuzla koşucunun Recover'ı GERÇEKTEN koşar. Öz-testin Run kanıt dosyası
+    // DEĞİŞTİRİLMEZ (kopya ayrı alt dizinde). Blok öz-testi RG-1 aynı yolu sahte koşucu kanıtıyla ölçer; burada kaynak GERÇEK koşucunun yazdığı kanıttır.
+    const psExe = (sh) => (sh === 'ps51' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : 'pwsh');
+    const extractWithBlock = (sh, tag, evFile, evObj) => {
+      const res = { sh, rc: null, out: '', sib: 0 };
+      try {
+        const up = path.join(dir, `${tag}-${sh}`); fs.mkdirSync(up); const runDir = path.join(up, `extacc-d6-live-${evObj.runId}-20000101-000000`); fs.mkdirSync(runDir);
+        const evBytes = fs.readFileSync(evFile); fs.writeFileSync(path.join(runDir, 'd6-evidence.json'), evBytes);
+        const goSha = sha256(`${tag}-go-${evObj.runId}-${sh}`).toUpperCase();
+        fs.writeFileSync(path.join(runDir, 'owner-block.json'), JSON.stringify({ record: 'EXTACC-D6-OWNER-BLOCK', revision: 'R01', mode: 'Run', runId: evObj.runId }), 'utf8');
+        fs.writeFileSync(path.join(runDir, 'goref-consumed.json'), JSON.stringify({ record: 'EXTACC-D6-GOREF-CONSUMED', runId: evObj.runId, goRefSha256: goSha, literalWritten: false, exitCode: evObj.exitCode }), 'utf8');
+        const ledger = path.join(up, 'go-defteri.txt'); fs.writeFileSync(ledger, `${goSha}  runId=${evObj.runId}  2000-01-01T00:00:00.0000000Z\r\n`, 'ascii');
+        const cmd = ['$ErrorActionPreference = \'Stop\'', '$tok = $null; $perr = $null', `$ast = [Management.Automation.Language.Parser]::ParseFile(${psq1(WRAPPER)}, [ref]$tok, [ref]$perr)`,
+          'if ($perr.Count -gt 0) { Write-Output \'Z21C-AYRISTIRMA-HATASI\'; exit 3 }',
+          'foreach ($f in @($ast.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] }, $false))) { . ([scriptblock]::Create($f.Extent.Text)) }',
+          `$GoLedger = ${psq1(ledger)}`,
+          `try { Write-Manifest ${psq1(runDir)} 6>$null; $s = Test-RunEvidenceSource ${psq1(runDir)} 6>$null; $p = New-RecoverInputFromRun ${psq1(runDir)} 6>$null; Write-Output ('Z21C-TAMAM manifestDosya=' + $s.manifestCount + ' bayt=' + $s.bytes.Length); exit 0 }`,
+          'catch { Write-Output (\'Z21C-DUR \' + $_.Exception.Message); exit 5 }'].join('\n');
+        const env = Object.assign({}, process.env); for (const k of Object.keys(env)) if (k.toLowerCase() === 'psmodulepath') delete env[k];   // WinPS 5.1: devralınan PS 7 modül yolu yerleşik cmdlet'leri bozabilir
+        const r = spawnSync(psExe(sh), ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(cmd, 'utf16le').toString('base64')], { env, encoding: 'utf8', timeout: 120000, windowsHide: true });
+        // Gözlem metni: stdout (işaret satırı); stderr yalnız çıkış 0 değilken eklenir (WinPS 5.1 -EncodedCommand ile ilerleme akışını CLIXML olarak stderr'e yazar — gürültü).
+        res.rc = r.status; res.out = maskUser(`${r.stdout || ''}${r.status === 0 ? '' : ' ' + String(r.stderr || '').replace(/#< CLIXML[\s\S]*$/, '')}${r.error ? ' ' + r.error.message : ''}`.replace(/\s+/g, ' ').trim().slice(0, 300));
+        const leaf = path.basename(runDir); const sibs = fs.readdirSync(up).filter((n) => n.startsWith(`${leaf}.recover-girdi-`)); res.sib = sibs.length;
+        res.sibName = sibs.length === 1 && /^extacc-d6-live-[0-9a-f]{8}-\d{8}-\d{6}\.recover-girdi-\d{8}T\d{6}Z$/.test(sibs[0]);
+        const runFiles = fs.readdirSync(runDir, { withFileTypes: true });
+        res.runDirOk = runFiles.map((e) => `${e.isDirectory() ? 'D' : 'F'}:${e.name}`).sort().join(',') === 'F:SHA256-MANIFEST.txt,F:d6-evidence.json,F:goref-consumed.json,F:owner-block.json' && fs.readFileSync(path.join(runDir, 'd6-evidence.json')).equals(evBytes);
+        res.srcSame = fs.readFileSync(evFile).equals(evBytes);
+        if (sibs.length === 1) {
+          const rp = path.join(up, sibs[0], 'd6-setup-receipt-kanittan.json'); const kp = path.join(up, sibs[0], 'RECOVER-GIRDI-KAYDI.json'); res.receipt = rp;
+          const nb = fs.existsSync(rp) ? fs.readFileSync(rp) : null; const exp = Buffer.from(String((evObj.recovery || {}).makbuzJson || ''), 'utf8'); res.bytes = nb;
+          res.same = !!nb && exp.length > 100 && nb.equals(exp); res.bom = !!nb && nb[0] === 0xEF && nb[1] === 0xBB && nb[2] === 0xBF; res.noCr = !!nb && !nb.includes(13);
+          let k = null; try { k = JSON.parse(fs.readFileSync(kp, 'utf8')); } catch (e) { k = null; }
+          res.kayit = !!k && k.record === 'EXTACC-D6-RECOVER-INPUT' && k.runId === evObj.runId && k.kaynakKanitSha256 === sha256(evBytes).toUpperCase() && !!nb && k.makbuzSha256 === sha256(nb).toUpperCase() && k.makbuzBayt === nb.length && k.kaynakKayitTuru === 'EXTACC-D6-PORTAL-DOCUMENTS-LIVE-RUN';
+          const g = nb && typeof EX.readReceiptForRecover === 'function' ? EX.readReceiptForRecover(rp) : null; res.gate = !!g && g.ok;
+          artifacts.push(rp, kp);
+        }
+      } catch (e) { res.out = `${res.out} · düzenek hatası: ${maskUser(String(e && e.message).slice(0, 160))}`; }
+      res.ok = res.rc === 0 && /Z21C-TAMAM manifestDosya=3 bayt=\d+/.test(res.out) && res.sib === 1 && res.sibName === true && res.runDirOk === true && res.srcSame === true && res.same === true && res.bom === false && res.noCr === true && res.kayit === true && res.gate === true;
+      return res;
     };
+    const shTxt = (x) => (x ? `rc=${x.rc} kardeş=${x.sib} ad=${x.sibName} Run dizini değişmedi=${x.runDirOk} baytlar=makbuzJson:${x.same} BOM=${x.bom} CR yok=${x.noCr} kayıt=${x.kayit} koşucu kapısı=${x.gate} [${x.out}]` : '-');
     const z21c = await runScenario('z21c-receipt-lost-mid-run', dir, { delete: 'noUnlink' }, {}, { onDisplay: async (s) => { try { fs.unlinkSync(path.join(dir, 'z21c-receipt-lost-mid-run-receipt.json')); } catch (e) { /* ölçüm aşağıda */ } return phoneFlow(s); } });
     const rec21 = (z21c.ev && z21c.ev.recovery) || {}; const ev21r = (z21c.ev && z21c.ev.receipt) || null;
-    const cmd21 = (String(rec21.adim || '').match(/`(\(Get-Content -Raw -Encoding UTF8 -LiteralPath [^`]+)`/) || [])[1] || null;
-    const newP21 = path.join(dir, 'd6-setup-receipt-kanittan.json'); const sh21 = {}; const r21 = {};
+    const evFile21 = path.join(dir, 'z21c-receipt-lost-mid-run-evidence.json'); const sh21 = {}; const r21 = {}; const keep21 = {};
     for (const sh of ['ps51', 'ps7']) {
-      try { fs.unlinkSync(newP21); } catch (e) { /* yok */ }
-      const x = cmd21 ? runShell(sh, cmd21) : { rc: -2, out: 'komut yok' }; const dst = path.join(dir, `z21c-makbuz-kanittan-${sh}.json`); let buf = null;
-      if (fs.existsSync(newP21)) { fs.renameSync(newP21, dst); buf = fs.readFileSync(dst); artifacts.push(dst); }
-      const txt = buf ? buf.toString('utf8').replace(/^\uFEFF/, '') : null; const g = buf && typeof EX.readReceiptForRecover === 'function' ? EX.readReceiptForRecover(dst) : null;
-      sh21[sh] = { rc: x.rc, out: x.out, err: x.err, bom: !!buf && buf[0] === 0xEF && buf[1] === 0xBB && buf[2] === 0xBF, same: txt !== null && txt === rec21.makbuzJson, gate: !!g && g.ok, dst };
-      if (buf) r21[sh] = await recover({ runId: z21c.runId, receipt: dst, tenant: z21c.tenant }, dir, `z21c-recover-${sh}`, {});
+      sh21[sh] = z21c.ev ? extractWithBlock(sh, 'z21c-run-kaniti', evFile21, z21c.ev) : { ok: false, out: 'Run kanıtı yok' };
+      if (sh21[sh].receipt && sh21[sh].bytes) {
+        // Recover bloğun verdiği gibi D6_RECEIPT_READONLY=1 ile koşar (blok -RunEvidenceDir yolunda bayrağı verir — T-12); makbuz baytları Recover'dan SONRA yeniden okunur (Z26).
+        r21[sh] = await recover({ runId: z21c.runId, receipt: sh21[sh].receipt, tenant: z21c.tenant }, dir, `z21c-recover-${sh}`, {}, { D6_RECEIPT_READONLY: '1' });
+        keep21[sh] = fs.readFileSync(sh21[sh].receipt).equals(sh21[sh].bytes);
+      }
     }
     const recOk = (r) => !!r && r.code === 6 && !!r.ev && r.ev.record === 'EXTACC-D6-RECOVER' && ((r.ev.portalClose || {}).identity === 'OK') && r.v('P6-C2') === 'PASS' && r.v('P6-C3L') === 'PASS' && r.v('P6-C-DOC') === 'FAIL' && r.activeUsers === 0;
-    check('Z21-c', 'makbuz dosyası koşum ORTASINDA (gösterimden sonra) kayboldu (uçtan uca; ürün DELETE\'i dosyayı bırakıyor → kalıntı, çıkış 6): gösterim yapıldı; kanıtta makbuzDurumu=YOK, makbuzDiskte=false; adım uygulanamayan `-Mode Recover -ReceiptFile <makbuz>` komutunu ÖNERMEZ; R03-d: kanıttaki `recovery.makbuzJson` = JSON.stringify(receipt, null, 1) ve adımın verdiği TEK komut (somut kanıt yolu → <kanıt dizini>\\d6-setup-receipt-kanittan.json) Windows PowerShell 5.1 ve PowerShell 7 ile koşuldu (çıkış 0): 5.1 dosyası UTF-8 BOM\'lu, 7 dosyası BOM\'suz, ikisinin metni (BOM hariç) makbuzJson\'a BİREBİR eşit; koşucunun Recover okuma kapısı (readReceiptForRecover) ikisinde ok; her dosyayla Recover GERÇEKTEN koşar: kimlik bağı OK (çıkış 4 DEĞİL), kayıt EXTACC-D6-RECOVER, P6-C2/C3L PASS, kalan dosya P6-C-DOC FAIL (çıkış 6), personel pasif',
-      z21c.code === 6 && !!z21c.ev && z21c.ev.displayed === true && !z21c.rc && rec21.gerekli === true && rec21.makbuzDurumu === 'YOK' && rec21.makbuzDiskte === false && noCmd(rec21) && altPath(rec21)
-        && !!ev21r && ev21r.record === EX.RECEIPT_RECORD && rec21.makbuzJson === JSON.stringify(ev21r, null, 1) && !!cmd21 && cmd21.includes(z21c.ev ? path.join(dir, 'z21c-receipt-lost-mid-run-evidence.json') : '#') && cmd21.includes(newP21)
-        && sh21.ps51 && sh21.ps51.rc === 0 && sh21.ps51.bom && sh21.ps51.same && sh21.ps51.gate && recOk(r21.ps51)
-        && sh21.ps7 && sh21.ps7.rc === 0 && !sh21.ps7.bom && sh21.ps7.same && sh21.ps7.gate && recOk(r21.ps7),
-      `çıkış=${z21c.code} · makbuz dosyası=${z21c.rc ? 'VAR' : 'YOK'} · durum=${rec21.makbuzDurumu} diskte=${rec21.makbuzDiskte} · komut=${cmd21 ? 'var' : 'YOK'} · ps51: rc=${(sh21.ps51 || {}).rc} BOM=${(sh21.ps51 || {}).bom} birebir=${(sh21.ps51 || {}).same} kapı=${(sh21.ps51 || {}).gate} Recover=${r21.ps51 ? r21.ps51.code : '-'} kimlik=${r21.ps51 && r21.ps51.ev ? (r21.ps51.ev.portalClose || {}).identity : '-'} [${(sh21.ps51 || {}).out || ''}${(sh21.ps51 || {}).err || ''}] · ps7: rc=${(sh21.ps7 || {}).rc} BOM=${(sh21.ps7 || {}).bom} birebir=${(sh21.ps7 || {}).same} kapı=${(sh21.ps7 || {}).gate} Recover=${r21.ps7 ? r21.ps7.code : '-'} kimlik=${r21.ps7 && r21.ps7.ev ? (r21.ps7.ev.portalClose || {}).identity : '-'} [${(sh21.ps7 || {}).out || ''}${(sh21.ps7 || {}).err || ''}]`);
+    check('Z21-c', 'makbuz dosyası koşum ORTASINDA (gösterimden sonra) kayboldu (uçtan uca; ürün DELETE\'i dosyayı bırakıyor → kalıntı, çıkış 6): gösterim yapıldı; kanıtta makbuzDurumu=YOK, makbuzDiskte=false, `recovery.makbuzJson` = JSON.stringify(receipt, null, 1); R04-b: adım bloğun seçeneğini SOMUT kanıt diziniyle gösterir (`-Mode Recover -RunEvidenceDir \'<bu kanıtın dizini>\'`; durum bilgisi "YOK (dosya yok (ENOENT))"), elle komut / `-ReceiptFile` önerisi YOK; GERÇEK KOŞUCU KANITIYLA ÇIKARMA (bu kanıtın kopyasından kurulan tamamlanmış Run kanıt dizini; manifest bloğun Write-Manifest\'iyle; bloğun fonksiyonları AST ile) Windows PowerShell 5.1 VE PowerShell 7\'de: kaynak doğrulama (Test-RunEvidenceSource) geçer (manifestte 3 dosya), New-RecoverInputFromRun makbuzu Run dizininin KARDEŞİNE yazar (tek kardeş dizin, adı <Run dizini>.recover-girdi-<UTC>), dosyanın baytları kanıttaki makbuzJson\'un UTF-8 baytlarına BİREBİR eşit (BOM yok, CR yok), RECOVER-GIRDI-KAYDI.json kaynak kanıt sha256 + makbuz sha256 / bayt + runId + kayıt türünü taşır, Run kanıt dizini (dört dosya, alt dizin yok) ve öz-testin kanıt dosyası DEĞİŞMEDİ; koşucunun Recover okuma kapısı (readReceiptForRecover) iki dosyada ok; her dosyayla Recover GERÇEKTEN koşar: kimlik bağı OK (çıkış 4 DEĞİL), kayıt EXTACC-D6-RECOVER, P6-C2/C3L PASS, kalan dosya P6-C-DOC FAIL (çıkış 6), personel pasif',
+      z21c.code === 6 && !!z21c.ev && z21c.ev.displayed === true && !z21c.rc && rec21.gerekli === true && rec21.makbuzDurumu === 'YOK' && rec21.makbuzDiskte === false
+        && rgOpt(rec21, psq1(dir)) && durumOf(rec21) === 'YOK (dosya yok (ENOENT))'
+        && !!ev21r && ev21r.record === EX.RECEIPT_RECORD && rec21.makbuzJson === JSON.stringify(ev21r, null, 1)
+        && !!sh21.ps51 && sh21.ps51.ok === true && recOk(r21.ps51) && !!sh21.ps7 && sh21.ps7.ok === true && recOk(r21.ps7),
+      `çıkış=${z21c.code} · makbuz dosyası=${z21c.rc ? 'VAR' : 'YOK'} · durum=${rec21.makbuzDurumu} diskte=${rec21.makbuzDiskte} · adım seçeneği=${rgOpt(rec21, psq1(dir))} [${durumOf(rec21)}] · ps51: ${shTxt(sh21.ps51)} Recover=${r21.ps51 ? r21.ps51.code : '-'} kimlik=${r21.ps51 && r21.ps51.ev ? (r21.ps51.ev.portalClose || {}).identity : '-'} · ps7: ${shTxt(sh21.ps7)} Recover=${r21.ps7 ? r21.ps7.code : '-'} kimlik=${r21.ps7 && r21.ps7.ev ? (r21.ps7.ev.portalClose || {}).identity : '-'}`);
+    // Z26 (R04-b; aşama 2 madde 2): DOĞRULANMIŞ Recover girdisi Recover'da YENİDEN YAZILMAZ. Önceki koşucu baytlarında Recover, bilinen / kalan belge yollarını
+    // (residueFiles) -ReceiptFile ile verilen dosyaya yerinde yazıyordu → bloğun kardeş dizine yazıp sha256'sını RECOVER-GIRDI-KAYDI.json'a kaydettiği makbuz Recover'dan
+    // sonra kayıtla tutmuyordu (ölçüldü). Blok artık -RunEvidenceDir yolunda D6_RECEIPT_READONLY=1 verir: dosya baytları Recover'dan sonra AYNI, yollar Recover
+    // kanıtında (residueFiles + receiptRewrite "YAPILMADI …"). Bayrak YOKKEN (-ReceiptFile yolu; Z5 Recover a) eski davranış: makbuz yerinde yeniden yazılır ("YAPILDI …").
+    const ro26 = (r) => !!r && !!r.ev && Array.isArray(r.ev.residueFiles) && r.ev.residueFiles.length >= 1 && /^YAPILMADI — D6_RECEIPT_READONLY=1/.test(r.ev.receiptRewrite || '') && !r.ev.receiptWriteError && !Array.isArray(r.rc.residueFiles);
+    check('Z26', 'R04-b: doğrulanmış Recover girdisi (bloğun kardeş dizine yazdığı makbuz) Recover\'da YENİDEN YAZILMAZ — iki kabuğun yazdığı iki makbuzla GERÇEK Recover `D6_RECEIPT_READONLY=1` ile koştu: dosya baytları Recover\'dan ÖNCE = SONRA (sha256 = RECOVER-GIRDI-KAYDI.json\'daki makbuzSha256 kalır), makbuzda residueFiles alanı YOK; bilinen / kalan belge yolları Recover KANITINDA (`residueFiles` ≥ 1) ve `receiptRewrite` "YAPILMADI — D6_RECEIPT_READONLY=1 …"; yazma hatası yok; Recover sonucu aynı (kimlik bağı OK, çıkış 6). Kontrol — bayrak YOK (`-ReceiptFile` yolu; Z5 Recover a): makbuz yerinde yeniden yazıldı (makbuzda residueFiles), kanıtta `receiptRewrite` "YAPILDI …" + `residueFiles`',
+      keep21.ps51 === true && keep21.ps7 === true && ro26(r21.ps51) && ro26(r21.ps7) && recOk(r21.ps51) && recOk(r21.ps7)
+        && !!r5a.ev && /^YAPILDI — /.test(r5a.ev.receiptRewrite || '') && Array.isArray(r5a.ev.residueFiles) && r5a.ev.residueFiles.length === 1 && Array.isArray(r5a.rc.residueFiles) && JSON.stringify(r5a.rc.residueFiles) === JSON.stringify(r5a.ev.residueFiles),
+      `ps51: makbuz baytları aynı=${keep21.ps51} kanıt=${r21.ps51 && r21.ps51.ev ? `${(r21.ps51.ev.residueFiles || []).length} yol · ${String(r21.ps51.ev.receiptRewrite || '-').slice(0, 40)}` : '-'} · ps7: makbuz baytları aynı=${keep21.ps7} kanıt=${r21.ps7 && r21.ps7.ev ? `${(r21.ps7.ev.residueFiles || []).length} yol · ${String(r21.ps7.ev.receiptRewrite || '-').slice(0, 40)}` : '-'} · bayraksız (Z5 Recover a): ${r5a.ev ? String(r5a.ev.receiptRewrite || '-').slice(0, 50) : '-'} makbuzda residueFiles=${Array.isArray(r5a.rc.residueFiles) ? r5a.rc.residueFiles.length : 'yok'}`);
     if (z21c.tenant && ev21r) { const left = await prisma.portalDocument.findMany({ where: { clientId: ev21r.clientId }, select: { filePath: true } }); for (const f of [ev21r.documentFile, ...left.map((d) => d.filePath)].filter(Boolean)) { try { fs.unlinkSync(f); } catch (e) { /* test temizliği */ } } await prisma.portalDocument.deleteMany({ where: { clientId: ev21r.clientId } }); }
 
     // ==== R03-d (M1) — guard NORMAL + yeniden açma (ürün gibi sürüm artışı): eski oturum 401 → P6-C4 PASS; bulgu yok; portal açık satırı var
@@ -831,9 +898,10 @@ const CLOSE_NO_S = CLOSE.filter((id) => id !== 'P6-C4L' && id !== 'P6-C4D' && id
     const aStale = adimOf(out21({ receipt: Object.assign({}, memR, { createOutcome: 'ok' }), receiptWriteError: 'EACCES: izin yok' }), okP, 'run', path.join(rDir, 'kanit.json'));
     const bomP = path.join(rDir, 'bom.json'); fs.writeFileSync(bomP, '\uFEFF' + JSON.stringify(memR, null, 1), 'utf8'); const stBom = rfs ? rfs(bomP, memR) : {};
     const gBom = typeof EX.readReceiptForRecover === 'function' ? EX.readReceiptForRecover(bomP) : {};
-    check('Z22-e', 'R03-d: (m7) diskteki makbuz BAYAT (bellekteki son makbuzla eşit değil: createOutcome eklenmiş, yazma hatası EACCES) → Run adımı diskteki dosyayı ÖNERMEZ ("-ReceiptFile <makbuz>" YOK): "makbuz dosyası BAYAT (… farklı alan(lar): createOutcome; … EACCES: izin yok): … sonradan eklenen kimlikleri içermeyebilir → eksik kapanış: bu makbuz dosyasıyla Recover ÖNERİLMEZ" + kanıttaki makbuzJson\'dan TEK komut SOMUT kanıt yoluyla (<kanıt dizini>\\d6-setup-receipt-kanittan.json); makbuzGuncel=false · (m6) makbuz yolu KLASÖR → makbuzDiskte=false (önceki existsSync true) · BOM\'lu makbuz → receiptFileState KULLANILABILIR (güncel) ve readReceiptForRecover ok',
-      noCmd(aStale) && /— ama makbuz dosyası BAYAT \(diskteki makbuz koşucunun bellekteki son makbuzuyla EŞİT DEĞİL — farklı alan\(lar\): createOutcome; makbuzun sonraki bir yazımı başarısız · makbuz yazma hatası: EACCES: izin yok\)/.test(aStale.adim || '') && /eksik kapanış: bu makbuz dosyasıyla Recover ÖNERİLMEZ/.test(aStale.adim || '')
-        && altPath(aStale) && String(aStale.adim || '').includes(path.join(rDir, 'd6-setup-receipt-kanittan.json')) && aStale.makbuzGuncel === false && aStale.makbuzDurumu === 'KULLANILABILIR'
+    check('Z22-e', 'R03-d (m7) + R04-b: diskteki makbuz BAYAT (bellekteki son makbuzla eşit değil: createOutcome eklenmiş, yazma hatası EACCES) → Run adımı diskteki dosyayı ÖNERMEZ ("-ReceiptFile <makbuz>" YOK); R04-b: adım bloğun seçeneğini SOMUT kanıt diziniyle gösterir (`-Mode Recover -RunEvidenceDir \'<kanıt dizini>\'`; elle komut / "…-setup-receipt-kanittan.json" yolu YOK) ve BAYAT durumu yalnız bilgi olarak yazar: "durumu: BAYAT (diskteki makbuz koşucunun bellekteki son makbuzuyla EŞİT DEĞİL — farklı alan(lar): createOutcome; makbuzun sonraki bir yazımı başarısız · makbuz yazma hatası: EACCES: izin yok; sonradan eklenen kimlikleri içermeyebilir → bu dosyayla Recover eksik kapanış yapabilir)"; makbuzGuncel=false · (m6) makbuz yolu KLASÖR → makbuzDiskte=false (önceki existsSync true) · BOM\'lu makbuz → receiptFileState KULLANILABILIR (güncel) ve readReceiptForRecover ok',
+      noCmd(aStale) && rgOpt(aStale, psq1(rDir))
+        && durumOf(aStale) === 'BAYAT (diskteki makbuz koşucunun bellekteki son makbuzuyla EŞİT DEĞİL — farklı alan(lar): createOutcome; makbuzun sonraki bir yazımı başarısız · makbuz yazma hatası: EACCES: izin yok; sonradan eklenen kimlikleri içermeyebilir → bu dosyayla Recover eksik kapanış yapabilir)'
+        && aStale.makbuzGuncel === false && aStale.makbuzDurumu === 'KULLANILABILIR'
         && aDir.makbuzDiskte === false && fs.statSync(dirP).isDirectory() && aGone.makbuzDiskte === false
         && stBom.durum === 'KULLANILABILIR' && stBom.guncel === true && gBom.ok === true,
       `bayat=${String(aStale.adim || '').slice(0, 300)} · klasör makbuzDiskte=${aDir.makbuzDiskte} · BOM durum=${stBom.durum}/${stBom.guncel} okuma=${gBom.ok}`);
@@ -943,7 +1011,7 @@ const CLOSE_NO_S = CLOSE.filter((id) => id !== 'P6-C4L' && id !== 'P6-C4D' && id
       `(1) çıkış=${r25k.code} C2=${r25k.v('P6-C2')} çağrılar=${JSON.stringify(pcK.disableCalls || null)} açıkErişim=${pcK.acikErisim || '-'} · (2) çıkış=${r25r.code} C1=${r25r.v('P6-C1')} C2=${r25r.v('P6-C2')} C3L=${r25r.o('P6-C3L')} C3D=${r25r.o('P6-C3D')} C5=${r25r.v('P6-C5')} sürüm ${(pcR.after || {}).tokenVersion}→${(pcR.afterMeasure || {}).tokenVersion} açıkErişim=${pcR.acikErisim || '-'} · portal satırı=${lR.slice(0, 320)}`);
 
     // ---- C-1 (R03 c) — kanıttaki kurtarma/kapanış metinleri YALNIZ ölçüleni söyler: bu öz-testin ürettiği TÜM Run/Recover kanıtları taranır
-    let evScanned = 0; let evNeed = 0; const textBad = [];
+    let evScanned = 0; let evNeed = 0; let evRunOpt = 0; const textBad = [];
     const fixedClaims = [/BİR KEZ daha/, /token 7 gün/, /birkaç dakika sonra Recover/, /Recover BİR KEZ/, /kapanışta yeniden kapatıldı/, /fark portal hesabı aç\/kapa kaynaklıdır/];
     for (const f of new Set(artifacts)) {
       if (!/-evidence\.json$/.test(f) || !fs.existsSync(f)) continue; const nm = path.basename(f); let e;
@@ -957,12 +1025,18 @@ const CLOSE_NO_S = CLOSE.filter((id) => id !== 'P6-C4L' && id !== 'P6-C4D' && id
         if (!/^ÖNERİ \(yetki DEĞİL\)/.test(a)) textBad.push(`${nm}:adım ÖNERİ değil`);
         if (e.record === 'EXTACC-D6-RECOVER' && e.exitCode !== 3 && !/İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR/.test(a)) textBad.push(`${nm}:Recover adımı ikinci Recover kuralını yazmıyor`);
         if (e.record !== 'EXTACC-D6-RECOVER' && !/AYRI owner onayıyla/.test(a)) textBad.push(`${nm}:Run adımı AYRI owner onayını yazmıyor`);
+        // R04-b: hiçbir kanıtta elle komut / Run kanıt dizininin içine makbuz yazdıran yol yok; kanıtta makbuz metni varsa Run adımı bloğun -RunEvidenceDir seçeneğini gösterir.
+        if (/Set-Content|Get-Content -Raw|setup-receipt-kanittan/.test(a)) textBad.push(`${nm}:adım elle komut içeriyor`);
+        if (e.record !== 'EXTACC-D6-RECOVER' && typeof e.recovery.makbuzJson === 'string') {
+          evRunOpt++;
+          if (!a.includes('`-Mode Recover -RunEvidenceDir ') || /-ReceiptFile <makbuz>|-ReceiptFile '/.test(a)) textBad.push(`${nm}:kanıtta makbuz metni var ama adım -RunEvidenceDir seçeneğini göstermiyor`);
+        }
       }
       if (e.temporaryAccess && typeof e.temporaryAccessClosed !== 'boolean') textBad.push(`${nm}:temporaryAccessClosed ölçülmedi`);
       if (e.record === 'EXTACC-D6-PORTAL-DOCUMENTS-LIVE-RUN' && e.auditRetained && e.auditRetained.before !== null && e.auditRetained.before !== undefined && typeof e.auditRetained.delta !== 'number') textBad.push(`${nm}:audit farkı ölçülmedi`);
     }
-    check('C-1', 'kanıttaki kurtarma/kapanış metinleri yalnız ölçüleni söyler (tüm Run/Recover kanıtları): revision=R03; sabit iddia YOK ("BİR KEZ daha", "token 7 gün", "birkaç dakika sonra Recover", "Recover BİR KEZ", "kapanışta yeniden kapatıldı", "fark … kaynaklıdır"); kurtarma gerekliyse adım "ÖNERİ (yetki DEĞİL)" ile başlar — Run adımı AYRI owner onayını, Recover adımı (çıkış 3 dışı) "İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR" kuralını yazar; Recover geçici erişimi verdiyse kapanışı ölçülmüş alanla (temporaryAccessClosed) yazılır; Run audit farkı sayı olarak ölçülür',
-      evScanned >= 30 && evNeed >= 15 && textBad.length === 0, `taranan kanıt=${evScanned} · kurtarma gerekli=${evNeed} · sorun=${textBad.length ? textBad.slice(0, 10).join(', ') : 'yok'}`);
+    check('C-1', 'kanıttaki kurtarma/kapanış metinleri yalnız ölçüleni söyler (tüm Run/Recover kanıtları): revision=R03; sabit iddia YOK ("BİR KEZ daha", "token 7 gün", "birkaç dakika sonra Recover", "Recover BİR KEZ", "kapanışta yeniden kapatıldı", "fark … kaynaklıdır"); kurtarma gerekliyse adım "ÖNERİ (yetki DEĞİL)" ile başlar — Run adımı AYRI owner onayını, Recover adımı (çıkış 3 dışı) "İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR" kuralını yazar; Recover geçici erişimi verdiyse kapanışı ölçülmüş alanla (temporaryAccessClosed) yazılır; Run audit farkı sayı olarak ölçülür; R04-b: hiçbir adımda elle komut (Get-Content -Raw / Set-Content) ya da "…-setup-receipt-kanittan.json" yolu YOK ve kanıtında makbuz metni (recovery.makbuzJson) olan her Run adımı `-Mode Recover -RunEvidenceDir` seçeneğini gösterir (`-ReceiptFile <makbuz>` / `-ReceiptFile \'<yol>\'` YOK)',
+      evScanned >= 30 && evNeed >= 15 && evRunOpt >= 20 && textBad.length === 0, `taranan kanıt=${evScanned} · kurtarma gerekli=${evNeed} · -RunEvidenceDir seçeneği ölçülen Run kanıtı=${evRunOpt} · sorun=${textBad.length ? textBad.slice(0, 10).join(', ') : 'yok'}`);
 
     // ---- S-1 SIR SIZINTISI — portal parolaları, ölçüm parolaları, personel parolası, JWT'ler, DB URL, GO (sink dosyaları TARAMA DIŞI)
     let scanned = 0; const leaks = [];
@@ -1001,6 +1075,36 @@ const CLOSE_NO_S = CLOSE.filter((id) => id !== 'P6-C4L' && id !== 'P6-C4D' && id
   check('T-10', 'R03-f: yorum dışı koşucu kaynağında "Recover kapatabilir", "DB\'ye yansımadı", "portal hesabı açık", "DB\'de AÇIK" ve eski "\'AÇIK\' : \'kapanış TAMAMLANMADI\'" biçimi YOK; P6-C1 yazan tüm R.check / R.unmeasured çağrıları (≥ 4) açıklamayı C1_DESC ya da "portal hesabı YOK (DB\'de ölçüldü) …" ile verir, "kapatıldı" geçmez; C1_DESC "DB kapanışı P6-C2 / P6-C5 satırlarında" der',
     t10Bad.length === 0 && c1Calls.length >= 4 && c1Calls.every((c) => /'P6-C1', C1_DESC,$/.test(c) || /'P6-C1', 'portal hesabı YOK \(DB\\'de ölçüldü\)/.test(c)) && !c1Calls.some((c) => /kapatıldı/.test(c)) && /DB kapanışı P6-C2 \/ P6-C5 satırlarında/.test(EX.C1_DESC || ''),
     `yasak dize=${t10Bad.join(',') || 'yok'} · P6-C1 çağrısı=${c1Calls.length}: ${c1Calls.map((c) => c.slice(0, 48)).join(' | ')}`);
+  // T-11 (R04, owner talimatı madde 5; birim + statik — disposable DB / sahte API GEREKMEZ): ret ölçütlerinde (P6-C3L/D yeni giriş · P6-C4L/D mevcut oturum)
+  // 503 / 429 DIŞINDAKİ 5xx gözlemi "ret kanıtlanmadı; neden kesinleşmedi (ürün kusuru olarak sınıflanmadı)" der; verdict ifadesi (`r.status === 401`) ve
+  // 503 / 429 → ÖLÇÜLEMEYEN dalı DEĞİŞMEDİ; eski yalın "HTTP ${r.status}" gözlemi iki ret ölçütünde kalmadı.
+  const t11Txt = 'ret kanıtlanmadı; neden kesinleşmedi (ürün kusuru olarak sınıflanmadı)';
+  const t11Fn = typeof EX.rejectObs === 'function';
+  const t11Five = t11Fn && [500, 502, 504, 599].every((s) => EX.rejectObs(s) === `HTTP ${s} — ${t11Txt}`);
+  const t11Other = t11Fn && [401, 403, 404, 200, 201, 429, 503, 600].every((s) => EX.rejectObs(s) === `HTTP ${s}`);
+  const t11New = (src.match(/return R\.check\(id, desc, r\.status === 401, rejectObs\(r\.status\)\); \};/g) || []).length;
+  const t11Old = (src.match(/return R\.check\(id, desc, r\.status === 401, `HTTP \$\{r\.status\}`\); \};/g) || []).length;
+  const t11Unm = (src.match(/if \(r\.status === 503 \|\| r\.status === 429\) return R\.unmeasured\(id, desc, `HTTP \$\{r\.status\} — neden UNKNOWN`\); return R\.check\(id, desc, r\.status === 401, rejectObs\(r\.status\)\); \};/g) || []).length;
+  const t11Calls = ['judge401(\'P6-C3L\'', 'judge401(\'P6-C3D\'', 'judgeSession(\'P6-C4L\'', 'judgeSession(\'P6-C4D\''].every((c) => src.includes(c));
+  check('T-11', 'R04 (owner madde 5): ret ölçütlerinde 503 / 429 dışındaki 5xx gözlemi "HTTP <kod> — ret kanıtlanmadı; neden kesinleşmedi (ürün kusuru olarak sınıflanmadı)" (birim: 500/502/504/599); 5xx dışı kodlar ve 503 "HTTP <kod>" aynen; judge401 (P6-C3L/D) ve judgeSession (P6-C4L/D) son dalı `R.check(id, desc, r.status === 401, rejectObs(r.status))` — verdict ifadesi ve 503 / 429 → ÖLÇÜLEMEYEN dalı değişmedi; eski yalın "HTTP ${r.status}" ret gözlemi YOK',
+    t11Fn && t11Five && t11Other && t11New === 2 && t11Old === 0 && t11Unm === 2 && t11Calls,
+    `fonksiyon=${t11Fn} · 5xx metni=${t11Five} · diğer kodlar=${t11Other} · yeni son dal=${t11New} · eski son dal=${t11Old} · 503/429 dalı + yeni son dal=${t11Unm} · dört ölçüt çağrısı=${t11Calls} · örnek=${t11Fn ? EX.rejectObs(502) : '-'}`);
+  // T-12 (R04-b; statik — disposable DB / sahte API GEREKMEZ): (a) yorum dışı koşucu kaynağında elle komut YOK (Get-Content -Raw / Set-Content / "…-setup-receipt-kanittan" /
+  // receiptFromEvidenceCommand; dışa aktarım da yok) ve `-RunEvidenceDir` seçeneği TEK yerde; `-ReceiptFile <makbuz>` yalnız "kanıtta makbuz yok + dosya okunabilir"
+  // dalında (tek yer). (b) D6_RECEIPT_READONLY yalnız Recover'da okunur (Run'da YOK); makbuz yazımı Recover'da TEK yerde ve bayrağın `else` dalında. (c) Owner bloğu
+  // aynı seçeneği gösterir ve bayrağı yalnız `-RunEvidenceDir` yolunda verir ($SecretEnv listesinde).
+  const t12Old = (src.match(/Get-Content -Raw|Set-Content|setup-receipt-kanittan|receiptFromEvidenceCommand/g) || []);
+  const t12Opt = (src.match(/-Mode Recover -RunEvidenceDir /g) || []).length; const t12File = (src.match(/-Mode Recover -ReceiptFile <makbuz>/g) || []).length;
+  const t12RoAll = (src.match(/D6_RECEIPT_READONLY/g) || []).length; const t12RoRun = (runSrc.match(/D6_RECEIPT_READONLY/g) || []).length;
+  const t12Read = /const receiptReadOnly = process\.env\.D6_RECEIPT_READONLY === '1';/.test(recSrc);
+  const t12Write = (recSrc.match(/writeJson\(receiptPath, receipt\)/g) || []).length;
+  const t12Else = /if \(receiptReadOnly\) out\.receiptRewrite = 'YAPILMADI[^']*';\s*else \{ try \{ writeJson\(receiptPath, receipt\);/.test(recSrc);
+  let t12W = ''; try { t12W = fs.readFileSync(WRAPPER, 'utf8').split('\n').filter((l) => !/^\s*#/.test(l)).join('\n'); } catch (e) { t12W = ''; }   // bloğun yorum dışı kaynağı
+  const t12Blk = t12W.includes('    -Mode Recover -RunEvidenceDir \'{0}\'') && (t12W.match(/\$env:D6_RECEIPT_READONLY\s*=/g) || []).length === 1 && t12W.includes('if ($runEvidenceDir) { $env:D6_RECEIPT_READONLY = \'1\' }')
+    && /\$SecretEnv\s*=\s*@\([^)]*'D6_RECEIPT_READONLY'/.test(t12W) && !t12W.includes('elle komut') && t12W.includes('kanıttaki kurtarma adımı da bu seçeneği gösterir');
+  check('T-12', 'R04-b (statik): yorum dışı koşucu kaynağında elle komut YOK ("Get-Content -Raw", "Set-Content", "setup-receipt-kanittan", receiptFromEvidenceCommand — dışa aktarım da yok); `-Mode Recover -RunEvidenceDir ` TEK yerde, `-Mode Recover -ReceiptFile <makbuz>` TEK yerde (kanıtta makbuz yok + dosya okunabilir dalı); D6_RECEIPT_READONLY yalnız Recover\'da okunur (`const receiptReadOnly = process.env.D6_RECEIPT_READONLY === \'1\';`; Run kaynağında YOK), Recover\'da makbuz yazımı TEK yerde ve bayrağın `else` dalında; owner bloğu aynı seçeneği gösterir ("    -Mode Recover -RunEvidenceDir \'{0}\'"), bayrağı TEK yerde ve yalnız `if ($runEvidenceDir)` ile verir, bayrak $SecretEnv listesinde, bloğun yorum dışı kaynağında "elle komut" ifadesi YOK ve Run sonu metni "kanıttaki kurtarma adımı da bu seçeneği gösterir" der',
+    t12Old.length === 0 && typeof EX.receiptFromEvidenceCommand === 'undefined' && t12Opt === 1 && t12File === 1 && t12RoAll >= 2 && t12RoRun === 0 && t12Read && t12Write === 1 && t12Else && t12Blk,
+    `elle komut izi=${t12Old.join(',') || 'yok'} · dışa aktarım=${typeof EX.receiptFromEvidenceCommand} · -RunEvidenceDir=${t12Opt} · -ReceiptFile <makbuz>=${t12File} · bayrak: kaynakta ${t12RoAll} (Run'da ${t12RoRun}) okuma=${t12Read} Recover makbuz yazımı=${t12Write} else dalında=${t12Else} · blok=${t12Blk}`);
   const sinkLines = src.split('\n').filter((l) => /D6_TEST_DISPLAY_SINK/.test(l));
   check('T-2', 'gösterimsiz test dosyası (sink) kaynakta TEK yerde ve yalnız `display === \'none\'` koşuluyla (konsol varken asla)', sinkLines.length === 1 && /g\.display === 'none' && process\.env\.D6_TEST_DISPLAY_SINK/.test(sinkLines[0]) && /if \(con\) return DISPLAY\.show/.test(sinkLines[0]), `satır=${sinkLines.length}`);
   const liveEnv = { AH_DATABASE_URL: 'postgresql://u:p@127.0.0.1:5432/hukuk_db', D6_EXPECT_DB: 'hukuk_db', D6_WAIT_MS: '1', D6_POLL_MS: '1', D6_VIEW_MS: '1', D6_HTTP_TIMEOUT_MS: '1', D6_CALL_TIMEOUT_MS: '1', D6_LATE_CREATE_MS: '1', D6_RESIDUE_WAIT_MS: '1' };

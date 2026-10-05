@@ -13,12 +13,13 @@ import {
   ExecutionResponse,
   getActionMatrixEntry,
   isLockRequired,
+  isStageIndependent,
   getFailMode,
 } from './types';
-import { FactStoreService, FactMap, ComputedFactRegistry } from './fact-store';
+import { FactStoreService, FactMap, ComputedFactRegistry, CLOSING_CASE_STATUSES } from './fact-store';
 import { DecisionLoggerService, ExecutionRecorderService } from './decision-logger';
 import { StateMachineService, StateInfo, IcraType } from './state-machine';
-import { GateCheckerService } from './gate-checker';
+import { GateCheckerService, COMPILED_GATES } from './gate-checker';
 import { RuleEngineService, ComputedMetrics, RecommendedAction } from './rule-engine';
 
 /**
@@ -145,7 +146,7 @@ export class CasePolicyEngine {
       // 1. Case'in var olduğunu kontrol et
       const caseExists = await this.prisma.case.findUnique({
         where: { id: caseId },
-        select: { id: true, caseStatus: true, workflowStage: true, type: true, subType: true },
+        select: { id: true, caseStatus: true, workflowStage: true, type: true, subType: true, isArchived: true },
       });
 
       if (!caseExists) {
@@ -189,7 +190,35 @@ export class CasePolicyEngine {
       // 6. State transition kontrolü (StateMachine ile)
       const icraType = this.mapCaseTypeToIcraType(caseExists.type, caseExists.subType ?? undefined);
       const transitionResult = this.stateMachine.canTransition(state, actionCode, icraType);
-      if (!transitionResult.allowed) {
+      // Aşamadan bağımsız eylem (owner kararı 8; yalnız matriste `stageIndependent` işaretli eylemler): durum makinesinin
+      // "geçersiz aşama / bu aşamada yapılamaz" reddi uygulanmaz. Kapılar (yukarıda) ve sonraki karar günlüğü AYNEN çalışır.
+      // YOK SAYMA SINIRLARI (PR #2930 incelemesi):
+      //  - durum makinesinin TERMİNAL ("Dosya kapalı. Sadece yeniden açma…") reddi ASLA yok sayılmaz;
+      //  - kapalı / arşiv hükmü olgu önbelleğinden (30 sn bayat olabilir) değil, bu çağrıda taze okunan dosya satırından türetilir:
+      //    yeni kapatılan / arşivlenen dosyada aşama reddi yok sayılmaz (ikinci engel kalkarken ilk engel bayat kalmasın).
+      let stageIndependentOverride = false;
+      if (!transitionResult.allowed && isStageIndependent(actionCode)) {
+        const closedByFreshRow = CLOSING_CASE_STATUSES.includes(caseExists.caseStatus as string);
+        const archivedByFreshRow = caseExists.isArchived === true;
+        if (closedByFreshRow || archivedByFreshRow) {
+          const gateCode = closedByFreshRow ? 'CASE_CLOSED' : 'CASE_ARCHIVED';
+          const decision = this.buildDecision(
+            false,
+            // Ret metni kapı tanımından okunur (ikinci yazım yok)
+            COMPILED_GATES.find((gate) => gate.gateCode === gateCode)?.reason ?? 'Dosya kapalı / arşivde. İşlem yapılamaz.',
+            DecisionCode.GATE_BLOCKED,
+            { blockedBy: { gateCode, severity: 'HARD' }, state },
+          );
+          const decisionId = await this.decisionLogger.log(
+            caseId, actionCode, context, decision, facts, state, traceId, ruleVersion,
+          );
+          decision.decisionId = decisionId;
+          decision.traceId = traceId;
+          return decision;
+        }
+        stageIndependentOverride = !this.stateMachine.isTerminal(state.currentState, icraType);
+      }
+      if (!transitionResult.allowed && !stageIndependentOverride) {
         const decision = this.buildDecision(
           false,
           transitionResult.reason,
@@ -207,10 +236,10 @@ export class CasePolicyEngine {
         return decision;
       }
 
-      // 7. İzin ver
+      // 7. İzin ver (aşama denetimi yok sayıldıysa gerekçe bunu açıkça söyler; karar günlüğünde aşama anlık görüntüsü kalır)
       const decision = this.buildDecision(
         true,
-        'OK',
+        stageIndependentOverride ? 'OK (aşamadan bağımsız eylem)' : 'OK',
         DecisionCode.OK,
         {
           state,

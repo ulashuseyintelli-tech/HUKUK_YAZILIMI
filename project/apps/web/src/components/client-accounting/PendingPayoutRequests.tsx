@@ -8,7 +8,8 @@
  * yalnız PENDING_APPROVAL'da render olur). Bu component o boşluğu TALEP SAHİBİ tarafında kapatır:
  * officeApprovalApi.getMine() ile kendi CLIENT_PAYOUT_POST taleplerini (tüm dosyalar) çeker, bu
  * case/caseClient'a ait olanları savedIntent üzerinden filtreler, PENDING_APPROVAL olanlar için DBIND §5
- * self-approval "Onayla" aksiyonu, APPROVED olanlar için "Kesinleştir" (finalize) aksiyonu sunar.
+ * self-approval "Onayla" aksiyonu ve talep sahibinin kendi bekleyen talebi için "Geri Çek" (cancel) aksiyonu, APPROVED olanlar için
+ * "Kesinleştir" (finalize) aksiyonu sunar. "Değiştirerek onay" ödeme talebinde YOKTUR (sunucu 400 döner).
  * Kesinleşmiş talep (APPROVED + yürütme işareti SUCCEEDED) listelenmez (bkz. isFinalized); reddedilen / geri
  * çekilen / revizyon istenen / değiştirerek onaylanan talepler düğmesiz listelenmeye devam eder.
  *
@@ -23,29 +24,9 @@ import { AlertCircle, ClipboardCheck } from 'lucide-react';
 import { officeApprovalApi, type OfficeApprovalDetail, type OfficeApprovalSummary } from '@/lib/api/office-approval';
 import { clientAccountingApi, formatMoneyString } from '@/lib/api/client-accounting';
 import { STATUS_LABELS } from '@/components/office-approval/status-labels';
+import { isPayoutIntent, type PayoutIntent } from './payout-intent';
 
 const CLIENT_PAYOUT_POST = 'CLIENT_PAYOUT_POST';
-
-interface PayoutIntent {
-  caseId: string;
-  caseClientId: string;
-  amount: string;
-  currency: string;
-  note: string | null;
-  idempotencyKey: string;
-}
-
-function isPayoutIntent(value: unknown): value is PayoutIntent {
-  if (!value || typeof value !== 'object') return false;
-  const v = value as Record<string, unknown>;
-  return (
-    typeof v.caseId === 'string' &&
-    typeof v.caseClientId === 'string' &&
-    typeof v.amount === 'string' &&
-    typeof v.currency === 'string' &&
-    typeof v.idempotencyKey === 'string'
-  );
-}
 
 /**
  * Kesinleşmiş talep: karar APPROVED + yürütme işareti SUCCEEDED. Kesinleştirme karar durumunu değiştirmez
@@ -77,6 +58,8 @@ interface PendingPayoutRequestsProps {
 export function PendingPayoutRequests({ caseId, caseClientId }: PendingPayoutRequestsProps) {
   const queryClient = useQueryClient();
   const [payoutActionError, setPayoutActionError] = useState<string | null>(null);
+  // Geri çekme geri alınamaz: tek tıkla yapılmaz, satırda onay adımı istenir (çekmecedeki akışla aynı).
+  const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
 
   const mineQ = useQuery({
     queryKey: ['client-payout-approval-requests'],
@@ -158,6 +141,22 @@ export function PendingPayoutRequests({ caseId, caseClientId }: PendingPayoutReq
     },
   });
 
+  // Talep sahibi kendi BEKLEYEN talebini geri çeker (POST /office-approvals/:id/cancel). Kural sunucudadır: yalnız talep
+  // sahibi ve yalnız PENDING_APPROVAL; başka durumda / başka kullanıcıda sunucunun reddi aynen gösterilir.
+  const cancelMutation = useMutation({
+    mutationFn: (approvalRequestId: string) => officeApprovalApi.cancel(approvalRequestId),
+    onSuccess: () => {
+      setPayoutActionError(null);
+      setConfirmCancelId(null);
+      queryClient.invalidateQueries({ queryKey: ['client-payout-approval-requests'] });
+      queryClient.invalidateQueries({ queryKey: ['client-payout-approval-request-details'] });
+    },
+    onError: (e: unknown) => {
+      setConfirmCancelId(null);
+      setPayoutActionError((e as Error)?.message || 'Talep geri çekilemedi.');
+    },
+  });
+
   // Sessiz görünürlük widget'ı: ana muhasebe sayfasını bloklamaz/kırmaz — yükleme/hata durumunda gizlenir.
   if (mineQ.isLoading || (payoutRequestIds.length > 0 && detailsQ.isLoading)) return null;
   if (mineQ.isError) return null;
@@ -184,6 +183,8 @@ export function PendingPayoutRequests({ caseId, caseClientId }: PendingPayoutReq
         {scoped.map(({ detail, intent }) => {
           const isFinalizingThis = finalizeMutation.isPending && finalizeMutation.variables?.approvalRequestId === detail.id;
           const isApprovingThis = approveMutation.isPending && approveMutation.variables === detail.id;
+          const isCancellingThis = cancelMutation.isPending && cancelMutation.variables === detail.id;
+          const anyPending = approveMutation.isPending || finalizeMutation.isPending || cancelMutation.isPending;
           return (
             <div key={detail.id} className="flex items-center justify-between border rounded-lg p-3 text-sm">
               <div>
@@ -192,6 +193,38 @@ export function PendingPayoutRequests({ caseId, caseClientId }: PendingPayoutReq
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant="secondary">{STATUS_LABELS[detail.status] ?? detail.status}</Badge>
+                {detail.status === 'PENDING_APPROVAL' && confirmCancelId !== detail.id && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setPayoutActionError(null);
+                      setConfirmCancelId(detail.id);
+                    }}
+                    disabled={anyPending}
+                  >
+                    Geri Çek
+                  </Button>
+                )}
+                {detail.status === 'PENDING_APPROVAL' && confirmCancelId === detail.id && (
+                  <>
+                    <span className="text-xs text-gray-600">Talep geri çekilsin mi? Bu işlem geri alınamaz.</span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setPayoutActionError(null);
+                        cancelMutation.mutate(detail.id);
+                      }}
+                      disabled={anyPending}
+                    >
+                      {isCancellingThis ? <Spinner className="w-4 h-4" /> : 'Evet, geri çek'}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setConfirmCancelId(null)} disabled={anyPending}>
+                      Vazgeç
+                    </Button>
+                  </>
+                )}
                 {detail.status === 'PENDING_APPROVAL' && (
                   <Button
                     size="sm"
@@ -199,7 +232,7 @@ export function PendingPayoutRequests({ caseId, caseClientId }: PendingPayoutReq
                       setPayoutActionError(null);
                       approveMutation.mutate(detail.id);
                     }}
-                    disabled={approveMutation.isPending || finalizeMutation.isPending}
+                    disabled={anyPending}
                   >
                     {isApprovingThis ? <Spinner className="w-4 h-4" /> : 'Onayla'}
                   </Button>
@@ -211,7 +244,7 @@ export function PendingPayoutRequests({ caseId, caseClientId }: PendingPayoutReq
                       setPayoutActionError(null);
                       finalizeMutation.mutate({ approvalRequestId: detail.id, intent });
                     }}
-                    disabled={finalizeMutation.isPending || approveMutation.isPending}
+                    disabled={anyPending}
                   >
                     {isFinalizingThis ? <Spinner className="w-4 h-4" /> : 'Kesinleştir'}
                   </Button>

@@ -3,7 +3,8 @@
  *
  * (1) Davranış: VIEWER yazma fiilinde 403 VIEWER_WRITE_DENIED; okuma fiilleri ve işaretli okuma-POST'ları geçer;
  *     ADMIN/USER etkilenmez; yöntemi bilinmeyen fiil yazma sayılır (fail-closed).
- * (2) Bağlama: guard, envanterdeki 12 controller'ın SINIF düzeyi guard listesinde JWT guard'ından SONRA durur;
+ * (2) Bağlama: guard, envanterdeki 13 controller'ın SINIF düzeyi guard listesinde JWT guard'ından SONRA durur
+ *     (13.: CaseBalanceController — owner GO 2026-10-05 karar 5, "VIEWER avans yazamaz");
  *     `@AllowViewerReadOnlyPost()` YALNIZ kaynaktan yazma yapmadığı doğrulanmış yedi handler'dadır. Yeni bir
  *     okuma-POST işareti eklenirse bu spec kırılır (bilinçli gözden geçirme zorunlu).
  */
@@ -32,6 +33,7 @@ import { CaseFeeAgreementController } from '../../../client-settlement/case-fee-
 import { ClientFinancialDisclosureController } from '../../../client-financial-disclosure/client-financial-disclosure.controller';
 import { ClientFinancialDisclosureOfficeCommandController } from '../../../client-settlement/client-financial-disclosure-office-command.controller';
 import { ExpenseRequestController } from '../../../expense-request/expense-request.controller';
+import { CaseBalanceController } from '../../../case-balance/case-balance.controller';
 
 const guard = new ViewerWriteDenyGuard(new Reflector());
 const handlerWithAllow = () => undefined;
@@ -82,6 +84,7 @@ const CONTROLLERS: Array<[string, any]> = [
   ['ClientFinancialDisclosureController', ClientFinancialDisclosureController],
   ['ClientFinancialDisclosureOfficeCommandController', ClientFinancialDisclosureOfficeCommandController],
   ['ExpenseRequestController', ExpenseRequestController],
+  ['CaseBalanceController', CaseBalanceController],
 ];
 
 /** Kaynaktan yazma YAPMADIĞI doğrulanmış okuma/hesap POST'ları (değişirse bilinçli güncelleme). */

@@ -38,8 +38,8 @@ export interface TriggerStageResult {
 /** UYAP gönderim hazırlığı olayı: açılış masrafı şartına bağlı tek olay (paket UYAP_PRE). */
 const UYAP_SEND_PREPARE_EVENT = 'EVT_UYAP_SEND_CLICKED';
 
-/** Politika motorunun masraf kapısı (gates.compiled.ts: "Ödenmemiş masraf talebi var. UYAP işlemi yapılamaz."). */
-const EXPENSE_GATE_CODE = 'EXPENSE_BLOCKING';
+/** Politika motorunun dosya kapalı / arşivde kapıları (masraf kapısından ÖNCE değerlendirilir; gerekçeleri açılış masrafı gerekçesiyle değiştirilmez). */
+const CLOSED_OR_ARCHIVED_GATES: ReadonlySet<string> = new Set(['CASE_CLOSED', 'CASE_ARCHIVED']);
 
 /**
  * CPE Adapter Interface
@@ -235,17 +235,24 @@ export class StageTriggerService {
     // CPE gate kontrolü (varsa)
     if (this.casePolicyEngine && actionCode) {
       try {
+        // Büro ve kullanıcı bağlamı SUNUCU-OTORİTER taşınır (JWT'den gelen `tenantId` / `userId`; istemci gövdesinden DEĞİL).
+        // Bağlam eksikken masraf blok olgusu ve vekalet olguları fail-closed hesaplanır: hazırlık her dosyada, dosyanın
+        // gerçek durumundan bağımsız olarak "Ödenmemiş masraf talebi var" ile reddediliyordu (ödenmiş, talepsiz ve
+        // NON_BLOCKING dosyada da). UyapService.sendPaymentOrder ile AYNI bağlam alanları.
         const decision = await this.casePolicyEngine.canPerformAction(tenantId, caseId, actionCode, {
           userId,
           debtorId: eventParams?.debtorCount ? undefined : caseData.debtors[0]?.id,
+          tenantId,
+          authenticatedUserId: userId,
+          evaluatedAt: new Date(),
         });
 
         if (!decision.allowed) {
           this.logger.warn(`CPE blocked action ${actionCode} for case ${caseId}: ${decision.reason}`);
-          // Politika motorunun MASRAF kapısı gerekçesi ("ödenmemiş masraf talebi var") açılış masrafı belirlenmemiş dosyada
-          // gerçek nedeni söylemez (dosyada talep olmayabilir): neden, gereken bilgi ve düzeltme yolu döner. Diğer kapıların
-          // (dosya kapalı, arşivde, UYAP kapalı, vekalet ...) gerekçesi aynen korunur.
-          if (openingExpenseBlock && decision.blockedBy?.gateCode === EXPENSE_GATE_CODE) {
+          // Açılış masrafı belirlenmemiş dosyada (dövizli / karma) gerçek neden, gereken bilgi ve düzeltme yolu döner;
+          // politika motorunun masraf kapısı sırasında (kapalı / arşiv kapılarından SONRA, UYAP ve vekalet kapılarından ÖNCE).
+          // Dosya kapalı / arşivde gerekçesi aynen korunur.
+          if (openingExpenseBlock && !CLOSED_OR_ARCHIVED_GATES.has(decision.blockedBy?.gateCode ?? '')) {
             return { ...openingExpenseBlock, cpeTraceId: decision.traceId };
           }
           return {
@@ -315,20 +322,25 @@ export class StageTriggerService {
   ): Promise<TriggerStageResult> {
     const packageCode = 'UYAP_PRE';
 
+    // Masraf kapısı (mevcut ratifiye kural: gate_type=BLOCKING talep karşılanmadıkça UYAP işlemi yapılamaz; NON_BLOCKING engel
+    // olmaz — expense-request-system gereksinim 4, ExpenseGateService; durum uçları ile AYNI karar). Politika motoru bağlamı
+    // doğru taşınınca bu kapı artık yalnız GERÇEK ödenmemiş talepte reddeder; ödenmiş, talepsiz ve NON_BLOCKING dosyada
+    // reddetmez. Ret gerekçesi durum ucunun gerekçesiyle AYNIDIR (tutar dahil).
+    const gate = await this.expenseGateService.checkGateForCase(tenantId, caseId);
+    if (gate.isBlocked) {
+      return {
+        action: 'BLOCKED',
+        blockReason: gate.message,
+        suggestion: {
+          title: 'Masraf karşılanmadı',
+          description: gate.message || 'Ödenmemiş masraf talebi var.',
+        },
+      };
+    }
+
     // Dövizli / karma dosyada paket toplamı HESAPLANAMAZ (peşin harç oranı TL matraha uygulanır): bakiye bu toplamla
     // karşılaştırılmaz. Peşin harç bir talepte tutarıyla kayıtlıysa şart mevcut masraf kapısıdır — talep karşılanmış olmalı.
     if (openingRequirement?.status === 'RATE_ITEMS_RECORDED') {
-      const gate = await this.expenseGateService.checkGateForCase(tenantId, caseId);
-      if (gate.isBlocked) {
-        return {
-          action: 'BLOCKED',
-          blockReason: gate.message,
-          suggestion: {
-            title: 'Masraf karşılanmadı',
-            description: gate.message || 'Ödenmemiş masraf talebi var.',
-          },
-        };
-      }
       return {
         action: 'READY',
         caseStatus: 'READY_FOR_UYAP',
@@ -351,14 +363,21 @@ export class StageTriggerService {
       tebligatCount: eventParams?.tebligatCount || caseData.debtors?.length || 1,
     });
 
+    // Avans kaydı yoksa (okuma artık satır oluşturmaz) kullanılabilir avans yoktur → karşılaştırma ve mesaj bugünkü sıfır bakiyeyle aynı.
+    const availableAdvance = balance.exists ? String(balance.balance) : '0';
+    // MESAJ yokluğu "0 TL" diye (gerçek sıfır bakiye gibi) YAZMAZ — owner kararı 5: yokluk sahte sıfır kaydı gibi üretilmez.
+    const availableAdvanceText = balance.exists ? `${availableAdvance} TL` : 'avans kaydı yok';
+
     // Bakiye yeterliyse hazır
-    if (Number(balance.balance) >= computed.totalSuggested) {
+    if (Number(availableAdvance) >= computed.totalSuggested) {
       return {
         action: 'READY',
         caseStatus: 'READY_FOR_UYAP',
         suggestion: {
           title: 'UYAP\'a gönderime hazır',
-          description: `Bakiyeniz yeterli (${balance.balance} TL). Gönderim yapabilirsiniz.`,
+          description: balance.exists
+            ? `Bakiyeniz yeterli (${availableAdvance} TL). Gönderim yapabilirsiniz.`
+            : 'Gerekli avans tutarı yok. Gönderim yapabilirsiniz.',
           packageCode,
         },
       };
@@ -367,7 +386,7 @@ export class StageTriggerService {
     // Bakiye yetersiz, modal aç
     return {
       action: 'OPEN_EXPENSE_MODAL',
-      blockReason: `Yetersiz bakiye. Gerekli: ${computed.totalSuggested} TL, Mevcut: ${balance.balance} TL`,
+      blockReason: `Yetersiz bakiye. Gerekli: ${computed.totalSuggested} TL, Mevcut: ${availableAdvanceText}`,
       suggestion: {
         title: `${computed.packageName} için masraf gerekiyor`,
         description: `Toplam: ${computed.totalSuggested.toLocaleString('tr-TR')} TL`,

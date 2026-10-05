@@ -14,6 +14,8 @@ import {
 
 type DecisionKind = "approve" | "reject" | "revision" | "approve-with-changes" | "cancel";
 
+const PAYOUT_ACTION_CODE = "CLIENT_PAYOUT_POST";
+
 interface Props {
   detail: OfficeApprovalDetail;
   currentUserId: string | null;
@@ -58,6 +60,9 @@ export function OfficeApprovalDecisionActions({ detail, currentUserId, onDecided
   if (detail.status !== "PENDING_APPROVAL") return null;
 
   const isRequester = currentUserId !== null && currentUserId === detail.requesterUserId;
+  // Müvekkile ödeme talebi "değiştirerek onaylanamaz": kesinleştirme yalnız ORİJİNAL niyetle çalışır, değiştirilmiş onay
+  // talebi çıkışsız bırakırdı. Bu YALNIZ görünürlüktür — kapı sunucudadır (400); doğrudan istek de reddedilir.
+  const supportsApproveWithChanges = detail.actionCode !== PAYOUT_ACTION_CODE;
 
   const openAction = (kind: DecisionKind) => {
     setActiveAction(kind);
@@ -152,13 +157,15 @@ export function OfficeApprovalDecisionActions({ detail, currentUserId, onDecided
               >
                 Onayla
               </button>
-              <button
-                type="button"
-                onClick={() => openAction("approve-with-changes")}
-                className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm"
-              >
-                Değiştirerek Onayla
-              </button>
+              {supportsApproveWithChanges && (
+                <button
+                  type="button"
+                  onClick={() => openAction("approve-with-changes")}
+                  className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm"
+                >
+                  Değiştirerek Onayla
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => openAction("revision")}

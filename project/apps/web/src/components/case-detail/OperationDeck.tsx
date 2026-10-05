@@ -296,6 +296,15 @@ const panels = [
 // HELPERS
 // ============================================================================
 
+/**
+ * Masraf talebinden TÜRETİLEN görev (`taskType: "EXPENSE_REQUEST"`): sunucuda ayrı bir görev satırı yoktur, `ExpenseRequest`'ten
+ * üretilir. Kimliği adres görevi ucunda (`/address-tasks/:id/complete`) bulunmaz (404) — bu satırda tamamlama eylemi sunulmaz;
+ * görev, masraf talebi kapanınca (ödeme kaydı) listeden kalkar. Metin bilerek nötrdür: bugün web'de ödeme kaydı yolu olmadığından
+ * "ödeme kaydedilince kapanır" vaadi yazılmaz.
+ */
+const isDerivedExpenseTask = (task: Task) => task.taskType === "EXPENSE_REQUEST";
+const DERIVED_TASK_PASSIVE_TEXT = "Masraf talebinden türetildi; buradan kapatılamaz";
+
 const formatDate = (d: string) => d ? new Date(d).toLocaleDateString("tr-TR") : "-";
 const formatDateTime = (d: string) => d ? new Date(d).toLocaleString("tr-TR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "-";
 const formatTL = (n: number) => n.toLocaleString("tr-TR", { minimumFractionDigits: 0 }) + " ₺";
@@ -1086,9 +1095,25 @@ export function OperationDeck({
                               Zaten aldık
                             </button>
                           )}
-                          <button onClick={() => onTaskAction?.(task.id, "complete")} className="p-1 hover:bg-emerald-100 rounded">
-                            <Check className="w-4 h-4 text-emerald-600" />
-                          </button>
+                          {isDerivedExpenseTask(task) ? (
+                            <span
+                              data-testid="task-passive-action"
+                              title={DERIVED_TASK_PASSIVE_TEXT}
+                              className="flex items-center gap-1 text-[10px] text-slate-400 cursor-default"
+                            >
+                              <Check aria-hidden="true" className="w-4 h-4 text-slate-300" />
+                              {DERIVED_TASK_PASSIVE_TEXT}
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => onTaskAction?.(task.id, "complete")}
+                              aria-label={`Görevi tamamla: ${task.title}`}
+                              title="Görevi tamamla"
+                              className="p-1 hover:bg-emerald-100 rounded"
+                            >
+                              <Check aria-hidden="true" className="w-4 h-4 text-emerald-600" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}

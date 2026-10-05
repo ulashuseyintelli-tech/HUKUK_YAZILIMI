@@ -956,6 +956,8 @@ export default function CaseDetailPage() {
   // SESSIZCE bos gorunmesine (gercekten-bos ile ayirt edilemez) yol acmasin.
   const [addressTasksLoadError, setAddressTasksLoadError] = useState<string | null>(null);
   const [loadingAddressTasks, setLoadingAddressTasks] = useState(false);
+  // Yapılacaklar eylem hatası (✓ / İptal): sessiz KALMAZ (lib/action-error.ts kuralı). Görev listede kalır; bant "Kapat" ile kalkar.
+  const [taskActionError, setTaskActionError] = useState<string | null>(null);
   
   // Expense Three-View State (OperationDeck entegrasyonu)
   const [expenseThreeViewData, setExpenseThreeViewData] = useState<Array<{
@@ -3245,6 +3247,20 @@ export default function CaseDetailPage() {
                   </button>
                 </div>
               )}
+              {taskActionError && (
+                // Görev eylemi (✓ / İptal) başarısız olursa ya da görev adres görevi değilse: eskiden yalnız console.error ile
+                // YUTULUYORDU; kullanıcı düğmeye bastığında hiçbir şey olmamış görünüyordu.
+                <div role="alert" className="m-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 flex items-center justify-between gap-3">
+                  <span>{taskActionError}</span>
+                  <button
+                    type="button"
+                    onClick={() => setTaskActionError(null)}
+                    className="shrink-0 rounded bg-red-100 px-2 py-1 text-red-800 hover:bg-red-200"
+                  >
+                    Kapat
+                  </button>
+                </div>
+              )}
               <OperationDeck
                 caseId={caseData.id}
                 muhasebeKayitlari={operationAccountingRecords}
@@ -3378,17 +3394,26 @@ export default function CaseDetailPage() {
                   console.log('Görev ekle');
                 }}
                 onTaskAction={async (taskId, action) => {
-                  // Görev tamamla veya iptal et
+                  // Görev tamamla veya iptal et. Bu uçlar YALNIZ adres görevleri içindir: masraf görevi (ExpenseRequest'ten
+                  // türetilir) ve "Bir Sonraki Hamle" örneği (`sys-1`) adres görevi DEĞİLDİR — kimlikleri adres görevi
+                  // ucunda 404 alırdı. İstek hiç gönderilmez; kullanıcıya nedeni yazılır.
+                  if (!addressTasks.some((task) => task.id === taskId)) {
+                    setTaskActionError(action === 'complete' ? 'Bu görev buradan tamamlanamaz.' : 'Bu görev buradan iptal edilemez.');
+                    return;
+                  }
                   try {
                     if (action === 'complete') {
                       await api.completeAddressTask(taskId, { resultType: 'POSITIVE' });
                     } else {
                       await api.cancelAddressTask(taskId, 'USER_CANCELLED');
                     }
+                    setTaskActionError(null);
                     // Görevleri yenile
                     fetchAddressTasksAndNotes();
                   } catch (error) {
                     console.error('Görev işlemi başarısız:', error);
+                    const reason = toActionErrorMessage(error, 'Görev işlemi tamamlanamadı.').trim();
+                    setTaskActionError(`${/[.!?…]$/.test(reason) ? reason : `${reason}.`} Görev listede duruyor.`);
                   }
                 }}
                 onConfirmReceived={async (taskId) => {
