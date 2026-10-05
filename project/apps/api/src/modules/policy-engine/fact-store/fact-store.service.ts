@@ -15,6 +15,12 @@ import {
   assertManuallyWritableFactKeys,
 } from './computed-fact-ownership';
 
+/**
+ * "Kapalı dosya" sayılan hukuki durumlar (`case.is_closed` olgusunun TEK tanımı). Karar motoru, aşamadan bağımsız eylemde durum
+ * makinesi reddini yok sayarken kapalı / arşiv hükmünü bu kümeyle TAZE dosya satırından türetir (olgu önbelleği 30 sn bayat kalabilir).
+ */
+export const CLOSING_CASE_STATUSES: readonly string[] = ['HITAM', 'INFAZ', 'MUVEKKILE_IADE', 'ACIZ', 'BATAK', 'MAHSUP', 'TEMLIK', 'AZIL', 'FERAGAT', 'SULH'];
+
 // ComputedMetrics type for backward compatibility
 interface ComputedMetrics {
   daysSinceNotification?: number;
@@ -272,8 +278,7 @@ export class FactStoreService {
     factMap.set('case.next_action_at', caseData.nextActionAt);
 
     // Computed: is case closed?
-    const closingStatuses = ['HITAM', 'INFAZ', 'MUVEKKILE_IADE', 'ACIZ', 'BATAK', 'MAHSUP', 'TEMLIK', 'AZIL', 'FERAGAT', 'SULH'];
-    factMap.set('case.is_closed', closingStatuses.includes(caseData.caseStatus as string));
+    factMap.set('case.is_closed', CLOSING_CASE_STATUSES.includes(caseData.caseStatus as string));
     // CS5: CASE_ARCHIVED gate'ini aktive eder (fact.get('case.is_archived') === true → HARD block).
     factMap.set('case.is_archived', caseData.isArchived);
   }

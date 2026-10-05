@@ -38,5 +38,6 @@ export {
   getResolverFailureMode,
   getFailMode,
   isLockRequired,
+  isStageIndependent,
   isCpeRequiredMandatory,
 } from './action-matrix.interface';
