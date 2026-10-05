@@ -305,6 +305,9 @@ function buildSummaryPrisma(o: {
   payoutByCc?: Record<string, Prisma.Decimal>;
   collectionByCase?: Record<string, Prisma.Decimal>;
   postedDispByCase?: Record<string, Prisma.Decimal>;
+  // Tahsilatı iptal edilmiş (manuel geri alma işaretli) KESİNLEŞMİŞ dağıtım toplamı. Sorgu `manualReversalRequiredAt: null`
+  // süzgeci taşımıyorsa bu tutar da toplanır (iptal işaretini esas almayan eski davranışı yakalar).
+  markedPostedDispByCase?: Record<string, Prisma.Decimal>;
   balanceByCase?: Record<string, Prisma.Decimal>;
   expenseRows?: any[];
   expenseOffsetApply?: Record<string, Prisma.Decimal>; // FAZ-1b: per-request offset APPLY (expenseRequestId)
@@ -337,9 +340,11 @@ function buildSummaryPrisma(o: {
       groupBy: jest.fn().mockResolvedValue(foreign.collection ?? []),
     },
     collectionDisposition: {
-      aggregate: jest.fn().mockImplementation(({ where }: any) =>
-        Promise.resolve({ _sum: { totalAmount: o.postedDispByCase?.[where.caseId] ?? null } }),
-      ),
+      aggregate: jest.fn().mockImplementation(({ where }: any) => {
+        const live = o.postedDispByCase?.[where.caseId];
+        const marked = where.manualReversalRequiredAt === null ? undefined : o.markedPostedDispByCase?.[where.caseId];
+        return Promise.resolve({ _sum: { totalAmount: live === undefined && marked === undefined ? null : (live ?? D(0)).plus(marked ?? D(0)) } });
+      }),
       groupBy: jest.fn().mockResolvedValue(foreign.disposition ?? []),
     },
     caseBalance: {
@@ -456,6 +461,61 @@ describe('ClientSettlementReadService.getClientAccountingSummary (Faz A)', () =>
     expect(res.caseScopedContext.pendingDistribution).toBe('-200');
     expect(res.needsReview).toBe(true);
     expect(res.caseBreakdown[0].needsReview).toBe(true);
+  });
+
+  // Satır 7 (owner kararı 6): tahsilatı iptal edilen KESİNLEŞMİŞ dağıtım, diğer okuyucularla AYNI iptal işaretiyle
+  // (CollectionDisposition.manualReversalRequiredAt) hesaptan çıkar. Üç durum AYRI kilitlenir; negatif KIRPILMAZ.
+  describe('iptal işaretli kesinleşmiş dağıtım (manualReversalRequiredAt) — dağıtım bekleyen', () => {
+    const cc = [{ id: 'cc1', caseId: 'caseA', role: 'ALACAKLI', case: { fileNumber: '2026/1', executionFileNumber: null } }];
+    async function summary(o: { collection: number; live: number; marked: number }) {
+      const prisma = buildSummaryPrisma({
+        ccRows: cc,
+        payoutByCc: { cc1: D(0) },
+        collectionByCase: { caseA: D(o.collection) },
+        postedDispByCase: { caseA: D(o.live) },
+        markedPostedDispByCase: { caseA: D(o.marked) },
+        balanceByCase: { caseA: D(0) },
+      });
+      const svc = read(prisma);
+      jest.spyOn(svc, 'computeOutstanding').mockResolvedValue(D(0));
+      const res = await svc.getClientAccountingSummary('t1', 'client-1');
+      return { res, prisma };
+    }
+
+    it('sözleşme: kesinleşmiş dağıtım toplamı, diğer okuyucularla aynı süzgeci taşır (status POSTED + manualReversalRequiredAt null)', async () => {
+      const { prisma } = await summary({ collection: 0, live: 0, marked: 3000 });
+      const where = prisma.collectionDisposition.aggregate.mock.calls[0][0].where;
+      expect(where).toEqual({ tenantId: 't1', caseId: 'caseA', currency: 'TRY', status: 'POSTED', manualReversalRequiredAt: null });
+    });
+
+    it('1) tahsilat iptali: tahsilat 3.000 iptal (onaylı 0), dağıtım 3.000 işaretli → 0 ve uyarı YOK (negatife düşmez)', async () => {
+      const { res } = await summary({ collection: 0, live: 0, marked: 3000 });
+      expect(res.caseScopedContext.pendingDistribution).toBe('0');
+      expect(res.caseScopedContext.debtorCollection).toBe('0');
+      expect(res.needsReview).toBe(false);
+      expect(res.caseBreakdown[0].needsReview).toBe(false);
+    });
+
+    it('2) kısmi dağıtım: iki tahsilattan biri iptal — onaylı 1.000, canlı dağıtım 1.000, iptal edilen 600 işaretli → 0 ve uyarı YOK', async () => {
+      const { res } = await summary({ collection: 1000, live: 1000, marked: 600 });
+      expect(res.caseScopedContext.pendingDistribution).toBe('0');
+      expect(res.needsReview).toBe(false);
+    });
+
+    it('3) gerçek bekleyen tutar GİZLENMEZ: iptal edilen 600 dağıtım + dağıtılmamış onaylı 1.000 tahsilat → 1.000', async () => {
+      const { res } = await summary({ collection: 1000, live: 0, marked: 600 });
+      expect(res.caseScopedContext.pendingDistribution).toBe('1000');
+      expect(res.caseBreakdown[0].pendingDistribution).toBe('1000');
+      expect(res.caseBreakdown[0].pendingDistributionExcludingHeld).toBe('1000');
+      expect(res.needsReview).toBe(false);
+    });
+
+    it('4) gerçek tutarsızlık hâlâ GÖRÜNÜR: işaretsiz dağıtım onaylı tahsilatı aşarsa negatif kalır ve uyarı verir (kırpma YOK)', async () => {
+      const { res } = await summary({ collection: 100, live: 300, marked: 500 });
+      expect(res.caseScopedContext.pendingDistribution).toBe('-200');
+      expect(res.needsReview).toBe(true);
+      expect(res.caseBreakdown[0].needsReview).toBe(true);
+    });
   });
 
   it('aynı caseId iki CaseClient → B grubu DISTINCT caseId ile bir kez sayılır (çift sayma yok)', async () => {

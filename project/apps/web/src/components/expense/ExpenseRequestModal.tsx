@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { X, Plus, Trash2, Send, Loader2, Package, AlertCircle, CheckCircle } from "lucide-react";
 import { api, ExpenseItem } from "@/lib/api";
 import { notCalculableLabels, type CostPackageIncompleteSuggestion } from "@/lib/cost-package-suggestion";
+import { expenseSendRequestFailed, interpretExpenseSendResponse, type ExpenseSendUiState } from "@/lib/expense-send-result";
 
 interface ExpenseRequestModalProps {
   isOpen: boolean;
@@ -78,6 +79,12 @@ export function ExpenseRequestModal({
   const [loading, setSaving] = useState(false);
   const [sendAfterCreate, setSendAfterCreate] = useState(false);
   const [paidByLawyer, setPaidByLawyer] = useState(false); // Avukat kendisi karşıladı
+  // "Oluştur ve Gönder": talep BİR KEZ oluşturulur; gönderim başarısız / belirsiz olsa da talep kaybolmaz ve yeniden deneme
+  // AYNI talep üzerinden yapılır (ikinci talep oluşturulmaz). Ref'ler çift tıklama / hızlı ardışık tıklamada state'ten önce okunur.
+  const createdRequestRef = useRef<string | null>(null);
+  const submittingRef = useRef(false);
+  const [createdRequestId, setCreatedRequestId] = useState<string | null>(null);
+  const [sendState, setSendState] = useState<ExpenseSendUiState | null>(null);
 
   // Paketleri yükle
   useEffect(() => {
@@ -195,73 +202,120 @@ export function ExpenseRequestModal({
   // gösterilmez ve bu paketten talep oluşturulmaz (eksik tutar 0 sayılmaz, kalem sessizce atlanmaz).
   const packageIncomplete = mode === "package" && incompleteSuggestion !== null;
 
+  // E-posta gönderimi yalnız ELLE kipte yapılır: paket talebi kalem satırı yazmadığı için e-posta kapısı ITEMS_MISSING ile reddeder
+  // (kalem yazım sözleşmesi owner kararı bekliyor). Paket kipinde kutu kapalı ve nedeni yazılıdır; "gönderildi" iddiası yok.
+  const willSend = mode === "manual" && !paidByLawyer && sendAfterCreate;
+
+  const resetForm = () => {
+    setItems([{ type: "TEBLIGAT_GIDERI", description: "Tebligat gönderim gideri", amount: 0 }]);
+    setComputedItems([]);
+    setIncompleteSuggestion(null);
+    setSelectedPackage("");
+    setNotes("");
+    setSendAfterCreate(false);
+    setPaidByLawyer(false);
+    createdRequestRef.current = null;
+    setCreatedRequestId(null);
+    setSendState(null);
+  };
+
+  // Talep oluşturulduysa pencere kapanırken form sıfırlanır (bir sonraki açılış eski talebin sonucunu göstermesin) ve dosya
+  // verisi yenilenir; oluşturulmadıysa eskisi gibi yalnız kapanır. Yenileme (onSuccess) KAPANIŞTA yapılır: sayfa dosya verisini
+  // yeniden yüklerken pencereyi yeniden kurabildiği için (ölçüldü: gönderim sonucu kayboluyordu) açıkken çağrılmaz.
+  // Gönderim denenirken pencere kapanmaz (sonuç kaybolur / kapalı pencerede dolar). Yeniden denenebilir başarısızlık gösterilirken
+  // kapatmak talebin kimliğini atar: o talep başka ekrandan gönderilemediği için kullanıcı onaylar.
+  const retryPending = createdRequestId !== null && sendState !== null && sendState.kind !== "accepted" && sendState.retryable;
+  const handleClose = () => {
+    if (submittingRef.current) return;
+    if (retryPending && !window.confirm("Bu talep için e-posta gönderilemedi. Pencereyi kapatırsanız aynı talep buradan yeniden gönderilemez. Kapatılsın mı?")) return;
+    if (createdRequestRef.current !== null) {
+      resetForm();
+      onSuccess?.();
+    }
+    onClose();
+  };
+
   const handleSubmit = async () => {
-    if (mode === "manual" && items.some((item) => !item.description || item.amount <= 0)) {
-      alert("Lütfen tüm kalemleri doldurun");
-      return;
+    if (submittingRef.current) return; // çift tıklama / eşzamanlı istek: ikinci talep ya da ikinci gönderim yok
+
+    if (createdRequestRef.current === null) {
+      if (mode === "manual" && items.some((item) => !item.description || item.amount <= 0)) {
+        alert("Lütfen tüm kalemleri doldurun");
+        return;
+      }
+
+      if (mode === "package" && computedItems.length === 0) {
+        alert("Lütfen bir paket seçin");
+        return;
+      }
     }
 
-    if (mode === "package" && computedItems.length === 0) {
-      alert("Lütfen bir paket seçin");
-      return;
-    }
-
+    submittingRef.current = true;
     setSaving(true);
     try {
-      let request;
-      
-      if (mode === "package") {
-        // Paket modunda - yeni API kullan
-        request = await api.createExpenseRequestFromPackage({
-          caseId,
-          clientId,
-          packageCode: selectedPackage,
-          items: computedItems.map(item => ({
-            itemCode: item.itemCode,
-            label: item.label,
-            suggestedAmount: item.suggestedAmount,
-            finalAmount: item.finalAmount,
-            wasOverridden: item.wasOverridden,
-          })),
-          dueDate: dueDate || undefined,
-          notes: paidByLawyer 
-            ? `${notes ? notes + '\n' : ''}[Avukat tarafından karşılandı - Müvekkilden tahsil edilecek]`
-            : notes || undefined,
-          sendEmail: !paidByLawyer && sendAfterCreate, // Avukat karşıladıysa mail gönderme
-          paidByLawyer, // Avukat karşıladı flag'i
-        });
-      } else {
-        // Manuel mod - eski API
-        request = await api.createExpenseRequest({
-          caseId,
-          clientId,
-          items,
-          dueDate: dueDate || undefined,
-          notes: paidByLawyer 
-            ? `${notes ? notes + '\n' : ''}[Avukat tarafından karşılandı - Müvekkilden tahsil edilecek]`
-            : notes || undefined,
-          paidByLawyer, // Avukat karşıladı flag'i
-        });
+      let requestId = createdRequestRef.current;
 
-        if (!paidByLawyer && sendAfterCreate && request.id) {
-          await api.sendExpenseRequest(request.id, "EMAIL");
+      if (requestId === null) {
+        let request;
+        if (mode === "package") {
+          // Paket modunda - yeni API kullan
+          request = await api.createExpenseRequestFromPackage({
+            caseId,
+            clientId,
+            packageCode: selectedPackage,
+            items: computedItems.map(item => ({
+              itemCode: item.itemCode,
+              label: item.label,
+              suggestedAmount: item.suggestedAmount,
+              finalAmount: item.finalAmount,
+              wasOverridden: item.wasOverridden,
+            })),
+            dueDate: dueDate || undefined,
+            notes: paidByLawyer 
+              ? `${notes ? notes + '\n' : ''}[Avukat tarafından karşılandı - Müvekkilden tahsil edilecek]`
+              : notes || undefined,
+            // Gönderim bu çağrıda DEĞİL, aşağıda gerçek gönderim ucuyla yapılır (sonucu pencerede gösterilir)
+            sendEmail: false,
+            paidByLawyer, // Avukat karşıladı flag'i
+          });
+        } else {
+          // Manuel mod - eski API
+          request = await api.createExpenseRequest({
+            caseId,
+            clientId,
+            items,
+            dueDate: dueDate || undefined,
+            notes: paidByLawyer 
+              ? `${notes ? notes + '\n' : ''}[Avukat tarafından karşılandı - Müvekkilden tahsil edilecek]`
+              : notes || undefined,
+            paidByLawyer, // Avukat karşıladı flag'i
+          });
+        }
+        requestId = request?.id ?? null;
+        if (requestId !== null) {
+          createdRequestRef.current = requestId;
+          setCreatedRequestId(requestId);
         }
       }
 
+      if (willSend && requestId) {
+        setSendState(null);
+        try {
+          // Gerçek gönderim: sonuç (kabul / neden / belirsiz) yanıttan okunur — HTTP 201 başarı DEMEK DEĞİLDİR
+          setSendState(interpretExpenseSendResponse(await api.sendExpenseEmail(requestId)));
+        } catch (error) {
+          setSendState(expenseSendRequestFailed(error));
+        }
+        return; // pencere açık kalır ve sonucu gösterir
+      }
+
+      resetForm();
       onSuccess?.();
       onClose();
-      
-      // Reset form
-      setItems([{ type: "TEBLIGAT_GIDERI", description: "Tebligat gönderim gideri", amount: 0 }]);
-      setComputedItems([]);
-      setIncompleteSuggestion(null);
-      setSelectedPackage("");
-      setNotes("");
-      setSendAfterCreate(false);
-      setPaidByLawyer(false);
     } catch (error: any) {
       alert(error.message || "Masraf talebi oluşturulamadı");
     } finally {
+      submittingRef.current = false;
       setSaving(false);
     }
   };
@@ -272,7 +326,7 @@ export function ExpenseRequestModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="fixed inset-0 bg-black/40" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/40" onClick={handleClose} />
       <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="px-5 py-4 border-b bg-gradient-to-r from-amber-50 to-orange-50">
@@ -283,7 +337,7 @@ export function ExpenseRequestModal({
                 {clientName} • {executionFileNumber || caseFileNumber}
               </p>
             </div>
-            <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
+            <button onClick={handleClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
               <X className="h-5 w-5 text-gray-500" />
             </button>
           </div>
@@ -298,7 +352,9 @@ export function ExpenseRequestModal({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+        <div className="flex-1 overflow-y-auto p-5">
+          {/* Talep oluşturulduktan sonra alanlar kilitlenir: yeniden deneme AYNI talebi kullanır, formdaki değer o talebe yansımaz */}
+          <fieldset disabled={createdRequestId !== null} className="space-y-4 min-w-0">
           {/* Mod Seçimi */}
           <div className="flex gap-2">
             <button
@@ -562,24 +618,71 @@ export function ExpenseRequestModal({
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={sendAfterCreate}
+                  checked={willSend}
+                  disabled={mode === "package"}
                   onChange={(e) => setSendAfterCreate(e.target.checked)}
                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
-                <span className="text-sm text-gray-700">Oluşturduktan sonra müvekkile e-posta gönder</span>
+                <span className="text-sm text-gray-700">
+                  Oluşturduktan sonra müvekkile e-posta gönder
+                  {mode === "package" && (
+                    <span className="text-gray-500 text-xs block">Paket kipinde e-posta gönderimi bu pencerede henüz yapılamıyor; talep oluşturulur, e-posta gönderilmez.</span>
+                  )}
+                </span>
               </label>
             )}
           </div>
+          </fieldset>
         </div>
+
+        {/* Gönderim sonucu (talep oluşturulduktan sonra) */}
+        {createdRequestId !== null && sendState !== null && (
+          <div
+            role={sendState.kind === "accepted" ? "status" : "alert"}
+            data-testid="expense-send-result"
+            data-state={sendState.kind}
+            className={`mx-5 mb-3 p-3 rounded-lg border text-sm ${
+              sendState.kind === "accepted"
+                ? "bg-green-50 border-green-200 text-green-800"
+                : sendState.kind === "uncertain"
+                  ? "bg-amber-50 border-amber-300 text-amber-900"
+                  : "bg-red-50 border-red-200 text-red-800"
+            }`}
+          >
+            <p className="font-medium">
+              {sendState.kind === "accepted"
+                ? "Masraf talebi oluşturuldu; e-posta gönderim sunucusuna iletildi."
+                : sendState.kind === "uncertain" || sendState.kind === "error"
+                  ? sendState.kind === "error"
+                    ? "Masraf talebi oluşturuldu; e-postanın gönderilip gönderilmediği bilinmiyor."
+                    : "Masraf talebi oluşturuldu; e-postanın gönderilip gönderilmediği doğrulanamadı."
+                  : "Masraf talebi oluşturuldu ancak e-posta gönderilemedi."}
+            </p>
+            <p className="mt-1">{sendState.message}</p>
+            {sendState.kind !== "accepted" && sendState.requiredInfo.length > 0 && (
+              <p className="mt-1">Gereken bilgi: {sendState.requiredInfo.join("; ")}</p>
+            )}
+            {sendState.kind === "uncertain" ? (
+              <p className="mt-1 text-xs">Başarılı sayılmadı. Mükerrer e-posta gitmemesi için bu talep için tekrar gönderilmez.</p>
+            ) : sendState.kind !== "accepted" && sendState.retryable ? (
+              <p className="mt-1 text-xs">Talep kaydedildi. "Yeniden Dene" aynı talebi kullanır; ikinci talep oluşturulmaz. Eksik ayarı başka sekmede tamamlayıp burada yeniden deneyebilirsiniz; pencereyi kapatırsanız bu talep buradan yeniden gönderilemez.</p>
+            ) : sendState.kind !== "accepted" ? (
+              <p className="mt-1 text-xs">Talep kaydedildi. Bu talebin kalemleri e-posta için geçerli değil; bu pencereden yeniden denenemez.</p>
+            ) : null}
+          </div>
+        )}
 
         {/* Footer */}
         <div className="px-5 py-4 border-t bg-gray-50 flex items-center justify-end gap-3">
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg"
           >
-            İptal
+            {createdRequestId !== null ? "Kapat" : "İptal"}
           </button>
+          {/* Talep oluşturulduktan sonra gönderim sonucu kesinleştiyse (kabul / belirsiz) ikinci gönderim düğmesi yoktur;
+              yalnız kesin başarısızlıkta / sonuç alınamadığında aynı talebi yeniden deneme düğmesi vardır. */}
+          {(createdRequestId === null || (sendState !== null && sendState.kind !== "accepted" && sendState.retryable) || loading) && (
           <button
             onClick={handleSubmit}
             disabled={loading || totalAmount <= 0 || packageIncomplete}
@@ -589,13 +692,14 @@ export function ExpenseRequestModal({
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : paidByLawyer ? (
               <CheckCircle className="h-4 w-4" />
-            ) : sendAfterCreate ? (
+            ) : willSend ? (
               <Send className="h-4 w-4" />
             ) : (
               <CheckCircle className="h-4 w-4" />
             )}
-            {paidByLawyer ? "Karşıladım & Kaydet" : sendAfterCreate ? "Oluştur ve Gönder" : "Oluştur"}
+            {createdRequestId !== null ? (loading ? "Gönderiliyor…" : "Yeniden Dene") : paidByLawyer ? "Karşıladım & Kaydet" : willSend ? "Oluştur ve Gönder" : "Oluştur"}
           </button>
+          )}
         </div>
       </div>
     </div>

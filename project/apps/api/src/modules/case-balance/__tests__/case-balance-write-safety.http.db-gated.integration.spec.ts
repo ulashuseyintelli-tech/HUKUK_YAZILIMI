@@ -110,6 +110,11 @@ describeWithDisposableDb('Masraf/avans bakiyesi — VIEWER yazma sınırı ve ok
     app = moduleRef.createNestApplication();
     app.useGlobalPipes(new ValidationPipe(PRODUCTION_VALIDATION_OPTIONS));
     await app.init();
+    // supertest dinlemeyen sunucuyu ilk istekte kendisi açar (listen(0)) ve O isteğin yanıtı gelince paylaşılan sunucuyu kapatır
+    // (supertest 7.2.2 lib/test.js). Eşzamanlı isteklerde (Promise.all) bu, henüz işlenmemiş bağlantıları koparır: Linux'ta
+    // yanıtsız `read ECONNRESET`, Windows'ta görünmez (CI'da ölçüldü; emsal #2915). Uygulama test boyunca kendi portunda dinler;
+    // supertest sunucuyu sahiplenmez ve kapatmaz. İstekler eşzamanlı kalır; kapanış afterAll'daki app.close() ile olur.
+    await app.listen(0, '127.0.0.1');
 
     for (const t of [tenantId, otherTenantId]) await prisma.tenant.create({ data: { id: t, name: `CI CBWS ${t}`, slug: t } });
     const mk = async (tenant: string, role: 'ADMIN' | 'USER' | 'VIEWER', tag: string) =>

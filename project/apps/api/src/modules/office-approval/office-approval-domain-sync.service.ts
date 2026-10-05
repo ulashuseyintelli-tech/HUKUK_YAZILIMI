@@ -45,6 +45,7 @@ import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-
 import { interestWriteData, normalizeInterestWriteIntent } from '../claim-item/interest-write-admission';
 import { validateInterestAccrualState } from '../claim-item/interest-accrual-policy';
 import { AuditService } from '../audit/audit.service';
+import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { createCollectionMutationTrace } from '../collection/collection-audit';
 import {
   appendClaimItemContinuity,
@@ -108,6 +109,9 @@ export class OfficeApprovalDomainSyncService {
     }
     if (this.isFinancialCaseCloseApproval(req)) {
       return this.syncFinancialCaseClose(tx, req);
+    }
+    if (this.isClientPayoutPostApproval(req)) {
+      return this.syncClientPayoutPost(req);
     }
   }
 
@@ -216,6 +220,24 @@ export class OfficeApprovalDomainSyncService {
 
   private isFinancialCaseCloseApproval(req: OfficeApprovalRequest): boolean {
     return req.actionCode === FINANCIAL_CASE_CLOSE_ACTION_CODE && req.targetType === FINANCIAL_CASE_CLOSE_TARGET_TYPE;
+  }
+
+  private isClientPayoutPostApproval(req: OfficeApprovalRequest): boolean {
+    return req.actionCode === ActionCode.CLIENT_PAYOUT_POST;
+  }
+
+  /**
+   * Müvekkile ödeme talebi: "değiştirerek onay" desteklenmez. Ödeme kesinleştirmesi (ClientPayoutService.finalize) yalnız
+   * ORİJİNAL niyetle çalışır (tutar / müvekkil / para birimi talepten okunur); APPROVED_WITH_CHANGES kaydı kesinleştirilemez
+   * ve talep çıkışsız kalırdı. Diğer onay türlerindeki kalıpla aynı: karar kaydı geri alınır, talep PENDING_APPROVAL'da kalır.
+   * Durum / öz-onay / onaylayıcı yeterliliği kapıları bu noktadan ÖNCE çalışır ve DEĞİŞMEZ; onay, ret ve revizyon etkilenmez.
+   */
+  private syncClientPayoutPost(req: OfficeApprovalRequest): void {
+    if (req.status === OfficeApprovalStatus.APPROVED_WITH_CHANGES) {
+      throw new BadRequestException(
+        'Müvekkile ödeme talebi değiştirilerek onaylanamaz; revizyon isteyin veya normal onaylayın.',
+      );
+    }
   }
 
   private async syncFinancialCaseClose(tx: Prisma.TransactionClient, req: OfficeApprovalRequest): Promise<void> {

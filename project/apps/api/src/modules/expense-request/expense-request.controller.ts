@@ -297,7 +297,7 @@ export class ExpenseRequestController {
    */
   @Post(':id/send-email')
   async sendExpenseEmail(@Req() req: AuthRequest, @Param('id') id: string) {
-    return this.notificationService.sendExpenseRequest(req.user.tenantId, id, req.user.id);
+    return this.service.sendExpenseEmailWithOutcome(req.user.tenantId, id, req.user.id);
   }
 
   /**

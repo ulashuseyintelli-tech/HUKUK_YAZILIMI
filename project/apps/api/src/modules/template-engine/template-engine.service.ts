@@ -28,7 +28,9 @@ import { previewCekFormation, type CekFormationPreviewInput } from '../claim-ite
 import { PrismaService } from '../../prisma/prisma.service';
 import { FeeEngineService } from '../fee-engine/fee-engine.service';
 import { resolveClientAddress } from '../client/client-address-resolver';
-import type { TDocumentDefinitions, TFontDictionary } from 'pdfmake/interfaces';
+import type { TDocumentDefinitions } from 'pdfmake/interfaces';
+import { getTemplatePdfFonts, TEMPLATE_PDF_FONT } from './template-pdf-fonts';
+import { buildGridLine } from './template-pdf-text-grid';
 import { Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel, Table, TableRow, TableCell, WidthType, BorderStyle } from 'docx';
 import { isExplicitCaseInterestType } from '../../common/case-interest-type-source';
 
@@ -2150,14 +2152,8 @@ Borclu: ............................    Yediemin: ..............................
    * Resmi Örnek No:1 formatında Takip Talebi PDF'i oluştur
    */
   private async generateTakipTalebiPdfFormatted(data: TemplateData): Promise<Buffer> {
-    const fonts: TFontDictionary = {
-      Courier: {
-        normal: 'Courier',
-        bold: 'Courier-Bold',
-        italics: 'Courier-Oblique',
-        bolditalics: 'Courier-BoldOblique'
-      }
-    };
+    // Gömülü Roboto (Türkçe ı İ ş Ş ğ Ğ): standart Courier WinAnsi'dir, bu harfleri bozar — bkz. template-pdf-fonts.ts
+    const fonts = getTemplatePdfFonts();
 
     const PdfPrinterClass = await getPdfPrinter();
     const printer = new PdfPrinterClass(fonts);
@@ -2377,36 +2373,36 @@ Borclu: ............................    Yediemin: ..............................
         header: {
           fontSize: 12,
           bold: true,
-          font: 'Courier'
+          font: TEMPLATE_PDF_FONT
         },
         subheader: {
           fontSize: 10,
-          font: 'Courier'
+          font: TEMPLATE_PDF_FONT
         },
         label: {
           fontSize: 8,
-          font: 'Courier'
+          font: TEMPLATE_PDF_FONT
         },
         value: {
           fontSize: 8,
-          font: 'Courier'
+          font: TEMPLATE_PDF_FONT
         },
         valueBold: {
           fontSize: 8,
-          font: 'Courier',
+          font: TEMPLATE_PDF_FONT,
           bold: true
         },
         content: {
           fontSize: 9,
-          font: 'Courier'
+          font: TEMPLATE_PDF_FONT
         },
         signature: {
           fontSize: 9,
-          font: 'Courier'
+          font: TEMPLATE_PDF_FONT
         }
       },
       defaultStyle: {
-        font: 'Courier'
+        font: TEMPLATE_PDF_FONT
       },
       pageSize: 'A4',
       pageMargins: [25, 20, 25, 20] as [number, number, number, number]
@@ -2432,14 +2428,8 @@ Borclu: ............................    Yediemin: ..............................
    * Text içeriğini PDF'e dönüştür
    */
   private async textToPdf(content: string, title: string): Promise<Buffer> {
-    const fonts: TFontDictionary = {
-      Courier: {
-        normal: 'Courier',
-        bold: 'Courier-Bold',
-        italics: 'Courier-Oblique',
-        bolditalics: 'Courier-BoldOblique'
-      }
-    };
+    // Gömülü Roboto (Türkçe ı İ ş Ş ğ Ğ): standart Courier WinAnsi'dir, bu harfleri bozar — bkz. template-pdf-fonts.ts
+    const fonts = getTemplatePdfFonts();
 
     const PdfPrinterClass = await getPdfPrinter();
     const printer = new PdfPrinterClass(fonts);
@@ -2461,12 +2451,10 @@ Borclu: ............................    Yediemin: ..............................
     });
     
     // İçerik satırları
+    // Şablonlar tek aralıklı yazı tipine göre boşlukla hizalıdır: satır başı boşluk / `ETİKET   : değer` sütunları eski
+    // Courier ızgarasındaki aynı konumlara oturtulur (metin değişmez) — bkz. template-pdf-text-grid.ts
     lines.forEach(line => {
-      docContent.push({
-        text: line || ' ',
-        style: 'content',
-        preserveLeadingSpaces: true
-      });
+      docContent.push(buildGridLine(line, 10, 'content'));
     });
 
     const docDefinition: TDocumentDefinitions = {
@@ -2475,15 +2463,15 @@ Borclu: ............................    Yediemin: ..............................
         header: {
           fontSize: 14,
           bold: true,
-          font: 'Courier'
+          font: TEMPLATE_PDF_FONT
         },
         content: {
           fontSize: 10,
-          font: 'Courier'
+          font: TEMPLATE_PDF_FONT
         }
       },
       defaultStyle: {
-        font: 'Courier'
+        font: TEMPLATE_PDF_FONT
       },
       pageSize: 'A4',
       pageMargins: [40, 60, 40, 60] as [number, number, number, number]

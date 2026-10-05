@@ -175,6 +175,40 @@ describe('DBIND-P1 OfficeApprovalDomainSyncService', () => {
     expect(db.collectionDisposition.updateMany).not.toHaveBeenCalled();
   });
 
+  describe('CLIENT_PAYOUT_POST (musteriye odeme talebi) — degistirerek onay kapali', () => {
+    const payoutReq = (over: Record<string, unknown> = {}) =>
+      req({ actionCode: 'CLIENT_PAYOUT_POST', targetType: 'CLIENT_PAYOUT_REQUEST', targetRef: 'payout-req-1', ...over });
+
+    it('APPROVED_WITH_CHANGES fail-closed: BadRequest, hicbir yazma yok', async () => {
+      const db = tx();
+      await expect(
+        svc.syncAfterDecision(db as any, payoutReq({ status: OfficeApprovalStatus.APPROVED_WITH_CHANGES }) as any),
+      ).rejects.toThrow('değiştirilerek onaylanamaz');
+      await expect(
+        svc.syncAfterDecision(db as any, payoutReq({ status: OfficeApprovalStatus.APPROVED_WITH_CHANGES }) as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(db.collectionDisposition.updateMany).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      OfficeApprovalStatus.APPROVED,
+      OfficeApprovalStatus.REJECTED,
+      OfficeApprovalStatus.REVISION_REQUESTED,
+      OfficeApprovalStatus.CANCELLED,
+    ])('%s: etkilenmez (no-op; kesinlestirme ayri uctan)', async (status) => {
+      const db = tx();
+      await expect(svc.syncAfterDecision(db as any, payoutReq({ status }) as any)).resolves.toBeUndefined();
+      expect(db.collectionDisposition.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('baska onay turu etkilenmez: genel (CHANGE_STATUS) talep APPROVED_WITH_CHANGES hata vermez', async () => {
+      const db = tx();
+      await expect(
+        svc.syncAfterDecision(db as any, req({ actionCode: 'CHANGE_STATUS', targetType: 'LegalCase', status: OfficeApprovalStatus.APPROVED_WITH_CHANGES }) as any),
+      ).resolves.toBeUndefined();
+    });
+  });
+
   it('APPROVED kayitta approverUserId yoksa disposition approved yazmaz', async () => {
     const db = tx();
 

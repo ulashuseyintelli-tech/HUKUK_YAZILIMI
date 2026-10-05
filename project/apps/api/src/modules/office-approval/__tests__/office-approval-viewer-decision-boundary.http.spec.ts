@@ -47,6 +47,7 @@ jest.mock('../../client-financial-disclosure/client-financial-disclosure-writer.
 
 import { OfficeApprovalController } from '../office-approval.controller';
 import { OfficeApprovalService } from '../office-approval.service';
+import { OfficeApprovalDomainSyncService } from '../office-approval-domain-sync.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { DispositionController } from '../../client-settlement/disposition.controller';
@@ -372,9 +373,12 @@ const VIEWER_REACH = [
   // CLF-O0-01: FD talebi (oar-fd-generic) hiçbir genel karar rotasında karar yüklemine ULAŞMAZ — bkz. FD_GENERIC_ACTORS.
 ];
 
-const PERMITTED = [
+const PERMITTED: { requestId: string; title: string; actors: string[]; exceptDecisions?: string[] }[] = [
   { requestId: 'oar-generic', title: 'CHANGE_STATUS', actors: ['partner', 'delegate', 'admin-partner'] },
-  { requestId: 'oar-payout', title: 'CLIENT_PAYOUT_POST', actors: ['manager', 'partner'] },
+  // Müvekkile ödeme talebinde "değiştirerek onay" KAPALIDIR (400; alan eşleme servisinde). Bu matris SAHTE alan eşleme
+  // kullanır ve oradaki kapıyı çalıştıramaz; bu yüzden o karar burada beklenmez — GERÇEK alan eşlemeyle aşağıdaki
+  // "CLIENT_PAYOUT_POST: değiştirerek onay kapalı" bloğunda sınanır.
+  { requestId: 'oar-payout', title: 'CLIENT_PAYOUT_POST', actors: ['manager', 'partner'], exceptDecisions: ['approve-with-changes'] },
 ];
 
 /** CLF-O0-01: FD talebinde genel kutu karar VERDİRMEZ — FD politikasınca uygun, talep sahibi ve bağlı VIEWER aynı yanıtı alır. */
@@ -463,8 +467,8 @@ describe('VIEWER ONAY KARARI SINIRI — gerçek HTTP giriş yolları', () => {
     });
   });
 
-  describe.each(PERMITTED)('izinli aktörler DEĞİŞMEDİ — $title', ({ requestId, actors }) => {
-    describe.each(DECISIONS)('$name', (d) => {
+  describe.each(PERMITTED)('izinli aktörler DEĞİŞMEDİ — $title', ({ requestId, actors, exceptDecisions }) => {
+    describe.each(DECISIONS.filter((d) => !(exceptDecisions ?? []).includes(d.name)))('$name', (d) => {
       it.each(actors)(`%s → 201 ${d.status}; karar kaydı + domain senkronu + audit birer kez`, async (actor) => {
         const res = await post(`/office-approvals/${requestId}/${d.name}`, actor, d.body);
         expect(res.status).toBe(201);
@@ -730,5 +734,84 @@ describe('VIEWER ONAY KARARI SINIRI — gerçek HTTP giriş yolları', () => {
       expect(res.body).toMatchObject({ status: 'CONTENT_APPROVED', replayed: false });
       expect(db.versions.get(VERSION_CONTENT)).toMatchObject({ status: 'CONTENT_APPROVED', contentApprovedById: ACTORS.delegate.id });
     });
+  });
+});
+
+// ── CLIENT_PAYOUT_POST: "değiştirerek onay" kapalı — GERÇEK alan eşleme servisiyle HTTP düzeyi ─────────────────────
+// Yukarıdaki blok SAHTE alan eşleme kullanır (kapıyı çalıştıramaz). Burada alan eşleme GERÇEK; yetki / durum / öz-onay kapıları
+// değişmemiş servis kodudur. Karar transaction'ı geri alınabilir bir sahteyle kurulur (ret → karar kaydı + denetim geri gider).
+describe('CLIENT_PAYOUT_POST: değiştirerek onay kapalı — gerçek alan eşleme, gerçek HTTP rotası', () => {
+  let app: INestApplication;
+  const realDomainSync = new OfficeApprovalDomainSyncService();
+  const approvalService = new OfficeApprovalService(fakePrisma, audit as never, realDomainSync);
+  const originalTransaction = fakePrisma.$transaction;
+  const AWC = { replacementSavedIntent: { amount: '1' }, note: 'degisiklikle' };
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({
+      controllers: [OfficeApprovalController],
+      providers: [{ provide: OfficeApprovalService, useValue: approvalService }],
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useClass(TestActorGuard)
+      .compile();
+    app = moduleRef.createNestApplication();
+    await app.init();
+  });
+
+  afterAll(async () => {
+    fakePrisma.$transaction = originalTransaction;
+    await app.close();
+  });
+
+  beforeEach(async () => {
+    seed(await produceSealedContent());
+    jest.clearAllMocks();
+    // Gerçek veritabanındaki gibi: transaction içinde fırlayan hata kayıt değişikliklerini GERİ ALIR.
+    fakePrisma.$transaction = jest.fn(async (fn: (tx: unknown) => unknown) => {
+      const snapshot = new Map([...db.requests].map(([id, row]) => [id, { ...row }]));
+      try {
+        return await fn(fakePrisma);
+      } catch (e) {
+        db.requests.clear();
+        snapshot.forEach((row, id) => db.requests.set(id, row));
+        throw e;
+      }
+    });
+  });
+
+  const post = (path: string, actor: string, body: object) =>
+    request(app.getHttpServer()).post(path).set('x-test-actor', actor).send(body);
+
+  it.each(['manager', 'partner'])('%s: ödeme talebinde değiştirerek onay → 400; talep PENDING_APPROVAL kalır; karar kaydı ve denetim YOK', async (actor) => {
+    const res = await post('/office-approvals/oar-payout/approve-with-changes', actor, AWC);
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.body)).toContain('değiştirilerek onaylanamaz');
+    expect(db.requests.get('oar-payout')).toMatchObject({ status: 'PENDING_APPROVAL', approverUserId: null, decidedAt: null });
+    expect(audit.log).not.toHaveBeenCalled();
+  });
+
+  it('ret sonrası AYNI talep normal onaylanır (talep çıkışsız kalmaz)', async () => {
+    const reddedilen = await post('/office-approvals/oar-payout/approve-with-changes', 'manager', AWC);
+    expect(reddedilen.status).toBe(400);
+    const res = await post('/office-approvals/oar-payout/approve', 'manager', { note: 'uygun' });
+    expect(res.status).toBe(201);
+    expect(res.body.data).toMatchObject({ id: 'oar-payout', status: 'APPROVED' });
+    expect(db.requests.get('oar-payout')).toMatchObject({ status: 'APPROVED', approverUserId: ACTORS.manager.id });
+  });
+
+  it('yetki kapıları DEĞİŞMEDİ: bağlı VIEWER hâlâ 403 (kapı alan eşlemeden ÖNCE); talep sahibi kendi talebini onaylayamaz', async () => {
+    const viewer = await post('/office-approvals/oar-payout/approve-with-changes', 'viewer-manager', AWC);
+    expect(viewer.status).toBe(403);
+    expect(viewer.body.code).toBe(DENIED);
+    const requesterSelf = await post('/office-approvals/oar-payout/approve-with-changes', 'requester', AWC);
+    expect([400, 403]).toContain(requesterSelf.status);
+    expect(db.requests.get('oar-payout')).toMatchObject({ status: 'PENDING_APPROVAL', approverUserId: null });
+  });
+
+  it('başka onay türü etkilenmez: CHANGE_STATUS değiştirerek onay hâlâ 201 APPROVED_WITH_CHANGES', async () => {
+    const res = await post('/office-approvals/oar-generic/approve-with-changes', 'partner', { replacementSavedIntent: { kind: 'degistirilmis' }, note: 'x' });
+    expect(res.status).toBe(201);
+    expect(res.body.data).toMatchObject({ id: 'oar-generic', status: 'APPROVED_WITH_CHANGES' });
   });
 });
