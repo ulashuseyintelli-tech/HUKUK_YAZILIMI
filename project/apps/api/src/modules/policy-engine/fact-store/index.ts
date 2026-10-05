@@ -5,7 +5,7 @@ export * from './fact-store.types';
 export { ComputedFactProvider, ProviderMetadata } from './computed-fact-provider.interface';
 
 // Services
-export { FactStoreService } from './fact-store.service';
+export { FactStoreService, CLOSING_CASE_STATUSES } from './fact-store.service';
 export { ComputedFactRegistry } from './computed-fact-registry';
 export {
   UyapAvailabilityService,
