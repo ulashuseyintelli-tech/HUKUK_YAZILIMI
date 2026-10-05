@@ -89,10 +89,10 @@ jobs:
       packages: read
     name: Test Suite
     runs-on: ubuntu-latest
-    # GH-03: job seviyesinde timeout yoktu → GitHub default'u 360 dk. Konsolidasyon
-    # sonrasi beklenen sure ~13 dk; 20 dk sinir kacak bir job'i sinirlar, normal
-    # kosuya mudahale etmez (client-workspace-live-smoke ile ayni deger).
-    timeout-minutes: 20
+    # GH-03: job seviyesinde timeout yoktu → GitHub default'u 360 dk. Ilk sinir 20 dk idi;
+    # 2026-10-03/04 olcumu: basarili en uzun 19:30, uc kosu 20:16'da sinirda kesildi.
+    # 30 dk kacak job'i yine sinirlar, normal kosuyu kesmez; kapsam / isci sayisi degismedi.
+    timeout-minutes: 30
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
     services:
