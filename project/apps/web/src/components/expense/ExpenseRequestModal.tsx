@@ -202,6 +202,10 @@ export function ExpenseRequestModal({
   // gösterilmez ve bu paketten talep oluşturulmaz (eksik tutar 0 sayılmaz, kalem sessizce atlanmaz).
   const packageIncomplete = mode === "package" && incompleteSuggestion !== null;
 
+  // E-posta gönderimi yalnız ELLE kipte yapılır: paket talebi kalem satırı yazmadığı için e-posta kapısı ITEMS_MISSING ile reddeder
+  // (kalem yazım sözleşmesi owner kararı bekliyor). Paket kipinde kutu kapalı ve nedeni yazılıdır; "gönderildi" iddiası yok.
+  const willSend = mode === "manual" && !paidByLawyer && sendAfterCreate;
+
   const resetForm = () => {
     setItems([{ type: "TEBLIGAT_GIDERI", description: "Tebligat gönderim gideri", amount: 0 }]);
     setComputedItems([]);
@@ -218,7 +222,12 @@ export function ExpenseRequestModal({
   // Talep oluşturulduysa pencere kapanırken form sıfırlanır (bir sonraki açılış eski talebin sonucunu göstermesin) ve dosya
   // verisi yenilenir; oluşturulmadıysa eskisi gibi yalnız kapanır. Yenileme (onSuccess) KAPANIŞTA yapılır: sayfa dosya verisini
   // yeniden yüklerken pencereyi yeniden kurabildiği için (ölçüldü: gönderim sonucu kayboluyordu) açıkken çağrılmaz.
+  // Gönderim denenirken pencere kapanmaz (sonuç kaybolur / kapalı pencerede dolar). Yeniden denenebilir başarısızlık gösterilirken
+  // kapatmak talebin kimliğini atar: o talep başka ekrandan gönderilemediği için kullanıcı onaylar.
+  const retryPending = createdRequestId !== null && sendState !== null && sendState.kind !== "accepted" && sendState.retryable;
   const handleClose = () => {
+    if (submittingRef.current) return;
+    if (retryPending && !window.confirm("Bu talep için e-posta gönderilemedi. Pencereyi kapatırsanız aynı talep buradan yeniden gönderilemez. Kapatılsın mı?")) return;
     if (createdRequestRef.current !== null) {
       resetForm();
       onSuccess?.();
@@ -289,7 +298,7 @@ export function ExpenseRequestModal({
         }
       }
 
-      if (!paidByLawyer && sendAfterCreate && requestId) {
+      if (willSend && requestId) {
         setSendState(null);
         try {
           // Gerçek gönderim: sonuç (kabul / neden / belirsiz) yanıttan okunur — HTTP 201 başarı DEMEK DEĞİLDİR
@@ -609,11 +618,17 @@ export function ExpenseRequestModal({
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={sendAfterCreate}
+                  checked={willSend}
+                  disabled={mode === "package"}
                   onChange={(e) => setSendAfterCreate(e.target.checked)}
                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
-                <span className="text-sm text-gray-700">Oluşturduktan sonra müvekkile e-posta gönder</span>
+                <span className="text-sm text-gray-700">
+                  Oluşturduktan sonra müvekkile e-posta gönder
+                  {mode === "package" && (
+                    <span className="text-gray-500 text-xs block">Paket kipinde e-posta gönderimi bu pencerede henüz yapılamıyor; talep oluşturulur, e-posta gönderilmez.</span>
+                  )}
+                </span>
               </label>
             )}
           </div>
@@ -637,8 +652,10 @@ export function ExpenseRequestModal({
             <p className="font-medium">
               {sendState.kind === "accepted"
                 ? "Masraf talebi oluşturuldu; e-posta gönderim sunucusuna iletildi."
-                : sendState.kind === "uncertain"
-                  ? "Masraf talebi oluşturuldu; e-postanın gönderilip gönderilmediği doğrulanamadı."
+                : sendState.kind === "uncertain" || sendState.kind === "error"
+                  ? sendState.kind === "error"
+                    ? "Masraf talebi oluşturuldu; e-postanın gönderilip gönderilmediği bilinmiyor."
+                    : "Masraf talebi oluşturuldu; e-postanın gönderilip gönderilmediği doğrulanamadı."
                   : "Masraf talebi oluşturuldu ancak e-posta gönderilemedi."}
             </p>
             <p className="mt-1">{sendState.message}</p>
@@ -647,8 +664,10 @@ export function ExpenseRequestModal({
             )}
             {sendState.kind === "uncertain" ? (
               <p className="mt-1 text-xs">Başarılı sayılmadı. Mükerrer e-posta gitmemesi için bu talep için tekrar gönderilmez.</p>
+            ) : sendState.kind !== "accepted" && sendState.retryable ? (
+              <p className="mt-1 text-xs">Talep kaydedildi. "Yeniden Dene" aynı talebi kullanır; ikinci talep oluşturulmaz. Eksik ayarı başka sekmede tamamlayıp burada yeniden deneyebilirsiniz; pencereyi kapatırsanız bu talep buradan yeniden gönderilemez.</p>
             ) : sendState.kind !== "accepted" ? (
-              <p className="mt-1 text-xs">Talep kaydedildi. "Yeniden Dene" aynı talebi kullanır; ikinci talep oluşturulmaz.</p>
+              <p className="mt-1 text-xs">Talep kaydedildi. Bu talebin kalemleri e-posta için geçerli değil; bu pencereden yeniden denenemez.</p>
             ) : null}
           </div>
         )}
@@ -673,12 +692,12 @@ export function ExpenseRequestModal({
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : paidByLawyer ? (
               <CheckCircle className="h-4 w-4" />
-            ) : sendAfterCreate ? (
+            ) : willSend ? (
               <Send className="h-4 w-4" />
             ) : (
               <CheckCircle className="h-4 w-4" />
             )}
-            {createdRequestId !== null ? "Yeniden Dene" : paidByLawyer ? "Karşıladım & Kaydet" : sendAfterCreate ? "Oluştur ve Gönder" : "Oluştur"}
+            {createdRequestId !== null ? (loading ? "Gönderiliyor…" : "Yeniden Dene") : paidByLawyer ? "Karşıladım & Kaydet" : willSend ? "Oluştur ve Gönder" : "Oluştur"}
           </button>
           )}
         </div>

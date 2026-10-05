@@ -10,7 +10,7 @@
  * belirsiz sonuç başarı sayılmaz. Sonuç metni / kararı sunucudandır; yalnız ağ katmanı (`@/lib/api`) taklit edilir.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ExpenseRequestModal } from "../ExpenseRequestModal";
 import { api } from "@/lib/api";
 
@@ -120,6 +120,7 @@ describe("ExpenseRequestModal — Oluştur ve Gönder", () => {
     mocked.createExpenseRequest.mockResolvedValue({ id: "talep-elle" });
     mocked.createExpenseRequestFromPackage.mockResolvedValue({ id: "talep-paket" });
     vi.spyOn(window, "alert").mockImplementation(() => undefined);
+    vi.spyOn(window, "confirm").mockImplementation(() => true);
     vi.spyOn(console, "log").mockImplementation(() => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
   });
@@ -230,6 +231,8 @@ describe("ExpenseRequestModal — Oluştur ve Gönder", () => {
     expect(box.getAttribute("data-state")).toBe("error");
     expect(box.textContent).toContain("Gönderim sonucu alınamadı");
     expect(box.textContent).toContain("bilinmiyor");
+    // başlık kesin başarısızlık söylemez (sonuç bilinmiyor)
+    expect(box.textContent).not.toContain("ancak e-posta gönderilemedi");
 
     fireEvent.click(screen.getByRole("button", { name: "Yeniden Dene" }));
     await waitFor(() => {
@@ -263,9 +266,12 @@ describe("ExpenseRequestModal — Oluştur ve Gönder", () => {
     await fillManualAndCheckSend();
 
     const button = sendButton();
-    fireEvent.click(button);
-    fireEvent.click(button); // ilk istek sürerken ikinci tıklama
-    fireEvent.click(button);
+    // Üç tıklama AYNI act içinde: React düğmeyi devre dışı bırakacak yeniden çizimi yapmadan gelir → yalnız ref koruması engeller
+    act(() => {
+      button.click();
+      button.click();
+      button.click();
+    });
     releaseCreate({ id: "talep-elle" });
     await screen.findByTestId("expense-send-result");
 
@@ -273,7 +279,7 @@ describe("ExpenseRequestModal — Oluştur ve Gönder", () => {
     expect(mocked.sendExpenseEmail).toHaveBeenCalledTimes(1);
   });
 
-  it("gönderim sürerken (yanıtsız SMTP) ikinci tıklama ikinci gönderim üretmez", async () => {
+  it("gönderim sürerken (yanıtsız SMTP): düğme 'Gönderiliyor…', kapatma yok sayılır, ikinci gönderim yok", async () => {
     let releaseSend: (v: unknown) => void = () => undefined;
     mocked.sendExpenseEmail.mockImplementation(
       () =>
@@ -281,20 +287,103 @@ describe("ExpenseRequestModal — Oluştur ve Gönder", () => {
           releaseSend = resolve;
         }),
     );
-    renderModal();
+    const onClose = vi.fn();
+    renderModal({ onClose });
     await fillManualAndCheckSend();
 
     fireEvent.click(sendButton());
     await waitFor(() => {
-      expect(mocked.sendExpenseEmail).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("button", { name: "Gönderiliyor…" })).toBeTruthy();
     });
-    // sürerken düğme devre dışı; zorla tıklansa da ikinci istek gitmez
-    const pending = screen.getAllByRole("button").find((b) => (b as HTMLButtonElement).disabled && /\S/.test(b.textContent ?? "") === false);
-    if (pending) fireEvent.click(pending);
+    // sürerken pencere kapanmaz (sonuç kaybolmasın) ve ikinci gönderim gitmez
+    fireEvent.click(screen.getByRole("button", { name: "Kapat" }));
+    act(() => {
+      (screen.getByRole("button", { name: "Gönderiliyor…" }) as HTMLButtonElement).click();
+    });
+    expect(onClose).not.toHaveBeenCalled();
     expect(mocked.sendExpenseEmail).toHaveBeenCalledTimes(1);
+
     releaseSend(ACCEPTED);
     await screen.findByTestId("expense-send-result");
     expect(mocked.createExpenseRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("Yeniden Dene'ye art arda tıklama: ikinci gönderim ve ikinci talep yok", async () => {
+    let releaseSend: (v: unknown) => void = () => undefined;
+    mocked.sendExpenseEmail.mockResolvedValueOnce(NOT_SENT_NO_SMTP).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseSend = resolve;
+        }),
+    );
+    renderModal();
+    await fillManualAndCheckSend();
+    fireEvent.click(sendButton());
+    await screen.findByTestId("expense-send-result");
+
+    const retry = screen.getByRole("button", { name: "Yeniden Dene" });
+    act(() => {
+      retry.click();
+      retry.click();
+    });
+    releaseSend(ACCEPTED);
+    await waitFor(() => {
+      expect(resultBox().getAttribute("data-state")).toBe("accepted");
+    });
+    expect(mocked.sendExpenseEmail).toHaveBeenCalledTimes(2);
+    expect(mocked.createExpenseRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("yeniden denenebilir başarısızlıkta kapatma ONAY ister; reddedilirse pencere açık kalır, kabul edilirse kapanır", async () => {
+    mocked.sendExpenseEmail.mockResolvedValue(NOT_SENT_NO_SMTP);
+    const onClose = vi.fn();
+    renderModal({ onClose });
+    await fillManualAndCheckSend();
+    fireEvent.click(sendButton());
+    const box = await screen.findByTestId("expense-send-result");
+    expect(box.textContent).toContain("pencereyi kapatırsanız bu talep buradan yeniden gönderilemez");
+
+    (window.confirm as unknown as Fn).mockReturnValueOnce(false);
+    fireEvent.click(screen.getByRole("button", { name: "Kapat" }));
+    expect(window.confirm).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Kapat" })); // onay verildi
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("kabul / belirsiz sonuçta kapatma onay istemez", async () => {
+    mocked.sendExpenseEmail.mockResolvedValue(ACCEPTED);
+    const onClose = vi.fn();
+    renderModal({ onClose });
+    await fillManualAndCheckSend();
+    fireEvent.click(sendButton());
+    await screen.findByTestId("expense-send-result");
+
+    fireEvent.click(screen.getByRole("button", { name: "Kapat" }));
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("kalemleri e-posta için geçersiz talep: 'belirsiz' DEĞİL, kesin başarısızlık; Yeniden Dene sunulmaz", async () => {
+    mocked.sendExpenseEmail.mockResolvedValue({
+      success: false,
+      status: "EMAIL_NOT_SENT",
+      reasonCode: "REQUEST_ITEMS_INVALID",
+      message: "Masraf talebinde geçerli kalem ya da tutar yok; masraf e-postası gönderilmedi.",
+      requiredInfo: ["Masraf talebinin kalemleri ve tutarları"],
+      retryable: false,
+    });
+    renderModal();
+    await fillManualAndCheckSend();
+    fireEvent.click(sendButton());
+    const box = await screen.findByTestId("expense-send-result");
+
+    expect(box.getAttribute("data-state")).toBe("not-sent");
+    expect(box.textContent).toContain("geçerli kalem ya da tutar yok");
+    expect(box.textContent).toContain("bu pencereden yeniden denenemez");
+    expect(box.textContent).not.toContain("doğrulanamadı");
+    expect(screen.queryByRole("button", { name: "Yeniden Dene" })).toBeNull();
   });
 
   it("talep oluştuktan sonra form alanları kilitlenir (yeniden deneme o talebi gönderir)", async () => {
@@ -309,36 +398,42 @@ describe("ExpenseRequestModal — Oluştur ve Gönder", () => {
     expect(amount.closest("fieldset")?.disabled).toBe(true);
   });
 
-  it("paket kipi: talep gönderimsiz oluşturulur (sendEmail:false), sonra gerçek gönderim aynı talepte çağrılır", async () => {
-    mocked.sendExpenseEmail.mockResolvedValue(ACCEPTED);
-    renderModal({ initialPackageCode: "UYAP_PRE" });
+  it("paket kipi: e-posta kutusu kapalı ve nedeni yazılı; 'Oluştur' talebi gönderimsiz oluşturur, gönderim denenmez", async () => {
+    const onClose = vi.fn();
+    renderModal({ initialPackageCode: "UYAP_PRE", onClose });
     await screen.findByText("Başvurma Harcı");
-    fireEvent.click(screen.getByLabelText("Oluşturduktan sonra müvekkile e-posta gönder"));
 
-    fireEvent.click(sendButton());
-    await screen.findByTestId("expense-send-result");
+    const box = screen.getByLabelText(/Oluşturduktan sonra müvekkile e-posta gönder/) as HTMLInputElement;
+    expect(box.disabled).toBe(true);
+    expect(box.checked).toBe(false);
+    expect(screen.getByText(/Paket kipinde e-posta gönderimi bu pencerede henüz yapılamıyor/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Oluştur ve Gönder" })).toBeNull();
 
+    fireEvent.click(screen.getByRole("button", { name: "Oluştur" }));
+    await waitFor(() => {
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
     expect(mocked.createExpenseRequestFromPackage).toHaveBeenCalledTimes(1);
     expect(mocked.createExpenseRequestFromPackage.mock.calls[0][0]).toMatchObject({ packageCode: "UYAP_PRE", sendEmail: false });
-    expect(mocked.sendExpenseEmail).toHaveBeenCalledWith("talep-paket");
+    expect(mocked.sendExpenseEmail).not.toHaveBeenCalled();
     expect(mocked.sendExpenseRequest).not.toHaveBeenCalled();
   });
 
-  it("paket kipi: gönderim başarısızsa talep kaybolmaz, yeniden deneme paket talebini bir daha oluşturmaz", async () => {
-    mocked.sendExpenseEmail.mockResolvedValueOnce(NOT_SENT_NO_SMTP).mockResolvedValueOnce(ACCEPTED);
-    renderModal({ initialPackageCode: "UYAP_PRE" });
+  it("elle kipte işaretlenen kutu paket kipine geçince gönderimi AÇMAZ (paket kipinde gönderim yok)", async () => {
+    const onClose = vi.fn();
+    renderModal({ onClose });
+    await fillManualAndCheckSend(); // kutu işaretli, elle kip
+    fireEvent.click(screen.getByRole("button", { name: "Paket Seç" }));
+    await screen.findByText("Başvurma Harcı").catch(() => undefined);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "UYAP_PRE" } });
     await screen.findByText("Başvurma Harcı");
-    fireEvent.click(screen.getByLabelText("Oluşturduktan sonra müvekkile e-posta gönder"));
 
-    fireEvent.click(sendButton());
-    await screen.findByTestId("expense-send-result");
-    fireEvent.click(screen.getByRole("button", { name: "Yeniden Dene" }));
+    expect((screen.getByLabelText(/Oluşturduktan sonra müvekkile e-posta gönder/) as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Oluştur" }));
     await waitFor(() => {
-      expect(resultBox().getAttribute("data-state")).toBe("accepted");
+      expect(onClose).toHaveBeenCalledTimes(1);
     });
-
-    expect(mocked.createExpenseRequestFromPackage).toHaveBeenCalledTimes(1);
-    expect(mocked.sendExpenseEmail.mock.calls.map((c) => c[0])).toEqual(["talep-paket", "talep-paket"]);
+    expect(mocked.sendExpenseEmail).not.toHaveBeenCalled();
   });
 
   it("kutu işaretsizken 'Oluştur': gönderim denenmez, pencere eskisi gibi kapanır", async () => {

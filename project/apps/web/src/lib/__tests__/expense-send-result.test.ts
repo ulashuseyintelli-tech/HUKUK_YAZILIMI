@@ -24,6 +24,11 @@ describe("interpretExpenseSendResponse", () => {
     expect(state).toEqual({ kind: "not-sent", message: "Müvekkilin e-posta adresi kayıtlı değil.", requiredInfo: ["Müvekkilin e-posta adresi"], retryable: true });
   });
 
+  it("kalemler e-posta için geçersiz (retryable:false, kesin başarısızlık): \"belirsiz\" DİYE gösterilmez, yeniden denenmez", () => {
+    const state = interpretExpenseSendResponse({ success: false, reasonCode: "REQUEST_ITEMS_INVALID", message: "geçerli kalem yok", requiredInfo: ["Masraf talebinin kalemleri ve tutarları"], retryable: false });
+    expect(state).toEqual({ kind: "not-sent", message: "geçerli kalem yok", requiredInfo: ["Masraf talebinin kalemleri ve tutarları"], retryable: false });
+  });
+
   it("retryable:false (belirsiz sonuç): başarı sayılmaz, yeniden denenmez", () => {
     const state = interpretExpenseSendResponse({ success: false, reasonCode: "DELIVERY_UNCERTAIN", message: "belirsiz", requiredInfo: [], retryable: false });
     expect(state.kind).toBe("uncertain");

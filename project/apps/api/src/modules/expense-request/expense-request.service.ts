@@ -408,26 +408,6 @@ export class ExpenseRequestService {
         },
       });
 
-      // Kalem satırları: mevcut onaylı oluşum sözleşmesiyle AYNI biçim (W4 D1; createOpeningExpenseSet ile aynı alanlar):
-      // kanonik kod, etiket, katalogtan varsayılan client-safe açıklama, önerilen / son tutar, sıra. Tutar kuralı eklenmez /
-      // değiştirilmez; toplam yukarıdaki kalemlerin toplamıdır. Kalem satırı olmayan talep e-posta kapısında
-      // `ITEMS_MISSING` ile reddediliyordu (e-posta / ekstre kalem dökümü requestItems'tan beslenir).
-      let sortOrder = 0;
-      for (const item of dto.items) {
-        await tx.expenseRequestItem.create({
-          data: {
-            expenseRequestId: created.id,
-            itemCode: item.itemCode,
-            label: item.label,
-            description: findExpenseCatalogEntry(item.itemCode)?.defaultClientDescription,
-            suggestedAmount: item.suggestedAmount,
-            finalAmount: item.finalAmount,
-            wasOverridden: item.wasOverridden === true,
-            sortOrder: sortOrder++,
-          },
-        });
-      }
-
       await this.writeExpenseRequestRecordedJournal(tx, tenantId, userId, created as JournalableExpenseRequestRow);
       return created;
     });
@@ -451,8 +431,9 @@ export class ExpenseRequestService {
       }
     }
     // `dto.sendEmail` bu uçta E-POSTA GÖNDERMEZ ve talebi "gönderildi" YAPMAZ: önceden burada `markAsSent` çağrılıyordu
-    // (e-posta gönderilmeden SENT / sentVia EMAIL yazılıyor, hata yutuluyordu). Gönderim ayrı ve gerçektir:
-    // POST /expense-requests/:id/send-email (sonucu yanıtta döner, aynı talep üzerinden yeniden denenebilir).
+    // (e-posta gönderilmeden SENT / sentVia EMAIL yazılıyor, hata yutuluyordu). Paket talebi kalem SATIRI yazmaz (yalnız JSON +
+    // toplam; kalem yazım sözleşmesi owner kararı bekliyor), bu yüzden e-posta kapısı ITEMS_MISSING ile reddeder: paket kipinde
+    // gönderim bu yoldan yapılamaz ve pencere bunu sunmaz.
 
     return expenseRequest;
   }

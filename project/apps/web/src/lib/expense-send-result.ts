@@ -5,7 +5,8 @@
  * `status: EMAIL_ACCEPTED` + `deliveryConfirmed: false`). İstemci neden / gerekli bilgi üretmez, kural seçmez; yalnız yanıtı üç
  * duruma indirger:
  * - `accepted`: e-posta gönderim sunucusu kabul etti (alıcıya teslim DOĞRULANMAZ).
- * - `not-sent`: kesin başarısızlık; aynı talep üzerinden yeniden denenebilir.
+ * - `not-sent`: kesin başarısızlık; çoğunlukla aynı talep üzerinden yeniden denenebilir (`retryable`); talebin kalemleri e-posta
+ *   için geçersizse (ör. kalem satırı yok / tutar <= 0) yeniden deneme sonuç değiştirmez → `retryable:false`.
  * - `uncertain`: sonuç belirsiz (gönderilmiş olabilir); BAŞARI sayılmaz, mükerrer e-posta riski yüzünden yeniden denenmez.
  * Yanıt alınamadıysa (ağ / sunucu hatası) `error`: sonuç bilinmiyor, aynı talep üzerinden yeniden denenebilir (sunucu tarafı
  * aynı talep için ikinci e-posta göndermez).
@@ -13,7 +14,7 @@
 
 export type ExpenseSendUiState =
   | { readonly kind: 'accepted'; readonly message: string }
-  | { readonly kind: 'not-sent'; readonly message: string; readonly requiredInfo: readonly string[]; readonly retryable: true }
+  | { readonly kind: 'not-sent'; readonly message: string; readonly requiredInfo: readonly string[]; readonly retryable: boolean }
   | { readonly kind: 'uncertain'; readonly message: string; readonly requiredInfo: readonly string[]; readonly retryable: false }
   | { readonly kind: 'error'; readonly message: string; readonly requiredInfo: readonly string[]; readonly retryable: true };
 
@@ -42,7 +43,11 @@ export function interpretExpenseSendResponse(response: unknown): ExpenseSendUiSt
     return { kind: 'uncertain', message: message ?? UNCERTAIN_FALLBACK, requiredInfo, retryable: false };
   }
   if (r.retryable === false) {
-    return { kind: 'uncertain', message: message ?? UNCERTAIN_FALLBACK, requiredInfo, retryable: false };
+    // Belirsiz sonuç (gönderilmiş olabilir) ile kesin ama düzeltilemeyen başarısızlık ayrılır: ikincisi "belirsiz" DİYE gösterilmez.
+    if (r.reasonCode === 'DELIVERY_UNCERTAIN' || r.reasonCode === 'DELIVERY_NOT_CONFIRMED') {
+      return { kind: 'uncertain', message: message ?? UNCERTAIN_FALLBACK, requiredInfo, retryable: false };
+    }
+    return { kind: 'not-sent', message: message ?? 'Masraf e-postası gönderilemedi.', requiredInfo, retryable: false };
   }
   return { kind: 'not-sent', message: message ?? 'Masraf e-postası gönderilemedi.', requiredInfo, retryable: true };
 }

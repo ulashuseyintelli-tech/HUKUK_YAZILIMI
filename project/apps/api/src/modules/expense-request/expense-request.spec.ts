@@ -338,38 +338,17 @@ describe('ExpenseRequestService - Property Tests', () => {
         { itemCode: 'TEBLIGAT_GIDERI', label: 'Tebligat Gideri', suggestedAmount: 15, finalAmount: 12, wasOverridden: true },
       ];
 
-      it('paket kalemleri, mevcut oluşum sözleşmesiyle aynı biçimde kalem satırı olarak yazılır (e-posta kalem dökümü buradan beslenir)', async () => {
+      it('paket talebi kalem SATIRI yazmaz (kalem yazım sözleşmesi owner kararı bekliyor; bugünkü davranış korunur)', async () => {
         await service.createFromPackage('tenant-1', 'user-1', { caseId: 'case-1', clientId: 'client-1', packageCode: 'UYAP_PRE', items: packageItems } as never);
 
-        expect(mockPrismaService.expenseRequestItem.create).toHaveBeenCalledTimes(2);
-        const [first, second] = mockPrismaService.expenseRequestItem.create.mock.calls.map((c: any[]) => c[0].data);
-        expect(first).toEqual({
-          expenseRequestId: 'package-exp-2',
-          itemCode: 'BASVURMA_HARCI',
-          label: 'Başvurma Harcı',
-          description: 'Takip açılışı başvurma harcı', // katalogtan varsayılan client-safe açıklama (W4 D1)
-          suggestedAmount: 615.4,
-          finalAmount: 615.4,
-          wasOverridden: false,
-          sortOrder: 0,
-        });
-        expect(second).toMatchObject({ itemCode: 'TEBLIGAT_GIDERI', suggestedAmount: 15, finalAmount: 12, wasOverridden: true, sortOrder: 1 });
-        // tutar kuralı eklenmedi / değişmedi: toplam kalemlerin son tutarları toplamı
+        expect(mockPrismaService.expenseRequestItem.create).not.toHaveBeenCalled();
         expect(mockPrismaService.expenseRequest.create.mock.calls[0][0].data.totalAmount).toBeCloseTo(627.4, 2);
       });
 
-      it('katalogda olmayan kod için açıklama UYDURULMAZ (alan boş kalır)', async () => {
-        await service.createFromPackage('tenant-1', 'user-1', {
-          caseId: 'case-1',
-          clientId: 'client-1',
-          packageCode: 'RE_TEBLIGAT',
-          items: [{ itemCode: 'KATALOG_DISI_KALEM', label: 'Özel Kalem', suggestedAmount: 20, finalAmount: 20 }],
-        } as never);
-
-        expect(mockPrismaService.expenseRequestItem.create.mock.calls[0][0].data.description).toBeUndefined();
-      });
-
       it('sendEmail:true talebi "gönderildi" YAPMAZ ve e-posta göndermez (eski sahte işaretleme kaldırıldı)', async () => {
+        // Eski kod markAsSent → findOne ile talebi okuyup update çağırırdı: okunabilir PENDING talep hazırlanır ki geri dönüş testi DÜŞÜRSÜN
+        mockPrismaService.expenseRequest.findFirst.mockResolvedValue({ ...mockExpenseRequest, id: 'package-exp-2', status: 'PENDING' });
+        mockPrismaService.expenseRequest.update.mockResolvedValue({ ...mockExpenseRequest, id: 'package-exp-2', status: 'SENT', sentVia: 'EMAIL' });
         const result = await service.createFromPackage('tenant-1', 'user-1', {
           caseId: 'case-1',
           clientId: 'client-1',
@@ -402,6 +381,8 @@ describe('ExpenseRequestService - Property Tests', () => {
       it.each([
         ['kapalı kapı: varsayılan hesap yok', { via: 'dispatcher', outcome: 'default-account-missing' }, 'PAYMENT_ACCOUNT_MISSING', true],
         ['kapalı kapı: IBAN yok', { via: 'dispatcher', outcome: 'iban-missing-fail-closed' }, 'PAYMENT_IBAN_MISSING', true],
+        ['kalem satırı yok (paket talebi)', { via: 'dispatcher', outcome: 'items-missing' }, 'REQUEST_ITEMS_INVALID', false],
+        ['kalem tutarı <= 0', { via: 'dispatcher', outcome: 'non-positive-amount' }, 'REQUEST_ITEMS_INVALID', false],
         ['müvekkil e-postası yok', { via: 'dispatcher', outcome: 'delivery-not-confirmed', reason: 'RECIPIENT_MISSING' }, 'RECIPIENT_MISSING', true],
         ['büro SMTP ayarı yok', { via: 'dispatcher', outcome: 'delivery-not-confirmed', reason: 'SMTP_NOT_CONFIGURED' }, 'SMTP_NOT_CONFIGURED', true],
         ['şablon yok', { via: 'dispatcher', outcome: 'delivery-not-confirmed', reason: 'TEMPLATE_MISSING' }, 'TEMPLATE_MISSING', true],

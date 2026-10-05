@@ -267,8 +267,14 @@ export interface ExpenseEmailAcceptedOutcome {
   readonly message: string;
 }
 
-/** Pencerede yeniden denenebilir mi: yalnız KESİN başarısızlıkta. Sonucu belirsiz denemede tekrar gönderilmez (mükerrer e-posta riski). */
+/** Sonucu belirsiz denemeler: gönderilmiş olabilir; başarı sayılmaz ve mükerrer e-posta riski yüzünden tekrar gönderilmez. */
 export const EXPENSE_EMAIL_UNCERTAIN_REASON_CODES = ['DELIVERY_UNCERTAIN', 'DELIVERY_NOT_CONFIRMED'] as const;
+
+/**
+ * Aynı talep üzerinden yeniden denemenin sonuç değiştirmeyeceği nedenler: belirsiz sonuçlar + talebin kalemleri e-posta için geçersiz
+ * (kalem satırı yok / tutar <= 0 — talep oluşunca düzeltilemez; yeniden deneme her seferinde aynı reddi üretir).
+ */
+export const EXPENSE_EMAIL_NOT_RETRYABLE_REASON_CODES = [...EXPENSE_EMAIL_UNCERTAIN_REASON_CODES, 'REQUEST_ITEMS_INVALID'] as const;
 
 export interface ExpenseEmailNotSentResult extends OpeningExpenseEmailFailureOutcomeFields {
   readonly success: false;
@@ -310,6 +316,6 @@ export function buildExpenseEmailNotSentResult(failure: OpeningExpenseEmailFailu
     reasonCode: failure.reasonCode,
     message: failure.message,
     requiredInfo: failure.requiredInfo,
-    retryable: !(EXPENSE_EMAIL_UNCERTAIN_REASON_CODES as readonly string[]).includes(failure.reasonCode),
+    retryable: !(EXPENSE_EMAIL_NOT_RETRYABLE_REASON_CODES as readonly string[]).includes(failure.reasonCode),
   };
 }
