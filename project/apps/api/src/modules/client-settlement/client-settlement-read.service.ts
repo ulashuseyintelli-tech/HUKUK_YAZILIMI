@@ -92,7 +92,7 @@ export interface ClientAccountingSummary {
   /** B grubu — DOSYA GENELİ / paylaşılan bağlam (müvekkile atfedilmez), distinct caseId toplamı. */
   caseScopedContext: {
     debtorCollection: string; // Σ CONFIRMED Collection (distinct caseId)
-    pendingDistribution: string; // Σ (CONFIRMED Collection − POSTED disposition)
+    pendingDistribution: string; // Σ (CONFIRMED Collection − POSTED disposition; manuel geri alma işaretli dağıtım HARİÇ)
     allocationHeld: string; // Σ mahsubu BEKLETİLEN tahsilat (dağıtıma kapalı; pendingDistribution içinde)
     pendingDistributionExcludingHeld: string; // pendingDistribution − allocationHeld
     advanceBalance: string; // Σ CaseBalance.balance
@@ -393,7 +393,7 @@ export class ClientSettlementReadService {
   /**
    * Faz A — Müvekkil Genel Cari (client-level read-only projection). Yeni defter YOK.
    * A grubu (müvekkile özgü): her CaseClient için computeOutstanding + ClientPayout; ExpenseRequest clientId.
-   * B grubu (dosya geneli): DISTINCT caseId için Σ CONFIRMED Collection − Σ POSTED disposition + CaseBalance.
+   * B grubu (dosya geneli): DISTINCT caseId için Σ CONFIRMED Collection − Σ POSTED disposition (iptal işaretlisi hariç) + CaseBalance.
    * Çağrıldığı yerler:
    *  - ClientAccountingController.summary() → GET /clients/:clientId/accounting/summary
    */
@@ -446,13 +446,18 @@ export class ClientSettlementReadService {
         where: { tenantId, caseId, currency, status: 'CONFIRMED' },
       });
       const debtorCollection = collAgg._sum.amount ?? ZERO;
+      // Tahsilatı iptal edilmiş (manuel geri alma işaretli) kesinleşmiş dağıtım hesaptan ÇIKAR: aynı iptal işareti
+      // (`manualReversalRequiredAt`) computeOutstanding, hareket listesi, ekstre ve ödeme planında da esas alınır (VER-03).
+      // Aksi halde iptal edilen tahsilat toplamdan düşerken dağıtımı düşmeye devam eder → negatif "dağıtım bekleyen" +
+      // kalıcı "kontrol gerekli" ve aynı dosyadaki GERÇEK bekleyen tutar sessizce eksik görünürdü. Negatif değer
+      // KIRPILMAZ: işaretsiz gerçek tutarsızlık (dağıtım > onaylı tahsilat) hâlâ negatif + needsReview üretir.
       const dispAgg = await this.prisma.collectionDisposition.aggregate({
         _sum: { totalAmount: true },
-        where: { tenantId, caseId, currency, status: 'POSTED' },
+        where: { tenantId, caseId, currency, status: 'POSTED', manualReversalRequiredAt: null },
       });
       const postedDisp = dispAgg._sum.totalAmount ?? ZERO;
-      // pendingDistribution TANIMI DEĞİŞMEZ (gölge rapor karşılaştırması aynı formülü kullanır). K3-L: mahsubu
-      // bekletilen tahsilat dağıtıma kapalıdır → AYRI alan; "dağıtılabilir bekleyen" = pendingDist − allocationHeld.
+      // K3-L: mahsubu bekletilen tahsilat dağıtıma kapalıdır → AYRI alan; "dağıtılabilir bekleyen" = pendingDist − allocationHeld.
+      // Gölge rapor (client-accounting-summary-shadow-report) kendi formül kopyasını taşır; bu değişiklik ona dokunmaz.
       const heldSummary = await readActiveAllocationHoldSummary(this.prisma, tenantId, caseId, currency);
       const allocationHeld = new Prisma.Decimal(heldSummary.amount);
       const pendingDist = debtorCollection.minus(postedDisp);
