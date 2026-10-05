@@ -536,9 +536,8 @@ describeWithDisposableDb('Masraf kapısı ve paket hesabı — büro (tenant) s�
         select: { id: true, status: true, paidTotal: true },
       });
       await prisma.expenseRequest.updateMany({ where: { tenantId: office.b.tenantId, caseId: caseOfB }, data: { status: 'PAID', paidTotal: 1 } });
-      // Avans satırı yoksa mesaj "0 TL" değil "avans kaydı yok" der (owner kararı 5)
-      const balanceRow = await prisma.caseBalance.findUnique({ where: { caseId: caseOfB } });
-      const available = balanceRow ? `${balanceRow.balance} TL` : 'avans kaydı yok';
+      // Bu dosyada avans satırı YOK: mesaj "0 TL" değil "avans kaydı yok" der (owner kararı 5)
+      expect(await prisma.caseBalance.findUnique({ where: { caseId: caseOfB } })).toBeNull();
       let prepared: Awaited<ReturnType<typeof post>>;
       try {
         prepared = await post(office.b, `/cases/${caseOfB}/uyap/prepare`);
@@ -551,7 +550,7 @@ describeWithDisposableDb('Masraf kapısı ve paket hesabı — büro (tenant) s�
         status: 201,
         body: {
           action: 'OPEN_EXPENSE_MODAL',
-          blockReason: `Yetersiz bakiye. Gerekli: ${computed.body.totalSuggested} TL, Mevcut: ${available}`,
+          blockReason: `Yetersiz bakiye. Gerekli: ${computed.body.totalSuggested} TL, Mevcut: avans kaydı yok`,
           suggestion: {
             title: `${computed.body.packageName} için masraf gerekiyor`,
             description: expect.stringMatching(/^Toplam: .+ TL$/),
