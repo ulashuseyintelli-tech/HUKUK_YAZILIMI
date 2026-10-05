@@ -59,7 +59,10 @@ export interface ActionMatrixEntry {
   /**
    * Aşamadan bağımsız eylem: durum makinesinin AŞAMA denetimi bu eylem için uygulanmaz (owner kararı 8, 2026-10-05).
    * Kapılar (kapalı / arşiv), büro sınırı, aktör yetkisi ve karar günlüğü AYNEN uygulanır; yalnız "bu aşamada bu eylem
-   * yapılamaz / geçersiz aşama" reddi kalkar. Varsayılan: yok (= aşamaya bağlı). Bu alan yalnız owner'ın adıyla anıp
+   * yapılamaz / geçersiz aşama" reddi kalkar. SINIRLAR (PR #2930 incelemesi): durum makinesinin TERMİNAL ("Dosya kapalı")
+   * reddi yok sayılmaz; kapalı / arşiv hükmü olgu önbelleğinden değil taze dosya satırından türetilir. Veritabanı
+   * aşamaları CLOSED ve SUSPENDED durum makinesi sözlüğünde terminal DEĞİLDİR (bilinmeyen aşama) → bu eylem için izinlidir;
+   * dosyanın hukuki kapanışı caseStatus + isArchived ile belirlenir. Varsayılan: yok (= aşamaya bağlı). Bu alan yalnız owner'ın adıyla anıp
    * açtığı eylemlere verilir; "48 eylemi topluca açma" yasaktır (bkz. case-policy-engine-stage-independence.spec.ts).
    */
   stageIndependent?: boolean;

@@ -33,11 +33,12 @@ const EXPECTED_ALLOWED_STAGES: Partial<Record<ActionCode, readonly string[]>> = 
   [ActionCode.REQUEST_EXPENSE]: ['INITIAL'],
 };
 
-type Fixture = { engine: CasePolicyEngine; decisionLog: jest.Mock; setStage: (stage: string) => void };
+type Fixture = { engine: CasePolicyEngine; decisionLog: jest.Mock; setStage: (stage: string) => void; setCase: (patch: { caseStatus?: string; isArchived?: boolean }) => void };
 
 function buildEngine(options: { facts?: Record<string, unknown>; gatesBlocked?: boolean } = {}): Fixture {
   let stage = 'INITIAL';
-  const caseRow = () => ({ id: 'case-1', caseStatus: 'DERDEST', workflowStage: stage, type: 'GENERAL_EXECUTION', subType: null, updatedAt: new Date('2026-10-05T10:00:00Z') });
+  let casePatch: { caseStatus?: string; isArchived?: boolean } = {};
+  const caseRow = () => ({ id: 'case-1', caseStatus: casePatch.caseStatus ?? 'DERDEST', isArchived: casePatch.isArchived ?? false, workflowStage: stage, type: 'GENERAL_EXECUTION', subType: null, updatedAt: new Date('2026-10-05T10:00:00Z') });
   const prisma: any = {
     case: {
       findFirst: jest.fn(async ({ where }: any) => (where.tenantId === 'tenant-a' ? { id: where.id } : null)),
@@ -54,7 +55,7 @@ function buildEngine(options: { facts?: Record<string, unknown>; gatesBlocked?: 
   // Aşama matrisinde yalnız durum makinesinin etkisi ölçülür: kapılar ayrı testte GERÇEK olarak koşar.
   const gateChecker: any = options.gatesBlocked === false ? { checkGates: async () => ({ blocked: false, reason: 'OK', factsUsed: [] }) } : realGates;
   const engine = new CasePolicyEngine(prisma, factStore, registry, decisionLogger, {} as any, stateMachine, gateChecker, {} as any);
-  return { engine, decisionLog, setStage: (s) => { stage = s; } };
+  return { engine, decisionLog, setStage: (s) => { stage = s; }, setCase: (patch) => { casePatch = patch; } };
 }
 
 describe('Aşamadan bağımsız eylem — karar motoru kilidi (gerçek motor + gerçek durum makinesi)', () => {
@@ -142,6 +143,64 @@ describe('Aşamadan bağımsız eylem — karar motoru kilidi (gerçek motor + g
       await expect(engine.canPerformAction('tenant-b', 'case-1', ActionCode.APPROVE_EXPENSE, { expenseId: 'exp-1' })).rejects.toThrow(/Dosya bulunamadi/);
       await expect(engine.canPerformAction('', 'case-1', ActionCode.APPROVE_EXPENSE, undefined)).rejects.toThrow(/cpe_tenant_required/);
       expect(decisionLog).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('yok sayma sınırları (PR #2930 incelemesi): terminal ret ve bayat olgu önbelleği', () => {
+    // Terminal aşama kodları durum makinesi sözlüğündedir (veritabanı enum'unda yok): sözlük hizalanırsa erişilebilir olurlar.
+    it.each(['CLOSED_PAID', 'CLOSED_SETTLED', 'CLOSED_WITHDRAWN', 'ARCHIVED'])(
+      'terminal aşama %s: APPROVE_EXPENSE durum makinesinin "Dosya kapalı" reddini AŞMAZ (INVALID_TRANSITION)',
+      async (terminalStage) => {
+        const { engine, setStage } = buildEngine({ gatesBlocked: false });
+        setStage(terminalStage);
+        const decision = await engine.canPerformAction('tenant-a', 'case-1', ActionCode.APPROVE_EXPENSE, { expenseId: 'exp-1' });
+        expect(decision).toMatchObject({ allowed: false, code: DecisionCode.INVALID_TRANSITION });
+        expect(decision.reason).toMatch(/Dosya kapalı/);
+      },
+    );
+
+    it('bayat olgu önbelleği: olgu "kapalı değil" derken TAZE dosya satırı kapalıysa (10 kapanış durumunun her biri) istisna uygulanmaz → GATE_BLOCKED / CASE_CLOSED', async () => {
+      const closing = ['HITAM', 'INFAZ', 'MUVEKKILE_IADE', 'ACIZ', 'BATAK', 'MAHSUP', 'TEMLIK', 'AZIL', 'FERAGAT', 'SULH'];
+      let inspected = 0;
+      for (const status of closing) {
+        const { engine, decisionLog, setStage, setCase } = buildEngine({ facts: { 'case.is_closed': false, 'case.is_archived': false } });
+        setStage('SEIZURE');
+        setCase({ caseStatus: status });
+        const decision = await engine.canPerformAction('tenant-a', 'case-1', ActionCode.APPROVE_EXPENSE, { expenseId: 'exp-1' });
+        inspected += 1;
+        expect(decision).toMatchObject({ allowed: false, code: DecisionCode.GATE_BLOCKED });
+        expect(decision.blockedBy?.gateCode).toBe('CASE_CLOSED');
+        expect(decisionLog).toHaveBeenCalledTimes(1); // ret günlüğe yazıldı
+        expect((decisionLog.mock.calls[0] as unknown[])[3]).toMatchObject({ allowed: false });
+      }
+      expect(inspected).toBe(10);
+    });
+
+    it('bayat olgu önbelleği: TAZE satır arşivdeyse istisna uygulanmaz → GATE_BLOCKED / CASE_ARCHIVED', async () => {
+      const { engine, setStage, setCase } = buildEngine({ facts: { 'case.is_closed': false, 'case.is_archived': false } });
+      setStage('SEIZURE');
+      setCase({ isArchived: true });
+      const decision = await engine.canPerformAction('tenant-a', 'case-1', ActionCode.APPROVE_EXPENSE, { expenseId: 'exp-1' });
+      expect(decision).toMatchObject({ allowed: false, code: DecisionCode.GATE_BLOCKED });
+      expect(decision.blockedBy?.gateCode).toBe('CASE_ARCHIVED');
+    });
+
+    it('açık durumlar (DERDEST / ISLEMDE / DERKENAR) bayat olgudan bağımsız izinli kalır (aşamadan bağımsız)', async () => {
+      for (const status of ['DERDEST', 'ISLEMDE', 'DERKENAR']) {
+        const { engine, setStage, setCase } = buildEngine({ gatesBlocked: false });
+        setStage('SEIZURE');
+        setCase({ caseStatus: status });
+        const decision = await engine.canPerformAction('tenant-a', 'case-1', ActionCode.APPROVE_EXPENSE, { expenseId: 'exp-1' });
+        expect(decision).toMatchObject({ allowed: true, code: DecisionCode.OK });
+      }
+    });
+
+    it('INITIAL aşamasında davranış değişmedi (durum makinesi izin verir; taze satır denetimi yalnız istisna yolunda)', async () => {
+      const { engine, setStage, setCase } = buildEngine({ gatesBlocked: false });
+      setStage('INITIAL');
+      setCase({ caseStatus: 'HITAM' });
+      const decision = await engine.canPerformAction('tenant-a', 'case-1', ActionCode.APPROVE_EXPENSE, { expenseId: 'exp-1' });
+      expect(decision).toMatchObject({ allowed: true, reason: 'OK' });
     });
   });
 

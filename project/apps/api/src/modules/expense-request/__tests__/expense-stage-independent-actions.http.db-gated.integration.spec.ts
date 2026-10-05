@@ -230,6 +230,43 @@ describeWithDisposableDb('Masraf finalize / approve / reject aşamadan bağıms�
       expect(await snapshot(id)).toEqual(before);
     });
 
+    // SICAK ÖNBELLEK: kapalı / arşiv kapısı olguyu 30 sn süreç içi önbellekten okur ve durum / arşiv yazımı önbelleği geçersiz kılmaz.
+    // Önceden INITIAL dışı aşamada durum makinesi tesadüfen ikinci engeldi; istisna onu kaldırdığı için hüküm TAZE dosya satırından
+    // türetilir. Bu testler önbelleği ÖNCE ısıtır (izinli çağrı), SONRA dosyayı kapatır / arşivler, hemen ikinci çağrıyı dener.
+    it('SICAK önbellek: izinli çağrı → dosya HITAM yapılır → hemen sonraki finalize / approve / reject 403 CASE_CLOSED; talepler DEĞİŞMEZ', async () => {
+      const caseId = await openCase('sicak-kapali');
+      await prisma.case.update({ where: { id: caseId }, data: { workflowStage: 'SEIZURE' } });
+      const warm = await makeRequestRow(caseId);
+      expect((await postAs(adminId, `/expense-requests/${warm}/approve`, {})).status).toBe(201); // önbellek ısındı (is_closed=false)
+      const ids = [await makeRequestRow(caseId), await makeRequestRow(caseId), await makeRequestRow(caseId)];
+      await prisma.case.update({ where: { id: caseId }, data: { caseStatus: 'HITAM' } }); // statü yazımı olgu önbelleğine dokunmaz
+      const before = await Promise.all(ids.map(snapshot));
+      const results = [
+        await postAs(adminId, `/expense-requests/${ids[0]}/finalize`, { channel: 'EMAIL' }),
+        await postAs(adminId, `/expense-requests/${ids[1]}/approve`, {}),
+        await postAs(adminId, `/expense-requests/${ids[2]}/reject`, {}),
+      ];
+      for (const res of results) {
+        expect(res.status).toBe(403);
+        expect(res.body).toMatchObject({ code: 'GATE_BLOCKED', blockedBy: { gateCode: 'CASE_CLOSED' } });
+      }
+      expect(await Promise.all(ids.map(snapshot))).toEqual(before);
+    });
+
+    it('SICAK önbellek: izinli çağrı → dosya arşivlenir → hemen sonraki approve 403 CASE_ARCHIVED; talep DEĞİŞMEZ', async () => {
+      const caseId = await openCase('sicak-arsiv');
+      await prisma.case.update({ where: { id: caseId }, data: { workflowStage: 'SEIZURE' } });
+      const warm = await makeRequestRow(caseId);
+      expect((await postAs(adminId, `/expense-requests/${warm}/approve`, {})).status).toBe(201);
+      const id = await makeRequestRow(caseId);
+      await prisma.case.update({ where: { id: caseId }, data: { isArchived: true } });
+      const before = await snapshot(id);
+      const res = await postAs(adminId, `/expense-requests/${id}/approve`, {});
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: 'GATE_BLOCKED', blockedBy: { gateCode: 'CASE_ARCHIVED' } });
+      expect(await snapshot(id)).toEqual(before);
+    });
+
     it('büro sınırı: başka büronun kullanıcısı bu bürodaki talebe dokunamaz (403 RESOLVER_ERROR_BLOCKED); talep DEĞİŞMEZ; karar motoru çağrılmaz', async () => {
       const caseId = await openCase('buro');
       await prisma.case.update({ where: { id: caseId }, data: { workflowStage: 'SEIZURE' } });
