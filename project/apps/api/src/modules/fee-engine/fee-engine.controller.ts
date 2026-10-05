@@ -70,6 +70,12 @@ interface FeePreviewResponse {
       | 'TARIFF_ITEM_MISSING';
     message: string;
   };
+  /**
+   * Yalnız `success:false` yanıtında: masraf hesaplanamasa da hesaplanabilen kısım. Vekalet ücreti masraf profiline ve
+   * tarifeye bağlı DEĞİLDİR (servisteki mevcut tablo; formül seçimi ayrı hukuki karar): satır kaybolmaz, tabandaki gibi
+   * hesaplanır; masraf ve ona bağlı satırlar "hesaplanamadı", toplamlar "gösterilemez" kalır.
+   */
+  partial?: { estimatedAttorneyFee: number };
   cached: boolean;
   cacheExpiry?: string;
 }
@@ -87,15 +93,17 @@ export class FeeEngineController {
    *
    * Cagrildigi yerler:
    * - web feeEngineApi.preview() -> ProfessionalClaimItemForm.hesapla() (sihirbaz alacak kalemi formu, "Hesap Özeti")
-   * - web feeEngineApi.preview() -> usePreviewCoordinator (para birimi göndermez; yanıt aynen)
+   * - web feeEngineApi.preview() -> usePreviewCoordinator (para birimi göndermez; profil dışı `caseType` artık
+   *   "hesaplanamadı" döner, eskiden sessiz 0; kancayı çağıran bileşen yok)
    *
    * @see docs/single-source-of-truth-architecture.md
    */
   @Post('preview')
   preview(@Body() dto: FeePreviewDto): FeePreviewResponse {
     try {
-      // Validate input
-      if (!dto.principalAmount || dto.principalAmount <= 0) {
+      // Validate input (tutar sayıya çevrilir: metin gövde "10000" + 0 = "100000" olmasın)
+      const principalAmount = Number(dto.principalAmount);
+      if (!Number.isFinite(principalAmount) || principalAmount <= 0) {
         return {
           success: false,
           error: {
@@ -106,23 +114,16 @@ export class FeeEngineController {
         };
       }
 
-      // Takip türü hiç verilmezse eski varsayılana (`ILAMSIZ_GENEL`) DÜŞÜLMEZ: eksik bilgi sıfır sayılmaz.
-      if (!String(dto.takipTuruCode ?? '').trim() && !String(dto.caseType ?? '').trim()) {
-        return {
-          success: false,
-          error: { code: 'CASE_TYPE_UNRESOLVED', message: 'Takip türü belirtilmedi; masraflar hesaplanamadı.' },
-          cached: false,
-        };
-      }
-
       // Hesap TEK kaynakta: FeeEngineService.previewCalculation() (takip türü çözümü, tarife, profil, döküm kodları,
       // dosya gideri). Denetleyicide ikinci bir döküm kodu listesi ya da vekalet tablosu KALMADI (§15.2, REC-FEE-002).
       const result = this.feeEngineService.previewCalculation({
-        principalAmount: dto.principalAmount,
+        principalAmount,
         takipTuruCode: dto.takipTuruCode,
         caseType: dto.caseType,
         debtorCount: dto.debtorCount || 1,
         postageType: 'NORMAL',
+        // Takip türü hiç verilmezse eski varsayılana (`ILAMSIZ_GENEL`) DÜŞÜLMEZ: eksik bilgi sıfır sayılmaz.
+        requireCaseType: true,
       });
 
       if (!result.success || !result.data) {
@@ -130,15 +131,16 @@ export class FeeEngineController {
           success: false,
           error: {
             code: (result.error?.code ?? 'SERVICE_UNAVAILABLE') as NonNullable<FeePreviewResponse['error']>['code'],
-            message: result.error?.message ?? 'Fee calculation service is temporarily unavailable',
+            message: result.error?.message ?? 'Masraf hesaplama servisi geçici olarak kullanılamıyor; masraflar hesaplanamadı.',
           },
+          ...(result.partial ? { partial: result.partial } : {}),
           cached: false,
         };
       }
 
       // Para birimi bağlamı (eklemeli; hesap ve çevirme YOK). İstek para birimi taşımıyorsa blok üretilmez.
       const paraBirimiDurumu = buildFeePreviewCurrencyStatus({
-        principalAmount: dto.principalAmount,
+        principalAmount,
         currency: dto.currency,
         caseCurrency: dto.caseCurrency,
       });
@@ -164,7 +166,7 @@ export class FeeEngineController {
         success: false,
         error: {
           code: 'SERVICE_UNAVAILABLE',
-          message: 'Fee calculation service is temporarily unavailable',
+          message: 'Masraf hesaplama servisi geçici olarak kullanılamıyor; masraflar hesaplanamadı.',
         },
         cached: false,
       };

@@ -392,5 +392,7 @@ src/modules/fee-engine/__tests__/fee-preview-currency.http.spec.ts
 src/modules/fee-engine/__tests__/fee-case-type.spec.ts
 src/modules/fee-engine/__tests__/fee-preview-hesaplanamadi.http.spec.ts
 src/modules/fee-engine/__tests__/fee-preview-case-summary-parity.spec.ts
+#   calc-preview (POST /calc/preview/light) cagri bicimi: caseType yoksa ILAMSIZ varsayilani, profil disi caseType artik hata.
+src/modules/fee-engine/__tests__/fee-preview-service-callers.spec.ts
 # Asama masraf seti ISTEK ANAHTARI saf kararlari (anahtar dogrulama, parmak izi, tekrar / cakisma / iptal karari).
 src/modules/expense-request/__tests__/stage-expense-idempotency.spec.ts

@@ -509,7 +509,7 @@ export class FeeEngineService implements OnModuleInit {
    *
    * Takip türü: `takipTuruCode` (lookup kodu) tercih edilir, yoksa `caseType` (doğrudan profil kodu). İkisi de verilmezse
    * eski sözleşmedeki varsayılan (`ILAMSIZ`) kullanılır: yalnız `calc-preview` bunu bildirmeyerek çağırır; sihirbaz yolu
-   * (`FeeEngineController.preview`) takip türü olmadan buraya GELMEZ.
+   * (`FeeEngineController.preview`) `requireCaseType: true` verir ve takip türü yoksa "hesaplanamadı" alır.
    *
    * Cagrildigi yerler:
    * - FeeEngineController.preview() -> POST /fee-engine/preview (sihirbaz "Hesap Özeti")
@@ -525,6 +525,8 @@ export class FeeEngineService implements OnModuleInit {
     debtorCount?: number;
     postageType?: string;
     tariffYear?: number;
+    /** true: takip türü verilmemişse eski varsayılana (ILAMSIZ) DÜŞÜLMEZ, "hesaplanamadı" döner (sihirbaz yolu). */
+    requireCaseType?: boolean;
   }): FeePreviewResult {
     const {
       principalAmount,
@@ -536,11 +538,17 @@ export class FeeEngineService implements OnModuleInit {
     } = params;
     const hasCaseTypeInput = Boolean(String(takipTuruCode ?? '').trim() || String(params.caseType ?? '').trim());
 
+    // Vekalet ücreti masraf profiline de tarifeye de bağlı DEĞİLDİR (servisteki mevcut tablo; formül seçimi ayrı hukuki karar).
+    // Masraf hesaplanamasa bile bu değer hata yanıtında `partial` olarak taşınır: vekalet satırı kaybolmaz, tabandaki gibi
+    // hesaplanır; masraf ve ona bağlı satırlar "hesaplanamadı", toplamlar "gösterilemez" kalır.
+    const partial = { estimatedAttorneyFee: this.calculateAttorneyFeePreview(Number(principalAmount) + Number(accruedInterest)) };
+
     // 1. Get tariff
     const tariff = this.getTariff(tariffYear);
     if (!tariff) {
       return {
         success: false,
+        partial,
         error: {
           code: 'TARIFF_NOT_FOUND',
           message: `Tarife bulunamadı (${tariffYear || this.currentYear}); masraflar hesaplanamadı.`,
@@ -549,11 +557,11 @@ export class FeeEngineService implements OnModuleInit {
     }
 
     // 2. Takip türü → masraf profili (bilinmeyen takip türü sessiz 0 değil, hata)
-    const resolved = hasCaseTypeInput
+    const resolved = hasCaseTypeInput || params.requireCaseType
       ? this.resolveFeeCaseType(takipTuruCode, params.caseType)
       : { caseType: 'ILAMSIZ' };
     if ('error' in resolved) {
-      return { success: false, error: resolved.error };
+      return { success: false, partial, error: resolved.error };
     }
     const caseType = resolved.caseType;
 
@@ -569,6 +577,7 @@ export class FeeEngineService implements OnModuleInit {
     if (!calculation.profileFound) {
       return {
         success: false,
+        partial,
         error: { code: 'FEE_PROFILE_NOT_FOUND', message: 'Bu takip türü için masraf profili bulunamadı; masraflar hesaplanamadı.' },
       };
     }
@@ -584,11 +593,14 @@ export class FeeEngineService implements OnModuleInit {
       dosyaGideri = fileExpense.amount;
     }
     if (missingTariffCodes.length > 0) {
+      // Dahili tarife kodları kullanıcıya gösterilmez (günlükte kalır); kullanıcı metni Türkçe ve kod içermez
+      this.logger.warn(`Önizleme: tarifede gerekli kalem yok (${missingTariffCodes.join(', ')})`);
       return {
         success: false,
+        partial,
         error: {
           code: 'TARIFF_ITEM_MISSING',
-          message: `Tarifede gerekli kalem tanımlı değil (${missingTariffCodes.join(', ')}); masraflar hesaplanamadı.`,
+          message: 'Tarifede gerekli masraf kalemi tanımlı değil; masraflar hesaplanamadı.',
         },
       };
     }
@@ -596,10 +608,8 @@ export class FeeEngineService implements OnModuleInit {
     // 5. Build breakdown
     const breakdown = this.buildPreviewBreakdown(feeItems, dosyaGideri);
 
-    // 6. Calculate attorney fee
-    const estimatedAttorneyFee = this.calculateAttorneyFeePreview(
-      principalAmount + accruedInterest
-    );
+    // 6. Calculate attorney fee (yukarıdaki `partial` ile aynı hesap; sayısal girdi: metin gövde "10000"+0 = "100000" olmasın)
+    const estimatedAttorneyFee = partial.estimatedAttorneyFee;
 
     // 7. Total fees (satırların toplamı: dosya gideri dahil)
     const estimatedFees = Math.round((this.calculateTotalFees(feeItems) + dosyaGideri) * 100) / 100;
@@ -692,6 +702,8 @@ export interface FeePreviewBreakdown {
 
 export interface FeePreviewResult {
   success: boolean;
+  /** Masraf hesaplanamadığında (success:false) yine de hesaplanabilen kısım: vekalet ücreti masraf profiline / tarifeye bağlı değil. */
+  partial?: { estimatedAttorneyFee: number };
   data?: {
     estimatedFees: number;
     estimatedAttorneyFee: number;

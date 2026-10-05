@@ -1139,6 +1139,11 @@ export function ProfessionalClaimItemForm({
     if (masrafResult.success && masrafResult.data) {
       vekaletUcreti = masrafResult.data.estimatedAttorneyFee;
       satirlar.push({ key: "vekalet_ucreti", label: "Vekalet Ücreti", tutar: vekaletUcreti, bold: true });
+    } else if (masrafResult.partial && Number.isFinite(masrafResult.partial.estimatedAttorneyFee)) {
+      // Masraf hesaplanamadı (takip türü / tarife / profil) ama vekalet ücreti masrafa bağlı değil: tabandaki gibi hesaplanır.
+      // Toplamlar yine eksik kalemle (masraf) TAM gösterilmez.
+      vekaletUcreti = masrafResult.partial.estimatedAttorneyFee;
+      satirlar.push({ key: "vekalet_ucreti", label: "Vekalet Ücreti", tutar: vekaletUcreti, bold: true });
     } else {
       satirlar.push({ key: "vekalet_ucreti", label: "Vekalet Ücreti (Hesaplanamadı)", tutar: 0, color: "red", bold: true, hesaplanamadi: true });
     }
@@ -1352,13 +1357,15 @@ export function ProfessionalClaimItemForm({
   // Masraf önizlemesi alınamadı (takip türü yok / eşleşmedi, tarife yok / eksik, sunucuya ulaşılamadı): masrafın kendisi ve masrafa
   // bağlı tahsil harcı "hesaplanamadı", eksik kalemle toplanmış TOPLAM / SON BORÇ ve oran tablosu "gösterilemez" yazılır.
   const masrafHesaplanamadi = ozetBaglami?.masrafHesaplanamadi ?? null;
-  const masrafaBagliHesaplanamadi = (key: string): boolean =>
+  const masrafaBagliHesaplanamadi = (satir: HesapOzetiSatir): boolean =>
     masrafHesaplanamadi !== null &&
-    ["icra_masraflari", "vekalet_ucreti", "pesin_harc_dahil_tahsil", "pesin_harc_haric_tahsil"].includes(key);
+    ["icra_masraflari", "pesin_harc_dahil_tahsil", "pesin_harc_haric_tahsil"].includes(satir.key) ||
+    // Vekalet ücreti yalnız sunucu hiç değer vermediyse (satır işaretli) "hesaplanamadı"; `partial` ile gelen değer yazılır
+    (masrafHesaplanamadi !== null && satir.key === "vekalet_ucreti" && satir.hesaplanamadi === true);
   const masrafaBagliToplam = (key: string): boolean =>
     masrafHesaplanamadi !== null && (key === "toplam_borc" || key === "son_borc" || key.startsWith("tahsil_"));
   const satirTutari = (satir: HesapOzetiSatir): string => {
-    if (masrafaBagliHesaplanamadi(satir.key)) return "hesaplanamadı";
+    if (masrafaBagliHesaplanamadi(satir)) return "hesaplanamadı";
     if (masrafaBagliToplam(satir.key)) return "gösterilemez";
     const alan = satirAlani(satir.key);
     if (!alan) return formatCurrency(satir.tutar, kalem.currency);
@@ -1366,6 +1373,10 @@ export function ProfessionalClaimItemForm({
     if (alan.durum !== "GECERLI" || !alan.paraBirimi) return "gösterilemez";
     return formatBildirilenParaBirimi(satir.tutar, alan.paraBirimi);
   };
+  // Taslak Takip Talebi PDF / XML düğmeleri masraf ve SON BORÇ'u satırlardan alır; masraf hesaplanamadıysa eksik kalem 0 sayılıp
+  // toplam basılmaz (owner kararı 12: "eksik bilgi sıfır sayılmasın"): düğmeler pasif ve neden görünür.
+  const taslakBelgeEngelli = masrafHesaplanamadi !== null;
+  const TASLAK_BELGE_ENGEL_MESAJI = "Masraf hesaplanamadığı için taslak belge (PDF / XML) üretilemez.";
   const tahsilOranlariGecerli = (!paraBirimiKisitli || satirAlani("tahsil_0")?.durum === "GECERLI") && !masrafHesaplanamadi;
   // Tutar yerine "gösterilemez" / "hesaplanamadı" yazılan toplam satırı vurgulu tutar biçimiyle (büyük, renkli) basılmaz
   const toplamSinifi = (key: string, vurgulu: string): string =>
@@ -2476,6 +2487,12 @@ export function ProfessionalClaimItemForm({
                 Kaydet
               </button>
               
+              {/* Masraf hesaplanamadıysa taslak PDF / XML pasif; neden görünür (Word takip tutarını kullanır, etkilenmez) */}
+              {isCalculated && hesapOzeti.length > 0 && taslakBelgeEngelli && (
+                <p data-testid="taslak-belge-engel-notu" className="text-[9px] text-amber-800">
+                  {TASLAK_BELGE_ENGEL_MESAJI}
+                </p>
+              )}
               {/* Takip Talebi İndirme Butonları */}
               {isCalculated && hesapOzeti.length > 0 && (
                 <div className="flex gap-1">
@@ -2756,7 +2773,10 @@ export function ProfessionalClaimItemForm({
                         alert(`PDF dosyası oluşturulamadı: ${err.message}`);
                       }
                     }}
-                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 text-[10px]"
+                    disabled={taslakBelgeEngelli}
+                    title={taslakBelgeEngelli ? TASLAK_BELGE_ENGEL_MESAJI : undefined}
+                    data-testid="taslak-belge-pdf"
+                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 text-[10px] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-400"
                   >
                     <FileText className="h-3 w-3" />
                     PDF
@@ -2856,7 +2876,10 @@ export function ProfessionalClaimItemForm({
                         alert(`XML dosyası oluşturulamadı: ${err.message}`);
                       }
                     }}
-                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 text-[10px]"
+                    disabled={taslakBelgeEngelli}
+                    title={taslakBelgeEngelli ? TASLAK_BELGE_ENGEL_MESAJI : undefined}
+                    data-testid="taslak-belge-xml"
+                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 text-[10px] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-400"
                   >
                     <FileText className="h-3 w-3" />
                     XML

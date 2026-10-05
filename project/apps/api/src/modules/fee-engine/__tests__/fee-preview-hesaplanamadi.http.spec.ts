@@ -83,6 +83,9 @@ describe('POST /fee-engine/preview — gerçek 2026 tarifesi, takip türü kodu'
     expect(res.body.data.tariffYear).toBe(2026);
   });
 
+  // NOT: tahliye / ilamlı / rehin / iflasta "peşin harç 0" masraf YAPILANDIRMASINA göredir (fee-profiles.yaml: nispi kalem yok;
+  // 2026.yaml ilamsiz_pesin_harc yalnız ILAMSIZ + KIRA). Dosya hesap özeti bu türlerde de binde 5 yazıyor: hangisinin hukuken doğru
+  // olduğu KARAR MADDESİ'nde (satır 14, ikinci hukuki soru); bu testler hukuki doğruluğu KİLİTLEMEZ, mevcut yapılandırmayı izler.
   it.each([
     ['ILAMSIZ_GENEL', 120],
     ['ILAMSIZ_KIRA', 120],
@@ -94,7 +97,7 @@ describe('POST /fee-engine/preview — gerçek 2026 tarifesi, takip türü kodu'
     ['REHIN_TASINMAZ', 0],
     ['IFLAS_ADI', 0],
     ['IFLAS_KAMBIYO', 0],
-  ])('%s: satırlar dolu ve toplamla tutar; peşin harç %s', async (takipTuruCode, pesinHarc) => {
+  ])('%s: satırlar dolu ve toplamla tutar; peşin harç %s (masraf yapılandırmasına göre; hukuki doğruluğu karar maddesinde)', async (takipTuruCode, pesinHarc) => {
     const res = await preview({ principalAmount: 10_000, takipTuruCode, debtorCount: 1 });
 
     expect(res.body.success).toBe(true);
@@ -108,7 +111,7 @@ describe('POST /fee-engine/preview — gerçek 2026 tarifesi, takip türü kodu'
     expect(sum(b)).toBe(res.body.data.estimatedFees);
   });
 
-  it('GERÇEK 0 ≠ hesaplanamadı: ilamlıda peşin harç doğmaz (0, success:true); NAFAKA için profil yok (success:false)', async () => {
+  it('0 ≠ hesaplanamadı: yapılandırmada peşin harç tanımsız olan ilamlıda 0 (success:true); NAFAKA için profil yok (success:false)', async () => {
     const ilamli = await preview({ principalAmount: 10_000, takipTuruCode: 'ILAMLI' });
     expect(ilamli.body.success).toBe(true);
     expect(ilamli.body.data.breakdown.pesinHarc).toBe(0);
@@ -142,6 +145,8 @@ describe('POST /fee-engine/preview — gerçek 2026 tarifesi, takip türü kodu'
     expect(res.body).toEqual({
       success: false,
       error: { code: 'CASE_TYPE_UNRESOLVED', message: 'Takip türü belirtilmedi; masraflar hesaplanamadı.' },
+      // Vekalet ücreti masraf profiline bağlı değil: satır kaybolmaz (tabandaki gibi hesaplanır)
+      partial: { estimatedAttorneyFee: 11000 },
       cached: false,
     });
   });
@@ -212,7 +217,9 @@ describe('POST /fee-engine/preview — tarife yok / eksik: "hesaplanamadı", ses
       const res = await post(app);
       expect(res.body.success).toBe(false);
       expect(res.body.error.code).toBe('TARIFF_ITEM_MISSING');
-      expect(res.body.error.message).toContain(code);
+      // Dahili tarife kodu kullanıcıya sızmaz (günlükte kalır)
+      expect(res.body.error.message).not.toContain(code);
+      expect(res.body.error.message).toBe('Tarifede gerekli masraf kalemi tanımlı değil; masraflar hesaplanamadı.');
       expect(res.body).not.toHaveProperty('data');
     } finally {
       await app.close();
@@ -266,6 +273,93 @@ describe('POST /fee-engine/preview — tarife yok / eksik: "hesaplanamadı", ses
     try {
       const res = await post(app);
       expect(res.body.data.tariffYear).toBe(2031);
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+describe('POST /fee-engine/preview — masraf hesaplanamasa da vekalet satırı kaybolmaz; kullanıcı metni Türkçe; metin tutar', () => {
+  const post = (app: INestApplication, body: Record<string, unknown>) => request(app.getHttpServer()).post('/fee-engine/preview').send(body);
+
+  // Kullanıcıya görünen metin: Türkçe, "hesaplanamadı" der, dahili tarife kodu (snake_case) ya da İngilizce ifade içermez
+  const kullaniciMetniMi = (message: string) => {
+    expect(message).toMatch(/hesaplanamadı\.$/);
+    expect(message).not.toMatch(/[a-z]+_[a-z_]+/);
+    expect(message).not.toMatch(/not found|unavailable|must be/i);
+  };
+
+  it('vekalet ücreti masraf profiline / tarifeye bağlı değil: hata yanıtında `partial` olarak tabandaki değerle gelir (10 bin ve 1 M TL)', async () => {
+    const ok = await createApp(repoOf(REAL_2026));
+    const eksik = await createApp(repoOf((() => { const t = clone(REAL_2026); delete t.fixedFees['file_expense']; return t; })()));
+    const yok = await createApp(repoOf(null));
+    try {
+      for (const amount of [10_000, 1_000_000]) {
+        const basarili = await post(ok, { principalAmount: amount, takipTuruCode: 'ILAMSIZ_GENEL' });
+        const vekalet = basarili.body.data.estimatedAttorneyFee;
+        expect(basarili.body).not.toHaveProperty('partial');
+
+        const cases: Array<[string, INestApplication, Record<string, unknown>, string]> = [
+          ['NAFAKA (profil yok)', ok, { takipTuruCode: 'NAFAKA' }, 'CASE_TYPE_UNRESOLVED'],
+          ['kalem türü', ok, { caseType: 'ASIL_ALACAK' }, 'CASE_TYPE_UNRESOLVED'],
+          ['takip türü yok', ok, {}, 'CASE_TYPE_UNRESOLVED'],
+          ['tarifede kalem yok', eksik, { takipTuruCode: 'ILAMSIZ_GENEL' }, 'TARIFF_ITEM_MISSING'],
+          ['tarife yok', yok, { takipTuruCode: 'ILAMSIZ_GENEL' }, 'TARIFF_NOT_FOUND'],
+        ];
+        for (const [ad, app, body, kod] of cases) {
+          const res = await post(app, { principalAmount: amount, ...body });
+          expect({ ad, success: res.body.success, kod: res.body.error?.code, partial: res.body.partial }).toEqual({
+            ad,
+            success: false,
+            kod,
+            partial: { estimatedAttorneyFee: vekalet },
+          });
+          expect(res.body).not.toHaveProperty('data');
+        }
+      }
+    } finally {
+      await ok.close();
+      await eksik.close();
+      await yok.close();
+    }
+  });
+
+  it('dört hata kodunun (CASE_TYPE_UNRESOLVED, TARIFF_NOT_FOUND, FEE_PROFILE_NOT_FOUND, TARIFF_ITEM_MISSING) kullanıcı metni Türkçe ve ham tarife kodu içermez', async () => {
+    const ok = await createApp(repoOf(REAL_2026));
+    const eksik = await createApp(repoOf((() => { const t = clone(REAL_2026); delete t.fixedFees['bar_stamp_fee']; return t; })()));
+    const yok = await createApp(repoOf(null));
+    try {
+      const sonuclar = [
+        await post(ok, { principalAmount: 10_000, takipTuruCode: 'NAFAKA' }),
+        await post(eksik, { principalAmount: 10_000, takipTuruCode: 'ILAMSIZ_GENEL' }),
+        await post(yok, { principalAmount: 10_000, takipTuruCode: 'ILAMSIZ_GENEL' }),
+      ];
+      expect(sonuclar.map((r) => r.body.error.code)).toEqual(['CASE_TYPE_UNRESOLVED', 'TARIFF_ITEM_MISSING', 'TARIFF_NOT_FOUND']);
+      for (const r of sonuclar) kullaniciMetniMi(r.body.error.message);
+
+      // FEE_PROFILE_NOT_FOUND: takip türü çözüldükten sonra profilin kaybolması (servis düzeyi; HTTP'den doğal yolu yok)
+      const svc = new FeeEngineService(repoOf(REAL_2026));
+      await svc.onModuleInit();
+      jest.spyOn(svc, 'calculateOpeningFeesDetailed').mockReturnValue({ items: [], missingTariffCodes: [], tariffFound: true, profileFound: false });
+      const profilYok = svc.previewCalculation({ principalAmount: 10_000, takipTuruCode: 'ILAMSIZ_GENEL', tariffYear: 2026 });
+      expect(profilYok.error?.code).toBe('FEE_PROFILE_NOT_FOUND');
+      expect(profilYok.partial).toEqual({ estimatedAttorneyFee: 11000 });
+      kullaniciMetniMi(profilYok.error!.message);
+    } finally {
+      await ok.close();
+      await eksik.close();
+      await yok.close();
+    }
+  });
+
+  it('tutar metin olarak gelirse sayıya çevrilir: "10000" ile 10000 aynı sonuç ("10000"+0 = "100000" olmasın)', async () => {
+    const app = await createApp(repoOf(REAL_2026));
+    try {
+      const sayi = await post(app, { principalAmount: 10_000, takipTuruCode: 'ILAMSIZ_GENEL' });
+      const metin = await post(app, { principalAmount: '10000', takipTuruCode: 'ILAMSIZ_GENEL' });
+      expect(metin.body.data).toEqual(sayi.body.data);
+      const gecersiz = await post(app, { principalAmount: 'abc', takipTuruCode: 'ILAMSIZ_GENEL' });
+      expect(gecersiz.body.error.code).toBe('INVALID_INPUT');
     } finally {
       await app.close();
     }

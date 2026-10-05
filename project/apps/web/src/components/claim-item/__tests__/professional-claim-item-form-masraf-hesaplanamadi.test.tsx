@@ -17,9 +17,10 @@
  * yanıtı gerçek denetleyiciyle `apps/api/.../fee-preview-hesaplanamadi.http.spec.ts` içinde ayrıca kilitlidir.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ProfessionalClaimItemForm } from "../ProfessionalClaimItemForm";
 import { apiClient } from "@/lib/api/client";
+import { api } from "@/lib/api";
 
 vi.mock("@/lib/api/client", () => ({
   apiClient: { get: vi.fn(), post: vi.fn() },
@@ -49,7 +50,12 @@ const BASARILI = (pesinHarc: number, toplam: number) => ({
   cached: false,
 });
 
-const HATA = (code: string, message: string) => ({ success: false, error: { code, message }, cached: false });
+const HATA = (code: string, message: string, partial?: { estimatedAttorneyFee: number }) => ({
+  success: false,
+  error: { code, message },
+  ...(partial ? { partial } : {}),
+  cached: false,
+});
 
 type MasrafYaniti = (istek: Record<string, unknown>) => unknown;
 
@@ -194,7 +200,7 @@ describe("Hesap Özeti masraf — hesaplanamadı ≠ gerçek 0,00", () => {
   const NEDENLER: Array<[string, string, string]> = [
     ["CASE_TYPE_UNRESOLVED", "Takip türü belirtilmedi; masraflar hesaplanamadı.", "takip türü yok"],
     ["TARIFF_NOT_FOUND", "Tarife bulunamadı (2026); masraflar hesaplanamadı.", "tarife yok"],
-    ["TARIFF_ITEM_MISSING", "Tarifede gerekli kalem tanımlı değil (file_expense); masraflar hesaplanamadı.", "tarifede kalem yok"],
+    ["TARIFF_ITEM_MISSING", "Tarifede gerekli masraf kalemi tanımlı değil; masraflar hesaplanamadı.", "tarifede kalem yok"],
     ["FEE_PROFILE_NOT_FOUND", "Bu takip türü için masraf profili bulunamadı; masraflar hesaplanamadı.", "profil yok"],
   ];
 
@@ -230,7 +236,7 @@ describe("Hesap Özeti masraf — hesaplanamadı ≠ gerçek 0,00", () => {
     expect(screen.getByTestId("kalem-hesap-masraf-hesaplanamadi").textContent).toContain("erişilemiyor");
   });
 
-  it("GERÇEK 0: ilamlıda peşin harç doğmaz — '0,00 ₺' kalır, toplamlar sayıdır, uyarı yok", async () => {
+  it("0 ≠ hesaplanamadı: sunucu peşin harcı 0 bildirdiyse (ilamlıda masraf yapılandırması) '0,00 ₺' kalır, toplamlar sayıdır, uyarı yok", async () => {
     agiKur(() => BASARILI(0, 1311.1));
     const { row } = await goster({ takipTuruCode: "ILAMLI", kalem: KALEM("ILAM") });
 
@@ -282,5 +288,63 @@ describe("Hesap Özeti masraf — dışarı verilen satırlar sıfırı gerçek 
     const bayrak = sonSatirlar(onItemsChange);
     expect(Object.values(bayrak).some(Boolean)).toBe(false);
     expect(Object.keys(bayrak)).toContain("icra_masraflari");
+  });
+});
+
+describe("Hesap Özeti masraf — masraf hesaplanamasa da vekalet satırı kaybolmaz (NAFAKA / profil yok)", () => {
+  it("sunucu `partial` vekalet verirse: vekalet yazılır; masraf ve masrafa bağlı tahsil harcı 'hesaplanamadı'; toplamlar 'gösterilemez'", async () => {
+    agiKur(() => HATA("CASE_TYPE_UNRESOLVED", "Bu takip türü için masraf profili tanımlı değil; masraflar hesaplanamadı.", { estimatedAttorneyFee: 11000 }));
+    const { row } = await goster({ takipTuruCode: "NAFAKA", kalem: KALEM("NAFAKA") });
+
+    expect(row("Vekalet Ücreti")).toBe("11.000,00 ₺");
+    expect(row("Vekalet Ücreti")).not.toBe("hesaplanamadı");
+    expect(row("İCRA MASRAFLARI")).toBe("hesaplanamadı");
+    expect(row("Peşin Harç Dahil Tahsil Harcı")).toBe("hesaplanamadı");
+    expect(row("TOPLAM BORÇ")).toBe("gösterilemez");
+    expect(row("SON BORÇ")).toBe("gösterilemez");
+  });
+
+  it("`partial` yoksa (sunucuya ulaşılamadı) vekalet de 'hesaplanamadı'", async () => {
+    agiKur(() => HATA("SERVICE_UNAVAILABLE", "Masraf hesaplama servisi geçici olarak kullanılamıyor; masraflar hesaplanamadı."));
+    const { row } = await goster();
+    expect(row("Vekalet Ücreti")).toBe("hesaplanamadı");
+  });
+});
+
+describe("Hesap Özeti masraf — taslak PDF / XML düğmeleri hesaplanamadıyken pasif", () => {
+  const indirmeler = () => [
+    api.downloadTakipTalebiPdf as unknown as ReturnType<typeof vi.fn>,
+    api.downloadTakipTalebiXml as unknown as ReturnType<typeof vi.fn>,
+    api.downloadTakipTalebiWord as unknown as ReturnType<typeof vi.fn>,
+  ];
+
+  it("masraf hesaplanamadı: PDF ve XML düğmeleri pasif, neden görünür; tıklama indirme işlevini ÇAĞIRMAZ (Word etkilenmez)", async () => {
+    agiKur(() => HATA("TARIFF_NOT_FOUND", "Tarife bulunamadı (2026); masraflar hesaplanamadı.", { estimatedAttorneyFee: 11000 }));
+    for (const fn of indirmeler()) fn.mockClear();
+    await goster();
+
+    const pdf = screen.getByTestId("taslak-belge-pdf") as HTMLButtonElement;
+    const xml = screen.getByTestId("taslak-belge-xml") as HTMLButtonElement;
+    expect(pdf.disabled).toBe(true);
+    expect(xml.disabled).toBe(true);
+    expect(pdf.title).toContain("Masraf hesaplanamadığı için taslak belge");
+    expect(screen.getByTestId("taslak-belge-engel-notu").textContent).toBe("Masraf hesaplanamadığı için taslak belge (PDF / XML) üretilemez.");
+    expect((screen.getByRole("button", { name: "Word" }) as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(pdf);
+    fireEvent.click(xml);
+    await new Promise((r) => setTimeout(r, 50));
+    const [pdfFn, xmlFn] = indirmeler();
+    expect(pdfFn).not.toHaveBeenCalled();
+    expect(xmlFn).not.toHaveBeenCalled();
+  });
+
+  it("masraf hesaplandı: PDF / XML düğmeleri etkin, engel notu yok", async () => {
+    agiKur(() => BASARILI(120, 1431.1));
+    await goster();
+
+    expect((screen.getByTestId("taslak-belge-pdf") as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByTestId("taslak-belge-xml") as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByTestId("taslak-belge-engel-notu")).toBeNull();
   });
 });

@@ -10,7 +10,12 @@ import { FeeEngineService } from '../fee-engine.service';
  * özeti 1.431,10 yazıyordu. Burada GERÇEK `FeeEngineService.previewCalculation` (gerçek 2026 tarife dosyası) ile GERÇEK
  * `CaseService.getCalculationSummary` (Prisma yerine sahte veri katmanı; DB yok) karşılaştırılır.
  *
- * KAPSAM: yalnız masraf satırları. Vekalet ücreti formülü bu spec'te KARŞILAŞTIRILMAZ: iki yerde farklı formül vardır ve
+ * KAPSAM: yalnız ILAMSIZ_GENEL (eşlemeli 10 takip türü kodunun ilamsız genel / kira / kambiyo grubu aynı sonucu verir). İlamlı, tahliye,
+ * rehin ve iflasta panel masraf YAPILANDIRMASINA göre peşin harcı 0 yazar, dosya özeti ise takip türüne BAKMAZ ve binde 5 yazar
+ * (10.000 TL'de 120, 1.000.000 TL'de 5.000 fark; rehin / iflasta tebligat da tek borçlu sayılır): bu fark bu spec'te EŞİT sayılmaz,
+ * hukuki doğruluğu KARAR MADDESİ'ndedir (satır 14).
+ *
+ * KAPSAM (devam): yalnız masraf satırları. Vekalet ücreti formülü bu spec'te KARŞILAŞTIRILMAZ: iki yerde farklı formül vardır ve
  * hangisinin doğru olduğu hukuki karardır (owner kararı 12: seçilmedi). Dosya özeti masraf sabitlerini tarifeden OKUMAZ
  * (tarife yokken "hesaplanamadı" demez) — bu açık alt iştir; bu spec yalnız tutarların bugün eşit kalmasını kilitler.
  */
@@ -35,7 +40,7 @@ function makePrisma(principal: number, debtorCount: number) {
   };
 }
 
-describe('sihirbaz önizlemesi ↔ dosya hesap özeti — masraf eşitliği (gerçek 2026 tarifesi)', () => {
+describe('sihirbaz önizlemesi ↔ dosya hesap özeti — masraf eşitliği YALNIZ ILAMSIZ_GENEL için (gerçek 2026 tarifesi)', () => {
   const stub = {} as any;
   let fee: FeeEngineService;
 
@@ -52,7 +57,7 @@ describe('sihirbaz önizlemesi ↔ dosya hesap özeti — masraf eşitliği (ger
     [1_000_000, 2],
     [5_000_000, 3],
   ])('takip %s TL, %s borçlu: altı satır ve İCRA MASRAFLARI eşit', async (principal, debtorCount) => {
-    const service = new CaseService(makePrisma(principal, debtorCount), stub, stub, stub, stub, stub, stub, stub, stub, stub);
+    const service = new CaseService(makePrisma(principal, debtorCount) as any, stub, stub, stub, stub, stub, stub, stub, stub, stub);
     const summary: any = await service.getCalculationSummary('tenant-1', 'case-1', '2026-10-01');
 
     // Özet kalemi ASIL_ALACAK + takip öncesi faiz 0 → takipTutari = anapara; önizleme aynı matrahla çağrılır
