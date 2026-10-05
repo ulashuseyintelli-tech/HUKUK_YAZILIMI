@@ -12,7 +12,10 @@ import { DecisionCode } from '../types/policy-decision.interface';
  * sınırı, aktör yetkisi, talebin kendi durum geçişleri ve denetim kaydı korunur. "Karar motorunu bütünüyle kaldırma veya 48
  * eylemi topluca açma. Diğer eylemlerin aşama sözlüğünü bu yamaya katma."
  *
- * Bu test GERÇEK CasePolicyEngine + GERÇEK StateMachineService + GERÇEK GateCheckerService ile koşar (yalnız veri erişimi sahte).
+ * Bu test GERÇEK CasePolicyEngine + GERÇEK StateMachineService ile koşar; veri erişimi (Prisma), olgu deposu, hesaplanan olgu kaydı ve
+ * karar günlüğü SAHTEDİR. Kapı denetleyicisi GERÇEK olan testler: kapalı dosya, arşivdeki dosya, bayat olgu önbelleği (kapalı / arşiv);
+ * diğer testlerde (48 × 13 matrisi dahil) kapı denetleyicisi saplamadır — matris YALNIZ durum makinesinin etkisini ölçer, ürünün
+ * gerçek izin kümesi DEĞİLDİR (ör. UYAP_SEND gerçek kapılarla INITIAL'da da bloklanabilir).
  * Beklenen sonuç matrisi (48 eylem × veritabanının taşıdığı 13 aşama) DOĞRUDAN yazılıdır — durum makinesinden türetilmez:
  * bir eylem daha açılırsa (ya da bu eylem kapanırsa) test düşer. Matris, düzeltme öncesi main'de ölçülen davranıştır
  * (ASAMA-SOZLUGU-EVIDENCE-20261002): 45 eylem hiçbir aşamada izinli değil; UYAP_SEND / REQUEST_EXPENSE / APPROVE_EXPENSE yalnız INITIAL.
