@@ -193,7 +193,7 @@ describe("Hesap Özeti masraf — takip türü kodu taşınır", () => {
 describe("Hesap Özeti masraf — hesaplanamadı ≠ gerçek 0,00", () => {
   const NEDENLER: Array<[string, string, string]> = [
     ["CASE_TYPE_UNRESOLVED", "Takip türü belirtilmedi; masraflar hesaplanamadı.", "takip türü yok"],
-    ["TARIFF_NOT_FOUND", "Tariff not found for year: 2026", "tarife yok"],
+    ["TARIFF_NOT_FOUND", "Tarife bulunamadı (2026); masraflar hesaplanamadı.", "tarife yok"],
     ["TARIFF_ITEM_MISSING", "Tarifede gerekli kalem tanımlı değil (file_expense); masraflar hesaplanamadı.", "tarifede kalem yok"],
     ["FEE_PROFILE_NOT_FOUND", "Bu takip türü için masraf profili bulunamadı; masraflar hesaplanamadı.", "profil yok"],
   ];
@@ -261,7 +261,7 @@ describe("Hesap Özeti masraf — dışarı verilen satırlar sıfırı gerçek 
   };
 
   it("masraf hesaplanamadıysa ilgili satırlar `hesaplanamadi: true` taşır", async () => {
-    agiKur(() => HATA("TARIFF_NOT_FOUND", "Tariff not found for year: 2026"));
+    agiKur(() => HATA("TARIFF_NOT_FOUND", "Tarife bulunamadı (2026); masraflar hesaplanamadı."));
     const onItemsChange = vi.fn();
     await goster({ onItemsChange });
 

@@ -193,6 +193,8 @@ describe('POST /fee-engine/preview — tarife yok / eksik: "hesaplanamadı", ses
       const res = await post(app);
       expect(res.body.success).toBe(false);
       expect(res.body.error.code).toBe('TARIFF_NOT_FOUND');
+      // Kullanıcıya görünen metin Türkçe ve "hesaplanamadı" der (eskiden İngilizce "Tariff not found for year")
+      expect(res.body.error.message).toBe(`Tarife bulunamadı (${new Date().getFullYear()}); masraflar hesaplanamadı.`);
       expect(res.body).not.toHaveProperty('data');
     } finally {
       await app.close();

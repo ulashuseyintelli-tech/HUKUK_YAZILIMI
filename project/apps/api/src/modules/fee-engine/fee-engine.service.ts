@@ -543,7 +543,7 @@ export class FeeEngineService implements OnModuleInit {
         success: false,
         error: {
           code: 'TARIFF_NOT_FOUND',
-          message: `Tariff not found for year: ${tariffYear || this.currentYear}`,
+          message: `Tarife bulunamadı (${tariffYear || this.currentYear}); masraflar hesaplanamadı.`,
         },
       };
     }
