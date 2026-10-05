@@ -97,7 +97,7 @@ describe('CaseBalanceService CLIENT-P0-T04-C1 tenant fail-closed containment', (
     it('own case balance read succeeds', async () => {
       const h = buildHarness(OWNED_WITH_BALANCE);
       const res = await h.service.getBalance('tenant-A', 'case-A');
-      expect(res).toEqual(expect.objectContaining({ id: 'cb-A', tenantId: 'tenant-A', isLow: false }));
+      expect(res).toEqual(expect.objectContaining({ exists: true, id: 'cb-A', tenantId: 'tenant-A', isLow: false }));
       expect(h.prisma.case.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'case-A', tenantId: 'tenant-A' } }));
     });
 
@@ -108,14 +108,32 @@ describe('CaseBalanceService CLIENT-P0-T04-C1 tenant fail-closed containment', (
       expect(h.prisma.balanceLedger.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { caseBalanceId: 'cb-A' } }));
     });
 
-    it('own case missing balance can be created (ownership verified before create)', async () => {
+    it('own case missing balance: READ does NOT create (owner GO 2026-10-05) — explicit absence, no fabricated zero or currency', async () => {
       const h = buildHarness(OWNED); // sahip var, mevcut bakiye yok
       const res = await h.service.getBalance('tenant-A', 'case-A');
+      expect(h.prisma.case.findFirst).toHaveBeenCalled(); // sahiplik yine doğrulanır
+      expect(h.prisma.caseBalance.create).not.toHaveBeenCalled();
+      expect(res).toEqual({
+        exists: false,
+        caseId: 'case-A',
+        balance: null,
+        currency: null,
+        lowThreshold: null,
+        isLow: null,
+        recentLedger: [],
+      });
+      expect(await h.service.getLedger('tenant-A', 'case-A')).toEqual([]);
+      expect(h.prisma.caseBalance.create).not.toHaveBeenCalled();
+      expect(h.prisma.balanceLedger.findMany).not.toHaveBeenCalled();
+    });
+
+    it('own case missing balance can be created by a WRITE (ownership verified before create)', async () => {
+      const h = buildHarness(OWNED); // sahip var, mevcut bakiye yok
+      await h.service.credit('tenant-A', 'case-A', { amount: 100, source: 'manual' }, 'user-A');
       expect(h.prisma.case.findFirst).toHaveBeenCalled();
       expect(h.prisma.caseBalance.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ tenantId: 'tenant-A', caseId: 'case-A', balance: 0 }) }),
       );
-      expect(res).toEqual(expect.objectContaining({ tenantId: 'tenant-A', caseId: 'case-A' }));
     });
 
     it('own case credit succeeds', async () => {

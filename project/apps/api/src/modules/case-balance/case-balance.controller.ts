@@ -2,14 +2,18 @@ import { Controller, Get, Post, Body, Param, UseGuards, Req } from '@nestjs/comm
 import { CaseBalanceService, CreditBalanceDto, DebitBalanceDto, PostExpenseActualDto } from './case-balance.service';
 import { AuthGuard } from '@nestjs/passport';
 import { AdminGuard } from '@/modules/auth/guards/admin.guard';
+import { ViewerWriteDenyGuard } from '@/modules/auth/guards/viewer-write-deny.guard';
 import { Request } from 'express';
 
 interface AuthRequest extends Request {
   user: { id: string; tenantId: string };
 }
 
+// Owner GO 2026-10-05 (karar 5): VIEWER avans yazamaz. Aynı sınıf düzeyi koruma owner'ın 2026-09-27 kararıyla 12 denetleyiciye
+// bağlanan ViewerWriteDenyGuard'dır (yeni rol / izin yok); okuma fiilleri (GET) etkilenmez. Dosya üyesi OLMAYAN kullanıcının
+// yazma yetkisi bu korumayla DEĞİŞMEZ (ayrı karar).
 @Controller('cases/:caseId/balance')
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(AuthGuard('jwt'), ViewerWriteDenyGuard)
 export class CaseBalanceController {
   constructor(private readonly caseBalanceService: CaseBalanceService) {}
 

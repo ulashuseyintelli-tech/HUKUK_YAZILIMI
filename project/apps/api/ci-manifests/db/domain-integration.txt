@@ -468,3 +468,6 @@ src/modules/stage-trigger/__tests__/uyap-prepare-opening-expense-requirement.htt
 #   ardisik donemlerde kapanis = sonraki acilis, bugune kadarki kapanis = computeOutstanding; ms siniri, TSI gun siniri,
 #   kiraci / para birimi / muvekkil ayrimi, hareketsiz donem, gecersiz aralik. Duzeltmesiz okuyucuyla 9 testin 7si duser.
 src/modules/accounting-journal/__tests__/accounting-journal-financial-statement.opening-carry.db-gated.integration.spec.ts
+# Masraf/avans bakiyesi (owner GO 2026-10-05, karar 5): VIEWER avans yazamaz + okuma isteği bakiye satırı oluşturmaz (açık yokluk `exists:false`).
+#   GERÇEK HTTP + disposable PostgreSQL; düzeltmesiz main'de 13 testin 8'i düşer (VIEWER 201 yazar; GET /balance ve /ledger satır oluşturur).
+src/modules/case-balance/__tests__/case-balance-write-safety.http.db-gated.integration.spec.ts
