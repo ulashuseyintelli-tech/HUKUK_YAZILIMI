@@ -96,15 +96,19 @@ function normalizeAdapter(
       displayStatus: adapter.canonical.displayStatus,
       displayAuthority: adapter.canonical.displayAuthority,
       currency: adapter.canonical.currency,
-      currencyResults: adapter.canonical.currencyResults.map((result) =>
-        enforcementDateSpecified
-          ? result
-          : {
-            ...result,
-            preEnforcementInterest: null,
-            postEnforcementInterest: null,
-            interestReconciled: null,
-          }),
+      // DB ClaimItem okuma sirasi bir currency sirasi sozlesmesi degildir.
+      // PR-9 display normalizer'i gibi kimlige gore sirala; kaynak diziyi degistirme.
+      currencyResults: [...adapter.canonical.currencyResults]
+        .sort((a, b) => a.currency.localeCompare(b.currency))
+        .map((result) =>
+          enforcementDateSpecified
+            ? result
+            : {
+              ...result,
+              preEnforcementInterest: null,
+              postEnforcementInterest: null,
+              interestReconciled: null,
+            }),
       costs: adapter.canonical.costs,
       ancillaries: adapter.canonical.ancillaries,
       totals: adapter.canonical.totals,
@@ -155,6 +159,81 @@ function normalizeAdapter(
   };
 }
 
+function expectAdapterParity(
+  actual: CaseCalculationSummaryCompatibilityAdapter,
+  expected: CaseCalculationSummaryCompatibilityAdapter,
+  enforcementDateSpecified: boolean,
+  expectedCurrencies: string[],
+) {
+  for (const adapter of [actual, expected]) {
+    const currencies = adapter.canonical?.currencyResults.map((row) => row.currency) ?? [];
+    // Kimlige gore karsilastirma eksik/fazla veya mukerrer satiri gizleyemez.
+    expect(new Set(currencies).size).toBe(currencies.length);
+    expect([...currencies].sort()).toEqual([...expectedCurrencies].sort());
+  }
+  expect(normalizeAdapter(actual, enforcementDateSpecified)).toEqual(
+    normalizeAdapter(expected, enforcementDateSpecified),
+  );
+}
+
+describe('ADR-014 PR-10 compatibility parity — currency identity', () => {
+  const scenario = ADR014_PR9_GOLDEN_FIXTURE_MATRIX.find(
+    (entry) => entry.id === 'pr9-07-multi-currency-isolation',
+  )!;
+  const expectedCurrencies = Object.keys(scenario.expected.perCurrencyStatus);
+  const makeAdapter = () => buildCaseCalculationSummaryCompatibilityAdapter({
+    legacy: fixedLegacyContract(scenario.id),
+    display: runGoldenScenarioUnit(scenario, optionsFor(scenario.id)).display,
+  });
+  type CurrencyRows = NonNullable<CaseCalculationSummaryCompatibilityAdapter['canonical']>['currencyResults'];
+
+  it('accepts reversed currency groups without mutating either adapter', () => {
+    const expected = makeAdapter();
+    const actual = makeAdapter();
+    actual.canonical!.currencyResults.reverse();
+    const before = JSON.stringify([actual, expected]);
+
+    expectAdapterParity(actual, expected, true, expectedCurrencies);
+
+    expect(JSON.stringify([actual, expected])).toBe(before);
+  });
+
+  it.each<[string, (rows: CurrencyRows) => CurrencyRows]>([
+    ['wrong currency', ([tryRow, usdRow]) => [{ ...tryRow, currency: 'EUR' }, usdRow]],
+    ['wrong amount', ([tryRow, usdRow]) => [{ ...tryRow, totalInterest: tryRow.totalInterest! + 0.01 }, usdRow]],
+    ['missing currency', ([tryRow]) => [tryRow]],
+    ['extra currency', (rows) => [...rows, { ...rows[0], currency: 'EUR' }]],
+    ['duplicate currency', (rows) => [...rows, { ...rows[0] }]],
+    ['duplicate replacing another currency', ([tryRow]) => [tryRow, { ...tryRow }]],
+    ['cross-currency results', ([tryRow, usdRow]) => [
+      { ...usdRow, currency: tryRow.currency }, { ...tryRow, currency: usdRow.currency },
+    ]],
+    ['cross-currency payment', ([tryRow, usdRow]) => [
+      { ...tryRow, allocatedPayment: usdRow.allocatedPayment },
+      { ...usdRow, allocatedPayment: tryRow.allocatedPayment },
+    ]],
+  ])('rejects %s after a valid comparison reaches the parity gate', (_name, mutate) => {
+    const expected = makeAdapter();
+    const actual = makeAdapter();
+    expectAdapterParity(actual, expected, true, expectedCurrencies);
+    actual.canonical!.currencyResults = mutate(actual.canonical!.currencyResults);
+
+    expect(() => expectAdapterParity(actual, expected, true, expectedCurrencies)).toThrow(
+      /toEqual|toBe/,
+    );
+  });
+
+  it('rejects a currency missing from both twins against the scenario contract', () => {
+    const expected = makeAdapter();
+    const actual = makeAdapter();
+    expectAdapterParity(actual, expected, true, expectedCurrencies);
+    actual.canonical!.currencyResults.pop();
+    expected.canonical!.currencyResults.pop();
+
+    expect(() => expectAdapterParity(actual, expected, true, expectedCurrencies)).toThrow(/toEqual/);
+  });
+});
+
 describeWithDisposableDb('ADR-014 PR-10 compatibility adapter — disposable PostgreSQL acceptance', () => {
   jest.setTimeout(120_000);
   let prisma: PrismaClient;
@@ -188,9 +267,22 @@ describeWithDisposableDb('ADR-014 PR-10 compatibility adapter — disposable Pos
       const unitAdapter = buildCaseCalculationSummaryCompatibilityAdapter({ legacy, display: unit.display });
       const dbAdapter = buildCaseCalculationSummaryCompatibilityAdapter({ legacy, display: db.display });
       const enforcementDateSpecified = scenario.domainInput.enforcementDate != null;
-      expect(normalizeAdapter(dbAdapter, enforcementDateSpecified)).toEqual(
-        normalizeAdapter(unitAdapter, enforcementDateSpecified),
+      expectAdapterParity(
+        dbAdapter,
+        unitAdapter,
+        enforcementDateSpecified,
+        Object.keys(scenario.expected.perCurrencyStatus),
       );
+      if (scenario.id === 'pr9-07-multi-currency-isolation') {
+        expect(db.refs.claimItemIds).toHaveLength(scenario.domainInput.claimBuckets.length);
+        expect(db.display.trace.sources.principal.map(({ currency, claimId }) => ({ currency, claimId })))
+          .toEqual(scenario.domainInput.claimBuckets.map((bucket, index) => ({
+            currency: bucket.currency,
+            claimId: db.refs.claimItemIds[index],
+          })).sort((a, b) => a.currency.localeCompare(b.currency)));
+        expect(db.display.trace.sources.principal.map(({ currency, amount }) => ({ currency, amount })))
+          .toEqual(unit.display.trace.sources.principal.map(({ currency, amount }) => ({ currency, amount })));
+      }
       expect(dbAdapter.consumerSwitchAuthorized).toBe(false);
       expect(dbAdapter.primaryAuthorityPromoted).toBe(false);
       expect(dbAdapter.canonical?.trace.authority).toBe('NONE');
