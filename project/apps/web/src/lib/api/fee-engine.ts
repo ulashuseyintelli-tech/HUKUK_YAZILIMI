@@ -85,6 +85,12 @@ export interface TariffInfo {
 
 export interface FeePreviewRequest {
   principalAmount: number;
+  /**
+   * Takip türü kodu (lookup `takipTuru.code`: ILAMSIZ_GENEL, KAMBIYO_CEK …). Sunucu masraf profiline çevirir; çözemezse
+   * `success:false` döner ("hesaplanamadı"). KALEM TÜRÜ (ASIL_ALACAK, FATURA …) takip türü DEĞİLDİR, gönderilmez.
+   */
+  takipTuruCode?: string;
+  /** Doğrudan masraf profili kodu (ILAMSIZ, KIRA …); yalnız `takipTuruCode` yoksa. Sihirbaz göndermez. */
   caseType?: string;
   debtorCount?: number;
   /** Alacak kaleminin para birimi; gönderilirse yanıt `paraBirimiDurumu` kararını taşır (sayılar değişmez) */
@@ -116,8 +122,24 @@ export interface FeePreviewResponse {
     /** Yalnız istek `currency` taşıyorsa ve sunucu kararı destekliyorsa gelir (eski sunucu yanıtında bulunmaz) */
     paraBirimiDurumu?: FeePreviewParaBirimiDurumu;
   };
+  /**
+   * Yalnız `success:false` yanıtında: masraf hesaplanamasa da hesaplanabilen kısım (vekalet ücreti masraf profiline / tarifeye
+   * bağlı değil; formül seçimi ayrı hukuki karar). Satır kaybolmaz; masraf ve ona bağlı satırlar "hesaplanamadı" kalır.
+   */
+  partial?: { estimatedAttorneyFee: number };
+  /**
+   * `success:false` = masraflar HESAPLANAMADI (sıfır DEĞİL): takip türü yok / eşleşmedi (`CASE_TYPE_UNRESOLVED`), tarife yok
+   * (`TARIFF_NOT_FOUND`), profil yok (`FEE_PROFILE_NOT_FOUND`), tarifede gerekli kalem yok (`TARIFF_ITEM_MISSING`).
+   * `message` sunucunun istemciye güvenli Türkçe metnidir.
+   */
   error?: {
-    code: 'INVALID_INPUT' | 'SERVICE_UNAVAILABLE';
+    code:
+      | 'INVALID_INPUT'
+      | 'SERVICE_UNAVAILABLE'
+      | 'CASE_TYPE_UNRESOLVED'
+      | 'TARIFF_NOT_FOUND'
+      | 'FEE_PROFILE_NOT_FOUND'
+      | 'TARIFF_ITEM_MISSING';
     message: string;
   };
   cached: boolean;

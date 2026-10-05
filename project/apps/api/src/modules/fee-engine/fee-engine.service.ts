@@ -2,6 +2,7 @@ import { Injectable, OnModuleInit, Logger, Inject, Optional } from '@nestjs/comm
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
+import { FEE_PROFILE_CASE_TYPE_BY_TAKIP_TURU } from './fee-case-type';
 import type {
   ITariffRepository,
   Tariff,
@@ -205,6 +206,11 @@ export class FeeEngineService implements OnModuleInit {
 
   /**
    * Takip türüne göre açılış masraflarını hesapla
+   *
+   * Cagrildigi yerler:
+   * - FeeEngineController.calculateOpeningFees() / calculate() (POST /fee-engine/calculate-opening-fees, /calculate)
+   * Çıktı `calculateOpeningFeesDetailed().items` ile AYNIDIR; eksik tarife kalemi ve profil yokluğu burada sessizce
+   * atlanır (eski sözleşme DEĞİŞMEDİ). Önizleme yolu (`previewCalculation`) bunları "hesaplanamadı" diye bildirir.
    */
   calculateOpeningFees(
     caseType: string,
@@ -214,18 +220,47 @@ export class FeeEngineService implements OnModuleInit {
     postageType: string = 'NORMAL',
     tariffYear?: number,
   ): GeneratedFeeItem[] {
+    return this.calculateOpeningFeesDetailed(
+      caseType,
+      principalAmount,
+      accruedInterest,
+      debtorCount,
+      postageType,
+      tariffYear,
+    ).items;
+  }
+
+  /**
+   * Açılış masrafları + HESAPLANAMAYAN kalemlerin dökümü.
+   *
+   * `missingTariffCodes`: profilin istediği ama tarifede HİÇ bulunmayan kalem kodları (tarifede var olup bu takip türüne
+   * uygulanmayan kalem EKSİK DEĞİLDİR: o gerçek 0'dır). Bu ayrım, "eksik bilgi → 0" kestirmesini önler.
+   *
+   * Cagrildigi yerler:
+   * - FeeEngineService.calculateOpeningFees() (yalnız items)
+   * - FeeEngineService.previewCalculation() (items + missingTariffCodes)
+   */
+  calculateOpeningFeesDetailed(
+    caseType: string,
+    principalAmount: number,
+    accruedInterest: number = 0,
+    debtorCount: number = 1,
+    postageType: string = 'NORMAL',
+    tariffYear?: number,
+  ): OpeningFeesCalculation {
     const tariff = this.getTariff(tariffYear);
     if (!tariff) {
       this.logger.warn('Tarife bulunamadı');
-      return [];
+      return { items: [], missingTariffCodes: [], tariffFound: false, profileFound: false };
     }
 
     const items: GeneratedFeeItem[] = [];
+    const missingTariffCodes: string[] = [];
     const profile = this.findProfileForCaseType(caseType);
     
     if (!profile) {
       this.logger.warn(`Masraf profili bulunamadı: ${caseType}`);
-      return items;
+      return { items, missingTariffCodes, tariffFound: true, profileFound: false };
     }
 
     // 1. Sabit harçlar
@@ -233,7 +268,11 @@ export class FeeEngineService implements OnModuleInit {
       if (!feeItem.auto_add) continue;
       
       const tariffFee = tariff.fixedFees[feeItem.code];
-      if (tariffFee && tariffFee.appliesTo.includes(caseType)) {
+      if (!tariffFee) {
+        missingTariffCodes.push(feeItem.code);
+        continue;
+      }
+      if (tariffFee.appliesTo.includes(caseType)) {
         items.push({
           type: feeItem.item_type,
           label: feeItem.label,
@@ -250,7 +289,11 @@ export class FeeEngineService implements OnModuleInit {
       if (!feeItem.auto_add) continue;
       
       const tariffFee = tariff.rateFees[feeItem.code];
-      if (tariffFee && tariffFee.appliesTo.includes(caseType)) {
+      if (!tariffFee) {
+        missingTariffCodes.push(feeItem.code);
+        continue;
+      }
+      if (tariffFee.appliesTo.includes(caseType)) {
         const base = principalAmount + accruedInterest;
         let amount = base * tariffFee.rate;
         
@@ -276,7 +319,10 @@ export class FeeEngineService implements OnModuleInit {
     // 3. Tebligat gideri
     if (profile.postage_policy.auto_add) {
       const postage = tariff.postage[postageType] || tariff.postage[profile.postage_policy.default];
-      if (postage && postage.amount) {
+      if (!postage || !postage.amount) {
+        // Tarifede tebligat ücreti yok / tutarsız: gider hesaplanamıyor (gerçek 0 değil)
+        missingTariffCodes.push(`postage.${tariff.postage[postageType] ? postageType : profile.postage_policy.default}`);
+      } else {
         const count = profile.postage_policy.per_debtor ? debtorCount : 1;
         items.push({
           type: 'POSTAGE',
@@ -290,7 +336,45 @@ export class FeeEngineService implements OnModuleInit {
       }
     }
 
-    return items;
+    return { items, missingTariffCodes, tariffFound: true, profileFound: true };
+  }
+
+  /**
+   * Önizleme isteğinin takip türünü masraf profilinin takip türüne çevirir.
+   *
+   * Öncelik: `takipTuruCode` (lookup kodu, `fee-case-type.ts` eşlemesi) → yoksa `caseType` (doğrudan profil kodu; yalnız
+   * masraf profili OLAN değer). Hiçbiri çözülemezse HATA döner: bilinmeyen kod sessizce "harç yok" sayılmaz.
+   *
+   * Cagrildigi yerler:
+   * - FeeEngineService.previewCalculation()
+   */
+  resolveFeeCaseType(
+    takipTuruCode?: string,
+    caseType?: string,
+  ): { caseType: string } | { error: { code: string; message: string } } {
+    const code = String(takipTuruCode ?? '').trim();
+    if (code) {
+      const mapped = FEE_PROFILE_CASE_TYPE_BY_TAKIP_TURU[code];
+      if (mapped && this.findProfileForCaseType(mapped)) return { caseType: mapped };
+      return {
+        error: {
+          code: 'CASE_TYPE_UNRESOLVED',
+          message: 'Bu takip türü için masraf profili tanımlı değil; masraflar hesaplanamadı.',
+        },
+      };
+    }
+
+    const direct = String(caseType ?? '').trim();
+    if (direct && this.findProfileForCaseType(direct)) return { caseType: direct };
+
+    return {
+      error: {
+        code: 'CASE_TYPE_UNRESOLVED',
+        message: direct
+          ? 'Takip türü masraf profiliyle eşleşmedi; masraflar hesaplanamadı.'
+          : 'Takip türü belirtilmedi; masraflar hesaplanamadı.',
+      },
+    };
   }
 
   private findProfileForCaseType(caseType: string): InternalFeeProfile | null {
@@ -418,40 +502,71 @@ export class FeeEngineService implements OnModuleInit {
    * calculateOpeningFees() ile FARKLI:
    * - NO audit log
    * - Simplified response format
-   * 
+   * - HESAPLANAMAYAN durum HATA döner, sessiz 0 DEĞİL (REC-FEE-003): takip türü çözülemedi (`CASE_TYPE_UNRESOLVED`),
+   *   tarife yok (`TARIFF_NOT_FOUND`), profil yok (`FEE_PROFILE_NOT_FOUND`), tarifede gerekli kalem yok
+   *   (`TARIFF_ITEM_MISSING`). Tarifede olup bu takip türüne UYGULANMAYAN kalem (ör. ilamlıda peşin harç) gerçek 0'dır.
+   * - Dosya gideri tarifenin `file_expense` kaleminden gelir ve `estimatedFees`'e DAHİLDİR (satırlar toplamla tutar).
+   *
+   * Takip türü: `takipTuruCode` (lookup kodu) tercih edilir, yoksa `caseType` (doğrudan profil kodu). İkisi de verilmezse
+   * eski sözleşmedeki varsayılan (`ILAMSIZ`) kullanılır: yalnız `calc-preview` bunu bildirmeyerek çağırır; sihirbaz yolu
+   * (`FeeEngineController.preview`) `requireCaseType: true` verir ve takip türü yoksa "hesaplanamadı" alır.
+   *
+   * Cagrildigi yerler:
+   * - FeeEngineController.preview() -> POST /fee-engine/preview (sihirbaz "Hesap Özeti")
+   * - CalcPreviewService (calc-preview, `caseType` opsiyonel)
+   *
    * @see docs/single-source-of-truth-architecture.md - Phase 3.1
    */
   previewCalculation(params: {
     principalAmount: number;
     accruedInterest?: number;
+    takipTuruCode?: string;
     caseType?: string;
     debtorCount?: number;
     postageType?: string;
     tariffYear?: number;
+    /** true: takip türü verilmemişse eski varsayılana (ILAMSIZ) DÜŞÜLMEZ, "hesaplanamadı" döner (sihirbaz yolu). */
+    requireCaseType?: boolean;
   }): FeePreviewResult {
     const {
       principalAmount,
       accruedInterest = 0,
-      caseType = 'ILAMSIZ',
+      takipTuruCode,
       debtorCount = 1,
       postageType = 'NORMAL',
       tariffYear,
     } = params;
+    const hasCaseTypeInput = Boolean(String(takipTuruCode ?? '').trim() || String(params.caseType ?? '').trim());
+
+    // Vekalet ücreti masraf profiline de tarifeye de bağlı DEĞİLDİR (servisteki mevcut tablo; formül seçimi ayrı hukuki karar).
+    // Masraf hesaplanamasa bile bu değer hata yanıtında `partial` olarak taşınır: vekalet satırı kaybolmaz, tabandaki gibi
+    // hesaplanır; masraf ve ona bağlı satırlar "hesaplanamadı", toplamlar "gösterilemez" kalır.
+    const partial = { estimatedAttorneyFee: this.calculateAttorneyFeePreview(Number(principalAmount) + Number(accruedInterest)) };
 
     // 1. Get tariff
     const tariff = this.getTariff(tariffYear);
     if (!tariff) {
       return {
         success: false,
+        partial,
         error: {
           code: 'TARIFF_NOT_FOUND',
-          message: `Tariff not found for year: ${tariffYear || this.currentYear}`,
+          message: `Tarife bulunamadı (${tariffYear || this.currentYear}); masraflar hesaplanamadı.`,
         },
       };
     }
 
-    // 2. Calculate fees using real engine
-    const feeItems = this.calculateOpeningFees(
+    // 2. Takip türü → masraf profili (bilinmeyen takip türü sessiz 0 değil, hata)
+    const resolved = hasCaseTypeInput || params.requireCaseType
+      ? this.resolveFeeCaseType(takipTuruCode, params.caseType)
+      : { caseType: 'ILAMSIZ' };
+    if ('error' in resolved) {
+      return { success: false, partial, error: resolved.error };
+    }
+    const caseType = resolved.caseType;
+
+    // 3. Calculate fees using real engine
+    const calculation = this.calculateOpeningFeesDetailed(
       caseType,
       principalAmount,
       accruedInterest,
@@ -459,17 +574,45 @@ export class FeeEngineService implements OnModuleInit {
       postageType,
       tariffYear,
     );
+    if (!calculation.profileFound) {
+      return {
+        success: false,
+        partial,
+        error: { code: 'FEE_PROFILE_NOT_FOUND', message: 'Bu takip türü için masraf profili bulunamadı; masraflar hesaplanamadı.' },
+      };
+    }
+    const feeItems = calculation.items;
 
-    // 3. Build breakdown
-    const breakdown = this.buildPreviewBreakdown(feeItems);
+    // 4. Dosya gideri: tarifenin `file_expense` kalemi (profilde değil; önizlemede satır olarak gösterilir)
+    const missingTariffCodes = [...calculation.missingTariffCodes];
+    const fileExpense = tariff.fixedFees['file_expense'];
+    let dosyaGideri = 0;
+    if (!fileExpense) {
+      missingTariffCodes.push('file_expense');
+    } else if (fileExpense.appliesTo.includes(caseType)) {
+      dosyaGideri = fileExpense.amount;
+    }
+    if (missingTariffCodes.length > 0) {
+      // Dahili tarife kodları kullanıcıya gösterilmez (günlükte kalır); kullanıcı metni Türkçe ve kod içermez
+      this.logger.warn(`Önizleme: tarifede gerekli kalem yok (${missingTariffCodes.join(', ')})`);
+      return {
+        success: false,
+        partial,
+        error: {
+          code: 'TARIFF_ITEM_MISSING',
+          message: 'Tarifede gerekli masraf kalemi tanımlı değil; masraflar hesaplanamadı.',
+        },
+      };
+    }
 
-    // 4. Calculate attorney fee
-    const estimatedAttorneyFee = this.calculateAttorneyFeePreview(
-      principalAmount + accruedInterest
-    );
+    // 5. Build breakdown
+    const breakdown = this.buildPreviewBreakdown(feeItems, dosyaGideri);
 
-    // 5. Total fees
-    const estimatedFees = this.calculateTotalFees(feeItems);
+    // 6. Calculate attorney fee (yukarıdaki `partial` ile aynı hesap; sayısal girdi: metin gövde "10000"+0 = "100000" olmasın)
+    const estimatedAttorneyFee = partial.estimatedAttorneyFee;
+
+    // 7. Total fees (satırların toplamı: dosya gideri dahil)
+    const estimatedFees = Math.round((this.calculateTotalFees(feeItems) + dosyaGideri) * 100) / 100;
 
     return {
       success: true,
@@ -478,7 +621,7 @@ export class FeeEngineService implements OnModuleInit {
         estimatedAttorneyFee,
         tariffYear: tariff.year,
         breakdown,
-        itemCount: feeItems.length,
+        itemCount: feeItems.length + (dosyaGideri > 0 ? 1 : 0),
       },
       versions: {
         tariffVersion: `${tariff.year}.${tariff.version}`,
@@ -489,8 +632,10 @@ export class FeeEngineService implements OnModuleInit {
 
   /**
    * Preview için breakdown oluştur
+   *
+   * Kodlar `calculateOpeningFeesDetailed()`in ürettiği kodlardır (`tariffCode`): denetleyicide ikinci bir kod listesi YOK.
    */
-  private buildPreviewBreakdown(items: GeneratedFeeItem[]): FeePreviewBreakdown {
+  private buildPreviewBreakdown(items: GeneratedFeeItem[], dosyaGideri: number): FeePreviewBreakdown {
     const findAmount = (code: string): number => {
       const item = items.find(i => i.tariffCode === code);
       return item?.amount || 0;
@@ -500,8 +645,8 @@ export class FeeEngineService implements OnModuleInit {
       basvurmaHarci: findAmount('application_fee'),
       vekaletHarci: findAmount('poa_copy_fee'),
       pesinHarc: findAmount('ilamsiz_pesin_harc') || findAmount('kambiyo_pesin_harc'),
-      dosyaGideri: 50.00, // Sabit dosya gideri
-      tebligatGideri: findAmount('NORMAL') || findAmount('UETS') || findAmount('FAST'),
+      dosyaGideri,
+      tebligatGideri: items.find(i => i.type === 'POSTAGE')?.amount || 0,
       vekaletPulu: findAmount('bar_stamp_fee'),
     };
   }
@@ -538,6 +683,14 @@ export class FeeEngineService implements OnModuleInit {
 // PREVIEW RESULT TYPES
 // ============================================
 
+/** `calculateOpeningFeesDetailed` sonucu: kalemler + tarifede bulunamayan kalem kodları (gerçek 0'dan AYRI). */
+export interface OpeningFeesCalculation {
+  items: GeneratedFeeItem[];
+  missingTariffCodes: string[];
+  tariffFound: boolean;
+  profileFound: boolean;
+}
+
 export interface FeePreviewBreakdown {
   basvurmaHarci: number;
   vekaletHarci: number;
@@ -549,6 +702,8 @@ export interface FeePreviewBreakdown {
 
 export interface FeePreviewResult {
   success: boolean;
+  /** Masraf hesaplanamadığında (success:false) yine de hesaplanabilen kısım: vekalet ücreti masraf profiline / tarifeye bağlı değil. */
+  partial?: { estimatedAttorneyFee: number };
   data?: {
     estimatedFees: number;
     estimatedAttorneyFee: number;
