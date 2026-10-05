@@ -178,7 +178,9 @@ describe("ExpenseRequestModal — Oluştur ve Gönder", () => {
     expect(box.textContent).toContain("Gereken bilgi: Büro Ayarları → SMTP ayarları");
     expect(box.textContent).toContain("ikinci talep oluşturulmaz");
     expect(screen.getByRole("button", { name: "Yeniden Dene" })).toBeTruthy();
-    // talep oluştu: dosya verisi yenilensin
+    // dosya verisi yenilemesi pencere AÇIKKEN yapılmaz (sayfa pencereyi yeniden kurup sonucu kaybettiriyordu); kapanışta yapılır
+    expect(onSuccess).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Kapat" }));
     expect(onSuccess).toHaveBeenCalledTimes(1);
   });
 

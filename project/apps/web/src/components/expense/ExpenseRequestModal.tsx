@@ -215,10 +215,14 @@ export function ExpenseRequestModal({
     setSendState(null);
   };
 
-  // Talep oluşturulduysa pencere kapanırken form sıfırlanır (bir sonraki açılış eski talebin sonucunu göstermesin);
-  // oluşturulmadıysa eskisi gibi yalnız kapanır.
+  // Talep oluşturulduysa pencere kapanırken form sıfırlanır (bir sonraki açılış eski talebin sonucunu göstermesin) ve dosya
+  // verisi yenilenir; oluşturulmadıysa eskisi gibi yalnız kapanır. Yenileme (onSuccess) KAPANIŞTA yapılır: sayfa dosya verisini
+  // yeniden yüklerken pencereyi yeniden kurabildiği için (ölçüldü: gönderim sonucu kayboluyordu) açıkken çağrılmaz.
   const handleClose = () => {
-    if (createdRequestRef.current !== null) resetForm();
+    if (createdRequestRef.current !== null) {
+      resetForm();
+      onSuccess?.();
+    }
     onClose();
   };
 
@@ -283,7 +287,6 @@ export function ExpenseRequestModal({
           createdRequestRef.current = requestId;
           setCreatedRequestId(requestId);
         }
-        onSuccess?.(); // dosya verisi talebin oluştuğunu görsün (pencere açık kalabilir)
       }
 
       if (!paidByLawyer && sendAfterCreate && requestId) {
@@ -298,6 +301,7 @@ export function ExpenseRequestModal({
       }
 
       resetForm();
+      onSuccess?.();
       onClose();
     } catch (error: any) {
       alert(error.message || "Masraf talebi oluşturulamadı");
