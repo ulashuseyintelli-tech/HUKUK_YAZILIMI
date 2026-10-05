@@ -38,9 +38,9 @@ import { StageTriggerModule } from '../stage-trigger.module';
  * sorgu ve bu şarttan bağımsız işlemler etkilenmez; ret yolunda masraf, muhasebe, bakiye, UYAP isteği ya da bildirim kaydı
  * yazılmaz (politika motorunun karar kaydı — denetim izi — korunur). TL dosyanın davranışı DEĞİŞMEZ.
  *
- * KAPSAM DIŞI: UYAP gönderim hazırlığı bugün politika motoru tarafından her dosyada reddedilir (bu yola büro / kullanıcı
- * bağlamı geçmiyor); bu genel durum burada değiştirilmez ve sabitlenmez — hazırlık yolunun masraf koşulu, politika motoru
- * kararı sabitlenerek ayrıca ölçülür. Dövizli takipte peşin harcın hangi tutar ve kur üzerinden hesaplanacağı owner kararı.
+ * NOT (owner kararı 9, 2026-10-05): hazırlık yoluna büro / kullanıcı bağlamı artık geçer (uyap-prepare-context testi);
+ * bu dosyadaki "politika motoru izin verdiğinde" bölümü politika kararını yine SABİTLER (vekalet / UYAP önkoşulları bu
+ * dosyanın konusu değildir). Dövizli takipte peşin harcın hangi tutar ve kur üzerinden hesaplanacağı owner kararı.
  */
 const TEST_DB_URL = resolveTestDatabaseUrl(process.env);
 if (process.env.CI && !TEST_DB_URL) {
@@ -656,10 +656,14 @@ describeWithDisposableDb('Açılış masrafı şartı — belirlenemeyen masraf 
 
     it('TL dosya (kontrol): bakiye paket toplamını karşılamıyorsa masraf penceresi, karşılıyorsa hazır — mevcut davranış', async () => {
       const caseId = await openCase('izin-try', { currency: 'TRY', dues: [principal(10_000)] });
+      // Açılış talebi ödenmemişken hazırlık, politika kararından bağımsız olarak masraf kapısında durur (bkz. uyap-prepare-context
+      // testi: ödenmemiş BLOCKING talep UYAP hazırlığını engeller). Bu test bakiye karşılaştırmasını sabitler: talep karşılanmış.
+      await prisma.expenseRequest.updateMany({ where: { caseId }, data: { status: 'PAID', paidTotal: 1431.1 } });
 
       expect((await prepare(caseId)).body).toEqual({
         action: 'OPEN_EXPENSE_MODAL',
-        blockReason: 'Yetersiz bakiye. Gerekli: 957.9 TL, Mevcut: 0 TL',
+        // Avans kaydı yok: yokluk "0 TL" (gerçek sıfır bakiye) diye yazılmaz — owner kararı 5
+        blockReason: 'Yetersiz bakiye. Gerekli: 957.9 TL, Mevcut: avans kaydı yok',
         suggestion: { title: 'UYAP Öncesi / Takip Açılış Masrafları için masraf gerekiyor', description: 'Toplam: 957,9 TL', packageCode: 'UYAP_PRE' },
       });
 
