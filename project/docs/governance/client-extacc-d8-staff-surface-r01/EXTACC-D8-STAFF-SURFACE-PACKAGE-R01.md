@@ -27,8 +27,8 @@
 > **R05 notlarında ve tarihsel tablolarda geçen şu kurallar R06 ile GEÇERSİZDİR:** "kenar engelleme PASS" ve "çıkış 0" · "`API değil`
 > çıkarımı" ve "30 satırda API değil gösterildi" · "pozitif 403 → ÖLÇÜLEMEYEN" · "iki zorunlu kalem aynı dosyayı gösteremez" · kapsam
 > yetkisinin "doğrulandı" durum adı. DEĞİŞMEYENLER: vektör listesi (59 ret + 9 pozitif) ve vektör kümesi kimliği, istek profili, kimlik
-> bilgisi göndermeme, ham yol sadakati, öz-testin ikame kapısı. Pinler değişti (§7). Canlı sonda **çalıştırılmadı**; bu revizyon canlı
-> sonda GO'su **değildir**.
+> bilgisi göndermeme, ham yol sadakati, öz-testin ikame kapısı. Pinler değişti (§7). R06 baytlarıyla gerçek API yinelemesi **dört
+> kipte** yapıldı (§1.1 "R06 baytlarıyla yineleme"). Canlı sonda **çalıştırılmadı**; bu revizyon canlı sonda GO'su **değildir**.
 >
 > **R05 dördüncü tur (2026-10-06; tarihsel — `main`'deki R05) — dar düzeltmeler (iki bağımsız doğrulamanın küçük bulguları + izole provanın ilk koşusu).**
 > **(a)** pozitif kontrolde **tek kural**: beklenen kod → uygun · yanıt alınamadı → ÖLÇÜLEMEYEN · 403 → ÖLÇÜLEMEYEN · beklenen
@@ -364,7 +364,7 @@ hiçbir yol sınıfında "API değil" denmez.
   (OLCULEMEYEN).
 
 **Bu protokolün dayanağı kaynak okumasıdır ve gerçek API ile izole provayla ölçülmüştür (aşağıda "Gerçek API ile izole prova";
-R05 sonda baytlarıyla — istek kimliği protokolü R06'da değişmedi; R06 baytlarıyla gerçek API yinelemesi koşulmadı).** Dayanak:
+ilk iki koşu R05 sonda baytlarıyla — istek kimliği protokolü R06'da değişmedi; R06 baytlarıyla dört kipte yinelendi).** Dayanak:
 `apps/api/src/common/request-id.middleware.ts` (başlık adı, kabul edilen biçim, kabul edilen değer aynen yanıta yazılır, edilmeyenin
 yerine `randomUUID()`), `app.module.ts` (ara katman `forRoutes('*')`), `main.ts` (genel önek `api`, `enableCors`); kilit dosyasındaki
 Nest 10.4.20 / Express 4 sürümlerinin ara katmanı `/api` ve `/api/*` için kaydetmesi. Canlı sürümün (R27, `1b758d29`) kaynağında
@@ -391,11 +391,12 @@ değiştirmeden geçirdiği ancak koşumun kendi kalibrasyonuyla görülür.
 > iki satır "kenar engelleme PASS · çıkış 0" verir: **izin listeli (sağlıklı)** ve **başlığı silinen API 403'ü** ("aynısı + kenar o
 > yanıttan başlığı siliyor"). İkincisinde istek API'ye ulaşmıştı; sonda bunu göremedi ve iki satır birbirinden **ayırt edilemedi**.
 > Owner bu sonucu kabul etmedi. **R06 sondasında bu iki satırın ikisi de `PASS · OLCULEMEYEN · OLCULEMEYEN · PASS`, çıkış 3'tür**
-> (kenar engelleme nedeni `ULASMAMA-BAGIMSIZ-KANITI-YOK`; çıkış 0 **değil**). Bu, R06 kuralının öz-testteki **model** girdileriyle
-> ölçülen sonucudur (S1 ve SINIR-2; aynı SINIR-2 girdisinde düzeltmesiz `main` sondası kenar engelleme PASS / çıkış 0 verir — §1c
-> "Negatif ayna"). **R06 sonda baytlarıyla gerçek API yinelemesi bu commit'te KOŞULMADI**; çağıran koşarsa sonucu buraya ekler.
-> Tablonun diğer yedi satırının alan değerleri R06 kurallarıyla değişmez (FAIL satırları FAIL kalır; ölçülemeyen satırlar ölçülemeyen
-> kalır) — bu da kuraldan türetilen bir beklentidir, gerçek API ile R06 baytlarında ölçülmemiştir.
+> (kenar engelleme nedeni `ULASMAMA-BAGIMSIZ-KANITI-YOK`; çıkış 0 **değil**). Bu sonuç iki ayrı yerde ölçüldü: öz-testteki **model**
+> girdileriyle (S1 ve SINIR-2; aynı SINIR-2 girdisinde düzeltmesiz `main` sondası kenar engelleme PASS / çıkış 0 verir — §1c
+> "Negatif ayna") ve **R06 sonda baytlarıyla gerçek API'ye karşı** (2026-10-06; dört kip — bu bölümün sonundaki "R06 baytlarıyla
+> yineleme"). Tablonun R06 baytlarıyla **yinelenmeyen** beş satırının (sızıntı · yansıtan iki kip · damgalayan · ezen) alan
+> değerlerinin R06 kurallarıyla değişmemesi (FAIL satırları FAIL, ölçülemeyen satırlar ölçülemeyen kalır) kuraldan türetilen bir
+> beklentidir; gerçek API ile R06 baytlarında ölçülmemiştir.
 
 *Yöntem.* Gerçek API = **yayın adayı derlemesi** (salt okunarak, geçici bir çalışma dizininden çalıştırıldı; 127.0.0.1:18095) +
 **tek kullanımlık veritabanı** (yalnız bu prova için açılan, koşu sonunda kaldırılan yerel veritabanı; 127.0.0.1:5591) + **yerel
@@ -446,6 +447,27 @@ yerine yeni kimlik; ön uçuş, çift eğik çizgili yol, çözülemeyen yüzde 
 API günlüğünde hata satırı ve gönderilen kimlik değeri yoktur; yayın adayı ağacı koşudan önce ve sonra aynı ölçülmüştür. R05 dördüncü
 turda değişen üç kural (pozitif kontrolde tek kural, kapının eksik kalemi adlandırması, katman doğrulamasında desteksiz kesinlik yok) bu
 dokuz kipin hiçbirinde farklı bir alan değeri üretmedi; o kuralların ayırt edici girdileri öz-testtedir (P-6, SA-2, A-5).
+
+**R06 baytlarıyla yineleme (2026-10-06; sonda `4A517621…8B71` — R06 pini; aynı düzenek; DÖRT kip; çağıran koştu — kanıt depo
+dışındadır).** Owner'ın kabul etmediği sonucun düzeldiği gerçek API ile ölçüldü. Beklenti dikte edilmedi; aşağıdakiler ölçülen
+değerlerdir (alan sırası yukarıdaki tabloyla aynı).
+
+| Kenar kipi | Alanlar (R06) | Çıkış | Kenar engelleme nedeni | Ret vektörü: gerçekte API'ye ulaşan / sondanın API dediği / yanlış pozitif / kaçan | R05'te aynı satır |
+|---|---|---|---|---|---|
+| izin listeli (sağlıklı) | PASS · ÖLÇÜLEMEYEN · ÖLÇÜLEMEYEN · PASS | 3 | `ULASMAMA-BAGIMSIZ-KANITI-YOK` | 0 / 0 / 0 / 0 | PASS · PASS · ÖLÇÜLEMEYEN · PASS, çıkış 0 |
+| **gerçek API 403'ü** | PASS · FAIL · FAIL · PASS | 2 | `API-YE-ULASTI-KANITLI` | 1 / 1 / 0 / 0 | aynı |
+| aynısı + kenar o yanıttan başlığı siliyor | PASS · ÖLÇÜLEMEYEN · ÖLÇÜLEMEYEN · PASS | **3** | `ULASMAMA-BAGIMSIZ-KANITI-YOK` | 1 / 0 / 0 / **1** | PASS · PASS · ÖLÇÜLEMEYEN · PASS, çıkış **0** |
+| saydam geçiş (her /api isteği API'ye) | FAIL · FAIL · FAIL · PASS | 2 | `API-YE-ULASTI-KANITLI` (+ 2xx ve durum kodu nedenleri) | 46 / 42 / 0 / 4 | aynı |
+
+Okuma: (1) sağlıklı kenar ile başlığı silinmiş API reddi sondada **yine aynı görünür** — ikisi de ÖLÇÜLEMEYEN, çıkış 3; sonda
+ikisine de PASS vermez. Başlığı silinen kipte API'ye ulaşan 1 istek sondayla **görülemez** (kaçan 1): sınır kapanmadı, yalnız başarılı
+kenar engellemesi gibi sunulmuyor. (2) API'ye ulaşma kanıtı bulunan ihlal FAIL olarak korundu (iki kip). (3) Dört kipte kalibrasyon
+`VAR`, pozitif kontrol PASS, yanlış pozitif 0. Ağ izolasyonu bu koşuda ölçüldü: API süreci yalnız geri döngü arayüzünü dinledi ve
+geri döngü dışına bağlantı açmadı (izolasyon yalnız prova başlatıcısının sürecinde kuruldu; ürün kodu, canlı ayar ve firewall
+değişmedi). Yayın adayı ağacı koşudan önce ve sonra aynı ölçüldü. **Koşulmayan:** diğer beş kip (sızıntı · yansıtan iki kip ·
+damgalayan · ezen) R06 baytlarıyla gerçek API'ye karşı koşulmadı; "Provada OLMAYAN" sınırları (tünel / sağlayıcı ayağı, gerçek web
+uygulaması, şablondaki kenar yazılımının kendisi) bu yineleme için de aynen geçerlidir. Aynı koşuda sonda dışı bağımsız kanıt
+yönteminin izole ön denetimi de yapıldı; sonucu depo dışı kayıttadır ve owner'a ayrıca sunulur (bu belge yöntem tanımlamaz).
 
 **"Kimliksiz istekte uygulama 403 üretmez" bir genelleme değildir.** Bu, yalnız sondanın vektör listesindeki uçlar için kaynak
 okumasıdır (çalışma zamanında ölçülmedi); uygulamanın başka uçları kimlik kontrolünden önce 403 üretebilir. Uygulamanın ürettiği 403
@@ -659,8 +681,8 @@ kabukta ölçüldü).
 - **isteğin API'ye ulaşmadığı**: sondayla ve öz-testle **ölçülemez** (kanıt sınırı). Öz-test yalnız şunu ölçer: sağlıklı kenar ile
   başlığı silinmiş API reddi sondada aynı görünür ve ikisine de PASS verilmez (S1, SINIR-2, GT-1). Kesin kenar kabulünün yöntemi bu
   paketin dışındadır (öneri ayrıca sunulur).
-- **gerçek API ve gerçek kenar**: öz-testteki API bir modeldir. Gerçek API ile izole prova R05 sonda baytlarıyla yapıldı (§1.1); **R06
-  baytlarıyla yinelenmedi**. O provada da **olmayanlar**: tünel / sağlayıcı ayağı, gerçek web uygulaması (web yanıtları kenarın
+- **gerçek API ve gerçek kenar**: öz-testteki API bir modeldir. Gerçek API ile izole prova R05 sonda baytlarıyla dokuz kipte yapıldı
+  (§1.1); **R06 baytlarıyla yalnız dört kipte yinelendi** (diğer beş kip yinelenmedi). O provada da **olmayanlar**: tünel / sağlayıcı ayağı, gerçek web uygulaması (web yanıtları kenarın
   sentetik sayfasıydı), şablondaki kenar yazılımının kendisi. Canlı zincirin kimlik başlığını geçirip geçirmediği, canlı kenarın
   şablonla eşitliği, gerçek web uygulamasının yanıtlarında bu başlığın bulunup bulunmadığı **ölçülmedi**. FAIL yönündeki sınır
   (SINIR-1) güvence değil kayıttır.
@@ -802,8 +824,8 @@ kabul edilir ve inceleme beyanı zorunludur.
 
 ### 3c. OWNER KARARLARI (2026-10-06)
 
-Bu kararlar owner'ın 2026-10-06 tarihli talimatıdır: çağıranın (CLIENT çalışma sayfası) aktardığına göre owner bunları kendi sayfasında
-teyit etmiştir; metinler uygulayıcıya aktarıldığı biçimde bu belgeye **aynen** yazılmıştır. "Bu revizyonda nasıl uygulandı" sütunu
+Bu kararlar owner'ın 2026-10-06 tarihli talimatıdır; CLIENT çalışma sayfasında verildi ve owner tarafından orada teyit edildi.
+Metinler bu belgeye **aynen** yazılmıştır. "Bu revizyonda nasıl uygulandı" sütunu
 uygulayıcının anlatımıdır (owner metni değildir). Kararların dayanağı gerçek API ile izole provanın ölçtüğü sonuçtur (§1.1): kenar yalnız
 API'nin 403 yanıtından kimlik başlığını silerse R05 sondası "durum kodu PASS · kenar engelleme PASS · çıkış 0" veriyordu, oysa istek
 API'ye ulaşmıştı; owner bu sonucu kabul etmedi.
@@ -888,7 +910,8 @@ Kurallar:
 Vektör kümesi kimliği (59 ret + 9 pozitif; vektörler R04 ile aynı): `83AD1AB6DF5E52FD4FD028C5C6A411CDD9D22BCAB53194ABD9915D47920FF0F2`.
 (R06, 2026-10-06, owner'ın 2026-10-06 kararlarıyla — §3c: kenar engelleme ve katman doğrulaması sondayla PASS üretmez (kanıt sınırı);
 "API değil" çıkarımı kalktı; ölçüm koşumu çıkış 0 üretmez · pozitif kontrolde 403 istisnası yok · kapsam yetkisi kapısında birleşik
-belge kabul edilir, içerik incelemesi beyanı zorunlu ve dosya bütünlüğünden ayrı · öz-test 114 kalem; canlıda koşulmadı. R05'ten
+belge kabul edilir, içerik incelemesi beyanı zorunlu ve dosya bütünlüğünden ayrı · öz-test 114 kalem · gerçek API ile izole prova bu
+sonda baytlarıyla dört kipte yinelendi (§1.1); canlıda koşulmadı. R05'ten
 değişmeyenler: ad başına üç ayrı alan + pozitif kontrol · API'ye özgü kanıt = kabul edilmeyen biçimdeki istek kimliğinin yenisiyle
 değiştirilmesi · çıkış 5 yok · vektör listesi ve vektör kümesi kimliği. Önceki pinler: R01 ilk `DD6448A5…` /
 `E50EAE0C…`; birinci tur düzeltme `51B78C3B…` / `F9E9BD65…` [13/13]; ikinci tur `6400223…` / `A311CF00…` [15/15]; R27-R03 katman ipucu
