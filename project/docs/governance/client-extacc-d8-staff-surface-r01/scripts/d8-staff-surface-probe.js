@@ -9,7 +9,8 @@
  *            yorumlanmaz, hiçbir yere yazılmaz).
  * KAPSAM YETKİSİ KAPISI (owner kararı 2026-10-05): birincil ad (AD-1) dışındaki her ad kimliği için sonda, kısıtlı bir "kapsam yetkisi
  *            kaydı" (`--scope-record <dosya>`) olmadan KOŞMAZ — istek atılmaz, çıkış 4, ileti tam olarak
- *            "KOŞULMADI — kapsam yetkisi doğrulanmadı" (+ ad / yol / özet değeri içermeyen neden SINIFI). Kayıt (JSON):
+ *            "KOŞULMADI — kapsam yetkisi doğrulanmadı" (+ ad / yol / özet değeri içermeyen neden SINIFI; zorunlu bir kalem eksikse
+ *            aynı satırda eksik kalemin TÜRÜ: `eksik=<tür>[,<tür>]` — owner kararı: "kanıt eksikse yalnız eksik girdiyi iste"). Kayıt (JSON):
  *              { "record": "EXTACC-D8-SCOPE-AUTHORIZATION", "nameAlias": "AD-<n>", "originHost": "<ana makine>",
  *                "items": [ { "type": "SAGLAYICI-HESABI-KAYDI", "file": "<yol>", "sha256": "<64 onaltılık>", "date": "YYYY-AA-GG" },
  *                           { "type": "DNS-ZINCIRI",            "file": "<yol>", "sha256": "<64 onaltılık>", "date": "YYYY-AA-GG" } ] }
@@ -47,14 +48,21 @@
  *         Kalibrasyon eksikliği somut olumsuz kanıtı SİLMEZ: kalibrasyon eksikken / yansıtan katman görülmüşken de API'ye özgü kanıt
  *         FAIL verir. Kalibrasyon eksikken "kapalı" (PASS) hükmü VERİLMEZ.
  *   (c) KATMAN DOĞRULAMASI (`layerVerification`) — kanıtın desteklemediği katman kesinliği REDDEDİLİR:
- *         FAIL         bir ret satırını API'nin yanıtladığı kanıtlı
+ *         FAIL         bir ret satırını API'nin yanıtladığı kanıtlı VE koşumun kendi kalibrasyonu API'nin "kabul edilmeyen biçim →
+ *                      yeni kimlik" davranışını EN AZ BİR kez gösterdi (`calibration.apiReplace` ≥ 1)
  *         PASS         YALNIZ bütün ret satırlarında yanıtlayan katmanın API OLMADIĞI gösterilebiliyorsa. Bu yöntemle doğrulanamayan
  *                      satır (ön uçuş · yolu belirsiz · web yolu) varken PASS YAZILMAZ — bugünkü vektör kümesi böyle satırlar içerir.
  *         OLCULEMEYEN  diğer her durum + kapsam sayısı (`coverage`: kaç ret satırında "API değil" gösterildi · kaç satır API kanıtlı ·
  *                      kaç satır ölçülemez ve neden sınıfı). Kenar / tünel / sağlayıcı bu sondayla HİÇBİR koşulda adlandırılmaz.
- *   POZİTİF KONTROL (`positiveControl`) — API'ye geçmesine İZİN VERİLEN yollar; (a)–(c) kurallarına KARIŞTIRILMAZ:
- *         PASS dokuz pozitifin hepsi beklenen kodu verdi · FAIL beklenmeyen ve 403 olmayan yanıt (ör. token'sız 200; web pozitifinde
- *         3xx / 404) = bulgu · OLCULEMEYEN pozitif reddedildi (403) / yanıtsız / API'den geldiği kanıtsız 5xx · 429 · sınıflanamayan kod.
+ *         DESTEKSİZ KESİNLİK YOK: kalibrasyon o davranışı HİÇ göstermediyse (değiştirme 0 / N) ret satırındaki "yeni kimlik" gözlemi
+ *                      (b)'de yine FAIL / bulgu adayıdır (somut olumsuz kanıt silinmez) ama bu alan "API yanıtladı" kesinliği BİLDİRMEZ:
+ *                      OLCULEMEYEN + neden `YENI-KIMLIK-GOZLEMI-KALIBRASYON-DEGISTIRMEYI-GOSTERMEDI`; o satır kapsam sayısında
+ *                      "API kanıtlı" değil "ölçülemez" sayılır.
+ *   POZİTİF KONTROL (`positiveControl`) — API'ye geçmesine İZİN VERİLEN yollar; (a)–(c) kurallarına KARIŞTIRILMAZ. TEK KURAL
+ *         (gönderilen kimlik biçimine ve satırın katman kimliğine BAĞLI DEĞİL):
+ *         PASS dokuz pozitifin hepsi beklenen kodu verdi · FAIL beklenen dışında DOĞRULANMIŞ başka bir HTTP yanıtı — 2xx · 3xx · 403
+ *         dışı 4xx · 429 · 5xx · sınıflanamayan kod; hangi katman üretmiş olursa olsun (ör. token'sız 200; web pozitifinde 3xx / 404;
+ *         izinli yolda 5xx) = bulgu · OLCULEMEYEN pozitif reddedildi (403; tekdüze ret dahil) / yanıt alınamadı.
  *
  * SATIR DÜZEYİ: `outcome` (durum kodu sınıfı): RET-403 · SINAMA-ISARETLI-403 · TANINMAYAN-AZALTIM-ISARETLI-403 · DORTYUZ-403-DISI ·
  *       HIZ-SINIRI-429 · REDDEDILMEDI-2XX · YONLENDIRME-3XX · SUNUCU-HATASI-5XX · SONUC-YOK (taşıma hatası; yalnız `errorClass`:
@@ -105,13 +113,16 @@
  *       düşürülmüyor. Kalibrasyon bunu yalnız pozitiflerin yanıtında gösterir; yalnız API'nin RET yanıtından başlığı silen bir katman
  *       varsa API'ye ulaşan bir istek "API değil" görünür.
  *     · FAIL yönünde: YALNIZ API önekli ve ön uçuş olmayan RET yanıtlarına, API'nin ürettiği biçimde KENDİ kimliğini yazan ve başka
- *       hiçbir yanıtta görünmeyen bir katman API'den ayırt edilemez — o yanıtlar API kanıtı sayılır (FAIL / bulgu adayı).
+ *       hiçbir yanıtta görünmeyen bir katman API'den ayırt edilemez — o yanıtlar API kanıtı sayılır (kenar engelleme FAIL / bulgu
+ *       adayı). Katman doğrulaması bu gözlemde yalnız koşumun kalibrasyonu "değiştirme" davranışını en az bir kez gösterdiyse FAIL
+ *       verir; göstermediyse OLCULEMEYEN kalır (yukarıda (c) "desteksiz kesinlik yok").
  *   YOL SINIFI (`pathClass`; kaynak okuması — Nest 10.4.20 + Express 4: `setGlobalPrefix("api")` + `forRoutes('*')` ara katmanı
  *     `/api` ve `/api/*` için kaydeder; `enableCors` ön uçuşu ara katmandan ÖNCE yanıtlar; yüzde dizisi çözülemezse ara katman
  *     çalışmaz): API-KESIN = ham yol tam `/api` önekli ve normalleştirilecek bir yanı yok (yüzde dizisi, nokta segmenti, çift
  *     eğik çizgi, noktalı virgül, büyük harfli önek yok) — API bu isteği işleseydi ara katman kesin çalışırdı · API-BELIRSIZ =
  *     ham ya da çözülmüş / sadeleştirilmiş biçimi API önekine düşen diğer her yol (çıkarım YAPILMAZ) · ONEK-DISI = web yolu.
- *   Bu protokol KAYNAK OKUMASIDIR; gerçek API ile izole provası bu betikte YAPILMADI (paket belgesi §1.1: çağıran koşar).
+ *   Bu protokolün dayanağı KAYNAK OKUMASIDIR; gerçek API ile izole prova bu betikte değil ayrı bir düzenekte koşuldu (paket belgesi
+ *   §1.1, "Gerçek API ile izole prova": hangi sonda baytlarıyla koşulduğu orada yazılıdır).
  *
  * ADSIZ ÖZET: ham kanıtın yanına (`<out>.json` → `<out>.ozet.json`) ad İÇERMEYEN ayrı bir özet yazılır (ad kimliği, revizyon, sondanın
  *            SHA-256'sı, vektör kümesi kimliği, kapsam yetkisi durumu, sayılar, kalibrasyon, üç alan + pozitif kontrol, zaman, çıkış
@@ -253,8 +264,9 @@ function ridFormOf(grp, ordinalInClass) { return grp === 'deny' ? 'GECERSIZ-BICI
   if (!RID_ACCEPTED_RX.test(g) || RID_ACCEPTED_RX.test(x) || RID_GENERATED_RX.test(g) || RID_GENERATED_RX.test(x) || g === x) reject('istek kimliği planı tutarsız (GECERLI-BICIM kabul desenine uymalı, GECERSIZ-BICIM uymamalı; ikisi de API\'nin ürettiği biçimde olmamalı)'); }
 
 // ─── KAPSAM YETKİSİ KAPISI ────────────────────────────────────────────────────────────────────────────────────────────────
-/** Kapsam yetkisi doğrulanmadı: istek atılmaz. İleti SABİTTİR; ikinci satır yalnız neden SINIFINI taşır (ad / yol / özet değeri yok). */
-function scopeRefuse(why) { console.error(SCOPE_REFUSAL_TEXT); console.error('D8-KAPSAM-YETKISI=RET neden=' + why); process.exit(4); }
+/** Kapsam yetkisi doğrulanmadı: istek atılmaz. İleti SABİTTİR; ikinci satır yalnız neden SINIFINI ve — zorunlu bir kalem eksikse —
+ *  eksik kalemin TÜRÜNÜ taşır (`eksik=<tür>[,<tür>]`; tür adları public belgededir). Ad / yol / özet değeri / tarih yazılmaz. */
+function scopeRefuse(why, missingTypes) { console.error(SCOPE_REFUSAL_TEXT); console.error('D8-KAPSAM-YETKISI=RET neden=' + why + ((missingTypes && missingTypes.length) ? ' eksik=' + missingTypes.join(',') : '')); process.exit(4); }
 function validIsoDate(s) {
   if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
   const t = Date.parse(s + 'T00:00:00Z'); if (Number.isNaN(t) || new Date(t).toISOString().slice(0, 10) !== s) return false;
@@ -275,8 +287,8 @@ function verifyScopeAuthorization() {
   const shapeOk = (it) => it && typeof it === 'object' && !Array.isArray(it) && known.includes(it.type) && typeof it.file === 'string' && it.file.length > 0 && typeof it.sha256 === 'string' && /^[0-9A-Fa-f]{64}$/.test(it.sha256) && validIsoDate(it.date);
   if (rec.items.length === 0 || !rec.items.every(shapeOk)) scopeRefuse('KALEM-BICIMI-GECERSIZ');
   const missing = SCOPE_REQUIRED_TYPES.filter((t) => !rec.items.some((it) => it.type === t));
-  if (missing.length === SCOPE_REQUIRED_TYPES.length) scopeRefuse(rec.items.some((it) => it.type === SCOPE_TUNNEL_TYPE) ? 'YALNIZ-TUNEL-KAYDI' : 'KALEM-EKSIK');
-  if (missing.length > 0) scopeRefuse('KALEM-EKSIK');
+  // Eksik zorunlu kalem ADLANDIRILIR (yalnız TÜR; zorunlu kalem sırasıyla). Sunulan tek şey tünel kaydıysa neden sınıfı ayrıdır.
+  if (missing.length > 0) scopeRefuse((missing.length === SCOPE_REQUIRED_TYPES.length && rec.items.some((it) => it.type === SCOPE_TUNNEL_TYPE)) ? 'YALNIZ-TUNEL-KAYDI' : 'KALEM-EKSIK', missing);
   const base = pathMod.dirname(pathMod.resolve(SCOPE_RECORD)); const seen = [];
   for (const it of rec.items) {
     const f = pathMod.resolve(base, it.file); let buf = null;
@@ -404,6 +416,9 @@ const VECTOR_SET_ID = crypto.createHash('sha256').update(
 const OUTCOMES = ['RET-403', 'SINAMA-ISARETLI-403', 'TANINMAYAN-AZALTIM-ISARETLI-403', 'DORTYUZ-403-DISI', 'HIZ-SINIRI-429', 'REDDEDILMEDI-2XX', 'YONLENDIRME-3XX', 'SUNUCU-HATASI-5XX', 'SONUC-YOK', 'SINIFLANAMADI'];
 const LAYER_IDS = ['UYGULAMA-API', 'API-DEGIL-CIKARIM', 'OLCULEMEYEN', 'SONUC-YOK'];
 const LAYER_WHYS = ['DEGISTIRME-KANITI', 'BASLIK-YOK-KALIBRASYON-VAR', 'WEB-YOLU', 'ON-UCUS', 'YOL-BELIRSIZ', 'KALIBRASYON-YOK', 'KALIBRASYON-GECERSIZ', 'YANSIMA', 'YABANCI-KIMLIK', 'AYIRT-ETMEYEN-GOZLEM', 'KANIT-KULLANILAMAZ', 'YANITSIZ'];
+/** Katman doğrulaması neden sınıfı: ret satırında "yeni kimlik" gözlendi ama koşumun kalibrasyonu API'nin bu davranışını HİÇ göstermedi
+ *  (değiştirme 0 / N) — alan "API yanıtladı" kesinliği bildirmez (OLCULEMEYEN). Kenar engelleme alanındaki FAIL bundan etkilenmez. */
+const LAYER_UNSUPPORTED = 'YENI-KIMLIK-GOZLEMI-KALIBRASYON-DEGISTIRMEYI-GOSTERMEDI';
 const ID_OBS = ['YOK', 'AYNEN', 'YENI-KIMLIK', 'BASKA-DEGER', 'SONUC-YOK'];
 const ID_SIGNALS = ['YOK', 'DEGISTIRME', 'AYNEN-GERI-YAZMA', 'YANSIMA', 'YABANCI-KIMLIK', 'SONUC-YOK'];
 const ERROR_CLASSES = ['AD-COZULMEDI', 'BAGLANTI', 'TLS', 'ZAMAN-ASIMI', 'DIGER'];
@@ -509,7 +524,6 @@ function verdictsOf(rows, cal) {
   const deny = rows.filter((x) => x.group === 'deny'); const allow = rows.filter((x) => x.group === 'allow');
   const complete = deny.length === DENY.length && allow.length === ALLOW.length;
   const proven = (x) => x.layerId === 'UYGULAMA-API';
-  const noDecision = (x) => x.outcome === 'SUNUCU-HATASI-5XX' || x.outcome === 'HIZ-SINIRI-429' || x.outcome === 'SINIFLANAMADI';
   const field = () => { const R = []; return { R,
     add: (value, reason, list) => { if (list.length) R.push({ value, reason, count: list.length, rows: list.map((x) => rows.indexOf(x)) }); },
     flag: (value, reason) => R.push({ value, reason, count: 1, rows: [] }),
@@ -521,12 +535,13 @@ function verdictsOf(rows, cal) {
   H.add('OLCULEMEYEN', 'RET-VEKTORU-YANITSIZ', deny.filter((x) => x.status === 0));
   const httpReject = { value: H.close(complete && deny.every((x) => x.status === 403)), reasons: H.R };
 
-  // POZİTİF KONTROL — izin verilen yollar; ret kurallarına karıştırılmaz.
+  // POZİTİF KONTROL — izin verilen yollar; ret kurallarına karıştırılmaz. TEK KURAL — yalnız durum kodundan; gönderilen kimlik biçimine
+  // ve satırın katman kimliğine BAĞLI DEĞİL: beklenen kod → uygun · yanıt alınamadı → OLCULEMEYEN · 403 (pozitif reddedildi) →
+  // OLCULEMEYEN · beklenen dışındaki her başka DOĞRULANMIŞ yanıt (2xx · 3xx · 403 dışı 4xx · 429 · 5xx · sınıflanamayan kod) → FAIL.
   const P = field();
-  P.add('FAIL', 'POZITIF-BEKLENMEYEN-YANIT', allow.filter((x) => x.status !== 0 && !x.statusExpected && x.status !== 403 && !(noDecision(x) && !proven(x))));
+  P.add('FAIL', 'POZITIF-BEKLENMEYEN-YANIT', allow.filter((x) => x.status !== 0 && !x.statusExpected && x.status !== 403));
   P.add('OLCULEMEYEN', 'POZITIF-REDDEDILDI-403', allow.filter((x) => x.status === 403));
   P.add('OLCULEMEYEN', 'POZITIF-YANITSIZ', allow.filter((x) => x.status === 0));
-  P.add('OLCULEMEYEN', 'POZITIF-KANITSIZ-5XX-429', allow.filter((x) => x.status !== 0 && !x.statusExpected && noDecision(x) && !proven(x)));
   const positiveControl = { value: P.close(complete && allow.every((x) => x.statusExpected)), reasons: P.R };
 
   // (b) KENAR ENGELLEME SONUCU.
@@ -545,13 +560,20 @@ function verdictsOf(rows, cal) {
   const edgePass = complete && deny.every((x) => x.outcome === 'RET-403' && x.idObs === 'YOK') && rows.every((x) => x.mitigationMark === 'YOK') && allow.every((x) => x.statusExpected) && cal.result === 'VAR' && httpReject.value === 'PASS';
   const edgeBlocking = { value: E.close(edgePass), reasons: E.R, scope: KAYIT_EKI };
 
-  // (c) KATMAN DOĞRULAMASI — kanıtın desteklemediği katman kesinliği reddedilir.
+  // (c) KATMAN DOĞRULAMASI — kanıtın desteklemediği katman kesinliği reddedilir. Ret satırındaki "yeni kimlik" gözlemi bu alanda
+  // YALNIZ koşumun kendi kalibrasyonu API'nin o davranışını (kabul edilmeyen biçim → yeni kimlik) en az bir kez gösterdiyse "API
+  // yanıtladı" kesinliği taşır; hiç göstermediyse (değiştirme 0 / N) alan OLCULEMEYEN kalır ve satır kapsam sayısında "ölçülemez"
+  // sayılır. Kenar engelleme alanındaki FAIL bundan ETKİLENMEZ (somut olumsuz kanıt silinmez).
   const L = field();
+  const replaceShown = cal.apiReplace > 0; const apiRows = deny.filter(proven);
+  const layerProven = replaceShown ? apiRows : []; const layerUnsupported = replaceShown ? [] : apiRows;
   const notApi = deny.filter((x) => x.layerId === 'API-DEGIL-CIKARIM'); const unverifiable = deny.filter((x) => x.layerId !== 'API-DEGIL-CIKARIM' && !proven(x));
-  L.add('FAIL', 'RET-SATIRINI-API-YANITLADI-KANITLI', deny.filter(proven));
+  L.add('FAIL', 'RET-SATIRINI-API-YANITLADI-KANITLI', layerProven);
+  L.add('OLCULEMEYEN', LAYER_UNSUPPORTED, layerUnsupported);
   L.add('OLCULEMEYEN', 'KATMANI-DOGRULANAMAYAN-RET-SATIRI', unverifiable);
+  const byReason = countBy(unverifiable, [], (x) => x.layerWhy); if (layerUnsupported.length) byReason[LAYER_UNSUPPORTED] = layerUnsupported.length;
   const layerVerification = { value: L.close(complete && notApi.length === deny.length), reasons: L.R,
-    coverage: { denyRows: deny.length, shownNotApi: notApi.length, provenApi: deny.filter(proven).length, unverifiable: unverifiable.length, unverifiableByReason: countBy(unverifiable, [], (x) => x.layerWhy) } };
+    coverage: { denyRows: deny.length, shownNotApi: notApi.length, provenApi: layerProven.length, unverifiable: unverifiable.length + layerUnsupported.length, unverifiableByReason: byReason } };
 
   return { httpReject, edgeBlocking, layerVerification, positiveControl };
 }
@@ -564,7 +586,7 @@ function labelLeaksName(label) {
   return [HOST, ORIGIN_URL.host].concat(HOST.split('.')).map(norm).filter((p) => p.length >= 3).some((p) => t.includes(p));
 }
 // Ön denetim (istek atılmadan): owner etiketi adı ya da bir parçasını, özetin sabit sözlüğü adın tam dizgisini içeriyorsa sonda koşmaz.
-if (labelLeaksName(VANTAGE || '') || containsName([REVISION, ALIAS, VANTAGE || '', KAYIT_EKI, EXIT_CODE_MAP, RID_HEADER, 'EXTACC-D8-STAFF-SURFACE-SUMMARY', SCOPE_AUTH.status].concat(OUTCOMES, LAYER_IDS, LAYER_WHYS, ID_OBS, ID_SIGNALS, RID_FORMS, ERROR_CLASSES, VECTOR_CLASSES, FIELD_VALUES, SCOPE_REQUIRED_TYPES, [SCOPE_TUNNEL_TYPE]).join(' '))) reject('konum etiketi ana makine adını ya da bir etiketini içeriyor (ya da özet sözlüğü adı içeriyor) — adsız özet yazılamaz');
+if (labelLeaksName(VANTAGE || '') || containsName([REVISION, ALIAS, VANTAGE || '', KAYIT_EKI, EXIT_CODE_MAP, RID_HEADER, 'EXTACC-D8-STAFF-SURFACE-SUMMARY', SCOPE_AUTH.status].concat(OUTCOMES, LAYER_IDS, LAYER_WHYS, ID_OBS, ID_SIGNALS, RID_FORMS, ERROR_CLASSES, VECTOR_CLASSES, FIELD_VALUES, SCOPE_REQUIRED_TYPES, [SCOPE_TUNNEL_TYPE, LAYER_UNSUPPORTED]).join(' '))) reject('konum etiketi ana makine adını ya da bir etiketini içeriyor (ya da özet sözlüğü adı içeriyor) — adsız özet yazılamaz');
 if (!PHONE && (fs.existsSync(OUT) || fs.existsSync(SUMMARY_OUT))) reject('kanıt ya da özet dosyası zaten var — başka bir koşumun / adın kanıtının üzerine yazılmaz');
 
 /** Kimlik taşıyabilecek istek başlıkları (ölçüm: gönderilen başlık adları bunlarla karşılaştırılır). */
