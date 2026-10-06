@@ -24,6 +24,8 @@
 >
 > **R05 (2026-10-06):** D-8 hazırlığı owner'ın 2026-10-05 kararlarıyla güncellendi — ad başına üç ayrı alan + pozitif kontrol, API'ye özgü kanıt kuralı, diğer adlar için kapsam yetkisi kapısı (§2 D-8 satırı, §5, §11 KR-9); canlı sonda yapılmadı. Dördüncü tur (2026-10-06): pozitif kontrolde tek kural · kapının eksik kalemi adlandırması · katman doğrulamasında desteksiz kesinlik yok · gerçek API ile izole provanın ilk koşusu paket belgesine işlendi (§5).
 >
+> **R06 (2026-10-06; owner'ın 2026-10-06 kararları — takip PR'ı, canlıya uygulanmadı):** gerçek API ile izole prova, kenar yalnız API'nin 403 yanıtından kimlik başlığını silerse R05 sondasının "kenar engelleme PASS · çıkış 0" verdiğini ölçmüştü; owner bu sonucu kabul etmedi. D-8 hazırlığı buna göre düzeltildi: **kenar engelleme sondayla PASS üretmez** (bağımsız kanıt yoksa ÖLÇÜLEMEYEN; API'ye ulaşma kanıtı FAIL olarak korunur; "API değil" çıkarımı kalktı; ölçüm koşumu çıkış 0 üretmez) · pozitif kontrolde **403 dahil** beklenmeyen her yanıt FAIL (ölçüt ihlali / bulgu adayı) · kapsam yetkisi kapısında birleşik belge kabul edilir, içerik incelemesi beyanı zorunlu ve dosya bütünlüğünden ayrı kaydedilir (§2 D-8 satırı, §5, §11 KR-9). Kesin kenar kabulü sonda dışı bağımsız kanıt ve owner değerlendirmesi gerektirir (yöntem önerisi ayrıca sunulur). Düzeltme gerçek API ile izole provada R06 sonda baytlarıyla dört kipte yinelendi (§5 R06 maddeleri). Canlı sonda yapılmadı; bu talimat canlı sonda GO'su değildir.
+>
 > Kaynak ayrımı: **[Ö]** bu çalışmanın kendi ölçümü (salt okuma ya da izole test) · **[B]** mevcut kayıt belgesinin iddiası
 > (yeniden ölçülmedi) · **[K]** yayın koordinatörünün ölçümü (aday doğrulama kaydı; depoda değil) · **[O]** owner beyanı (makine
 > ölçümü değildir).
@@ -53,7 +55,7 @@ Kabul ölçütlerinin kanonik tanımı `client-external-access-r01` §7'dir; pak
 | **D-5** portal parola sıfırlama uçtan uca | **Kabul yok.** runId `00c96bd5`: çıkış 3 · 21 PASS / 0 FAIL / 8 ÖLÇÜLEMEYEN [Ö]; "e-posta gelmedi" [O] | (a) uçtan uca sıfırlama hiç ölçülmedi (8 ölçüt) · (b) kök neden **kanıtlanmadı** · (c) bu koşumun kanıt paketi manifestsiz — **tamamlanamaz** (§3.2) | teşhis: UNKNOWN düzeyinde tamam · API yaması #2884: `main`'de (`be08dbe9`) ve adayda · web yaması #2900: `main`'de (`8b9a9989`) · aday doğrulaması: koordinatörde · yayın: **GO yok** | doğrulanmış aday (API + web) → onaylı yayın → pin güncellemesi → yeni D-5 GO'su | §3.3 sırası | yayın GO'su · yeni D-5 GO'su · alıcı adresi · tek gönderim onayı |
 | **D-6** belge yükleme/indirme/silme | **Kabul yok** — canlı koşum yok | canlı Run + owner beyanı (D6-*, P6-C*) | blok R02 `main`'de (#2880 → `6744abff`) · kapanış düzeltmesi R03 … R03-g `main`'de (**#2904** → `039f4137`; koşucu öz-testi 102/102 R03-g baytlarında; son commit yalnız bloğun onay metnini değiştirdi ve blok öz-testi son baytlarda 83/83 iki kabukta — koşucu öz-testi bu commit'ten sonra yeniden koşulmadı; R03-g bağımsız doğrulamasında blocker/major yok; §4.4) | ayrı GO · dış zincir · canlı dist pini (yayından önce ya da pin güncellemesinden sonra) | Preflight → QrTest → Run | D-6 GO · telefon yüklemesi · kalıcı izlerin kabulü · kalıntıda sıra · OK-5 / OK-6 · makbuz kurtarma dosyasının yazarı ve yeri (§4.4) |
 | **D-7** mesaj gönderme/okuma | **Kabul yok** — canlı koşum yok | canlı Run + owner beyanı (D7-*, P7-C*) | blok R02 `main`'de (#2882 → `0e04f4a6`) · kapanış düzeltmesi R03 … R03-g `main`'de (**#2905** → `95a35711`; öz-test 86/86, blok öz-testi 75/75 iki kabukta; son bağımsız doğrulamada blocker/major yok; §4.4) | ayrı GO · dış zincir · canlı dist pini · SEC-PORTAL-ADMIN-MSG-01 açık (engel değil) | Preflight → QrTest → Run | D-7 GO · kalan mesaj/bildirim satırları "saklandı" · kapsam dışı dosya referansında 400'ün ölçüt sayılması · Recover kuralı · K-8 (Run kapanışında tek yeniden giriş) · makbuz kurtarma dosyasının yazarı ve yeri |
-| **D-8** personel yüzeyi dışarıdan kapalı | **Kısmi**: yalnız 2026-09-27 telefon beyanı, 5 GET 403 [O]; R27 öncesi; bir ada bağlanmadı | sonda canlıda koşulmadı; ad başına satır tablosunda AD-1 (birincil ad) **KOŞULMADI — canlı sonda GO'su yok**, diğer yayın adları **KOŞULMADI — kapsam yetkisi doğrulanmadı**; telefon beyanı R27 sonrası yinelenmedi | sonda **R05** (owner kararları 2026-10-05; dördüncü tur 2026-10-06; R04 tabanı **#2906** → `45d47143`): ad başına koşum (zorunlu ad kimliği) · ad düzeyinde **üç ayrı alan + pozitif kontrol** — HTTP / ret sonucu · kenar engelleme sonucu · katman doğrulaması; her biri yalnız PASS / FAIL / ÖLÇÜLEMEYEN; birleşik PASS ve "değerlendirme gerekir" çıkışı yok · API'ye özgü kanıt: API'nin kabul etmediği biçimdeki istek kimliğini atıp yenisini üretmesi (gönderilen değerin aynen dönmesi kanıt sayılmaz) · birincil ad dışındaki adlar için kapsam yetkisi kapısı · ad içermeyen özet (kısıtlı); 68 istek (vektörler R04 ile aynı), pin `EE0C6998…3F1A`; öz-test 109 kalem (owner blokları iki kabukta); kanıt kuralının gerçek API ile izole provası **yapıldı ve son sonda baytlarıyla yinelendi** (sonuç paket belgesi §1.1'de — tünel / sağlayıcı ayağı ve gerçek web uygulaması provada yoktu); canlı istek yok (§5) | ad başına ayrı GO · dış zincir · diğer adlar için kapsam yetkisi kaydı (yetkili sağlayıcı hesabındaki bölge / özel ad kaydı + DNS zinciri) · izole provanın son baytlarla yinelenmesi | kapsam + ad başına GO → kapsamdaki adların koşumu + telefon beyanı → alan değerlerinin ad başına satıra yazılması | **açık kalan tek D-8 kararı:** canlı sonda kapsamı ve ad başına GO (telefon beyanının ad başına olup olmadığı onunla birlikte netleşir). Diğer D-8 kararları 2026-10-05'te verildi (§5 R05, §11 KR-9) |
+| **D-8** personel yüzeyi dışarıdan kapalı | **Kısmi**: yalnız 2026-09-27 telefon beyanı, 5 GET 403 [O]; R27 öncesi; bir ada bağlanmadı | sonda canlıda koşulmadı; ad başına satır tablosunda AD-1 (birincil ad) **KOŞULMADI — canlı sonda GO'su yok**, diğer yayın adları **KOŞULMADI — kapsam yetkisi doğrulanmadı**; telefon beyanı R27 sonrası yinelenmedi; **sonda koşsa da kenar engellemesi için kabul kanıtı üretmez** (aşağıda) | sonda **R06** (owner kararları 2026-10-05 ve 2026-10-06; R05 `main`'dedir: **#2942** → `c9f51af1`; R04 tabanı #2906): ad başına koşum (zorunlu ad kimliği) · ad düzeyinde **üç ayrı alan + pozitif kontrol** — HTTP / ret sonucu · kenar engelleme sonucu · katman doğrulaması; her biri yalnız PASS / FAIL / ÖLÇÜLEMEYEN; birleşik PASS yok · **kanıt sınırı (R06): kenar engelleme ve katman doğrulaması sondayla PASS üretmez** — sondada isteğin API'ye ulaşmadığını gösteren bağımsız kanıt yoktur (başlığın bulunmaması bunu kanıtlamaz); FAIL yoksa alan ÖLÇÜLEMEYEN'dir ve **ölçüm koşumu çıkış 0 üretmez** (sağlıklı koşum çıkış 3) · API'ye özgü kanıt (API'nin kabul etmediği biçimdeki istek kimliğini atıp yenisini üretmesi) yalnız "ulaştı"yı gösterir → FAIL · **pozitif kontrolde 403 dahil** beklenmeyen her doğrulanmış yanıt FAIL (ölçüt ihlali / bulgu adayı) · birincil ad dışındaki adlar için kapsam yetkisi kapısı (birleşik belge kabul edilir; içerik incelemesi beyanı zorunlu ve dosya bütünlüğünden ayrı) · ad içermeyen özet (kısıtlı); 68 istek (vektörler R04 ile aynı), pin `4A517621…8B71`; öz-test 114 kalem (owner blokları iki kabukta); gerçek API ile izole prova **R05 baytlarıyla** yapıldı (sonuç paket belgesi §1.1'de — o prova başlığı silinen API reddinde R05 sondasının kenar engelleme PASS / çıkış 0 verdiğini ölçtü; R06 bunu düzeltir) — **R06 baytlarıyla gerçek API yinelemesi koşulmadı**; canlı istek yok (§5) | ad başına ayrı GO · dış zincir · diğer adlar için kapsam yetkisi kaydı (yetkili sağlayıcı hesabındaki bölge / özel ad kaydı + DNS zinciri + içerik incelemesi beyanı) · **kesin kenar kabulü için sonda dışı bağımsız kanıt** (yöntem önerisi ayrıca sunulur) | kapsam + ad başına GO → kapsamdaki adların koşumu + telefon beyanı → alan değerlerinin ad başına satıra yazılması (kenar engelleme hücresi FAIL ya da ÖLÇÜLEMEYEN olur; ÖLÇÜLEMEYEN kapanış değildir) → kesin kenar kabulünün ayrı kanıtla owner değerlendirmesi | **açık kalan iki D-8 kararı:** (1) canlı sonda kapsamı ve ad başına GO (telefon beyanının ad başına olup olmadığı onunla birlikte netleşir); (2) kesin kenar kabulünün yöntemi — sonda dışı bağımsız kanıt ve owner değerlendirmesi. Diğer D-8 kararları 2026-10-05 ve 2026-10-06'da verildi (§5 R05 / R06, §11 KR-9) |
 | **D-9 (intake)** | **Kabul — dar**: `cff5c692` [B] | yok | tamam | — | yok | — |
 | **D-9 (portal, D-4 koşumu)** | **Kabul — dar**: `e34b7e6d` [B] | yok | tamam | — | yok | — |
 | **D-9 (birleşik)** | **Açık** | D-5 bileşeni ölçülemeyenli; D-6/D-7 bileşenleri yok (§6) | — | D-5, D-6, D-7 koşumları | koşumlardan sonra kayıt | birleşik kabul onayı; dar kanıt genel kapanış sayılmaz |
@@ -193,44 +195,53 @@ iki kabukta yeşil). Son değerler paket belgelerindedir (D-6 §6, D-7 §7) ve P
 
 ## 5. D-8 sondası — istek kapsamı, yan etkiler, kapsam boşluklarının kabule etkisi (**çalıştırılmadı**)
 
-> **R05 (owner kararları 2026-10-05; dördüncü tur 2026-10-06; canlıya uygulanmadı, canlı istek yok).** Owner talimatı: "D-8 hazırlığında
-> birincil adı ve sahipliği doğrulanmış diğer yayın adlarını ayrı satırlarda göster. Bir adın sonucu diğerine taşınmasın; ret sonucu
-> ile reddeden katmanın kimliği ayrı değerlendirilsin. Canlı sonda kapsamı ve GO'su ayrıca kesinleşecek." Aynı gün owner bekleyen
-> D-8 kararlarını verdi (açık metinleri paket belgesi §3b'de). Sonda **ad başına** koşar (zorunlu ad kimliği; bir süreç = bir ad =
-> bir kanıt) ve ad düzeyinde **üç ayrı alan + pozitif kontrol** üretir; her biri yalnız PASS / FAIL / ÖLÇÜLEMEYEN alır ve hiçbiri
-> diğerinin yerine geçmez — birleşik tek "PASS" ya da "D-8 PASS" yoktur:
+> **R06 (owner kararları 2026-10-05 ve 2026-10-06; canlıya uygulanmadı, canlı istek yok) — güncel tanım.** Owner talimatı (2026-10-05):
+> "D-8 hazırlığında birincil adı ve sahipliği doğrulanmış diğer yayın adlarını ayrı satırlarda göster. Bir adın sonucu diğerine
+> taşınmasın; ret sonucu ile reddeden katmanın kimliği ayrı değerlendirilsin. Canlı sonda kapsamı ve GO'su ayrıca kesinleşecek." Aynı
+> gün owner bekleyen D-8 kararlarını verdi; 2026-10-06'da, gerçek API ile izole provanın sonucu üzerine, dört karar daha verdi (açık
+> metinleri paket belgesi §3b ve §3c'de). Sonda **ad başına** koşar (zorunlu ad kimliği; bir süreç = bir ad = bir kanıt) ve ad düzeyinde
+> **üç ayrı alan + pozitif kontrol** üretir; her biri yalnız PASS / FAIL / ÖLÇÜLEMEYEN alır ve hiçbiri diğerinin yerine geçmez —
+> birleşik tek "PASS" ya da "D-8 PASS" yoktur:
 > - **HTTP / ret sonucu** (yalnız durum kodu ölçütü): bütün ret vektörleri 403 → PASS · bir ret vektörüne doğrulanmış başka bir HTTP
->   yanıtı (hangi kod olursa olsun) → FAIL · yanıt alınamayan ret vektörü → ÖLÇÜLEMEYEN. Bu ikisi tek etikette birleşmez.
-> - **Kenar engelleme sonucu:** engellenmesi gereken bir isteğin API'ye ulaştığı API'ye özgü kanıtla gösterildiyse FAIL — API'nin o
->   isteğe 403 vermesi bunu kapatmaz; ret vektörü hiç reddedilmediyse (2xx) FAIL. Kalibrasyon eksik / geçersizse, yanıt sınama
->   (challenge) ya da tanınmayan azaltım işareti taşıyorsa, pozitifler beklendiği gibi değilse ya da yanıtsız vektör varsa
->   ÖLÇÜLEMEYEN: ne "kapalı" ne kesin API sızıntısı yazılır. Kalibrasyon eksikliği somut olumsuz kanıtı silmez. Aksi PASS (kayıt
->   ekiyle: bu istek profili, bu konum, bu vektör kümesi, varsayımlar).
-> - **Katman doğrulaması:** kanıtın desteklemediği katman kesinliği reddedilir. Bugünkü vektör kümesi bu yöntemle doğrulanamayan
->   satırlar (ön uçuş, yolu belirsiz, web yolu) içerdiğinden değer PASS olamaz: kapsam sayısıyla ÖLÇÜLEMEYEN; API'nin yanıtladığı
->   kanıtlı ret satırı varsa **ve** koşumun kendi kalibrasyonu API'nin "kabul edilmeyen biçim → yeni kimlik" davranışını en az bir kez
->   gösterdiyse FAIL. Kalibrasyon o davranışı hiç göstermediyse aynı gözlem kenar engellemede FAIL kalır ama katman doğrulaması
->   ÖLÇÜLEMEYEN'dir (dördüncü tur). Kenar / tünel / sağlayıcı adlandırılmaz.
-> - **Pozitif kontrol:** API'ye geçmesine izin verilen yollar ayrı kayıttır. Tek kural (dördüncü tur; gönderilen kimlik biçimine bağlı
->   değil): beklenen kod → uygun · yanıt alınamadı → ÖLÇÜLEMEYEN · 403 (pozitif reddedildi) → ÖLÇÜLEMEYEN · beklenen dışındaki
->   doğrulanmış her başka yanıt (2xx, 3xx, 404, 429, 5xx, sınıflanamayan kod) → FAIL.
+>   yanıtı (hangi kod olursa olsun) → FAIL · yanıt alınamayan ret vektörü → ÖLÇÜLEMEYEN. Bu ikisi tek etikette birleşmez. PASS yalnız
+>   "ret vektörleri 403 aldı" demektir; kenar engellemesi demek değildir.
+> - **Kenar engelleme sonucu — sondayla PASS üretilmez (R06; kanıt sınırı):** sondanın elindeki tek katman kanıtı API'nin yeni kimlik
+>   üretmesidir ve o yalnız isteğin API'ye **ulaştığını** gösterir. Ulaşma kanıtı varsa FAIL — API'nin o isteğe 403 vermesi bunu
+>   kapatmaz; ret vektörü hiç reddedilmediyse (2xx) FAIL. FAIL yoksa alan **her koşumda ÖLÇÜLEMEYEN**'dir: isteğin API'ye
+>   ulaşmadığını gösteren bağımsız kanıt sondada yoktur (başlığın bulunmaması bunu kanıtlamaz; pozitif yolların kalibrasyonu ret
+>   yollarında başlığın korunacağını kanıtlamaz). Sağlıklı koşumun neden sınıfı "bağımsız kanıt yok"tur; kalibrasyon eksik / geçersizse,
+>   yanıt sınama (challenge) ya da tanınmayan azaltım işareti taşıyorsa, pozitifler beklendiği gibi değilse ya da yanıtsız vektör varsa
+>   ayrı neden sınıfı yazılır. Kalibrasyon eksikliği somut olumsuz kanıtı silmez. Sağlıklı kenar ile başlığı silinmiş API reddi ayırt
+>   edilemediğinden ikisine de PASS verilmez.
+> - **Katman doğrulaması — PASS üretilmez:** kanıtın desteklemediği katman kesinliği reddedilir. "API değil" çıkarımı **kalktı** (başlık
+>   yokluğu satır düzeyinde de kanıt değildir): kapsam sayısıyla ÖLÇÜLEMEYEN; API'nin yanıtladığı kanıtlı ret satırı varsa **ve**
+>   koşumun kendi kalibrasyonu API'nin "kabul edilmeyen biçim → yeni kimlik" davranışını en az bir kez gösterdiyse FAIL. Kalibrasyon o
+>   davranışı hiç göstermediyse aynı gözlem kenar engellemede FAIL kalır ama katman doğrulaması ÖLÇÜLEMEYEN'dir. Kenar / tünel /
+>   sağlayıcı adlandırılmaz.
+> - **Pozitif kontrol:** API'ye geçmesine izin verilen yollar ayrı kayıttır. Tek kural (R06: 403 istisnası yok; gönderilen kimlik
+>   biçimine bağlı değil): beklenen kod → uygun · yanıt alınamadı → ÖLÇÜLEMEYEN · beklenen dışındaki doğrulanmış **her** yanıt (2xx,
+>   3xx, **403**, 404, 429, 5xx, sınıflanamayan kod) → FAIL. FAIL bir ölçüt ihlali / bulgu adayıdır; nedeni ayrı değerlendirilir —
+>   "ürün güvenlik kusuru kesinleşti" demek değildir. Tekdüze 403 (pozitifler dahil hepsi 403) artık pozitif kontrol FAIL verir.
 >
 > **API'ye özgü kanıt** artık "gönderdiğim kimlik aynen döndü" değildir — isteğin başlığını yansıtan sıradan bir aracı katman da onu
 > üretir. Kaynakta API, kabul ettiği biçimdeki kimliği aynen geri yazar, kabul etmediği biçimdekini atıp **yenisini üretir**; sonda
 > ret vektörlerine kabul edilmeyen biçimi gönderir: yeni kimlik = API kanıtı adayı, aynı değerin dönmesi = yansıtan katman göstergesi
 > (kanıt sayılmaz), kendi kimliğini damgalayan katman görülmüşse kanıt kullanılmaz. Kuralın dayanağı kaynak okumasıdır; **gerçek API
-> ile izole prova yapıldı ve son sonda baytlarıyla yinelendi** (2026-10-06; yöntem, sonuç tablosu ve ölçülmeyenler paket belgesi
-> §1.1'de). **Kapsam yetkisi kapısı:** birincil ad (AD-1) dışındaki her
+> ile izole prova R05 sonda baytlarıyla yapıldı** (2026-10-06; yöntem, sonuç tablosu ve ölçülmeyenler paket belgesi §1.1'de); R06
+> baytlarıyla dört kipte yinelendi (aşağıda R06 maddeleri). **Kapsam yetkisi kapısı:** birincil ad (AD-1) dışındaki her
 > ad kimliği için sonda, kısıtlı bir kapsam yetkisi kaydı olmadan koşmaz (yetkili sağlayıcı hesabındaki bölge / özel ad kaydı + DNS
-> zinciri; tünel kaydı tek başına yetmez; kanıt dosyası ve özeti ölçülür) — "KOŞULMADI — kapsam yetkisi doğrulanmadı"; zorunlu bir
-> kalem eksikse ret iletisi eksik kalemin **türünü** adlandırır (dördüncü tur). **Çıkış kodu:** herhangi bir alan FAIL
-> → 2 · FAIL yok ve kenar engelleme PASS → 0 · diğer her durum → 3 · kapı → 4 (çıkış 5 kalktı). **Public satır** yalnız alan
-> değerlerini ve ad kimliğini taşır (sayı, neden, özet değeri yazılmaz). Vektör listesi (68 istek) **değişmedi**; istek profilinde
-> değişen yalnız her istekteki tek kullanımlık `x-request-id` değerinin biçimidir. Pin `EE0C6998…3F1A`. Ayrıntı, ad başına satır
-> tablosu ve karar tablosu paket belgesindedir (`client-extacc-d8-staff-surface-r01` §1.1, §1b, §3, §3b). **Bu bölümde aşağıda kalan
-> "403 sonucu tamam", "katman daima `unknown`", "bulgu listesi boş", "yerelde tek kanıt dosyası" ifadeleri R04 ve öncesini anlatır;
-> R05 ile geçersizdir. R05'in ilk iki turundaki "iki ayrı hüküm", "yankı eşleşti = API", "çıkış 5 / karar bekliyor" kuralları da
-> geçersizdir (PR'ın commit geçmişindedir).**
+> zinciri; tünel kaydı tek başına yetmez) — "KOŞULMADI — kapsam yetkisi doğrulanmadı"; zorunlu bir kalem eksikse ret iletisi eksik
+> kalemin **türünü** adlandırır. R06: iki kalem tek **birleşik belgeyi** gösterebilir (iki ayrı dosya zorunlu değil; iki ayrı kanıt
+> unsuru, ad bağı, dosya bütünlüğü ve içerik incelemesi beyanı zorunlu); sonda yalnız **dosya bütünlüğünü** ölçer (dosya var, boş değil,
+> özeti tutuyor), **içerik incelemesini** yalnız "beyan var" diye kaydeder — sahipliği sondanın doğruladığı söylenmez. **Çıkış kodu:**
+> herhangi bir alan FAIL → 2 · FAIL yok → 3 · kapı → 4; **ölçüm koşumu çıkış 0 üretmez** (çıkış 5 de yok). **Public satır** yalnız alan
+> değerlerini ve ad kimliğini taşır (sayı, neden, özet değeri yazılmaz); kenar engelleme ve katman hücrelerine PASS yazılmaz. Vektör
+> listesi (68 istek) ve istek profili **değişmedi**. Pin `4A517621…8B71`. Ayrıntı, ad başına satır
+> tablosu ve karar tabloları paket belgesindedir (`client-extacc-d8-staff-surface-r01` §1.1, §1b, §3, §3b, §3c). **Bu bölümde aşağıda
+> kalan "403 sonucu tamam", "katman daima `unknown`", "bulgu listesi boş", "yerelde tek kanıt dosyası" ifadeleri R04 ve öncesini
+> anlatır; geçersizdir. R05'in "kenar engelleme PASS (kayıt ekiyle)", "çıkış 0", "API değil çıkarımı", "pozitif 403 → ÖLÇÜLEMEYEN"
+> ve "iki kalem aynı dosyayı gösteremez" kuralları R06 ile geçersizdir; R05'in ilk iki turundaki "iki ayrı hüküm", "yankı eşleşti =
+> API", "çıkış 5 / karar bekliyor" kuralları da geçersizdir (PR'ların commit geçmişindedir).**
 >
 > **R04 revizyonu (PR #2906 → `45d47143`, `main`'de; canlıya uygulanmadı):** HEAD / OPTIONS (D8-E1) ve izole provadaki 18 kodlama varyantının tamamı (D8-E2)
 > sondaya alındı → **68 istek** (59 ret + 9 pozitif; GET 41 · POST 11 · PUT 3 · PATCH 1 · DELETE 6 · HEAD 3 · OPTIONS 3; boş JSON gövde
@@ -239,8 +250,8 @@ iki kabukta yeşil). Son değerler paket belgelerindedir (D-6 §6, D-7 §7) ve P
 > yazma / audit / giriş sayacı yok). 68 istek tablosu ve yan etkiler paket belgesindedir. Aşağıdaki 46 istek tablosu birleştirilmiş
 > **R02** sondasına aittir ve #2906 ile geçersizdir (tarihsel). 403 sonucu kesin katman kanıtı sayılmaz.
 
-Sonda `client-extacc-d8-staff-surface-r01/scripts/d8-staff-surface-probe.js` (R05 pini `EE0C6998…3F1A`; paket belgesi §7 ve iki owner
-bloğundaki pinle eşit [Ö 2026-10-06]. Aşağıdaki 46 istek tablosunun ait olduğu R02 sondasının pini `D5FA37D1…579B` idi; tarihsel).
+Sonda `client-extacc-d8-staff-surface-r01/scripts/d8-staff-surface-probe.js` (R06 pini `4A517621…8B71`; paket belgesi §7 ve iki owner
+bloğundaki pinle eşit [Ö 2026-10-06]; `main`'deki R05 pini `EE0C6998…3F1A` idi. Aşağıdaki 46 istek tablosunun ait olduğu R02 sondasının pini `D5FA37D1…579B` idi; tarihsel).
 Durum açmaz: sentetik veri, hesap, token, veritabanı erişimi yoktur; kapanış/Recover gerekmez; yeniden koşulabilir.
 
 **İstekler: 46, sıralı, tekrar denemesiz, istek başına 15 sn.** 37 ret vektörü (403 beklenir) + 9 pozitif (3 sayfa 200, 6 API 401).
@@ -291,10 +302,11 @@ vektörlerinin hepsi) API'nin kabul etmediği biçimde bir istek kimliği taşı
 üretir — kaynakta bunu günlüğe yazan satır görülmedi. Sağlayıcı kenarının kendi kayıtları ve canlı kenar günlüğü **ölçülemedi
 (UNKNOWN)**.
 
-**Katman sınırı (R05).** Durum kodu, kenar engelleme ve katman üç ayrı alandır. API'ye özgü kanıt yalnız istek kimliği protokolünden
-gelir (kabul edilmeyen biçimdeki kimliğin yenisiyle değiştirilmesi); başlık ve gövde imzası yalnız ipucudur. API'nin yanıtladığı
-kanıtlı ret satırı — 403 verse de — kenar engelleme ve katman doğrulamasında FAIL'dir (owner kararı). 403'ü hangi üst katmanın
-ürettiği bu yöntemle **adlandırılamaz** ve katman doğrulaması bugünkü vektör kümesinde PASS olamaz. Sonda sunucunun kendi çıkışından
+**Katman ve kanıt sınırı (R05 / R06).** Durum kodu, kenar engelleme ve katman üç ayrı alandır. API'ye özgü kanıt yalnız istek kimliği
+protokolünden gelir (kabul edilmeyen biçimdeki kimliğin yenisiyle değiştirilmesi); başlık ve gövde imzası yalnız ipucudur. API'nin
+yanıtladığı kanıtlı ret satırı — 403 verse de — kenar engelleme ve katman doğrulamasında FAIL'dir (owner kararı). 403'ü hangi üst
+katmanın ürettiği bu yöntemle **adlandırılamaz**. **R06:** bu kanıt yalnız "ulaştı"yı gösterebildiğinden kenar engelleme ve katman
+doğrulaması sondayla PASS **üretmez**; başlığın bulunmaması isteğin API'ye ulaşmadığını kanıtlamaz. Sonda sunucunun kendi çıkışından
 koşar (konum etiketi beyandır); dış ağ ayağı yalnız telefon beyanıdır. (R04'te kesin katman alanı daima `unknown` idi ve ret
 vektöründe "tamam" yalnız durum 403'tü.)
 
@@ -319,7 +331,7 @@ revizyonu yolunda pin, öz-test ve belge birlikte değişir ve koşum ondan sonr
 - **HEAD / OPTIONS ve 18 kodlama varyantı (D8-E1 / D8-E2)** PR #2906'da sondaya alındı (bu bölümün başındaki R04 notu); öz-test
   17/17, eski sondada yeni kalemler düşüyor; canlı sonda çalıştırılmadı. 403 sonucu kesin katman kanıtı sayılmaz.
 
-**R05 (owner kararları 2026-10-05; dördüncü tur 2026-10-06):**
+**R05 (owner kararları 2026-10-05; dördüncü tur 2026-10-06) — R06 ile değişen yerler bu listenin altındaki R06 maddelerindedir:**
 - **Ad başına koşum (D8-E3):** sonda her ad için ayrı süreçte, zorunlu ad kimliğiyle koşar; başka bir adın kanıtını okumaz, var olan
   kanıtın üzerine yazmaz. Ad başına satır tablosunda AD-1 (birincil ad) **KOŞULMADI — canlı sonda GO'su yok**; diğer yayın adları
   **KOŞULMADI — kapsam yetkisi doğrulanmadı**. Owner bloğu yalnız AD-1 için yazıldı; çalıştırılmadı.
@@ -328,15 +340,17 @@ revizyonu yolunda pin, öz-test ve belge birlikte değişir ve koşum ondan sonr
   kimliği ya da ana makine birebir uyuşmuyorsa, iki kalemden biri eksikse, bir kanıt dosyası yoksa ya da özeti tutmuyorsa istek
   atmadan durur (çıkış 4); zorunlu bir kalem eksikse ret iletisi eksik kalemin türünü adlandırır ("kanıt eksikse yalnız eksik
   girdiyi iste"). Kayıt ve kanıt dosyaları kısıtlıdır (depoya girmez). Eksik olan yalnız girdidir: bugün hiçbir ek ad için
-  kayıt sunulmadı. Asgari ölçütün ötesindeki koşullar (iki kalem aynı dosyayı / içeriği gösteremez · boş dosya · gelecekteki tarih ·
-  AD-1 ile kayıt verilmez · telefon listesinde de kapı) uygulayıcı sıkılaştırmasıdır, owner kararı değildir (paket belgesi §1).
+  kayıt sunulmadı. Asgari ölçütün ötesindeki koşullar (boş dosya · gelecekteki tarih · AD-1 ile kayıt verilmez · telefon listesinde de
+  kapı) uygulayıcı sıkılaştırmasıdır (paket belgesi §1). R05'teki "iki kalem aynı dosyayı / içeriği gösteremez" koşulu R06'da owner
+  kararıyla **kalktı**; içerik incelemesi beyanı zorunlu oldu (aşağıda R06).
 - **Katmanı ayırt eden kanıt (D8-E4) ve 403 dışı yanıtların sınıflanması (D8-E5):** 403 dışı her doğrulanmış ret yanıtı durum kodu
   ölçütünde FAIL'dir; kenar engelleme yalnız API'ye özgü kanıt (ya da 2xx) varsa FAIL, kanıt yoksa ÖLÇÜLEMEYEN'dir. 403 de tek sınıf
   değildir: sınama (challenge) ya da tanınmayan azaltım işareti taşıyan 403 durum kodu ölçütünde 403'tür ama hedeflenen erişim
   kuralının uygulandığını kanıtlamaz (kenar engelleme ÖLÇÜLEMEYEN). FAIL ölçülemeyenin önündedir (aynı koşumda ikisi varsa çıkış 2).
-  Kanıt kuralının dayanağı kaynak okumasıdır; gerçek API ile izole prova yapıldı ve son baytlarla yinelendi (aşağıdaki madde). Ölçülemeyen iki
-  sınır paket belgesinde ve öz-testte kayıtlıdır: (PASS yönünde) API'nin ret yanıtından kimlik başlığını silen bir katman görülemez —
-  "kapalı" kaydı bu varsayımı taşır (gerçek API ile gösterildi; kapatılamaz); (FAIL yönünde) yalnız API önekli ret yanıtlarına API'nin
+  Kanıt kuralının dayanağı kaynak okumasıdır; gerçek API ile izole prova R05 baytlarıyla yapıldı (aşağıdaki madde). İki sınır paket
+  belgesinde ve öz-testte kayıtlıdır: (ulaşmama yönünde; R05'te "PASS yönündeki varsayım"dı) API'nin ret yanıtından kimlik başlığını
+  silen bir katman görülemez — gerçek API ile gösterildi; kapatılamaz; **R06'da sonda bu durumda PASS vermez** (ölçülemeyen); (FAIL
+  yönünde) yalnız API önekli ret yanıtlarına API'nin
   ürettiği biçimde kendi kimliğini yazan bir katman API'den ayırt edilemez (kenar engelleme FAIL; katman doğrulaması yalnız koşumun
   kalibrasyonu o davranışı en az bir kez gösterdiyse FAIL, göstermediyse ÖLÇÜLEMEYEN).
 - **Gerçek API ile izole prova — ilk koşu (2026-10-06; çağıran koştu; sonda baytları `369A51DD…8370`):** gerçek API = yayın adayı
@@ -344,11 +358,11 @@ revizyonu yolunda pin, öz-test ve belge birlikte değişir ve koşum ondan sonr
   bazındaki iddiası kenarın zemin günlüğüyle karşılaştırıldı. Ölçülen (dokuz kenar kipi; tablo ve altı sonuç maddesi paket belgesi
   §1.1'de aynen): sıradan yansıma API kanıtı üretmedi (yansıtan iki kipte "API'ye ulaştı" iddiası 0) · gerçek API iki davranışı da
   gösterdi (aynen 3/3, değiştirme 3/3) · gerçek API'nin 403'ü kenar ölçütünü FAIL yaptı (durum kodu ölçütü PASS kaldı) · yalnız
-  API'nin ret yanıtından başlığı silen katmanla sonda kenar engelleme PASS verdi (çıkış 0) — ölçülemeyen sınır; kapatılamaz, PASS
-  kaydının varsayımı · yanlış pozitif hiçbir kipte yok (0 / 9 kip). **Provada olmayan (ölçülmeyen):** tünel / sağlayıcı ayağı ve
-  gerçek web uygulaması (web yanıtları kenarın sentetik sayfasıydı). Bu turda sondanın üç kuralı değişti; **son baytlarla
-  yineleme yapıldı** (sonda `EE0C6998…3F1A`): dokuz kipin dokuzunda alanlar, çıkış kodları ve zemin günlüğü karşılaştırması ilk koşuyla
-  aynı.
+  API'nin ret yanıtından başlığı silen katmanla **R05 sondası** kenar engelleme PASS verdi (çıkış 0) — istek API'ye ulaşmışken; owner
+  bu sonucu **kabul etmedi** ve R06 bunu düzeltti (aşağıda) · yanlış pozitif hiçbir kipte yok (0 / 9 kip). **Provada olmayan
+  (ölçülmeyen):** tünel / sağlayıcı ayağı ve gerçek web uygulaması (web yanıtları kenarın sentetik sayfasıydı). R05 dördüncü turda
+  sondanın üç kuralı değişti; **R05'in son baytlarıyla yineleme yapıldı** (sonda `EE0C6998…3F1A`): dokuz kipin dokuzunda alanlar, çıkış
+  kodları ve zemin günlüğü karşılaştırması ilk koşuyla aynı. R06 baytlarıyla yineleme (dört kip) aşağıdaki R06 maddelerindedir.
 - **Dördüncü tur (2026-10-06; iki bağımsız doğrulamanın küçük bulguları):** pozitif kontrolde tek kural (önceden API'nin izinli bir
   yolda ürettiği 5xx, gönderilen kimlik biçimine göre çıkış 3 ya da çıkış 2 veriyordu; artık iki sırada da FAIL) · kapının eksik
   kalemi adlandırması · katman doğrulamasında desteksiz kesinlik yok · ad başına satır tablosunda koşum hücresine pin ve vektör kümesi
@@ -357,22 +371,55 @@ revizyonu yolunda pin, öz-test ve belge birlikte değişir ve koşum ondan sonr
 - **Owner kararları (2026-10-05; verildi):** kenarda engellenmesi gereken isteğin API'ye ulaştığı kanıtlanırsa bulgu adayıdır (API'nin
   403'ü bunu kapatmaz) · kalibrasyon eksikse "kapalı" hükmü verilmez, kanıtlı ihlal yine korunur · sınama yanıtı erişim kuralının
   uygulandığını kanıtlamaz · her ad için üç ayrı alan, kanıtın desteklediği değerle · 403 yerine başka doğrulanmış yanıt FAIL, yanıt
-  alınamaması ÖLÇÜLEMEYEN · diğer adın kapsam yetkisi ölçütü (yukarıda). **Açık kalan tek D-8 kararı:** canlı sonda kapsamı ve ad
-  başına GO; telefon beyanının ad başına olup olmadığı onunla birlikte netleşir (§11 KR-9).
+  alınamaması ÖLÇÜLEMEYEN · diğer adın kapsam yetkisi ölçütü (yukarıda).
+
+**R06 (owner kararları 2026-10-06; takip PR'ı; canlıya uygulanmadı — açık metinler paket belgesi §3c'de):**
+- **Kanıt sınırı:** owner, gerçek API'nin 403 yanıtından kimlik başlığı silindiğinde kenar engelleme PASS çıkmasını kabul etmedi —
+  başlığın bulunmaması isteğin API'ye ulaşmadığını kanıtlamaz; pozitif yolların kalibrasyonu ret yollarında başlığın korunacağını
+  kanıtlamaz. Düzeltme: HTTP 403 eşleşmesi kendi alanında PASS kalır · kenar engelleme bağımsız kanıt yoksa ÖLÇÜLEMEYEN (sonda PASS
+  üretmez; sağlıklı koşumun neden sınıfı "bağımsız kanıt yok" — diğer ölçülemeyen nedenlerinden ayrı) · API'ye ulaşma kanıtı bulunan
+  ihlal FAIL olarak korunur · "API değil" çıkarımı ve "API değil gösterilen" kapsam sayısı kalktı · **ölçüm koşumu çıkış 0 üretmez**
+  (FAIL → 2 · FAIL yok → 3). Yeni ürün telemetrisi ya da mimari değişiklik eklenmedi; sınır dürüstçe ölçülemeyen bırakıldı.
+- **Regresyon (öz-testte; ölçüldü):** başlığı silinen API 403'ü girdisinde düzeltilmiş sonda `PASS · ÖLÇÜLEMEYEN · ÖLÇÜLEMEYEN · PASS`,
+  çıkış 3 verir ve sağlıklı kenardan ayırt edilemez (ikisine de PASS yok); `main`'deki düzeltmesiz sonda aynı girdide kenar engelleme
+  PASS, çıkış 0 verir (sayılar paket belgesi §1c "Negatif ayna").
+- **Gerçek API ile yineleme (R06 sonda baytları; 2026-10-06; dört kip; ölçüldü — tablo paket belgesi §1.1'de):** sağlıklı kenar →
+  `PASS · ÖLÇÜLEMEYEN · ÖLÇÜLEMEYEN · PASS`, çıkış 3 (R05'te kenar engelleme PASS, çıkış 0) · gerçek API 403'ü → `PASS · FAIL · FAIL ·
+  PASS`, çıkış 2 (değişmedi) · aynı yanıttan kimlik başlığı silinince → `PASS · ÖLÇÜLEMEYEN · ÖLÇÜLEMEYEN · PASS`, çıkış 3 (R05'te
+  yanlış PASS, çıkış 0) · saydam geçiş → `FAIL · FAIL · FAIL · PASS`, çıkış 2; yanlış pozitif dört kipte 0. Başlığı silinen kipte
+  API'ye ulaşan istek sondayla **yine görülemez** (sınır kapanmadı; yalnız başarılı kenar engellemesi gibi sunulmuyor). Bu koşuda API
+  süreci yalnız geri döngü arayüzünü dinledi ve geri döngü dışına bağlantı açmadı (ölçüldü; izolasyon yalnız prova başlatıcısında);
+  yayın adayı ağacı önce / sonra aynı. **Koşulmayan:** diğer beş kip R06 baytlarıyla; tünel / sağlayıcı ayağı ve gerçek web uygulaması
+  bu yinelemede de yok.
+- **Pozitif kontrol:** izinli yolda beklenen kod yerine doğrulanmış başka her HTTP yanıtı, **403 dahil**, FAIL; yanıt alınamaması
+  ÖLÇÜLEMEYEN. Beklenmeyen yanıt önce ölçüt ihlali / bulgu adayıdır, nedeni ayrı değerlendirilir ("ürün güvenlik kusuru kesinleşti"
+  diye sunulmaz). Tekdüze 403 artık pozitif kontrol FAIL, çıkış 2.
+- **Kapsam yetkisi kapısı:** boş ya da özeti uyuşmayan kanıtın reddi kaldı · tarih denetimi sınır saatlerinde ölçüldü (TSİ / UTC farkı
+  geçerli belgeyi reddetmiyor; kod değişmedi; saatli biçim her saatte biçim nedeniyle reddedilir) · sağlayıcı hesabı kaydı ile DNS
+  zinciri tek birleşik belgede olabilir (iki ayrı kanıt unsuru, içerik incelemesi beyanı ve ad bağı zorunlu; iki ayrı dosya değil) ·
+  sonda yalnız dosya bütünlüğünü ölçer, içerik incelemesini yalnız "beyan var" diye ayrı kaydeder; "sahipliği sonda doğruladı"
+  anlamına gelen ifade kalmadı.
+- **Açık kalan iki D-8 kararı:** (1) canlı sonda kapsamı ve ad başına GO (telefon beyanının ad başına olup olmadığı onunla birlikte
+  netleşir); (2) kesin kenar kabulünün yöntemi — sonda kenar engellemesi için PASS üretmediğinden bir adın "dışarıdan kapalı"
+  sayılması sonda dışı bağımsız kanıt ve owner değerlendirmesi gerektirir; yöntem önerisi ayrıca sunulur (§11 KR-9). Owner'ın
+  2026-10-06 talimatı canlı sonda GO'su değildir.
 
 Diğer sınırlar (minor; koşumu engellemez; kimlikler bu belgede tanımlıdır): dış zincir ön ölçümü yok (D8-E5'in kalanı; D8-E4 ve
 D8-E5'in sınıflama kısmı R05'te ele alındı) · canlı kenar yapılandırmasının şablonla eşitliği ölçülmüyor (D8-E6) · dış ağdan makine
 koşumu yok (D8-E7) · blok kanıtı mühürlemiyor (D8-E8; R05'te blok adsız özetin SHA-256'sını gösterir) · telefon beyanı için dosya
 şablonu yok (D8-E11).
 
-Kanıt kabul kontrol listesi (koşulduğunda; **ad başına**, R05 — kısıtlı kayıtta denetlenir): adsız özette sonda SHA-256'sı = paket
+Kanıt kabul kontrol listesi (koşulduğunda; **ad başına**, R06 — kısıtlı kayıtta denetlenir): adsız özette sonda SHA-256'sı = paket
 pini ve vektör kümesi kimliği = paket değeri (paket belgesi §7) · satır 68 (59 + 9) · kimlik bilgisi başlıklı istek 0 · boş olmayan
 gövde 0 · boş JSON gövde 15, gövdesiz 53 (ham kanıtta) · tekil istek kimliği 68; gönderilen biçim: ret vektörlerinin hepsi kabul
 edilmeyen biçim, API pozitifleri 3 + 3, web pozitifleri 2 + 1 · kalibrasyon VAR (API pozitiflerinde aynen geri yazma 3/3 ve
 değiştirme 3/3, web pozitifleri 3/3 ölçülmüş, başlıksız bölgede başlık 0, yansıma göstergesi 0, yabancı kimlik göstergesi 0) · ret
 vektörlerinde kimlik başlığı 0 · azaltım işareti 0 · sonuç yok 0 · dört değer **ayrı ayrı** yazılır: HTTP / ret sonucu, kenar
-engelleme sonucu, katman doğrulaması (kapsam sayısıyla), pozitif kontrol. Çıkış 0 tek başına kapanış değildir; çıkış 1, 3, 4 ve 7
-kapanış değildir; çıkış 2 bulgu adayıdır. Bulgu ayrıntısı (yol, yöntem, durum), sayılar, nedenler ve özet SHA-256'sı kısıtlı kayıtta
+engelleme sonucu, katman doğrulaması (kapsam sayısıyla), pozitif kontrol. Bu liste kanıtın **kabul edilebilirliğini** denetler; kenar
+engellemesinin kabulünü değil: liste eksiksiz tutsa da kenar engelleme alanı ÖLÇÜLEMEYEN'dir (neden "bağımsız kanıt yok") ve kesin kenar
+kabulü sonda dışı kanıtla ayrıca yapılır. Ölçüm koşumu çıkış 0 üretmez; çıkış 3 sağlıklı koşumun olağan sonucudur ve kapanış ya da
+başarılı kenar engellemesi değildir; çıkış 1, 4 ve 7 kapanış değildir; çıkış 2 ölçüt ihlali / bulgu adayıdır. Bulgu adayının ayrıntısı
+(yol, yöntem, durum), sayılar, nedenler ve özet SHA-256'sı kısıtlı kayıtta
 kalır; public satıra yalnız alan değerleri ve ad kimliği yazılır (paket belgesi §1b). (R02 sondasına ait eski liste — satır 46 · boş
 JSON gövde 14 · gövdesiz 32 · "bulgu listesi boş" — ve R05'in ilk iki turundaki "yankı 6/6" listesi geçersizdir.)
 
@@ -548,7 +595,7 @@ yeterli sayılmaz) · KR-15'in birleştirme kısmı (R03-b: #2904, #2905, #2906 
 | KR-5 | D-6 / D-7 Recover kuralı ve açık paket kararları (D-6 OK-1…OK-5; D-7 K-4…K-7) | ayrı onayın kaydı · ikinci Recover · D-6 kalıntısında sıra · D-6 kalıntı bağlamında ayrı çıkış kodu (OK-5) · D-7 makbuzsuz yarım kurulum · yayın ile D-6/D-7 sırası | D-6/D-7 koşumundan önce |
 | KR-17 | D-6 / D-7: Run kapanışında 401/403'te tek yeniden giriş (D-6 OK-6, D-7 K-8) — kod `main`'de | aynı sentetik personel, veritabanı yazması yok; canlıya ek etkisi giriş hız sınırı sayacı +1 (kaynaktan okundu) — Run'ın kendi kapanış yetkisi içinde sayılır mı | D-6 / D-7 koşumundan önce |
 | KR-18 | Portal formları (#2900, `main`'de) küçük görünür değişiklikler | başarılı girişte düğme yönlendirme bitene dek "Giriş yapılıyor..." kalır — kabul edilmezse küçük takip düzeltmesi · API tarafında giriş / şifremi unuttum gövde doğrulaması ayrı iş olarak açılsın mı | yayından önce (ilki) / herhangi bir zaman (ikincisi) |
-| KR-9 | D-8 — **kararların çoğu verildi (owner, 2026-10-05):** engellenmesi gereken isteğin API'ye ulaştığı kanıtlanırsa bulgu adayıdır, API'nin 403 vermesi bunu kapatmaz · kalibrasyon eksik ya da başarısızsa "kapalı" hükmü verilmez, bağımsız kanıtlanan ihlal korunur · sınama (challenge) yanıtı erişim kuralının uygulandığını kanıtlamaz, kenar engelleme ÖLÇÜLEMEYEN kalır · her ad için HTTP / ret sonucu, kenar engelleme sonucu ve katman doğrulaması ayrı alanlardır, kanıtın desteklediği PASS / FAIL / ÖLÇÜLEMEYEN değeri yazılır · 403 yerine doğrulanmış başka yanıt FAIL, yanıt alınamaması ÖLÇÜLEMEYEN · diğer adın kapsam yetkisi: yetkili sağlayıcı hesabındaki bölge / özel ad kaydı + DNS zinciri (tünel kaydı tek başına yetmez). **AÇIK KALAN:** canlı sonda kapsamı (hangi adlar, hangi pencere, hangi istek profili) ve ad başına GO; R27 sonrası telefon beyanının yenilenmesi ve ad başına alınıp alınmayacağı bu GO ile birlikte netleşir | §5 R05; paket belgesi §3b (kararların açık metni). "Katman `unknown` iken PASS'in kabulü" sorusu kalktı: tek bir PASS yoktur, katman doğrulaması ayrı alandır | D-8 koşumundan önce |
+| KR-9 | D-8 — **kararların çoğu verildi (owner, 2026-10-05):** engellenmesi gereken isteğin API'ye ulaştığı kanıtlanırsa bulgu adayıdır, API'nin 403 vermesi bunu kapatmaz · kalibrasyon eksik ya da başarısızsa "kapalı" hükmü verilmez, bağımsız kanıtlanan ihlal korunur · sınama (challenge) yanıtı erişim kuralının uygulandığını kanıtlamaz, kenar engelleme ÖLÇÜLEMEYEN kalır · her ad için HTTP / ret sonucu, kenar engelleme sonucu ve katman doğrulaması ayrı alanlardır, kanıtın desteklediği PASS / FAIL / ÖLÇÜLEMEYEN değeri yazılır · 403 yerine doğrulanmış başka yanıt FAIL, yanıt alınamaması ÖLÇÜLEMEYEN · diğer adın kapsam yetkisi: yetkili sağlayıcı hesabındaki bölge / özel ad kaydı + DNS zinciri (tünel kaydı tek başına yetmez). **Owner, 2026-10-06 (gerçek API ile izole provanın sonucu üzerine):** başlığı silinen API reddinde kenar engelleme PASS kabul edilmez — kenar engelleme bağımsız yeterli kanıt yoksa ÖLÇÜLEMEYEN'dir, API'ye ulaşma kanıtı FAIL olarak korunur, "API değil" çıkarımı ve çıkış kodu aynı kanıt sınırına uyar (sonda kenar engellemesi için PASS ve çıkış 0 üretmez) · izinli yolda beklenen kod yerine doğrulanmış başka her yanıt, 403 dahil, pozitif kontrolde FAIL'dir (ölçüt ihlali / bulgu adayı; "kusur kesinleşti" değil); yanıt alınamaması ÖLÇÜLEMEYEN · kapsam yetkisi: iki kanıt türü tek birleşik belgede olabilir; iki ayrı kanıt unsuru, içerik incelemesi ve ad bağı zorunlu; dosya bütünlüğü ile içerik incelemesi ayrı kaydedilir; boş / özeti uyuşmayan kanıt reddi kalır. **AÇIK KALAN (iki kalem):** (1) canlı sonda kapsamı (hangi adlar, hangi pencere, hangi istek profili) ve ad başına GO; R27 sonrası telefon beyanının yenilenmesi ve ad başına alınıp alınmayacağı bu GO ile birlikte netleşir · (2) **kesin kenar kabulünün yöntemi**: sonda "ulaşmama"yı kanıtlayamadığından bir adın "dışarıdan kapalı" sayılması sonda dışı bağımsız kanıt ve owner değerlendirmesi gerektirir (yöntem önerisi ayrıca sunulur); karar verilene kadar D-8 sonda koşsa da kapanmaz | §5 R05 / R06; paket belgesi §3b ve §3c (kararların açık metni). "Katman `unknown` iken PASS'in kabulü" sorusu kalktı: tek bir PASS yoktur, katman doğrulaması ayrı alandır | D-8 koşumundan önce (2. kalem: D-8'in kapanışından önce) |
 | KR-10 | D-6: GO · telefon yüklemesi · kalıcı izlerin kabulü · belge onay/ret akışı ayrı paket mi | — | D-6 koşumundan önce |
 | KR-11 | D-7: GO · kalan mesaj/bildirim satırları "saklandı" · SEC-PORTAL-ADMIN-MSG-01 açıkken koşum teyidi · kapsam dışı dosya referansında 400'ün ölçüt sayılması | — | D-7 koşumundan önce |
 | KR-12 | H beyanları: H6 · H8 imzası (yayından önce mi sonra mı); H3 imza + kapsam seçimi (açık bırakıldı) · H1 / H2 / H4 / H5 / H7 hükümleri (§7.2, günlük dille) | taslaklar: `H3-H6-H8-OWNER-BEYAN-TASLAKLARI-R01.md` | herhangi bir zaman |
