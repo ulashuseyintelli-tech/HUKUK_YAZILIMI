@@ -1,6 +1,6 @@
 'use strict';
 /*
- * EXTACC D-8 R07 — PERSONEL YÜZEYİ DIŞARIDAN KAPALI: AD BAŞINA makine ölçümü (owner PC'sinden, gerçek alan adı, gerçek TLS).
+ * EXTACC D-8 R08 — PERSONEL YÜZEYİ DIŞARIDAN KAPALI: AD BAŞINA makine ölçümü (owner PC'sinden, gerçek alan adı, gerçek TLS).
  *
  * BİR SÜREÇ = BİR AD = BİR KANIT. Sonda tek `--origin` ve zorunlu bir ad kimliği (`--alias AD-<n>`; AD-1 = birincil ad) alır; çok adlı
  *            döngü ya da ikinci origin YOKTUR; başka bir adın kanıtını OKUMAZ ve var olan bir kanıt dosyasının ÜZERİNE YAZMAZ. Bir adın
@@ -133,8 +133,18 @@
  *               `--offprobe-evidence KULLANILACAK`   kullanılacak; sonucu koşumdan SONRA oluşur → koşum anında sınıf KESİNLEŞMEZ
  *                                                    (durum `KESINLESMEDI-EK-KANIT-SONUCU-YOK`; satır mevcut kuralla FAIL, çıkış 2);
  *               beyan YOK                            eksik kanıt → istisna YOK (`EK-KANIT-BEYANI-YOK`).
- *             KESİNLEŞTİRME (çevrimdışı ikinci adım; İSTEK ATMAZ): `--finalize <kanit.json> --offprobe-result <SONUÇ> --out <yeni.json>`
- *             — aynı `--alias` / `--vantage` / `--origin` ile. SONUÇ: `GECERLI-ACIKLANAMAYAN-ARTIS-YOK` → koşul (5) sağlandı ·
+ *             KESİNLEŞTİRME (çevrimdışı ikinci adım; İSTEK ATMAZ): `--finalize <kanit.json> --evidence-sha256 <KAYITLI ÖZET>
+ *             --offprobe-result <SONUÇ> --out <yeni.json>` — aynı `--alias` / `--vantage` / `--origin` ile.
+ *             KAYITLI ÖZET KAPISI (R08; owner talimatı 2026-10-06: "Ham kanıt özetini kesinleştirmeden önce kaydet; sonradan
+ *             değişmiş kanıtı reddet." · "… beklenen SHA-256 değerini, kesinleştirme sırasında yeniden hesaplayıp 'beklenen' diye
+ *             kullanma. Koşum sonunda ayrı kayda alınmış değerle karşılaştır."): `--evidence-sha256` ZORUNLUDUR ve koşum SONUNDA
+ *             ayrı kayda alınmış değerdir (64 onaltılık hane). Sonda bu değeri dosyadan TÜRETMEZ: dosyanın gerçek SHA-256'sını
+ *             hesaplar ve VERİLEN değerle karşılaştırır; farklıysa kesinleştirme YAPILMAZ (`KANIT-OZETI-KAYITLA-UYUSMUYOR`; çıkış 4;
+ *             kayıt yazılmaz). Değer yoksa / biçimsizse kapı (çıkış 4). Kesinleştirme kaydına ikisi de yazılır
+ *             (`registeredEvidenceSha256` = verilen · `sourceEvidenceSha256` = hesaplanan). GÜVEN SINIRI: kanıt dosyası ile ayrı
+ *             kayıt BİRLİKTE ve tutarlı biçimde değiştirilirse sonda bunu AYIRT EDEMEZ — korunma, ayrı kaydın kanıt dizininin
+ *             DIŞINDA ve bağımsız bir yerde (koşum çıktısının alındığı kısıtlı kayıt / manifest) tutulmasına dayanır; her ikisine de
+ *             yazma erişimi olan biri için teknik engel DEĞİLDİR. SONUÇ: `GECERLI-ACIKLANAMAYAN-ARTIS-YOK` → koşul (5) sağlandı ·
  *             `GECERSIZ-YA-DA-ACIKLANAMAYAN-ARTIS` → istisna YOK. Adım kanıt dosyasını okur, kalibrasyonu / katman kimliğini / dar
  *             sınıf kararını / dört alanı kanıttaki satırlardan YENİDEN türetir (kanıttaki eski hükme güvenmez) ve AYRI bir
  *             kesinleştirme kaydı yazar (kaynak kanıtın SHA-256'sıyla; kaynak kanıtın üzerine yazmaz). Reddeder (çıkış 4): kanıt bu
@@ -142,9 +152,10 @@
  *             kanıttaki beyan `KULLANILACAK` değilse — ya da kanıt KENDİ İÇİNDE TUTARSIZSA: satırlardan yeniden türetilen dört alan /
  *             çıkış kodu / beş koşul kanıttaki kayıtla aynı değilse, ya da tanımlı satırın türetilmiş "özet eşleşti" alanı ham özetle
  *             çelişiyorsa (yalnız türetilmiş alanı elle çevrilmiş kanıt kabul edilmez). SINIR: ham değerleri de birlikte ve tutarlı
- *             biçimde yeniden yazılmış bir kanıtı adım AYIRT EDEMEZ — dosyanın bütünlüğü, koşum ANINDA kısıtlı kayda yazılan ham
- *             kanıt SHA-256'sının kesinleştirme kaydındaki `sourceEvidenceSha256` ile karşılaştırılmasıyla korunur (sonda bunu
- *             ölçemez); adım beyanın doğruluğunu ÖLÇEMEZ ve aynı kanıt için ikinci bir kesinleştirmeyi engelleyemez.
+ *             biçimde yeniden yazılmış bir kanıtı adım İÇERİĞİNDEN ayırt edemez — dosyanın bütünlüğü yukarıdaki KAYITLI ÖZET
+ *             KAPISI ile korunur (koşum sonunda ayrı kayda alınan değer verilir; dosya sonradan değiştiyse özet tutmaz ve adım
+ *             reddeder); o kapının güven sınırı yukarıda yazılıdır. Adım beyanın doğruluğunu ÖLÇEMEZ ve aynı kanıt için ikinci
+ *             bir kesinleştirmeyi engelleyemez.
  *   SINIRLAR — bu sınıf: 2xx yanıtları KAPSAMAZ · başka vektöre UYGULANMAZ · KENAR ENGELLEME ve KATMAN DOĞRULAMASI alanlarına PASS
  *         ya da lehte neden VERMEZ — o iki alan sınıfı GÖRMEZ: istisna uygulanan koşumda, uygulanmayan aynı girdideki değer ve
  *         nedenlerle BİREBİR aynıdır (o satır 403 almamıştır: kenar engelleme nedeni `DURUM-KODU-OLCUTU-PASS-DEGIL` kalır; burada
@@ -274,15 +285,17 @@
  *            İSTEĞE BAĞLI (dar kabul istisnası; yukarıda): ölçüm çağrısına `--local-edge http://127.0.0.1:<port>` (dış 68 istekten
  *            sonra yerel kenara +1 istek) ve `--offprobe-evidence KULLANILMIYOR | KULLANILACAK` eklenir. Verilmezlerse sonda R06 ile
  *            aynı 68 isteği atar ve istisna uygulanmaz.
- *            node d8-staff-surface-probe.js --alias AD-<n> --vantage <etiket> --origin https://<host> --finalize <kanit.json> --offprobe-result <SONUÇ> --out <kesinlestirme.json>
- *            --finalize AYRI çağrıdır: İSTEK ATMAZ; yalnız `KULLANILACAK` beyanlı kanıtı, verilen sonuçla kesinleştirir.
+ *            node d8-staff-surface-probe.js --alias AD-<n> --vantage <etiket> --origin https://<host> --finalize <kanit.json> --evidence-sha256 <KAYITLI ÖZET> --offprobe-result <SONUÇ> --out <kesinlestirme.json>
+ *            --finalize AYRI çağrıdır: İSTEK ATMAZ; yalnız `KULLANILACAK` beyanlı kanıtı, verilen sonuçla kesinleştirir. Kanıt
+ *            dosyasının SHA-256'sı koşum sonunda ayrı kayda alınmış değerle (`--evidence-sha256`) aynı değilse kesinleştirmez.
  * ÇIKIŞ    : dört alandan türer (TEK YER: `exitCodeOf`) — 2 herhangi bir alan FAIL (pozitif kontrol dahil) · 3 FAIL yok (ÖLÇÜLEMEYEN:
  *            kenar engelleme bu sondayla PASS olamaz — sağlıklı koşum da 3 verir) · 4 kapı — istek atılmaz (kapsam yetkisi
  *            doğrulanmadı · origin https değil ya da içinde kimlik / sorgu / parça var · TLS doğrulaması kapalı · ad kimliği / konum
  *            etiketi yok ya da geçersiz · parametre yinelenmiş · --out yok · --phone-list ile --out birlikte · kanıt ya da özet
  *            dosyası zaten var · konum etiketi ana makine adını ya da bir etiketini içeriyor · D8_HTTP_TIMEOUT_MS geçersiz · istek
  *            kimliği planı tutarsız · --local-edge geri döngü http adresi değil · --offprobe-evidence / --offprobe-result değeri
- *            tanınmıyor · --finalize ile ölçüm / telefon parametresi birlikte · kesinleştirilecek kanıt kabul edilmedi) · 7 kanıt /
+ *            tanınmıyor · --finalize ile ölçüm / telefon parametresi birlikte · --evidence-sha256 yok / 64 onaltılık hane değil / ölçüm
+ *            çağrısında verilmiş · kanıtın özeti kayıtlı değerle aynı değil · kesinleştirilecek kanıt kabul edilmedi) · 7 kanıt /
  *            özet yazılamadı (ölçüm yapıldı; ham kanıtı olmayan özet kanıt sayılmaz) · 1 sonda beklenmeyen biçimde durdu
  *            (ÖLÇÜLEMEYEN sayılır; kapanış değildir). Kesinleştirme adımının çıkışı da aynı eşlemeyle (2 / 3) yeniden türetilen
  *            dört alandan gelir.
@@ -292,7 +305,7 @@
  */
 const https = require('https'); const http = require('http'); const fs = require('fs'); const pathMod = require('path'); const crypto = require('crypto');
 
-const REVISION = 'R07';
+const REVISION = 'R08';
 /** API'nin istek kimliği başlığı (apps/api/src/common/request-id.middleware.ts REQUEST_ID_HEADER). */
 const RID_HEADER = 'x-request-id';
 /** API'nin KABUL ettiği biçim — ürün kaynağındaki SAFE_REQUEST_ID ile AYNI ifade (öz-test kaynak metniyle karşılaştırır). */
@@ -380,16 +393,19 @@ function argCount(name) { return process.argv.filter((a) => a === name).length; 
 function reject(msg) { console.error('REDDEDİLDİ: ' + msg); process.exit(4); }
 const ORIGIN = arg('--origin'); const OUT = arg('--out'); const PHONE = process.argv.includes('--phone-list');
 const ALIAS = arg('--alias'); const VANTAGE = arg('--vantage'); const SCOPE_RECORD = arg('--scope-record');
-const LOCAL_EDGE = arg('--local-edge'); const OFFPROBE = arg('--offprobe-evidence'); const FINALIZE = arg('--finalize'); const OFFPROBE_RESULT = arg('--offprobe-result');
+const LOCAL_EDGE = arg('--local-edge'); const OFFPROBE = arg('--offprobe-evidence'); const FINALIZE = arg('--finalize'); const OFFPROBE_RESULT = arg('--offprobe-result'); const EVIDENCE_SHA = arg('--evidence-sha256');
 if (!ORIGIN || !/^https:\/\/[^/]+$/.test(ORIGIN)) reject('--origin https://<host> (yolsuz) gerekli');
 if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0') reject('TLS doğrulaması kapalı');
-if (['--origin', '--alias', '--out', '--vantage', '--scope-record', '--local-edge', '--offprobe-evidence', '--finalize', '--offprobe-result'].some((n) => argCount(n) > 1)) reject('BİR SÜREÇ = BİR AD = BİR KANIT: --origin / --alias / --out / --vantage / --scope-record / --local-edge / --offprobe-evidence / --finalize / --offprobe-result birer kez verilir (çok adlı koşum yok)');
+if (['--origin', '--alias', '--out', '--vantage', '--scope-record', '--local-edge', '--offprobe-evidence', '--finalize', '--offprobe-result', '--evidence-sha256'].some((n) => argCount(n) > 1)) reject('BİR SÜREÇ = BİR AD = BİR KANIT: --origin / --alias / --out / --vantage / --scope-record / --local-edge / --offprobe-evidence / --finalize / --offprobe-result / --evidence-sha256 birer kez verilir (çok adlı koşum yok)');
 // Dar kabul istisnasının girdileri (isteğe bağlı): değer tanınmıyorsa sonda KOŞMAZ — tanınmayan girdi sessizce "yok" sayılmaz.
 const FINALIZING = argCount('--finalize') > 0;
 if (argCount('--local-edge') > 0 && (!LOCAL_EDGE || !LOCAL_EDGE_RX.test(LOCAL_EDGE) || Number(LOCAL_EDGE_RX.exec(LOCAL_EDGE)[2]) > 65535)) reject('--local-edge yalnız http://127.0.0.1:<port> olabilir (yalnız geri döngü adresi; localhost dahil başka ad / adres, https, yol / sorgu / kimlik yok)');
 if (argCount('--offprobe-evidence') > 0 && !OFFPROBE_DECLARATIONS.includes(OFFPROBE)) reject('--offprobe-evidence yalnız ' + OFFPROBE_DECLARATIONS.join(' | ') + ' olabilir (sonuç koşum anında verilemez; --finalize adımında --offprobe-result ile verilir)');
 if (FINALIZING && (!FINALIZE || PHONE || argCount('--local-edge') > 0 || argCount('--offprobe-evidence') > 0)) reject('--finalize <kanit.json> AYRI çağrıdır (istek atmaz); --phone-list / --local-edge / --offprobe-evidence ile birlikte verilmez');
 if (FINALIZING !== (argCount('--offprobe-result') > 0) || (FINALIZING && !OFFPROBE_RESULTS.includes(OFFPROBE_RESULT))) reject('--finalize ile --offprobe-result birlikte verilir; --offprobe-result yalnız ' + OFFPROBE_RESULTS.join(' | ') + ' olabilir');
+// KAYITLI ÖZET KAPISI (R08): kesinleştirme, koşum SONUNDA ayrı kayda alınmış ham kanıt SHA-256'sı OLMADAN yapılmaz. Sonda bu değeri
+// dosyadan türetip "beklenen" diye KULLANMAZ; yalnız VERİLEN değerle dosyanın gerçek özetini karşılaştırır (aşağıda, kesinleştirme adımı).
+if (FINALIZING !== (argCount('--evidence-sha256') > 0) || (FINALIZING && (typeof EVIDENCE_SHA !== 'string' || !/^[0-9A-Fa-f]{64}$/.test(EVIDENCE_SHA)))) reject('--finalize ile --evidence-sha256 <64 onaltılık hane> birlikte verilir (koşum sonunda ayrı kayda alınmış ham kanıt SHA-256\'sı; ölçüm çağrısında verilmez)');
 if (PHONE && (argCount('--local-edge') > 0 || argCount('--offprobe-evidence') > 0)) reject('--phone-list AYRI çağrıdır; --local-edge / --offprobe-evidence ile birlikte verilmez');
 if (!ALIAS || !ALIAS_RX.test(ALIAS)) reject('--alias AD-<n> gerekli (ad kimliği; ana makine adı DEĞİL)');
 let ORIGIN_URL = null; try { ORIGIN_URL = new URL(ORIGIN); } catch (e) { ORIGIN_URL = null; }
@@ -898,7 +914,13 @@ function printNarrow(n) {
     // yeniden değerlendirilir. Kanıttaki eski hükme güvenilmez: kalibrasyon, katman kimliği, dar sınıf kararı ve dört alan satırlardan
     // yeniden türetilir. Kaynak kanıtın üzerine yazılmaz; ayrı bir kayıt yazılır (ana makine adı İÇERMEZ).
     const refuse = (why) => reject('KESİNLEŞTİRME YAPILMADI — neden=' + why);
-    let srcBuf = null; let ev = null; try { srcBuf = fs.readFileSync(FINALIZE); ev = JSON.parse(srcBuf.toString('utf8')); } catch (e) { refuse('KANIT-OKUNAMADI'); }
+    let srcBuf = null; let ev = null; try { srcBuf = fs.readFileSync(FINALIZE); } catch (e) { refuse('KANIT-OKUNAMADI'); }
+    // KAYITLI ÖZET KAPISI — içerik yorumlanmadan ÖNCE: dosyanın gerçek SHA-256'sı, koşum sonunda ayrı kayda alınmış ve bu çağrıya
+    // VERİLEN değerle karşılaştırılır. "Beklenen" değer dosyadan türetilmez. GÜVEN SINIRI: dosya ile ayrı kayıt birlikte ve tutarlı
+    // değiştirilirse bu karşılaştırma tutar ve sonda bunu ayırt edemez; korunma ayrı kaydın bağımsız bir yerde tutulmasındadır.
+    const registeredSha = EVIDENCE_SHA.toUpperCase(); const computedSha = crypto.createHash('sha256').update(srcBuf).digest('hex').toUpperCase();
+    if (computedSha !== registeredSha) refuse('KANIT-OZETI-KAYITLA-UYUSMUYOR');
+    try { ev = JSON.parse(srcBuf.toString('utf8')); } catch (e) { refuse('KANIT-OKUNAMADI'); }
     const plan = DENY.map((v) => `deny|${v[0]}|${v[1]}|${v[2]}`).concat(ALLOW.map((v) => `allow|${v[0]}|${v[1]}|${v[2]}`));
     if (!ev || typeof ev !== 'object' || Array.isArray(ev) || ev.record !== 'EXTACC-D8-STAFF-SURFACE-PROBE' || !Array.isArray(ev.rows) || !ev.nameVerdict) refuse('KANIT-BICIMI-GECERSIZ');
     if (ev.revision !== REVISION || ev.probeSha256 !== SELF_SHA || ev.vectorSetId !== VECTOR_SET_ID) refuse('KANIT-BU-SONDA-BAYTLARIYLA-YAZILMAMIS'); // geçmiş koşuma geriye dönük uygulanmaz
@@ -914,15 +936,15 @@ function printNarrow(n) {
     if (valuesOf(before.verdict) !== valuesOf(ev.nameVerdict) || before.exitCode !== ev.exitCode || !derivedOk || JSON.stringify(before.narrowClass.conditions) !== JSON.stringify(ev.malformedRejectClass.conditions)) refuse('KANIT-KENDI-ICINDE-TUTARSIZ');
     const F = evaluate(ev.rows, ev.localEdgeComparison, { declared: OFFPROBE_DECLARATIONS[1], result: OFFPROBE_RESULT });
     const rec = { record: FINALIZATION_RECORD_KIND, revision: REVISION, nameAlias: ALIAS, vantage: VANTAGE, probeSha256: SELF_SHA, vectorSetId: VECTOR_SET_ID,
-      sourceEvidenceSha256: crypto.createHash('sha256').update(srcBuf).digest('hex').toUpperCase(), sourceNameVerdictValues: valuesOf(ev.nameVerdict), sourceExitCode: ev.exitCode, requestsSent: 0,
+      registeredEvidenceSha256: registeredSha, sourceEvidenceSha256: computedSha, sourceNameVerdictValues: valuesOf(ev.nameVerdict), sourceExitCode: ev.exitCode, requestsSent: 0,
       malformedRejectClass: F.narrowClass, nameVerdict: stripVerdict(F.verdict), exitCodeMap: EXIT_CODE_MAP, exitCode: F.exitCode, finalizedAt: new Date().toISOString(),
-      note: 'KESİNLEŞTİRME KAYDI (çevrimdışı; istek atılmadı). Sonda dışı ek kanıtın sonucu owner BEYANIDIR — sonda onu ölçmez. Dört alan kaynak kanıttaki satırlardan yeniden türetildi; dar sınıf yalnız beş koşulun hepsi tutuyorsa UYGULANDI; uygulandıysa nameVerdict.httpReject.value PASS DEĞİL ' + HTTP_OWNER_EXCEPTION + ' değerini alır (' + HTTP_OWNER_EXCEPTION_TEXT + '). ' + NARROW.notice + ' Sınıf: ' + NARROW.limits + '. Kenar engelleme ve katman doğrulaması alanları bu adımla değişmez; hiçbir çıkış kodu kapanış değildir. Bu kayıt kaynak kanıtın yerine geçmez (kaynak: sourceEvidenceSha256); KISITLIDIR.' };
+      note: 'KESİNLEŞTİRME KAYDI (çevrimdışı; istek atılmadı). Sonda dışı ek kanıtın sonucu owner BEYANIDIR — sonda onu ölçmez. Dört alan kaynak kanıttaki satırlardan yeniden türetildi; dar sınıf yalnız beş koşulun hepsi tutuyorsa UYGULANDI; uygulandıysa nameVerdict.httpReject.value PASS DEĞİL ' + HTTP_OWNER_EXCEPTION + ' değerini alır (' + HTTP_OWNER_EXCEPTION_TEXT + '). ' + NARROW.notice + ' Sınıf: ' + NARROW.limits + '. Kenar engelleme ve katman doğrulaması alanları bu adımla değişmez; hiçbir çıkış kodu kapanış değildir. Bu kayıt kaynak kanıtın yerine geçmez; KISITLIDIR. KAYITLI ÖZET KAPISI: registeredEvidenceSha256 koşum sonunda ayrı kayda alınmış ve bu adıma VERİLEN değerdir; sourceEvidenceSha256 sondanın kanıt dosyasından hesapladığı değerdir; ikisi eşit olduğu için adım yürüdü (eşit değilse kesinleştirme yapılmaz). Güven sınırı: kanıt dosyası ile ayrı kayıt birlikte ve tutarlı değiştirilirse sonda bunu ayırt edemez; korunma ayrı kaydın kanıt dizininin dışında, bağımsız bir yerde tutulmasına dayanır.' };
     const text = JSON.stringify(rec, null, 1);
     if (containsName(text)) { console.error('KESİNLEŞTİRME KAYDI YAZILMADI: kayıt içinde ana makine adı geçiyor'); process.exit(7); }
     try { fs.writeFileSync(OUT, text, { flag: 'wx' }); } catch (e) { console.error('KESİNLEŞTİRME KAYDI YAZILAMADI'); process.exit(7); }
     console.log(`D-8 KESİNLEŞTİRME ${REVISION} · ${ALIAS} · istek ATILMADI · kaynak kanıtın alanları ${rec.sourceNameVerdictValues} (çıkış ${ev.exitCode})`);
     printNarrow(F.narrowClass);
-    console.log(`D8-AD=${ALIAS}\nD8-KESINLESTIRME=YAPILDI\nD8-DAR-SINIF=${F.narrowClass.state}\nD8-HTTP-RET=${F.verdict.httpReject.value}\nD8-KENAR-ENGELLEME=${F.verdict.edgeBlocking.value}\nD8-KATMAN-DOGRULAMA=${F.verdict.layerVerification.value}\nD8-POZITIF-KONTROL=${F.verdict.positiveControl.value}\nD8-CIKIS=${F.exitCode}`);
+    console.log(`D8-AD=${ALIAS}\nD8-KESINLESTIRME=YAPILDI\nD8-KANIT-OZETI=KAYITLI-DEGERLE-AYNI\nD8-DAR-SINIF=${F.narrowClass.state}\nD8-HTTP-RET=${F.verdict.httpReject.value}\nD8-KENAR-ENGELLEME=${F.verdict.edgeBlocking.value}\nD8-KATMAN-DOGRULAMA=${F.verdict.layerVerification.value}\nD8-POZITIF-KONTROL=${F.verdict.positiveControl.value}\nD8-CIKIS=${F.exitCode}`);
     process.exitCode = F.exitCode;
     return;
   }
