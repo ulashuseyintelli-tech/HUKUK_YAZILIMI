@@ -2,7 +2,12 @@
 
 > **DURUM: HAZIRLIK R06 — owner'ın 2026-10-06 kararları işlendi (§3c): kenar engelleme bu sondayla PASS üretmez (kanıt sınırı) ·
 > pozitif kontrolde 403 istisnası yok · kapsam yetkisi kapısında birleşik belge kabul edilir, içerik incelemesi dosya bütünlüğünden ayrı
-> kaydedilir. CANLIDA KOŞULMADI; canlı sonda GO'su YOK.** D-8 kısmi kaydı
+> kaydedilir. AD-1 İÇİN CANLI SONDA 2026-10-06'DA BİR KEZ KOŞULDU (aşağıdaki koşum kaydı; §1b); başka ad ve ikinci koşum için GO YOK.**
+> **KOŞUM KAYDI (2026-10-06; owner onayıyla, tek koşum; sonda pini ve vektör kümesi §7 ile aynı):** AD-1 satırının sonucu —
+> HTTP / ret sonucu `FAIL` · kenar engelleme sonucu `FAIL` · katman doğrulaması `OLCULEMEYEN` · pozitif kontrol `PASS`. Bu bir **ölçüt
+> ihlali / bulgu adayıdır**; nedeni ayrı değerlendirilir ve ayrıntısı kısıtlı kayıttadır ("ürün güvenlik kusuru kesinleşti" demek
+> değildir; "dışarıdan kapalı" hükmü de değildir). **D-8 kapanmadı.** Diğer yayın adları koşulmadı. Bu belgedeki "canlıda koşulmadı /
+> çalıştırılmadı" ifadeleri bu koşumdan önceki revizyon notlarıdır. D-8 kısmi kaydı
 > (owner telefonu, 5 GET → 403, 2026-09-27 21:14–21:15) **tamamlanmış sayılmaz**: katman ölçülmedi; diğer yöntem/yollar açık. Bu paket
 > makine ölçümünü ve telefon beyanını ayırır.
 >
@@ -527,7 +532,7 @@ public belgeye yazılmaz (yalnız ad kimliği); ad ↔ ad kimliği eşlemesi, ad
 
 | Ad kimliği | Kapsam yetkisi | HTTP / ret sonucu | Kenar engelleme sonucu | Katman doğrulaması | Pozitif kontrol | Koşum (tarih · konum · sonda pini · vektör kümesi) | Dış ağ beyanı |
 |---|---|---|---|---|---|---|---|
-| **AD-1** (birincil ad) | birincil ad — kapı yok (ad canlı yapılandırmadan okunur) | KOŞULMADI — canlı sonda GO'su yok | KOŞULMADI — canlı sonda GO'su yok | KOŞULMADI — canlı sonda GO'su yok | KOŞULMADI — canlı sonda GO'su yok | — | bu revizyon için YOK (eski beyan R27 öncesidir; ada bağlanmadı) |
+| **AD-1** (birincil ad) | birincil ad — kapı yok (ad canlı yapılandırmadan okunur) | FAIL | FAIL | OLCULEMEYEN | PASS | 2026-10-06 · canli-ana-makine-cikisi · 4A517621…8B71 · 83AD1AB6…F0F2 | bu revizyon için YOK (eski beyan R27 öncesidir; ada bağlanmadı) |
 | diğer yayın adları | KOŞULMADI — kapsam yetkisi doğrulanmadı | KOŞULMADI — kapsam yetkisi doğrulanmadı | KOŞULMADI — kapsam yetkisi doğrulanmadı | KOŞULMADI — kapsam yetkisi doğrulanmadı | KOŞULMADI — kapsam yetkisi doğrulanmadı | — | — |
 
 Doldurma kuralları:
@@ -707,9 +712,10 @@ Günlükler depo dışındadır (R06: `HY_R27_AGENT_EVIDENCE\r04\d8-hazirlik\r06
 önceki turlar `…\r05\tur3\`, `…\r05\` ve `…\r05\duzeltme\`). Önceki
 revizyonların kanıtları (R04 `r04\d8-probe-r02\`; R03 `extacc-d8-r01-is3-fix\`, `extacc-d8-r01-is3\`) korunur.
 
-### 1d. Owner blokları — yalnız AD-1 (canlıda ÇALIŞTIRILMADI)
+### 1d. Owner blokları — yalnız AD-1 (ölçüm bloğu 2026-10-06'da bir kez çalıştırıldı; telefon listesi bloğu çalıştırılmadı)
 
-**Bu paket revizyonunda canlı sonda çalıştırılmadı.** Koşum, owner'ın canlı sonda kapsamı kararı ve **ad başına GO**'sundan sonra, kayıt
+**Ölçüm bloğu 2026-10-06'da, owner onayıyla, AD-1 için bir kez çalıştırıldı (sonuç §1b ad satırında); ikinci koşum yeni onay ister.**
+Aşağıdaki paragraf koşumdan önceki kuralı anlatır ve sonraki koşumlar için geçerlidir. Koşum, owner'ın canlı sonda kapsamı kararı ve **ad başına GO**'sundan sonra, kayıt
 sahibinin penceresinde yapılır (§3c, açık kalan kararlar); owner'ın 2026-10-06 talimatı canlı sonda GO'su **değildir** (§3c-T0). Blok
 **yalnız AD-1 (birincil ad)** içindir; başka ad için blok
 **yazılmamıştır** (kapsam ve ad başına GO ayrıca; başka bir ad ayrıca kapsam yetkisi kaydı ister — §1). Dış origin yer tutucu
