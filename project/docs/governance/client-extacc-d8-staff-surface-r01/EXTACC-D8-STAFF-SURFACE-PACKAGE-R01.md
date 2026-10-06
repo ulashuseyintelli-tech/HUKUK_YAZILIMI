@@ -3,13 +3,34 @@
 > **DURUM: HAZIRLIK R06 — owner'ın 2026-10-06 kararları işlendi (§3c): kenar engelleme bu sondayla PASS üretmez (kanıt sınırı) ·
 > pozitif kontrolde 403 istisnası yok · kapsam yetkisi kapısında birleşik belge kabul edilir, içerik incelemesi dosya bütünlüğünden ayrı
 > kaydedilir. AD-1 İÇİN CANLI SONDA 2026-10-06'DA BİR KEZ KOŞULDU (aşağıdaki koşum kaydı; §1b); başka ad ve ikinci koşum için GO YOK.**
-> **KOŞUM KAYDI (2026-10-06; owner onayıyla, tek koşum; sonda pini ve vektör kümesi §7 ile aynı):** AD-1 satırının sonucu —
+> **KOŞUM KAYDI (2026-10-06; owner onayıyla, tek koşum; R06 sonda baytlarıyla — pini §7 "önceki pinler" listesindedir; vektör kümesi §7 ile aynı):** AD-1 satırının sonucu —
 > HTTP / ret sonucu `FAIL` · kenar engelleme sonucu `FAIL` · katman doğrulaması `OLCULEMEYEN` · pozitif kontrol `PASS`. Bu bir **ölçüt
 > ihlali / bulgu adayıdır**; nedeni ayrı değerlendirilir ve ayrıntısı kısıtlı kayıttadır ("ürün güvenlik kusuru kesinleşti" demek
 > değildir; "dışarıdan kapalı" hükmü de değildir). **D-8 kapanmadı.** Diğer yayın adları koşulmadı. Bu belgedeki "canlıda koşulmadı /
 > çalıştırılmadı" ifadeleri bu koşumdan önceki revizyon notlarıdır. D-8 kısmi kaydı
 > (owner telefonu, 5 GET → 403, 2026-09-27 21:14–21:15) **tamamlanmış sayılmaz**: katman ölçülmedi; diğer yöntem/yollar açık. Bu paket
 > makine ölçümünü ve telefon beyanını ayırır.
+>
+> **R07 (kural sürümü; owner kararı 2026-10-06 — §3d) — dar kabul istisnası; canlıya uygulanmadı, canlı sonda GO'su değildir.**
+> R06 kuralıyla bir ret vektörüne gelen 403 dışı her doğrulanmış yanıt durum kodu ölçütünü FAIL yapar. Owner, **yalnız mevcut kodlanmış
+> boş baytlı GET vektörü** ("varyant boş bayt kodlu"; ham istek hedefi `/api/portal/cases%00/admin`) için HTTP 400 yanıtına dar bir kabul
+> sınıfı tanımladı; sınıfın adı tam olarak **"İzin verilen bozuk istek reddi — katman doğrulanmadı"**dır. **Bu bir owner kabul
+> kuralıdır; uygulamaya hiç ulaşılmadığının teknik kanıtı değildir.** Sınıf yalnız beş koşulun **hepsi** tutuyorsa uygulanır (tanımlı
+> vektör ve HTTP 400 · incelenmiş hata yanıtının özellikleri · uygulamaya ulaşma kanıtı yok · aynı ham yol ve Host ile yerel kenarda 403 ·
+> sonda dışı ek kanıt kullanılıyorsa geçerli ve açıklanamayan artış yok); biri eksik ya da çelişkiliyse istisna yoktur ve R06'nın FAIL /
+> ÖLÇÜLEMEYEN kuralları aynen uygulanır (§1.1 "Dar kabul istisnası"). Sınıf: 2xx yanıtları kapsamaz · başka vektöre uygulanmaz · kenar
+> engelleme ve katman doğrulamasına PASS vermez · başka bir bulguyu kapatmaz · genel D-8 kabulü üretmez.
+> **İstisna uygulanan koşum "HTTP / ret PASS" diye sunulmaz (owner şartı 2026-10-06, §3d-D8):** o koşumda HTTP / ret alanı `PASS`
+> değil, ayrı değer **`OWNER-ISTISNASIYLA-UYGUN`** alır; satırın gerçek HTTP kodu **400** olarak kalır ve sınıfın adı ayrı görünür. Bu
+> değer 403 başarısı değildir; owner kabul kuralına dayandığını açıkça söyler.
+> **Geçmiş koşuma geriye dönük uygulanmaz:** yukarıdaki 2026-10-06 koşum kaydı ve §1b AD-1 satırı (FAIL · FAIL · OLCULEMEYEN · PASS)
+> **aynen kalır**; o koşumun kanıtı R06 sonda baytlarıyla yazılmıştır ve R07 sondası onu kesinleştirmeyi reddeder (öz-test MR-9).
+> Sondaya iki **isteğe bağlı** girdi ve istek atmayan bir ikinci adım eklendi (§1); verilmezlerse sonda R06 ile **aynı 68 isteği**
+> atar ve istisna uygulanmaz. Yerel kenar karşılaştırması verilirse toplam istek **dış 68 + yerel 1 = 69** olur; yerel istek sonraki
+> koşum paketinde **ayrı izin kalemidir** (§1a, §3d). **Bu revizyondaki owner bloğu yerel karşılaştırmayı içermez** — o blokla yapılan
+> koşumda yerel gözlem yoktur ve istisna **uygulanmaz** (§1d). DEĞİŞMEYENLER: vektör listesi (59 ret + 9 pozitif) ve vektör kümesi
+> kimliği, dış istek profili, kenar engelleme / katman doğrulaması / pozitif kontrol kuralları, kanıt sınırı, çıkış kodu eşlemesi (FAIL →
+> 2 · FAIL yok → 3; ölçüm koşumu 0 üretmez). Pinler değişti (§7). Öz-test 125 kalem (§1c).
 >
 > **R06 (2026-10-06) — owner kararlarıyla en küçük düzeltme (takip PR'ı; R05 `main`'dedir: #2942 → `c9f51af1`).** Gerçek API ile
 > izole prova (§1.1) şunu ölçmüştü: kenar **yalnız** API'nin 403 yanıtından kimlik başlığını silerse R05 sondası "durum kodu PASS · kenar
@@ -101,8 +122,10 @@ Owner PC'sinden, gerçek alan adı ve gerçek TLS ile (TLS doğrulaması kapalı
 uymuyorsa, ya da bir parametre yinelenmişse sonda koşmaz (kapı, çıkış 4). Çok adlı döngü ya da ikinci origin parametresi **yoktur**.
 Sonda başka bir adın kanıtını okumaz ve var olan bir kanıt ya da özet dosyasının üzerine yazmaz (kapı, çıkış 4). Okuduğu dosyalar:
 kendi kaynağı (SHA-256 için) ve — yalnız AD-1 dışındaki adlarda — kapsam yetkisi kaydı ile o kaydın gösterdiği kanıt dosyaları
-(yalnız SHA-256 için; içerik yorumlanmaz, hiçbir yere yazılmaz). `--vantage <etiket>` owner'ın **beyan ettiği** koşum konumudur
-(ölçüm değildir).
+(yalnız SHA-256 için; içerik yorumlanmaz, hiçbir yere yazılmaz). **R07:** yalnız istek atmayan kesinleştirme adımında (`--finalize`;
+aşağıda) sonda, **aynı adın** ve **aynı sonda baytlarının** yazdığı tek ham kanıt dosyasını da okur; ad kimliği / ana makine / konum
+etiketi / sonda pini / vektör kümesi tutmayan kanıt reddedilir (ölçüm çağrısında hiçbir kanıt dosyası okunmaz). `--vantage <etiket>`
+owner'ın **beyan ettiği** koşum konumudur (ölçüm değildir).
 
 **Kapsam yetkisi kapısı (owner kararları, §3b-K6 ve §3c-T4).** Birincil ad (AD-1) dışındaki her ad kimliği için sonda, kısıtlı bir
 **kapsam yetkisi kaydı** (`--scope-record <dosya>`) olmadan **koşmaz**: istek atılmaz, çıkış 4, ileti tam olarak
@@ -201,12 +224,29 @@ kapsam kalemidir (§3c, açık kalan kararlar); GO verilmemiştir.
 dizedir (`/api/portal/./admin/...`, `%2F`, `?x=1` normalize edilmez). Öz-test S1-p bunu kenarın gördüğü `req.url` ile birebir
 doğrular; URL-string ile istek atan kopya bu testte düşer.
 
+**R07 — isteğe bağlı iki girdi ve istek atmayan ikinci adım (yalnız dar kabul istisnası için; kural §1.1'de, owner kararı §3d'de).**
+Verilmezlerse sonda R06 ile **aynı 68 isteği** atar; istisna uygulanmaz.
+
+| Girdi | Ne yapar | Tanınmayan değer |
+|---|---|---|
+| `--local-edge http://127.0.0.1:<port>` (yalnız bu biçim) | **yerel kenar karşılaştırması:** dış 68 isteğin **hepsinden sonra**, yalnız tanımlı tek vektörü (GET, aynı ham istek hedefi), **dış adın Host başlığıyla**, geri döngüdeki yerel kenara düz http ile **bir kez** gönderir. Yeniden deneme ve yönlendirme takibi yoktur; kimlik bilgisi ve gövde yoktur; istek kimliği başlığı ret vektörlerindeki gibi kabul edilmeyen biçimdedir. İstek kanıta **ayrı kayıt** olarak yazılır (`localEdgeComparison`; satır listesinde değildir) ve toplam istek sayısına **dahildir** (`measured.requestCount` = dış 68 + yerel 1; `externalRequests` / `localEdgeRequests` ayrı). Yalnız geri döngü **adresi** `127.0.0.1` kabul edilir — ad çözümlemesine bağlı olmamak için `localhost` adı da **kabul edilmez**: başka ad / adres, https, yol / sorgu / kimlik, portsuz değer kapıdır | kapı, çıkış 4, istek atılmaz |
+| `--offprobe-evidence KULLANILMIYOR` \| `KULLANILACAK` | **sonda dışı ek kanıt beyanı** (owner beyanıdır; ölçüm değildir). Sonda o kanıtı ölçmez, nasıl elde edildiğini bilmez ve hiçbir çıktısında anlatmaz (yöntem kısıtlı kayıttadır). `KULLANILMIYOR`: bu satırın değerlendirmesinde ek kanıt kullanılmıyor. `KULLANILACAK`: kullanılacak, sonucu koşumdan **sonra** oluşur → sınıf koşum anında **kesinleşmez**. Beyan verilmezse eksik kanıt sayılır | kapı, çıkış 4, istek atılmaz (sonuç değerleri koşum anında verilemez) |
+| `--finalize <kanıt.json> --offprobe-result GECERLI-ACIKLANAMAYAN-ARTIS-YOK` \| `GECERSIZ-YA-DA-ACIKLANAMAYAN-ARTIS` `--out <kesinleştirme.json>` (aynı `--alias` / `--vantage` / `--origin` ile) | **kesinleştirme adımı — istek atmaz.** Yalnız `KULLANILACAK` beyanlı kanıtı, owner'ın verdiği sonuçla yeniden değerlendirir: kalibrasyon, katman kimliği, dar sınıf kararı ve dört alan kanıttaki **satırlardan yeniden türetilir** (kanıttaki eski hükme güvenilmez). İncelenmiş yanıt özeti kararda kanıttaki **ham değerle** karşılaştırılır; türetilmiş "eşleşti" alanı karara girmez. Kanıt **kendi içinde tutarsızsa** reddedilir: yeniden türetilen dört alan, çıkış kodu ya da **beş koşul** kanıttaki kayıtla aynı değilse; ya da tanımlı satırın türetilmiş "özet eşleşti" alanı ham özetle çelişiyorsa — yalnız türetilmiş alanı elle çevrilmiş kanıt kabul edilmez (öz-test MR-9). Kaynak kanıtın üzerine yazmaz; ana makine adı içermeyen **ayrı bir kesinleştirme kaydı** yazar (kaynak kanıtın SHA-256'sı, kaynak koşumun alan değerleri, yeni dar sınıf kaydı, yeni dört alan, çıkış kodu). Çıkış kodu aynı eşlemeyle türer (2 / 3) | kapı, çıkış 4: kanıt okunamadı / biçimi geçersiz / **bu sonda baytlarıyla, bu revizyonla, bu vektör kümesiyle yazılmamış** (geçmiş koşuma geriye dönük uygulanmaz) / bu ad için değil / satırları vektör listesiyle aynı değil / kanıtta kesinleştirilecek beyan yok / kendi içinde tutarsız; ölçüm ya da telefon parametresiyle birlikte verilmiş; kayıt dosyası zaten var |
+
+Kesinleştirme adımının **sınırları (ölçülemez):** ham değerleri, türetilmiş alanları ve koşul kaydı **birlikte ve
+tutarlı biçimde** yeniden yazılmış bir kanıt dosyasını adım **ayırt edemez** (öz-test MR-9 bunu sınır kaydı olarak ölçer: böyle bir kanıtta
+sınıf uygulanır). Bu yüzden **yerel karşılaştırmalı koşum bloğu ayrıca yazıldığında ham kanıtın SHA-256'sının koşum ANINDA kısıtlı
+kayda yazılması şarttır**; kesinleştirme kaydındaki `sourceEvidenceSha256` bu değerle karşılaştırılır ve eşit değilse kesinleştirme
+kabul edilmez (karşılaştırmayı kayıt sahibi yapar; sonda yapamaz). Adım ayrıca sonucun (beyanın) doğruluğunu ölçemez; aynı kanıt için ikinci bir kesinleştirmeyi engelleyemez (iki
+farklı sonuçla iki kayıt varsa bu **çelişkili kanıttır** ve istisna kabul edilmez — kayıt sahibinin kuralıdır, sonda ölçmez).
+
 ### 1.1 Üç ayrı alan + pozitif kontrol; API'ye özgü kanıt; kanıt sınırı
 
 Aynı durum kodunu birden çok katman üretebilir (403: kenar varsayılan reddi · sağlayıcı kuralı · sınama sayfası · uygulama; 404: tünel
 varsayılanı · web · API; 5xx: zincir hatası · uygulama). Bu yüzden sonda, owner'ın 2026-10-05 ve 2026-10-06 kararlarıyla (§3b, §3c),
 ad düzeyinde **üç ayrı alan** ve ayrı bir **pozitif kontrol** kaydı üretir (kanıtta `nameVerdict { httpReject, edgeBlocking,
-layerVerification, positiveControl }`). Her biri yalnız `PASS` / `FAIL` / `OLCULEMEYEN` değerini alır; hiçbiri diğerinin yerine geçmez;
+layerVerification, positiveControl }`). Her biri yalnız `PASS` / `FAIL` / `OLCULEMEYEN` değerini alır (tek ek değer — R07: yalnız HTTP /
+ret alanında ve yalnız dar kabul istisnası uygulanan koşumda `OWNER-ISTISNASIYLA-UYGUN`; `PASS` değildir — aşağıda); hiçbiri diğerinin yerine geçmez;
 ikisini birleştiren tek bir "PASS" ya da "D-8 PASS" **üretilmez**. Her alanın nedenleri (`reasons`) ayrı ayrı yazılır. Hiçbir belirsiz
 durum PASS'a düşmez.
 
@@ -227,9 +267,47 @@ alana girmez. Bu alan `PASS` üretebilir; PASS yalnız "bütün ret vektörleri 
 
 | Değer | Koşul |
 |---|---|
-| `PASS` | bütün ret vektörleri 403 (sınama işaretli 403 de durum kodu olarak 403'tür; kenar hükmü (b)'dedir — §3b-K3) |
-| `FAIL` | en az bir ret vektörüne **doğrulanmış** başka bir HTTP yanıtı geldi — hangi kod olursa olsun: 2xx · 3xx · 403 dışı 4xx · 429 · 5xx · sınıflanamayan kod (§3b-K5) |
+| `PASS` | bütün ret vektörleri 403 (sınama işaretli 403 de durum kodu olarak 403'tür; kenar hükmü (b)'dedir — §3b-K3). **R07:** dar kabul istisnası uygulanan koşum `PASS` **almaz** (aşağıdaki son satır) |
+| `FAIL` | en az bir ret vektörüne **doğrulanmış** başka bir HTTP yanıtı geldi — hangi kod olursa olsun: 2xx · 3xx · 403 dışı 4xx · 429 · 5xx · sınıflanamayan kod (§3b-K5). **R07:** dar sınıfın **uygulandığı** tek satır bu kuralın dışındadır; sınıfın uygulanmadığı ya da kesinleşmediği satır bu kuralla `FAIL`'dir |
 | `OLCULEMEYEN` | FAIL yok ama **yanıt alınamayan** ret vektörü var (taşıma hatası). FAIL ile tek etikette birleşmez |
+| `OWNER-ISTISNASIYLA-UYGUN` (R07; **yalnız bu alanda**; owner şartı §3d-D8) | FAIL nedeni yok, ölçülemeyen nedeni yok ve **tam bir** satır aşağıdaki dar kabul sınıfında: istisna dışındaki bütün ret vektörleri 403 aldı; o tek satırın **gerçek HTTP kodu 400'dür** ve öyle kaydedilir (`status` 400 · `outcome` `DORTYUZ-403-DISI` · `acceptedClass` = sınıfın adı). Bu değer `PASS` **değildir** ve **403 başarısı değildir**: toplu uygunluğun **owner istisnasına dayandığını** açıkça söyler; kenar engelleme ya da katman doğrulaması için `PASS` üretmez (o iki alan ve pozitif kontrol bu değeri hiç almaz ve görmez). O satır "403" **sayılmaz**; sayılar kanıtta `httpReject.counts` alanında ayrı tutulur. Çıkış kodu eşlemesinde FAIL değildir (FAIL yok → 3). Çıktıda `D8-HTTP-RET=OWNER-ISTISNASIYLA-UYGUN` ve `HTTP / RET SONUCU` satırında açık cümle (öz-test MR-10) |
+
+**Dar kabul istisnası — "İzin verilen bozuk istek reddi — katman doğrulanmadı" (owner kararı 2026-10-06; kural sürümü R07 — §3d).**
+**Bu bir owner kabul kuralıdır; uygulamaya hiç ulaşılmadığının teknik kanıtı değildir.** Yanıtı hangi katmanın ürettiği bu sondayla
+ölçülemez (kanıt sınırı aynen geçerlidir); sınıf yalnız (a) alanında **tek bir satırın** durum kodu ölçütünü tek başına `FAIL`
+yapmamasıdır. O koşumda (a) alanı `PASS` değil `OWNER-ISTISNASIYLA-UYGUN` değerini alır; satırın gerçek HTTP kodu (400) ve sınıfın adı ayrı
+görünür. "Sağlayıcıda erken ret kanıtlandı" **denmez**.
+
+*Kapsam — satır numarasıyla değil, değişmez tanımla sabittir* (liste sırası değişse de başka isteğe taşınmaz; öz-test MR-2, MR-7):
+vektör kimliği `D8E2-BOS-BAYT-KODLU` = ret listesindeki "varyant boş bayt kodlu" vektörü **+** yöntem `GET` **+** ham istek hedefi
+`/api/portal/cases%00/admin`. Üçü de birebir tutmalı ve ret listesinde **tam bir** vektör bu tanımla eşleşmelidir.
+
+*Koşullar — hepsi* (kanıtta `malformedRejectClass.conditions`; her koşul ayrı kaydedilir):
+
+| # | Koşul | Sondanın ölçtüğü / kaydettiği | Tutmazsa neden sınıfı |
+|---|---|---|---|
+| 1 | tam olarak tanımlı vektör ve HTTP 400 | tanımlı satırın durum kodu 400 (2xx dahil başka her kod istisna dışıdır) | `TANIMLI-VEKTOR-HTTP-400-DEGIL` (tanım tam bir vektörle eşleşmiyorsa ayrıca `TANIM-TEK-VEKTORLE-ESLESMIYOR`) |
+| 2 | incelenmiş hata yanıtı özellikleriyle uyum — yalnız genel bir sağlayıcı başlığı **yeterli değildir** | içerik türü tam `text/html` · gövde tam **155 bayt** · gövdenin SHA-256'sı `EFCA0895B4D88B27A94249F8E7AC0083EFF0A4FF3AC37C2841B3F6D7E11C1905` — üçü birlikte; özet kanıttaki **ham değerle** karşılaştırılır (türetilmiş "eşleşti" alanıyla değil). Bu üç **değer** owner metninde yoktur (owner "incelenmiş hata yanıtı özellikleriyle uyum" dedi): 2026-10-06 teşhis ölçümünde incelenen yanıttan uygulayıcı tarafından sabitlenmiştir (ölçüm kısıtlı kayıttadır). `Server` başlığı ve gövde imzası ipucudur; bu karara **girmez** | `INCELENMIS-YANIT-OZELLIKLERI-UYUSMUYOR` |
+| 3 | uygulama kimliği ya da başka olumlu uygulamaya ulaşma kanıtı yok | o yanıtta kimlik başlığı **hiç** yok (yeni kimlik, yansıma ve yabancı kimlik dahil her kimlik başlığı istisnayı geçersiz kılar) ve satır API kanıtlı değil | `UYGULAMAYA-ULASMA-KANITI-VAR-YA-DA-CELISKILI` |
+| 4 | aynı ham yol ve ad bağlamıyla (Host) yerel kenarda 403 gözlemi | `--local-edge` ile atılan tek isteğin yanıtı 403 ve kimlik başlıksız. Parametre verilmediyse, yanıt 403 değilse ya da alınamadıysa koşul tutmaz | `YEREL-KENAR-403-GOZLEMI-YOK` |
+| 5 | bu değerlendirmede sonda dışı ek kanıt (sayaç kanıtı) kullanılıyorsa geçerlilik koşulları sağlanmış ve açıklanamayan artış yok | sonda bu kanıtı **ölçmez**; owner beyanını kaydeder: `KULLANILMIYOR` → koşul uygulanmaz · `KULLANILACAK` + kesinleştirme sonucu `GECERLI-ACIKLANAMAYAN-ARTIS-YOK` → sağlandı | beyan yok → `EK-KANIT-BEYANI-YOK` · beyan `KULLANILACAK`, sonuç verilmedi → `EK-KANIT-SONUCU-YOK` · sonuç `GECERSIZ-YA-DA-ACIKLANAMAYAN-ARTIS` → `EK-KANIT-GECERSIZ-YA-DA-ACIKLANAMAYAN-ARTIS` |
+
+*Durum* (kanıtta ve adsız özette `malformedRejectClass.state`; çıktıda `D8-DAR-SINIF=` satırı): `UYGULANDI` — beş koşulun hepsi tutuyor ·
+`KESINLESMEDI-EK-KANIT-SONUCU-YOK` — eksik olan **yalnız** ek kanıtın sonucudur (beyan `KULLANILACAK`); sınıf **uygulanmaz**, satır
+`FAIL`'dir, çıkış 2; sonuç kesinleştirme adımıyla verilir (§1) · `UYGULANMADI` — diğer her durum. **Olumlu uygulamaya ulaşma kanıtı
+istisnayı geçersiz kılar. Eksik veya çelişkili kanıt istisnaya kabul edilmez; mevcut FAIL / ÖLÇÜLEMEYEN kuralları uygulanır.**
+
+*Sınıfın yapmadıkları:* 2xx yanıtları kapsamaz · başka vektörlere uygulanmaz · **kenar engelleme veya katman doğrulamasına PASS
+vermez** — o iki alan sınıfı **görmez**: istisna uygulanan koşumda, uygulanmayan aynı girdideki değer ve nedenlerle **birebir aynıdır**
+(o satır 403 almamıştır; kenar engelleme nedeni `DURUM-KODU-OLCUTU-PASS-DEGIL` olarak kalır — burada "durum kodu ölçütü" istisnasız
+ölçüttür, yani "bütün ret vektörleri 403"; sınıf koşumu "temiz gözlem" sınıfına da taşımaz; öz-test MR-8) · başka bir bulguyu
+kapatmaz · genel D-8 kabulü üretmez · çıkış kodu eşlemesini değiştirmez (istisna uygulanan ve başka FAIL olmayan koşum **3** verir) · HTTP / ret alanında
+`PASS` üretmez (değer `OWNER-ISTISNASIYLA-UYGUN`'dur; "403 başarısı" diye sunulmaz).
+
+*Kayıt:* uygulandığında o satır `acceptedClass` alanında sınıfın **tam adını** taşır (durum kodu sınıfı `DORTYUZ-403-DISI` olarak
+kalır); sınıfın adı ve "owner kabul kuralı; teknik kanıt değildir" cümlesi çıktıda, ham kanıtta ve adsız özette yer alır. Adsız özete
+ham yol, yöntem ve yerel adres yazılmaz (yalnız vektör kimliği, durum, koşullar, nedenler, beyan / sonuç, yerel yanıtın durum kodu).
+Karar tarihi kanıta, özete ve çıktıya yazılmaz (orada yalnız kural sürümü `R07` bulunur); tarih bu belgede ayrı kayıtlıdır (§3d).
 
 **(b) Kenar engelleme sonucu** (`edgeBlocking`) — **`PASS` üretilmez**:
 
@@ -290,7 +368,9 @@ koşum da 3 verir. R05'teki "FAIL yok ve kenar engelleme PASS → 0" eşlemesi *
 (istek atmaz; ölçüm değildir). Kapı (4) = istek atılmaz: kapsam yetkisi doğrulanmadı · origin https değil ya da içinde kimlik /
 sorgu / parça var · TLS doğrulaması kapalı · ad kimliği / konum etiketi yok ya da geçersiz · parametre yinelenmiş · `--out` yok ·
 `--phone-list` ile `--out` birlikte · kanıt ya da özet dosyası zaten var · konum etiketi ana makine adını ya da bir etiketini içeriyor ·
-`D8_HTTP_TIMEOUT_MS` geçersiz · istek kimliği planı tutarsız. 7 = ölçüm yapıldı ama kanıt / özet yazılamadı (ham kanıtı olmayan özet
+`D8_HTTP_TIMEOUT_MS` geçersiz · istek kimliği planı tutarsız · **(R07)** `--local-edge` geri döngü http adresi değil · `--offprobe-evidence`
+/ `--offprobe-result` değeri tanınmıyor · `--finalize` ölçüm ya da telefon parametresiyle birlikte · kesinleştirilecek kanıt kabul
+edilmedi (§1). 7 = ölçüm yapıldı ama kanıt / özet yazılamadı (ham kanıtı olmayan özet
 kanıt sayılmaz). 1 = sonda beklenmeyen biçimde durdu — **ölçülemeyen** sayılır. Tanınmayan bir alan değeri de 0 vermez.
 **Çıkış 5 kalkmıştır.** Hiçbir çıkış kodu "D-8 kapandı" demek **değildir** (§3).
 
@@ -483,7 +563,9 @@ bu yüzden varsayımla değil kimlik kanıtıyla sınıflanır (tablo satırı 2
 (yalnız durum + dosya bütünlüğü durumu + içerik incelemesi beyanı durumu + kalem türleri), yöntem kapsamı sayıları, durum sınıfı / hata
 sınıfı / kimlik anlamı / katman kimliği sayıları, kalibrasyon, dört alan ve nedenleri (yalnız değer + neden + sayı), kenar engelleme
 kaydının eki (kapsam + kanıt sınırı), katman kapsam sayısı, çıkış kodu eşlemesi, zaman, çıkış kodu, beyan edilen konum etiketi,
-gönderilen başlık **adları** ve biçim sayıları. İçermez: ad, hata metni, yönlendirme hedefi, yol düzeyinde bulgu adayı, ipuçları,
+gönderilen başlık **adları** ve biçim sayıları, **(R07)** dar kabul istisnası kaydı (`malformedRejectClass`: sınıfın adı, uyarı cümlesi,
+kural sürümü, vektör kimliği, durum, beş koşul, nedenler, ek kanıt beyanı / sonucu, yerel yanıtın durum kodu — ham yol, yöntem ve yerel
+adres **olmadan**) ve dış / yerel istek sayıları. İçermez: ad, hata metni, yönlendirme hedefi, yol düzeyinde bulgu adayı, ipuçları,
 gönderilen / dönen kimlik değerleri, kanıt dosyası yolu / özeti / tarihi, inceleyen. **Yöntem sınıfı düzeyinde sayı içerir** (HEAD /
 OPTIONS / varyant kaç tanesi reddedildi) — bu yüzden **özet de kısıtlıdır** ve depoya konmaz. **Public satıra (§1b) bu özetten yalnız
 dört alanın değeri ve ad kimliği aktarılır; hiçbir sayı, neden, yol / yöntem ayrıntısı ve hiçbir özet (SHA-256) değeri public belgeye
@@ -524,6 +606,17 @@ Beklenen: her ret vektörü **403**. Aşağıdaki "kenar geçirirse" sütunu R27
 | **Pozitifler** `GET /portal/login|forgot-password|reset-password` | GET | 200 | — (izinli) |
 | **Pozitifler** `GET /api/portal/cases|documents|messages`, `POST messages {}`, `DELETE documents/:id`, `POST change-password {}` | token yok | 401 | — (`PortalAuthGuard` token yokken durur; yazma yok) |
 
+**R07 — yerel kenar karşılaştırma isteği (isteğe bağlı; dış istek listesine dahil değildir, vektör kümesi kimliğini değiştirmez).**
+
+| İstek | Nereye | Yöntem / gövde | Beklenen | Not |
+|---|---|---|---|---|
+| "varyant boş bayt kodlu" vektörünün **aynı ham istek hedefi**, Host başlığı = dış adın ana makinesi | **yerel kenar** (yalnız geri döngü, düz http; `--local-edge`) — dış ağa çıkmaz | GET (gövdesiz); kimlik bilgisi yok; istek kimliği başlığı kabul edilmeyen biçimde | 403 | dış 68 istekten **sonra**, **bir kez**; yeniden deneme / yönlendirme takibi yok. Yerel kenar geçirirse olası uygulama sonucu dış vektördekiyle aynıdır (kodlama varyantı satırı; yazma yok). Kanıtta ayrı kayıt |
+
+**İstek sayısı ve izin kapsamı (sonraki koşum paketi için — §3d):** yerel karşılaştırma **verilmeyen** koşumda toplam **68** istek (R06
+ile aynı; istisna uygulanmaz); **verilen** koşumda **dış 68 + yerel kenar 1 = 69** istek. Yerel istek canlı ana makinenin kendi
+kenarına gider ve dış isteklerden **ayrı bir izin kalemidir**: canlı sonda GO'su verilirken ayrıca onaylanır; onaylanmadıysa
+`--local-edge` verilmez. Kesinleştirme adımı istek atmaz (izin kalemi değildir; kısıtlı kayda yazılan bir beyanın işlenmesidir).
+
 ### 1b. Ad başına satır tablosu (D8-E3)
 
 Her ad **ayrı satırdır**; her satır yalnız o adın **kendi koşumundan** dolar. Bir adın sonucu başka bir ada taşınmaz; şablon ya da
@@ -535,11 +628,24 @@ public belgeye yazılmaz (yalnız ad kimliği); ad ↔ ad kimliği eşlemesi, ad
 | **AD-1** (birincil ad) | birincil ad — kapı yok (ad canlı yapılandırmadan okunur) | FAIL | FAIL | OLCULEMEYEN | PASS | 2026-10-06 · canli-ana-makine-cikisi · 4A517621…8B71 · 83AD1AB6…F0F2 | bu revizyon için YOK (eski beyan R27 öncesidir; ada bağlanmadı) |
 | diğer yayın adları | KOŞULMADI — kapsam yetkisi doğrulanmadı | KOŞULMADI — kapsam yetkisi doğrulanmadı | KOŞULMADI — kapsam yetkisi doğrulanmadı | KOŞULMADI — kapsam yetkisi doğrulanmadı | KOŞULMADI — kapsam yetkisi doğrulanmadı | — | — |
 
+**AD-1 satırı R06 sonda baytlarının 2026-10-06 koşumudur ve aynen korunur.** Koşum hücresindeki kısa pin R06 pinidir (§7 "önceki
+pinler"). R07'nin dar kabul istisnası (§1.1, §3d) bu satıra **uygulanmaz** — kural geçmiş koşuma geriye dönük işlemez; satırdaki `FAIL`
+değerleri R07 kuralıyla yeniden yorumlanmaz ve `PASS`'a çevrilmez.
+
+**Dar sınıf notu (R07; tablo dışında, satır başına bir satır).** *(Bu revizyonda dar sınıfın uygulandığı koşum yoktur.)*
+
 Doldurma kuralları:
+- **Dar sınıf uygulanan koşum (R07):** HTTP / ret hücresine sondanın verdiği değer **aynen** yazılır: `OWNER-ISTISNASIYLA-UYGUN`. Bu koşumda
+  HTTP / ret hücresine `PASS` yazılmaz (sonda o değeri üretmez; owner şartı §3d-D8) ve hücreye başka
+  bir şey eklenmez; ama o satır için yukarıdaki "Dar sınıf notu" başlığının altına **zorunlu** bir not satırı eklenir: ad kimliği +
+  sınıfın tam adı ("İzin verilen bozuk istek reddi — katman doğrulanmadı") + "Bu bir owner kabul kuralıdır; uygulamaya hiç
+  ulaşılmadığının teknik kanıtı değildir." cümlesi + kural sürümü. Notu olmayan böyle bir satır eksiktir. Not sayı, yol / yöntem ayrıntısı ve özet değeri içermez. Öz-test bu notun varlığını **ölçemez**
+  (public belgeden sınıfın uygulanıp uygulanmadığı bilinemez); kural kayıt sahibinindir.
 - Dört sonuç hücresine **yalnız** adsız özetteki `nameVerdict` alan değeri (yorumlanmadan) ya da iki "KOŞULMADI" metninden biri
   yazılır. **Koşum hücresi boşken (`—`)** dört sonuç hücresi aynı "KOŞULMADI" metnini taşır (kapsam yetkisi doğrulanmamış satırda
   `KOŞULMADI — kapsam yetkisi doğrulanmadı`; diğerlerinde `KOŞULMADI — canlı sonda GO'su yok`). **Koşum hücresi doldurulduğunda**
-  (kanıtı olan gerçek bir koşumdan sonra): **HTTP / ret sonucu** ve **pozitif kontrol** hücreleri `PASS` / `FAIL` / `OLCULEMEYEN` alır;
+  (kanıtı olan gerçek bir koşumdan sonra): **HTTP / ret sonucu** ve **pozitif kontrol** hücreleri `PASS` / `FAIL` / `OLCULEMEYEN` alır (HTTP / ret hücresi, yalnız dar sınıf
+  uygulanan koşumda, `PASS` yerine `OWNER-ISTISNASIYLA-UYGUN` taşır — yukarıdaki kural; başka hiçbir hücre bu değeri almaz);
   **kenar engelleme sonucu** ve **katman doğrulaması** hücreleri yalnız `FAIL` / `OLCULEMEYEN` alır — **bu iki hücreye `PASS`
   yazılmaz** (sonda o değeri üretmez; kanıt sınırı, §1.1). O iki hücrede `PASS` yazan satır bu sondanın ölçümü olamaz ve DOC-1'i düşürür.
 - **`OLCULEMEYEN` başarı değildir.** Kenar engelleme hücresindeki `OLCULEMEYEN`, "personel yüzeyi dışarıdan kapalı" demek **değildir**;
@@ -582,8 +688,15 @@ başlığını siler ya da üzerine yazar) katmanlar; her biri "yalnız şu yan�
 yanıt verdiğini (üreten katman, durum, kimlik, işaret) kaydeder; kalemler sondanın sınıfını bu **zemin gerçeğiyle** karşılaştırır. Her
 kalem **ayırt edici girdi → sondanın ölçtüğü alan** biçimindedir. Gönderilen kimlik biçimlerinin kaynaktaki desenle gerçekten kabul /
 ret edildiği, kenarın gördüğü değerler ürün kaynağından okunan desenle sınanarak **ölçülür** (K-SRC, Y-1). Port `D8_SELFTEST_PORT` ile
-değişir (varsayılan 8457; 8080 / 3002 / 5432 / 5447–5449 / 5591 / 18095 reddedilir); `D8_SELFTEST_PROBE` başka bir sonda dosyasını
+değişir (varsayılan 8457; 8080 / 3002 / **8081** / 5432 / 5447–5449 / 5591 / 18095 ve **47200–47299 / 47998–47999** aralıkları
+reddedilir); `D8_SELFTEST_PROBE` başka bir sonda dosyasını
 sınar (negatif ayna / mutasyon). Çıkış: 0 hepsi PASS · 1 en az bir FAIL · 2 FAIL yok ama ölçülemeyen kalem var · 4 port kapısı.
+**R07:** dar kabul istisnası için geri döngüde düz http ile dinleyen ikinci bir **sahte yerel kenar** vardır (`D8_SELFTEST_LOCAL_PORT`,
+varsayılan 8458; aynı yasak liste; sahte kenar portundan farklı olmalı). Dış ad `localhost:<port>`, yerel kenar `127.0.0.1:<yerel port>`
+olduğundan sondanın yerel isteğinde Host başlığının dış adın ana makinesi olduğu **ölçülür**. İncelenmiş 400 yanıtının gövdesi öz-testte
+**bağımsız** kurulur (standart hata sayfası, 155 bayt) ve SHA-256'sı bağımsız hesaplanır; sonda yalnız bayt sayısını ve özeti taşır.
+Sahte kenar o yanıtı birebir ya da **tek özelliği** ayrılmış biçimde verir (başka vektöre · 2xx · kimlik başlıklı · gövdesi bir bayt
+farklı · içerik türü farklı · yalnız genel sağlayıcı başlığı).
 
 Kapsam yetkisi kapısının **tarih** girdilerinde (SA-11) sondanın saati, sondaya dokunulmadan, yalnız o girdinin alt sürecine yüklenen
 bir ön yükleme dosyasıyla sabitlenir (`Date.now`) ve yerel saat dilimi TSİ olarak verilir; bu girdiler istek atılmayan `--phone-list`
@@ -597,7 +710,7 @@ OLCULEMEYEN); parantez içindeki sayı sondanın çıkış kodudur. **R06'da ken
 | K-SRC · K-PORT | ürün kaynağındaki dayanaklar okunabildi; sondanın kabul deseni kaynaktaki metinle birebir, "üretilen kimlik" deseni `randomUUID()` çıktılarını tanır · öz-test port kapısı |
 | **S1** · K-1 · **L-1** | **sağlıklı kenar → P · O · O · P (3)** — kenar engelleme PASS **değil**; tek neden `ULASMAMA-BAGIMSIZ-KANITI-YOK`; üç alan + pozitif kontrol ayrı, birleşik PASS yok; kayıt eki kapsamı ve kanıt sınırını taşır (kanıtta, özette ve çıktıda aynı) · kalibrasyon: API pozitiflerinde aynen geri yazma 3/3 **ve** değiştirme 3/3, başlıksız bölge temiz → `VAR` · **"API değil" çıkarımı yok**: başlıksız düz `/api` satırı (30) → `OLCULEMEYEN` / `BASLIK-YOKLUGU-KANIT-DEGIL`; ön uçuş (2), yolu belirsiz (14), web yolu (13) → `OLCULEMEYEN`; kapsam: API kanıtlı 0, ölçülemeyen 59; hiçbir satırın katman kimliği "API değil" değil |
 | S1-p · S1-c · Y-1 · Y-2 · S7 | ham yol birebir (68/68) · kimlik bilgisi başlığı yok, gövde 0 / 2 bayt · **istek kimliği planı**: 59 ret vektörünün hepsinde gönderilen değer kaynak deseniyle **kabul edilmez**, API pozitiflerinde 3 + 3, web pozitiflerinde 2 + 1; tek kullanımlık · plan kapısı: iki biçim ayrışmıyorsa (bozulmuş kopya) sonda istek atmaz (4) · 3 HEAD + 3 OPTIONS + 18 varyant |
-| S2 · N-5 | bozuk kenar (AD-2, tam kapsam yetkisi kaydıyla) → F · F · F · P (2); 20 sızan istek: API'nin işlediği 17 yanıtta **değiştirme** kanıtı, 2 ön uçuş 204, 1 başlıksız 404 · AD-2 koşumu AD-1'in dosyalarını değiştirmez; sonda yalnız üç yerde dosya okur |
+| S2 · N-5 | bozuk kenar (AD-2, tam kapsam yetkisi kaydıyla) → F · F · F · P (2); 20 sızan istek: API'nin işlediği 17 yanıtta **değiştirme** kanıtı, 2 ön uçuş 204, 1 başlıksız 404 · AD-2 koşumu AD-1'in dosyalarını değiştirmez; sonda yalnız dört yerde dosya okur (R07: dördüncüsü yalnız kesinleştirme adımındaki tek kanıt dosyasıdır; R06'da üç) |
 | S3 · S3-b · S3-c · S3-dN | sağlayıcı engelleme imzası · başlıksız boş 403 · sağlayıcı `Server` + boş gövde · gövdesi dolu ama kimlik başlıksız 403 → ipuçları değişir; dört alan, nedenler ve katman kimliği S1 ile aynı (3) |
 | **S3-ch · S3-chF · S3-az · S3-azP** | sınama işaretli 403 (hepsinde / birkaçında) → P · O · O · P (3): durum kodu ölçütü PASS kalır; kenar engelleme nedeni **işaret sınıfıdır** — S1'in "temiz gözlem" sınıfından **ayırt edilir** · işaretin altı yazımı tanınır · **tanınmayan** değerli işaret (beş değer; boş değer dahil) → aynı sonuç · işaret pozitifin beklenen yanıtında → ayrı neden sınıfı (3); işaretli 2xx → bulgu adayı kalır (2) |
 | **A-1 · A-2 · A-3 · A-4 · A-5** | **API'nin ürettiği 403** (geçersiz biçim → yeni kimlik) → P · **F** · **F** · P (2) — S3-dN ile aynı durum kodları · yalnız yolu belirsiz vektörde → yine API kanıtı · kalibrasyon `YOK` iken ve yansıtan katman görülmüşken API kanıtı → kenar engelleme yine F · sınama işaretli yanıtlar + başka satırda API kanıtı → F korunur · **katman doğrulamasında desteksiz kesinlik yok (A-5):** aynı ret vektörünü API 403 ile yanıtlamış; koşumun kalibrasyonu "değiştirme" davranışını **hiç göstermedi** (0/3) → P · **F** · **O** · P (2), neden sınıfı yazılı, kapsamda API kanıtlı satır 0 · **en az bir kez** gösterdi (1/3) → P · F · **F** · P (2) |
@@ -616,13 +729,34 @@ OLCULEMEYEN); parantez içindeki sayı sondanın çıkış kodudur. **R06'da ken
 | **SA-9** (§3c-T4, T5) | **birleşik sahiplik belgesi**: iki zorunlu kalem **aynı dosyayı** gösteriyor; dosya bütünlüğü + iki tür + bağ + inceleme beyanı tam → **KABUL** (sonda koşar; alanlar S1 ile aynı) · aynı içerik iki ayrı dosyada → KABUL · beyan yok → RET · tek tür → RET (eksik tür adlandırılır) · aynı türden iki kalem → RET · boş belge → RET · özeti tutmayan belge (birinci / ikinci kalemde) → RET · yalnız tünel kalemi → RET |
 | **SA-10** (§3c-T4) | **içerik incelemesi beyanı zorunlu ve dosya bütünlüğünden ayrı**: beyan alanı yok / null → RET (`INCELEME-BEYANI-YOK`); inceleyen · tarih · incelenen kalem türleri eksik ya da bozuk (15 girdi) → RET (`INCELEME-BEYANI-GECERSIZ`) — hepsinde dosyalar var ve özetleri tutuyor · tam beyan → KABUL · kanıtta iki **ayrı** alan (`fileIntegrity: OLCULDU` · `contentReview: BEYAN-VAR`) · kabul çıktılarında, kanıtta ve özette "doğrulandı" yok, inceleyenin adı yok · sondanın kod satırlarında eski "doğrulandı" durumu yok · inceleme tarihi sınır saatinde kalem tarihiyle aynı kuralla (yerel bugün → KABUL · UTC bugün + 2 gün → RET) |
 | **SA-11** (§3c-T4) | **tarih denetimi sınır saatlerinde** (saat sabitlenir; yerel saat dilimi TSİ): yerel gün UTC gününden ilerideyken (TSİ 00:00:00 ve 02:59:59) tarihi yerel **bugün** olan belge → **KABUL** · UTC bugün + 2 gün ve sonrası → RET (dört sınır saatinde) · aradaki tek gün bir günlük payla KABUL · **saatli biçim** iki ayrı saatte de RET (biçim reddi) · karşı girdi: aynı kayıt saat sabitlenmeden KABUL. Bu kalem düzeltmesiz (`main`) sondada da geçer: tarih kuralı değişmedi |
-| O-2 · O-3 · V-1 · V-2 | adsız özette ad / yol / hata metni / yönlendirme hedefi / satır düzeyi bulgu adayı / sağlayıcı adı / kanıt dosyası bilgisi / inceleyen yok, alan kümesi sabit, sayılar ham kanıtla ve zemin gerçeğiyle uyumlu (13 koşumda) · özet SHA-256'sı bağımsız hesapla eşleşir · vektör kümesi kimliği kaynaktan bağımsız hesapla eşleşir · bir vektörü değişen kopyada kimlik değişir |
+| O-2 · O-3 · V-1 · V-2 | adsız özette ad / yol / hata metni / yönlendirme hedefi / satır düzeyi bulgu adayı / sağlayıcı adı / kanıt dosyası bilgisi / inceleyen yok, alan kümesi sabit, sayılar ham kanıtla ve zemin gerçeğiyle uyumlu (14 koşumda; R07: dar sınıfın uygulandığı koşum dahil — özette ham yol / yerel adres yok) · özet SHA-256'sı bağımsız hesapla eşleşir · vektör kümesi kimliği kaynaktan bağımsız hesapla eşleşir · bir vektörü değişen kopyada kimlik değişir |
 | T-1 … **T-5** · D-1 · **DOC-1** · B-0 | statik: pozitif liste · seçenek nesnesi, `ifPassed`, kimlik / kalibrasyon / katman / alan / çıkış kodu işlevleri ipucu okumaz · D8-E1/E2 kaynak kapsamı · "karar bekliyor" eşlemesi, "değerlendirme gerekir" sınıfı ve çıkış 5 sondada yok; çıkış kodu tek işlevden · **T-5: kalkan kuralların izi kod satırlarında yok** ("API değil" çıkarımı · pozitif 403 istisnası · aynı kanıtın iki kalemde reddi · "doğrulandı" durumu · PASS kaydının eki); kenar engelleme ve katman alanları yalnız PASS üretmeyen kapatıcıyla kapanır; çıkış kodu işlevinde 0 dönüşü yok · pinler · **belge ↔ kod ↔ öz-test**: belgedeki çıkış kodu eşlemesi sondanın kanıta yazdığı metinle aynı; §1b sütunları ve satır biçimi **koşum hücresine göre** (boşken dört sonuç hücresi "KOŞULMADI"; doluyken yalnız alan değerleri — kenar engelleme ve katman hücrelerinde PASS yok — + kısa biçimli koşum hücresi); kapsam yetkisi hücresindeki kabul metni sondanın çıktısıyla birebir; §3 ve §1d "ölçüm koşumu çıkış 0 üretmez" der; 2026-10-06 karar bölümü var · belgedeki iki blok tek satır, yalnız ASCII, yalnız AD-1 |
 | **B-G** | blok düzeneğinin kapısı (§3b-K8): test ikamesi **kanıtlanamayan** (belgedeki biçimden kaymış: çift tırnak · değişmez dize değil · iki atama · ikinci mutlak `.env` yolu · sonda yolu kaymış · yalnız telefon bloğunda kayma) blok kümesi **hiç koşturulmaz** (kabuk başlatılmaz, betik dosyası yazılmaz, kenara istek gitmez); gerçek bloklardan hazırlanan dokuz metinde canlı kök adı, `.env` uzantılı değer ya da sahte dosyalar dışında mutlak yol yok |
 | **B-1 … B-T2** (her biri iki kabukta) | belgeden çıkarılan blok metni, yalnız test için `.env` yolu / sonda yolu / pin ikamesi ve sahte kullanıcı köküyle, sahte `.env` ve sahte kenara karşı: olağan akış — **sağlıklı kenarda blok "cikis=3" aktarır (0 değil)**, özet SHA'sı; kabuğun **ölçülen** tam sürümü gözleme yazılır · satır sayısı 0 ve 2 → sonda hiç koşmaz · https olmayan / yollu değer → koşmaz · pin uyuşmazlığı → koşmaz · bozuk kenarda blok çıkış 2'yi aktarır · telefon listesi bloğu istek atmaz · telefon bloğunda pin uyuşmazlığı. Kabuk yoksa kalem **ÖLÇÜLEMEDİ**'dir (geçti değil) |
 | S4 · S4-b | kenar kapalı → O · O · O · O (3; `BAGLANTI`) · doğrulanamayan sertifika → aynı (`TLS`); hata iletisi kanıtta yok |
+| **MR-1** (R07; §3d — a) | **dar sınıf uygulanır:** tanımlı vektör incelenmiş 400 yanıtını birebir aldı + yerel kenar 403 + beyan `KULLANILMIYOR` → **OWNER-ISTISNASIYLA-UYGUN · O · O · P (3)** — HTTP / ret `PASS` **değil**; yalnız o satır sınıfın **tam adını** taşır; o satır 403 **sayılmaz** (403 58/59 · dar sınıf 1); kenar engelleme ve katman **PASS değil**, "temiz gözlem" sınıfı da değil; ad ve "owner kabul kuralı; teknik kanıt değildir" cümlesi çıktıda, kanıtta ve özette; yerel istek: aynı ham hedef, Host = dış adın ana makinesi, bir kez, bütün dış isteklerden **sonra** (iki sahte ucun ortak sıra sayacıyla ölçülür), kimlik bilgisi / gövde yok, kanıtta ayrı kayıt, toplam 68 + 1 = 69; karşı girdi: sağlıklı kenarda sınıf uygulanmaz |
+| **MR-2** (b) | **başka isteğe uygulanmaz:** incelenmiş yanıt başka bir vektöre geldi → F · O · O · P (2) · aynı ham yol başka yöntemle (sonda kopyası) → tanım eşleşmez, F (2), yerel istek atılmaz · ham yol tek karakter farklı (kopya) → F (2); karşı girdi: aynı sahte kenar kipinde paket sondası → sınıf uygulanır |
+| **MR-3** (c) | **2xx ve uygulamaya ulaşma kanıtı:** aynı gövde / içerik türüyle 200 → F · F · O · P (2) · aynı yanıt + API'nin ürettiği biçimde yeni kimlik → F · F · F · P (2) · aynı yanıt + yansıtılmış kimlik → F · O · O · P (2); üçünde de sınıf uygulanmaz |
+| **MR-4** (d) | **yerel kenar gözlemi:** parametre verilmedi · yerel yanıt 404 / 200 / aynı 400 · kimlik başlıklı 403 · yanıtsız → sınıf uygulanmaz, F · O · O · P (2), tek neden `YEREL-KENAR-403-GOZLEMI-YOK`; atılan yerel istek toplam sayıya dahil ve bir kez |
+| **MR-5** (d) | **incelenmiş yanıt özellikleri:** gövde aynı uzunlukta ama tek baytı farklı · içerik türü farklı · yalnız genel sağlayıcı başlığı (gövde boş) → sınıf uygulanmaz, F · O · O · P (2), tek neden `INCELENMIS-YANIT-OZELLIKLERI-UYUSMUYOR`; `Server` başlığı karara girmez |
+| **MR-6** (d) | **sonda dışı ek kanıt:** beyan yok → uygulanmaz (2) · beyan `KULLANILACAK` → **kesinleşmez** (durum ayrı, satır F, çıkış 2) · kesinleştirme `GECERSIZ-…` → uygulanmaz (2) · kesinleştirme `GECERLI-…` → **uygulanır: OWNER-ISTISNASIYLA-UYGUN · O · O · P (3)**; kesinleştirme istek atmaz (sahte kenar 0 + sahte yerel kenar 0), kaynak kanıtı değiştirmez, ayrı kayıt yazar · "geçerli" sonucu tek başına yetmez (yanıtı tutmayan koşum yine uygulanmaz) |
+| **MR-7** (e) | **liste sırası:** tanımlı vektörü listenin başına taşıyan sonda kopyası sınıfı yine o vektöre uygular; eski sırasına gelen vektör işaretlenmez · statik: tanım tek yerde (kimlik + ad + yöntem + ham hedef); karar işlevinde sıra numarası / dizin erişimi yok; paket listesinde tanımla eşleşen tam bir vektör |
+| **MR-8** (f) | **alanlar birbirine dönüşmez:** aynı girdide sınıf uygulanan ve uygulanmayan iki koşumda kenar engelleme, katman doğrulaması ve pozitif kontrol alanları (değer + nedenler + kapsam) **bayt düzeyinde aynı**; değişen yalnız HTTP / ret (F → OWNER-ISTISNASIYLA-UYGUN; P değil) ve çıkış kodu (2 → 3); kenar engelleme nedeni `DURUM-KODU-OLCUTU-PASS-DEGIL` kalır; kesinleştirme öncesi / sonrası da aynı |
+| **MR-9** | **kapılar:** `localhost` adı dahil `127.0.0.1` dışındaki her yerel ad / adres, https / yollu / portsuz değer, tanınmayan beyan ya da sonuç, yinelenen parametre, ölçüm çağrısında sonuç, telefon listesiyle birlikte → çıkış 4, iki sahte uca da istek yok · kesinleştirme retleri: beyansız ya da `KULLANILMIYOR` beyanlı kanıt · elle "uygulandı" yazılmış kanıt · **önceki revizyonun (R06) / başka sonda baytlarının kanıtı — geçmiş koşuma geriye dönük uygulanmaz** · başka ad / konum · satırı ya da sırası değiştirilmiş kanıt · var olan kaydın üzerine yazmama · başka `--origin` · **yalnız türetilmiş "eşleşti" alanı elle çevrilmiş kanıt → kendi içinde tutarsız** (karar ham özetle verilir; yeniden türetilen beş koşul kanıttaki kayıtla karşılaştırılır); değiştirilmemiş aynı kanıt kesinleştirilir ama sınıf uygulanmaz · **sınır kaydı (güvence değil):** ham değerleri, türetilmiş alanı ve koşul kaydı birlikte tutarlı yeniden yazılmış kanıt **ayırt edilemez** — yalnız koşum anında kaydedilen ham kanıt özetiyle karşılaştırma gösterir (§1) |
+| **MR-10** (§3d-D8) | **sınıf uygulanan koşum "HTTP / ret PASS" diye sunulmaz:** uygulanan her koşumda ve kesinleştirme kaydında HTTP / ret alanı `OWNER-ISTISNASIYLA-UYGUN` — ham kanıtta, adsız özette, `D8-HTTP-RET` satırında ve `HTTP / RET SONUCU` satırında; hiçbirinde `PASS` değil · satırın **gerçek HTTP kodu 400** (zemin gerçeği = kanıt satırı = çıktı satırı), durum sınıfı `DORTYUZ-403-DISI`, sınıfın adı ayrı; 403 sayısına girmez · çıktı "403 başarısı değildir, owner kabul kuralına dayanır" der · kenar engelleme, katman doğrulaması ve pozitif kontrol bu değeri hiç almaz; kenar / katman `PASS` değil; çıkış 3 · değer sınıfın uygulanmadığı hiçbir koşumda geçmez · karşı girdiler: sınıfsız aynı girdi F, kesinleştirme `GECERSIZ-…` F, sağlıklı kenar P (R06 davranışı aynen) · statik: değer sondada tek sabit; alan değerleri kümesi ve çıkış kodu işlevi değişmedi |
+| **DOC-2** | belge ↔ kod ↔ öz-test (R07): sınıfın adı ve uyarı cümlesi üçünde aynı; §3d karar tarihini ve kural sürümünü ayrı taşır; incelenmiş yanıt özellikleri ve vektör tanımı belgede; "dış 68 + yerel 1" ve ayrı izin kalemi yazılı; owner bloğu yerel karşılaştırmayı içermez ve kuralı yazılı; **§1b AD-1 satırı ve koşum kaydı değişmedi** (FAIL · FAIL · OLCULEMEYEN · PASS); HTTP / ret alanının ek değeri §1.1, §1b ve §3d'de, "`PASS` yazılmaz" kuralı §1b'de, owner şartının cümlesi §3d'de |
 
-**Son koşu (R06 baytları, 2026-10-06; Windows, node 24.18.0; kabuk sürümleri öz-testin kendi çıktısından: Windows PowerShell 5.1 = 5.1.26100.9549 (Desktop) · pwsh 7 = 7.6.6 (Core)):** 114 kalem — **PASS 114 · FAIL 0 · ÖLÇÜLEMEDİ 0**, çıkış 0 (iki kabuktaki 14 blok kalemi dahil). R05'in 109 kalemine beş kalem eklendi (P-7 · SA-9 · SA-10 · SA-11 · T-5); bütün koşumları tarayan değişmez kalemi (GT-1) 89 koşum taradı ve görülen çıkış kodları yalnız 2 ve 3'tür.
+**R07'de beklentisi değişen eski kalemler (kural değişikliğinin ya da yeni kaydın doğrudan sonucu):** K-PORT (yasak listeye 8081 ve iki
+aralık eklendi; sahte yerel kenar portu aynı kapıdan geçer) · N-5 (sonda artık dört yerde dosya okur: dördüncüsü yalnız kesinleştirme
+adımındaki tek kanıt dosyasıdır) · GT-1 ((7) durum kodu ölçütü, dar sınıfın bağımsız beklendiği tek satır dışında; yeni (14); taranan
+koşum sayısı) · O-2 (özetin üst düzey alan kümesine `malformedRejectClass` eklendi; revizyon `R07`; 14 koşum) · D-1 (yeni pinler) ·
+DOC-1 (§1b HTTP / ret hücresi ek değeri de kabul eder; başka hiçbir hücre etmez) · GT-1 (1) (HTTP / ret alanı, yalnız dar sınıfın
+bağımsız beklendiği koşumda, `PASS` yerine ek değeri alır; değer başka hiçbir koşumda geçmez).
+Diğer kalemlerin beklentisi değişmedi.
+
+**Son koşu (R07 baytları — §7 pinleri, 2026-10-06; Windows, node 24.18.0; kabuk sürümleri öz-testin kendi çıktısından: Windows PowerShell 5.1 = 5.1.26100.9549 (Desktop) · pwsh 7 = 7.6.6 (Core)):** 125 kalem — **PASS 125 · FAIL 0 · ÖLÇÜLEMEDİ 0**, çıkış 0 (iki kabuktaki 14 blok kalemi dahil). R06'nın 114 kalemine on bir kalem eklendi (MR-1 … MR-10 · DOC-2); bütün koşumları tarayan değişmez kalemi (GT-1) 109 koşum taradı: dar sınıf bağımsız beklentinin verdiği 2 koşumda uygulandı (HTTP / ret alanı ikisinde de `OWNER-ISTISNASIYLA-UYGUN`, `PASS` değil), diğer 107 koşumda uygulanmadı; görülen çıkış kodları yalnız 2 ve 3'tür. Değişiklik öncesi taban (R06 baytları, aynı makine, aynı gün): 114 / 114, çıkış 0. **R07 baytlarıyla yapılmayanlar:** negatif ayna (R06 sondasının R07 öz-testinde koşturulması), mutasyon provası, yalıtılmış kopya deneyi, gerçek API ile izole prova — hiçbiri koşulmadı; aşağıdaki "Negatif ayna" ve "Mutasyon provası" bölümleri **R06 baytlarının** kaydıdır.
+
+**Önceki koşu (R06 baytları, 2026-10-06; Windows, node 24.18.0; kabuk sürümleri öz-testin kendi çıktısından: Windows PowerShell 5.1 = 5.1.26100.9549 (Desktop) · pwsh 7 = 7.6.6 (Core)):** 114 kalem — **PASS 114 · FAIL 0 · ÖLÇÜLEMEDİ 0**, çıkış 0 (iki kabuktaki 14 blok kalemi dahil). R05'in 109 kalemine beş kalem eklendi (P-7 · SA-9 · SA-10 · SA-11 · T-5); bütün koşumları tarayan değişmez kalemi (GT-1) 89 koşum taradı ve görülen çıkış kodları yalnız 2 ve 3'tür.
 
 **Negatif ayna — düzeltmesiz kod yanlış PASS üretir (§3c-T5).** `main`'deki R05 sondası (`git show c9f51af1:<sonda yolu>`; SHA-256
 `EE0C6998…3F1A`) R06 öz-testinde koşturuldu: **77 / 114** (öz-test çıkışı 1; 114 kalem raporlandı).
@@ -683,6 +817,20 @@ blok düzeneği kodu R06'da değişmedi; yalnız B-1'in beklenen blok çıktıs�
 kabukta ölçüldü).
 
 **Öz-testin ölçmediği** (hiçbiri "geçti" sayılmaz):
+- **R07 — dar kabul istisnası:** (1) gerçek sağlayıcının, gerçek yerel kenarın ve gerçek uygulamanın boş baytlı istek hedefine ne yanıt
+  verdiği **ölçülmedi** — öz-testteki 400 yanıtı, teşhis ölçümünde incelenen yanıttan sabitlenen özelliklerden (içerik türü + bayt sayısı +
+  SHA-256; değerler owner metninde yoktur — §3d) bağımsız kurulmuş bir
+  **girdidir**; canlıya ya da yerel kenara istek atılmadı. İncelenmiş yanıtın içerik türü başlığı tam `text/html` değilse (ör. karakter
+  kümesi ekliyse) ya da sağlayıcı sayfayı değiştirirse sınıf uygulanmaz (satır FAIL kalır) — dar tarafta kalan bilinçli seçimdir.
+  (2) **Sonda dışı ek kanıt** ölçülmez: sonda yalnız beyanı ve sonucu kaydeder; beyanın doğruluğu, kanıtın geçerlilik koşulları ve
+  "açıklanamayan artış yok" hükmü kayıt sahibinindir. (3) Kesinleştirme adımı kanıt dosyasının **içeriğine güvenir**; öz-test, revizyon / pin /
+  vektör kümesi / ad / ana makine / konum / satır sırası değişikliğinin, hükümle tutarsız satırın ve **yalnız türetilmiş alanı** (özet
+  eşleşti · içerik türü eşleşti) elle çevrilmiş kanıtın reddedildiğini ölçer; ham değerleri ve koşul kaydı **birlikte tutarlı** yeniden
+  yazılmış kanıtın ayırt **edilemediğini** de sınır kaydı olarak ölçer (MR-9) — o durumu yalnız koşum anında kaydedilen ham kanıt
+  SHA-256'sı gösterir (§1); aynı kanıt için iki kesinleştirme engellenmez. (4) Yerel kenar isteğinin gerçekten **canlı
+  kenar sürecine** gittiği ölçülmez: sonda verilen geri döngü adresine gider; o adreste canlı kenarın dinlediği kayıt sahibinin
+  beyanıdır. (5) Owner bloğu yerel karşılaştırmayı içermediği için blok düzeneği (B-*) yeni girdileri **koşturmaz**. (6) Negatif ayna
+  (R06 sondası R07 öz-testinde) ve mutasyon provası R07 baytlarıyla **yapılmadı**.
 - **isteğin API'ye ulaşmadığı**: sondayla ve öz-testle **ölçülemez** (kanıt sınırı). Öz-test yalnız şunu ölçer: sağlıklı kenar ile
   başlığı silinmiş API reddi sondada aynı görünür ve ikisine de PASS verilmez (S1, SINIR-2, GT-1). Kesin kenar kabulünün yöntemi bu
   paketin dışındadır (öneri ayrıca sunulur).
@@ -727,14 +875,25 @@ sondanın çıkış kodunu ve — **kısıtlı kayıt için** — adsız özetin
 Sondanın kendi çıktısının son satırları dört alanı ayrı ayrı verir (`D8-HTTP-RET` · `D8-KENAR-ENGELLEME` · `D8-KATMAN-DOGRULAMA` ·
 `D8-POZITIF-KONTROL`).
 
+**R07 — bu bloklar yerel kenar karşılaştırmasını İÇERMEZ.** Aşağıdaki ölçüm bloğu `--local-edge` ve `--offprobe-evidence` vermez
+(blok metni R06 ile aynıdır; yalnız sonda pini değişti — 2026-10-06 koşumu R06 pinli blokla yapıldı; aşağıdaki R07 pinli bloklar
+**çalıştırılmadı** ve yeni bir koşum yeni onay ister). Kural: **yerel gözlem yok → dar kabul istisnası uygulanmaz** — bu blokla
+yapılan koşumda sonda R06 ile aynı 68 dış isteği atar, çıktıda `D8-DAR-SINIF=UYGULANMADI` yazar ve boş baytlı vektör 403 dışında bir
+yanıt alırsa HTTP / ret sonucu R06'daki gibi `FAIL`'dir. Dar sınıfın değerlendirileceği bir koşum için blok **ayrıca** yazılır ve ayrı
+onay ister: (1) yerel kenar isteği ayrı izin kalemidir (dış 68 + yerel 1; §1a, §3d); (2) yerel kenarın geri döngü adresi bu public
+belgeye yazılmaz, blok onu canlı yapılandırmadan okumalıdır; (3) öz-testin blok düzeneği, yerel adresin test ikamesi **kanıtlanmadan**
+böyle bir bloğu koşturmamalıdır (bu makine canlı ana makine olabilir — ikamesiz blok canlı yerel kenara istek atar; §3b-K8). Bu üç
+iş bu revizyonda **yapılmadı**. Bloklar sondanın `D8-HTTP-RET` satırını **ayrıştırmaz** (yalnız çıkış kodunu ve özetin SHA-256'sını
+aktarır): yeni `OWNER-ISTISNASIYLA-UYGUN` değeri blok metninde değişiklik gerektirmedi; blok onu `PASS` gibi göstermez ve reddetmez.
+
 Ölçüm (normal pencere):
 ```powershell
-& { $ErrorActionPreference='Stop'; $e='C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\.env'; $l=@([IO.File]::ReadAllLines($e) | Where-Object { $_ -match '^\s*PUBLIC_PORTAL_BASE_URL\s*=' }); if($l.Count -ne 1){ throw 'PUBLIC_PORTAL_BASE_URL satiri 1 degil - DUR' }; $ExpBaseUrl=($l[0] -replace '^\s*PUBLIC_PORTAL_BASE_URL\s*=\s*','').Trim().Trim('"').Trim("'"); if($ExpBaseUrl -cnotmatch '^https://[A-Za-z0-9.-]+(:\d+)?$'){ throw 'PUBLIC_PORTAL_BASE_URL https/yolsuz origin degil - DUR' }; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-extacc-d8-staff-surface-r01\scripts\d8-staff-surface-probe.js'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne '4A5176211DBD8FDB1523C78A49E87C7F1AEEA00B320EED1C6806A5A11F208B71'){ throw 'D8 SONDA SHA UYUSMUYOR - DUR' }; $o=Join-Path $env:USERPROFILE ('Documents\CLIENT-EVIDENCE-20260911\extacc-d8-AD-1-' + (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss') + 'Z'); New-Item -ItemType Directory -Force -Path $o | Out-Null; & node $f --alias AD-1 --vantage canli-ana-makine-cikisi --origin $ExpBaseUrl --out "$o\d8-probe.json"; $c=$LASTEXITCODE; 'D8 AD-1 cikis=' + $c; $s="$o\d8-probe.ozet.json"; if(Test-Path -LiteralPath $s){ 'D8 AD-1 adsiz ozet SHA256=' + (Get-FileHash -Algorithm SHA256 -LiteralPath $s).Hash } else { 'D8 AD-1 adsiz ozet YOK' } }
+& { $ErrorActionPreference='Stop'; $e='C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\.env'; $l=@([IO.File]::ReadAllLines($e) | Where-Object { $_ -match '^\s*PUBLIC_PORTAL_BASE_URL\s*=' }); if($l.Count -ne 1){ throw 'PUBLIC_PORTAL_BASE_URL satiri 1 degil - DUR' }; $ExpBaseUrl=($l[0] -replace '^\s*PUBLIC_PORTAL_BASE_URL\s*=\s*','').Trim().Trim('"').Trim("'"); if($ExpBaseUrl -cnotmatch '^https://[A-Za-z0-9.-]+(:\d+)?$'){ throw 'PUBLIC_PORTAL_BASE_URL https/yolsuz origin degil - DUR' }; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-extacc-d8-staff-surface-r01\scripts\d8-staff-surface-probe.js'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne 'DE925B2AA89EA06DE0CED9EF15E269549AA596F7D9FA6BC7AEA8EE7761B5B51E'){ throw 'D8 SONDA SHA UYUSMUYOR - DUR' }; $o=Join-Path $env:USERPROFILE ('Documents\CLIENT-EVIDENCE-20260911\extacc-d8-AD-1-' + (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss') + 'Z'); New-Item -ItemType Directory -Force -Path $o | Out-Null; & node $f --alias AD-1 --vantage canli-ana-makine-cikisi --origin $ExpBaseUrl --out "$o\d8-probe.json"; $c=$LASTEXITCODE; 'D8 AD-1 cikis=' + $c; $s="$o\d8-probe.ozet.json"; if(Test-Path -LiteralPath $s){ 'D8 AD-1 adsiz ozet SHA256=' + (Get-FileHash -Algorithm SHA256 -LiteralPath $s).Hash } else { 'D8 AD-1 adsiz ozet YOK' } }
 ```
 
 Telefon listesi (ayrı çağrı; istek atmaz, kanıt yazmaz; ölçüm bloğu listeyi yazdırmaz):
 ```powershell
-& { $ErrorActionPreference='Stop'; $e='C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\.env'; $l=@([IO.File]::ReadAllLines($e) | Where-Object { $_ -match '^\s*PUBLIC_PORTAL_BASE_URL\s*=' }); if($l.Count -ne 1){ throw 'PUBLIC_PORTAL_BASE_URL satiri 1 degil - DUR' }; $ExpBaseUrl=($l[0] -replace '^\s*PUBLIC_PORTAL_BASE_URL\s*=\s*','').Trim().Trim('"').Trim("'"); if($ExpBaseUrl -cnotmatch '^https://[A-Za-z0-9.-]+(:\d+)?$'){ throw 'PUBLIC_PORTAL_BASE_URL https/yolsuz origin degil - DUR' }; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-extacc-d8-staff-surface-r01\scripts\d8-staff-surface-probe.js'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne '4A5176211DBD8FDB1523C78A49E87C7F1AEEA00B320EED1C6806A5A11F208B71'){ throw 'D8 SONDA SHA UYUSMUYOR - DUR' }; & node $f --alias AD-1 --origin $ExpBaseUrl --phone-list; 'D8 AD-1 telefon listesi cikis=' + $LASTEXITCODE }
+& { $ErrorActionPreference='Stop'; $e='C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\.env'; $l=@([IO.File]::ReadAllLines($e) | Where-Object { $_ -match '^\s*PUBLIC_PORTAL_BASE_URL\s*=' }); if($l.Count -ne 1){ throw 'PUBLIC_PORTAL_BASE_URL satiri 1 degil - DUR' }; $ExpBaseUrl=($l[0] -replace '^\s*PUBLIC_PORTAL_BASE_URL\s*=\s*','').Trim().Trim('"').Trim("'"); if($ExpBaseUrl -cnotmatch '^https://[A-Za-z0-9.-]+(:\d+)?$'){ throw 'PUBLIC_PORTAL_BASE_URL https/yolsuz origin degil - DUR' }; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-extacc-d8-staff-surface-r01\scripts\d8-staff-surface-probe.js'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne 'DE925B2AA89EA06DE0CED9EF15E269549AA596F7D9FA6BC7AEA8EE7761B5B51E'){ throw 'D8 SONDA SHA UYUSMUYOR - DUR' }; & node $f --alias AD-1 --origin $ExpBaseUrl --phone-list; 'D8 AD-1 telefon listesi cikis=' + $LASTEXITCODE }
 ```
 
 Konum etiketi `canli-ana-makine-cikisi` bir **beyandır**: blok canlı ana makinede koşar ve istek o makinenin çıkışından gider; sonda
@@ -769,7 +928,10 @@ biri **kanıtın desteklediği** değeri taşır:
 
 1. **HTTP / ret sonucu** — `PASS` / `FAIL` / `OLCULEMEYEN` (yalnız durum kodu ölçütü). Beklenen 403 yerine doğrulanmış başka bir
    HTTP yanıtı `FAIL`'dir; yanıt alınamaması `OLCULEMEYEN`'dir. `PASS` yalnız "bütün ret vektörleri 403 aldı" demektir; kenar
-   engellemesi demek değildir.
+   engellemesi demek değildir. **R07 (§3d):** tek tanımlı satır "İzin verilen bozuk istek reddi — katman doğrulanmadı" sınıfındaysa
+   alan `PASS` **değil** `OWNER-ISTISNASIYLA-UYGUN` değerini alır: "diğer 58 ret vektörü 403 aldı; tanımlı satırın gerçek HTTP kodu 400'dür ve owner
+   kabul kuralıyla ayrı sınıftadır" demektir — 403 başarısı değildir, o satır 403 sayılmaz, sınıf teknik kanıt değildir, satırın yanına
+   dar sınıf notu yazılır (§1b) ve bu değer aşağıdaki 2. ve 3. kayıtlara hiçbir şey vermez.
 2. **Kenar engelleme sonucu** — sondadan yalnız `FAIL` / `OLCULEMEYEN`. Engellenmesi gereken bir isteğin API'ye ulaştığı
    kanıtlanmışsa — API 403 vermiş olsa da — alan `FAIL`'dir (bulgu adayı) ve öyle **korunur**. FAIL yoksa alan `OLCULEMEYEN`'dir:
    sağlıklı koşumda neden "bağımsız kanıt yok"tur (`ULASMAMA-BAGIMSIZ-KANITI-YOK`); kalibrasyon eksikse, yanıt bir sınama yanıtıysa ya
@@ -798,7 +960,13 @@ Kurallar:
 - Ölçülemeyen kontrol PASS sayılmaz ve hiçbir belgede kapanış / başarı gibi sunulmaz; kanıt yoksa satır "KOŞULMADI" kalır.
 - Kanıttaki `measured.credentialHeaderRequests` 0 ve `measured.nonEmptyBodyRequests` 0 değilse koşum kanıt olarak KABUL EDİLMEZ (sonda
   beklenmeyen bir şey göndermiştir).
-- Özetteki `probeSha256` §7 pinine, `vectorSetId` §7 değerine eşit değilse satır bu revizyonun ölçümü sayılmaz.
+- Özetteki `probeSha256` §7 pinine, `vectorSetId` §7 değerine eşit değilse satır bu revizyonun ölçümü sayılmaz. (§1b AD-1 satırı R06
+  revizyonunun ölçümüdür — pini §7 "önceki pinler" listesindedir; R07 kuralıyla yeniden değerlendirilmez.)
+- **Dar kabul istisnası (R07, §3d) kapanış üretmez:** sınıf yalnız HTTP / ret kaydında tek bir satırın tek başına `FAIL` saydırılmamasıdır;
+  kenar engelleme ve katman doğrulaması kayıtlarını değiştirmez, başka bir satırdaki bulgu adayını kapatmaz ve genel D-8 kabulü değildir.
+  Sınıfın uygulandığı bir koşumda kanıt olarak şunlar **birlikte** aranır: ham kanıt + adsız özet (`malformedRejectClass.state` =
+  `UYGULANDI`) ve — beyan `KULLANILACAK` idiyse — kesinleştirme kaydı (kaynak kanıtın SHA-256'sıyla). Eksik ya da çelişkili kayıtla
+  sınıf kabul edilmez.
 - Bulgu adayının ayrıntısı (yol, yöntem, durum), sayılar ve nedenler **kısıtlı kayda** alınır; public PR'a ve public satıra yazılmaz
   (§1b). `POST /api/auth/login` uygulamaya ulaştıysa personel giriş sayacı +1 yan etkisi de kayda yazılır (tek istek; blok üretmez).
 - Bu sonda sunucunun kendi çıkışından koşar; SEC-API-BIND-01 açıkken D-8 sonucu ayrıca "dışarıdan erişilemez" diye genellenmez.
@@ -851,6 +1019,41 @@ API'ye ulaşmıştı; owner bu sonucu kabul etmedi.
 2. **Kesin kenar kabulünün yöntemi** — sonda kenar engellemesi için `PASS` üretmediğinden bir adın "dışarıdan kapalı" sayılması, sonda
    dışı bağımsız kanıt ve owner değerlendirmesi gerektirir. Yöntem önerisi ayrıca sunulur; owner karar verene kadar her adın kenar
    engelleme durumu — sonda koşsa da — "ölçülemeyen"dir ve D-8 o ad için kapanmış sayılmaz.
+
+Bu iki kalem §3d'deki kararla **kapanmaz**: dar kabul istisnası canlı sonda GO'su ya da kenar kabulü değildir; yalnız 1. kalemin
+kapsamına bir satır ekler (yerel kenar karşılaştırma isteği — ayrı izin kalemi).
+
+### 3d. OWNER KARARI (2026-10-06) — dar kabul istisnası; kural sürümü R07
+
+**Karar tarihi: 2026-10-06 · Kural sürümü: R07 · Yürürlük: R07 sonda baytlarıyla yapılacak koşumlar.** Bu karar §3c'deki aynı günlü
+kararlardan **ayrı** kaydedilir: R06 kurallarının (§3c) üzerine gelen ayrı bir kuraldır ve **geçmiş koşuma geriye dönük uygulanmaz** —
+2026-10-06 AD-1 koşumunun kanıtı ve `FAIL` kaydı (§1b) değişmez; o koşuma bu kuralla `PASS` verilmez. Kararın kaynağı owner'ın
+2026-10-06'da CLIENT oturumuna verdiği yazılı talimattır ("D-8 A/B kararı ve dar uygulama"; owner aynı gün uygulama yetkisini ayrıca
+yineledi): aşağıda tırnak içindeki cümleler o talimattaki owner cümleleridir, tırnaksız olanlar aynı talimatın özetidir. "Nasıl
+uygulandı" sütunu uygulayıcının anlatımıdır (owner metni değildir).
+
+**Sınıfın adı (tam olarak): "İzin verilen bozuk istek reddi — katman doğrulanmadı".**
+**"Bu bir owner kabul kuralıdır; uygulamaya hiç ulaşılmadığının teknik kanıtı değildir."**
+"Sağlayıcıda erken ret kanıtlandı" **yazılmaz**.
+
+İncelenmiş hata yanıtının özellikleri (kuralın 2. koşulu bunlara bağlıdır). **Bu değerler owner metninde yoktur** — owner "incelenmiş
+hata yanıtı özellikleriyle uyum" dedi; değerler 2026-10-06 teşhis ölçümünde incelenen yanıttan **uygulayıcı tarafından sabitlenmiştir**
+(ölçüm kısıtlı kayıttadır): durum **400** · içerik türü `text/html` · gövde tam
+**155 bayt**, SHA-256 `EFCA0895B4D88B27A94249F8E7AC0083EFF0A4FF3AC37C2841B3F6D7E11C1905` · uygulamanın kimlik başlığı **yok**.
+
+| # | Karar (owner talimatı; tırnak içindekiler owner'ın cümleleri) | Bu revizyonda nasıl uygulandı | Öz-test |
+|---|---|---|---|
+| D1 | Yalnız mevcut kodlanmış boş baytlı GET vektörü için HTTP 400 yanıtına dar bir kabul istisnası. Sınıfın adı: "İzin verilen bozuk istek reddi — katman doğrulanmadı". "Bu bir owner kabul kuralıdır; uygulamaya hiç ulaşılmadığının teknik kanıtı değildir." | sondada tek tanım; uygulandığında yalnız o satır sınıfın tam adını taşır ve durum kodu ölçütünü tek başına `FAIL` yapmaz; satır 403 sayılmaz (sayılar ayrı); satırın gerçek HTTP kodu 400 olarak kalır ve HTTP / ret alanı `PASS` değil `OWNER-ISTISNASIYLA-UYGUN` olur (D8); ad ve cümle çıktıda, ham kanıtta ve adsız özette (§1.1) | MR-1, DOC-2 |
+| D2 | Kapsam satır numarasıyla değil, değişmez vektör kimliği + yöntem + ham request-target tanımıyla sabitlenecek; liste sırası değişince istisna başka isteğe taşınamasın. | tanım: vektör kimliği `D8E2-BOS-BAYT-KODLU` (ret listesindeki "varyant boş bayt kodlu" vektörü) + `GET` + `/api/portal/cases%00/admin`; satır bu üçlüyle aranır; karar işlevinde sıra numarası yoktur; tanım tam bir vektörle eşleşmiyorsa istisna yoktur | MR-2, MR-7 |
+| D3 | Koşullar (hepsi): (1) tam olarak tanımlı vektör ve HTTP 400; (2) incelenmiş hata yanıtı özellikleriyle uyum — "yalnız genel bir sağlayıcı başlığı yeterli değil"; (3) uygulama kimliği ya da başka olumlu uygulamaya ulaşma kanıtı bulunmaması; (4) aynı ham yol ve ad bağlamıyla yerel kenarda 403 gözlemi; (5) bu değerlendirmede kullanılan sayaç kanıtı varsa geçerlilik koşulları sağlanmış ve açıklanamayan artış bulunmaması. | beş koşul ayrı ayrı ölçülür / kaydedilir (§1.1 tablosu). (2): içerik türü + bayt sayısı + gövde SHA-256'sı birlikte (değerler owner metninde yoktur; teşhis ölçümünde incelenen yanıttan uygulayıcı sabitledi — yukarıda); özet ham değerle karşılaştırılır; `Server` başlığı karara girmez. (4): isteğe bağlı `--local-edge` girdisi — tek istek, yalnız `127.0.0.1`, "ad bağlamı" dış adın Host başlığı olarak uygulandı; ayrıca yerel 403'ün kimlik başlıksız olması aranır (**uygulayıcı sıkılaştırması**: kimlik başlıklı yerel 403 "çelişkili kanıt" sayılır). (5): sonda sayaç kanıtını **ölçmez**; owner beyanı (`--offprobe-evidence`) ve — beyan "kullanılacak" ise — istek atmayan kesinleştirme adımındaki sonuç (`--offprobe-result`) kaydedilir. Sayaç yönteminin ayrıntısı bu belgeye ve sondaya **yazılmaz** (kısıtlı kayıt) | MR-1, MR-3, MR-4, MR-5, MR-6 |
+| D4 | "Olumlu uygulamaya ulaşma kanıtı istisnayı geçersiz kılar. Eksik veya çelişkili kanıt istisnaya kabul edilmez; mevcut FAIL / ÖLÇÜLEMEYEN kuralları uygulanır." | kimlik başlığı taşıyan yanıt (yeni kimlik · yansıma · yabancı kimlik) → istisna yok; beyan yok / sonuç yok / yerel gözlem yok / yanıt özellikleri tutmuyor → istisna yok; o satır R06 kuralıyla `FAIL`'dir. Tanınmayan girdi sessizce "yok" sayılmaz (kapı, çıkış 4) | MR-3 … MR-6, MR-9, GT-1 (14) |
+| D5 | Bu sınıf: 2xx yanıtları kapsamaz · başka vektörlere uygulanmaz · kenar engelleme veya katman doğrulamasına PASS vermez · başka bulguyu kapatmaz · genel D-8 kabulü üretmez. | kenar engelleme ve katman doğrulaması alanları sınıfı **görmez**: sınıf uygulanan ve uygulanmayan aynı girdide iki alan birebir aynıdır; kanıt sınırı ve çıkış kodu eşlemesi değişmedi (ölçüm koşumu 0 üretmez). Sınıf HTTP / ret alanında da `PASS` üretmez (D8). 2026-10-06 koşumunun `FAIL` kaydı ve bulgu adayı değerlendirmesi **ayrıdır**: bu kural onlara dokunmaz ve hiçbirini kapatmaz; D-8 açık kalır | MR-2, MR-3, MR-8, GT-1 |
+| D6 | Yeni kuralın karar tarihi (2026-10-06) ve sürümü (R07) ayrı kaydedilsin; geçmiş koşuma geriye dönük PASS verilmesin. 2026-10-06 koşum kaydı ve §1b AD-1 satırı aynen kalır. | bu bölüm ayrı kayıttır; kanıtta / özette / çıktıda kural sürümü `R07` yazılır. Kesinleştirme adımı yalnız R07 sonda baytlarının yazdığı kanıtı kabul eder (R06 kanıtı reddedilir). §1b AD-1 satırı ve belgenin başındaki koşum kaydı değişmedi (koşum kaydındaki parantez "pin §7 ile aynı" yerine "R06 pini — §7 önceki pinler" diye düzeltildi; sonuç değerleri aynen) | MR-9, DOC-2 |
+| D7 | "Eklenen yerel karşılaştırma isteğini sonraki koşum paketinin istek sayısı ve izin kapsamına açıkça işle." | yerel karşılaştırmalı koşum: **dış 68 istek + 1 yerel kenar isteği = 69**; yerel istek **ayrı izin kalemidir** (§1a). Bu revizyondaki owner bloğu yerel karşılaştırmayı **içermez**: o blokla yapılan koşumda yerel gözlem yoktur → istisna uygulanmaz (§1d). Yerel karşılaştırmalı blok ayrıca yazılır ve ayrı onay ister | MR-1, MR-4, DOC-2 |
+| D8 | (owner'ın 2026-10-06 gece verdiği ek şart) "İstisna uygulanan HTTP 400 satırını 'HTTP/ret PASS' diye sunma. Gerçek HTTP kodu 400; sınıf 'İzin verilen bozuk istek reddi — katman doğrulanmadı' olarak ayrı görünmeli. Toplu politika uygunluğu hesaplanıyorsa bunun owner istisnasına dayandığı açık olmalı; 403 başarısı, kenar engelleme veya katman PASS'i üretmemeli." | sınıf uygulanan koşumda HTTP / ret alanı `PASS` **olmaz**: yalnız bu alan için ayrı değer `OWNER-ISTISNASIYLA-UYGUN` yazılır (anlamı: istisna dışındaki bütün ret vektörleri 403 + tam bir satır owner istisnası sınıfında; koşul: FAIL nedeni yok, ölçülemeyen nedeni yok, tam bir satır). Satırın `status` değeri 400, durum sınıfı `DORTYUZ-403-DISI` olarak kalır; sınıfın adı satırda ayrı alandadır; satır 403 sayısına girmez. Çıktı bu değerin owner kabul kuralına dayandığını ve 403 başarısı olmadığını yazar. Kenar engelleme, katman doğrulaması ve pozitif kontrol bu değeri almaz ve görmez (yalnız üç değer); çıkış kodu eşlemesi değişmedi. §1b satırına bu değer aynen yazılır (`PASS` yazılmaz). Owner blokları `D8-HTTP-RET` satırını ayrıştırmaz (değişiklik gerekmedi). Değerin **adı** uygulama seçimidir (owner metni değildir) | MR-10, MR-1, MR-6, MR-8, GT-1, DOC-1, DOC-2 |
+
+**Bu karar şunları vermez:** canlı sonda GO'su · yerel kenara istek izni (ayrı izin kalemi) · kenar kabulü · D-8 kapanışı · başka ad için
+kapsam. Canlıya ve yerel kenara bu revizyon için hiçbir istek atılmadı.
 
 ## 4. D-6 belge akışı — tanım ve paket eşlemesi (koşucu + owner bloğu HAZIR: `client-extacc-portal-d6-r01`; canlıda koşulmadı)
 
@@ -912,8 +1115,16 @@ Kurallar:
 
 ## 7. Pinler
 
-`d8-staff-surface-probe.js` `4A5176211DBD8FDB1523C78A49E87C7F1AEEA00B320EED1C6806A5A11F208B71` · `d8-selftest.js` `389B84F2CFD44B6BF7E56BA352386242F02B217C74E5F16DDC793C31AE9CBFF1`.
+`d8-staff-surface-probe.js` `DE925B2AA89EA06DE0CED9EF15E269549AA596F7D9FA6BC7AEA8EE7761B5B51E` · `d8-selftest.js` `66E389377404DE57B99173C6684B5FBCC5F73D6AEA70DCEB0DBD056FFCAF13A7`.
 Vektör kümesi kimliği (59 ret + 9 pozitif; vektörler R04 ile aynı): `83AD1AB6DF5E52FD4FD028C5C6A411CDD9D22BCAB53194ABD9915D47920FF0F2`.
+(**R07** — kural sürümü; owner kararı 2026-10-06, §3d: yalnız tanımlı tek vektör için dar kabul istisnası "İzin verilen bozuk istek
+reddi — katman doğrulanmadı" — owner kabul kuralıdır, teknik kanıt değildir; uygulandığında HTTP / ret alanı `PASS` değil `OWNER-ISTISNASIYLA-UYGUN` olur; isteğe bağlı yerel kenar karşılaştırması (+1 istek) ve
+sonda dışı ek kanıt beyanı; istek atmayan kesinleştirme adımı · öz-test 125 kalem · **canlıda koşulmadı**; geçmiş koşuma uygulanmaz.
+R06'dan değişmeyenler: vektör listesi ve vektör kümesi kimliği, dış istek profili, kenar engelleme / katman doğrulaması / pozitif
+kontrol kuralları, kanıt sınırı, çıkış kodu eşlemesi. **Önceki pinler — R06:** sonda `4A5176211DBD8FDB1523C78A49E87C7F1AEEA00B320EED1C6806A5A11F208B71` · öz-test
+`389B84F2CFD44B6BF7E56BA352386242F02B217C74E5F16DDC793C31AE9CBFF1` [114/114, 2026-10-06; `main`
+#2943 → `7cc31a3a`; **AD-1 canlı koşumu (2026-10-06) bu sonda baytlarıyla yapıldı** — §1b satırındaki kısa pin budur; R06'nın gerçek API
+ile izole prova yinelemesi de bu baytlarladır]. Aşağıdaki parantez R06 notudur ve tarihsel olarak korunur.)
 (R06, 2026-10-06, owner'ın 2026-10-06 kararlarıyla — §3c: kenar engelleme ve katman doğrulaması sondayla PASS üretmez (kanıt sınırı);
 "API değil" çıkarımı kalktı; ölçüm koşumu çıkış 0 üretmez · pozitif kontrolde 403 istisnası yok · kapsam yetkisi kapısında birleşik
 belge kabul edilir, içerik incelemesi beyanı zorunlu ve dosya bütünlüğünden ayrı · öz-test 114 kalem · gerçek API ile izole prova bu
