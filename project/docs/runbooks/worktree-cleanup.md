@@ -1,6 +1,6 @@
 # Runbook: Worktree Cleanup & Git Safety (Windows + pnpm + çoklu oturum)
 
-**Status:** Active · **Owner:** Platform · **Son güncelleme:** 2026-07-05 (ACT-17)
+**Status:** Active · **Owner:** Platform · **Son güncelleme:** 2026-10-06 (owner kararı: zorlamasız kaldırma varsayılanı; önceki: 2026-07-05 ACT-17)
 
 Bu runbook HUKUK_YAZILIMI repo'sunda biriken git worktree'lerinin ve merged branch'lerin GÜVENLİ temizliği için bağlayıcı operasyon prosedürüdür. Windows junction + pnpm hardlink/store yapısı ve çoklu Claude/Codex oturumu nedeniyle naif recursive silme canonical repoyu sessizce bozabilir. Normatif çekirdek `AGENTS.md` §6'dadır; bu runbook bağlayıcı mekanik prosedürdür. `process-rules.md` yalnız açıklama/şablon katmanıdır.
 
@@ -25,7 +25,7 @@ Gerekçe: bunların hepsi ya junction/hardlink'i takip edip canonical'ı bozabil
 ## Güvenli komutlar
 
 - `git worktree list --porcelain` (envanter)
-- `git worktree remove --force <path>` (TEK izinli worktree kaldırma)
+- `git worktree remove <path>` — **zorlamasız**; worktree kaldırmanın TEK izinli yoludur ve varsayılan budur. `--force` otomatik uygulanmaz; yalnız owner o worktree için açıkça isterse kullanılır (§2)
 - `git worktree prune`
 - `git branch -D <branch>` (local; squash-merge teyitliyse)
 - `git push origin --delete <branch>` (remote; merged + açık-PR-yok teyitli)
@@ -44,10 +44,10 @@ Her worktree silmeden önce şu sınıflardan birine konur:
 | ACTIVE_CLAUDE_WIP | clean değil ∨ açık PR ∨ HEAD origin'de değil + güncel commit | DOKUNMA |
 | DIRTY_KEEP | uncommitted/untracked iş var | DOKUNMA |
 | UNKNOWN_KEEP | sahibi/merge durumu belirsiz (özellikle detached, branch yok) | DOKUNMA |
-| DETACHED_VERIFY_CANDIDATE | benim açtığım detached verify worktree (origin/main snapshot, iş bitti) | aday (remove --force) |
+| DETACHED_VERIFY_CANDIDATE | benim açtığım detached verify worktree (origin/main snapshot, iş bitti) | aday (zorlamasız remove) |
 | MERGED_CLAUDE_CLEANUP_CANDIDATE | clean ∧ Claude-sahipli ∧ PR-merged ∧ açık-PR-yok | per-branch gh-verify SONRA aday |
-| SAFE_REMOVE_CANDIDATE | yukarıdaki doğrulamalar geçti | remove --force |
-| ORPHANED_WORKTREE_DIR | `remove --force` "Directory not empty" bıraktı | RAPORLA, fiziksel silme YOK, owner kararı |
+| SAFE_REMOVE_CANDIDATE | yukarıdaki doğrulamalar geçti | zorlamasız remove |
+| ORPHANED_WORKTREE_DIR | `remove` "Directory not empty" bıraktı | RAPORLA, fiziksel silme YOK, owner kararı |
 
 ## Prosedür
 
@@ -64,8 +64,10 @@ Her worktree silmeden önce şu sınıflardan birine konur:
 ### 2. Worktree cleanup (junction-RİSKLİ)
 1. Sınıflandır (yukarıdaki tablo). Yalnız SAFE_REMOVE_CANDIDATE / DETACHED_VERIFY_CANDIDATE.
 2. `git -C <path> status --porcelain` → clean olmalı.
-3. `git worktree remove --force <path>`.
+3. `git worktree remove <path>` — **zorlamasız** (owner kararı 2026-10-06: varsayılan zorlamasız kaldırmadır).
    - **SUCCESS** → `git worktree prune`.
+   - **Git reddederse** (ör. değişmiş / izlenmeyen dosya, kilitli worktree) → **DUR.** Ret hâlinde hiçbir şey silinmemiştir ve worktree `git worktree list --porcelain` çıktısında hâlâ kayıtlıdır. Nedeni incele ve raporla (yalnız salt okuma): `git -C <path> status --porcelain --ignored` (`!!` ile başlayan yok sayılan girdiler reddin nedeni DEĞİLDİR; yalnız envanterdir) ve kilit durumu (`git worktree list --porcelain` içindeki `locked` satırı). **Otomatik `--force` UYGULANMAZ.** `--force` (kilitli worktree'de kilidin açılması dahil) yalnız owner'ın o worktree için açık talimatıyla ve neden raporlandıktan sonra kullanılır.
+   - **Kayıt düştü ama dizin duruyor** (neden ne olursa olsun: "Directory not empty", "Filename too long", dizini kullanan bir süreç) → bu bir ret DEĞİL, silme aşaması hatasıdır: ORPHANED_WORKTREE_DIR (aşağıdaki madde). `--force` bunun çözümü değildir; süreç sonlandırılmaz, yalnız raporlanır.
    - **"Directory not empty"** (node_modules junction) → **DUR.** ORPHANED_WORKTREE_DIR olarak işaretle. Fiziksel dizini SİLME. node_modules orphan kalır (disk-only, zararsız). Owner manuel temizler (cmd rd + ANINDA integrity-check) — AJAN YAPMAZ.
 4. PREVENTİF: temizlenecek/kısa-ömürlü worktree'de gate gerekmiyorsa `pnpm install` YAPMA → node_modules yok → remove temiz, risk yok.
 
@@ -116,11 +118,14 @@ Bozulma → `pnpm install --force` (relink). Store dosyaları eksikse → owner-
   1. Zaman aşımına uğrayan HER `git worktree add` sonrası, düzenlemeye başlamadan ÖNCE
      bütünlüğü doğrula: `git -C <path> status --porcelain` (temiz olmalı, "deleted" göstermemeli)
      + değiştirilecek dosyanın gerçekten var olduğunu `ls`/`Read` ile teyit et.
-  2. Bozuksa: bu worktree'yi GÜVENİLMEZ SAY, `git worktree remove --force <path>` ile kaldır
-     (bkz. §2 — "Directory not empty" olursa yine `prune`, orphan bırak).
-  3. Aynı branch adını YENİDEN KULLANMA konusunda dikkatli ol (branch zaten oluşturulmuş
-     olabilir) — gerekirse önce `git branch -D <branch>` ile temizle, sonra **yeni/aynı** branch
-     adıyla worktree'yi TEKRAR aç (fresh checkout).
+  2. Bozuksa: bu worktree'yi GÜVENİLMEZ SAY ve ona dokunma. Kısmi checkout tanım gereği temiz
+     değildir; bu yüzden zorlamasız `git worktree remove <path>` git tarafından reddedilir — bu
+     BEKLENEN sonuçtur: DUR, nedeni (kısmi checkout) raporla. Otomatik `--force` yok; `--force` için
+     owner'ın o worktree'ye açık talimatı beklenir (bkz. §2).
+  3. Beklerken işe FARKLI bir yol ve FARKLI bir branch adıyla açılan yeni worktree'de devam et
+     (fresh checkout). Aynı branch adı yalnız bozuk worktree kaldırıldıktan sonra yeniden
+     kullanılabilir: branch o worktree'de çekili kaldığı sürece `git branch -D <branch>` ile
+     silinemez.
   4. Yeniden denerken timeout payını artır (ör. 180000ms) — büyük repo checkout'u rutin
      olarak 60sn'yi geçebilir, bu tek başına bir hata değildir; yalnız checkout bütünlüğü
      bozulduğunda gerçek bir sorundur.
@@ -130,6 +135,7 @@ Bozulma → `pnpm install --force` (relink). Store dosyaları eksikse → owner-
 - Silinen remote branch'ler
 - Silinen local branch'ler
 - Kaldırılan worktree'ler
+- Zorlamasız kaldırması git tarafından reddedilen worktree'ler (neden; owner kararı bekliyor)
 - ORPHANED kalan dizinler (owner manuel)
 - Korunan owner/codex/WIP worktree'leri
 - Canonical integrity check sonucu (yukarıdaki 9 kalem)
