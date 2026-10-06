@@ -1,7 +1,7 @@
 # EXTACC D-8 — PERSONEL YÜZEYİ DIŞARIDAN KAPALI · D-6/D-7 TANIMI · BİRLEŞİK D-9 (R01)
 
-> **DURUM: HAZIRLIK R05 — owner kararları işlendi (§3b); kanıt kuralının gerçek API ile izole provasının ilk koşusu yapıldı (bir
-> önceki sonda baytlarıyla; §1.1 — son baytlarla yinelemesi çağıranda); CANLIDA KOŞULMADI; canlı sonda GO'su YOK.** D-8 kısmi kaydı
+> **DURUM: HAZIRLIK R05 — owner kararları işlendi (§3b); kanıt kuralının gerçek API ile izole provası yapıldı ve son sonda
+> baytlarıyla yinelendi (§1.1); CANLIDA KOŞULMADI; canlı sonda GO'su YOK.** D-8 kısmi kaydı
 > (owner telefonu, 5 GET → 403, 2026-09-27 21:14–21:15) **tamamlanmış sayılmaz**: katman ölçülmedi; diğer yöntem/yollar açık. Bu paket
 > makine ölçümünü ve telefon beyanını ayırır.
 >
@@ -12,7 +12,7 @@
 > "kabul edilmeyen biçim → yeni kimlik" davranışını hiç göstermediyse ret satırındaki "yeni kimlik" kenar engellemede yine FAIL'dir ama
 > katman doğrulaması ÖLÇÜLEMEYEN kalır (§1.1) · **(d)** §1b satır biçimi koşum hücresine göre ölçülür; koşum hücresine pin ve vektör
 > kümesi kimliği kısa biçimde yazılır · **(e)** §1'de owner'ın asgari ölçütünün ötesindeki koşullar "uygulayıcı sıkılaştırması" diye
-> ayrı işaretlendi · **(f)** gerçek API ile izole provanın ilk koşusu işlendi (§1.1). Vektör listesi ve istek profili **değişmedi**;
+> ayrı işaretlendi · **(f)** gerçek API ile izole prova işlendi (ilk koşu + son baytlarla yineleme; §1.1). Vektör listesi ve istek profili **değişmedi**;
 > pinler değişti (§7). Canlı sonda çalıştırılmadı.
 >
 > **R05 (2026-10-05; üçüncü tur 2026-10-06) — ad başına koşum; owner kararlarıyla üç ayrı alan.** Owner talimatı (2026-10-05, aynen): "D-8 hazırlığında
@@ -290,8 +290,8 @@ katman çalışmaz; ikisinde de API yanıtı başlıksız olur). `ONEK-DISI` = w
   ("desteksiz kesinlik yok"; öz-test SINIR-1'in ikinci girdisi). Aynı yerde API biçiminde **olmayan** bir değer yabancı kimlik sayılır
   (OLCULEMEYEN).
 
-**Bu protokolün dayanağı KAYNAK OKUMASIDIR; gerçek API ile izole provanın ilk koşusu bir önceki sonda baytlarıyla yapıldı (aşağıda
-"Gerçek API ile izole prova").** Dayanak:
+**Bu protokolün dayanağı kaynak okumasıdır ve gerçek API ile izole provayla ölçülmüştür (aşağıda "Gerçek API ile izole prova";
+son sonda baytlarıyla yinelendi).** Dayanak:
 `apps/api/src/common/request-id.middleware.ts` (başlık adı, kabul edilen biçim, kabul edilen değer aynen yanıta yazılır, edilmeyenin
 yerine `randomUUID()`), `app.module.ts` (ara katman `forRoutes('*')`), `main.ts` (genel önek `api`, `enableCors`); kilit dosyasındaki
 Nest 10.4.20 / Express 4 sürümlerinin ara katmanı `/api` ve `/api/*` için kaydetmesi. Canlı sürümün (R27, `1b758d29`) kaynağında
@@ -353,9 +353,15 @@ web uygulaması) bu başlığa ne yaptığı bu provayla **ölçülmedi**; o, an
 sınır (yalnız API'nin ret yanıtından başlığı silen katman → kenar engelleme PASS) gerçek API ile gösterilmiştir; **kapatılamaz** ve
 kenar engelleme PASS kaydının **varsayımıdır** (kayıt eki, varsayım 1).
 
-Bu koşu sonda baytları `369A51DD…8370` ile yapıldı; son baytlarla yineleme sonucu bu bölümün sonuna çağıran tarafından eklenir.
-(Yukarıdaki tablo, bu turda değişen üç kuraldan — pozitif kontrolde tek kural, kapının eksik kalemi adlandırması, katman
-doğrulamasında desteksiz kesinlik yok — **önceki** baytların çıktısıdır.)
+İlk koşu sonda baytları `369A51DD…8370` ile yapıldı (yukarıdaki tablo o koşunun çıktısıdır). **Son baytlarla yineleme (2026-10-06;
+sonda `EE0C6998…3F1A`, §7 pini; aynı düzenek, aynı dokuz kip):** dokuz kipin dokuzunda dört alan, çıkış kodu, kalibrasyon sonucu ve
+zemin günlüğüyle karşılaştırma sayıları yukarıdaki tabloyla **aynıdır** (yanlış pozitif 0 / 9 kip; gerçek API 403'ü → PASS · FAIL ·
+FAIL · PASS, çıkış 2; yansıtan, damgalayan ve ezen kiplerde kenar engelleme ÖLÇÜLEMEYEN, çıkış 3; sınır kipi çıkış 0). Kenarsız
+doğrudan API ölçümü iki koşuda aynı sınıfları verdi: kimliksiz 403 / 401 / 404 yanıtlarında kabul edilen biçim aynen, edilmeyen biçim
+yerine yeni kimlik; ön uçuş, çift eğik çizgili yol, çözülemeyen yüzde dizisi ve API öneki dışındaki yollarda başlık yok. İki koşuda da
+API günlüğünde hata satırı ve gönderilen kimlik değeri yoktur; yayın adayı ağacı koşudan önce ve sonra aynı ölçülmüştür. Bu turda
+değişen üç kural (pozitif kontrolde tek kural, kapının eksik kalemi adlandırması, katman doğrulamasında desteksiz kesinlik yok) bu
+dokuz kipin hiçbirinde farklı bir alan değeri üretmedi; o kuralların ayırt edici girdileri öz-testtedir (P-6, SA-2, A-5).
 
 **"Kimliksiz istekte uygulama 403 üretmez" bir genelleme değildir.** Bu, yalnız sondanın vektör listesindeki uçlar için kaynak
 okumasıdır (çalışma zamanında ölçülmedi); uygulamanın başka uçları kimlik kontrolünden önce 403 üretebilir. Uygulamanın ürettiği 403
@@ -593,8 +599,8 @@ OLCULEMEYEN); parantez içindeki sayı sondanın çıkış kodudur.
 **Blok düzeneği deneyi (depo dışı, yalıtılmış kopya; bu turun baytları — §3b-K8; blok düzeneği kodu bu turda değişmedi):** paketin kopyasında belgedeki iki bloğun `.env` yolu değiştirilip öz-test o kopyada koşturuldu. (A) yol var olmayan bir köke çevrildi: 109 kalem raporlandı, FAIL yalnız B-0 (belgedeki yolun değiştiğini gösteren kalem); kabuğa verilen 20 betikten belgedeki yolu taşıyan 0, canlı kök adını taşıyan 0 — bloklar sahte `.env` ile koştu. (B) ölçüm bloğunda yol çift tırnakla yazıldı (ikame kanıtlanamaz): 109 kalem raporlandı, FAIL B-0, B-G, B-1 (iki kabukta), B-2 (iki kabukta), B-3 (iki kabukta), B-4 (iki kabukta), B-5 (iki kabukta), B-T (iki kabukta), B-T2 (iki kabukta); kabuğa verilen betik 2 (yalnız iki kabuğun sürüm sorgusu: 2) — owner bloğu **hiç koşmadı**.
 
 **Öz-testin ölçmediği** (hiçbiri "geçti" sayılmaz):
-- **gerçek API ve gerçek kenar**: öz-testteki API bir modeldir. Gerçek API ile izole provanın ilk koşusu ayrı düzenekte, bir önceki
-  sonda baytlarıyla yapıldı (§1.1); son baytlarla yinelemesi çağırandadır. O provada da **olmayanlar**: tünel / sağlayıcı ayağı, gerçek
+- **gerçek API ve gerçek kenar**: öz-testteki API bir modeldir. Gerçek API ile izole prova ayrı düzenekte yapıldı ve son sonda
+  baytlarıyla yinelendi (§1.1). O provada da **olmayanlar**: tünel / sağlayıcı ayağı, gerçek
   web uygulaması (web yanıtları kenarın sentetik sayfasıydı), şablondaki kenar yazılımının kendisi. Canlı zincirin kimlik başlığını
   geçirip geçirmediği, canlı kenarın şablonla eşitliği, gerçek web uygulamasının yanıtlarında bu başlığın bulunup bulunmadığı
   **ölçülmedi**. Kenar engelleme PASS kaydındaki varsayım (SINIR-2; gerçek API ile gösterildi, kapatılamaz) ve FAIL yönündeki sınır
@@ -717,7 +723,7 @@ işaretlidir.
 | K6 | Diğer adın kapsam yetkisi: "yetkili sağlayıcı hesabındaki bölge/özel ad kaydı + DNS zinciri yeterli. Tünel kaydı tek başına yeterli değil. Kanıt eksikse yalnız eksik girdiyi iste; sahiplik kapısını uygulamayı bekletme." | kapsam yetkisi kapısı sondada (§1): AD-1 dışındaki ad kimliği kayıtsız koşmaz; iki kalem + dosya + SHA-256 + tarih + ad kimliği / ana makine bağı ölçülür; yalnız tünel kaydı RET; zorunlu bir kalem eksikse ret iletisi **eksik kalemin türünü** adlandırır (dördüncü tur). Asgari ölçütün ötesindeki koşullar §1'de "uygulayıcı sıkılaştırması (owner kararı değildir)" diye ayrı işaretlidir. Bugün hiçbir ek ad için kayıt sunulmadı — eksik olan yalnız bu girdidir | SA-1 … SA-8 |
 | K7 | "R27 yayın paketi ve kalan işler karar listesindeki eski 'tek PASS ile kapanış' ifadelerini düzeltmek için dar kapsam genişletmesini onaylıyorum. … Yalnız D-8'in güncel karar ve kapanış tanımını düzelt. Tarihsel koşum sonuçlarını değiştirme." | `client-release-r27-r01/R27-RELEASE-PACKAGE-R01.md` — yalnız D-8 ölçüt satırı + tek cümlelik not · `CLIENT-KALAN-ISLER-R01.md` — D-8 satırı, §3.3, §5, §11 KR-9 | — (belge) |
 | K8 | "Öz-testin canlı hedefe çıkmasını engelleyen ikame kontrolü zorunlu kalsın. İkame kanıtlanamazsa owner bloğu hiç çalışmamalı." | öz-testin blok düzeneği, `.env` yolu / sonda yolu / pin ikamesi kanıtlanmadan bloğu hiç koşturmaz (değişmedi; bu turun baytlarında iki kabukta yeniden ölçüldü) | B-G, B-0, B-1 … B-T2 |
-| K9 | İzole prova ölçütü: prova "sıradan yansıyan girdi ile API'ye ulaşmayı gerçekten ayırt eden kanıtı sınayacak; kanıtın desteklemediği katman kesinliğini reddedecek." | kanıt kuralı "kabul edilmeyen biçim → yeni kimlik" üzerine yeniden kuruldu; yansıma, damga, ezme ve kısmi kalibrasyonda katman / kenar hükmü `OLCULEMEYEN` (§1.1). **Dördüncü tur (çağıranın kararı):** koşumun kalibrasyonu "yeni kimlik" davranışını hiç göstermediyse ret satırındaki aynı gözlem kenar engellemede `FAIL` kalır ama katman doğrulaması "API" kesinliği bildirmez (`OLCULEMEYEN`). **Gerçek API ile izole provanın ilk koşusu yapıldı** (bir önceki sonda baytlarıyla; sonuç §1.1'de — sıradan yansıma API kanıtı üretmedi; son baytlarla yinelemesi çağıranda); öz-testteki API bir modeldir | R-1 … R-3, M-1 … M-4, E-1, E-2, Z-1, SINIR-1, SINIR-2, A-5 |
+| K9 | İzole prova ölçütü: prova "sıradan yansıyan girdi ile API'ye ulaşmayı gerçekten ayırt eden kanıtı sınayacak; kanıtın desteklemediği katman kesinliğini reddedecek." | kanıt kuralı "kabul edilmeyen biçim → yeni kimlik" üzerine yeniden kuruldu; yansıma, damga, ezme ve kısmi kalibrasyonda katman / kenar hükmü `OLCULEMEYEN` (§1.1). **Dördüncü tur (çağıranın kararı):** koşumun kalibrasyonu "yeni kimlik" davranışını hiç göstermediyse ret satırındaki aynı gözlem kenar engellemede `FAIL` kalır ama katman doğrulaması "API" kesinliği bildirmez (`OLCULEMEYEN`). **Gerçek API ile izole prova yapıldı ve son sonda baytlarıyla yinelendi** (sonuç §1.1'de — sıradan yansıma API kanıtı üretmedi; desteklenmeyen katman kesinliği bildirilmedi); öz-testteki API bir modeldir | R-1 … R-3, M-1 … M-4, E-1, E-2, Z-1, SINIR-1, SINIR-2, A-5 |
 | K10 | "Bu talimat canlı sonda, yayın, migration, e-posta, Run veya Recover yetkisi vermiyor." | canlıya hiçbir istek atılmadı; blok yalnız AD-1 için hazır ve çalıştırılmadı | — |
 
 **AÇIK KALAN TEK D-8 KARARI — canlı sonda kapsamı ve ad başına GO:** hangi adlar, hangi pencere, hangi istek profili (her istekte tek
