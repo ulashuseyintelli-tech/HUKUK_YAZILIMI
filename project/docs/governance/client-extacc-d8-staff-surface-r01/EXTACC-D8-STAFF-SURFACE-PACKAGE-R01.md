@@ -11,6 +11,20 @@
 > (owner telefonu, 5 GET → 403, 2026-09-27 21:14–21:15) **tamamlanmış sayılmaz**: katman ölçülmedi; diğer yöntem/yollar açık. Bu paket
 > makine ölçümünü ve telefon beyanını ayırır.
 >
+> **R09 (2026-10-07; owner talimatı — §3d-D10) — sondaya çalıştırıcıdan bağımsız TOPLAM SÜRE SINIRI + İPTAL DOSYASI. HAZIRLIK: canlıya
+> uygulanmadı, bloklar ÇALIŞTIRILMADI; canlı koşum izni DEĞİLDİR.** Neden: yerel ölçümde çalıştırıcının süre sınırı dolunca sonda
+> ölmüyordu ve sondada toplam süre sınırı yoktu — 15 sn yalnız istek başına **boşta kalma** sınırıdır; sürekli veri damlatan bir yanıt onu
+> hiç doldurmaz. **İki güvence ölçüm çağrısında zorunludur:** `--max-total-ms` (iki ölçüm bloğunda **5 dakika**) ve `--cancel-file`.
+> Süre dolunca ya da iptal dosyası algılanınca (devam eden istek **sırasında da**; 200 ms aralıkla yoklanır): aktif istek ve bağlantısı
+> kesilir, yeni dış ya da yerel istek başlamaz, süreç **çıkış 6** ile sonlanır. Önceden mevcut iptal dosyasıyla **0 istek** atılır.
+> **5 dakika sondanın sınırıdır; sayaç beklemeleri dahil bütün iş akışının süresi değildir.** Kesilen koşum **eksiktir**: ham kanıt /
+> özet yazılmaz, yalnız **kesinti kaydı** yazılır (neden · zaman · **istemci tarafında** başlatılan / sonuçlanan istek sayıları — sunucunun
+> aldığı ya da işlediği istek sayısı **değildir**); `PASS` ya da owner istisnası üretmez. Zorla öldürmede sayı **UNKNOWN** kalır.
+> **Eski çağrılar:** iki güvenceyi vermeyen ölçüm çağrısı (R08 ve öncesi) artık **koşmaz** (kapı, çıkış 4, istek yok); canlı owner bloğu iki
+> güvence olmadan çalışmaz. Tamamlanan koşumun sınıflandırması, dört alanı ve çıkış kodları (2 / 3) **değişmedi**; vektör listesi, vektör
+> kümesi kimliği ve dar kabul kuralı (sürüm R07) aynen. Pinler değişti (§7). Öz-test 159 kalem (§1c). §1b AD-1 satırı ve 2026-10-06 koşum
+> kaydı aynen.
+>
 > **R08 (2026-10-06; owner talimatı — §3d-D9) — yerel karşılaştırmalı owner bloğu (yalnız AD-1) + kesinleştirmede kayıtlı ham kanıt
 > özeti kapısı. HAZIRLIK: canlıya uygulanmadı, yeni bloklar ÇALIŞTIRILMADI; canlı koşum izni DEĞİLDİR.** R07'de eksik kalan yerel
 > karşılaştırmalı ölçüm bloğu ve kesinleştirme bloğu yazıldı (§1d "R08"). **İstek bütçesi (hazırlık bütçesi):** 68 dış + 1 yerel
@@ -255,6 +269,28 @@ dışında ve bağımsız bir yerde (koşum çıktısının alındığı kısıt
 olan biri için teknik engel değildir. Adım ayrıca sonucun (beyanın) doğruluğunu ölçemez; aynı kanıt için ikinci bir kesinleştirmeyi engelleyemez (iki
 farklı sonuçla iki kayıt varsa bu **çelişkili kanıttır** ve istisna kabul edilmez — kayıt sahibinin kuralıdır, sonda ölçmez).
 
+**R09 — iki güvence: ölçüm çağrısında ZORUNLU iki girdi (owner talimatı §3d-D10).** Ölçüm çağrısı (istek atan tek çağrı) bu ikisi
+olmadan **koşmaz**. **Eski çağrıların davranışı:** `--max-total-ms` / `--cancel-file` vermeyen ölçüm çağrısı — R08 ve öncesinin
+çağrı biçimi — artık kapıda durur (çıkış 4, istek atılmaz); sessizce "sınırsız" koşmaz. `--phone-list` ve `--finalize` istek atmaz ve
+bu iki girdiyi **almaz** (verilirse kapı).
+
+| Girdi | Ne yapar | Yoksa / geçersizse |
+|---|---|---|
+| `--max-total-ms <1000–900000>` | **toplam süre sınırı** — çalıştırıcıdan bağımsız, sondanın kendi sınırı. Bitiş anı süreç başında hesaplanır; bütün dış istekleri ve yerel karşılaştırma isteğini kapsar (kanıt yazımı kapsam dışıdır). Süre dolunca aktif istek ve bağlantısı kesilir (açık tutulan bağlantılar dahil), yeni istek başlamaz, süreç **çıkış 6** ile sonlanır. İstek başına 15 000 ms (`D8_HTTP_TIMEOUT_MS`) ayrı bir şeydir: yalnız **boşta kalma** sınırıdır, toplam sınır değildir. Owner blokları 300 000 (5 dakika) verir. Bu süre **sondanın** sınırıdır; iş akışının bütününün süresi değildir | kapı, çıkış 4, istek atılmaz |
+| `--cancel-file <yol>` (yolun dizini var olmalı) | **iptal dosyası** — süreç başında **varsa 0 istek** atılır. Koşum boyunca **200 ms aralıkla** yoklanır, devam eden istek **sırasında da**; ayrıca her istekten önce bakılır. Algılanınca aktif istek kesilir, yeni istek başlamaz, süreç çıkış 6 ile sonlanır. Dosyanın içeriği okunmaz. Dosya koşum boyunca yoksa hiçbir etkisi yoktur | kapı, çıkış 4, istek atılmaz |
+
+**Kesilme sonucu (çıkış 6) ve kesinti kaydı.** Kesilen koşumda ham kanıt ve adsız özet **yazılmaz**; `<out>.json` yanına ayrı türde,
+asgari bir kayıt yazılır: `<out>.kesinti.json` (var olanın üzerine yazmaz; ana makine adı içermez). Alanları: `reason`
+(`TOPLAM-SURE-DOLDU` / `IPTAL-DOSYASI`) · `startedAt` · `interruptedAt` · `elapsedMs` · `maxTotalMs` · `cancelPollMs` ·
+`clientRequests.external` ve `clientRequests.localEdge` (her biri `planned` · `started` · `completed` · `aborted`) · `complete: false` ·
+`evidenceWritten: false` · `fieldsProduced: false` · `exitCode: 6` + ad kimliği, revizyon, sonda pini, vektör kümesi kimliği.
+**`clientRequests` sayıları istemci tarafındaki sayılardır** — sondanın başlattığı, sondada sonuçlanan (yanıt tamamen alındı ya da
+taşıma hatası / boşta kalma sınırıyla bitti) ve kesilme anında aktif olup sondanın kestiği istekler; **sunucunun aldığı ya da işlediği
+istek sayısı değildir**. Kayıtta dört alan, dar sınıf kararı ve satır listesi **yoktur**: eksik koşum `PASS`, owner istisnası ya da
+başka bir hüküm üretmez; `--finalize` kesinti kaydını kabul etmez. Süreç **zorla** öldürülürse kayıt yazılamaz: sayılar **UNKNOWN**'dır.
+Tamamlanan koşumun ham kanıtına iki güvencenin kaydı eklenir (`guards`: sınır, yoklama aralığı, `interrupted: false`); adsız özet,
+dört alan, sınıflandırma ve çıkış kodları **değişmedi**.
+
 ### 1.1 Üç ayrı alan + pozitif kontrol; API'ye özgü kanıt; kanıt sınırı
 
 Aynı durum kodunu birden çok katman üretebilir (403: kenar varsayılan reddi · sağlayıcı kuralı · sınama sayfası · uygulama; 404: tünel
@@ -375,7 +411,7 @@ olabilir); sondanın çıktısı ve kanıtı da bu adı kullanır. R05'te redded
 kalır; kenar engelleme `OLCULEMEYEN`). Öz-test: P-3, P-7, U-1 (403) · P-4, P-6 (5xx / 429) · K-10 (yanıtsız → ölçülemeyen).
 
 **Çıkış kodu** dört alandan türer (sondada tek işlev). Eşleme — sondanın kanıta yazdığı metinle aynen:
-`herhangi bir alan FAIL → 2 · FAIL yok → 3 (ölçüm koşumu 0 üretmez) · kapı → 4 · kanıt yazılamadı → 7 · beklenmeyen durma → 1`.
+`herhangi bir alan FAIL → 2 · FAIL yok → 3 (ölçüm koşumu 0 üretmez) · kapı → 4 · kesildi (toplam süre sınırı / iptal dosyası; koşum eksik, kanıt yazılmaz) → 6 · kanıt yazılamadı → 7 · beklenmeyen durma → 1`.
 "Herhangi bir alan" pozitif kontrolü de kapsar. FAIL ölçülemeyenin önündedir (aynı koşumda taşıma hatası olsa da FAIL çıkış 2 verir;
 ölçülemeyen nedenler kayıtta kalır). **Ölçüm koşumu çıkış 0 üretmez** (owner kararı 2026-10-06: belirsizlik başarılı kenar
 engellemesi gibi sunulmaz): kenar engelleme bu sondayla PASS olamadığından FAIL yoksa sonuç her zaman ölçülemeyendir (3) — sağlıklı
@@ -384,10 +420,13 @@ koşum da 3 verir. R05'teki "FAIL yok ve kenar engelleme PASS → 0" eşlemesi *
 sorgu / parça var · TLS doğrulaması kapalı · ad kimliği / konum etiketi yok ya da geçersiz · parametre yinelenmiş · `--out` yok ·
 `--phone-list` ile `--out` birlikte · kanıt ya da özet dosyası zaten var · konum etiketi ana makine adını ya da bir etiketini içeriyor ·
 `D8_HTTP_TIMEOUT_MS` geçersiz · istek kimliği planı tutarsız · **(R07)** `--local-edge` geri döngü http adresi değil · `--offprobe-evidence`
-/ `--offprobe-result` değeri tanınmıyor · `--finalize` ölçüm ya da telefon parametresiyle birlikte · **(R08)** `--evidence-sha256` yok / 64 onaltılık hane değil / ölçüm
+/ `--offprobe-result` değeri tanınmıyor · `--finalize` ölçüm ya da telefon parametresiyle birlikte · **(R09)** ölçüm çağrısında `--max-total-ms` / `--cancel-file` yok ya da geçersiz · bu ikisi
+`--phone-list` / `--finalize` ile verilmiş · kesinti kaydı dosyası zaten var · **(R08)** `--evidence-sha256` yok / 64 onaltılık hane değil / ölçüm
 çağrısında verilmiş · kanıtın özeti kayıtlı değerle aynı değil · kesinleştirilecek kanıt kabul
 edilmedi (§1). 7 = ölçüm yapıldı ama kanıt / özet yazılamadı (ham kanıtı olmayan özet
 kanıt sayılmaz). 1 = sonda beklenmeyen biçimde durdu — **ölçülemeyen** sayılır. Tanınmayan bir alan değeri de 0 vermez.
+**Çıkış 6 (R09) = koşum KESİLDİ** — toplam süre sınırı doldu ya da iptal dosyası algılandı: koşum **eksiktir**, ham kanıt / özet
+yazılmaz, yalnız kesinti kaydı yazılır; dört alandan **türemez** ve hüküm üretmez ("beklenmeyen durma" olan 1'den ayrıdır).
 **Çıkış 5 kalkmıştır.** Hiçbir çıkış kodu "D-8 kapandı" demek **değildir** (§3).
 
 **Satır düzeyi.** `outcome` (durum kodu sınıfı): `RET-403` · `SINAMA-ISARETLI-403` · `TANINMAYAN-AZALTIM-ISARETLI-403` ·
@@ -765,6 +804,19 @@ OLCULEMEYEN); parantez içindeki sayı sondanın çıkış kodudur. **R06'da ken
 | **B-GZ** (R08) | **gerçek yeni bloklarla ikame kapısı:** belgedeki yerel karşılaştırmalı blok eski hazırlama yoluyla (yerel adres ikamesiz) hazırlanırsa son kapıda **reddedilir** (0 istek); bloğun bozulmuş biçimleri (yerel adres iki kez / hiç yok / çift tırnaklı / başka port / beyan değişkeni iki kez) ve kesinleştirme bloğunun bozulmuş biçimleri hazırlama aşamasında reddedilir; doğru ikameyle hazırlanan metinlerde canlı değişmez (8081, canlı `.env` yolu, canlı sonda yolu dışı mutlak yol) **kalmaz** |
 | **B-Y1 … B-Y3** (R08; iki kabukta) | **yerel karşılaştırmalı ölçüm bloğu, test ikamesiyle:** beyan `KULLANILMIYOR` + tanımlı vektöre incelenmiş 400 → sahte kenara tam **68**, sahte yerel uca tam **1** istek (yerel istek en sonda; Host = dış ad); blok `cikis=3` aktarır; `D8-HTTP-RET=OWNER-ISTISNASIYLA-UYGUN` — **`PASS` / 403 başarısı diye geçmez**; ham kanıt özeti ekranda **ve** kanıt dizininin **dışındaki** kayıt dosyasında, ikisi de dosyanın bağımsız hesaplanan özetiyle aynı (Y1) · beyan yer tutucuda (belgede yazıldığı gibi) ya da tanınmayan değerde → blok **durur**, iki uca 0 istek; pin uyuşmazlığı → durur (Y2) · beyan `KULLANILACAK` → sınıf kesinleşmez, `cikis=2`, özet kaydı yine yazılır (Y3) |
 | **B-K1 … B-K3** (R08; iki kabukta) | **kesinleştirme bloğu:** koşum çıktısından alınan kayıtlı değerle → `kesinlestirme cikis=3`, istek yok, kayıtta verilen = hesaplanan özet, HTTP / ret `OWNER-ISTISNASIYLA-UYGUN` (K1) · **kanıt koşumdan sonra tek bayt değiştirilmiş** → sonda reddeder (`KANIT-OZETI-KAYITLA-UYUSMUYOR`, `cikis=4`, kayıt yok); verilen değer yanlış / yer tutucu / kayıt dosyası yok / sonuç yer tutucu → blok durur, sonda koşmaz (K2) · **sınır kaydı (kusur değil):** kanıt, kayıt dosyası ve verilen değer birlikte tutarlı değiştirilirse kesinleştirme kabul eder (K3) |
+| **KS-1** (R09; §3d-D10) | **toplam süre sınırı — sürekli veri akıtan yavaş yanıt:** sahte kenar bir isteğe başlık gönderip gövdeyi her 100 ms'de bir baytla hiç bitirmeden akıtır; boşta kalma sınırı (600 ms) hiç dolmaz; sonda yine de `--max-total-ms` anında keser: çıkış 6, süreç sınırdan önce değil ve sınır + pay içinde biter; bağlantı sahte kenarda kapanır; yeni istek yok; kesinti kaydı `TOPLAM-SURE-DOLDU`, istemci başlatılan 4 · sonuçlanan 3 · kesilen 1 · karşı girdi: aynı tür boşta kalma sınırı **sessiz** yanıtı keser ve koşum sürer |
+| **KS-2** | **toplam süre sınırı — yalnız gecikmeli / sessiz yanıt** (tek test bu değil): boşta kalma sınırı 15 sn iken sonda 2 sn'lik toplam sınırda keser (6) |
+| **KS-3** | **iptal dosyası devam eden istek sırasında:** istek aktifken (bekletilen yanıt · akan yanıt) iptal dosyası oluşturulur → sonda yoklama aralığı (200 ms) + pay içinde çıkar (6); aktif isteğin bağlantısı iptalden sonra kapanır; yeni istek yok; neden `IPTAL-DOSYASI`; toplam sınır dolmadan |
+| **KS-4** | **önceden mevcut iptal dosyası → 0 istek** (sahte kenara 0, sahte yerel uca 0); çıkış 6; kayıtta başlatılan 0 |
+| **KS-5** | **üst çalıştırıcı ölür:** sonda bir ara süreç üzerinden başlatılır; öz-test **yalnız ara süreci, kendi tutamacıyla** sonlandırır; ara süreç öldükten sonra sondanın **hâlâ yaşadığı ve isteğinin aktif olduğu** ölçülür (boş kanıt değil); sonda en geç kendi süre sınırında sonlanır (pid ölçümü); kesinti kaydı dosyada |
+| **KS-6** | **sonlanma sonrası:** yedi kesilme senaryosunun her birinde çıkıştan sonraki bekleme boyunca iki sahte uca **yeni istek yok** ve **süreç yok**; hiçbirini öz-testin bekçisi sonlandırmak zorunda kalmadı (sonda kendi çıktı) |
+| **KS-7** | **normal tamamlanma korunur:** iki güvence verilmiş ve iptal dosyası yokken sağlıklı kenarda aynı dört alan, aynı çıkış kodu, aynı sınıflandırma; kesinti kaydı yazılmaz; zamanlayıcı tamamlanan koşumu bekletmez; bütün olağan koşumlarda çıkış yalnız 2 / 3 |
+| **KS-8** | **iki güvencenin kapıları:** ikisi de yok (**eski çağrı artık çalışmaz**) · biri yok · geçersiz değer · iki kez · dizini olmayan iptal yolu · `--phone-list` / `--finalize` ile · kesinti kaydı zaten var → çıkış 4, 0 istek |
+| **KS-9** | **eksik koşum `PASS` / owner istisnası üretemez:** dar sınıfın koşulları sağlanacakken son dış istekte süre dolar → yerel karşılaştırma isteği **başlamaz**, kanıt yok, alan / sınıf yok; kesinti kaydı kesinleştirilemez; kesilen hiçbir koşumun çıktısında / kaydında `PASS` ya da `OWNER-ISTISNASIYLA-UYGUN` yok |
+| **KS-10** | **zorla öldürme → sayı bilinmez (UNKNOWN):** istek aktifken sonda süreci zorla sonlandırılır (öz-testin kendi tutamacıyla; sondanın iki güvencesi devrede değil) → kesinti kaydı, ham kanıt, özet **yok**; çıktıda sayı / kesilme / çıkış satırı **yok** (hiçbir yerde "0 istek" iddiası yok); zemin gerçeğinde sahte kenar 4 istek görmüştür — sondanın bıraktıklarından bu sayı çıkarılamaz |
+| **B-S1 … B-S3** (iki kabukta) | **blokların kesilme davranışı** (ikame + son kapı aynen): yerel karşılaştırmasız blok süre sınırında kesilir → `cikis=6` aynen aktarılır, "KESINTI KAYDI VAR", kanıt / özet yok (S1) · **önceden mevcut iptal dosyası → blok durur**, 0 istek (S2) · yerel karşılaştırmalı blok kesilir → ham kanıt olmadığı için **özet kaydı yazılmaz**, yerel istek başlamaz (S3) |
+| **Z-SON** | **koşu sonu:** öz-testin başlattığı bütün alt süreçler (ve ara sürecin başlattığı sonda) bitmiş — tutamaç / pid ölçümü; iki sahte uç kapalı (bağlantı reddediliyor); öz-test paket ve betik dizinine dosya bırakmadı (ad listesi koşu başındakiyle aynı; blok kabukları geçici dizinde çalışır) |
+| **DOC-4** | belge ↔ kod (R09): çıkış kodu eşlemesi · 5 dakika ve "bütün iş akışının süresi değil" · yoklama aralığı · kesinti kaydı alanları ve "sunucunun aldığı ya da işlediği istek sayısı değildir" · UNKNOWN · eski çağrılar · bloklar ÇALIŞTIRILMADI · §3d-D10 owner cümleleri · R08 pinleri tam değerleriyle |
 | **DOC-3** (R08) | belge ↔ kod: istek bütçesi (68 + 1 = 69; sayaç ayrı: 72 / en çok 76) · yöntem sayıları sondanın vektör listesinden bağımsız sayımla aynı · zaman aşımı değerleri koddaki değerlerle aynı (15 000 ms; 69 × 15 = 1 035 sn) · iptal davranışı ve güven sınırı cümleleri · "tamamı salt okuma" yalnız olumsuz bağlamda · yeni bloklar ÇALIŞTIRILMADI · §3d-D9 owner cümleleri · R07 pinleri tam değerleriyle "önceki pinler"de |
 | **DOC-2** | belge ↔ kod ↔ öz-test (R07): sınıfın adı ve uyarı cümlesi üçünde aynı; §3d karar tarihini ve kural sürümünü ayrı taşır; incelenmiş yanıt özellikleri ve vektör tanımı belgede; "dış 68 + yerel 1" ve ayrı izin kalemi yazılı; owner bloğu yerel karşılaştırmayı içermez ve kuralı yazılı; **§1b AD-1 satırı ve koşum kaydı değişmedi** (FAIL · FAIL · OLCULEMEYEN · PASS); HTTP / ret alanının ek değeri §1.1, §1b ve §3d'de, "`PASS` yazılmaz" kuralı §1b'de, owner şartının cümlesi §3d'de |
 
@@ -776,12 +828,30 @@ DOC-1 (§1b HTTP / ret hücresi ek değeri de kabul eder; başka hiçbir hücre 
 bağımsız beklendiği koşumda, `PASS` yerine ek değeri alır; değer başka hiçbir koşumda geçmez).
 Diğer kalemlerin beklentisi değişmedi.
 
+**R09'da beklentisi değişen eski kalemler:** bütün ölçüm senaryoları ve kapı girdileri artık iki güvenceyi verir (verilmezse her biri yeni
+kapıda dururdu) — beklenen sonuçlar aynı · N-5 (sonda iptal dosyasının ve kesinti kaydı yolunun yalnız **varlığına** bakar; içerik okuma
+yerleri aynı) · T-4 (tek ek süreç çıkışı: kesilme, 6) · DOC-1 / X-1 (çıkış kodu eşleme metnine "kesildi → 6" eklendi; olağan koşumlarda yine
+yalnız 2 ve 3) · DOC-3 (c)(d) (R08'in "en kötü durum ≈ 17 dk 15 sn" hesabı kaldırıldı: 15 sn boşta kalma sınırıdır) · B-0 (iki ölçüm bloğu iki
+güvenceyi verir) · B-1 / B-5 / B-Y1 (iptal dosyası yolu satırı; sınır 300 000 ms) · O-2 ve kesinleştirme kaydı (revizyon adı `R09`) · D-1 (pin).
+Diğer kalemlerin beklentisi değişmedi.
+
 **R08'de beklentisi değişen eski kalemler:** B-0 (belgede artık **dört** blok; yeni iki blok ayrı sınıflanır) · D-1 (pin; dört bloktaki
 pin) · DOC-2 (e) (yerel karşılaştırmayı içermeyen bloklar artık "ilk iki blok") · MR-6 / MR-9 (kesinleştirme çağrıları kayıtlı özeti de
 verir; kayıtta `registeredEvidenceSha256`; beklenen sonuçlar aynı) · O-2 ve kesinleştirme kaydı (sondanın revizyon adı `R08`; kural
 sürümü `R07` aynen). Diğer kalemlerin beklentisi değişmedi.
 
-**Son koşu (R08 baytları — §7 pinleri, 2026-10-06; Windows, node 24.18.0; kabuk sürümleri öz-testin kendi çıktısından: Windows PowerShell 5.1 = 5.1.26100.9549 (Desktop) · pwsh 7 = 7.6.6 (Core)):** 141 kalem — **PASS 141 · FAIL 0 · ÖLÇÜLEMEDİ 0**, çıkış 0. R07'nin 125 kalemine on altı kalem eklendi (MR-11 · B-GY · B-GZ · DOC-3 · iki kabukta B-Y1 … B-Y3 ve B-K1 … B-K3). Yeni bloklar yalnız sahte uçlara karşı, ikamesi kanıtlandıktan sonra koşturuldu; canlıya, dış adrese ve canlı yerel portlara istek atılmadı. **R08 baytlarıyla yapılmayanlar:** negatif ayna, mutasyon provası, yalıtılmış kopya deneyi, gerçek API ile izole prova.
+**Son koşu (R09 baytları — §7 pinleri, 2026-10-07; Windows, node 24.18.0; kabuk sürümleri öz-testin kendi çıktısından: Windows PowerShell 5.1 = 5.1.26100.9549 (Desktop) · pwsh 7 = 7.6.6 (Core)):** 159 kalem — **PASS 159 · FAIL 0 · ÖLÇÜLEMEDİ 0**, çıkış 0. R08'in 141 kalemine on sekiz kalem eklendi (KS-1 … KS-10 · Z-SON · DOC-4 · iki kabukta B-S1 … B-S3 · R08 kalemleri aynen). **Ölçülen süreler (yerel sahte uç; 2026-10-07 koşularının aralığı — koşudan koşuya on ms'ler düzeyinde oynar):** sürekli veri damlatan
+yanıt (sınır 2 500 ms; 600 ms'lik boşta kalma sınırı hiç dolmadı) → süreç ≈ 2 550–2 580 ms'de bitti · sessiz yanıt (sınır 2 000 ms) →
+≈ 2 060–2 070 ms · aktif istek sırasında iptal → dosya oluşturulduktan ≈ 30–220 ms sonra süreç bitti (bekletilen yanıtta 166–195 ms, akan
+yanıtta 26–219 ms ölçüldü; süre, 200 ms'lik yoklama aralığının hangi anına denk gelindiğine bağlıdır) · önceden mevcut iptal dosyası → ≈ 60 ms'de, 0 istekle · üst çalıştırıcı ölümü (sınır 4 000 ms) → sonda ilk
+isteğinden ≈ 3 985–3 995 ms, ara sürecin ölümünden ≈ 3 660 ms sonra yok. Zorla sonlandırılan sonda (KS-10) hiçbir kayıt bırakmadı. Öz-testin toplam süresi ≈ 85–95 sn. **Mutasyon provası (R09
+baytlarıyla; sondanın üç bozuk kopyası, sırayla, her biri öz-testin tamamıyla):** süre zamanlayıcısı kaldırılınca KS-1 · KS-2 · KS-5 · KS-6 ·
+KS-9 · B-S1 · B-S3 (ve DOC-4) düştü · koşum içi iptal yoklaması kaldırılınca KS-3 (ve KS-6, KS-9, N-5) düştü · istek öncesi iptal denetimi
+kaldırılınca KS-4 (ve KS-6, KS-9, N-5) düştü; üçünde de Z-SON geçti (öz-testin bekçisi asılı süreç bırakmadı) ve D-1 beklendiği gibi düştü
+(alternatif sonda). Yalnız yerel sahte uçlar (127.0.0.1; iki port); canlıya, dış adrese ve canlı yerel portlara istek atılmadı; öz-test yalnız kendi başlattığı süreçleri tutamaç / pid ile izledi. **R09 baytlarıyla yapılmayanlar:** negatif ayna, yalıtılmış kopya deneyi, gerçek API ile izole prova; mutasyon provası yalnız yukarıdaki üç kopyayla
+sınırlıdır (R08 ve öncesinin mutasyon kümeleri yinelenmedi).
+
+**Önceki koşu (R08 baytları — §7 pinleri, 2026-10-06; Windows, node 24.18.0; kabuk sürümleri öz-testin kendi çıktısından: Windows PowerShell 5.1 = 5.1.26100.9549 (Desktop) · pwsh 7 = 7.6.6 (Core)):** 141 kalem — **PASS 141 · FAIL 0 · ÖLÇÜLEMEDİ 0**, çıkış 0. R07'nin 125 kalemine on altı kalem eklendi (MR-11 · B-GY · B-GZ · DOC-3 · iki kabukta B-Y1 … B-Y3 ve B-K1 … B-K3). Yeni bloklar yalnız sahte uçlara karşı, ikamesi kanıtlandıktan sonra koşturuldu; canlıya, dış adrese ve canlı yerel portlara istek atılmadı. **R08 baytlarıyla yapılmayanlar:** negatif ayna, mutasyon provası, yalıtılmış kopya deneyi, gerçek API ile izole prova.
 
 **Önceki koşu (R07 baytları — §7 "önceki pinler", 2026-10-06; Windows, node 24.18.0; kabuk sürümleri öz-testin kendi çıktısından: Windows PowerShell 5.1 = 5.1.26100.9549 (Desktop) · pwsh 7 = 7.6.6 (Core)):** 125 kalem — **PASS 125 · FAIL 0 · ÖLÇÜLEMEDİ 0**, çıkış 0 (iki kabuktaki 14 blok kalemi dahil). R06'nın 114 kalemine on bir kalem eklendi (MR-1 … MR-10 · DOC-2); bütün koşumları tarayan değişmez kalemi (GT-1) 109 koşum taradı: dar sınıf bağımsız beklentinin verdiği 2 koşumda uygulandı (HTTP / ret alanı ikisinde de `OWNER-ISTISNASIYLA-UYGUN`, `PASS` değil), diğer 107 koşumda uygulanmadı; görülen çıkış kodları yalnız 2 ve 3'tür. Değişiklik öncesi taban (R06 baytları, aynı makine, aynı gün): 114 / 114, çıkış 0. **R07 baytlarıyla yapılmayanlar:** negatif ayna (R06 sondasının R07 öz-testinde koşturulması), mutasyon provası, yalıtılmış kopya deneyi, gerçek API ile izole prova — hiçbiri koşulmadı; aşağıdaki "Negatif ayna" ve "Mutasyon provası" bölümleri **R06 baytlarının** kaydıdır.
 
@@ -846,6 +916,17 @@ blok düzeneği kodu R06'da değişmedi; yalnız B-1'in beklenen blok çıktıs�
 kabukta ölçüldü).
 
 **Öz-testin ölçmediği** (hiçbiri "geçti" sayılmaz):
+- **R09 — iki güvence:** (1) yalnız yerel sahte uçta ölçüldü; gerçek ağda (TLS el sıkışması sırasında, ad çözümlemesinde ya da çok
+  yavaş bir bağlantıda) kesilmenin süresi **ölçülmedi** — zamanlayıcı ve soket yok etme aynı koddur, ama ad çözümlemesi gibi işletim
+  sistemi çağrılarının yarıda kesilip kesilmediği bu öz-testte görülmez. (2) **Zorla öldürme** yalnız "sonda süreci sonlandırılır → hiçbir kayıt kalmaz" biçiminde ölçüldü
+  (KS-10); güç kesintisi, pencerenin kapatılması ve blok üzerinden zorla öldürme **ölçülmedi**. (3) Üst çalıştırıcı ölümü, ara sürecin sondayı **ayrık** başlattığı düzenekle
+  ölçüldü (çalıştırıcısı ölen sondanın durumu); pencerenin kapatılması ve Ctrl+C **ölçülmedi** — konsol olayı süreci doğrudan
+  sonlandırabilir (o zaman kayıt yazılmaz: UNKNOWN). (4) Kesilen isteğin **sunucu tarafında** işlenip işlenmediği ölçülemez; kayıttaki
+  sayılar yalnız istemci sayılarıdır. (5) Bloklardaki 5 dakikalık değer öz-testte **koşturulmaz** (yalnız test için 2 sn'ye çevrilir;
+  değerin blokta yazılı olduğu statik ölçülür). (6) Blok üzerinden **koşum sırasında** iptal dosyası oluşturma denenmedi (sondada
+  ölçüldü: KS-3; blokta yalnız "önceden mevcut dosya → blok durur" ölçüldü). (7) Bu makinede `node` bir ara süreç üzerinden
+  çalışabilir; öz-test alt süreçlerini gerçek çalıştırılabilirle başlatır — iki süreçli görünüm öz-testte oluşmaz, canlı usulde
+  süreç kimliğiyle ayrıca ölçülür.
 - **R08 — yeni bloklar:** (1) bloklar **canlıda çalıştırılmadı**; öz-test onları yalnız test ikamesiyle (sahte `.env`, sahte kenar, sahte
   yerel uç, sahte kullanıcı kökü) koşturur — canlı `.env` satırı, canlı yerel kenarın gerçekten `127.0.0.1:8081`'de dinlediği ve o
   adresteki sürecin canlı kenar olduğu **ölçülmedi** (kayıt sahibinin beyanı; port farklıysa koşum paketi `$y`'yi düzeltir). (2) Bloğun
@@ -914,7 +995,8 @@ Sondanın kendi çıktısının son satırları dört alanı ayrı ayrı verir (
 
 **R07 — aşağıdaki ilk iki blok yerel kenar karşılaştırmasını İÇERMEZ** (yerel karşılaştırmalı blok R08'de ayrıca yazıldı — bu bölümün
 sonunda). Aşağıdaki ölçüm bloğu `--local-edge` ve `--offprobe-evidence` vermez
-(blok metni R06 ile aynıdır; yalnız sonda pini değişti — 2026-10-06 koşumu R06 pinli blokla yapıldı; aşağıdaki güncel pinli bloklar
+(R08'e kadar blok metni R06 ile aynıydı; **R09'da iki güvence eklendi** — `--max-total-ms 300000` ve `--cancel-file`; canlı blok iki
+güvence olmadan çalışmaz — 2026-10-06 koşumu R06 pinli blokla yapıldı; aşağıdaki güncel pinli bloklar
 **çalıştırılmadı** ve yeni bir koşum yeni onay ister). Kural: **yerel gözlem yok → dar kabul istisnası uygulanmaz** — bu blokla
 yapılan koşumda sonda R06 ile aynı 68 dış isteği atar, çıktıda `D8-DAR-SINIF=UYGULANMADI` yazar ve boş baytlı vektör 403 dışında bir
 yanıt alırsa HTTP / ret sonucu R06'daki gibi `FAIL`'dir. Dar sınıfın değerlendirileceği bir koşum için blok **ayrıca** yazılır ve ayrı
@@ -927,12 +1009,12 @@ aktarır): yeni `OWNER-ISTISNASIYLA-UYGUN` değeri blok metninde değişiklik ge
 
 Ölçüm (normal pencere):
 ```powershell
-& { $ErrorActionPreference='Stop'; $e='C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\.env'; $l=@([IO.File]::ReadAllLines($e) | Where-Object { $_ -match '^\s*PUBLIC_PORTAL_BASE_URL\s*=' }); if($l.Count -ne 1){ throw 'PUBLIC_PORTAL_BASE_URL satiri 1 degil - DUR' }; $ExpBaseUrl=($l[0] -replace '^\s*PUBLIC_PORTAL_BASE_URL\s*=\s*','').Trim().Trim('"').Trim("'"); if($ExpBaseUrl -cnotmatch '^https://[A-Za-z0-9.-]+(:\d+)?$'){ throw 'PUBLIC_PORTAL_BASE_URL https/yolsuz origin degil - DUR' }; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-extacc-d8-staff-surface-r01\scripts\d8-staff-surface-probe.js'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne '04D0188320FADBC98F7A634F334E7065DF0110CBB58A9758B0DBE223A8B781AD'){ throw 'D8 SONDA SHA UYUSMUYOR - DUR' }; $o=Join-Path $env:USERPROFILE ('Documents\CLIENT-EVIDENCE-20260911\extacc-d8-AD-1-' + (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss') + 'Z'); New-Item -ItemType Directory -Force -Path $o | Out-Null; & node $f --alias AD-1 --vantage canli-ana-makine-cikisi --origin $ExpBaseUrl --out "$o\d8-probe.json"; $c=$LASTEXITCODE; 'D8 AD-1 cikis=' + $c; $s="$o\d8-probe.ozet.json"; if(Test-Path -LiteralPath $s){ 'D8 AD-1 adsiz ozet SHA256=' + (Get-FileHash -Algorithm SHA256 -LiteralPath $s).Hash } else { 'D8 AD-1 adsiz ozet YOK' } }
+& { $ErrorActionPreference='Stop'; $e='C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\.env'; $l=@([IO.File]::ReadAllLines($e) | Where-Object { $_ -match '^\s*PUBLIC_PORTAL_BASE_URL\s*=' }); if($l.Count -ne 1){ throw 'PUBLIC_PORTAL_BASE_URL satiri 1 degil - DUR' }; $ExpBaseUrl=($l[0] -replace '^\s*PUBLIC_PORTAL_BASE_URL\s*=\s*','').Trim().Trim('"').Trim("'"); if($ExpBaseUrl -cnotmatch '^https://[A-Za-z0-9.-]+(:\d+)?$'){ throw 'PUBLIC_PORTAL_BASE_URL https/yolsuz origin degil - DUR' }; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-extacc-d8-staff-surface-r01\scripts\d8-staff-surface-probe.js'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne 'C77FC3F6E0DA796136AFA7AD859E7C6C1EB93C528DF6BAE82E7F2B7B40266EC8'){ throw 'D8 SONDA SHA UYUSMUYOR - DUR' }; $o=Join-Path $env:USERPROFILE ('Documents\CLIENT-EVIDENCE-20260911\extacc-d8-AD-1-' + (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss') + 'Z'); $q=$o + '.iptal'; if(Test-Path -LiteralPath $q){ throw 'D8 IPTAL DOSYASI zaten var - DUR' }; New-Item -ItemType Directory -Force -Path $o | Out-Null; 'D8 AD-1 iptal icin bu dosyayi olusturun: ' + $q; & node $f --alias AD-1 --vantage canli-ana-makine-cikisi --origin $ExpBaseUrl --max-total-ms 300000 --cancel-file $q --out "$o\d8-probe.json"; $c=$LASTEXITCODE; 'D8 AD-1 cikis=' + $c; $x="$o\d8-probe.kesinti.json"; if(Test-Path -LiteralPath $x){ 'D8 AD-1 KESINTI KAYDI VAR - kosum EKSIK (kanit degil)' }; $s="$o\d8-probe.ozet.json"; if(Test-Path -LiteralPath $s){ 'D8 AD-1 adsiz ozet SHA256=' + (Get-FileHash -Algorithm SHA256 -LiteralPath $s).Hash } else { 'D8 AD-1 adsiz ozet YOK' } }
 ```
 
 Telefon listesi (ayrı çağrı; istek atmaz, kanıt yazmaz; ölçüm bloğu listeyi yazdırmaz):
 ```powershell
-& { $ErrorActionPreference='Stop'; $e='C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\.env'; $l=@([IO.File]::ReadAllLines($e) | Where-Object { $_ -match '^\s*PUBLIC_PORTAL_BASE_URL\s*=' }); if($l.Count -ne 1){ throw 'PUBLIC_PORTAL_BASE_URL satiri 1 degil - DUR' }; $ExpBaseUrl=($l[0] -replace '^\s*PUBLIC_PORTAL_BASE_URL\s*=\s*','').Trim().Trim('"').Trim("'"); if($ExpBaseUrl -cnotmatch '^https://[A-Za-z0-9.-]+(:\d+)?$'){ throw 'PUBLIC_PORTAL_BASE_URL https/yolsuz origin degil - DUR' }; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-extacc-d8-staff-surface-r01\scripts\d8-staff-surface-probe.js'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne '04D0188320FADBC98F7A634F334E7065DF0110CBB58A9758B0DBE223A8B781AD'){ throw 'D8 SONDA SHA UYUSMUYOR - DUR' }; & node $f --alias AD-1 --origin $ExpBaseUrl --phone-list; 'D8 AD-1 telefon listesi cikis=' + $LASTEXITCODE }
+& { $ErrorActionPreference='Stop'; $e='C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\.env'; $l=@([IO.File]::ReadAllLines($e) | Where-Object { $_ -match '^\s*PUBLIC_PORTAL_BASE_URL\s*=' }); if($l.Count -ne 1){ throw 'PUBLIC_PORTAL_BASE_URL satiri 1 degil - DUR' }; $ExpBaseUrl=($l[0] -replace '^\s*PUBLIC_PORTAL_BASE_URL\s*=\s*','').Trim().Trim('"').Trim("'"); if($ExpBaseUrl -cnotmatch '^https://[A-Za-z0-9.-]+(:\d+)?$'){ throw 'PUBLIC_PORTAL_BASE_URL https/yolsuz origin degil - DUR' }; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-extacc-d8-staff-surface-r01\scripts\d8-staff-surface-probe.js'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne 'C77FC3F6E0DA796136AFA7AD859E7C6C1EB93C528DF6BAE82E7F2B7B40266EC8'){ throw 'D8 SONDA SHA UYUSMUYOR - DUR' }; & node $f --alias AD-1 --origin $ExpBaseUrl --phone-list; 'D8 AD-1 telefon listesi cikis=' + $LASTEXITCODE }
 ```
 
 Konum etiketi `canli-ana-makine-cikisi` bir **beyandır**: blok canlı ana makinede koşar ve istek o makinenin çıkışından gider; sonda
@@ -942,7 +1024,9 @@ bulgu adayı; nedeni ayrı değerlendirilir); **3 olağan sonuçtur** — FAIL y
 koşumda sondanın çıktısındaki neden `ULASMAMA-BAGIMSIZ-KANITI-YOK`'tur ("gözlem temiz ama isteğin API'ye ulaşmadığını gösteren bağımsız
 kanıt yok"), başka bir neden sınıfı yazıyorsa koşumda ayrıca ölçülemeyen bir durum vardır; **3 başarılı kenar engellemesi demek
 değildir**. 4'te sonda istek atmamıştır (blok önceden açtığı kanıt dizinini boş bırakır; boş dizin kanıt değildir — ör. konum etiketi
-adın bir etiketini içeriyorsa); 1'de sonda beklenmeyen biçimde durmuştur (ölçülemeyen); 7'de özet ya da ham kanıt yazılamamıştır.
+adın bir etiketini içeriyorsa); 1'de sonda beklenmeyen biçimde durmuştur (ölçülemeyen); 7'de özet ya da ham kanıt yazılamamıştır. **6'da (R09) koşum kesilmiştir** —
+sondanın 5 dakikalık toplam süre sınırı doldu ya da iptal dosyası algılandı: koşum **eksiktir**, ham kanıt ve özet yoktur, blok
+`D8 AD-1 KESINTI KAYDI VAR - kosum EKSIK (kanit degil)` yazdırır; satır doldurulmaz, hüküm yoktur (aşağıda "R09" paragrafları).
 Sondanın çıktısı her koşumda "kenar engelleme kaydının eki" satırında kanıt sınırını da yazar. Telefon listesi bloğunun `cikis=0`
 yazdırması olağandır (istek atmaz; ölçüm değildir).
 
@@ -979,28 +1063,51 @@ kenarın 403 vermesidir; ama:
 - pozitif vektörler (9 istek) tasarım gereği uygulamaya **ulaşır** (token olmadığı için 401 / sayfa 200 beklenir; yazma beklenmez);
 - geçerli biçimdeki istek kimliği, uygulama o istekte 5xx üretirse uygulamanın hata kaydına yazılır (§1).
 
-**Zaman aşımı (koddan okundu).** İstek başına sınır **15 000 ms**'dir (`D8_HTTP_TIMEOUT_MS` ortam değişkeniyle 500–120 000 ms; blok
-bu değişkeni ayarlamaz — pencerede tanımlı değilse 15 000 ms geçerlidir). Bu sınır bir **boşta kalma** sınırıdır: bağlantıda o süre
-boyunca hiç veri akmazsa istek kesilir ve satır `SONUC-YOK` / `ZAMAN-ASIMI` olur; sürekli ama çok yavaş akan bir yanıt için ayrı bir
-toplam süre üst sınırı **yoktur** (gövdenin 4096 bayttan fazlası tutulmaz ama okunur). İstekler **sırayladır**, **yeniden deneme
-yoktur**, yönlendirme izlenmez. En kötü durum (her istek boşta kalma sınırına takılırsa): 68 × 15 sn = 1 020 sn dış + 15 sn yerel =
-**1 035 sn ≈ 17 dk 15 sn**; sonda çıkışta en çok 3 sn daha bekler. Değişken üst sınıra (120 000 ms) çekilirse aynı hesap 69 × 120 sn =
-8 280 sn = 138 dk verir. Kesinleştirme bloğu istek atmaz; süresi dosya okuma ve hesaptan ibarettir.
+**Süre sınırları (R09; koddan okundu ve yerel sahte uçta ölçüldü).** İki ayrı sınır vardır ve **karıştırılmaz**:
+- **Toplam süre sınırı — `--max-total-ms`; iki ölçüm bloğunda 300 000 ms = 5 dakika.** Çalıştırıcıdan (pencere, araç, zamanlayıcı)
+  **bağımsız**, sondanın **kendi** sınırıdır: bitiş anı süreç başında hesaplanır ve bütün dış istekleri + yerel karşılaştırma isteğini
+  kapsar (kanıt yazımı kapsam dışıdır: son istek sonuçlanınca sınır kalkar; yazım yerel ve kısadır). Süre dolunca devam eden istek ve
+  bağlantısı **kesilir**, yeni dış ya da yerel karşılaştırma isteği **başlamaz**, süreç açık bir kesilme sonucuyla — **çıkış 6** —
+  sonlanır. **Bu 5 dakika sondanın sınırıdır; sayaç okumaları / beklemeleri dahil bütün iş akışının süresi DEĞİLDİR** — iş akışının
+  öteki adımlarının süresi bu sınırın içinde değildir ve ayrıca izlenir.
+- **İstek başına boşta kalma sınırı — 15 000 ms** (`D8_HTTP_TIMEOUT_MS` ortam değişkeniyle 500–120 000 ms; blok bu değişkeni
+  ayarlamaz). Bu bir **boşta kalma** sınırıdır; **toplam süre sınırı DEĞİLDİR**: bağlantıda o süre boyunca hiç veri akmazsa istek
+  kesilir (satır `SONUC-YOK` / `ZAMAN-ASIMI`) ve koşum sonraki istekle **sürer**; sürekli veri damlatan bir yanıt bu sınırı **hiç
+  doldurmaz** — onu yalnız toplam süre sınırı keser (öz-test KS-1). R08'de burada yazan "en kötü durum" hesabı (istek sayısı × boşta
+  kalma sınırı) bu yüzden gerçek bir üst sınır **değildi** ve kaldırıldı; üst sınır artık `--max-total-ms`'tir.
 
-**İptal davranışı (koddan okundu; canlıda denenmedi).** Koşum ön planda, tek süreçtir; arka plan ya da zamanlanmış çalıştırma yoktur.
-Koşum kesilirse (pencere kapatılır / Ctrl+C):
-- o ana kadar **gönderilmiş istekler geri alınamaz**; süren istek yarıda kalır;
-- sonda kanıtı ve adsız özeti **yalnız bütün istekler bittikten sonra** yazar (önce özet, hemen ardından ham kanıt) — yarıda kesilen
-  koşum **kanıt bırakmaz**; sondanın iptal için ayrı bir işleyicisi yoktur. Çok dar bir aralıkta (özet yazıldı, ham kanıt yazılmadı)
-  yalnız özet kalabilir; ham kanıtı olmayan özet kanıt sayılmaz;
-- blok kanıt dizinini sondadan **önce** açar: kesilen koşumdan boş (ya da yalnız özet içeren) bir dizin kalır; boş dizin kanıt değildir;
-- blok kesildiği için **özet kaydı oluşmaz** ve `cikis=` satırı yazılmaz; kesinleştirme yapılamaz;
-- yeniden koşum **yeni onay** ister (istekler yeniden gider; bütçe yeniden harcanır).
+İstekler **sırayladır**, **yeniden deneme yoktur**, yönlendirme izlenmez. Tamamlanan koşumda sonda çıkışta en çok 3 sn, kesilen koşumda
+en çok 0,5 sn daha bekleyebilir (yalnız bir tutamaç takılı kalırsa). Kesinleştirme ve telefon listesi blokları istek atmaz; iki
+güvenceyi **almaz**.
+
+**İptal usulü ve iptal davranışı (R09).** Koşum ön planda, tek süreçtir; arka plan ya da zamanlanmış çalıştırma yoktur.
+- **İptal dosyası.** Blok, sondadan **önce** ekrana `D8 AD-1 iptal icin bu dosyayi olusturun: <yol>` yazar. Yol kanıt kökünde, kanıt
+  dizininin **dışındadır** (kanıt dizininin adı + `.iptal`). O yolda dosya **zaten varsa blok durur** (kanıt dizini açılmaz, sonda
+  çağrılmaz; öz-test B-S2). Koşum sırasında bu dosya **oluşturulursa** sonda onu **200 ms aralıkla** yoklar — yalnız istekler arasında
+  değil, **devam eden istek sırasında da** — ve algılayınca aktif isteği keser, yeni istek başlatmaz, çıkış 6 ile sonlanır (öz-test
+  KS-3). Dosyanın içeriği okunmaz; varlığı yeter. Sonda başlarken dosya zaten varsa **0 istek** atılır (öz-test KS-4).
+- **İptalden sonra süreç listesi yine ölçülür.** İptal dosyası oluşturulduktan ya da çalıştırıcı durdurulduktan sonra "durdu" demek
+  için aracın / komutun yanıtına **güvenilmez**: sondanın sürecinin gerçekten bittiği, **o koşumun süreç kimliğiyle** ölçülür (bu
+  makinede `node` bir ara süreç üzerinden çalışabilir — aynı komut satırıyla iki süreç görünür; ikisinin de bittiği ölçülür; süreç
+  **adına** göre toplu sonlandırma yapılmaz). Çalıştırıcı ölse de sonda en geç kendi toplam süre sınırında sonlanır (öz-test KS-5).
+- **Kesilme sonucu — çıkış 6.** Ham kanıt ve adsız özet **yazılmaz**; kanıt dizinine yalnız **kesinti kaydı**
+  (`d8-probe.kesinti.json`) yazılır ve blok `D8 AD-1 KESINTI KAYDI VAR - kosum EKSIK (kanit degil)` yazdırır. Kayıt: neden
+  (`TOPLAM-SURE-DOLDU` / `IPTAL-DOSYASI`) · başlangıç ve kesilme zamanı · süre sınırı · yoklama aralığı · **istemci tarafında**
+  başlatılan / sonuçlanan / kesilen istek sayıları (dış ve yerel ayrı; planlanan sayıyla birlikte). **Bu sayılar istemci
+  sayılarıdır; sunucunun aldığı ya da işlediği istek sayısı DEĞİLDİR** (başlatılan bir istek sunucuya ulaşmamış, kesilen bir istek
+  sunucuda işlenmiş olabilir). Kesilen koşum **eksiktir**: dört alan, dar sınıf kararı, `PASS` ya da owner istisnası **üretmez**; ham
+  kanıt olmadığı için özet kaydı yazılmaz ve kesinleştirme yapılamaz (kesinti kaydı kanıt biçimi değildir; öz-test KS-9, B-S3).
+- **Zorla öldürme** (sürecin sonlandırılması, güç kesintisi, pencerenin zorla kapatılması). Sonda kayıt **yazamaz**; o durumda
+  istemci istek sayıları **bilinmez — UNKNOWN**; sıfır varsayılmaz ve "istek gitmedi" denmez. O ana kadar **gönderilmiş istekler geri
+  alınamaz**. Pencere / blok da kesildiyse **özet kaydı oluşmaz** ve `cikis=` satırı yazılmaz; yalnız sonda süreci öldürüldüyse blok `cikis=`
+  satırını yazar ama kesinti kaydı da ham kanıt da yoktur — sayılar yine UNKNOWN'dır (öz-test KS-10: zorla sonlandırılan sonda hiçbir
+  kayıt bırakmaz).
+- Her durumda yeniden koşum **yeni onay ister** (istekler yeniden gider; bütçe yeniden harcanır).
 
 **Ham kanıt özeti — koşum sonunda kaydedilir, kesinleştirmeden önce.** Ölçüm bloğu, sonda bittikten hemen sonra ham kanıtın
 SHA-256'sını hesaplar, ekrana `D8 AD-1 ham kanit SHA256=…` diye yazar **ve** kanıt dizininin **dışında** ayrı bir dosyaya yazar
 (kanıt kökünde, kanıt dizininin adıyla: `extacc-d8-AD-1-<damga>Z.kanit-sha256.txt`; var olan dosyanın üzerine yazmaz). Ham kanıt
-yoksa (sonda 4 / 1 / 7 ile çıktıysa) kayıt yazılmaz ve bu açıkça yazdırılır. **Kayıt sahibi ekrandaki değeri koşum biter bitmez kısıtlı
+yoksa (sonda 4 / 1 / 6 / 7 ile çıktıysa) kayıt yazılmaz ve bu açıkça yazdırılır. **Kayıt sahibi ekrandaki değeri koşum biter bitmez kısıtlı
 kayda / koşum manifestine alır** — asıl "ayrı kayıt" odur. Kesinleştirme bloğunda bu değer **elle** verilir (`$h`); blok ve sonda onu
 kanıt dosyasından yeniden hesaplayıp "beklenen" diye **kullanmaz**. Blok önce verilen değerin kanıt kökündeki kayıt dosyasındaki
 değerle aynı olduğunu denetler (ikisi de koşum anı kaydıdır; dosya yoksa ya da değer farklıysa blok durur), sonra sondayı
@@ -1031,18 +1138,19 @@ kayıt durumudur.
 
 Yerel karşılaştırmalı ölçüm (normal pencere; **69 istek atar** — onaysız çalıştırılmaz):
 ```powershell
-& { $ErrorActionPreference='Stop'; $e='C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\.env'; $l=@([IO.File]::ReadAllLines($e) | Where-Object { $_ -match '^\s*PUBLIC_PORTAL_BASE_URL\s*=' }); if($l.Count -ne 1){ throw 'PUBLIC_PORTAL_BASE_URL satiri 1 degil - DUR' }; $ExpBaseUrl=($l[0] -replace '^\s*PUBLIC_PORTAL_BASE_URL\s*=\s*','').Trim().Trim('"').Trim("'"); if($ExpBaseUrl -cnotmatch '^https://[A-Za-z0-9.-]+(:\d+)?$'){ throw 'PUBLIC_PORTAL_BASE_URL https/yolsuz origin degil - DUR' }; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-extacc-d8-staff-surface-r01\scripts\d8-staff-surface-probe.js'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne '04D0188320FADBC98F7A634F334E7065DF0110CBB58A9758B0DBE223A8B781AD'){ throw 'D8 SONDA SHA UYUSMUYOR - DUR' }; $y='http://127.0.0.1:8081'; if($y -cnotmatch '^http:[/][/]127[.]0[.]0[.]1:[0-9]{1,5}$'){ throw 'D8 YEREL KENAR ADRESI gecersiz - DUR' }; $k='BEYAN-SECILMEDI'; if(@('KULLANILACAK','KULLANILMIYOR') -cnotcontains $k){ throw 'D8 EK KANIT BEYANI secilmedi (KULLANILACAK ya da KULLANILMIYOR) - DUR' }; $o=Join-Path $env:USERPROFILE ('Documents\CLIENT-EVIDENCE-20260911\extacc-d8-AD-1-' + (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss') + 'Z'); $g=$o + '.kanit-sha256.txt'; New-Item -ItemType Directory -Force -Path $o | Out-Null; & node $f --alias AD-1 --vantage canli-ana-makine-cikisi --origin $ExpBaseUrl --local-edge $y --offprobe-evidence $k --out "$o\d8-probe.json"; $c=$LASTEXITCODE; 'D8 AD-1 cikis=' + $c; $p="$o\d8-probe.json"; if(Test-Path -LiteralPath $p){ $hh=(Get-FileHash -Algorithm SHA256 -LiteralPath $p).Hash; 'D8 AD-1 ham kanit SHA256=' + $hh; if(Test-Path -LiteralPath $g){ 'D8 AD-1 ham kanit ozet kaydi ZATEN VAR - yazilmadi' } else { [IO.File]::WriteAllText($g, $hh); 'D8 AD-1 ham kanit ozet kaydi yazildi (kanit dizininin disinda)' } } else { 'D8 AD-1 ham kanit YOK - ozet kaydi yazilmadi' }; $s="$o\d8-probe.ozet.json"; if(Test-Path -LiteralPath $s){ 'D8 AD-1 adsiz ozet SHA256=' + (Get-FileHash -Algorithm SHA256 -LiteralPath $s).Hash } else { 'D8 AD-1 adsiz ozet YOK' } }
+& { $ErrorActionPreference='Stop'; $e='C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\.env'; $l=@([IO.File]::ReadAllLines($e) | Where-Object { $_ -match '^\s*PUBLIC_PORTAL_BASE_URL\s*=' }); if($l.Count -ne 1){ throw 'PUBLIC_PORTAL_BASE_URL satiri 1 degil - DUR' }; $ExpBaseUrl=($l[0] -replace '^\s*PUBLIC_PORTAL_BASE_URL\s*=\s*','').Trim().Trim('"').Trim("'"); if($ExpBaseUrl -cnotmatch '^https://[A-Za-z0-9.-]+(:\d+)?$'){ throw 'PUBLIC_PORTAL_BASE_URL https/yolsuz origin degil - DUR' }; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-extacc-d8-staff-surface-r01\scripts\d8-staff-surface-probe.js'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne 'C77FC3F6E0DA796136AFA7AD859E7C6C1EB93C528DF6BAE82E7F2B7B40266EC8'){ throw 'D8 SONDA SHA UYUSMUYOR - DUR' }; $y='http://127.0.0.1:8081'; if($y -cnotmatch '^http:[/][/]127[.]0[.]0[.]1:[0-9]{1,5}$'){ throw 'D8 YEREL KENAR ADRESI gecersiz - DUR' }; $k='BEYAN-SECILMEDI'; if(@('KULLANILACAK','KULLANILMIYOR') -cnotcontains $k){ throw 'D8 EK KANIT BEYANI secilmedi (KULLANILACAK ya da KULLANILMIYOR) - DUR' }; $o=Join-Path $env:USERPROFILE ('Documents\CLIENT-EVIDENCE-20260911\extacc-d8-AD-1-' + (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss') + 'Z'); $g=$o + '.kanit-sha256.txt'; $q=$o + '.iptal'; if(Test-Path -LiteralPath $q){ throw 'D8 IPTAL DOSYASI zaten var - DUR' }; New-Item -ItemType Directory -Force -Path $o | Out-Null; 'D8 AD-1 iptal icin bu dosyayi olusturun: ' + $q; & node $f --alias AD-1 --vantage canli-ana-makine-cikisi --origin $ExpBaseUrl --max-total-ms 300000 --cancel-file $q --local-edge $y --offprobe-evidence $k --out "$o\d8-probe.json"; $c=$LASTEXITCODE; 'D8 AD-1 cikis=' + $c; $x="$o\d8-probe.kesinti.json"; if(Test-Path -LiteralPath $x){ 'D8 AD-1 KESINTI KAYDI VAR - kosum EKSIK (kanit degil)' }; $p="$o\d8-probe.json"; if(Test-Path -LiteralPath $p){ $hh=(Get-FileHash -Algorithm SHA256 -LiteralPath $p).Hash; 'D8 AD-1 ham kanit SHA256=' + $hh; if(Test-Path -LiteralPath $g){ 'D8 AD-1 ham kanit ozet kaydi ZATEN VAR - yazilmadi' } else { [IO.File]::WriteAllText($g, $hh); 'D8 AD-1 ham kanit ozet kaydi yazildi (kanit dizininin disinda)' } } else { 'D8 AD-1 ham kanit YOK - ozet kaydi yazilmadi' }; $s="$o\d8-probe.ozet.json"; if(Test-Path -LiteralPath $s){ 'D8 AD-1 adsiz ozet SHA256=' + (Get-FileHash -Algorithm SHA256 -LiteralPath $s).Hash } else { 'D8 AD-1 adsiz ozet YOK' } }
 ```
 
 Kesinleştirme (ayrı çağrı; **istek atmaz**; yalnız beyanı `KULLANILACAK` olan koşumun kanıtı için):
 ```powershell
-& { $ErrorActionPreference='Stop'; $e='C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\.env'; $l=@([IO.File]::ReadAllLines($e) | Where-Object { $_ -match '^\s*PUBLIC_PORTAL_BASE_URL\s*=' }); if($l.Count -ne 1){ throw 'PUBLIC_PORTAL_BASE_URL satiri 1 degil - DUR' }; $ExpBaseUrl=($l[0] -replace '^\s*PUBLIC_PORTAL_BASE_URL\s*=\s*','').Trim().Trim('"').Trim("'"); if($ExpBaseUrl -cnotmatch '^https://[A-Za-z0-9.-]+(:\d+)?$'){ throw 'PUBLIC_PORTAL_BASE_URL https/yolsuz origin degil - DUR' }; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-extacc-d8-staff-surface-r01\scripts\d8-staff-surface-probe.js'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne '04D0188320FADBC98F7A634F334E7065DF0110CBB58A9758B0DBE223A8B781AD'){ throw 'D8 SONDA SHA UYUSMUYOR - DUR' }; $j='KANIT-DOSYASI-YOLU'; $h='KOSUM-SONU-KAYITLI-SHA256'; $r='SONUC-SECILMEDI'; if(-not (Test-Path -LiteralPath $j -PathType Leaf)){ throw 'D8 KANIT DOSYASI yok - DUR' }; if($h -cnotmatch '^[0-9A-F]{64}$'){ throw 'D8 KAYITLI OZET 64 onaltilik hane (buyuk harf) degil - DUR' }; if(@('GECERLI-ACIKLANAMAYAN-ARTIS-YOK','GECERSIZ-YA-DA-ACIKLANAMAYAN-ARTIS') -cnotcontains $r){ throw 'D8 EK KANIT SONUCU secilmedi - DUR' }; $d=Split-Path -Parent $j; $g=$d + '.kanit-sha256.txt'; if(-not (Test-Path -LiteralPath $g -PathType Leaf)){ throw 'D8 KOSUM SONU OZET KAYDI dosyasi yok - DUR' }; if(([IO.File]::ReadAllText($g)).Trim() -cne $h){ throw 'D8 VERILEN OZET kosum sonu kayit dosyasindaki degerle ayni degil - DUR' }; & node $f --alias AD-1 --vantage canli-ana-makine-cikisi --origin $ExpBaseUrl --finalize $j --evidence-sha256 $h --offprobe-result $r --out (Join-Path $d 'd8-kesinlestirme.json'); 'D8 AD-1 kesinlestirme cikis=' + $LASTEXITCODE }
+& { $ErrorActionPreference='Stop'; $e='C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\.env'; $l=@([IO.File]::ReadAllLines($e) | Where-Object { $_ -match '^\s*PUBLIC_PORTAL_BASE_URL\s*=' }); if($l.Count -ne 1){ throw 'PUBLIC_PORTAL_BASE_URL satiri 1 degil - DUR' }; $ExpBaseUrl=($l[0] -replace '^\s*PUBLIC_PORTAL_BASE_URL\s*=\s*','').Trim().Trim('"').Trim("'"); if($ExpBaseUrl -cnotmatch '^https://[A-Za-z0-9.-]+(:\d+)?$'){ throw 'PUBLIC_PORTAL_BASE_URL https/yolsuz origin degil - DUR' }; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-extacc-d8-staff-surface-r01\scripts\d8-staff-surface-probe.js'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne 'C77FC3F6E0DA796136AFA7AD859E7C6C1EB93C528DF6BAE82E7F2B7B40266EC8'){ throw 'D8 SONDA SHA UYUSMUYOR - DUR' }; $j='KANIT-DOSYASI-YOLU'; $h='KOSUM-SONU-KAYITLI-SHA256'; $r='SONUC-SECILMEDI'; if(-not (Test-Path -LiteralPath $j -PathType Leaf)){ throw 'D8 KANIT DOSYASI yok - DUR' }; if($h -cnotmatch '^[0-9A-F]{64}$'){ throw 'D8 KAYITLI OZET 64 onaltilik hane (buyuk harf) degil - DUR' }; if(@('GECERLI-ACIKLANAMAYAN-ARTIS-YOK','GECERSIZ-YA-DA-ACIKLANAMAYAN-ARTIS') -cnotcontains $r){ throw 'D8 EK KANIT SONUCU secilmedi - DUR' }; $d=Split-Path -Parent $j; $g=$d + '.kanit-sha256.txt'; if(-not (Test-Path -LiteralPath $g -PathType Leaf)){ throw 'D8 KOSUM SONU OZET KAYDI dosyasi yok - DUR' }; if(([IO.File]::ReadAllText($g)).Trim() -cne $h){ throw 'D8 VERILEN OZET kosum sonu kayit dosyasindaki degerle ayni degil - DUR' }; & node $f --alias AD-1 --vantage canli-ana-makine-cikisi --origin $ExpBaseUrl --finalize $j --evidence-sha256 $h --offprobe-result $r --out (Join-Path $d 'd8-kesinlestirme.json'); 'D8 AD-1 kesinlestirme cikis=' + $LASTEXITCODE }
 ```
 
 Blok çıktıları: ölçüm bloğunda `D8 AD-1 cikis=` §1.1'deki çıkış kodudur (dar sınıf uygulanan ve başka FAIL olmayan koşum **3** verir;
 beyan `KULLANILACAK` ise sınıf koşum anında kesinleşmez ve boş baytlı vektör 400 aldıysa çıkış **2**'dir — kesinleştirme bloğu bundan
 sonra çalıştırılır). Kesinleştirme bloğunda `D8 AD-1 kesinlestirme cikis=` aynı eşlemedir (2 / 3; 4 = kesinleştirme yapılmadı, neden
-sınıfı sondanın iletisindedir). Kesinleştirme kaydı kanıt dizinine `d8-kesinlestirme.json` adıyla yazılır; dosya varsa sonda üzerine
+sınıfı sondanın iletisindedir). **Ölçüm bloğunda `cikis=6` kesilmedir** (süre sınırı / iptal dosyası): kanıt ve özet kaydı yoktur,
+kesinleştirme bloğu çalıştırılmaz. Kesinleştirme kaydı kanıt dizinine `d8-kesinlestirme.json` adıyla yazılır; dosya varsa sonda üzerine
 yazmaz (ikinci kesinleştirme aynı dizinde reddedilir). Hiçbir çıkış kodu D-8 kapanışı değildir (§3).
 
 ## 2. D-8 telefon adımı (owner beyanı; makine ölçümü değildir)
@@ -1091,7 +1199,7 @@ biri **kanıtın desteklediği** değeri taşır:
 
 Sonda çıkış kodları: **ölçüm koşumu çıkış 0 üretmez** · **2** = en az bir alan `FAIL` (ölçüt ihlali / bulgu adayı) · **3** = FAIL
 yok; kenar engelleme ölçülemeyen — sağlıklı koşumun olağan sonucudur; **kapanış değildir ve başarılı kenar engellemesi değildir** ·
-**1**, **7** = ölçülemeyen / kanıt yok — kapanış değildir · **4** = sonda koşmadı (kapsam yetkisi doğrulanmayan ad için satıra
+**6** = koşum kesildi (R09: toplam süre sınırı / iptal dosyası) — eksik koşum: kanıt yok, hüküm yok, satır doldurulmaz · **1**, **7** = ölçülemeyen / kanıt yok — kapanış değildir · **4** = sonda koşmadı (kapsam yetkisi doğrulanmayan ad için satıra
 "KOŞULMADI — kapsam yetkisi doğrulanmadı" yazılır).
 
 Kurallar:
@@ -1191,6 +1299,7 @@ hata yanıtı özellikleriyle uyum" dedi; değerler 2026-10-06 teşhis ölçüm�
 | D7 | "Eklenen yerel karşılaştırma isteğini sonraki koşum paketinin istek sayısı ve izin kapsamına açıkça işle." | yerel karşılaştırmalı koşum: **dış 68 istek + 1 yerel kenar isteği = 69**; yerel istek **ayrı izin kalemidir** (§1a). İlk ölçüm bloğu yerel karşılaştırmayı **içermez**: o blokla yapılan koşumda yerel gözlem yoktur → istisna uygulanmaz (§1d). **R08:** yerel karşılaştırmalı blok **yazıldı** (§1d "R08"; yalnız AD-1) ve **ÇALIŞTIRILMADI**; yerel istek ve — kullanılırsa — sayaç okumaları **ayrı izin kalemleridir** (bütçe: 68 + 1 = 69; sayaçla 72, en çok 76) | MR-1, MR-4, DOC-2, B-Y1, DOC-3 |
 | D8 | (owner'ın 2026-10-06 gece verdiği ek şart) "İstisna uygulanan HTTP 400 satırını 'HTTP/ret PASS' diye sunma. Gerçek HTTP kodu 400; sınıf 'İzin verilen bozuk istek reddi — katman doğrulanmadı' olarak ayrı görünmeli. Toplu politika uygunluğu hesaplanıyorsa bunun owner istisnasına dayandığı açık olmalı; 403 başarısı, kenar engelleme veya katman PASS'i üretmemeli." | sınıf uygulanan koşumda HTTP / ret alanı `PASS` **olmaz**: yalnız bu alan için ayrı değer `OWNER-ISTISNASIYLA-UYGUN` yazılır (anlamı: istisna dışındaki bütün ret vektörleri 403 + tam bir satır owner istisnası sınıfında; koşul: FAIL nedeni yok, ölçülemeyen nedeni yok, tam bir satır). Satırın `status` değeri 400, durum sınıfı `DORTYUZ-403-DISI` olarak kalır; sınıfın adı satırda ayrı alandadır; satır 403 sayısına girmez. Çıktı bu değerin owner kabul kuralına dayandığını ve 403 başarısı olmadığını yazar. Kenar engelleme, katman doğrulaması ve pozitif kontrol bu değeri almaz ve görmez (yalnız üç değer); çıkış kodu eşlemesi değişmedi. §1b satırına bu değer aynen yazılır (`PASS` yazılmaz). Owner blokları `D8-HTTP-RET` satırını ayrıştırmaz (değişiklik gerekmedi). Değerin **adı** uygulama seçimidir (owner metni değildir) | MR-10, MR-1, MR-6, MR-8, GT-1, DOC-1, DOC-2 |
 | D9 | (owner talimatı, 2026-10-06 — R08) "R07 için eksik yerel karşılaştırmalı owner bloğunu hazırla. Kapsam önce yalnız AD-1: - 68 dış istek + 127.0.0.1 üzerinden tek yerel karşılaştırma. - Sayaç okumaları kullanılacaksa bunları 69 isteğe dahilmiş gibi gösterme; ek istek sayısını ayrıca belirt. - Yöntemleri, olası yan etkileri, zaman aşımını ve iptal davranışını açıkça yaz. 'Tamamı salt okuma, veri değişmez' iddiasında bulunma. - Ham kanıt özetini kesinleştirmeden önce kaydet; sonradan değişmiş kanıtı reddet. - Owner istisnası, HTTP 403 başarısı veya kenar/katman PASS'i olarak sunulmasın." · "Bloğu canlıya ulaşmayan test ikamesiyle doğrula. Gerekli pin ve belge güncellemelerini dar kapsamda yap." · "İstek bütçesini toplamıyla yaz: 68 dış + 1 yerel karşılaştırma + 3 sayaç = normalde 72; sayaç okumaları 7'ye çıkarsa en çok 76. Bunlar hazırlık bütçesidir, henüz canlı koşum izni değildir." · "Ham kanıt için beklenen SHA-256 değerini, kesinleştirme sırasında yeniden hesaplayıp 'beklenen' diye kullanma. Koşum sonunda ayrı kayda alınmış değerle karşılaştır. Kanıtla bu kayıt birlikte değiştirilirse bunun hangi güven sınırında kaldığını açıkça belirt." | §1d "R08": yerel karşılaştırmalı ölçüm bloğu + kesinleştirme bloğu (yalnız AD-1; mevcut iki blok durur). Bütçe tablosu (69; sayaç ayrı kalem: 72 / en çok 76 — blok sayaç okuması yapmaz). Yöntem sayıları, olası yan etkiler, zaman aşımı ve iptal davranışı koddan okunarak yazıldı; "tamamı salt okuma" denmedi. Ham kanıt özeti koşum sonunda ekrana ve kanıt dizininin dışındaki kayıt dosyasına yazılır; kesinleştirme `--evidence-sha256` (verilen kayıtlı değer) olmadan yapılmaz ve dosyanın özeti onunla aynı değilse reddeder; sonda "beklenen" değeri dosyadan türetmez. Güven sınırı §1 ve §1d'de açık cümleyle. Bloklar hüküm üretmez; `OWNER-ISTISNASIYLA-UYGUN` `PASS` / 403 başarısı diye sunulmaz. Bloklar iki kabukta, canlıya ulaşmayan test ikamesiyle doğrulandı; ikame kanıtlanmadan blok koşturulmaz. Dar kabul kuralı (D1–D8) **değişmedi** | MR-11, B-GY, B-GZ, B-Y1 … B-Y3, B-K1 … B-K3, DOC-3 |
+| D10 | (owner talimatı, 2026-10-07 — R09) "1. Sondaya çalıştırıcıdan bağımsız toplam süre sınırı ekle. Owner bloğunda 5 dakika kullan. Süre dolunca: - devam eden istek ve bağlantı kesilsin, - yeni dış veya yerel karşılaştırma isteği başlamasın, - süreç açık bir kesilme sonucuyla sonlansın. Bu süre sondanın sınırıdır; sayaç beklemeleri dahil bütün iş akışının süresi diye sunma. 2. İptal dosyası devam eden istek sırasında da izlensin. Yalnız 'sonraki istekten önce kontrol' yeterli değil. İptal algılanınca aktif istek kesilsin ve yeni istek başlamasın. Önceden mevcut iptal dosyasıyla 0 istek atılsın. 3. Süre/iptal çıkışında asgari kayıt bırak: neden, zaman ve istemci tarafında başlatılan/tamamlanan istek sayıları. Bunları sunucunun aldığı veya işlediği istek sayısı diye adlandırma. Zorla öldürme halinde bilinmeyen sayı UNKNOWN kalsın. Eksik koşum PASS veya owner istisnası üretemez. 4. Yalnız yerel sahte uçta doğrula: - sürekli veri akıtan yavaş yanıt toplam süreyi aşamıyor; - aktif istek sırasında iptal çalışıyor; - üst çalıştırıcı öldüğünde sonda en geç kendi süre sınırında sonlanıyor; - sonlanma sonrası süreç yok ve yeni istek yok; - normal tamamlanma ve mevcut sınıflandırma korunuyor. Yalnız 2 saniye geciken yanıt testiyle yetinme. 5. Parametreleri, owner bloğunu, pinleri ve belgeleri birlikte güncelle. Eski çağrıların davranışını açıkça belirt; canlı owner bloğu iki güvence olmadan çalışmasın. … Tarihsel kanıtları değiştirme." · "Yeni genel inceleme veya ilgisiz refactor açma." | iki zorunlu girdi: `--max-total-ms` (bloklarda 300 000 = 5 dakika; sondanın sınırı — iş akışının bütününün süresi değil) ve `--cancel-file` (200 ms aralıkla, aktif istek sırasında da yoklanır; önceden varsa 0 istek). Kesilmede aktif istek ve bağlantısı yok edilir, yeni dış / yerel istek başlamaz, süreç **çıkış 6** ile sonlanır; ham kanıt / özet yerine **kesinti kaydı**: neden · zaman · istemci tarafında başlatılan / sonuçlanan / kesilen sayılar ("sunucunun aldığı ya da işlediği istek sayısı değildir" notuyla); kayıtta alan / sınıf yok — eksik koşum `PASS` ya da owner istisnası üretmez; zorla öldürmede sayı UNKNOWN (belgede). **Eski çağrılar:** iki güvenceyi vermeyen ölçüm çağrısı koşmaz (kapı); iki ölçüm bloğu iki güvenceyi verir, iptal yolunu sondadan önce yazdırır, yol doluysa durur. Beş doğrulama başlığı ayrı kalemlerdir; "2 saniye geciken yanıt" tek test değildir (damlatan yanıt ayrıca). Tarihsel kanıt, §1b AD-1 satırı, dar kabul kuralı (D1–D8) ve R08 kapısı (D9) **değişmedi** | KS-1 … KS-10, B-S1 … B-S3, Z-SON, DOC-4 |
 
 **Bu karar şunları vermez:** canlı sonda GO'su · yerel kenara istek izni (ayrı izin kalemi) · kenar kabulü · D-8 kapanışı · başka ad için
 kapsam. Canlıya ve yerel kenara bu revizyon (R07) ve R08 için hiçbir istek atılmadı; R08 blokları çalıştırılmadı.
@@ -1255,8 +1364,16 @@ Kurallar:
 
 ## 7. Pinler
 
-`d8-staff-surface-probe.js` `04D0188320FADBC98F7A634F334E7065DF0110CBB58A9758B0DBE223A8B781AD` · `d8-selftest.js` `778AA5BDF578F369FBAE9448BF3851B1F241EC644DFC57CCE47D56EC4E94070F`.
+`d8-staff-surface-probe.js` `C77FC3F6E0DA796136AFA7AD859E7C6C1EB93C528DF6BAE82E7F2B7B40266EC8` · `d8-selftest.js` `D27A7987180B2A1608F40D06D680EA35773CB823B357C02AE1D29AE9A1416A14`.
 Vektör kümesi kimliği (59 ret + 9 pozitif; vektörler R04 ile aynı): `83AD1AB6DF5E52FD4FD028C5C6A411CDD9D22BCAB53194ABD9915D47920FF0F2`.
+(**R09** — 2026-10-07, owner talimatı §3d-D10: sondaya çalıştırıcıdan bağımsız toplam süre sınırı (`--max-total-ms`; bloklarda 5 dakika) +
+iptal dosyası (`--cancel-file`; aktif istek sırasında da) — ölçüm çağrısında ikisi de zorunlu; kesilme = çıkış 6 + kesinti kaydı (istemci
+sayıları; hüküm yok) · iki ölçüm bloğu iki güvenceyi verir (ÇALIŞTIRILMADI) · sondanın revizyon adı R09, dar kabul kuralının sürümü R07
+aynen · öz-test 159 kalem · **canlıda koşulmadı**. R08'den değişmeyenler: vektör listesi ve vektör kümesi kimliği, dış istek profili, dört
+alanın kuralları, dar kabul kuralı, kayıtlı özet kapısı, tamamlanan koşumun çıkış kodları. **Önceki pinler — R08:** sonda
+`04D0188320FADBC98F7A634F334E7065DF0110CBB58A9758B0DBE223A8B781AD` · öz-test
+`778AA5BDF578F369FBAE9448BF3851B1F241EC644DFC57CCE47D56EC4E94070F` [141/141, 2026-10-06; `main` #2947 → `c33106f7`]. Aşağıdaki
+parantez R08 notudur ve tarihsel olarak korunur.)
 (**R08** — 2026-10-06, owner talimatı §3d-D9: yerel karşılaştırmalı ölçüm bloğu + kesinleştirme bloğu (yalnız AD-1; ÇALIŞTIRILMADI) ·
 kesinleştirmede kayıtlı ham kanıt özeti kapısı (`--evidence-sha256`; sonradan değişmiş kanıt reddedilir; güven sınırı §1d) · sondanın
 revizyon adı R08, dar kabul kuralının sürümü R07 aynen · öz-test 141 kalem · **canlıda koşulmadı**. R07'den değişmeyenler: vektör listesi

@@ -1,6 +1,6 @@
 'use strict';
 /*
- * EXTACC D-8 R08 — PERSONEL YÜZEYİ DIŞARIDAN KAPALI: AD BAŞINA makine ölçümü (owner PC'sinden, gerçek alan adı, gerçek TLS).
+ * EXTACC D-8 R09 — PERSONEL YÜZEYİ DIŞARIDAN KAPALI: AD BAŞINA makine ölçümü (owner PC'sinden, gerçek alan adı, gerçek TLS).
  *
  * BİR SÜREÇ = BİR AD = BİR KANIT. Sonda tek `--origin` ve zorunlu bir ad kimliği (`--alias AD-<n>`; AD-1 = birincil ad) alır; çok adlı
  *            döngü ya da ikinci origin YOKTUR; başka bir adın kanıtını OKUMAZ ve var olan bir kanıt dosyasının ÜZERİNE YAZMAZ. Bir adın
@@ -277,8 +277,30 @@
  *            gövde ∈ {'', '{}'}). Yanıt başlığı DEĞERLERİ kanıta yazılmaz (yalnız ad / varlık / gözlem sınıfı).
  *            `vantage` owner'ın BEYAN ettiği konum etiketidir (ölçüm değil). `vectorSetId` vektör listesinden türetilir
  *            (sırayla "grup yöntem hamYol beklenenKodlar" satırlarının SHA-256'sı): adlar arasında aynı listenin koşulduğunu gösterir.
- * KULLANIM : node d8-staff-surface-probe.js --alias AD-1 --vantage <etiket> --origin https://<public-host> --out <kanit.json>
- *            node d8-staff-surface-probe.js --alias AD-<n> --scope-record <kayit.json> --vantage <etiket> --origin https://<host> --out <kanit.json>
+ * İKİ GÜVENCE (R09; owner talimatı 2026-10-07) — ÖLÇÜM ÇAĞRISINDA İKİSİ DE ZORUNLUDUR; biri yoksa / geçersizse sonda KOŞMAZ (kapı,
+ *            çıkış 4, istek yok). ESKİ ÇAĞRILAR (R08 ve öncesinin `--max-total-ms` / `--cancel-file` vermeyen ölçüm çağrıları) bu
+ *            yüzden artık ÇALIŞMAZ: iki güvence olmadan ölçüm yapılmaz. `--phone-list` ve `--finalize` istek atmaz; bu iki parametreyi
+ *            ALMAZ (verilirse kapı).
+ *   TOPLAM SÜRE SINIRI `--max-total-ms <1000–900000>`: çalıştırıcıdan BAĞIMSIZ, sondanın KENDİ sınırıdır. Bitiş anı süreç başında
+ *            hesaplanır ve BÜTÜN dış istekleri + yerel karşılaştırma isteğini kapsar (kanıt yazımı kapsam DIŞIDIR: son istek
+ *            sonuçlanınca sınır kalkar; kanıt yazımı yerel, eşzamanlı ve kısadır). Süre dolunca: devam eden istek ve bağlantısı
+ *            KESİLİR (soket yok edilir; açık tutulan bağlantılar dahil), yeni dış ya da yerel istek BAŞLAMAZ, süreç açık KESİLME
+ *            sonucuyla çıkar (çıkış 6). `D8_HTTP_TIMEOUT_MS` (varsayılan 15000) yalnız istek başına BOŞTA KALMA sınırıdır — sürekli
+ *            veri damlatan bir yanıt onu hiç doldurmaz; toplam sınır o yanıtı da keser. Bu süre SONDANIN sınırıdır: sayaç okumaları /
+ *            beklemeleri dahil bütün iş akışının süresi DEĞİLDİR.
+ *   İPTAL DOSYASI `--cancel-file <yol>` (yolun DİZİNİ var olmalı): dosya süreç başında VARSA 0 istek atılır (kesilme sonucu). Koşum
+ *            boyunca 200 ms aralıkla yoklanır — devam eden istek SIRASINDA da; ayrıca her istekten önce bakılır. Algılanınca aktif
+ *            istek kesilir, yeni istek başlamaz, süreç kesilme sonucuyla çıkar. Dosya koşum boyunca yoksa hiçbir etkisi yoktur.
+ *   KESİLME SONUCU: çıkış 6 + çıktıda `D8-KESILDI=TOPLAM-SURE-DOLDU | IPTAL-DOSYASI`. HAM KANIT ve ADSIZ ÖZET YAZILMAZ. Yerine AYRI
+ *            türde asgari bir KESİNTİ KAYDI yazılır (`<out>.json` → `<out>.kesinti.json`; var olanın üzerine yazmaz; ana makine adı
+ *            içermez): neden · başlangıç ve kesilme zamanı · `--max-total-ms` · yoklama aralığı · İSTEMCİ TARAFINDA başlatılan /
+ *            sonuçlanan / kesilen istek sayıları (dış ve yerel ayrı). Bu sayılar İSTEMCİ sayılarıdır; SUNUCUNUN ALDIĞI ya da
+ *            İŞLEDİĞİ istek sayısı DEĞİLDİR (başlatılan bir istek sunucuya ulaşmamış, kesilen bir istek sunucuda işlenmiş olabilir).
+ *            Kesinti kaydında dört alan ve dar sınıf kararı YOKTUR: EKSİK KOŞUM PASS, owner istisnası ya da başka bir hüküm ÜRETMEZ;
+ *            `--finalize` kesinti kaydını kabul etmez. Süreç ZORLA öldürülürse (sonlandırma, güç kesintisi) kayıt YAZILAMAZ — o
+ *            durumda istek sayıları BİLİNMEZ (UNKNOWN); sıfır varsayılmaz.
+ * KULLANIM : node d8-staff-surface-probe.js --alias AD-1 --vantage <etiket> --origin https://<public-host> --max-total-ms <ms> --cancel-file <yol> --out <kanit.json>
+ *            node d8-staff-surface-probe.js --alias AD-<n> --scope-record <kayit.json> --vantage <etiket> --origin https://<host> --max-total-ms <ms> --cancel-file <yol> --out <kanit.json>
  *            node d8-staff-surface-probe.js --alias AD-<n> [--scope-record <kayit.json>] --origin https://<public-host> --phone-list
  *            --phone-list AYRI çağrıdır: owner'ın telefonda (mobil veri) açacağı 5 adresi yazar, İSTEK ATMAZ, kanıt yazmaz
  *            (beyan ayrı dosyadadır; makine ölçümü değildir). Kapsam yetkisi kapısı bu çağrıda da geçerlidir.
@@ -295,7 +317,10 @@
  *            dosyası zaten var · konum etiketi ana makine adını ya da bir etiketini içeriyor · D8_HTTP_TIMEOUT_MS geçersiz · istek
  *            kimliği planı tutarsız · --local-edge geri döngü http adresi değil · --offprobe-evidence / --offprobe-result değeri
  *            tanınmıyor · --finalize ile ölçüm / telefon parametresi birlikte · --evidence-sha256 yok / 64 onaltılık hane değil / ölçüm
- *            çağrısında verilmiş · kanıtın özeti kayıtlı değerle aynı değil · kesinleştirilecek kanıt kabul edilmedi) · 7 kanıt /
+ *            çağrısında verilmiş · kanıtın özeti kayıtlı değerle aynı değil · kesinleştirilecek kanıt kabul edilmedi · (R09)
+ *            ölçüm çağrısında --max-total-ms / --cancel-file yok ya da geçersiz · bu ikisi --phone-list / --finalize ile verilmiş ·
+ *            kesinti kaydı dosyası zaten var) · 6 KESİLDİ — toplam süre sınırı doldu ya da iptal dosyası algılandı: koşum EKSİKTİR,
+ *            ham kanıt / özet yazılmaz, yalnız kesinti kaydı yazılır; hüküm üretilmez (1'den AYRIDIR) · 7 kanıt /
  *            özet yazılamadı (ölçüm yapıldı; ham kanıtı olmayan özet kanıt sayılmaz) · 1 sonda beklenmeyen biçimde durdu
  *            (ÖLÇÜLEMEYEN sayılır; kapanış değildir). Kesinleştirme adımının çıkışı da aynı eşlemeyle (2 / 3) yeniden türetilen
  *            dört alandan gelir.
@@ -304,8 +329,10 @@
  *            (paket belgesi §3).
  */
 const https = require('https'); const http = require('http'); const fs = require('fs'); const pathMod = require('path'); const crypto = require('crypto');
+/** Süreç başı — toplam süre sınırının (`--max-total-ms`) başlangıç anı. */
+const T_START_MS = Date.now();
 
-const REVISION = 'R08';
+const REVISION = 'R09';
 /** API'nin istek kimliği başlığı (apps/api/src/common/request-id.middleware.ts REQUEST_ID_HEADER). */
 const RID_HEADER = 'x-request-id';
 /** API'nin KABUL ettiği biçim — ürün kaynağındaki SAFE_REQUEST_ID ile AYNI ifade (öz-test kaynak metniyle karşılaştırır). */
@@ -362,7 +389,14 @@ const FINALIZATION_RECORD_KIND = 'EXTACC-D8-OFFPROBE-FINALIZATION';
 // ─── ALAN DEĞERLERİ VE ÇIKIŞ KODU — TEK YER ───────────────────────────────────────────────────────────────────────────────
 const FIELD_VALUES = ['PASS', 'FAIL', 'OLCULEMEYEN'];
 /** Çıkış kodu eşlemesi (paket belgesi §1.1 bu metni AYNEN taşır; öz-test üçünü karşılaştırır). */
-const EXIT_CODE_MAP = 'herhangi bir alan FAIL → 2 · FAIL yok → 3 (ölçüm koşumu 0 üretmez) · kapı → 4 · kanıt yazılamadı → 7 · beklenmeyen durma → 1';
+const EXIT_CODE_MAP = 'herhangi bir alan FAIL → 2 · FAIL yok → 3 (ölçüm koşumu 0 üretmez) · kapı → 4 · kesildi (toplam süre sınırı / iptal dosyası; koşum eksik, kanıt yazılmaz) → 6 · kanıt yazılamadı → 7 · beklenmeyen durma → 1';
+/** KESİLME (R09) — tamamlanan koşumun çıkış kodlarından (2 / 3) ve "beklenmeyen durma"dan (1) AYRI kod. Dört alandan türemez. */
+const EXIT_INTERRUPTED = 6;
+const INTERRUPT_REASONS = ['TOPLAM-SURE-DOLDU', 'IPTAL-DOSYASI'];
+const INTERRUPTION_RECORD_KIND = 'EXTACC-D8-PROBE-INTERRUPTION';
+/** İptal dosyasının yoklama aralığı (ms) — devam eden istek sırasında da. */
+const CANCEL_POLL_MS = 200;
+const COUNTS_ARE_CLIENT_SIDE = 'Bu sayılar İSTEMCİ tarafındaki sayılardır (sondanın başlattığı / sonuçlandırdığı / kestiği istekler); sunucunun aldığı ya da işlediği istek sayısı DEĞİLDİR — başlatılan bir istek sunucuya ulaşmamış, kesilen bir istek sunucuda işlenmiş olabilir.';
 /** Dört alandan çıkış kodu. Ölçüm koşumu 0 ÜRETMEZ: kenar engelleme bu sondayla PASS olamaz (kanıt sınırı), bu yüzden FAIL yoksa
  *  sonuç her zaman ölçülemeyendir (3) — tanınmayan bir alan değeri de dahil. */
 function exitCodeOf(v) {
@@ -413,6 +447,16 @@ if (!ORIGIN_URL || ORIGIN_URL.username || ORIGIN_URL.password || ORIGIN_URL.sear
 if (PHONE && OUT) reject('--phone-list AYRI çağrıdır; --out ile birlikte verilmez');
 if (!PHONE && !OUT) reject('--out <kanit.json> gerekli');
 if (!PHONE && (!VANTAGE || !VANTAGE_RX.test(VANTAGE))) reject('--vantage <etiket> gerekli (beyan edilen koşum konumu; küçük harf / rakam / tire, 2–40 karakter)');
+// İKİ GÜVENCE (R09): ölçüm çağrısı (istek atan tek çağrı) toplam süre sınırı VE iptal dosyası OLMADAN koşmaz. İstek atmayan iki çağrı
+// (--phone-list, --finalize) bu parametreleri almaz — verilirse sessizce yok sayılmaz, kapıdır.
+const MAX_TOTAL_RAW = arg('--max-total-ms'); const CANCEL_FILE = arg('--cancel-file'); const MEASURING = !PHONE && !FINALIZING;
+if (['--max-total-ms', '--cancel-file'].some((n) => argCount(n) > 1)) reject('--max-total-ms / --cancel-file birer kez verilir');
+if (!MEASURING && (argCount('--max-total-ms') > 0 || argCount('--cancel-file') > 0)) reject('--max-total-ms / --cancel-file yalnız ölçüm çağrısı içindir (--phone-list ve --finalize istek atmaz; bu parametreleri almaz)');
+if (MEASURING && (typeof MAX_TOTAL_RAW !== 'string' || !/^\d{4,6}$/.test(MAX_TOTAL_RAW) || Number(MAX_TOTAL_RAW) < 1000 || Number(MAX_TOTAL_RAW) > 900000)) reject('--max-total-ms <1000–900000> gerekli (sondanın toplam süre sınırı, ms; bu güvence olmadan ölçüm çağrısı koşmaz)');
+if (MEASURING && (typeof CANCEL_FILE !== 'string' || CANCEL_FILE.length === 0 || /^--/.test(CANCEL_FILE) || !fs.existsSync(pathMod.dirname(pathMod.resolve(CANCEL_FILE))))) reject('--cancel-file <yol> gerekli (iptal dosyası; yolun dizini var olmalı; bu güvence olmadan ölçüm çağrısı koşmaz)');
+const MAX_TOTAL_MS = MEASURING ? Number(MAX_TOTAL_RAW) : null;
+/** Toplam süre sınırının bitiş anı: süreç başı + `--max-total-ms`. Bütün dış istekleri ve yerel karşılaştırma isteğini kapsar. */
+const DEADLINE_MS = MEASURING ? T_START_MS + MAX_TOTAL_MS : null;
 const TIMEOUT_RAW = process.env.D8_HTTP_TIMEOUT_MS === undefined ? '15000' : String(process.env.D8_HTTP_TIMEOUT_MS);
 if (!/^\d{3,6}$/.test(TIMEOUT_RAW) || Number(TIMEOUT_RAW) < 500 || Number(TIMEOUT_RAW) > 120000) reject('D8_HTTP_TIMEOUT_MS geçersiz (500–120000 ms tam sayı)');
 const TIMEOUT_MS = Number(TIMEOUT_RAW);
@@ -422,6 +466,8 @@ const LOCAL_EDGE_URL = LOCAL_EDGE ? new URL(LOCAL_EDGE) : null;
 /** Sonda dışı ek kanıt beyanı (ölçüm çağrısında): verilmediyse BEYAN-YOK. Sonuç yalnız kesinleştirme adımında bulunur. */
 const OFFPROBE_STATE = { declared: OFFPROBE || OFFPROBE_NOT_DECLARED, result: null };
 const SUMMARY_OUT = OUT ? (/\.json$/i.test(OUT) ? OUT.replace(/\.json$/i, '.ozet.json') : OUT + '.ozet.json') : null;
+/** Kesinti kaydının yolu (R09): yalnız koşum KESİLİRSE yazılır; ham kanıtın / özetin yerine geçmez. */
+const INTERRUPT_OUT = (OUT && MEASURING) ? (/\.json$/i.test(OUT) ? OUT.replace(/\.json$/i, '.kesinti.json') : OUT + '.kesinti.json') : null;
 /** Sondanın kendi SHA-256'sı. */
 const SELF_SHA = crypto.createHash('sha256').update(fs.readFileSync(__filename)).digest('hex').toUpperCase();
 
@@ -822,6 +868,50 @@ function labelLeaksName(label) {
 // Ön denetim (istek atılmadan): owner etiketi adı ya da bir parçasını, özetin sabit sözlüğü adın tam dizgisini içeriyorsa sonda koşmaz.
 if (labelLeaksName(VANTAGE || '') || containsName([REVISION, ALIAS, VANTAGE || '', KANIT_SINIRI, EXIT_CODE_MAP, RID_HEADER, 'EXTACC-D8-STAFF-SURFACE-SUMMARY', SCOPE_AUTH.status, SCOPE_AUTH.fileIntegrity, SCOPE_AUTH.contentReview, SCOPE_ACCEPT_TEXT].concat(OUTCOMES, LAYER_IDS, LAYER_WHYS, ID_OBS, ID_SIGNALS, RID_FORMS, ERROR_CLASSES, VECTOR_CLASSES, FIELD_VALUES, SCOPE_REQUIRED_TYPES, [SCOPE_TUNNEL_TYPE, LAYER_UNSUPPORTED, EDGE_NO_INDEPENDENT_EVIDENCE, NARROW.className, NARROW.notice, NARROW.limits, NARROW.vectorId, NARROW.ruleRevision, OFFPROBE_NOT_DECLARED, FINALIZATION_RECORD_KIND, HTTP_OWNER_EXCEPTION, HTTP_OWNER_EXCEPTION_TEXT], NARROW_STATES, NARROW_WHYS, OFFPROBE_DECLARATIONS, OFFPROBE_RESULTS).join(' '))) reject('konum etiketi ana makine adını ya da bir etiketini içeriyor (ya da özet sözlüğü adı içeriyor) — adsız özet yazılamaz');
 if (!PHONE && (fs.existsSync(OUT) || fs.existsSync(SUMMARY_OUT))) reject('kanıt ya da özet dosyası zaten var — başka bir koşumun / adın kanıtının üzerine yazılmaz');
+if (MEASURING && fs.existsSync(INTERRUPT_OUT)) reject('kesinti kaydı dosyası zaten var — başka bir koşumun kaydının üzerine yazılmaz');
+
+// ─── İKİ GÜVENCE: toplam süre sınırı + iptal dosyası (R09) ───────────────────────────────────────────────────────────────
+/** Koşum durumu. Sayılar İSTEMCİ tarafındadır: `started` = sondanın başlattığı · `completed` = sondada SONUÇLANAN (yanıt tamamen alındı
+ *  ya da taşıma hatası / boşta kalma sınırıyla bitti) · `aborted` = kesilme anında AKTİF olup sondanın kestiği istek. Sunucunun aldığı
+ *  ya da işlediği istek sayısı DEĞİLDİR. */
+const RUN = { counts: { external: { started: 0, completed: 0, aborted: 0 }, localEdge: { started: 0, completed: 0, aborted: 0 } }, active: null, activeKind: null, interrupted: null, timer: null, poll: null };
+function stopGuards() { if (RUN.timer) { clearTimeout(RUN.timer); RUN.timer = null; } if (RUN.poll) { clearInterval(RUN.poll); RUN.poll = null; } }
+/** KESİLME: aktif istek ve bağlantısı kesilir (açık tutulan bağlantılar dahil), yeni istek başlamaz (çağıranlar `RUN.interrupted`'a
+ *  bakar), kesinti kaydı yazılır, süreç çıkış 6 ile sonlanır. Ham kanıt / özet YAZILMAZ; dört alan ve dar sınıf kararı ÜRETİLMEZ. */
+function interrupt(reason) {
+  if (RUN.interrupted) return;
+  RUN.interrupted = { reason, at: new Date().toISOString() }; stopGuards();
+  if (RUN.active) { RUN.counts[RUN.activeKind].aborted++; try { RUN.active.destroy(Object.assign(new Error('kesildi'), { code: 'D8_INTERRUPTED' })); } catch (e) { /* zaten kapanmış */ } }
+  try { https.globalAgent.destroy(); http.globalAgent.destroy(); } catch (e) { /* yok */ }
+  const c = RUN.counts; const localPlanned = !!LOCAL_EDGE_URL;
+  const rec = { record: INTERRUPTION_RECORD_KIND, revision: REVISION, nameAlias: ALIAS, vantage: VANTAGE, probeSha256: SELF_SHA, vectorSetId: VECTOR_SET_ID,
+    reason, startedAt: new Date(T_START_MS).toISOString(), interruptedAt: RUN.interrupted.at, elapsedMs: Date.parse(RUN.interrupted.at) - T_START_MS, maxTotalMs: MAX_TOTAL_MS, cancelPollMs: CANCEL_POLL_MS,
+    clientRequests: { external: { planned: DENY.length + ALLOW.length, started: c.external.started, completed: c.external.completed, aborted: c.external.aborted }, localEdge: { planned: localPlanned ? 1 : 0, started: c.localEdge.started, completed: c.localEdge.completed, aborted: c.localEdge.aborted } },
+    complete: false, evidenceWritten: false, fieldsProduced: false, exitCode: EXIT_INTERRUPTED,
+    note: 'KESİNTİ KAYDI — koşum EKSİKTİR: ham kanıt ve adsız özet yazılmadı; dört alan ve dar sınıf kararı ÜRETİLMEDİ (eksik koşum hüküm üretmez; bu kayıt kanıt değildir ve kesinleştirilemez). ' + COUNTS_ARE_CLIENT_SIDE + ' Toplam süre sınırı sondanın sınırıdır (bütün dış istekler + yerel karşılaştırma isteği); sayaç okumaları / beklemeleri dahil bütün iş akışının süresi değildir. Süreç zorla öldürülürse bu kayıt yazılamaz; o durumda sayılar BİLİNMEZ (UNKNOWN). KISITLIDIR.' };
+  const text = JSON.stringify(rec, null, 1); let written = 'YAZILDI';
+  if (containsName(text)) written = 'YAZILMADI-AD-ICERIYOR'; else { try { fs.writeFileSync(INTERRUPT_OUT, text, { flag: 'wx' }); } catch (e) { written = 'YAZILAMADI'; } }
+  // Üst çalıştırıcı ölmüş ve çıktı borusu kapanmış olabilir: yazma hatası süreci "beklenmeyen durma"ya çevirmesin.
+  process.stdout.on('error', () => {}); process.stderr.on('error', () => {});
+  console.log(`\nD-8 SONDA ${REVISION} · ${ALIAS} · KOŞUM KESİLDİ (${reason}) — EKSİK KOŞUM: ham kanıt ve özet YAZILMADI; alan / sınıf üretilmedi`);
+  console.log(`  istemci tarafında: dış istek başlatılan ${c.external.started} · sonuçlanan ${c.external.completed} · kesilen ${c.external.aborted} (planlanan ${DENY.length + ALLOW.length}) · yerel karşılaştırma başlatılan ${c.localEdge.started} · sonuçlanan ${c.localEdge.completed} · kesilen ${c.localEdge.aborted} (planlanan ${localPlanned ? 1 : 0})`);
+  console.log('  ' + COUNTS_ARE_CLIENT_SIDE);
+  console.log(`D8-AD=${ALIAS}\nD8-KESILDI=${reason}\nD8-KESINTI-KAYDI=${written}\nD8-ISTEMCI-DIS-BASLATILAN=${c.external.started}\nD8-ISTEMCI-DIS-SONUCLANAN=${c.external.completed}\nD8-ISTEMCI-YEREL-BASLATILAN=${c.localEdge.started}\nD8-CIKIS=${EXIT_INTERRUPTED}`);
+  // Çıkış kodu olay döngüsü boşalınca verilir (son satırlar kesilmesin); bir tutamaç takılı kalırsa 500 ms sonra zorla çıkılır.
+  process.exitCode = EXIT_INTERRUPTED; setTimeout(() => process.exit(EXIT_INTERRUPTED), 500).unref();
+}
+/** Her istekten ÖNCE: kesildiyse, süre dolduysa ya da iptal dosyası varsa yeni istek BAŞLAMAZ (true döner). */
+function mustStop() {
+  if (RUN.interrupted) return true;
+  if (Date.now() >= DEADLINE_MS) { interrupt(INTERRUPT_REASONS[0]); return true; }
+  if (fs.existsSync(CANCEL_FILE)) { interrupt(INTERRUPT_REASONS[1]); return true; }
+  return false;
+}
+/** İki güvenceyi başlatır: toplam süre zamanlayıcısı (bitiş anı süreç başından) + iptal dosyası yoklaması (aktif istek sırasında da). */
+function startGuards() {
+  RUN.timer = setTimeout(() => interrupt(INTERRUPT_REASONS[0]), Math.max(0, DEADLINE_MS - Date.now()));
+  RUN.poll = setInterval(() => { if (fs.existsSync(CANCEL_FILE)) interrupt(INTERRUPT_REASONS[1]); }, CANCEL_POLL_MS);
+}
 
 /** Kimlik taşıyabilecek istek başlıkları (ölçüm: gönderilen başlık adları bunlarla karşılaştırılır). */
 const CREDENTIAL_HEADERS = /^(authorization|cookie|x-api-key|proxy-authorization)$/i;
@@ -835,16 +925,20 @@ function req(method, path, form, localEdge) {
   const headers = { host: ORIGIN_URL.host, 'user-agent': 'extacc-d8-probe', 'content-type': 'application/json', accept: '*/*', [RID_HEADER]: requestId };
   const body = (method === 'POST' || method === 'PUT' || method === 'PATCH') ? '{}' : '';
   const sent = { headerNames: Object.keys(headers), body, requestId, requestIdForm: form };
+  const kind = localEdge ? 'localEdge' : 'external';
   return new Promise((resolve) => {
+    // İstemci sayıları (R09): `started` istek nesnesi kurulurken · `completed` istek sondada SONUÇLANINCA (bir kez; kesilen istek sayılmaz).
+    let settled = false; const settle = (v) => { if (settled) return; settled = true; if (RUN.active === r) { RUN.active = null; RUN.activeKind = null; } if (!RUN.interrupted) RUN.counts[kind].completed++; resolve(v); };
     const onResponse = (res) => {
       const kept = []; let keptBytes = 0; let total = 0; res.on('data', (c) => { total += c.length; if (keptBytes < 4096) { kept.push(c); keptBytes += c.length; } });
-      const done = () => { const buf = Buffer.concat(kept); resolve({ status: res.statusCode, body: buf.toString('utf8'), bodyBytes: total, bodySha256: buf.length === total ? crypto.createHash('sha256').update(buf).digest('hex').toUpperCase() : null, headers: res.headers, sent }); };
+      const done = () => { const buf = Buffer.concat(kept); settle({ status: res.statusCode, body: buf.toString('utf8'), bodyBytes: total, bodySha256: buf.length === total ? crypto.createHash('sha256').update(buf).digest('hex').toUpperCase() : null, headers: res.headers, sent }); };
       res.on('end', done); res.on('close', done); res.on('error', done);
     };
     const r = localEdge ? http.request({ host: localEdge.hostname, port: Number(localEdge.port), path, method, headers, timeout: TIMEOUT_MS, agent: false }, onResponse)
       : https.request({ host: HOST, port: PORT, path, method, servername: HOST, headers, timeout: TIMEOUT_MS }, onResponse);
+    RUN.counts[kind].started++; RUN.active = r; RUN.activeKind = kind; // kesilme anında bu istek ve bağlantısı yok edilir
     r.on('timeout', () => r.destroy(Object.assign(new Error('zaman aşımı'), { code: 'D8_TIMEOUT' })));
-    r.on('error', (e) => resolve({ status: 0, errorClass: errorClassOf(e), sent }));
+    r.on('error', (e) => settle({ status: 0, errorClass: errorClassOf(e), sent }));
     if (body) r.write(body);
     r.end();
   });
@@ -949,17 +1043,25 @@ function printNarrow(n) {
     return;
   }
   const t0 = new Date().toISOString(); const rows = [];
-  for (const [name, method, path, fx] of DENY) rows.push(row('deny', name, method, path, await req(method, path, ridFormOf('deny', 0)), [403], fx));
+  // İKİ GÜVENCE (R09): önce bakılır (önceden var olan iptal dosyası → 0 istek), sonra zamanlayıcı ve yoklama başlar. Her istekten ÖNCE
+  // `mustStop()`; her isteğin ARDINDAN `RUN.interrupted` — kesildiyse yeni istek başlamaz ve kanıt / özet YAZILMAZ (bu işlevden çıkılır).
+  if (mustStop()) return;
+  startGuards();
+  for (const [name, method, path, fx] of DENY) { if (mustStop()) return; const r = await req(method, path, ridFormOf('deny', 0)); if (RUN.interrupted) return; rows.push(row('deny', name, method, path, r, [403], fx)); }
   const ordinal = { 'ONEK-DISI': 0, API: 0 }; // pozitifler: kendi sınıfı (web / API) içindeki sıra
-  for (const [name, method, path, exp] of ALLOW) { const k = pathClassOf(path) === 'ONEK-DISI' ? 'ONEK-DISI' : 'API'; rows.push(row('allow', name, method, path, await req(method, path, ridFormOf('allow', ordinal[k]++)), exp, null)); }
+  for (const [name, method, path, exp] of ALLOW) { if (mustStop()) return; const k = pathClassOf(path) === 'ONEK-DISI' ? 'ONEK-DISI' : 'API'; const r = await req(method, path, ridFormOf('allow', ordinal[k]++)); if (RUN.interrupted) return; rows.push(row('allow', name, method, path, r, exp, null)); }
   // YEREL KENAR KARŞILAŞTIRMASI (isteğe bağlı; dar kabul istisnasının 4. koşulu): dış isteklerin HEPSİNDEN SONRA, yalnız tanımlı TEK
   // vektör, AYNI ham yol ve AYNI Host başlığıyla, BİR kez. Tanım ret listesinde tam bir vektörle eşleşmiyorsa istek ATILMAZ.
   let localObs = { requested: false };
   if (LOCAL_EDGE_URL && DENY.filter((v) => v[0] === NARROW.vectorName && v[1] === NARROW.method && v[2] === NARROW.rawTarget).length === 1) {
-    const lr = await req(NARROW.method, NARROW.rawTarget, ridFormOf('deny', 0), LOCAL_EDGE_URL); const lm = lr.status !== 0;
+    if (mustStop()) return; // süre dolduysa / iptal edildiyse yerel karşılaştırma isteği de BAŞLAMAZ
+    const lr = await req(NARROW.method, NARROW.rawTarget, ridFormOf('deny', 0), LOCAL_EDGE_URL); if (RUN.interrupted) return; const lm = lr.status !== 0;
     localObs = { requested: true, targetClass: LOCAL_EDGE_CLASS, port: Number(LOCAL_EDGE_URL.port), vectorId: NARROW.vectorId, method: NARROW.method, rawTarget: NARROW.rawTarget, hostHeader: 'DIS-ADIN-ANA-MAKINESI',
       status: lr.status, errorClass: lr.errorClass || null, idObs: idObsOf(lm, lm ? (lr.headers || {})[RID_HEADER] : undefined, lr.sent.requestId), bodyBytes: lm ? lr.bodyBytes : null, sent: lr.sent };
   }
+  // Son istek sonuçlandı: iki güvence burada KALKAR (toplam süre sınırı istekleri kapsar; kanıt yazımı kapsam dışıdır — yerel, eşzamanlı
+  // ve kısadır). Bütün istekleri sonuçlanmış bir koşum eksik sayılmaz.
+  stopGuards(); const requestPhaseMs = Date.now() - T_START_MS;
   const { calibration, narrowClass, verdict, exitCode } = evaluate(rows, localObs, OFFPROBE_STATE);
   const deny = rows.filter((x) => x.group === 'deny'); const allow = rows.filter((x) => x.group === 'allow');
   const coverage = {}; for (const k of VECTOR_CLASSES) { const v = deny.filter((x) => x.vectorClass === k); coverage[k] = { of: v.length, measured: v.filter((x) => x.status !== 0).length, rejected403: v.filter((x) => x.outcome === 'RET-403').length }; }
@@ -1005,6 +1107,8 @@ function printNarrow(n) {
     hintsOnly: { denyLayerHints, fullBody403WithoutProviderSignature: hintFullBody403 }, rows,
     design: { credentialsSent: false, writesAttempted: false, note: 'betik TASARIM BEYANI (ölçüm değil): vektör listesinde kimlik bilgisi ve yazma verisi yoktur; ölçüm `measured` alanındadır' },
     measured,
+    // İki güvence (R09; yalnız ham kanıtta): bu koşum toplam süre sınırı ve iptal dosyası yoklaması ALTINDA tamamlandı (kesilmedi).
+    guards: { maxTotalMs: MAX_TOTAL_MS, cancelPollMs: CANCEL_POLL_MS, cancelFileWatched: true, interrupted: false, requestPhaseMs },
     note: 'ÜÇ AYRI ALAN + POZİTİF KONTROL: nameVerdict.httpReject (yalnız durum kodu ölçütü) · nameVerdict.edgeBlocking (kenar engelleme) · nameVerdict.layerVerification (katman doğrulaması; kapsam sayısıyla) · nameVerdict.positiveControl (izin verilen yollar). Her biri yalnız PASS / FAIL / OLCULEMEYEN alır; birleşik tek PASS yoktur. KANIT SINIRI: kenar engelleme ve katman doğrulaması bu sondayla PASS ÜRETMEZ (başlığın bulunmaması isteğin API\'ye ulaşmadığını kanıtlamaz; nameVerdict.edgeBlocking.scope); ölçüm koşumu çıkış 0 üretmez ve hiçbir çıkış kodu kapanış değildir. findings = FAIL nedeni taşıyan satırlar: ' + FINDING_LABEL + ' (ürün güvenlik kusuru hükmü değildir). API\'ye özgü kanıt YALNIZ istek kimliği protokolünden ve aynı koşumun kalibrasyonundan türer (rows[].idObs / idSignal / layerId / layerWhy): GECERSIZ-BICIM gönderilen istekte API\'nin ürettiği biçimde YENİ kimlik = DEGISTIRME; gönderilen değerin AYNEN dönmesi API kanıtı DEĞİLDİR (yansıtan katman göstergesi). Kenar / tünel / sağlayıcı adlandırılmaz. hintsOnly, rows[].hints ve rows[].layerHint İPUCUDUR (Server başlığı, gövde imzası, boş gövde) — kanıt değildir, hiçbir alana ve adsız özete girmez. vantage beyandır (ölçüm değil). Yanıt başlığı değerleri, hata iletileri ve yönlendirme hedefleri kanıta yazılmaz. scopeAuthorization yalnız durum + dosya bütünlüğü (sondanın ölçtüğü: dosya var · boş değil · SHA-256 tutuyor) + içerik incelemesi (yalnız "beyan var" — insan incelemesidir; sonda içeriği okumaz ve sahipliği doğrulamaz) + kalem türleridir (kayıt, yol, özet değeri, tarih, inceleyen yazılmaz). Bu dosya ana makine adını içerir (KISITLI); adsız özet de kısıtlıdır; public satıra yalnız dört alanın değeri ve ad kimliği yazılır. Ret listesindeki POST/PUT/PATCH gövdesi boş JSON, DELETE gövdesizdir; hiçbirinde kimlik bilgisi yoktur (measured.credentialHeaderRequests). Kenar geçirirse olası sonuç rows[].ifPassed alanındadır. Owner telefon beyanı ayrı dosyadadır. DAR KABUL İSTİSNASI (malformedRejectClass; owner kabul kuralı, kural sürümü ' + NARROW.ruleRevision + '): sınıf "' + NARROW.className + '" yalnız tanımlı TEK vektöre (vectorId; ad + yöntem + ham hedef — satır numarası değil) ve yalnız beş koşulun HEPSİ tutuyorsa uygulanır (state / conditions / whyNot); uygulandığında o satır rows[].acceptedClass alanında sınıfın tam adını taşır (rows[].status gerçek HTTP kodudur: 400), durum kodu ölçütünü tek başına FAIL yapmaz ama 403 SAYILMAZ (nameVerdict.httpReject.counts) ve nameVerdict.httpReject.value PASS OLMAZ: değer ' + HTTP_OWNER_EXCEPTION + ' olur (' + HTTP_OWNER_EXCEPTION_TEXT + ').' + NARROW.notice + ' Sınıf: ' + NARROW.limits + '. Yerel kenar karşılaştırma isteği localEdgeComparison alanında AYRI kayıttır ve measured.requestCount sayısına dahildir (measured.externalRequests + measured.localEdgeRequests). Sonda dışı ek kanıt beyanı owner beyanıdır (ölçüm değil); "kullanılacak" beyanında sınıf koşum anında kesinleşmez.' };
   // Önce adsız özet yazılır; ham kanıttaki `summary.written` özetin GERÇEKTEN yazıldığını gösterir (yazımdan sonra kesinleşir).
   let summaryFail = summaryRefused ? 'ÖZET ANA MAKİNE ADINI İÇERİYOR — yazılmadı' : null;
@@ -1020,7 +1124,7 @@ function printNarrow(n) {
   console.log(`  durum kodu (ret vektörleri): ${JSON.stringify(outcomeCounts.deny)}`);
   console.log(`  kalibrasyon: API aynen geri yazma ${calibration.apiWriteBack}/${calibration.apiWriteBackOf} · API değiştirme ${calibration.apiReplace}/${calibration.apiReplaceOf} · web ölçülen ${calibration.webMeasured}/${calibration.webPositives} · başlıksız bölgede ölçülen ${calibration.zoneMeasured}/${calibration.zoneRows}, başlıklı ${calibration.zoneHeaderRows} · yansıma göstergesi ${calibration.reflectionRows} · yabancı kimlik göstergesi ${calibration.foreignIdRows} → ${calibration.result} (API kanıtı ${calibration.apiEvidenceUsable ? 'kullanılabilir' : 'KULLANILAMAZ'})`);
   console.log(`  kimlik anlamı (ret vektörleri): ${JSON.stringify(idSignalCounts.deny)} · ipucu (kanıt değil) ${JSON.stringify(denyLayerHints)}`);
-  console.log(`  kimlik bilgisi başlığı taşıyan istek ${measured.credentialHeaderRequests}/${measured.requestCount} · dolu gövde ${measured.nonEmptyBodyRequests} · sonuç yok ${out.unmeasured} · istek: dış ${measured.externalRequests} + yerel kenar ${measured.localEdgeRequests}`);
+  console.log(`  kimlik bilgisi başlığı taşıyan istek ${measured.credentialHeaderRequests}/${measured.requestCount} · dolu gövde ${measured.nonEmptyBodyRequests} · sonuç yok ${out.unmeasured} · istek: dış ${measured.externalRequests} + yerel kenar ${measured.localEdgeRequests} · iki güvence altında tamamlandı (toplam süre sınırı ${MAX_TOTAL_MS} ms, istek aşaması ${requestPhaseMs} ms; iptal dosyası ${CANCEL_POLL_MS} ms aralıkla yoklandı)`);
   const hc = verdict.httpReject.counts;
   console.log(`HTTP / RET SONUCU  : ${verdict.httpReject.value}${why(verdict.httpReject)}${verdict.httpReject.value === HTTP_OWNER_EXCEPTION ? ' — ' + HTTP_OWNER_EXCEPTION_TEXT : ''} · sayılar: 403 ${hc.status403}/${hc.denyRows} · dar sınıf ${hc.narrowClass} (403 sayılmaz) · başka yanıt ${hc.otherAnswered} · yanıtsız ${hc.unanswered}`);
   printNarrow(narrowClass);
