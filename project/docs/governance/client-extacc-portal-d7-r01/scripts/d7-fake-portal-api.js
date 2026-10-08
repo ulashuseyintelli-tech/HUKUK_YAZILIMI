@@ -15,6 +15,9 @@
  * Senaryolar: create normal|fail|late|hold · disable normal|fail|failOnce · guard normal|stale (KUSUR: kapalı hesabın oturumu geçer) ·
  *             ext normal|503 · extLogin normal|503 · wrongPw normal|acceptAny · cases normal|leak ·
  *             send normal|fail|foreignAccept (KUSUR: caseId doğrulanmaz, satır yazılır 201) ·
+ *             scope normal|<N|S|U>:<accept|429|503|hang> (R05: YALNIZ o kapsam dışı denemeye uygulanır — N yabancı tenant dosyası · S aynı tenantta başka
+ *                   müvekkilin dosyası · U bulunmayan kimlik; deneme mesaj içeriğinin son ekinden tanınır. accept = KUSUR: doğrulama yok, satır yazılır 201
+ *                   (U'da dosyasız satır); 429 / 503 = o kodla yanıt, satır yok; hang = YANITSIZ, satır yok) ·
  *             list normal|leak (KUSUR: aynı tenantta BAŞKA müvekkilin mesajı da döner; ilk gönderimde tuzak satır yazılır) ·
  *             reply normal|fail|noNotify (bildirim satırı üretilmez)|hang (YANITSIZ: personel POST'u hiç yanıtlanmaz, satır yazılmaz) ·
  *             markRead normal|noop (KUSUR: okundu işaretlenmez) · unread normal|hang (YANITSIZ: unread-count hiç yanıtlanmaz)
@@ -58,7 +61,7 @@ const EXT_ORIGIN = `https://localhost:${EXT_PORT}`;
 const CASE_REF_INVALID = 'Geçersiz dosya referansı';
 const MSG_SELECT = { id: true, content: true, senderType: true, senderName: true, isRead: true, createdAt: true };
 
-const DEFAULT = { create: 'normal', disable: 'normal', guard: 'normal', ext: 'normal', extLogin: 'normal', wrongPw: 'normal', cases: 'normal', send: 'normal', list: 'normal', reply: 'normal', markRead: 'normal', unread: 'normal',
+const DEFAULT = { create: 'normal', disable: 'normal', guard: 'normal', ext: 'normal', extLogin: 'normal', wrongPw: 'normal', cases: 'normal', send: 'normal', scope: 'normal', list: 'normal', reply: 'normal', markRead: 'normal', unread: 'normal',
   staffAuth: 'normal', relogin: 'normal', reopen: 'normal', portalToken: 'jwt', login: 'normal', pwChange: 'normal', rowDelete: 'normal', reopenOn: 'messages' };
 // R03-c: reopen afterDisable — kapatılan müvekkil (başarılı disable-user) ve yeniden açmanın yapılıp yapılmadığı (tek sefer)
 let reopenClientId = null; let reopenDone = false; let reopenRevertTv = null;   // R03-d: kapatma ÖNCESİ sürüm (afterDisableRevert)
@@ -145,8 +148,15 @@ const httpErr = (e) => ({ status: e && e.status ? e.status : 500, body: { messag
 async function sendFromClient(req, body) {
   const pu = await portalUser(req); if (!pu) return { status: 401, body: { message: 'Unauthorized' } };
   if (scenario.send === 'fail') return { status: 500, body: { message: 'Internal server error' } };
+  // R05: kapsam dışı denemenin türü (koşucunun içerik son eki) — `scope` düğmesi yalnız eşleşen denemeye uygulanır.
+  const c = String(body.content || ''); const kind = !body.caseId ? null : (/-FOREIGN$/.test(c) ? 'N' : (/-SAMETENANT$/.test(c) ? 'S' : (/-UNKNOWN$/.test(c) ? 'U' : null)));
+  const scopeIs = (x) => !!kind && scenario.scope === `${kind}:${x}`;
+  if (scopeIs('429')) return { status: 429, body: { message: 'Too Many Requests' } };
+  if (scopeIs('503')) return { status: 503, body: { message: 'Service Unavailable' } };
+  if (scopeIs('hang')) return HANG();
   try {
-    const caseRef = await resolveCaseRef(body.caseId, { actor: 'client', clientId: pu.clientId, tenantId: pu.tenantId });
+    // scope <tür>:accept → KUSUR TAKLİDİ: doğrulama yok (U'da dosya yoktur: satır dosyasız yazılır)
+    const caseRef = scopeIs('accept') ? (kind === 'U' ? undefined : body.caseId) : await resolveCaseRef(body.caseId, { actor: 'client', clientId: pu.clientId, tenantId: pu.tenantId });
     if (scenario.list === 'leak' && !leakSeeded.has(pu.clientId)) {
       // KUSUR TAKLİDİ için tuzak: aynı tenanttaki BAŞKA müvekkile ait bir mesaj satırı (içerik gizli sayılır; kanıta girmemeli).
       const other = await prisma.client.findFirst({ where: { tenantId: pu.tenantId, id: { not: pu.clientId } }, select: { id: true } });

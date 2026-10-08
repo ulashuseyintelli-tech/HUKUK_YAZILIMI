@@ -72,6 +72,14 @@
  *           (statik: koşucuda elle komut / `receiptFromEvidenceCommand` yok; Recover makbuz dosyasına yazmaz; blok aynı seçeneği gösterir). Elle komutu iki
  *           kabukta koşan eski ölçüm kaldırıldı: komut artık hiçbir çıktıda yok; makbuzu bloğun yazdığı yol blok öz-testi RG-1'de (sahte koşucu kanıtı) ve
  *           burada (gerçek koşucu kanıtı) ölçülür.
+ * R05     : (2026-10-08; owner kararı "D-7 dar düzeltme" — kapsam ihlalinde dur) YENİ: Z24-a … Z24-f (kapsam dışı üç ölçütün HER BİRİNDE FAIL ve ÖLÇÜLEMEYEN yolu;
+ *           sahte API `scope` düğmesi yalnız o denemeye uygulanır): durduran ölçütün verdict'i değişmez, sonraki ölçütler ÖLÇÜLEMEYEN (PASS / FAIL değil), sonraki
+ *           işlevsel çağrı 0 (dış: başka mesaj POST'u, unread-count, mark-read yok; yerel: personel mesaj uçları yok), giriş bilgisi gösterilmedi, telefon
+ *           beklenmedi, kapanış ölçütlerinin tamamı PASS; FAIL yolunda çıkış 2, ÖLÇÜLEMEYEN yolunda çıkış 3 (FAIL sayısı 0) · Z24-g / Z24-h (durdurma + kapatma
+ *           500: çıkış 6; durduran ölçütün satırı kanıtta FAIL / ÖLÇÜLEMEYEN olarak DURUR — kapanış başarısızlığı gizlenmez, ihlal de gizlenmez) · Z24-i
+ *           (hatasız akış korunur: Z1 koşumunda üç ölçüt kapıda PASS, `scopeStop` yok, gösterim yapıldı) · T-15 (statik: üç durdurma noktası kendi dosyasıyla
+ *           mesajdan ÖNCE; kapı listesi; durdurma istisna fırlatmaz). DEĞİŞEN: Z3 (eski baytlar ihlalden sonra akışı sürdürüp gösterim yapıyordu — artık D7-4N'de
+ *           durur) · Z4-a (müvekkil mesajı 500 iken kapsam denemesi de 500 → D7-4N FAIL → durur; koşucu hiç mesaj yazmadığı için P7-MSG-KEPT ÖLÇÜLEMEYEN).
  */
 const { spawn, spawnSync, execFileSync } = require('child_process');
 const fs = require('fs'); const path = require('path'); const os = require('os'); const crypto = require('crypto');
@@ -227,6 +235,30 @@ async function recover(prev, dir, name, sc, envOver) {
 const FLOW = ['P7-00', 'P7-01', 'P7-02', 'P7-03L', 'P7-04D', 'D7-1', 'D7-2', 'D7-4N', 'D7-4S', 'D7-4U', 'D7-4P', 'D7-3', 'D7-3N', 'D7-3U', 'D7-3G', 'D7-3F', 'P7-DISP', 'P7-WAIT', 'D7-3B'];
 const CLOSE = ['P7-C1', 'P7-C2', 'P7-C2V', 'P7-C3L', 'P7-C3D', 'P7-C4L', 'P7-C4D', 'P7-C5', 'U-CLOSE', 'P7-MSG-KEPT', 'P7-D9'];
 const closedAll = (z) => CLOSE.every((id) => z.v(id) === 'PASS');
+// R05 — kapsam durdurması ölçümü. `id` durduran ölçüt; `verdict` beklenen verdict'i (FAIL / UNMEASURED). Döner: { ok, obs } — her alt koşul ayrı adlandırılır.
+const SCOPE_ORDER = ['D7-4N', 'D7-4S', 'D7-4U'];
+const SCOPE_REST = ['D7-4P', 'D7-3', 'D7-3N', 'D7-3U', 'D7-3G', 'D7-3F'];
+function scopeStopState(z, id, verdict, dir, name) {
+  const i = SCOPE_ORDER.indexOf(id); const before = SCOPE_ORDER.slice(0, i); const after = SCOPE_ORDER.slice(i + 1).concat(SCOPE_REST);
+  const ev = z.ev || {}; const ss = ev.scopeStop || {};
+  const extPost = z.ext.filter((c) => c.method === 'POST' && c.path === '/api/portal/messages').length;
+  const extRead = z.ext.filter((c) => /\/api\/portal\/messages\/(unread-count|mark-read)/.test(c.path)).length;
+  const staffMsg = z.calls.filter((c) => /\/api\/portal\/admin\/messages\//.test(c.path)).length;
+  let sinkCreds = false; try { sinkCreds = /Parola|E-posta/.test(fs.readFileSync(path.join(dir, `${name}-display.sink`), 'utf8')); } catch (e) { sinkCreds = false; }
+  const c = {
+    durduran: z.v(id) === verdict,
+    onceki: ['D7-1', 'D7-2', ...before].every((x) => z.v(x) === 'PASS'),
+    sonraki: after.every((x) => z.v(x) === 'UNMEASURED' && z.o(x).includes(`kapsam dışı ölçüt ${id}=`)),
+    telefon: ['P7-DISP', 'P7-WAIT', 'D7-3B'].every((x) => z.v(x) === 'UNMEASURED'),
+    kanit: ss.olcut === id && ss.verdict === verdict && JSON.stringify(ss.kosulmayan) === JSON.stringify(after) && typeof ev.stopped === 'string' && ev.stopped.includes(`kapsam dışı ölçüt ${id}=${verdict === 'FAIL' ? 'FAIL' : 'ÖLÇÜLEMEYEN'}`),
+    cagri: extPost === 2 + i && extRead === 0 && staffMsg === 0,
+    gosterim: ev.displayed === false && z.phone.length === 0 && !sinkCreds,
+    kapanis: closedAll(z) && z.v('U-ISO') === 'PASS' && !!z.pu && z.pu.isActive === false && !!z.cl && z.cl.hasPortalAccess === false && z.activeUsers === 0 && z.activeCases === 0,
+    passYok: [id, ...after, 'P7-DISP', 'P7-WAIT', 'D7-3B'].every((x) => z.v(x) !== 'PASS'),
+  };
+  const bad = Object.keys(c).filter((k) => !c[k]);
+  return { ok: bad.length === 0, c, obs: `çıkış=${z.code} · ${id}=${z.v(id)} (${z.o(id)}) · tutmayan=${bad.join(',') || 'yok'} · dış mesaj POST=${extPost} · dış sayaç/okundu=${extRead} · yerel personel mesaj ucu=${staffMsg} · FAIL=${ev.fail} · ÖLÇÜLEMEYEN=${ev.unmeasured}` };
+}
 const adminExt = (z) => z.ext.filter((c) => /\/api\/portal\/admin/.test(c.path)).length;
 const fullPhone = (runId, sink) => phoneFlow(runId, sink);
 const shouldNot = { onDisplay: async () => ({ displayedButShouldNot: true }) };
@@ -292,17 +324,51 @@ async function withInsertFault(table, column, value, fn) {
     const z2 = await runScenario('z2-list-leak', dir, { list: 'leak' }, {});
     check('Z2', 'liste sızıntısı: D7-2 FAIL (yabancı≥1), gösterim YOK, kapanış PASS, çıkış 2', z2.code === 2 && z2.v('D7-2') === 'FAIL' && /yabancı=1/.test(z2.o('D7-2')) && z2.ev.displayed === false && closedAll(z2), `çıkış=${z2.code} · D7-2=${z2.o('D7-2')}`);
 
-    // ---- Z3 KUSUR TAKLİDİ: kapsam dışı caseId kabul ediliyor → D7-4N/D7-4U FAIL (201 + satır), çıkış 2
-    const z3 = await runScenario('z3-foreign-accept', dir, { send: 'foreignAccept' }, {}, { onDisplay: fullPhone });
-    check('Z3', 'kapsam dışı caseId kabul: D7-4N, D7-4S ve D7-4U FAIL (HTTP 201, satır yazıldı), akış geri kalanı PASS (kabul edilen satırlar koşucunun sayılır; gösterim + telefon yapılır), çıkış 2; yabancı + aynı-tenant-başka-müvekkil caseId satırları DB\'de var; kalıntı 8 (koşucu 7 + telefon 1)',
-      z3.code === 2 && z3.v('D7-4N') === 'FAIL' && /HTTP 201/.test(z3.o('D7-4N')) && z3.v('D7-4S') === 'FAIL' && /HTTP 201/.test(z3.o('D7-4S')) && z3.v('D7-4U') === 'FAIL' && z3.v('D7-1') === 'PASS' && z3.v('D7-3') === 'PASS' && z3.v('D7-3G') === 'PASS' && z3.v('P7-WAIT') === 'PASS' && closedAll(z3)
-        && (await prisma.portalMessage.count({ where: { caseId: z3.rc.foreignCaseId } })) === 1 && (await prisma.portalMessage.count({ where: { caseId: z3.rc.sameTenantOtherCaseId } })) === 1
-        && z3.ev.messageResidue.runnerWritten === 7 && z3.msgs.length === 8, `çıkış=${z3.code} · 4N=${z3.o('D7-4N')} · 4S=${z3.v('D7-4S')} · 4U=${z3.v('D7-4U')} · D7-3=${z3.v('D7-3')} · 3G=${z3.o('D7-3G')} · kalıntı=${z3.msgs.length}`);
+    // ---- Z3 KUSUR TAKLİDİ: kapsam dışı caseId kabul ediliyor → R05: koşucu İLK ihlalde (D7-4N FAIL: 201 + satır) DURUR; çıkış 2
+    const z3 = await runScenario('z3-foreign-accept', dir, { send: 'foreignAccept' }, {}, shouldNot);
+    const z3s = scopeStopState(z3, 'D7-4N', 'FAIL', dir, 'z3-foreign-accept');
+    check('Z3', 'kapsam dışı caseId kabul (R05; önceki baytlar akışı sürdürüp gösterim + telefon yapıyordu): D7-4N FAIL (HTTP 201, satır yazıldı) → koşucu DURDU: D7-4S, D7-4U ve kalan mesaj / yanıt / okundu ölçütleri ÖLÇÜLEMEYEN (denenmedi), gösterim YOK, telefon YOK, kapanış PASS, çıkış 2; yabancı caseId satırı DB\'de 1, aynı-tenant-başka-müvekkil caseId satırı 0 (deneme yapılmadı); kabul edilen satır koşucunun sayılır: kalıntı 2 (koşucu 2), makbuzda 2 id',
+      z3.code === 2 && z3s.ok && /HTTP 201/.test(z3.o('D7-4N')) && z3.ev.fail === 1
+        && (await prisma.portalMessage.count({ where: { caseId: z3.rc.foreignCaseId } })) === 1 && (await prisma.portalMessage.count({ where: { caseId: z3.rc.sameTenantOtherCaseId } })) === 0
+        && z3.ev.messageResidue.runnerWritten === 2 && z3.msgs.length === 2 && (z3.rc.runnerMessageIds || []).length === 2, `${z3s.obs} · kalıntı=${z3.msgs.length} · makbuz id=${(z3.rc.runnerMessageIds || []).length}`);
+
+    // ---- Z24 (R05) KAPSAM İHLALİNDE DUR: üç ölçütün HER BİRİNDE FAIL ve ÖLÇÜLEMEYEN yolu; sonraki işlevsel çağrı / gösterim YOK; kapanış ÇALIŞIR
+    const z24 = [
+      ['Z24-a', 'D7-4N', 'FAIL', { scope: 'N:accept' }, {}, 'yabancı tenant dosyası KABUL (201 + satır)'],
+      ['Z24-b', 'D7-4N', 'UNMEASURED', { scope: 'N:429' }, {}, 'yabancı tenant dosyası denemesi HTTP 429'],
+      ['Z24-c', 'D7-4S', 'FAIL', { scope: 'S:accept' }, {}, 'aynı tenantta başka müvekkilin dosyası KABUL (201 + satır)'],
+      ['Z24-d', 'D7-4S', 'UNMEASURED', { scope: 'S:503' }, {}, 'aynı tenantta başka müvekkilin dosyası denemesi HTTP 503'],
+      ['Z24-e', 'D7-4U', 'FAIL', { scope: 'U:accept' }, {}, 'bulunmayan kimlik KABUL (201 + dosyasız satır)'],
+      ['Z24-f', 'D7-4U', 'UNMEASURED', { scope: 'U:hang' }, { D7_HTTP_TIMEOUT_MS: '1500' }, 'bulunmayan kimlik denemesi YANITSIZ (zaman aşımı)'],
+    ];
+    for (const [zid, sid, verdict, sc, over, what] of z24) {
+      const nm = `${zid.toLowerCase()}-scope`; const z = await runScenario(nm, dir, sc, over, shouldNot); const st = scopeStopState(z, sid, verdict, dir, nm);
+      const isFail = verdict === 'FAIL'; const want = isFail ? 2 : 3;
+      const written = isFail ? 2 : 1;   // D7-1 + (FAIL yolunda) ürünün kabul ettiği satır
+      check(zid, `R05 ${sid} ${isFail ? 'FAIL' : 'ÖLÇÜLEMEYEN'} (${what}): durduran ölçütün verdict'i ${isFail ? 'FAIL (ÖLÇÜLEMEYEN\'e çevrilmedi)' : 'ÖLÇÜLEMEYEN (FAIL üretilmedi: FAIL sayısı 0)'}; önceki ölçütler PASS; sonraki kapsam / mesaj / yanıt / okundu ölçütleri ve gösterim / telefon / 2. yanıt ÖLÇÜLEMEYEN (hiçbiri PASS değil); durdurmadan sonra dış mesaj POST'u, unread-count, mark-read ve yerel personel mesaj ucu çağrısı 0; giriş bilgisi gösterilmedi; kapanış ölçütlerinin tamamı PASS (portal pasif, erişim kapalı, aktif personel 0, açık dosya 0); çıkış ${want}; koşucunun yazdığı satır ${written}`,
+        z.code === want && st.ok && (isFail ? z.ev.fail === 1 : z.ev.fail === 0) && z.msgs.length === written && (z.rc.runnerMessageIds || []).length === written && z.ev.messageResidue.runnerWritten === written,
+        `${st.obs} · satır=${z.msgs.length} · makbuz id=${(z.rc.runnerMessageIds || []).length}`);
+    }
+    // Z24-g / Z24-h: durdurma + KAPANIŞ BAŞARISIZ (kapatma 500) → çıkış 6; durduran ölçütün satırı kanıtta DURUR (ihlal de, kapanış başarısızlığı da gizlenmez)
+    const z24g = await runScenario('z24g-scope-fail-disable-fail', dir, { scope: 'S:accept', disable: 'fail' }, {}, shouldNot);
+    const z24h = await runScenario('z24h-scope-unm-disable-fail', dir, { scope: 'N:503', disable: 'fail' }, {}, shouldNot);
+    const noFlow = (z) => z.calls.filter((c) => /\/api\/portal\/admin\/messages\//.test(c.path)).length === 0 && z.ev.displayed === false && z.phone.length === 0;
+    check('Z24-g', 'R05 D7-4S FAIL + kapatma 500: çıkış 6 (2 değil — kapanış başarısızlığı öne geçer); D7-4S kanıtta FAIL olarak DURUR (FAIL sayısı ≥ 2: ihlal + kapanış); P7-C2 FAIL, P7-D9 FAIL; kurtarma notu VAR; portal hesabı DB\'de AKTİF (kapanmadı — gizlenmedi); personel / dosya kapanışı yine çalıştı (U-CLOSE PASS); sonraki işlevsel çağrı ve gösterim yok',
+      z24g.code === 6 && z24g.v('D7-4S') === 'FAIL' && !!z24g.ev.scopeStop && z24g.ev.scopeStop.olcut === 'D7-4S' && z24g.v('P7-C2') === 'FAIL' && z24g.v('P7-D9') === 'FAIL' && z24g.ev.fail >= 2 && z24g.ev.recovery.gerekli === true
+        && z24g.pu.isActive === true && z24g.v('U-CLOSE') === 'PASS' && z24g.activeUsers === 0 && noFlow(z24g), `çıkış=${z24g.code} · D7-4S=${z24g.v('D7-4S')} · P7-C2=${z24g.v('P7-C2')} · P7-D9=${z24g.v('P7-D9')} · FAIL=${z24g.ev.fail} · portal aktif=${z24g.pu.isActive}`);
+    check('Z24-h', 'R05 D7-4N ÖLÇÜLEMEYEN + kapatma 500: çıkış 6; D7-4N kanıtta ÖLÇÜLEMEYEN olarak DURUR (FAIL\'e çevrilmedi); P7-C2 FAIL, P7-D9 FAIL; kurtarma notu VAR; sonraki işlevsel çağrı ve gösterim yok',
+      z24h.code === 6 && z24h.v('D7-4N') === 'UNMEASURED' && !!z24h.ev.scopeStop && z24h.ev.scopeStop.verdict === 'UNMEASURED' && z24h.v('P7-C2') === 'FAIL' && z24h.v('P7-D9') === 'FAIL' && z24h.ev.recovery.gerekli === true && noFlow(z24h),
+      `çıkış=${z24h.code} · D7-4N=${z24h.v('D7-4N')} · P7-C2=${z24h.v('P7-C2')} · FAIL=${z24h.ev.fail}`);
+    // Z24-i: HATASIZ AKIŞ KORUNUR (Z1 koşumu): üç ölçüt kapıda PASS, durdurma kaydı yok, gösterim yapıldı
+    check('Z24-i', 'R05 hatasız akış korunur (Z1 koşumu): gösterim kapısı listesi üç kapsam ölçütünü içerir ve hepsi PASS; kanıtta `scopeStop` YOK; `stopped` boş; gösterim yapıldı; çıkış 0',
+      z1.code === 0 && JSON.stringify(z1.ev.displayGate) === JSON.stringify(['P7-03L', 'P7-04D', 'D7-1', 'D7-2', 'D7-4N', 'D7-4S', 'D7-4U', 'D7-3', 'D7-3U'].map((x) => `${x}=PASS`)) && !('scopeStop' in z1.ev) && !z1.ev.stopped && z1.ev.displayed === true,
+      `çıkış=${z1.code} · kapı=${(z1.ev.displayGate || []).join(',')} · scopeStop=${'scopeStop' in z1.ev}`);
 
     // ---- Z4 send 500 → 2/6 kuralı: kapanış PASS ise 2; kapanış doğrulanamazsa 6
     const z4a = await runScenario('z4a-send-500', dir, { send: 'fail' }, {});
-    check('Z4-a', 'müvekkil mesajı 500: D7-1/D7-2 FAIL, gösterim YOK (kapı), telefon BEKLENMEDİ, kapanış PASS → çıkış 2',
-      z4a.code === 2 && z4a.v('D7-1') === 'FAIL' && z4a.v('D7-2') === 'FAIL' && z4a.ev.displayed === false && z4a.v('P7-WAIT') === 'UNMEASURED' && closedAll(z4a), `çıkış=${z4a.code} · kapı=${(z4a.ev.displayGate || []).join(',')}`);
+    check('Z4-a', 'müvekkil mesajı 500: D7-1/D7-2 FAIL; R05: kapsam denemesi de 500 → D7-4N FAIL → koşucu DURDU (personel yanıtı gönderilmedi); gösterim YOK, telefon BEKLENMEDİ; koşucu hiç mesaj yazmadı → P7-MSG-KEPT ÖLÇÜLEMEYEN (boş doğrulama PASS sayılmaz), diğer kapanış ölçütleri PASS → çıkış 2',
+      z4a.code === 2 && z4a.v('D7-1') === 'FAIL' && z4a.v('D7-2') === 'FAIL' && z4a.ev.displayed === false && z4a.v('P7-WAIT') === 'UNMEASURED' && z4a.v('D7-4N') === 'FAIL' && !!z4a.ev.scopeStop && z4a.ev.scopeStop.olcut === 'D7-4N'
+        && CLOSE.filter((id) => id !== 'P7-MSG-KEPT').every((id) => z4a.v(id) === 'PASS') && z4a.v('P7-MSG-KEPT') === 'UNMEASURED' && z4a.msgs.length === 0, `çıkış=${z4a.code} · kapı=${(z4a.ev.displayGate || []).join(',')} · KEPT=${z4a.v('P7-MSG-KEPT')}`);
     const z4b = await runScenario('z4b-send-500-disable-fail', dir, { send: 'fail', disable: 'fail' }, {});
     check('Z4-b', 'müvekkil mesajı 500 + kapatma 500: portal kapanışı doğrulanamadı → çıkış 6 (2 değil), kurtarma notu', z4b.code === 6 && z4b.v('P7-C2') === 'FAIL' && z4b.ev.recovery.gerekli, `çıkış=${z4b.code}`);
 
@@ -1027,6 +1093,17 @@ async function withInsertFault(table, column, value, fn) {
   check('T-12', 'R03-f: yorum dışı koşucu kaynağında "Recover kapatabilir", "DB\'ye yansımadı", "portal hesabı açık", "DB\'de AÇIK" ve eski "\'AÇIK\' : \'kapanış TAMAMLANMADI\'" biçimi YOK; P7-C1 yazan tüm R.check / R.unmeasured çağrıları (≥ 4) açıklamayı C1_DESC ya da "portal hesabı YOK (DB\'de ölçüldü) …" ile verir, "kapatıldı" geçmez; C1_DESC "DB kapanışı P7-C2 / P7-C5 satırlarında" der',
     t12Bad.length === 0 && c1Calls7.length >= 4 && c1Calls7.every((c) => /'P7-C1', C1_DESC,$/.test(c) || /'P7-C1', 'portal hesabı YOK \(DB\\'de ölçüldü\)/.test(c)) && !c1Calls7.some((c) => /kapatıldı/.test(c)) && /DB kapanışı P7-C2 \/ P7-C5 satırlarında/.test((require(RUN).C1_DESC) || ''),
     `yasak dize=${t12Bad.join(',') || 'yok'} · P7-C1 çağrısı=${c1Calls7.length}: ${c1Calls7.map((c) => c.slice(0, 48)).join(' | ')}`);
+  // T-15 (R05; statik): kapsam durdurması üç ölçütün HER BİRİNDEN hemen sonra ve kendi dosyasıyla mesajdan (D7-4P) ÖNCE; durdurma istisna fırlatmaz (kapanış
+  // `finally`'de çalışır); gösterim kapısı üç ölçütü içerir; koşulmayan ölçütler R.unmeasured ile yazılır.
+  const iOl = runSrc.indexOf('olcum: {'); const iOwn = runSrc.indexOf('(kendi caseId)'); const iHalt = runSrc.indexOf('const scopeHalt = (id) => {');
+  const haltFn = iHalt >= 0 ? runSrc.slice(iHalt, runSrc.indexOf('};', iHalt)) : '';
+  const haltAt = SCOPE_ORDER.map((id) => runSrc.indexOf(`if (scopeHalt('${id}')) break olcum;`));
+  const iFin = runSrc.indexOf('finally {');
+  check('T-15', 'R05 statik: `scopeHalt` üç ölçütün her birinden sonra çağrılır (sıra D7-4N < D7-4S < D7-4U), üçü de `olcum` bloğunda ve kendi dosyasıyla mesaj çağrısından ÖNCE; durdurma fonksiyonu `throw` içermez, PASS dışındaki her verdict\'te durur; gösterim kapısı listesi üç ölçütü içerir; koşulmayan ölçütler `R.unmeasured` ile yazılır; kapanış `finally` bloğunda (closePortal + closeAccess) kalır',
+    iOl > 0 && iOwn > iOl && haltAt.every((x) => x > iOl && x < iOwn) && haltAt[0] < haltAt[1] && haltAt[1] < haltAt[2] && haltFn.length > 0 && !/throw/.test(haltFn) && /if \(vd === 'PASS'\) return false;/.test(haltFn)
+      && /const GATE = \['P7-03L', 'P7-04D', 'D7-1', 'D7-2', 'D7-4N', 'D7-4S', 'D7-4U', 'D7-3', 'D7-3U'\];/.test(runSrc) && /for \(const id of out\.scopeStop\.kosulmayan\) R\.unmeasured\(id, /.test(runSrc)
+      && iFin > iOwn && runSrc.indexOf('await closePortal(', iFin) > 0 && runSrc.indexOf('await closeAccess(', iFin) > 0,
+    `durdurma noktaları=${haltAt.join(',')} · blok=${iOl} · kendi dosya çağrısı=${iOwn} · fonksiyon=${haltFn.length} karakter`);
   // T-13 (R04, owner talimatı madde 5; birim + statik — disposable DB / sahte API senaryosu GEREKMEZ): ret ölçütlerinde (P7-C3L/D yeni giriş · P7-C4L/D mevcut
   // oturum) 503 / 429 DIŞINDAKİ 5xx gözlemi "ret kanıtlanmadı; neden kesinleşmedi (ürün kusuru olarak sınıflanmadı)" der; verdict ifadesi (`r.status === 401`) ve
   // 503 / 429 → ÖLÇÜLEMEYEN dalı DEĞİŞMEDİ (her iki ölçütte R.check satırından hemen önce); eski yalın "HTTP ${r.status}" gözlemi iki ret ölçütünde kalmadı.
