@@ -115,6 +115,14 @@
 > **K4** manifest yokken DUR metni kalan yolu ve makbuz dosyasının ölçülen durumunu yazar. **K5** makbuz yazımından sonraki beklenmeyen istisna da KULLANILMAZ işareti + DUR
 > üretir. Çıkış kodları **değişmedi**; Recover yine soru sormaz. **Ölçülen (son baytlar):** blok öz-testi **88/88** iki kabukta; koşucu öz-testi bu aşamada **koşulmadı**
 > (koşucu değişmedi — R04-b baytlarında 88/88 ölçülmüştü). Pinler: **§7**. Canlı Run / Recover **koşulmadı**; bu revizyon hiçbir canlı koşum ya da Recover için yetki DEĞİLDİR.
+>
+> **R05 (2026-10-08) — kapsam ihlalinde dur (owner kararı "D-7 dar düzeltme"; koşucu, sahte API, koşucu öz-testi, bloktaki koşucu pini + paket digest'i ve bu belge
+> değişti; blok öz-testi ve QR betiği DEĞİŞMEDİ) — §15:** kapsam dışı üç ölçütten (D7-4N · D7-4S · D7-4U) biri **FAIL ya da ÖLÇÜLEMEYEN** ise koşucu **o anda durur**:
+> kalan mesaj / yanıt / okundu adımları koşulmaz, giriş bilgisi **gösterilmez**, telefon adımı **başlamaz**; kapanış ve kanıt yazımı **çalışır**. FAIL, ÖLÇÜLEMEYEN'e
+> çevrilmez; yalnız ÖLÇÜLEMEYEN varsa FAIL üretilmez; koşulmayan adımlar PASS sayılmaz. Önceki baytlar (R04-b) bu durumda akışı sürdürüyor ve giriş bilgisini
+> gösterebiliyordu. Çıkış kodu fonksiyonları ve öncelik **değişmedi**. "Kimlikten makbuz" yaması **yapılmadı** (owner kararı — §10 K-7). **Ölçülen (son baytlar):**
+> koşucu öz-testi **98/98**, blok öz-testi **88/88** iki kabukta. Pinler: **§7**. Canlı Run / Recover **koşulmadı**; bu revizyon hiçbir canlı koşum
+> ya da Recover için yetki DEĞİLDİR.
 
 ## 1. Ne ölçer ve ne yapmaz
 
@@ -166,7 +174,7 @@ URL'yi blok ve koşucu **kendi kanıt/log dosyalarına yazmaz** (öz-test ortam�
 | P7-03L / P7-04D | koşucu portal girişi yerel 201 · dosya listesi dış 200 yalnız `I3-<runId>` | HTTP |
 | **D7-1** | dış `POST /api/portal/messages {content:'D7-<runId>'}` **201** + DB satırı (clientId/tenantId/senderType=CLIENT/isRead=false/caseId=null) | HTTP+DB |
 | **D7-2** | dış `GET /api/portal/messages` **200** ve **yalnız bu koşumun** mesajları (id kümesi; en az 1 kendi mesajı — boş doğrulama yok) | HTTP |
-| **D7-4N / D7-4S / D7-4U / D7-4P** | yabancı tenant dosyası / **aynı tenant başka müvekkil dosyası** / bulunmayan id ile POST → **400** ve satır yok (üçü aynı cevap) · kendi dosyası → 201 + caseId doğru | HTTP+DB |
+| **D7-4N / D7-4S / D7-4U / D7-4P** | yabancı tenant dosyası / **aynı tenant başka müvekkil dosyası** / bulunmayan id ile POST → **400** ve satır yok (üçü aynı cevap) · kendi dosyası → 201 + caseId doğru · **R05:** D7-4N / D7-4S / D7-4U'dan biri PASS değilse koşucu o anda durur; sonraki ölçütler ÖLÇÜLEMEYEN yazılır (§15) | HTTP+DB |
 | **D7-3 / D7-3N** | personel yanıtı **yerel** `POST /portal/admin/messages/:clientId` (elev1) 201 + OFFICE satırı → dış GET'te görünür · `PortalNotification` **+1** (MESAJ, `/portal/messages`). Personel yanıtı **yanıtsız** kalırsa ikisi de **ÖLÇÜLEMEYEN** (FAIL değil) | HTTP+DB |
 | **D7-3U** | dış `unread-count` **1** → `mark-read` 2xx → **0**; DB OFFICE satırı `isRead=true` + `readAt`. Personel yanıtı / ilk `unread-count` / `mark-read` **yanıtsız** kalırsa **ÖLÇÜLEMEYEN** (FAIL değil) | HTTP+DB |
 | D7-3G / D7-3F | personel yerel GET 200, **gövde `{ client, messages }`** (ürün sözleşmesi; çıplak dizi FAIL) ve tüm koşum mesajları `messages` içinde; müvekkil mesajları okundu işaretlenir · yabancı tenant müvekkiline personel mesajı **404**, satır yok | HTTP+DB |
@@ -177,8 +185,9 @@ URL'yi blok ve koşucu **kendi kanıt/log dosyalarına yazmaz** (öz-test ortam�
 | **P7-MSG-KEPT** | koşucunun yazdığı `PortalMessage` satırlarının **tamamı yerinde** (`yerinde=k/k`) ve `PortalMessage`/`PortalNotification` **SİLİNMEDİ**; kanıt `yerinde=k/k · saklandı: n mesaj (koşucu k · telefon t) + m bildirim satırı (kapanış, ölçülen: <U-CLOSE ve portal DB ölçümü>) — SİLİNMEDİ` (R03; R01/R02 baytlarında parantez SABİT "(sentetik tenant CLOSED; portal pasif)" idi); `messageResidue.deleted=false`. Koşucu **hiç mesaj yazmadıysa** (ya da Recover makbuzunda `runnerMessageIds` yoksa) boş-doğrulama PASS **verilmez**: **ÖLÇÜLEMEYEN** + yalnız rapor. Koşucu mesaj id'leri makbuza `runnerMessageIds` olarak yazılır; Recover bunlarla gerçek sayım yapar | DB |
 | U-CLOSE / U-ISO / P7-D9 | personel/dosya kapanışı · izolasyon (yalnız sayı) · birleşik | DB |
 
-Gösterim kapısı: `P7-03L, P7-04D, D7-1, D7-2, D7-3, D7-3U` PASS değilse giriş bilgisi gösterilmez, telefon beklenmez (D7-4N/4S/4U/3N kapı dışı: kusur
-FAIL olur, akış sürer). Çıkış: 0 PASS · 2 FAIL · 3 ÖLÇÜLEMEYEN · 1 DURDU · 4 KİMLİK/HEDEF REDDİ · 5 PERSONEL/DOSYA · 6 PORTAL KAPANIŞI DOĞRULANMADI ·
+Gösterim kapısı (R05): `P7-03L, P7-04D, D7-1, D7-2, D7-4N, D7-4S, D7-4U, D7-3, D7-3U` PASS değilse giriş bilgisi gösterilmez, telefon beklenmez.
+Kapsam dışı üç ölçüt (D7-4N / 4S / 4U) ayrıca **durdurucudur**: biri FAIL ya da ÖLÇÜLEMEYEN ise sıradaki adımlar hiç koşulmaz (§15). D7-3N / D7-4P / D7-3G / D7-3F
+kapı dışıdır (kusur FAIL olur, akış sürer). R04-b ve önceki baytlarda D7-4N / 4S / 4U da kapı dışıydı. Çıkış: 0 PASS · 2 FAIL · 3 ÖLÇÜLEMEYEN · 1 DURDU · 4 KİMLİK/HEDEF REDDİ · 5 PERSONEL/DOSYA · 6 PORTAL KAPANIŞI DOĞRULANMADI ·
 7 KANIT YAZILAMADI (öncelik 6 > 5 > 7 > 1 > 2 > 3 > 0); owner bloğu 90 kapı · 91 node. Recover ölçülemeyeni 0 yapmaz (C4 Recover'da hep ÖLÇÜLEMEYEN → 3).
 
 **Not (R02) — "sentetik tenant CLOSED" ifadesi:** P7-MSG-KEPT kanıt metnindeki "(sentetik tenant CLOSED; portal pasif)" (Recover kanıtında
@@ -481,13 +490,17 @@ kullanıcı adından ve test DB parolasından arındırılarak yazılır.
 
 | Dosya | sha256 |
 |---|---|
-| `d7-portal-messages-live-run.js` **R04-b** (son baytlar; **R04-c'de DEĞİŞMEDİ**; §14.9 "R04-b": kurtarma adımı bloğun `-RunEvidenceDir` seçeneğiyle hizalandı — elle komut ve `receiptFromEvidenceCommand` kaldırıldı; verdict ve çıkış kodları aynı; bloğun PkgPins'inde) | `20DC82E2EE807F480E02BF9EC4BAF409F847489972B466D16955BB4F5DF51965` |
-| `d7-owner-live-block.ps1` **R04-c** (son baytlar; §14.9 "R04-c": K1 Recover bitiş ekranındaki PORTAL ERİŞİMİ satırı DB kapalıyken kanıttaki P7-C3L/D verdict'lerine bağlı (ad + renk: `Get-RecoverPortalAccess` `goster` / `renk`); K2 `-ReceiptFile` manifesti olan Run kanıt dizinindeki makbuzla ve kanıtta makbuz metni varken DUR + `-RunEvidenceDir` yönlendirmesi (`Assert-ReceiptFileRoute`), kanıtta makbuz metni yokken izin + "orijinal kanıt dizini DEĞİŞİR" metni (`Get-RunDirWriteNote`: Recover başı, Recover bitişi, Run sonu ekranı); K3 `New-RecoverInputFromRun` yol + makbuz özeti döndürür, makbuz node'dan önce iki noktada yeniden ölçülür (`Assert-RecoverInputUnchanged`; fark → DUR + KULLANILMAZ işareti) ve Recover'dan sonra "RECOVER GİRDİSİ (makbuz): … DEĞİŞMEDİ / DEĞİŞTİ" satırı; K4 manifest yokken DUR metni kalan yolu ve makbuz dosyasının durumunu yazar; K5 yazımdan sonraki adımlar tek try/catch içinde (beklenmeyen istisna → işaret + DUR; `Set-RecoverInputUnusable`); başlık notu; **`PkgPins` ve `$ExpPackage` DEĞİŞMEDİ**; kapılar, Run sırası, node çağrısı, çıkış kodları değişmedi; Recover soru sormaz) | `04BE4AC46CA5BA238566C76AADBD65C2D27839A05CF9374D2756DAF4C355718C` |
+| `d7-portal-messages-live-run.js` **R05** (son baytlar; §15: kapsam dışı üç ölçütten biri PASS değilse durur — kalan adımlar ve gösterim yok, kapanış aynen; üç ölçüt gösterim kapısında; kanıtta `scopeStop`; çıkış kodu fonksiyonları aynı; bloğun PkgPins'inde) | `6E88FCCB33C0943C0D7BBF391509C05D646CA0E06483E0FA82DB58EFA31BBA49` |
+| `d7-owner-live-block.ps1` **R05** (son baytlar; §15: YALNIZ koşucu pini + `$ExpPackage` + başlık notu; kapılar, Run sırası, node çağrısı, çıkış kodları, ekran metinleri, Recover yolu değişmedi) | `2CACFA3FCD69DCBAAB148A875A5CDA81D59C0208E0BFE2E95301849228687DC5` |
+| `d7-fake-portal-api.js` **R05** (son baytlar; §15: `scope` düğmesi (tür N / S / U · davranış accept / 429 / 503 / hang) — yalnız o kapsam dışı denemeye uygulanır; diğer davranışlar aynı) | `ED7FCBEFF6AFE3DFAB066C54CA2D202DD9C245B597A136B25F765EEDEE5D6814` |
+| `d7-selftest.js` **R05** (son baytlar; Z24-a … Z24-i ve T-15 yeni (10) + Z3, Z4-a değişti (2); 98 ölçüt — son baytlarda **98/98 PASS**; §15.4) | `890D2AC240214814F72DF3D35CFADD33AEB8839B15C39A55D739CA59E085D59F` |
+| önceki (**R04-b**; R04-c'de değişmedi; **R05'te DEĞİŞTİ**): `d7-portal-messages-live-run.js` ( §14.9 "R04-b": kurtarma adımı bloğun `-RunEvidenceDir` seçeneğiyle hizalandı — elle komut ve `receiptFromEvidenceCommand` kaldırıldı; verdict ve çıkış kodları aynı; bloğun PkgPins'inde) | `20DC82E2EE807F480E02BF9EC4BAF409F847489972B466D16955BB4F5DF51965` |
+| önceki (**R04-c**; **R05'te DEĞİŞTİ** — yalnız pin + digest + başlık notu): `d7-owner-live-block.ps1` (§14.9 "R04-c": K1 Recover bitiş ekranındaki PORTAL ERİŞİMİ satırı DB kapalıyken kanıttaki P7-C3L/D verdict'lerine bağlı (ad + renk: `Get-RecoverPortalAccess` `goster` / `renk`); K2 `-ReceiptFile` manifesti olan Run kanıt dizinindeki makbuzla ve kanıtta makbuz metni varken DUR + `-RunEvidenceDir` yönlendirmesi (`Assert-ReceiptFileRoute`), kanıtta makbuz metni yokken izin + "orijinal kanıt dizini DEĞİŞİR" metni (`Get-RunDirWriteNote`: Recover başı, Recover bitişi, Run sonu ekranı); K3 `New-RecoverInputFromRun` yol + makbuz özeti döndürür, makbuz node'dan önce iki noktada yeniden ölçülür (`Assert-RecoverInputUnchanged`; fark → DUR + KULLANILMAZ işareti) ve Recover'dan sonra "RECOVER GİRDİSİ (makbuz): … DEĞİŞMEDİ / DEĞİŞTİ" satırı; K4 manifest yokken DUR metni kalan yolu ve makbuz dosyasının durumunu yazar; K5 yazımdan sonraki adımlar tek try/catch içinde (beklenmeyen istisna → işaret + DUR; `Set-RecoverInputUnusable`); başlık notu; **`PkgPins` ve `$ExpPackage` DEĞİŞMEDİ**; kapılar, Run sırası, node çağrısı, çıkış kodları değişmedi; Recover soru sormaz) | `04BE4AC46CA5BA238566C76AADBD65C2D27839A05CF9374D2756DAF4C355718C` |
 | önceki (**R04-b**; §14.9 "R04-b": Run sonu metni "kanıttaki kurtarma adımı da bu seçeneği gösterir" (yalnız METİN) + koşucu pini + `$ExpPackage` + başlık notu): `d7-owner-live-block.ps1` | `01D5EA53C1E8FC6BC3EB8F433083FB537D24CDFA9C472D5B107DC8E86D4F1113` |
-| `d7-owner-block-selftest.ps1` **R04-c** (son baytlar; RG-12, RG-13, RG-14, RG-15 yeni (4) + RG-1, RG-9, RG-10 değişti → 88 ölçüt; satır rengi `Get-HostLines` ile ölçülür; sahte koşucuya `EXSTUB_REWRITE=force` eklendi (Recover'da makbuza bayt ekleme taklidi — D-7 gerçek koşucusu yazmaz); §14.9 "R04-c") | `94C315E873BD5B654CCBE5AAAC7CAF46DDF21060173AEAE0C717507CE1E93391` |
+| `d7-owner-block-selftest.ps1` **R04-c** (son baytlar; **R05'te DEĞİŞMEDİ** — R05 blok baytlarıyla yeniden koşuldu: 88 ölçüt, iki kabukta, §15.4; RG-12, RG-13, RG-14, RG-15 yeni (4) + RG-1, RG-9, RG-10 değişti → 88 ölçüt; satır rengi `Get-HostLines` ile ölçülür; sahte koşucuya `EXSTUB_REWRITE=force` eklendi (Recover'da makbuza bayt ekleme taklidi — D-7 gerçek koşucusu yazmaz); §14.9 "R04-c") | `94C315E873BD5B654CCBE5AAAC7CAF46DDF21060173AEAE0C717507CE1E93391` |
 | önceki (**R04-b**; O-8 değişti — Run sonu metni; 84 ölçüt; §14.9 "R04-b"): `d7-owner-block-selftest.ps1` | `8A5CE9F3081E3A1EF0C871BF234E88C8C20091172B7D1B3EEB97E71A5172657F` |
-| `d7-fake-portal-api.js` **R03-g** (son baytlar; **R04, R04-b ve R04-c'de DEĞİŞMEDİ**; guard NORMAL taklidi ürün guard'ı gibi JWT olmayan token'ı (`portalToken opaque`) DB'ye bakmadan reddeder (`portal-auth.guard.ts:36`; R03-e/f'de kabul ediyordu — ürün davranışı değildi) + `reopenOn extLogin` (yeniden açma tetiği başarılı kapatmadan sonraki İLK dış portal girişi yanıtlandıktan sonra; varsayılan `messages` = önceki davranış)) | `BEF6E73226DC50E2361C54A37299EA943B850B253243C960E006225A8C77740E` |
-| `d7-selftest.js` **R04-b** (son baytlar; **R04-c'de DEĞİŞMEDİ ve yeniden KOŞULMADI** — koşucu değişmedi; sonuç R04-b baytlarında ölçülmüştür; T-14 yeni (1) + Z18, Z19-b, Z20-d, C-1 değişti (4); 88 ölçüt — R04-b baytlarında **88/88 PASS**; §14.9 "R04-b") | `466EC3EF37A748DCA3032AA40D66FD1179B0EF75DE7D5F42BA6CC6F142AD3440` |
+| önceki (**R03-g**; R04, R04-b ve R04-c'de değişmedi; **R05'te DEĞİŞTİ**): `d7-fake-portal-api.js` ( guard NORMAL taklidi ürün guard'ı gibi JWT olmayan token'ı (`portalToken opaque`) DB'ye bakmadan reddeder (`portal-auth.guard.ts:36`; R03-e/f'de kabul ediyordu — ürün davranışı değildi) + `reopenOn extLogin` (yeniden açma tetiği başarılı kapatmadan sonraki İLK dış portal girişi yanıtlandıktan sonra; varsayılan `messages` = önceki davranış)) | `BEF6E73226DC50E2361C54A37299EA943B850B253243C960E006225A8C77740E` |
+| önceki (**R04-b**; **R05'te DEĞİŞTİ**): `d7-selftest.js` (R04-c'de değişmedi ve yeniden koşulmadı — koşucu değişmedi; sonuç R04-b baytlarında ölçülmüştür; T-14 yeni (1) + Z18, Z19-b, Z20-d, C-1 değişti (4); 88 ölçüt — R04-b baytlarında **88/88 PASS**; §14.9 "R04-b") | `466EC3EF37A748DCA3032AA40D66FD1179B0EF75DE7D5F42BA6CC6F142AD3440` |
 | `d7-qr-test.js` (değişmedi) | `15E6431396E978423BAE72F3B7511F3972F12847EF96AA02C12937E0F2233E15` |
 | önceki (**R04 aşama 1** baytları, commit `553f199b`; §14.9): koşucu (5xx gözlem metni `rejectObs`) · blok (`-RunEvidenceDir`, Recover bitiş ekranında PORTAL ERİŞİMİ satırı) · blok öz-testi (RG-1 … RG-10 yeni + O-8 değişti + O-9 kaldırıldı; 84 ölçüt) · sahte API (değişmedi) · koşucu öz-testi (T-13 yeni; 87 ölçüt — aşama 1'de koşulmamıştı; aşama 2'de aşama 1 baytlarında 87/87 PASS ölçüldü) | `AB38AC97DD400B13A2BD71F561EEC7C3EA8A37AB937DC02DE31BA992810F41C2` · `C52CBDA8EACC8B0EABACF4256D3B14DD10E58E1F2904D5C1919889185FA3978E` · `7EEBCB6C0924FCE4BD081A684E72F171ACA42DF40077BE52FBC6F68A88B587D9` · `BEF6E73226DC50E2361C54A37299EA943B850B253243C960E006225A8C77740E` · `BF699CFF766E13737D1F80EED916050B97C13892DCB9545CC8CDB4D2B4D8EEFD` |
 | önceki (**R03-g** son baytlar; §14.8): koşucu · blok · blok öz-testi (75 ölçüt) · sahte API (R04'te değişmedi) · koşucu öz-testi (86 ölçüt) | `4446C256EF83A0401B7C93F3FD28B6C1A14AF18F1FD04237349D6E37517A9001` · `EF3FCF08A382B6B62C4B62307B06E4D204E89017AE0FD8CD141E43AD8577C1DA` · `DDA5A722F8D157485130DA4B0E5F6A4E828E4727995D7546282213D5B24C3A8C` · `BEF6E73226DC50E2361C54A37299EA943B850B253243C960E006225A8C77740E` · `82A0B53B11E7EDECB152E84B9A76EAD89D771DF1975E45E73018851557238BF3` |
@@ -507,14 +520,20 @@ kullanıcı adından ve test DB parolasından arındırılarak yazılır.
 | önceki (**R02 kütüphane kökü düzeltmesi**; 2026-10-03; §6.4): `d7-selftest.js` | `2867FBC58282982F79218F2A468884677626B89D34BE91F963FB58FEAD32A1E3` |
 | önceki (R01 düzeltme baytları; R02'nin ilk iki turunda değişmedi): `d7-selftest.js` | `D5E12B00D1F708D056F1949CAE9EC76519DF3B71F4CBCDC0C67473CE630345DB` (kütüphane kökü sabit olarak canlı yayın dizini; yalnız ayna kopyada koşuldu) |
 
-**R04-c pin ölçümü (son baytlar):** bu aşamada koşucu, sahte API ve koşucu öz-testi değişmedi → `PkgPins` ve `$ExpPackage` **DEĞİŞMEDİ**. Ölçüm (iki kabukta;
+**Paket digest (R05 — son; blok içinde `$ExpPackage`): `FBE19948B35319DB170B333826FF2DFA07659E221A97BB2E8AB57EE8DB45DC5D`** — pin listesindeki 9 dosyadan bloğun `Digest` kuralıyla (dosya yolu + NUL + sha256 + satır
+sonu; sıralı; UTF-8 sha256) yeniden hesaplandı: önce R04-b pinleriyle `16D95F54…D1C5` elde edilerek hesap doğrulandı, sonra R05 baytlarıyla bu değer bulundu; pin listesinde
+değişen **yalnız koşucu satırı** (`20DC82E2…1965` → `6E88FCCB…BA49`). Blok öz-testi **PIN-1** aynı eşitliği her koşumda ölçer (R05 son koşumları: iki kabukta 9/9).
+Kanıttaki `revision` yine `R03`; R05 koşucusu `packageDigest` `FBE19948…` ile ve kanıttaki `displayGate` alanının dokuz kalemli olmasıyla ayırt edilir. Aşağıdaki
+paragraflar önceki revizyonların kaydıdır.
+
+**R04-c pin ölçümü (R05'ten önceki baytlar):** bu aşamada koşucu, sahte API ve koşucu öz-testi değişmedi → `PkgPins` ve `$ExpPackage` **DEĞİŞMEDİ**. Ölçüm (iki kabukta;
 `r04\d6-d7-recover-hazirlik\asama3\pin-degismedi.log`): bloktaki `$PkgPins` ve `$ExpPackage` atamalarının metni aşama 2 ucu (`bcea51c1`) bloğundaki atamalarla **aynı**;
 9 pinli dosya bu dalın dosyalarından yeniden hesaplandı → uyuşmazlık 0; paket digest'i yeniden hesap = `16D95F54…D1C5` = `$ExpPackage`; pinli dosyalarda `git status`
 farkı yok. Blok öz-testi **PIN-1** aynı eşitliği her koşumda ölçer (R04-c son koşumları: iki kabukta 9/9, digest `16D95F54…` = `$ExpPackage`). Blok ve blok öz-testi
 PkgPins'te **değildir**; yukarıdaki tabloda yalnız bu iki dosyanın özeti değişti. Koşucu değişmediği için kanıt alanları, `revision` (`R03`) ve `packageDigest`
 (`16D95F54…`) aynıdır; R04-b ile R04-c **yalnız blok dosyasının sha256'sıyla** ayırt edilir (owner koşumdan önce blok dosyasının sha256'sını kaydeder).
 
-**Paket digest (R04-b; R04-c'de DEĞİŞMEDİ — son; blok içinde `$ExpPackage`): `16D95F54DB430D3E113DA86DF36719BC68C19DD934E8D32170D44682014AD1C5`** — pin listesindeki 9 dosyadan bloğun kendi `Sha` + `Digest`
+**Paket digest (R04-b; R04-c'de DEĞİŞMEDİ; **R05'te geçersiz**): `16D95F54DB430D3E113DA86DF36719BC68C19DD934E8D32170D44682014AD1C5`** — pin listesindeki 9 dosyadan bloğun kendi `Sha` + `Digest`
 fonksiyonlarıyla (AST'den yüklenerek; bloğun akışı çalışmadan) yeniden hesaplandı (9 pin, uyuşmazlık 0; R04-b'de pin listesinde değişen yalnız koşucu satırı;
 `r04\d6-d7-recover-hazirlik\asama2\d7\test\son-pin-dogrulama.log`). Blok öz-testi **PIN-1** bu eşitliği her koşumda ölçer (R04-b son koşumları: iki kabukta 9/9, digest
 `16D95F54…` = `$ExpPackage`). Kanıttaki `revision` yine `R03` (C-1 son baytlarda ölçtü); R04-b koşucusu `packageDigest` `16D95F54…` ile ayırt edilir; kanıtta yeni alan yok —
@@ -586,7 +605,9 @@ normal kapanışla aynıdır.
 personel kullanıcıları (9 kullanıcı; avukat/personel profilleri ve bir yetki kaydıyla), iki sentetik müvekkil, iki dosya (`I3-<runId>` ve ikinci
 müvekkile bağlı `I3-<runId>-s`, yalnız D7-4S için) ve bir borçlu (+ dosya bağları); yabancı tenantta bir sentetik müvekkil ve bir dosya
 (`I3-<runId>-xf`, yalnız D7-4N için). Sentetik müvekkile BİR portal hesabı (`.invalid` adres; e-posta yok). **PortalMessage**: koşucu 4 (müvekkil
-×2, personel ×2) + telefondan gönderilirse +1; **PortalNotification**: 2 (personel yanıtı başına 1).
+×2, personel ×2) + telefondan gönderilirse +1; **PortalNotification**: 2 (personel yanıtı başına 1). Telefon girişi görülmezse 3 mesaj + 1 bildirim (ikinci
+personel yanıtı gönderilmez). **R05 — kapsam durdurmasında (§15):** personel yanıtı ve kendi dosyasıyla mesaj YAZILMAZ: PortalMessage 1 (yalnız ilk müvekkil
+mesajı) — ürün kapsam dışı denemeyi yanlışlıkla kabul ettiyse 2 (o satır da kalır; silme ucu yok); PortalNotification 0.
 
 **Ürünün kendi yazdıkları (kaynaktan okundu).** Portal erişimi açma/kapatma **audit** satırları (`CLIENT_PORTAL_ACCESS_ENABLE` / `…_DISABLE`);
 portal **giriş sayacı** ve son giriş zamanı (her başarılı portal girişinde); okundu bayrakları (`mark-read`, personel listesi); canlı API
@@ -782,7 +803,11 @@ Bu metin bir öneridir; yetki değildir ve ikinci bir Recover'ı tanımlamaz. R0
   Recover'ı engellemez (§8.1); kural kodda değil, bu maddede ve gösterilen metindedir (öz-test G-6 yalnız metni ölçer).
   **R03 durumu: AÇIK (değişmedi).** Koşucunun Recover kanıtındaki adım metni de bu kuralı yazar ("İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR,
   owner kararı gerektirir"; öz-test C-1); R01/R02 koşucusunun Recover 5/6'da yazdığı "… ile BİR KEZ" önerisi kaldırıldı.
-- **K-7 Makbuzsuz yarım kurulum (AÇIK owner sorusu; R02-b):** Run, kurulum tamamlandıktan sonra ve makbuz atanmadan önce hata verirse (§9
+- **K-7 — owner kararı (2026-10-08):** "kimlikten makbuz" türü bir kapanış yaması **YAPILMAYACAK**. Makbuz yoksa **durulur**; kalıcı koşum kimliğiyle (kanıt
+  dizininin adı = GO defteri satırı = blok kaydı; üçü de ilk canlı yazımdan önce yazılır) **yalnız ilgili sentetik kayıtların salt okuma dökümü** çıkarılır;
+  aktif hesaplar, kalan dosya / satırlar ve önerilen kapatma işlemleri **somut listeyle** owner'a sunulur. Bu karar canlı silme, kapatma ya da Recover yetkisi
+  **değildir**; işlem kararı o liste üzerinden ayrıca verilir. Aşağıdaki madde durumun teknik tarifidir (değişmedi).
+- **K-7 Makbuzsuz yarım kurulum (R02-b; karar yukarıda):** Run, kurulum tamamlandıktan sonra ve makbuz atanmadan önce hata verirse (§9
   "Kurulum ile makbuz arasındaki pencere"; kaynaktan okundu, canlıda ölçülmedi) sentetik kullanıcılar aktif ve dosya(lar) ACTIVE kalabilir,
   Run'ın koşucu içindeki kendi kapanışı çalışmaz, koşum çıkış 1 ile biter ve makbuz dosyası oluşmadığı için Recover bu bloktan koşulamaz.
   Bu durumda ne yapılacağı — kapanışın tamamlanıp tamamlanmayacağı, hangi yolla, hangi kanıtla ve hangi onay biçimiyle — **owner/CLIENT
@@ -1748,3 +1773,79 @@ kardeş dizindeki makbuzun sonradan `-ReceiptFile` ile verilmesi (odak A17-b) ve
 `Invoke-RecoverMode` ile gerçek koşucunun tek zincirde koşumu ölçülmedi (R04-b sınırı; değişmedi): K1'in okuduğu P7-C3L/D satırları blok öz-testinde sahte koşucunun
 kanıtındadır (kimlik ve verdict değerleri koşucu kaynağından okundu: `judge401` → PASS / FAIL / UNMEASURED; hesap yokken satır yok); "… DEĞİŞTİ" satırı yalnız koşucu taklidiyle
 ölçüldü (D-7 gerçek koşucusu Recover'da makbuza yazmaz — Z19-b). (8) Canlıda hiçbiri koşulmadı; owner bloğu canlı modda çalıştırılmadı; B3 açık (değişmedi).
+
+## 15. R05 — kapsam ihlalinde dur (2026-10-08; owner kararı "D-7 dar düzeltme")
+
+**Karar (owner, 2026-10-08).** Kapsam dışı üç ölçütten (D7-4N yabancı tenant dosyası · D7-4S aynı tenantta başka müvekkilin dosyası · D7-4U bulunmayan kimlik)
+herhangi biri **FAIL ya da ÖLÇÜLEMEYEN** ise kalan mesaj / yanıt / okundu adımlarına geçilmez, giriş bilgisi gösterilmez, telefon adımı başlatılmaz; kapanış ve
+gerekli kanıt yazımı çalışmaya devam eder. FAIL, ÖLÇÜLEMEYEN'e çevrilmez; yalnız ÖLÇÜLEMEYEN varsa sonuç FAIL diye sunulmaz; atlanan adımlar PASS sayılmaz.
+Makbuzsuz dar durum için yama yapılmaz (§10 K-7). Bu revizyon canlı Run / Recover yetkisi **değildir**.
+
+### 15.1 Önceki davranış (R04-b baytları; kaynaktan okundu, öz-testte de böyle bekleniyordu)
+
+Üç ölçüt gösterim kapısında değildi. Biri FAIL ya da ÖLÇÜLEMEYEN olsa da koşucu kendi dosyasıyla mesajı, personel yanıtını, okundu işaretlemeyi ve personel
+okumasını koşuyor; kapıdaki altı ölçüt PASS ise giriş bilgisini gösterip telefonu bekliyor ve ikinci personel yanıtını gönderiyordu. Eski öz-test ölçütü Z3 bunu
+("akış geri kalanı PASS; gösterim + telefon yapılır") beklenen davranış sayıyordu.
+
+### 15.2 Değişiklik
+
+| Dosya | Değişen |
+|---|---|
+| `d7-portal-messages-live-run.js` | Üç ölçütün **her birinin yargısından hemen sonra** verdict PASS değilse koşucunun mevcut `stopped` alanı kurulur ve ölçüm bloğundan çıkılır (**istisna fırlatılmaz**). Koşulmayan ölçütler ÖLÇÜLEMEYEN yazılır (gerekçe: durduran ölçüt ve verdict'i). Durduran ölçütün satırına dokunulmaz. Üç ölçüt gösterim kapısı listesine eklendi (ikinci emniyet). Kanıtta yeni alan `scopeStop` (`olcut`, `verdict`, `kosulmayan`). O ana kadar yazılan mesaj kimlikleri (ürünün yanlışlıkla kabul ettiği satır dahil) makbuza yazılır. **Kapanış (`finally`) ve çıkış kodu fonksiyonları DEĞİŞMEDİ** |
+| `d7-fake-portal-api.js` | `scope` düğmesi (tür N / S / U · davranış accept / 429 / 503 / hang): yalnız o kapsam dışı denemeye uygulanır (deneme, koşucunun mesaj içeriği son ekinden tanınır). Diğer davranışlar aynı |
+| `d7-selftest.js` | Z24-a … Z24-i ve T-15 yeni; Z3 ve Z4-a yeni davranışa göre değişti (§15.4) |
+| `d7-owner-live-block.ps1` | yalnız koşucu pini + `$ExpPackage` + başlık notu |
+
+**Durma noktası.** Koşucu **ilk** PASS olmayan ölçütte durur; sıradaki kapsam dışı denemeler de **gönderilmez** (ör. D7-4N FAIL iken D7-4S ve D7-4U
+ÖLÇÜLEMEYEN kalır). Gerekçe: ihlal ya da belirsizlik görüldükten sonra yeni yazma denemesi yapılmaz.
+
+### 15.3 Sonuç sınıfı (çıkış kodu fonksiyonları değişmedi; öz-testte ölçüldü)
+
+| Durum | Durduran ölçüt | Sonraki ölçütler | Çıkış |
+|---|---|---|---|
+| Ürün kapsam dışı denemeyi kabul etti / 400 dışında yanıt verdi (503 ve 429 hariç) | **FAIL** (ÖLÇÜLEMEYEN'e çevrilmez) | ÖLÇÜLEMEYEN | **2** |
+| Yanıt yok (zaman aşımı) · 503 · 429 | **ÖLÇÜLEMEYEN** (FAIL üretilmez; FAIL sayısı 0) | ÖLÇÜLEMEYEN | **3** |
+| Yukarıdakilerden biri + portal kapanışı doğrulanmadı | verdict kanıtta **aynen durur** | ÖLÇÜLEMEYEN | **6** (kapanış başarısızlığı öne geçer; ihlal satırı gizlenmez) |
+| Üçü de PASS | — | akış önceki gibi | önceki gibi |
+
+### 15.4 Hedefli doğrulama (son baytlarla; ölçülen)
+
+| Koşu | Sonuç |
+|---|---|
+| `d7-selftest.js` (koşucu öz-testi; tek kullanımlık `postgres:16-alpine` konteyneri, yalnız geri döngü, `_test` adlı veritabanı, şema `prisma db push --skip-generate`; kütüphane kökü canlı olmayan R27 çalışma ağacı; sahte API 8200 / 8459; iş sonunda konteyner kaldırıldı) | **98/98 PASS**, çıkış 0 |
+| `d7-owner-block-selftest.ps1` — Windows PowerShell 5.1 | **88/88 PASS**, çıkış 0 (PIN-1: 9/9 + yeni paket digest'i) |
+| `d7-owner-block-selftest.ps1` — PowerShell 7 | **88/88 PASS**, çıkış 0 |
+
+Yerel kayıt (git dışı): `r04\d7-r05-ihlalde-dur\` (koşu günlükleri, dosya özetleri önce = sonra). İlk koşu (yeni ölçüt kimlikleri mevcut Z22 kimlikleriyle çakışırken;
+98/98) **son sayılmadı**; kimlikler Z24 yapıldıktan sonra son baytlarla yeniden koşuldu. Mutasyon turu **koşulmadı**.
+
+Yeni / değişen ölçütler:
+
+- **Z24-a … Z24-f** — üç ölçütün her birinde FAIL ve ÖLÇÜLEMEYEN yolu (FAIL: ürün denemeyi kabul eder, 201 + satır; ÖLÇÜLEMEYEN: D7-4N'de 429, D7-4S'de 503,
+  D7-4U'da yanıtsız). Her birinde ölçülen: durduran ölçütün verdict'i; önceki ölçütler PASS; sonraki kapsam / mesaj / yanıt / okundu ölçütleri ve gösterim /
+  telefon / ikinci yanıt ÖLÇÜLEMEYEN (hiçbiri PASS değil); durdurmadan sonra dış mesaj gönderimi, okunmamış sayacı, okundu işaretleme ve yerel personel mesaj
+  ucu çağrısı **0** (sahte API'nin çağrı kayıtlarından); giriş bilgisi gösterilmedi (gösterim kaydı boş, telefon taklidi tetiklenmedi); kapanış ölçütlerinin
+  **tamamı PASS** (portal pasif, erişim kapalı, aktif personel 0, açık dosya 0); çıkış 2 (FAIL sayısı 1) / 3 (FAIL sayısı 0); makbuzdaki mesaj kimliği sayısı.
+- **Z24-g / Z24-h** — durdurma + kapatma çağrısı 500: çıkış **6**; durduran ölçüt kanıtta FAIL / ÖLÇÜLEMEYEN olarak durur; portal kapanış ölçütleri FAIL;
+  kurtarma notu var; personel / dosya kapanışı yine çalıştı; sonraki işlevsel çağrı ve gösterim yok.
+- **Z24-i** — hatasız akış korunur (Z1 koşumu): kapı listesi dokuz kalem, hepsi PASS; `scopeStop` yok; gösterim yapıldı; çıkış 0.
+- **T-15** (statik) — üç durdurma noktası kendi dosyasıyla mesajdan önce ve sırayla; durdurma fonksiyonu istisna fırlatmaz; kapı listesi; kapanış `finally`'de.
+- **Z3** (değişti) — eski "kapsam dışı kabul" taklidi artık D7-4N'de durur (FAIL, çıkış 2; gösterim yok; ikinci kapsam denemesi yapılmadı).
+- **Z4-a** (değişti) — müvekkil mesajı 500 iken kapsam denemesi de 500 döner → D7-4N FAIL → durur; koşucu hiç mesaj yazmadığı için P7-MSG-KEPT ÖLÇÜLEMEYEN.
+
+### 15.5 Sınırlar ve ölçülmeyenler
+
+1. **Canlıda koşulmadı.** Ölçümler sahte API + tek kullanımlık veritabanıyladır; ürünün gerçek davranışı ilk canlı koşumda ölçülür.
+2. **Durdurma ilk müvekkil mesajından SONRADIR** (D7-1 / D7-2 kapsam ölçütlerinden önce koşar): en az 1 mesaj satırı her durumda yazılır ve kalır (silme ucu yok).
+   Ürün kapsam dışı denemeyi kabul ederse o satır da kalır; koşucu onu kendi satırı sayar, makbuza yazar ve "saklandı" diye raporlar — **silmez**.
+3. **İlk PASS olmayan ölçütte durulduğu için** sonraki kapsam ölçütleri o koşumda **ölçülmez** (ÖLÇÜLEMEYEN). Üçünün de sonucu isteniyorsa bu ayrı bir karardır.
+4. **Yanıtsız denemede** (zaman aşımı) ürünün satırı sonradan yazması olasılığı için bekleme yoktur; kapanıştaki kalıntı sayımı o anki durumu ölçer.
+5. **400 beklenir:** 400 dışındaki her yanıt (503 / 429 hariç) FAIL'dir ve durdurur; yanıt **gövdesi** ölçülmez (başka nedenle gelen 400 de PASS sayılır — §9, değişmedi).
+6. **Blok:** yalnız pin ve başlık notu değişti. Blok `scopeStop` alanını ayrıca göstermez; durdurma nedeni koşucunun konsol özetindeki ölçüt satırlarında ve
+   kanıttaki `stopped` / `scopeStop` alanlarındadır. Bloğun gerçek koşucuyla tek zincirde koşumu bu revizyonda da ölçülmedi (blok öz-testi sahte koşucu kullanır).
+7. **Makbuzsuz dar durum** (kurulum bitti, makbuz yok) için yol tanımlanmadı — owner kararı §10 K-7.
+8. SEC-PORTAL-ADMIN-MSG-01 açık (değişmedi; bu paket ölçmez ve kapatmaz).
+
+### 15.6 Durum
+
+**HAZIR — CANLIDA KOŞULMADI.** Güncel baytlar R05'tir (§7). Preflight / QrTest / Run / Recover canlıda koşulmadı; D-7 kabulü **yok**.

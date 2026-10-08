@@ -100,6 +100,14 @@
  *          açar). İkisi de KALDIRILDI (`receiptFromEvidenceCommand` silindi); diskteki makbuz dosyasının durumu adımda yalnız BİLGİ olarak yazılır. Kanıtta
  *          makbuz yoksa "bu koşumda makbuz YOK … (K-7)" metni aynen. Recover makbuz dosyasına YAZMAZ (recoverMode'da makbuz yazımı yok — değişmedi; D-6'daki
  *          `residueFiles` yazımının D-7'de karşılığı yoktur). Çıkış kodu fonksiyonları, öncelik, verdict'ler ve kanıttaki `revision` (R03) DEĞİŞMEDİ.
+ * R05    : (2026-10-08; owner kararı "D-7 dar düzeltme") KAPSAM İHLALİNDE DUR: kapsam dışı üç ölçüt (D7-4N · D7-4S · D7-4U) sırayla yargılanır; biri PASS
+ *          DEĞİLSE (FAIL ya da ÖLÇÜLEMEYEN) koşucu O ANDA durur (`stopped`; istisna FIRLATILMAZ): sıradaki kapsam dışı deneme, kendi dosyasıyla mesaj (D7-4P),
+ *          personel yanıtı / bildirim / okundu / personel GET / yabancı müvekkil (D7-3 · 3N · 3U · 3G · 3F) KOŞULMAZ; giriş bilgisi GÖSTERİLMEZ, telefon
+ *          BEKLENMEZ, 2. personel yanıtı GÖNDERİLMEZ. Koşulmayan ölçütler ÖLÇÜLEMEYEN yazılır (PASS sayılmaz); durduran ölçütün verdict'i DEĞİŞMEZ (FAIL →
+ *          FAIL; yalnız ÖLÇÜLEMEYEN varsa FAIL üretilmez). Kanıtta `scopeStop` (durduran ölçüt, verdict, koşulmayanlar). Üç ölçüt gösterim kapısına da
+ *          eklendi (ikinci emniyet). Önceki baytlar bu durumda akışı sürdürüyor, giriş bilgisini gösteriyor ve telefonu bekliyordu. KAPANIŞ DEĞİŞMEDİ:
+ *          `finally` bloğu (portal kapatma, personel / dosya kapanışı, mesaj kalıntısı, kanıt yazımı) aynen çalışır; o ana kadar yazılan mesaj kimlikleri
+ *          (ürünün yanlışlıkla kabul ettiği satır dahil) makbuza yazılır. Çıkış kodu fonksiyonları ve öncelik DEĞİŞMEDİ; kanıttaki `revision` R03 kalır.
  */
 const fs = require('fs'); const crypto = require('crypto'); const path = require('path');
 const H5 = require('../../client-h5-intake-url-r01/scripts/h5-url-live-run');
@@ -721,6 +729,18 @@ async function runMode() {
       const count0 = await msgCount(); const notes0 = await noteCount();
       out.messageBaseline = { portalMessages: count0, portalNotifications: notes0 };
       const judgeExt = (id, desc, r, ok, obs) => { if (r.indeterminate) return R.unmeasured(id, desc, 'yanıt alınamadı (zaman aşımı/taşıma)'); if (r.status === 503 || r.status === 429) return R.unmeasured(id, desc, `HTTP ${r.status} — neden UNKNOWN`); return R.check(id, desc, ok, obs); };
+      const v = (id) => (R.rows.find((r) => r.id === id) || {}).verdict;
+      // R05 — KAPSAM İHLALİNDE DUR: kapsam dışı ölçüt PASS değilse (FAIL ya da ÖLÇÜLEMEYEN) `stopped` kurulur ve aşağıdaki `olcum` bloğundan çıkılır
+      // (istisna yok → kapanış `finally`'de aynen çalışır). Durduran ölçütün verdict'i olduğu gibi kalır.
+      const scopeHalt = (id) => {
+        const vd = v(id); if (vd === 'PASS') return false;
+        const ad = vd === 'UNMEASURED' ? 'ÖLÇÜLEMEYEN' : (vd || 'YOK');
+        out.scopeStop = { olcut: id, verdict: vd || 'YOK' };
+        stopped = `kapsam dışı ölçüt ${id}=${ad} — kalan mesaj / yanıt / okundu adımları KOŞULMADI, giriş bilgisi GÖSTERİLMEDİ, telefon BEKLENMEDİ (kapanış çalışır)`;
+        return true;
+      };
+      // (blok gövdesi bilinçli olarak girintilenmedi: R05 farkı yalnız eklenen satırlardır)
+      olcum: {
 
       // D7-1: müvekkil mesajı (dış) → 201 + DB satırı
       call('POST', '<DIŞ>/api/portal/messages');
@@ -746,6 +766,7 @@ async function runMode() {
       const fxRows = await prisma.portalMessage.count({ where: { caseId: receipt.foreignCaseId } }); const c2 = await msgCount();
       judgeExt('D7-4N', `kapsam dışı caseId (YABANCI tenant dosyası) ile POST → ${FOREIGN_CASE_EXPECT} (kaynak R27 CLIENT-K1 "Geçersiz dosya referansı"; tanımdaki 404 değil) ve satır YAZILMADI`, fx,
         fx.status === FOREIGN_CASE_EXPECT && fxRows === 0 && c2 === c1, `HTTP ${fx.status} · yabancı caseId satırı=${fxRows} · sayı ${c1}→${c2}`);
+      if (scopeHalt('D7-4N')) break olcum;
       // D7-4S: AYNI tenantta BAŞKA müvekkilin dosyası (showToClient=true; tek kapsam dışılık müvekkil bağı) → 400, satır YAZILMAZ.
       call('POST', '<DIŞ>/api/portal/messages (aynı tenant başka müvekkil caseId)');
       const sx = await L.AH.httpJson('POST', `${origin}/api/portal/messages`, { token: portalToken, body: { content: `${MSG.client}-SAMETENANT`, caseId: receipt.sameTenantOtherCaseId }, timeoutMs: tmo });
@@ -753,12 +774,14 @@ async function runMode() {
       const sxRows = await prisma.portalMessage.count({ where: { caseId: receipt.sameTenantOtherCaseId } }); const c2s = await msgCount();
       judgeExt('D7-4S', `kapsam dışı caseId (AYNI tenantta BAŞKA müvekkilin dosyası) ile POST → ${FOREIGN_CASE_EXPECT} (yabancı ile aynı cevap) ve satır YAZILMADI`, sx,
         sx.status === FOREIGN_CASE_EXPECT && sxRows === 0 && c2s === c2 && sx.status === fx.status, `HTTP ${sx.status} · başka müvekkil caseId satırı=${sxRows} · sayı ${c2}→${c2s}`);
+      if (scopeHalt('D7-4S')) break olcum;
       const bogus = 'c' + crypto.randomBytes(12).toString('hex');
       call('POST', '<DIŞ>/api/portal/messages (bulunmayan caseId)');
       const ux = await L.AH.httpJson('POST', `${origin}/api/portal/messages`, { token: portalToken, body: { content: `${MSG.client}-UNKNOWN`, caseId: bogus }, timeoutMs: tmo });
       if (ux.body && typeof ux.body.id === 'string') ownIds.push(ux.body.id);
       const c3 = await msgCount();
       judgeExt('D7-4U', `bulunmayan caseId ile POST → ${FOREIGN_CASE_EXPECT} ve satır YAZILMADI (varlık sızdırılmaz: yabancı ile aynı cevap)`, ux, ux.status === FOREIGN_CASE_EXPECT && c3 === c2s && ux.status === fx.status, `HTTP ${ux.status} · sayı ${c2s}→${c3}`);
+      if (scopeHalt('D7-4U')) break olcum;
       call('POST', '<DIŞ>/api/portal/messages (kendi caseId)');
       const px = await L.AH.httpJson('POST', `${origin}/api/portal/messages`, { token: portalToken, body: { content: MSG.clientCase, caseId: st.caseId }, timeoutMs: tmo });
       const pxid = px.body && typeof px.body.id === 'string' ? px.body.id : null; if (pxid) ownIds.push(pxid);
@@ -819,14 +842,17 @@ async function runMode() {
       if (fo.indeterminate) R.unmeasured('D7-3F', 'yabancı müvekkile personel mesajı', 'yanıt alınamadı');
       else R.check('D7-3F', 'personel, YABANCI tenant müvekkiline mesaj gönderemez: 404 ve satır YOK (tenant kapsamı)', fo.status === 404 && foRows === 0, `HTTP ${fo.status} · yabancı müvekkil satırı=${foRows}`);
 
+      }   // olcum
+      // R05: kapsam durdurmasında KOŞULMAYAN ölçütler ÖLÇÜLEMEYEN yazılır (PASS sayılmaz; durduran ölçütün satırına dokunulmaz).
+      if (out.scopeStop) { out.scopeStop.kosulmayan = msgIds.filter((id) => !v(id)); for (const id of out.scopeStop.kosulmayan) R.unmeasured(id, 'mesaj ölçümü', stopped); }
+
       // Koşucunun yazdığı mesaj id'leri makbuza: Recover kalıntıyı bunlarla sayar (yoksa yalnız rapor / ÖLÇÜLEMEYEN).
       receipt.runnerMessageIds = ownIds.slice();
       try { writeJson(receiptPath, receipt); } catch (e) { out.receiptWriteError = errText(e, 160); }
-      const v = (id) => (R.rows.find((r) => r.id === id) || {}).verdict;
-      // GÖSTERİM KAPISI: oturum, dış liste ve temel mesaj akışı PASS değilse giriş bilgisi GÖSTERİLMEZ, telefon BEKLENMEZ.
-      const GATE = ['P7-03L', 'P7-04D', 'D7-1', 'D7-2', 'D7-3', 'D7-3U'];
+      // GÖSTERİM KAPISI: oturum, dış liste, temel mesaj akışı ve (R05) kapsam dışı üç ölçüt PASS değilse giriş bilgisi GÖSTERİLMEZ, telefon BEKLENMEZ.
+      const GATE = ['P7-03L', 'P7-04D', 'D7-1', 'D7-2', 'D7-4N', 'D7-4S', 'D7-4U', 'D7-3', 'D7-3U'];
       out.displayGate = GATE.map((id) => `${id}=${v(id) || 'YOK'}`);
-      if (!GATE.every((id) => v(id) === 'PASS')) stopped = `gösterim öncesi zorunlu kontroller PASS değil (${GATE.filter((id) => v(id) !== 'PASS').join(',')}) — giriş bilgisi GÖSTERİLMEDİ, telefon BEKLENMEDİ`;
+      if (!stopped && !GATE.every((id) => v(id) === 'PASS')) stopped =`gösterim öncesi zorunlu kontroller PASS değil (${GATE.filter((id) => v(id) !== 'PASS').join(',')}) — giriş bilgisi GÖSTERİLMEDİ, telefon BEKLENMEDİ`;
     } else {
       for (const id of msgIds) R.unmeasured(id, 'mesaj ölçümü', stopped);
     }
