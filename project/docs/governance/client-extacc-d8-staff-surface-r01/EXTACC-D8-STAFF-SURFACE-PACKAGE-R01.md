@@ -11,6 +11,12 @@
 > (owner telefonu, 5 GET → 403, 2026-09-27 21:14–21:15) **tamamlanmış sayılmaz**: katman ölçülmedi; diğer yöntem/yollar açık. Bu paket
 > makine ölçümünü ve telefon beyanını ayırır.
 >
+> **İKİNCİ KOŞUM KAYDI (2026-10-08; owner onayıyla, tek koşum; R09 sonda baytlarıyla — pin ve vektör kümesi §7 ile aynı):** AD-1 için
+> HTTP / ret sonucu `OWNER-ISTISNASIYLA-UYGUN` (**`PASS` değildir**; owner kabul kuralına dayanır) · kenar engelleme sonucu `OLCULEMEYEN` ·
+> katman doğrulaması `OLCULEMEYEN` · pozitif kontrol `PASS`. Owner bu koşumu **ölçüm teslimi** olarak kabul etti; **kesin kenar kabulü ve
+> D-8 kapanışı verilmedi.** Yukarıdaki 2026-10-06 kaydı ve §1b AD-1 satırı **değişmedi**. Ayrıntı, kapsam sınırları ve kanıt dosyasının
+> özeti: **§3e**.
+>
 > **R09 (2026-10-07; owner talimatı — §3d-D10) — sondaya çalıştırıcıdan bağımsız TOPLAM SÜRE SINIRI + İPTAL DOSYASI. HAZIRLIK: canlıya
 > uygulanmadı, bloklar ÇALIŞTIRILMADI; canlı koşum izni DEĞİLDİR.** Neden: yerel ölçümde çalıştırıcının süre sınırı dolunca sonda
 > ölmüyordu ve sondada toplam süre sınırı yoktu — 15 sn yalnız istek başına **boşta kalma** sınırıdır; sürekli veri damlatan bir yanıt onu
@@ -687,7 +693,11 @@ public belgeye yazılmaz (yalnız ad kimliği); ad ↔ ad kimliği eşlemesi, ad
 pinler"). R07'nin dar kabul istisnası (§1.1, §3d) bu satıra **uygulanmaz** — kural geçmiş koşuma geriye dönük işlemez; satırdaki `FAIL`
 değerleri R07 kuralıyla yeniden yorumlanmaz ve `PASS`'a çevrilmez.
 
-**Dar sınıf notu (R07; tablo dışında, satır başına bir satır).** *(Bu revizyonda dar sınıfın uygulandığı koşum yoktur.)*
+**AD-1'in 2026-10-08 koşumu (R09 sonda baytları) bu tabloya YAZILMADI; satırı aynı biçimde §3e'dedir.** Bu tablodaki AD-1 satırı
+2026-10-06 koşumu olarak sabit tutulur (öz-test onu değişmez sayar); ikinci koşum onun yerine geçmez, onu düzeltmez ve onunla
+birleştirilmez — iki koşum iki ayrı kayıttır.
+
+**Dar sınıf notu (R07; tablo dışında, satır başına bir satır).** *(Bu tablodaki satırlarda dar sınıfın uygulandığı koşum yoktur; dar sınıfın uygulandığı 2026-10-08 koşumunun zorunlu notu satırıyla birlikte §3e'dedir.)*
 
 Doldurma kuralları:
 - **Dar sınıf uygulanan koşum (R07):** HTTP / ret hücresine sondanın verdiği değer **aynen** yazılır: `OWNER-ISTISNASIYLA-UYGUN`. Bu koşumda
@@ -713,7 +723,8 @@ Doldurma kuralları:
 - Public satıra **başka hiçbir şey yazılmaz**: sayılar (durum sınıfı, yöntem kapsamı, kalibrasyon, katman kapsamı, neden sayıları),
   nedenler, yol / yöntem / durum ayrıntısı, kanıt ve özet dosyalarının SHA-256 değerleri ve her türlü hassas kanıt **kısıtlı kayıtta**
   kalır. (Özet yöntem sınıfı düzeyinde sayı taşır ve sondanın vektör listesi public'tir; özet düşük entropili olduğundan SHA-256'sı da
-  sayıların denenerek sınanmasına yarar.)
+  sayıların denenerek sınanmasına yarar.) **Owner kararı (2026-10-08):** ham kanıt dosyasının adı ve SHA-256 değeri koşum kaydı
+  bölümüne (§3e) yazılır — tabloya değil; adsız özetin ve kesinleştirme kaydının değerleri için bu kural aynen geçerlidir.
 - "Koşum" hücresine yalnız tarih, beyan edilen konum etiketi, sonda pini ve vektör kümesi kimliği yazılır. Pin ve vektör kümesi
   kimliği bu tabloya **kısa biçimde** yazılır (ilk 8 … son 4 onaltılık hane, `XXXXXXXX…XXXX`); **tam 64 haneli değer bu tabloya
   yazılmaz**. Hücrenin biçimi tam olarak şudur: `YYYY-AA-GG · <konum etiketi> · <sonda pini kısa> · <vektör kümesi kimliği kısa>`.
@@ -1303,6 +1314,54 @@ hata yanıtı özellikleriyle uyum" dedi; değerler 2026-10-06 teşhis ölçüm�
 
 **Bu karar şunları vermez:** canlı sonda GO'su · yerel kenara istek izni (ayrı izin kalemi) · kenar kabulü · D-8 kapanışı · başka ad için
 kapsam. Canlıya ve yerel kenara bu revizyon (R07) ve R08 için hiçbir istek atılmadı; R08 blokları çalıştırılmadı.
+
+### 3e. KOŞUM KAYDI (2026-10-08) — AD-1; R09 sonda baytları; ölçüm teslimi (kabul değil)
+
+**Yetki ve owner kararları (2026-10-08).** Owner, yerel karşılaştırmalı ölçüm bloğuyla (§1d) AD-1 için **tek koşum** onayı verdi; koşum
+bir kez yapıldı, otomatik tekrar ve ikinci koşum yoktur. Koşumdan sonra owner sonucu **ölçüm teslimi** olarak kabul etti ve şunu karara
+bağladı: **kesin kenar kabulü ve D-8 genel kapanışı verilmedi**; HTTP / ret sonucu `OWNER-ISTISNASIYLA-UYGUN`, kenar engelleme ve katman
+doğrulaması `OLCULEMEYEN` olarak **korunur**; sonda dışı ek kanıt yalnız kapsadığı 42 ret satırı için kullanılır; kapsanmayan 17 ret
+satırının ve katmanın belirsizliği **açık kalır**; 2026-10-06 `FAIL` kaydı değişmez. Koşumdan önce owner, sağlayıcı tarafında bölge
+düzeyinde bir ayarı kapattı ve koşumdan sonra kapalı kalmasına karar verdi (ayrıntı kısıtlı kayıttadır; sonda ve bu paket sağlayıcı ayarına
+dokunmaz).
+
+**Satır (§1b ile aynı biçim; §1b tablosuna yazılmadı — orada AD-1 satırı 2026-10-06 koşumu olarak sabittir):**
+
+| Ad kimliği | Kapsam yetkisi | HTTP / ret sonucu | Kenar engelleme sonucu | Katman doğrulaması | Pozitif kontrol | Koşum (tarih · konum · sonda pini · vektör kümesi) | Dış ağ beyanı |
+|---|---|---|---|---|---|---|---|
+| **AD-1** (birincil ad) | birincil ad — kapı yok (ad canlı yapılandırmadan okunur) | OWNER-ISTISNASIYLA-UYGUN | OLCULEMEYEN | OLCULEMEYEN | PASS | 2026-10-08 · canli-ana-makine-cikisi · C77FC3F6…6EC8 · 83AD1AB6…F0F2 | bu koşum için YOK |
+
+**Dar sınıf notu (zorunlu; §1b kuralı).** AD-1 · "İzin verilen bozuk istek reddi — katman doğrulanmadı" · "Bu bir owner kabul kuralıdır;
+uygulamaya hiç ulaşılmadığının teknik kanıtı değildir." · kural sürümü R07.
+
+**Bu değerlerin anlamı ve sınırı.**
+- `OWNER-ISTISNASIYLA-UYGUN` **`PASS` değildir ve HTTP 403 başarısı değildir** (§1.1, §3d-D8). Sonda dışı ek kanıtın sonucu koşumdan sonra
+  oluştuğu için koşum anındaki ham kanıtta bu alan `FAIL`'dir; tablodaki değer, istek atmayan kesinleştirme adımının (§1d) değeridir.
+  Kesinleştirme, koşum sonunda ayrı kayda alınmış ham kanıt özetiyle yapıldı (kayıtlı özet = dosyanın özeti).
+- Kenar engelleme ve katman doğrulamasındaki `OLCULEMEYEN` **başarı değildir**; "personel yüzeyi dışarıdan kapalı" hükmü **değildir**.
+  Sonda bu iki alanda `PASS` üretmez (kanıt sınırı, §1.1).
+- Sonda dışı ek kanıt (yöntemi kısıtlı kayıttadır) bu koşumda geçerlilik koşullarını sağladı ve açıklanamayan artış göstermedi; **yalnız
+  kapsadığı 42 ret satırı** için, yöntem grubu düzeyinde ek kanıttır. **Kapsanmayan 17 ret satırı ölçülemeyen kalır.** Bu kanıt ad için
+  "kapalı" hükmü üretmez.
+- Ölçüm tek konumdan (beyan edilen konum etiketi), tek koşumla ve yalnız bu vektör kümesiyle yapıldı. Diğer yayın adları koşulmadı; telefon
+  beyanı yoktur.
+- 2026-10-06 koşumunun bulgu adayı değerlendirmesi ayrıdır; bu koşum onu kapatmaz ve o kaydı düzeltmez.
+
+**İstek sayıları (istemci tarafı).** Sonda 68 dış + 1 yerel kenar karşılaştırması = **69** istek attı; sonda dışı ek kanıt için ayrıca
+**3** yerel okuma yapıldı (toplam **72**; hazırlık bütçesi normalde 72, en çok 76 idi — §1d). Kimlik bilgisi taşıyan istek yoktur. Dış
+isteklerin 21'i yazma yöntemidir; "tamamı salt okuma, veri değişmez" denmez (§1d).
+
+**İki güvence (R09).** Koşum toplam süre sınırı ve iptal dosyası altında **tamamlandı**; süre sınırı ve iptal devreye girmedi, kesinti
+kaydı oluşmadı.
+
+**Kanıt (KISITLI; depoya konmaz — ham kanıt dış adı içerir).** Ham kanıt dosyası `d8-probe.json`, SHA-256
+`CEC5471D52D6D78A5101CF8564D1E899FD56D575059E31C26B28AB914CC0D359`. Adsız özetin ve kesinleştirme kaydının SHA-256 değerleri
+**yazılmaz** (düşük entropili kayıtlardır — §1b son kuralı); kısıtlı kayıttadır. Yol, yöntem ve durum ayrıntısı, neden sayıları ve sonda
+dışı ek kanıtın yöntemi de kısıtlı kayıtta kalır.
+
+**Bu kayıt şunları vermez:** kesin kenar kabulü · D-8 kapanışı · başka ad için kapsam · yeni koşum izni · ölçüt değişikliği. D-8 **açık
+kalır**.
+
 
 ## 4. D-6 belge akışı — tanım ve paket eşlemesi (koşucu + owner bloğu HAZIR: `client-extacc-portal-d6-r01`; canlıda koşulmadı)
 
