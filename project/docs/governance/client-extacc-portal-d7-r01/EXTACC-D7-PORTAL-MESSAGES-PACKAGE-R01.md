@@ -1890,7 +1890,7 @@ telefon adımları için yetmemesiyle **uyumludur**; bunun tek neden olduğu öl
 ### 16.2 Süreler — bunlar BEKLEME sürelerinin üst sınırlarıdır, kesin toplam koşum süresi DEĞİLDİR
 
 Giriş bekleme en çok 20 dk · gözlem penceresi 300 sn. Koşumun toplam süresi bu beklemelere ek olarak kurulum, makine ölçümleri, kapanış çağrıları ve owner'ın giriş / beyan sürelerini içerir;
-belgede kesin bir toplam süre sınırı **verilmez** ve kodda toplam koşum için ayrı bir üst sınır **yoktur** (giriş beklemesinin ve gözlem beklemelerinin kendi üst sınırı vardır; yoklama döngüsündeki tek tek veritabanı sorguları için ayrı bir zaman aşımı bu revizyonda ölçülmedi).
+belgede kesin bir toplam süre sınırı **verilmez** ve kodda toplam koşum için ayrı bir üst sınır **yoktur** (giriş beklemesinin ve gözlem beklemesinin kendi üst sınırı vardır; yoklama döngüsündeki tek tek veritabanı sorguları için ayrı bir zaman aşımı bu revizyonda ölçülmedi).
 Pencere uzadığı için sentetik portal hesabı ve personel oturumu daha uzun açık kalır: personel token süresi canlıda ölçülmedi; kapanışta 401 / 403 gelirse mevcut tek yeniden
 giriş yolu (R03) çalışır — değişmedi.
 
@@ -1902,7 +1902,7 @@ giriş yolu (R03) çalışır — değişmedi.
 | `d7-owner-block-selftest.ps1` — Windows PowerShell 5.1 | **88/88 PASS**, çıkış 0 |
 | `d7-owner-block-selftest.ps1` — PowerShell 7 | **88/88 PASS**, çıkış 0 |
 
-**P-VIEW** (yeni) — ölçtükleri: canlı inceleme süresi sabitinin 300000 ms olması; giriş bekleme süresinin değişmemesi; koşucu kaynağında inceleme beklemesi çağrısının sayısı (tam bir) ve `process.stdin` geçmemesi (ikisi de kaynak aramasıdır — çalışma anı davranışı değil); normal senaryonun (Z1) gösterim dosyasında numaralı beş adım, iki gözlemin ayrı adımlar olması, "SÜRELER:" satırının ve adımlardaki sürenin Z1 kanıtındaki süre değerleriyle **birebir** eşleşmesi, ilk QR satırının adımlardan ve "SÜRELER:" satırından SONRA, giriş bilgisinden ÖNCE gelmesi, giriş bilgisinin ilk ekranın son satırları olması ve aşama başlıklarının sırası. Öz-testler kısa test süreleriyle koşar: ekranda **300 sn yazdığı** ve 300 saniyenin **gerçek süre olarak beklendiği ölçülmedi** (ölçülen: canlı kipte sabitin 300000 olması, pencereden devralınan değerlerin yok sayılması ve ekranın süreyi koşumun süre değerinden yazması). Mutasyon turu **koşulmadı**.
+**P-VIEW** (yeni) — ölçtükleri: canlı inceleme süresi sabitinin 300000 ms olması; giriş bekleme süresinin değişmemesi; koşucu kaynağında inceleme beklemesi çağrısının sayısı (tam bir) ve `process.stdin` geçmemesi (ikisi de kaynak aramasıdır — çalışma anı davranışı değil); normal senaryonun (Z1) gösterim dosyasında numaralı beş adım, iki gözlemin ayrı adımlar olması, "SÜRELER:" satırının Z1 kanıtındaki süre değerleriyle **birebir** eşleşmesi (D-7 adımlarında süre geçmez), ilk QR satırının 3. ve 4. adımdan ve "SÜRELER:" satırından SONRA, giriş bilgisinden ÖNCE gelmesi (sıra yalnız 3. ve 4. adım için ölçülür; 1., 2. ve 5. adımın yalnız ekranda BULUNDUĞU ölçülür, konumu değil), giriş bilgisinin ilk ekranın son satırları olması ve aşama başlıklarının sırası. Öz-testler kısa test süreleriyle koşar: ekranda **300 sn yazdığı** ve 300 saniyenin **gerçek süre olarak beklendiği ölçülmedi** (ölçülen: canlı kipte sabitin 300000 olması, pencereden devralınan değerlerin yok sayılması ve ekranın süreyi koşumun süre değerinden yazması). Mutasyon turu **koşulmadı**.
 
 ### 16.4 Sınırlar
 

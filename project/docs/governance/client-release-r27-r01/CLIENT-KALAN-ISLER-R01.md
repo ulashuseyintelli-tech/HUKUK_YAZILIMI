@@ -575,7 +575,7 @@ dar kapsamla atandı; PR #2914 açık; birleştirme owner kararında.
 | API düzeltmesi (#2884) | `main`'de; adaya alındı (`f69783af`), adaydaki saf testleri 116/116 [K] |
 | Web düzeltmesi (#2900) | üretim derlemesinde doğrulandı; `main`'de (`8b9a9989`, main CI yeşil); aday uyarlaması koordinatörde |
 | Yayın adayı (API + web) | **hazır değil** — birleşik aday doğrulaması koordinatörde sürüyor; canlı yayın GO'su yok |
-| D-6 / D-7 kapanış düzeltmeleri | **`main`'de** (#2904 → `039f4137`, #2905 → `95a35711`; `main` CI yeşil; #2905 için yalnız düşen işler yeniden koşuldu); izole senaryolar, negatif kontroller, pinler, iki kabukta blok öz-testi; canlı koşum yok |
+| D-6 / D-7 kapanış düzeltmeleri | **`main`'de** (#2904 → `039f4137`, #2905 → `95a35711`; `main` CI yeşil; #2905 için yalnız düşen işler yeniden koşuldu); izole senaryolar, negatif kontroller, pinler, iki kabukta blok öz-testi; canlı koşum yok (o teslim tarihindeki durum; 2026-10-09 notu için yukarıdaki D-6 / D-7 satırlarına bakın) |
 | D-8 sonda revizyonu | **`main`'de** (R06: #2943 → `7cc31a3a`; önceki R05 #2942 → `c9f51af1`, R04 #2906 → `45d47143`; `main` CI yeşil); AD-1 canlı sondası 2026-10-06'da bir kez koşuldu — sonuç FAIL alanları içerir, D-8 açık |
 | Canlı kabul | **eksik**: D-5, D-6, D-7, D-8 (kısmi), birleşik D-9; H1–H8 0/8 |
 
