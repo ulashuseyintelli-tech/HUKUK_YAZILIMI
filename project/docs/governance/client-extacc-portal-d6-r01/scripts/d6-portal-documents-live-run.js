@@ -95,6 +95,13 @@
  *          `residueFiles` eklenip dosya yerinde yeniden yazılıyor, kayıttaki özet tutmuyordu — ölçüldü). Kalan dosya yolları iki durumda da Recover
  *          kanıtına yazılır (`residueFiles`, `receiptRewrite`). Bayrak yokken (`-ReceiptFile` yolu) davranış DEĞİŞMEDİ. Çıkış kodu fonksiyonları, öncelik,
  *          verdict'ler ve kanıttaki `revision` (R03) DEĞİŞMEDİ.
+ * R06    : (2026-10-09; owner kararı "300 saniyelik gözlem penceresi") GÖZLEM SÜRESİ 120 sn → 300 sn: `D6_VIEW_MS` canlı değeri 300000. Sabit iki
+ *          aşamada AYRI AYRI kullanılır: AŞAMA 1 (giriş algılandıktan sonra: telefonla indirme) ve AŞAMA 2 (koşucu kendi belgesini sildikten
+ *          sonra: telefonda listeyi yenileme) — her biri 300 sn. Owner ekranı (1/2) telefon adımlarını numaralı ve süreleriyle gösterir; indirme
+ *          ile silme sonrası yenileme ayrı adımlardır. Giriş bekleme sınırı (20 dk), kalıntı bekleme (5 dk), kapanış (`finally`), verdict'ler ve
+ *          çıkış kodu fonksiyonları DEĞİŞMEDİ; "tamamlandı" girdisi YOKTUR (koşucu konsoldan girdi okumaz) — her süre dolunca kendiliğinden ilerler.
+ *          Gerekçe: 2026-10-09 canlı koşumunda (7bf59f6d) telefonla indirme ve silme sonrası yenileme gözlenmedi; zaman çizelgesi 120 sn'lik
+ *          pencerenin yetmemesiyle UYUMLUDUR (kesin kök neden olarak ölçülmedi). Kanıttaki `revision` R03 kalır.
  */
 const fs = require('fs'); const crypto = require('crypto'); const path = require('path');
 const H5 = require('../../client-h5-intake-url-r01/scripts/h5-url-live-run');
@@ -111,7 +118,7 @@ const FORBIDDEN = [/\/portal\/forgot-password/, /\/portal\/reset-password/, /\/p
 const MAX_PDF_BYTES = 50 * 1024;
 
 // CANLI SÜRELER SABİT (bağlı DB `hukuk_db` ise ortam yok sayılır); izole testler kısaltabilir.
-const LIVE_PARAMS = Object.freeze({ D6_WAIT_MS: 20 * 60 * 1000, D6_POLL_MS: 5000, D6_VIEW_MS: 120000, D6_HTTP_TIMEOUT_MS: 15000, D6_CALL_TIMEOUT_MS: 30000,
+const LIVE_PARAMS = Object.freeze({ D6_WAIT_MS: 20 * 60 * 1000, D6_POLL_MS: 5000, D6_VIEW_MS: 300000, D6_HTTP_TIMEOUT_MS: 15000, D6_CALL_TIMEOUT_MS: 30000,
   D6_LATE_CREATE_MS: 120000, D6_RESIDUE_WAIT_MS: 5 * 60 * 1000 });
 function effectiveParams(env) {
   const live = dbName(env.AH_DATABASE_URL || '') === 'hukuk_db' || (env.D6_EXPECT_DB || '') === 'hukuk_db';
@@ -753,15 +760,20 @@ async function runMode() {
       const qr = DISPLAY.renderQr(`${origin}/portal/documents`);
       await showOwner(['============ EXTACC D-6 (1/2) — YALNIZ OWNER EKRANI (kayda ALINMAZ) ============', 'TELEFON: Wi-Fi KAPALI, mobil veri AÇIK, gizli sekme. QR portal BELGELER sayfasını açar (giriş istenir).', '', ...qr.lines, '', `${origin}/portal/documents`, '',
         'Giriş bilgisi (yalnız bu koşum için; koşum sonunda kapatma adımı çalışır):', `    E-posta : ${portalEmail}`, `    Parola  : ${portalPw}`, '',
-        `Girişten sonra belge listesinde YALNIZ "${docTitle}" başlıklı belge görünmeli; indirin (açılan PDF'de ${docTitle} yazar).`,
+        'TELEFON ADIMLARI (sırayla; onay beklenmez — her süre dolunca koşucu kendiliğinden ilerler):',
+        '  1) QR\'ı okutun; yukarıdaki bilgilerle BİR KEZ giriş yapın. Girişten sonra portal ANA SAYFASI açılır.',
+        `  2) "Belgelerim" sekmesine geçin: listede YALNIZ "${docTitle}" başlıklı belge görünmeli.`,
+        `  3) AŞAMA 1 — İNDİRME (giriş algılanınca ${Math.round(P.D6_VIEW_MS / 1000)} sn): belgeyi HEMEN indirin (açılan PDF'de ${docTitle} yazar).`,
+        `  4) AŞAMA 2 — SİLME SONRASI YENİLEME (2. ekran gelince ${Math.round(P.D6_VIEW_MS / 1000)} sn): koşucu kendi belgesini siler; telefonda listeyi YENİLEYİN — liste BOŞ olmalı.`,
+        '  5) Koşum bitince (bu ekran temizlenir) sayfayı bir kez daha yenileyin; gördüğünüzü beyan sorularında yanıtlayın.',
         'Telefondan yükleme OPSİYONELDİR; yaparsanız koşucu silme adımından ÖNCE onu telefondan SİLMENİZİ bekler.',
-        `Girişi BİR KEZ yapın. Giriş algılanınca ${Math.round(P.D6_VIEW_MS / 1000)} sn inceleme süresi verilir; sonra koşucu kendi belgesini siler ve 2. ekran gelir.`, `Bekleme: en fazla ${Math.round(P.D6_WAIT_MS / 60000)} dk.`]);
+        `SÜRELER: giriş için en fazla ${Math.round(P.D6_WAIT_MS / 60000)} dk beklenir · AŞAMA 1 ${Math.round(P.D6_VIEW_MS / 1000)} sn · AŞAMA 2 ${Math.round(P.D6_VIEW_MS / 1000)} sn (ayrı ayrı).`]);
       displayed = true; R.check('P6-DISP', 'giriş bilgisi + QR yalnız yerel konsola gösterildi', true, g.display === 'conout' ? 'CONOUT$' : 'gösterimsiz izole test');
       const t0 = Date.now();
       for (;;) { const s = await portalState(prisma, st.clientId); if (typeof s.loginCount === 'number' && s.loginCount > baseline.loginCount) { loginSeen = true; out.phoneLogin = { loginCountDelta: s.loginCount - baseline.loginCount }; break; } if (Date.now() - t0 >= P.D6_WAIT_MS) break; await sleep(P.D6_POLL_MS); }
       out.wait = { loginSeen, elapsedMs: Date.now() - t0, windowMs: P.D6_WAIT_MS };
       if (loginSeen) { R.check('P6-WAIT', 'koşucu dışında BAŞARILI portal girişi pencere içinde görüldü (DB loginCount; cihaz/ağ owner beyanı)', out.phoneLogin.loginCountDelta >= 1, `artış=${out.phoneLogin.loginCountDelta} · ~${Math.round((Date.now() - t0) / 1000)} sn`);
-        await showOwner(['', `Giriş algılandı. ${Math.round(P.D6_VIEW_MS / 1000)} sn inceleme süresi: listeyi ve indirmeyi şimdi deneyin.`]); await sleep(P.D6_VIEW_MS); }
+        await showOwner(['', `Giriş algılandı — AŞAMA 1 başladı (${Math.round(P.D6_VIEW_MS / 1000)} sn): "Belgelerim"de belgeyi ŞİMDİ indirin. Süre dolunca koşucu kendi belgesini siler ve 2. ekran (AŞAMA 2) gelir.`]); await sleep(P.D6_VIEW_MS); }
       else R.unmeasured('P6-WAIT', 'başarılı portal girişi pencere içinde görüldü', 'giriş görülmedi — owner beyanı ile ayrılır (açılamadı / denenmedi / başarısız)');
       // Telefon yüklemesi (opsiyonel) varsa: koşucu KENDİ silmesinden önce owner'ın telefondan silmesini bekler (ürün ucu; koşucu başkasının belgesini silmez).
       let extra = (await docRows(prisma, st.clientId)).filter((r) => r.id !== docId); out.phoneUploadsSeen = extra.length;
@@ -788,7 +800,7 @@ async function runMode() {
       const l2 = await L.AH.httpJson('GET', `${origin}/api/portal/documents`, { token: portalToken, timeoutMs: P.D6_HTTP_TIMEOUT_MS });
       if (l2.indeterminate || l2.status === 503) R.unmeasured('D6-5L', 'silme sonrası dış liste', l2.indeterminate ? 'yanıt yok' : 'HTTP 503');
       else R.check('D6-5L', 'silme sonrası DIŞ liste 200 ve bu belge yok', l2.status === 200 && Array.isArray(l2.body) && !l2.body.some((d) => d && d.id === docId), `HTTP ${l2.status} · kayıt=${Array.isArray(l2.body) ? l2.body.length : '-'}`);
-      if (displayed && loginSeen) { await showOwner(['', '============ EXTACC D-6 (2/2) ============', 'Koşucu kendi belgesini SİLDİ. Telefonda belge listesini ŞİMDİ yenileyin: liste BOŞ olmalı.', `${Math.round(P.D6_VIEW_MS / 1000)} sn sonra kapatma adımı çalışır ve ekran temizlenir.`]); await sleep(P.D6_VIEW_MS); }
+      if (displayed && loginSeen) { await showOwner(['', '============ EXTACC D-6 (2/2) — AŞAMA 2: SİLME SONRASI YENİLEME ============', 'Koşucu kendi belgesini SİLDİ. Telefonda belge listesini ŞİMDİ yenileyin: liste BOŞ olmalı.', `AŞAMA 2 süresi ${Math.round(P.D6_VIEW_MS / 1000)} sn; dolunca kapatma adımı çalışır ve ekran temizlenir.`]); await sleep(P.D6_VIEW_MS); }
     } else if (!stopped && !docId) for (const [id, d] of [['D6-5', 'silme'], ['D6-5D', 'silme sonrası DB/disk'], ['D6-5L', 'silme sonrası liste']]) R.unmeasured(id, d, 'belge yok');
     if (stopped) for (const [id, d] of [['D6-2L', 'liste yerel'], ['D6-2D', 'liste dış'], ['D6-3', 'indirme'], ['D6-6', 'personel bekleyen liste'], ['D6-4A', 'kapsam dışı indirme'], ['D6-4B', 'kapsam dışı silme'], ['D6-4C', 'yabancı satır'], ['P6-DISP', 'giriş bilgisi gösterildi'], ['P6-WAIT', 'telefon girişi'], ['P6-PHONE-DOC', 'telefon yüklemesi'], ['D6-5', 'silme'], ['D6-5D', 'silme sonrası DB/disk'], ['D6-5L', 'silme sonrası liste']]) if (!v(id)) R.unmeasured(id, d, stopped);
   } catch (e) { fatal = errText(e, 300); }

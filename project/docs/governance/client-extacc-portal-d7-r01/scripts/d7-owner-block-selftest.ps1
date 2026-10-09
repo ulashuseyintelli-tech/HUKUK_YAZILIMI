@@ -274,7 +274,7 @@ try {
   # ---- CANLI SÜRELER: pencereden devralınan değerler canlı süreleri DEĞİŞTİREMEZ
   foreach ($k in 'D7_WAIT_MS', 'D7_POLL_MS', 'D7_VIEW_MS', 'D7_HTTP_TIMEOUT_MS', 'D7_CALL_TIMEOUT_MS', 'D7_LATE_CREATE_MS') { Set-Item -Path "Env:$k" -Value '1' }
   $script:goN = 70; $r = Invoke-Mode 'Run' $real.Exe 0 $true
-  $exp = @('1200000', '5000', '120000', '15000', '30000', '120000')
+  $exp = @('1200000', '5000', '300000', '15000', '30000', '120000')   # R06: inceleme 300 sn (önceki 120 sn)
   $saved = $LiveParams; $LiveParams = $null; $script:goN = 72
   $r2 = Invoke-Mode 'Run' $real.Exe 0 $true
   $LiveParams = $saved

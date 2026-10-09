@@ -96,6 +96,9 @@
 #          üç ölçütten (D7-4N · D7-4S · D7-4U) biri PASS değilse (FAIL ya da ÖLÇÜLEMEYEN) o anda durur: kalan mesaj / yanıt / okundu adımları koşulmaz, giriş
 #          bilgisi gösterilmez, telefon beklenmez; kapanış adımları aynen çalışır (kanıtta `scopeStop` + `stopped`). Blokta BAŞKA DEĞİŞİKLİK YOK: kapılar, Run
 #          sırası, node çağrısı, çıkış kodları, ekran metinleri, Recover yolu aynı; `owner-block.json` `revision` alanı R01 kalır.
+# R06 (2026-10-09; owner kararı "300 saniyelik gözlem penceresi"): canlı inceleme süresi 120 sn → 300 sn ($LiveParams D7_VIEW_MS = 300000); koşucu değişti
+#          (aynı sabit + owner ekranında numaralı telefon adımları ve aşama süreleri) → koşucu pini + $ExpPackage güncellendi. D-7'de süre giriş algılandıktan sonraki tek gözlem penceresidir.
+#          Giriş bekleme sınırı, kapılar, Run sırası, node çağrısı, çıkış kodları, Recover yolu ve bloğun ekran metinleri DEĞİŞMEDİ; "tamamlandı" girdisi yok.
 param(
   [ValidateSet('Preflight', 'QrTest', 'Run', 'Recover')] [string]$Mode = 'Preflight',
   [string]$ReceiptFile = '',
@@ -120,7 +123,7 @@ $ExpEnvSha   = '5C776BBEEE018EA5CC8192378D42D742FD4ABC1B6D0E9A3EA671CF463206908D
 $ExpBaseUrl  = $null   # R05 public portal adresi: canlı .env PUBLIC_PORTAL_BASE_URL'den okunur (Invoke-ReadOnlyGates, biçim kapısı) ve Run/QrTest'te owner'ın konsola yazdığı R05 adresiyle birebir doğrulanır (Confirm-PortalBaseUrlR05). Public repoya host literali YAZILMAZ.
 # Koşucunun YÜKLEDİĞİ tüm governance dosyaları + D-7 QR denemesi (require ağacı ölçüldü).
 $PkgPins = [ordered]@{
-  'client-extacc-portal-d7-r01\scripts\d7-portal-messages-live-run.js'                = '6E88FCCB33C0943C0D7BBF391509C05D646CA0E06483E0FA82DB58EFA31BBA49'
+  'client-extacc-portal-d7-r01\scripts\d7-portal-messages-live-run.js'                = 'D892AE0BA294827235915AB45C70D40C35C915DB0C1010294B4057B02899B6A1'
   'client-extacc-portal-d7-r01\scripts\d7-qr-test.js'                                 = '15E6431396E978423BAE72F3B7511F3972F12847EF96AA02C12937E0F2233E15'
   'client-extacc-intake-chain-r01\scripts\extacc-display.js'                          = 'F257188DF66C429472C214D38D965C1E6F5A2EA490D348369AC68C5DC6F26867'
   'client-extacc-intake-chain-r01\scripts\vendor\qrcode-generator-1.4.4\qrcode.js'    = '18AE399F81182BC9DE916E9C77B195DF20CC58D6F2D55A62B085A299F1BF1780'
@@ -130,13 +133,13 @@ $PkgPins = [ordered]@{
   'client-acceptance-runners-i3-r01\scripts\i3-lib.js'                                = '56F3788E9F84746CFFEE384D8C18B9B9A28130CC8E2285F9570AB69CC6EE74A3'
   'client-acceptance-harness-r01\scripts\ah-lib.js'                                   = 'DF882DB7F33A667092F126F01E518C1A8292C8C0B3C4C039BF73D71F3ACCBFD7'
 }
-$ExpPackage = 'FBE19948B35319DB170B333826FF2DFA07659E221A97BB2E8AB57EE8DB45DC5D'
+$ExpPackage = 'AA7C7200EB463051EA4A2366C95996F896D6D8CCC7D22C46CEB6847A4EF61703'
 $SecretEnv  = @('AH_DATABASE_URL', 'AH_PRISMA_ROOT', 'AH_BCRYPT_PATH', 'D7_LIVE_CONFIRM', 'D7_RECOVER_CONFIRM', 'D7_LIVE_GO_REF',
                 'D7_RUNID', 'D7_MODE', 'D7_EXPECT_DB', 'D7_EXPECT_TENANT_SLUG', 'D7_API_BASE', 'D7_EXPECT_API',
                 'D7_EXPECT_BASE_URL', 'D7_LIVE_LOGIN_PW', 'D7_RECEIPT', 'D7_EVID_FILE', 'D7_DISPLAY', 'EXA_QRTEST_URL', 'D7_TEST_DISPLAY_SINK',
                 'D7_WAIT_MS', 'D7_POLL_MS', 'D7_VIEW_MS', 'D7_HTTP_TIMEOUT_MS', 'D7_CALL_TIMEOUT_MS', 'D7_LATE_CREATE_MS')
 # CANLI SÜRELER — açıkça kurulur; pencereden devralınan değerler başta ve sonda SİLİNİR (koşucu da canlı DB'de bunları zorlar).
-$LiveParams = [ordered]@{ D7_WAIT_MS = '1200000'; D7_POLL_MS = '5000'; D7_VIEW_MS = '120000'; D7_HTTP_TIMEOUT_MS = '15000'; D7_CALL_TIMEOUT_MS = '30000'
+$LiveParams = [ordered]@{ D7_WAIT_MS = '1200000'; D7_POLL_MS = '5000'; D7_VIEW_MS = '300000'; D7_HTTP_TIMEOUT_MS = '15000'; D7_CALL_TIMEOUT_MS = '30000'
                           D7_LATE_CREATE_MS = '120000' }
 $script:LastNodeRc = $null
 
