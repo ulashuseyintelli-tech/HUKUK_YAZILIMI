@@ -100,7 +100,7 @@
  *          sonra: telefonda listeyi yenileme) — her biri 300 sn. Owner ekranı (1/2) telefon adımlarını numaralı ve süreleriyle gösterir; indirme
  *          ile silme sonrası yenileme ayrı adımlardır. Giriş bekleme sınırı (20 dk), kalıntı bekleme (5 dk), kapanış (`finally`), verdict'ler ve
  *          çıkış kodu fonksiyonları DEĞİŞMEDİ; "tamamlandı" girdisi YOKTUR (koşucu konsoldan girdi okumaz) — her süre dolunca kendiliğinden ilerler.
- *          Gerekçe: 2026-10-09 canlı koşumunda (7bf59f6d) telefonla indirme ve silme sonrası yenileme gözlenmedi; zaman çizelgesi 120 sn'lik
+ *          Gerekçe: 2026-10-09 canlı koşumunda telefonla indirme ve silme sonrası yenileme gözlenmedi; zaman çizelgesi 120 sn'lik
  *          pencerenin yetmemesiyle UYUMLUDUR (kesin kök neden olarak ölçülmedi). Kanıttaki `revision` R03 kalır.
  */
 const fs = require('fs'); const crypto = require('crypto'); const path = require('path');
@@ -758,16 +758,18 @@ async function runMode() {
     if (!stopped) {
       baseline = await portalState(prisma, st.clientId); out.baseline = { loginCount: baseline.loginCount, tokenVersion: baseline.tokenVersion };
       const qr = DISPLAY.renderQr(`${origin}/portal/documents`);
-      await showOwner(['============ EXTACC D-6 (1/2) — YALNIZ OWNER EKRANI (kayda ALINMAZ) ============', 'TELEFON: Wi-Fi KAPALI, mobil veri AÇIK, gizli sekme. QR portal BELGELER sayfasını açar (giriş istenir).', '', ...qr.lines, '', `${origin}/portal/documents`, '',
-        'Giriş bilgisi (yalnız bu koşum için; koşum sonunda kapatma adımı çalışır):', `    E-posta : ${portalEmail}`, `    Parola  : ${portalPw}`, '',
-        'TELEFON ADIMLARI (sırayla; onay beklenmez — her süre dolunca koşucu kendiliğinden ilerler):',
-        '  1) QR\'ı okutun; yukarıdaki bilgilerle BİR KEZ giriş yapın. Girişten sonra portal ANA SAYFASI açılır.',
+      await showOwner(['============ EXTACC D-6 (1/2) — YALNIZ OWNER EKRANI (kayda ALINMAZ) ============', 'TELEFON: Wi-Fi KAPALI, mobil veri AÇIK, gizli sekme. QR portal BELGELER sayfasını açar (giriş istenir).', '',
+        'TELEFON ADIMLARI — sırayla; onay beklenmez, her süre dolunca koşucu kendiliğinden ilerler:',
+        '  1) Aşağıdaki QR\'ı okutun; altındaki bilgilerle BİR KEZ giriş yapın. Önce portal ANA SAYFASI açılır.',
         `  2) "Belgelerim" sekmesine geçin: listede YALNIZ "${docTitle}" başlıklı belge görünmeli.`,
-        `  3) AŞAMA 1 — İNDİRME (giriş algılanınca ${Math.round(P.D6_VIEW_MS / 1000)} sn): belgeyi HEMEN indirin (açılan PDF'de ${docTitle} yazar).`,
-        `  4) AŞAMA 2 — SİLME SONRASI YENİLEME (2. ekran gelince ${Math.round(P.D6_VIEW_MS / 1000)} sn): koşucu kendi belgesini siler; telefonda listeyi YENİLEYİN — liste BOŞ olmalı.`,
-        '  5) Koşum bitince (bu ekran temizlenir) sayfayı bir kez daha yenileyin; gördüğünüzü beyan sorularında yanıtlayın.',
+        `  3) AŞAMA 1 — İNDİRME (giriş algılanınca ${Math.round(P.D6_VIEW_MS / 1000)} sn): belgeyi HEMEN indirin; açılan PDF'de ${docTitle} yazar.`,
+        `  4) AŞAMA 2 — SİLME SONRASI YENİLEME (2. ekran gelince ${Math.round(P.D6_VIEW_MS / 1000)} sn): koşucu kendi belgesini siler;`,
+        '     telefonda listeyi YENİLEYİN — liste BOŞ olmalı.',
+        '  5) Koşum bitince owner bloğu sayfayı yenilemenizi ister: O ZAMAN bir kez yenileyin ve gördüğünüzü yanıtlayın.',
         'Telefondan yükleme OPSİYONELDİR; yaparsanız koşucu silme adımından ÖNCE onu telefondan SİLMENİZİ bekler.',
-        `SÜRELER: giriş için en fazla ${Math.round(P.D6_WAIT_MS / 60000)} dk beklenir · AŞAMA 1 ${Math.round(P.D6_VIEW_MS / 1000)} sn · AŞAMA 2 ${Math.round(P.D6_VIEW_MS / 1000)} sn (ayrı ayrı).`]);
+        `SÜRELER: giriş için en fazla ${Math.round(P.D6_WAIT_MS / 60000)} dk beklenir · AŞAMA 1 ${Math.round(P.D6_VIEW_MS / 1000)} sn · AŞAMA 2 ${Math.round(P.D6_VIEW_MS / 1000)} sn (ayrı ayrı).`,
+        '', ...qr.lines, '', `${origin}/portal/documents`, '',
+        'Giriş bilgisi (yalnız bu koşum için; koşum sonunda kapatma adımı çalışır):', `    E-posta : ${portalEmail}`, `    Parola  : ${portalPw}`, '']);
       displayed = true; R.check('P6-DISP', 'giriş bilgisi + QR yalnız yerel konsola gösterildi', true, g.display === 'conout' ? 'CONOUT$' : 'gösterimsiz izole test');
       const t0 = Date.now();
       for (;;) { const s = await portalState(prisma, st.clientId); if (typeof s.loginCount === 'number' && s.loginCount > baseline.loginCount) { loginSeen = true; out.phoneLogin = { loginCountDelta: s.loginCount - baseline.loginCount }; break; } if (Date.now() - t0 >= P.D6_WAIT_MS) break; await sleep(P.D6_POLL_MS); }

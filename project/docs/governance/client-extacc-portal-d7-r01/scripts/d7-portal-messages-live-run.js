@@ -112,7 +112,7 @@
  *          algılandıktan ve ikinci personel yanıtı gönderildikten sonraki tek pencere). Owner ekranı telefon adımlarını numaralı ve süresiyle gösterir;
  *          mesaj listesinin görülmesi (GÖZLEM A) ile ikinci personel yanıtının görülmesi (GÖZLEM B) ayrı adımlardır. Giriş bekleme sınırı (20 dk),
  *          R05 kapsam durdurması, kapanış (`finally`), verdict'ler ve çıkış kodu fonksiyonları DEĞİŞMEDİ; "tamamlandı" girdisi YOKTUR (koşucu konsoldan
- *          girdi okumaz) — süre dolunca kendiliğinden kapanışa geçer. Gerekçe: 2026-10-09 canlı koşumunda (53ed5137) telefonda mesaj listesi ve ikinci
+ *          girdi okumaz) — süre dolunca kendiliğinden kapanışa geçer. Gerekçe: 2026-10-09 canlı koşumunda telefonda mesaj listesi ve ikinci
  *          yanıt gözlenmedi; zaman çizelgesi 120 sn'lik pencerenin yetmemesiyle UYUMLUDUR (kesin kök neden olarak ölçülmedi). `revision` R03 kalır.
  */
 const fs = require('fs'); const crypto = require('crypto'); const path = require('path');
@@ -869,17 +869,19 @@ async function runMode() {
       const qr = DISPLAY.renderQr(`${origin}/portal/messages`);
       await showOwner([
         '============ EXTACC D-7 — YALNIZ OWNER EKRANI (kayda ALINMAZ) ============',
-        'TELEFON: Wi-Fi KAPALI, mobil veri AÇIK, gizli sekme. QR portal MESAJ sayfasını açar (giriş istenir).', '', ...qr.lines, '', `${origin}/portal/messages`, `Giriş sayfası: ${origin}/portal/login`, '',
-        'Giriş bilgisi (yalnız bu koşum için; koşum sonunda kapatma adımı çalışır, sonucu owner bloğu bildirir):', `    E-posta : ${portalEmail}`, `    Parola  : ${portalPw}`, '',
-        'TELEFON ADIMLARI (sırayla; onay beklenmez — süre dolunca koşucu kendiliğinden kapanışa geçer):',
-        '  1) QR\'ı okutun; yukarıdaki bilgilerle BİR KEZ giriş yapın. Girişten sonra portal ANA SAYFASI açılır (mesaj sayfası değil).',
+        'TELEFON: Wi-Fi KAPALI, mobil veri AÇIK, gizli sekme. QR portal MESAJ sayfasını açar (giriş istenir).', '',
+        'TELEFON ADIMLARI — sırayla; onay beklenmez, süre dolunca koşucu kendiliğinden kapanışa geçer:',
+        '  1) Aşağıdaki QR\'ı okutun; altındaki bilgilerle BİR KEZ giriş yapın. Önce portal ANA SAYFASI açılır.',
         '  2) Üst menüden "Mesajlar" sekmesine HEMEN geçin.',
-        `  3) GÖZLEM A — MESAJ LİSTESİ: bu koşumun mesajlarını görün ve ilk bakıştaki sayıyı aklınızda tutun. Girişten önce yazılan üç mesaj: ${MSG.client} · ${MSG.clientCase} · ${MSG.office1}`,
-        `  4) GÖZLEM B — İKİNCİ YANIT: giriş algılanınca koşucu İKİNCİ personel yanıtını gönderir; metni ${MSG.office2} (ilk yanıttan son ekiyle ayrılır). Listede görünmesini bekleyin; zil rozetine de bakın.`,
-        '  5) Koşum bitince (bu ekran temizlenir) sayfayı bir kez YENİLEYİN; gördüğünüzü beyan sorularında yanıtlayın.',
+        '  3) GÖZLEM A — MESAJ LİSTESİ: bu koşumun mesajlarını görün; ilk bakıştaki sayıyı aklınızda tutun.',
+        `     Girişten önce yazılan üç mesaj: ${MSG.client} · ${MSG.clientCase} · ${MSG.office1}`,
+        '  4) GÖZLEM B — İKİNCİ YANIT: giriş algılanınca koşucu ikinci personel yanıtını gönderir.',
+        `     Metni ${MSG.office2} (ilk yanıttan son ekiyle ayrılır); listede görünmesini bekleyin, zil rozetine de bakın.`,
+        '  5) Koşum bitince owner bloğu sayfayı yenilemenizi ister: O ZAMAN bir kez yenileyin ve gördüğünüzü yanıtlayın.',
         'İsterseniz telefondan KISA bir mesaj gönderin (kişisel veri YAZMAYIN; içerik kanıta yazılmaz, yalnız sayısı).',
         `SÜRELER: giriş için en fazla ${Math.round(P.D7_WAIT_MS / 60000)} dk beklenir · giriş algılanınca GÖZLEM A + B için ${Math.round(P.D7_VIEW_MS / 1000)} sn.`,
-      ]);
+        '', ...qr.lines, '', `${origin}/portal/messages`, `Giriş sayfası: ${origin}/portal/login`, '',
+        'Giriş bilgisi (yalnız bu koşum için; koşum sonunda kapatma adımı çalışır, sonucu owner bloğu bildirir):', `    E-posta : ${portalEmail}`, `    Parola  : ${portalPw}`, '']);
       displayed = true;
       R.check('P7-DISP', 'giriş bilgisi + mesaj sayfası QR yalnız yerel konsola gösterildi', true, g.display === 'conout' ? 'CONOUT$' : 'gösterimsiz izole test');
       const t0 = Date.now();

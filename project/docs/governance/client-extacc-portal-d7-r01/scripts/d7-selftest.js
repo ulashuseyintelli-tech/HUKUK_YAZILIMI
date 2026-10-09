@@ -82,7 +82,7 @@
  *           durur) · Z4-a (müvekkil mesajı 500 iken kapsam denemesi de 500 → D7-4N FAIL → durur; koşucu hiç mesaj yazmadığı için P7-MSG-KEPT ÖLÇÜLEMEYEN).
  * R06     : (2026-10-09; owner kararı "300 saniyelik gözlem penceresi") DEĞİŞEN: P-1 (canlı inceleme süresi 300000 ms açıkça ölçülür). YENİ: P-VIEW (statik +
  *           ekran): canlı `D7_VIEW_MS` = 300000 ve tek bekleme; giriş bekleme 20 dk aynı; koşucu konsoldan girdi OKUMAZ; owner ekranı numaralı telefon
- *           adımlarını, GÖZLEM A (mesaj listesi) ile GÖZLEM B'yi (ikinci yanıt) AYRI adımlar olarak ve süreyi gösterir — Z1 koşumunun gösterim dosyasında.
+ *           adımlarını, GÖZLEM A (mesaj listesi) ile GÖZLEM B'yi (ikinci yanıt) AYRI adımlar olarak ve süreyi gösterir — Z1 koşumunun gösterim dosyasında, Z1 kanıtındaki süre değerleriyle birebir; QR + giriş bilgisi ilk ekranın SONUNDADIR.
  */
 const { spawn, spawnSync, execFileSync } = require('child_process');
 const fs = require('fs'); const path = require('path'); const os = require('os'); const crypto = require('crypto');
@@ -1147,15 +1147,19 @@ async function withInsertFault(table, column, value, fn) {
   const pl = EX.effectiveParams(liveEnv); const pt = EX.effectiveParams(Object.assign({}, liveEnv, { AH_DATABASE_URL: `postgresql://u:p@127.0.0.1:${new URL(DBURL).port}/${DB_NAME}`, D7_EXPECT_DB: DB_NAME }));
   check('P-1', 'canlı DB: devralınan 6 süre değişkeni YOK SAYILIR (20 dk bekleme, 5 sn yoklama, 300 sn inceleme — R06; önceki 120 sn, 120 sn geç oluşma); test kısa süreleri korur',
     pl.live && Object.keys(EX.LIVE_PARAMS).length === 6 && Object.keys(EX.LIVE_PARAMS).every((k) => pl[k] === EX.LIVE_PARAMS[k]) && pl.D7_WAIT_MS === 1200000 && pl.D7_VIEW_MS === 300000 && pl.D7_LATE_CREATE_MS === 120000 && !pt.live && pt.D7_WAIT_MS === 1 && pt.D7_VIEW_MS === 1, `canlı=${pl.live}/${pl.D7_WAIT_MS}/${pl.D7_VIEW_MS} · test=${pt.live}/${pt.D7_WAIT_MS}/${pt.D7_VIEW_MS}`);
-  // P-VIEW (R06): gözlem penceresi 300 sn (tek bekleme); "tamamlandı" girdisi yok; ekranda numaralı adımlar + GÖZLEM A / B ayrı + süre (Z1'in gösterim dosyası).
+  // P-VIEW (R06): gözlem penceresi 300 sn; ekranda numaralı adımlar + GÖZLEM A / B ayrı + süre (Z1'in gösterim dosyası ve kanıtındaki süre değerleriyle BİREBİR).
   const viewSleeps = (src.match(/await sleep\(P\.D7_VIEW_MS\)/g) || []).length;
   let z1Sink = ''; try { z1Sink = fs.readFileSync(path.join(P2DIR, 'z1-normal-display.sink'), 'utf8'); } catch (e) { z1Sink = ''; }
-  const stepsOk = ['  1) ', '  2) ', '  3) GÖZLEM A — MESAJ LİSTESİ', '  4) GÖZLEM B — İKİNCİ YANIT', '  5) '].every((x) => z1Sink.includes(x));
-  const order = ['  3) GÖZLEM A', '  4) GÖZLEM B', 'GÖZLEM süresi başladı'].map((x) => z1Sink.indexOf(x));
-  check('P-VIEW', 'R06: canlı inceleme süresi 300000 ms ve koşucuda TEK bekleme (giriş algılanıp ikinci yanıt gönderildikten sonra); giriş bekleme 1200000 ms DEĞİŞMEDİ; koşucu konsoldan girdi okumaz (process.stdin yok); Z1 gösterim dosyasında numaralı beş telefon adımı, mesaj listesi (GÖZLEM A) ile ikinci yanıt (GÖZLEM B) AYRI adımlar, "SÜRELER:" satırı ve "GÖZLEM süresi başladı" satırı adım listesinden SONRA; ikinci yanıtın metni (…-OFFICE-2) ekranda yazılı',
+  let z1P = null; try { z1P = JSON.parse(fs.readFileSync(path.join(P2DIR, 'z1-normal-evidence.json'), 'utf8')).params; } catch (e) { z1P = null; }
+  const vS = z1P ? Math.round(z1P.D7_VIEW_MS / 1000) : null; const wM = z1P ? Math.round(z1P.D7_WAIT_MS / 60000) : null;
+  const stepsOk = ['  1) ', '  2) Üst menüden "Mesajlar"', '  3) GÖZLEM A — MESAJ LİSTESİ', '  4) GÖZLEM B — İKİNCİ YANIT', '  5) Koşum bitince owner bloğu sayfayı yenilemenizi ister'].every((x) => z1Sink.includes(x));
+  const sureOk = z1Sink.includes(`SÜRELER: giriş için en fazla ${wM} dk beklenir · giriş algılanınca GÖZLEM A + B için ${vS} sn.`);
+  const order = ['  3) GÖZLEM A', '  4) GÖZLEM B', 'SÜRELER:', 'E-posta :', 'Parola  :', 'GÖZLEM süresi başladı'].map((x) => z1Sink.indexOf(x));
+  const afterCreds = order[4] >= 0 && order[5] > order[4] ? z1Sink.slice(z1Sink.indexOf('\n', order[4]), order[5]).split('\n').filter((l) => l.trim() && !/Giriş algılandı/.test(l)) : ['?'];
+  check('P-VIEW', 'R06: canlı inceleme süresi sabiti 300000 ms; giriş bekleme 1200000 ms DEĞİŞMEDİ; koşucu kaynağında inceleme beklemesi çağrısı TAM 1 (sayı) ve `process.stdin` geçmiyor (kaynak araması); Z1 gösterim dosyasında numaralı beş telefon adımı — mesaj listesi (GÖZLEM A) ile ikinci yanıt (GÖZLEM B) AYRI adımlar; ikinci yanıtın metni (…-OFFICE-2) ekranda; "SÜRELER:" satırı Z1 kanıtındaki süre değerleriyle BİREBİR; sıra: adımlar → SÜRELER → giriş bilgisi (ilk ekranın SON satırları; ardından başka yönerge yok) → "GÖZLEM süresi başladı"; 5. adım yenilemeyi owner bloğunun isteğine bağlar',
     EX.LIVE_PARAMS.D7_VIEW_MS === 300000 && EX.LIVE_PARAMS.D7_WAIT_MS === 1200000 && viewSleeps === 1 && !/process\.stdin/.test(src)
-      && stepsOk && /SÜRELER: giriş için en fazla \d+ dk beklenir · giriş algılanınca GÖZLEM A \+ B için \d+ sn\./.test(z1Sink) && /-OFFICE-2 \(ilk yanıttan son ekiyle ayrılır\)/.test(z1Sink) && order.every((x) => x >= 0) && order[0] < order[1] && order[1] < order[2],
-    `canlı inceleme=${EX.LIVE_PARAMS.D7_VIEW_MS} · bekleme sayısı=${viewSleeps} · adımlar=${stepsOk} · sıra=${order.join(',')} · gösterim dosyası=${z1Sink.length} bayt`);
+      && !!z1P && stepsOk && sureOk && /-OFFICE-2 \(ilk yanıttan son ekiyle ayrılır\)/.test(z1Sink) && order.every((x) => x >= 0) && order.every((x, i) => i === 0 || x > order[i - 1]) && afterCreds.length === 0,
+    `canlı inceleme=${EX.LIVE_PARAMS.D7_VIEW_MS} · bekleme çağrısı=${viewSleeps} · Z1 süreleri=${vS} sn/${wM} dk · adımlar=${stepsOk} · SÜRELER=${sureOk} · sıra=${order.join(',')} · giriş bilgisinden sonra yönerge satırı=${afterCreds.length}`);
   const g = EX.runGates({ D7_DISPLAY: 'none', D7_EXPECT_DB: 'x', AH_DATABASE_URL: 'postgresql://u:p@h:1/x', D7_API_BASE: 'a', D7_EXPECT_API: 'a', D7_EXPECT_BASE_URL: 'https://ornek.invalid', D7_LIVE_CONFIRM: '1', D7_LIVE_GO_REF: 'OWNER-GO-CLIENT-EXTACC-D7-20000101-R01', D7_RUNID: 'abcdef12', D7_EXPECT_TENANT_SLUG: 'ah-abcdef12' });
   check('P-2', 'kapılar: doğru D-7 GO + runId + slug kabul; origin yolsuz https; FOREIGN_CASE_EXPECT=400 (kaynak); listOnlyOwn boş listeyi kabul etmez', g.code === 0 && g.origin === 'https://ornek.invalid' && EX.FOREIGN_CASE_EXPECT === 400 && EX.listOnlyOwn([], []).ok === false && EX.listOnlyOwn([{ id: 'a' }], ['a']).ok === true && EX.listOnlyOwn([{ id: 'a' }, { id: 'b' }], ['a']).ok === false, `kod=${g.code}`);
   if (fs.existsSync(WRAPPER)) {

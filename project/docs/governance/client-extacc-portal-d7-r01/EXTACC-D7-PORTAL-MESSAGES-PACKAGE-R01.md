@@ -500,10 +500,10 @@ kullanıcı adından ve test DB parolasından arındırılarak yazılır.
 
 | Dosya | sha256 |
 |---|---|
-| `d7-portal-messages-live-run.js` **R06** (son baytlar; §16: canlı inceleme süresi 300000 ms + owner ekranında numaralı telefon adımları ve aşama süreleri; giriş bekleme, kapanış, verdict ve çıkış kodları aynı; bloğun PkgPins'inde) | `D892AE0BA294827235915AB45C70D40C35C915DB0C1010294B4057B02899B6A1` |
-| `d7-owner-live-block.ps1` **R06** (son baytlar; §16: YALNIZ `$LiveParams` inceleme süresi 300000 + koşucu pini + `$ExpPackage` + başlık notu) | `C432BF8A42F93F61B5952017460382486C90627000650670F8B90BCE912952E1` |
-| `d7-selftest.js` **R06** (son baytlar; P-VIEW yeni (1) + P-1 değişti (1); 99 ölçüt — son baytlarda **99/99 PASS**; §16) | `06B672FDF70D3B36055D0D1C50F4D2B38DFB56973BFBCCBFC5F93DE5FE06D632` |
-| `d7-owner-block-selftest.ps1` **R06** (son baytlar; YALNIZ canlı süre tablosu beklentisi 300000; 88 ölçüt — son baytlarda iki kabukta **88/88 PASS**; §16) | `64A4440EF0FEC74A133A1D098840BA1452E4CB5CC9A5B77B8952A3B78B43AAFF` |
+| `d7-portal-messages-live-run.js` **R06** (son baytlar; §16: canlı inceleme süresi 300000 ms + owner ekranında numaralı telefon adımları ve aşama süreleri; giriş bekleme, kapanış, verdict ve çıkış kodları aynı; bloğun PkgPins'inde) | `E3B4D217D1551DF6E59908B62B461B75CD1001F0047E1DF4F36F9B90FEBE1413` |
+| `d7-owner-live-block.ps1` **R06** (son baytlar; §16: YALNIZ `$LiveParams` inceleme süresi 300000 + koşucu pini + `$ExpPackage` + başlık notu) | `CC2B85AB80108AF6B4730237CAECEC50AFDC11C52D68FD29447BCC3614E4263D` |
+| `d7-selftest.js` **R06** (son baytlar; P-VIEW yeni (1) + P-1 değişti (1); 99 ölçüt — son baytlarda **99/99 PASS**; §16) | `967A0B5A60DE3854EF026154D01E9512C6BFA37FEDFCA57721DE366BA65FE8D4` |
+| `d7-owner-block-selftest.ps1` **R06** (son baytlar; YALNIZ canlı süre tablosu beklentisi 300000 ve L-1 açıklaması; 88 ölçüt — son baytlarda iki kabukta **88/88 PASS**; §16) | `290BC95B58528D4B3445479D1F428BA5B02D62A3FEC11DE826CBD93A5EAD3653` |
 | `d7-portal-messages-live-run.js` **R05** (son baytlar; §15: kapsam dışı üç ölçütten biri PASS değilse durur — kalan adımlar ve gösterim yok, kapanış aynen; üç ölçüt gösterim kapısında; kanıtta `scopeStop`; çıkış kodu fonksiyonları aynı; bloğun PkgPins'inde) | `6E88FCCB33C0943C0D7BBF391509C05D646CA0E06483E0FA82DB58EFA31BBA49` |
 | `d7-owner-live-block.ps1` **R05** (son baytlar; §15: YALNIZ koşucu pini + `$ExpPackage` + başlık notu; kapılar, Run sırası, node çağrısı, çıkış kodları, ekran metinleri, Recover yolu değişmedi) | `2CACFA3FCD69DCBAAB148A875A5CDA81D59C0208E0BFE2E95301849228687DC5` |
 | `d7-fake-portal-api.js` **R05** (son baytlar; §15: `scope` düğmesi (tür N / S / U · davranış accept / 429 / 503 / hang) — yalnız o kapsam dışı denemeye uygulanır; diğer davranışlar aynı) | `ED7FCBEFF6AFE3DFAB066C54CA2D202DD9C245B597A136B25F765EEDEE5D6814` |
@@ -534,7 +534,7 @@ kullanıcı adından ve test DB parolasından arındırılarak yazılır.
 | önceki (**R02 kütüphane kökü düzeltmesi**; 2026-10-03; §6.4): `d7-selftest.js` | `2867FBC58282982F79218F2A468884677626B89D34BE91F963FB58FEAD32A1E3` |
 | önceki (R01 düzeltme baytları; R02'nin ilk iki turunda değişmedi): `d7-selftest.js` | `D5E12B00D1F708D056F1949CAE9EC76519DF3B71F4CBCDC0C67473CE630345DB` (kütüphane kökü sabit olarak canlı yayın dizini; yalnız ayna kopyada koşuldu) |
 
-**Paket digest (R06 — son; blok içinde `$ExpPackage`): `AA7C7200EB463051EA4A2366C95996F896D6D8CCC7D22C46CEB6847A4EF61703`** — pin listesindeki 9 dosyadan bloğun `Digest` kuralıyla yeniden hesaplandı (önce önceki pinlerle `FBE19948…` elde edilerek hesap doğrulandı); pin listesinde değişen **yalnız koşucu satırı**. Blok öz-testi **PIN-1** aynı eşitliği her koşumda ölçer (R06 son koşumları: iki kabukta 9/9). Aşağıdaki paragraflar önceki revizyonların kaydıdır.
+**Paket digest (R06 — son; blok içinde `$ExpPackage`): `2008ABE78FBCD74309A408931311720E246A9D2FF4186ADEEF2B2A9B97BF2610`** — pin listesindeki 9 dosyadan bloğun `Digest` kuralıyla yeniden hesaplandı (önce önceki pinlerle `FBE19948…` elde edilerek hesap doğrulandı); pin listesinde değişen **yalnız koşucu satırı**. Blok öz-testi **PIN-1** aynı eşitliği her koşumda ölçer (R06 son koşumları: iki kabukta 9/9). Aşağıdaki paragraflar önceki revizyonların kaydıdır.
 
 **Paket digest (R05; **R06'da geçersiz**; blok içinde `$ExpPackage`): `FBE19948B35319DB170B333826FF2DFA07659E221A97BB2E8AB57EE8DB45DC5D`** — pin listesindeki 9 dosyadan bloğun `Digest` kuralıyla (dosya yolu + NUL + sha256 + satır
 sonu; sıralı; UTF-8 sha256) yeniden hesaplandı: önce R04-b pinleriyle `16D95F54…D1C5` elde edilerek hesap doğrulandı, sonra R05 baytlarıyla bu değer bulundu; pin listesinde
@@ -1883,7 +1883,7 @@ telefon adımları için yetmemesiyle **uyumludur**; bunun tek neden olduğu öl
 | `d7-selftest.js` | P-1 canlı inceleme süresini açıkça ölçer; **P-VIEW** yeni (aşağıda) |
 | `d7-owner-block-selftest.ps1` | canlı süre tablosu beklentisinde yalnız inceleme süresi 300000 |
 
-**Telefon adımları (owner ekranındaki sıra).** 1) QR → bir kez giriş (portal Ana Sayfası açılır; mesaj sayfası değil) · 2) üst menüden "Mesajlar" · 3) **GÖZLEM A — mesaj listesi** (girişten önce yazılan üç mesaj) · 4) **GÖZLEM B — ikinci yanıt** (metni `…-OFFICE-2`; ilk yanıttan son ekiyle ayrılır) ve zil rozeti · 5) koşum bitince bir kez yenileme ve beyan.
+**Telefon adımları (owner ekranındaki sıra).** 1) QR → bir kez giriş (portal Ana Sayfası açılır; mesaj sayfası değil) · 2) üst menüden "Mesajlar" · 3) **GÖZLEM A — mesaj listesi** (girişten önce yazılan üç mesaj) · 4) **GÖZLEM B — ikinci yanıt** (metni `…-OFFICE-2`; ilk yanıttan son ekiyle ayrılır) ve zil rozeti · 5) koşum bitince owner bloğu isteyince bir kez yenileme ve beyan. Adım listesi QR'ın ÜSTÜNDEdir; QR, adres ve giriş bilgisi ilk ekranın son satırlarıdır.
 
 ### 16.2 Süreler — bunlar BEKLEME sürelerinin üst sınırlarıdır, kesin toplam koşum süresi DEĞİLDİR
 
@@ -1900,9 +1900,7 @@ giriş yolu (R03) çalışır — değişmedi.
 | `d7-owner-block-selftest.ps1` — Windows PowerShell 5.1 | **88/88 PASS**, çıkış 0 |
 | `d7-owner-block-selftest.ps1` — PowerShell 7 | **88/88 PASS**, çıkış 0 |
 
-**P-VIEW** (yeni): canlı inceleme süresi 300000 ms; koşucuda bekleme sayısı beklenen kadar (tam bir); giriş bekleme süresi değişmedi; koşucu kaynağında konsol girdisi okuması yok;
-normal senaryonun (Z1) gösterim dosyasında numaralı beş adım, iki gözlemin ayrı adımlar olması, "SÜRELER:" satırı ve aşama başlıklarının sırası. Öz-testler kısa test süreleriyle koşar:
-300 saniyenin **gerçek süre olarak beklenmesi ölçülmedi** (ölçülen: canlı kipte değerin 300000 olması ve pencereden devralınan değerlerin yok sayılması). Mutasyon turu **koşulmadı**.
+**P-VIEW** (yeni) — ölçtükleri: canlı inceleme süresi sabitinin 300000 ms olması; giriş bekleme süresinin değişmemesi; koşucu kaynağında inceleme beklemesi çağrısının sayısı (tam bir) ve `process.stdin` geçmemesi (ikisi de kaynak aramasıdır — çalışma anı davranışı değil); normal senaryonun (Z1) gösterim dosyasında numaralı beş adım, iki gözlemin ayrı adımlar olması, "SÜRELER:" satırının ve adımlardaki sürenin Z1 kanıtındaki süre değerleriyle **birebir** eşleşmesi, giriş bilgisinin ilk ekranın son satırları olması ve aşama başlıklarının sırası. Öz-testler kısa test süreleriyle koşar: ekranda **300 sn yazdığı** ve 300 saniyenin **gerçek süre olarak beklendiği ölçülmedi** (ölçülen: canlı kipte sabitin 300000 olması, pencereden devralınan değerlerin yok sayılması ve ekranın süreyi koşumun süre değerinden yazması). Mutasyon turu **koşulmadı**.
 
 ### 16.4 Sınırlar
 
