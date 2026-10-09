@@ -1,6 +1,6 @@
 # EXTACC D-7 — PORTAL MESAJ AKIŞI CANLI KABUL PAKETİ (R01 · owner bloğu metni R02 · koşucu kapanışı R03)
 
-> **DURUM: HAZIR — CANLIDA KOŞULMADI.** Canlı Run/Recover ve yayın bu paketle yetkilendirilmez; GO biçimi `OWNER-GO-CLIENT-EXTACC-D7-YYYYMMDD-RNN`
+> **DURUM: HAZIR — güncel (R06) baytlar CANLIDA KOŞULMADI.** Önceki baytlarla 2026-10-09'da owner onayıyla canlı koşum yapıldı (aşağıdaki R06 notu; o koşumların sonuç kaydı bu belgede değildir). Canlı Run/Recover ve yayın bu paketle yetkilendirilmez; GO biçimi `OWNER-GO-CLIENT-EXTACC-D7-YYYYMMDD-RNN`
 > (D-4/D-5 GO'ları kabul **edilmez**). Tanım: `client-extacc-d8-staff-surface-r01` §5 (D-7) ve §6 (birleşik D-9); şablon: D-5 paketi + D-4 koşucusu (R03).
 > **ÖN KOŞUL:** canlı API dist'i **R27** (`E28A6863…5134`; D-5 ile aynı pin). Owner bloğunun salt okuma kapıları (paket pinleri, dist pini,
 > `.env` pini) **tüm modlarda** — Preflight, QrTest, Run **ve Recover** — mod dalından önce koşar; canlı dist R27 değilse blok **her modda DUR** verir
@@ -300,7 +300,7 @@ değiştirilirse mantık eşitliği bozulurdu). Koşumun hangi blok baytlarıyla
    bu durumu kendisi düzeltmez. Bu yol kullanılacaksa çocuk süreç için modül yolu önce düzeltilmelidir (ölçülen düzeltme: `Start-Process`
    öncesinde ebeveyn ortamından `PSModulePath` geçici olarak kaldırılır → çocuk kendi varsayılanını kurar → `Get-FileHash=True`).
 2. `-Mode QrTest` → R05 kararındaki public portal adresini yazın (canlı `.env` değeriyle eşleşmeli) → QR'ı okutun; portal sayfası (giriş sayfasına yönlenir) açılırsa **E**; giriş yapmayın.
-3. `-Mode Run`: pencere teyidi, R05 public portal adresi (https://…), EVET, GO ref. Koşucu önce makine ölçümlerini yapar (D7-1…D7-3F); konsolda QR + giriş bilgisi görünür.
+3. `-Mode Run`: pencere teyidi, R05 public portal adresi (https://…), EVET, GO ref. Koşucu önce makine ölçümlerini yapar (D7-1…D7-3F); konsolda QR + giriş bilgisi görünür. **Run'dan önce konsol penceresini büyütün:** ilk ekran uzundur (numaralı adımlar + QR + giriş bilgisi; kesin satır sayısı adres uzunluğuna bağlıdır, ölçülmedi) ve numaralı telefon adımları QR'ın **üstündedir** — pencere kısaysa yukarı kaydırın.
 4. Telefonda giriş yapın. Girişten sonra açılan sayfa mesaj sayfası **değildir**: portal **ana sayfası (özet)** açılır (kaynak: giriş sayfası
    `/portal`'a yönlendirir). Üst menüden **Mesajlar sekmesine geçin**; mesaj sayfasında **üç** mesaj görünmeli (ekrandaki `D7-…` metinleri).
    İsterseniz kısa bir mesaj gönderin (kişisel veri yazmayın).
@@ -502,7 +502,7 @@ kullanıcı adından ve test DB parolasından arındırılarak yazılır.
 |---|---|
 | `d7-portal-messages-live-run.js` **R06** (son baytlar; §16: canlı inceleme süresi 300000 ms + owner ekranında numaralı telefon adımları ve aşama süreleri; giriş bekleme, kapanış, verdict ve çıkış kodları aynı; bloğun PkgPins'inde) | `E3B4D217D1551DF6E59908B62B461B75CD1001F0047E1DF4F36F9B90FEBE1413` |
 | `d7-owner-live-block.ps1` **R06** (son baytlar; §16: YALNIZ `$LiveParams` inceleme süresi 300000 + koşucu pini + `$ExpPackage` + başlık notu) | `CC2B85AB80108AF6B4730237CAECEC50AFDC11C52D68FD29447BCC3614E4263D` |
-| `d7-selftest.js` **R06** (son baytlar; P-VIEW yeni (1) + P-1 değişti (1); 99 ölçüt — son baytlarda **99/99 PASS**; §16) | `967A0B5A60DE3854EF026154D01E9512C6BFA37FEDFCA57721DE366BA65FE8D4` |
+| `d7-selftest.js` **R06** (son baytlar; P-VIEW yeni (1) + P-1 değişti (1); 99 ölçüt — son baytlarda **99/99 PASS**; §16) | `46813EDC37EF66B3E5AE1574334D8D2DFC273C9663EF654ECFD6F42969BD086C` |
 | `d7-owner-block-selftest.ps1` **R06** (son baytlar; YALNIZ canlı süre tablosu beklentisi 300000 ve L-1 açıklaması; 88 ölçüt — son baytlarda iki kabukta **88/88 PASS**; §16) | `290BC95B58528D4B3445479D1F428BA5B02D62A3FEC11DE826CBD93A5EAD3653` |
 | `d7-portal-messages-live-run.js` **R05** (son baytlar; §15: kapsam dışı üç ölçütten biri PASS değilse durur — kalan adımlar ve gösterim yok, kapanış aynen; üç ölçüt gösterim kapısında; kanıtta `scopeStop`; çıkış kodu fonksiyonları aynı; bloğun PkgPins'inde) | `6E88FCCB33C0943C0D7BBF391509C05D646CA0E06483E0FA82DB58EFA31BBA49` |
 | `d7-owner-live-block.ps1` **R05** (son baytlar; §15: YALNIZ koşucu pini + `$ExpPackage` + başlık notu; kapılar, Run sırası, node çağrısı, çıkış kodları, ekran metinleri, Recover yolu değişmedi) | `2CACFA3FCD69DCBAAB148A875A5CDA81D59C0208E0BFE2E95301849228687DC5` |
@@ -1866,6 +1866,8 @@ Yeni / değişen ölçütler:
 
 **HAZIR — CANLIDA KOŞULMADI.** Güncel baytlar R05'tir (§7). Preflight / QrTest / Run / Recover canlıda koşulmadı; D-7 kabulü **yok**.
 
+*(Bu satır R05 tarihlidir. Güncel baytlar R06'dır — §16; 2026-10-09'daki canlı koşumlar için belge başındaki R06 notuna bakın. D-7 kabulü yine **yok**.)*
+
 ## 16. R06 — 300 saniyelik gözlem penceresi (2026-10-09; owner kararı)
 
 **Karar (owner, 2026-10-09).** Gözlem penceresi 120 saniyeden 300 saniyeye çıkarılır; D-7'de bu, giriş algılandıktan sonraki tek gözlem penceresidir. Giriş bekleme sınırı, kapanış mantığı ve çıkış kodları
@@ -1888,7 +1890,7 @@ telefon adımları için yetmemesiyle **uyumludur**; bunun tek neden olduğu öl
 ### 16.2 Süreler — bunlar BEKLEME sürelerinin üst sınırlarıdır, kesin toplam koşum süresi DEĞİLDİR
 
 Giriş bekleme en çok 20 dk · gözlem penceresi 300 sn. Koşumun toplam süresi bu beklemelere ek olarak kurulum, makine ölçümleri, kapanış çağrıları ve owner'ın giriş / beyan sürelerini içerir;
-belgede kesin bir toplam süre sınırı **verilmez** ve kodda toplam koşum için ayrı bir üst sınır **yoktur** (her beklemenin kendi üst sınırı vardır; süresiz bekleme yoktur).
+belgede kesin bir toplam süre sınırı **verilmez** ve kodda toplam koşum için ayrı bir üst sınır **yoktur** (giriş beklemesinin ve gözlem beklemelerinin kendi üst sınırı vardır; yoklama döngüsündeki tek tek veritabanı sorguları için ayrı bir zaman aşımı bu revizyonda ölçülmedi).
 Pencere uzadığı için sentetik portal hesabı ve personel oturumu daha uzun açık kalır: personel token süresi canlıda ölçülmedi; kapanışta 401 / 403 gelirse mevcut tek yeniden
 giriş yolu (R03) çalışır — değişmedi.
 
@@ -1900,7 +1902,7 @@ giriş yolu (R03) çalışır — değişmedi.
 | `d7-owner-block-selftest.ps1` — Windows PowerShell 5.1 | **88/88 PASS**, çıkış 0 |
 | `d7-owner-block-selftest.ps1` — PowerShell 7 | **88/88 PASS**, çıkış 0 |
 
-**P-VIEW** (yeni) — ölçtükleri: canlı inceleme süresi sabitinin 300000 ms olması; giriş bekleme süresinin değişmemesi; koşucu kaynağında inceleme beklemesi çağrısının sayısı (tam bir) ve `process.stdin` geçmemesi (ikisi de kaynak aramasıdır — çalışma anı davranışı değil); normal senaryonun (Z1) gösterim dosyasında numaralı beş adım, iki gözlemin ayrı adımlar olması, "SÜRELER:" satırının ve adımlardaki sürenin Z1 kanıtındaki süre değerleriyle **birebir** eşleşmesi, giriş bilgisinin ilk ekranın son satırları olması ve aşama başlıklarının sırası. Öz-testler kısa test süreleriyle koşar: ekranda **300 sn yazdığı** ve 300 saniyenin **gerçek süre olarak beklendiği ölçülmedi** (ölçülen: canlı kipte sabitin 300000 olması, pencereden devralınan değerlerin yok sayılması ve ekranın süreyi koşumun süre değerinden yazması). Mutasyon turu **koşulmadı**.
+**P-VIEW** (yeni) — ölçtükleri: canlı inceleme süresi sabitinin 300000 ms olması; giriş bekleme süresinin değişmemesi; koşucu kaynağında inceleme beklemesi çağrısının sayısı (tam bir) ve `process.stdin` geçmemesi (ikisi de kaynak aramasıdır — çalışma anı davranışı değil); normal senaryonun (Z1) gösterim dosyasında numaralı beş adım, iki gözlemin ayrı adımlar olması, "SÜRELER:" satırının ve adımlardaki sürenin Z1 kanıtındaki süre değerleriyle **birebir** eşleşmesi, ilk QR satırının adımlardan ve "SÜRELER:" satırından SONRA, giriş bilgisinden ÖNCE gelmesi, giriş bilgisinin ilk ekranın son satırları olması ve aşama başlıklarının sırası. Öz-testler kısa test süreleriyle koşar: ekranda **300 sn yazdığı** ve 300 saniyenin **gerçek süre olarak beklendiği ölçülmedi** (ölçülen: canlı kipte sabitin 300000 olması, pencereden devralınan değerlerin yok sayılması ve ekranın süreyi koşumun süre değerinden yazması). Mutasyon turu **koşulmadı**.
 
 ### 16.4 Sınırlar
 
@@ -1908,3 +1910,4 @@ giriş yolu (R03) çalışır — değişmedi.
 2. İş erken bitse de koşucu sürenin dolmasını bekler ("tamamlandı" girdisi yoktur — owner kararı).
 3. Kapalı / geçersiz oturumda portalın giriş sayfasına yönlendirmek yerine hata ya da boş durum göstermesi ayrı bir ürün gözlemidir; bu revizyonun **kapsamı dışındadır**.
 4. Önceki koşumların kanıtlarına dokunulmadı.
+5. Ekran pencereyi boyutlandırmaz ve temizlemeden alta ekler: ilk ekran kısa bir konsol penceresine sığmayabilir; numaralı adımlar QR'ın üstünde kalır (Run adımındaki "pencereyi büyütün" notu). Owner'ın pencere yüksekliği ölçülmedi.

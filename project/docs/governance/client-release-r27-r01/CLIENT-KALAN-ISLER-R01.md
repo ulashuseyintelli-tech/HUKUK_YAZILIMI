@@ -436,8 +436,8 @@ JSON gövde 14 · gövdesiz 32 · "bulgu listesi boş" — ve R05'in ilk iki tur
 | Intake `cff5c692` | bağlantı kullanıldı, açık bağlantı yok, public uç kapalı (yerel + dış), kullanıcı pasif, dosya kapalı | PASS [B] | bileşen hazır (**dar**: yalnız intake) |
 | D-4 `e34b7e6d` | yeni giriş reddi, mevcut oturum reddi (yerel + dış), DB pasif, sürüm artışı, personel pasif, dosya kapalı | PASS [B] | bileşen hazır (**dar**: yalnız giriş koşumu) |
 | D-5 `00c96bd5` | (a) kapanış: **PASS** · (b) özgün oturumun reddi: **PASS** · (c) sıfırlama sonrası kontroller: **ÖLÇÜLEMEYEN** (8 ölçüt; bunlardan kapanışa ait ikisi sıfırlama sonrası oturum reddidir: P5-C4L / P5-C4D). Kurtarma gerekmedi; ayrı Recover başlatılmadı. Kanıt paketi manifestsiz | kapanış makinece doğrulandı; kapanışa ait iki satır ölçülemeyen; paket tamamlanmadı [Ö] | **yeterli değil**: ölçülemeyen satır PASS saydırmaz; manifestsiz paket tamamlanmış sayılmaz |
-| D-6 | — | koşulmadı | yok |
-| D-7 | — | koşulmadı | yok |
+| D-6 | — | bu tabloda kayıt yok — 2026-10-09'da owner onayıyla canlı koşum yapıldı; kapanış sonucunun public kaydı ayrı owner kararıdır | yok |
+| D-7 | — | bu tabloda kayıt yok — 2026-10-09'da owner onayıyla canlı koşum yapıldı; kapanış sonucunun public kaydı ayrı owner kararıdır | yok |
 
 Birleşik D-9, D-4/D-5/D-6/D-7 koşumlarının kapanış satırlarının hiçbiri FAIL/ÖLÇÜLEMEYEN olmadığında kaydedilir. **Dar kanıt genel
 kapanış sayılmaz**: intake ve D-4 kapanışları yalnız kendi koşumlarını kapatır.
