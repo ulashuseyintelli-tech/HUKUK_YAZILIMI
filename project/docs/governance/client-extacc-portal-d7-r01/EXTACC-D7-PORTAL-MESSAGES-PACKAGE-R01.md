@@ -1,6 +1,6 @@
 # EXTACC D-7 — PORTAL MESAJ AKIŞI CANLI KABUL PAKETİ (R01 · owner bloğu metni R02 · koşucu kapanışı R03)
 
-> **DURUM: HAZIR — güncel (R06) baytlar CANLIDA KOŞULMADI.** Önceki baytlarla 2026-10-09'da owner onayıyla canlı koşum yapıldı (aşağıdaki R06 notu; o koşumların sonuç kaydı bu belgede değildir). Canlı Run/Recover ve yayın bu paketle yetkilendirilmez; GO biçimi `OWNER-GO-CLIENT-EXTACC-D7-YYYYMMDD-RNN`
+> **DURUM: KABUL — tanımlı paket kapsamı (owner kararı 2026-10-10).** R06 baytlarıyla canlı koşum `244d4aa2` yapıldı ve owner tarafından kabul edildi (§17). Önceki baytlarla 2026-10-09'da yapılan koşumların sonuçları değişmedi. Canlı Run/Recover ve yayın bu paketle yetkilendirilmez; GO biçimi `OWNER-GO-CLIENT-EXTACC-D7-YYYYMMDD-RNN`
 > (D-4/D-5 GO'ları kabul **edilmez**). Tanım: `client-extacc-d8-staff-surface-r01` §5 (D-7) ve §6 (birleşik D-9); şablon: D-5 paketi + D-4 koşucusu (R03).
 > **ÖN KOŞUL:** canlı API dist'i **R27** (`E28A6863…5134`; D-5 ile aynı pin). Owner bloğunun salt okuma kapıları (paket pinleri, dist pini,
 > `.env` pini) **tüm modlarda** — Preflight, QrTest, Run **ve Recover** — mod dalından önce koşar; canlı dist R27 değilse blok **her modda DUR** verir
@@ -128,9 +128,9 @@
 > DEĞİŞMEDİ) — §16:** canlı inceleme süresi 120 sn → **300 sn**; süre telefon girişi algılanıp ikinci personel yanıtı gönderildikten sonraki **tek gözlem penceresidir**; pencerede iki ayrı gözlem yapılır: GÖZLEM A (telefonda **mesaj listesi**) ve GÖZLEM B (telefonda **ikinci personel yanıtı**). Owner ekranı telefon adımlarını
 > numaralı ve süreleriyle gösterir. Giriş bekleme sınırı (20 dk), kapanış mantığı ve çıkış kodları **değişmedi**; "tamamlandı" girdisi **yoktur** — her süre dolunca koşucu
 > kendiliğinden ilerler. **Ölçülen (son baytlar):** koşucu öz-testi **99/99**, blok öz-testi **88/88** iki kabukta. Pinler: **§7**.
-> **Durum satırlarına not:** 2026-10-09'da owner onayıyla, bu revizyondan ÖNCEKİ (120 saniyelik pencereli) baytlarla canlı koşum yapıldı; R06 (300 saniyelik) baytlar canlıda **koşulmadı**. O koşumların
-> **sonuç kaydı bu belgede DEĞİLDİR** (yerel kayıt; public kayıt ayrı owner kararıdır) ve bu paketin kabulü **yoktur**; yukarıdaki "canlıda koşulmadı" ifadeleri yazıldıkları
-> revizyonun tarihini taşır. Bu revizyon yeni bir canlı Run / Recover için yetki DEĞİLDİR.
+> **Durum satırlarına not (2026-10-10'da güncellendi):** 2026-10-09'da owner onayıyla, bu revizyondan ÖNCEKİ (120 saniyelik pencereli) baytlarla canlı koşum yapıldı. 2026-10-10'da R06 (300 saniyelik) baytlarla
+> canlı koşum `244d4aa2` yapıldı ve owner bu koşumu **tanımlı paket kapsamıyla kabul etti** — kayıt **§17**'dedir. Yukarıdaki ve aşağıdaki "canlıda koşulmadı" ifadeleri yazıldıkları
+> revizyonun tarihini taşır. Bu belge yeni bir canlı Run / Recover için yetki DEĞİLDİR.
 
 ## 1. Ne ölçer ve ne yapmaz
 
@@ -1866,7 +1866,7 @@ Yeni / değişen ölçütler:
 
 **HAZIR — CANLIDA KOŞULMADI.** Güncel baytlar R05'tir (§7). Preflight / QrTest / Run / Recover canlıda koşulmadı; D-7 kabulü **yok**.
 
-*(Bu satır R05 tarihlidir. Güncel baytlar R06'dır — §16; 2026-10-09'daki canlı koşumlar için belge başındaki R06 notuna bakın. D-7 kabulü yine **yok**.)*
+*(Bu satır R05 tarihlidir. Güncel baytlar R06'dır — §16; canlı koşumlar ve 2026-10-10 tarihli owner kabulü için §17'ye bakın.)*
 
 ## 16. R06 — 300 saniyelik gözlem penceresi (2026-10-09; owner kararı)
 
@@ -1906,8 +1906,28 @@ giriş yolu (R03) çalışır — değişmedi.
 
 ### 16.4 Sınırlar
 
-1. Canlıda bu baytlarla koşum **yapılmadı**. Telefon gözlemlerinin 300 saniyede tamamlanacağı bir **öngörüdür**, ölçüm değildir.
+1. Bu bölüm yazıldığında canlıda bu baytlarla koşum yapılmamıştı; 2026-10-10'da yapıldı (§17). Telefon gözlemlerinin 300 saniyede tamamlanacağı o tarihte bir **öngörüydü**.
 2. İş erken bitse de koşucu sürenin dolmasını bekler ("tamamlandı" girdisi yoktur — owner kararı).
 3. Kapalı / geçersiz oturumda portalın giriş sayfasına yönlendirmek yerine hata ya da boş durum göstermesi ayrı bir ürün gözlemidir; bu revizyonun **kapsamı dışındadır**.
 4. Önceki koşumların kanıtlarına dokunulmadı.
 5. Ekran pencereyi boyutlandırmaz ve temizlemeden alta ekler: ilk ekran kısa bir konsol penceresine sığmayabilir; numaralı adımlar QR'ın üstünde kalır (Run adımındaki "pencereyi büyütün" notu). Owner'ın pencere yüksekliği ölçülmedi.
+
+## 17. R06 canlı koşumu ve owner kabulü (2026-10-10)
+
+**Owner kararı (2026-10-10):** `244d4aa2` koşumu **tanımlı paket kapsamıyla kabul edildi**. Bu bölüm kabulün public kaydıdır; ham kanıt, manifest, owner beyan dosyası, adres ve hesap
+bilgisi kısıtlı yerel kayıttadır ve burada yayımlanmaz. Bu kayıt yeni bir canlı Run / Recover için yetki **değildir**.
+
+| Kalem | Kayıt |
+|---|---|
+| Baytlar | R06 (#2952 → `88caf7ba`); Preflight ve QrTest koşumdan önce çıkış 0 |
+| Run öncesi [Ö] | Run penceresi iki kez GO sorusundan önce bir kapıda durdu (çıkış 90): canlıya yazım yok, GO tüketilmedi; neden ölçülmedi. Üçüncü açılışta tek Run yapıldı |
+| Makine ölçütleri [Ö] | çıkış 0 · 31 / 31 PASS · 0 FAIL · 0 ÖLÇÜLEMEYEN · kapsam durdurması yok · ürün bulgusu alanı boş (yalnız makine ölçütleri için) · yasak uç çağrılmadı |
+| Gözlem süresi [Ö] | canlı kipte 300000 ms; telefon girişi ile kanıt yazımı arasındaki süre tek 300 saniyelik bekleme ile uyumlu (koşucu günlüğünde zaman damgası yoktur) |
+| Kapanış [Ö] | portal hesabı pasif, oturum sürümü arttı; yeni giriş ve mevcut oturum reddi (yerel + dış); iki sentetik büroda aktif kullanıcı ve aktif dosya yok; Recover gerekmedi; kalan 4 mesaj + 2 bildirim satırı (silme ucu yok; saklandı) |
+| Telefon gözlemleri [O] | girişten sonra portal açıldı; mesaj sayfasında ilk bakışta dört mesaj görüldü; ikinci personel yanıtı görüldü; zil rozeti 2 gösterdi; telefondan mesaj gönderilmedi; telefon mobil verideydi |
+| Kanıt bütünlüğü [Ö] | manifest 6 / 6; GO referansının açık değeri kanıt dosyalarına ve deftere yazılmadı (yalnız özeti) |
+| Yöntem | **owner onaylı yöntem değişikliği:** gizli sekme yerine normal tarayıcı (önce eski portal oturumundan çıkış; ağ beyanı [O]: mobil veri, Wi-Fi kapalı). "Gizli sekmede sınandı" yazılmaz |
+| Önceki koşumlar | `f59005e9` (2026-10-09; R06 öncesi baytlar): çıkış 3 — 29 PASS · 2 ÖLÇÜLEMEYEN (telefon girişi algılanmadı; nedeni ölçülmedi), kapanış doğrulandı · `53ed5137` (2026-10-09): çıkış 0 · 31 / 31 PASS · kapanış doğrulandı; telefonda mesaj listesi ve ikinci personel yanıtı gözlenmedi. İki koşum için de kabul verilmemişti — **sonuçları değişmedi** |
+
+**Bu kabulün kapatmadıkları:** kapatılmış / geçersiz oturumda giriş sayfasına yönlendirme yerine hata metni görünmesi (ürün gözlemi; bu koşumda da görüldü; erişim kapalıdır) · SEC-PORTAL-ADMIN-MSG-01 (açık; bu koşum ölçmez ve kapatmaz) ·
+birleşik D-9 · CLIENT genel kabulü. Telefon gözlemleri owner beyanıdır; makine ölçümü değildir. Etiketler: [Ö] bu çalışmanın ölçümü · [O] owner beyanı.
