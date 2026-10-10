@@ -34,6 +34,11 @@
 >
 > **D-6 / D-7 kabul kaydı (2026-10-10; owner kararları — yalnız belge kaydı; canlıya uygulama, yayın, migration yok):** owner, D-6 için `e1a9a546` ve D-7 için `244d4aa2` koşumlarını **tanımlı paket kapsamıyla kabul etti** (R06 baytları; #2952 → `88caf7ba`). D-6'nın iki telefon kalemi (başarılı indirme · silme sonrası boş liste) ve D-7'nin iki telefon kalemi (mesaj listesi · ikinci personel yanıtı) bu koşumların kanıtıyla kapandı; önceki koşumların sonuçları değişmedi. Normal tarayıcı kullanımı owner onaylı yöntem değişikliğidir. **Açık kalır:** kapatılmış oturumda giriş sayfasına yönlendirmeme gözlemi · SEC-PORTAL-ADMIN-MSG-01 · D-5 · D-8 kesin kenar kabulü · **birleşik D-9** · H1–H8 · **CLIENT genel kabulü**. Ayrıntı: §2, §6, §10; paket belgeleri D-6 §15 ve D-7 §17. Ham kanıt, manifest ve owner beyan dosyaları kısıtlı yerel kayıttadır.
 >
+> **Portal oturum reddi kaydı + H atıfları (2026-10-11; owner talimatı — yalnız belge; canlıya uygulama, yayın, migration yok):**
+> #2954'ün durumu, owner'ın başlatma hatası kararı, açık sınırlar ve genel hata süzgeci ölçümü §2.1'e yazıldı · §7, §7.1 ve §11
+> KR-12'deki H3 / H6 / H8 atıfları beyan taslaklarının R02 metniyle hizalandı (H3 on iki ayrı seçim; yeniden değerlendirme H3'te
+> 4., H6 ve H8'de 5. madde). H kabulü verilmedi; kutular boş, sayaç **0/8**.
+>
 > Kaynak ayrımı: **[Ö]** bu çalışmanın kendi ölçümü (salt okuma ya da izole test) · **[B]** mevcut kayıt belgesinin iddiası
 > (yeniden ölçülmedi) · **[K]** yayın koordinatörünün ölçümü (aday doğrulama kaydı; depoda değil) · **[O]** owner beyanı (makine
 > ölçümü değildir).
@@ -69,6 +74,81 @@ Kabul ölçütlerinin kanonik tanımı `client-external-access-r01` §7'dir; pak
 | **D-9 (birleşik)** | **Açık** | D-5 bileşeni ölçülemeyenli (§6); D-6 / D-7 bileşenleri 2026-10-10'da kaydedildi (§6) | — | yeni D-5 denemesi (yayın → pin → tek deneme; ayrı kararlar) | D-5'ten sonra kayıt | birleşik kabul onayı; dar kanıt genel kapanış sayılmaz |
 
 D-1/D-2/D-3/D-4 ve dar D-9 kabullerinin kapsamı **korunur**; bu belge onları genişletmez ya da daraltmaz.
+
+### 2.1 Portal oturum reddi düzeltmesi (#2954) — durum, owner kararı ve açık sınırlar (2026-10-11)
+
+Durum: `main`'de (`47e68617`); **canlıda değil**, yayın adayında değil. Ürün gözlemi (kapatılmış oturumda giriş sayfasına
+yönlendirmeme) canlıda doğrulanana kadar **açık** kalır.
+
+| Portal oturum kapısında durum | Yanıt | Erişim |
+|---|---|---|
+| Gerçek oturum reddi (başlıcaları): geçersiz · süresi dolmuş · çözülemeyen işaret; bulunamayan ya da kapatılmış hesap; sürümü uyuşmayan oturum; etkin olmayan (ör. askıdaki) büro | 401 (değişmedi) | kapalı |
+| **Tanınan** veritabanı erişim / bağlantı hatası | 503, genel metin | kapalı |
+| Tanınmayan (beklenmeyen) hata | 401 (önceki kapalı davranış) | kapalı |
+
+**"Bütün sunucu hataları oturum reddinden ayrıldı" DEĞİLDİR.** Ayrılan yalnız şunlardır: veritabanı istemcisinin başlatma hatası
+(kodundan bağımsız; bağlantı dışı başlatma arızalarını da kapsar — "tanınan veritabanı erişim hatası" tanımından biraz geniştir)
+ve bağlantı / erişim kodlu istek hataları (on kod). Tam liste PR #2954 gövdesinde ve kapı kaynağındadır.
+
+**Owner kararı (2026-10-11):** veritabanı istemcisinin başlatma hatası kodundan bağımsız 503 olarak **kalır**. Karar, veritabanı
+istemcisinin başlatılamadığı durumda doğrulamanın tamamlanamamasını kapsar; korunan işlem çalışmaz, yanıtta altyapı ayrıntısı
+bulunmaz. Bu karar bütün beklenmeyen hataları 503'e çevirme yetkisi **değildir**.
+
+**Açık sınırlar:**
+
+1. Tanınmayan hatalar (kod taşımayan bağlantı hatası, sorgu motoru çökmesi, öteki beklenmeyen hatalar) 401 kalır; yeni web bunu
+   oturum reddi sayar ve **kullanıcıyı çıkışa atabilir**. Gerçek bir kesintide hangi hata türünün üretildiği ölçülmedi.
+2. Sürüm eşleşmesi: yeni web + **eski** sunucuda veritabanı hatası hâlâ 401 gelir ve kullanıcı girişe yönlendirilir. Güvenli sıra
+   (PR #2954 gövdesi; yayın kararı değildir): önce sunucu, sonra web — ya da birlikte; §2 D-6 / D-7 satırlarındaki "birlikte
+   yayınlanmalıdır" ifadesi bu sırayla okunur. Sunucu yayını canlı sunucu derlemesini değiştirir; D-6 / D-7 paketlerinin canlı
+   derleme pini o yayınla birlikte güncellenmelidir.
+3. Kapsam: düzelen sayfalar portal çerçevesi, Belgelerim ve Mesajlar'dır. Dosya ayrıntısı, vekâletler, mali beyanlar ve profil
+   sayfalarının kendi okumaları değişmedi ("tüm portal düzeldi" değildir).
+4. Şifre değiştirme ucu aynı kapının arkasındadır: veritabanı kesintisinde 503 döner. 503 oturum reddi olmadığı için sayfa
+   yoklamaları kesinti boyunca sürer.
+5. Canlıda, gerçek tarayıcıda ve gerçek veritabanı kesintisinde ölçülmedi. Yönlendirme zamanı için süre taahhüdü yoktur.
+
+**Genel hata süzgeciyle etkileşim — izole ölçüm [Ö 2026-10-11].** Düzen: kaynak `main` (`30dc8c85`); oturum kapısı + **gerçek**
+genel hata süzgeci + **gerçek** hata kaydı servisi, gerçek HTTP; veritabanı yok (veritabanı istemcisi sahte); canlıya dokunulmadı;
+depoya test eklenmedi — ölçüm dosyası ve koşu çıktıları kısıtlı yerel kayıttadır. İki koşu yapıldı; son koşuda yedi senaryo ve
+üç kontrol geçti. Dördüncü kontrol (bilinçli yakalanmamış ret içeren adım) düştü ve hata listesinde bilinçli reddin kendisi yer
+aldı — test koşucusunun yakalanmamış reddi yakalayıp çalışan adıma yazdığının kanıtı bu kayıttır. Adımın düşmüş olması tek başına
+kanıt değildir: adım, yazım biçimi nedeniyle ret yakalanmasaydı da düşerdi.
+
+Depodaki testlerin daha önce ölçtüğü: süzgeç birim testi (sahte servisle, HTTP'siz) 5xx gövdesinin korunduğunu (500 ile), kayıt
+çağrısı reddedilse de süzgecin atmadığını ve yanıt durumunu yazdığını, aynı hata iki kez gelirse kayıt çağrısının iki kez
+yapıldığını ve 4xx'in kayıt üretmediğini ölçüyordu; hata kaydı servisinin "yazım hata verirse çağıranı bozmaz" davranışı ayrı bir
+birim testinde ölçülüydü. Kapı + gerçek süzgeç + gerçek servis + HTTP birleşimi depodaki testlerde yoktu.
+
+| Soru | Sonuç |
+|---|---|
+| Kapının 503'ü gerçek süzgeçten geçince yanıt 503 kalıyor mu | **Evet** — durum 503, gövde sabit üç alan (okuma ve yazma isteğinde) |
+| Hata kaydı yazımı da başarısızken yanıt tamamlanıyor mu | **Evet** — yazım reddedildiğinde, eşzamanlı hata fırlattığında ve hiç dönmediğinde yanıt tamamlandı; bu adımların hiçbiri yakalanmamış hata nedeniyle düşmedi (test koşucusunun yakalayıcısı; kontrol adımı yukarıda) |
+| Kontrolsüz tekrar var mı | **Yok** — istek başına bir doğrulama sorgusu ve bir kayıt denemesi (art arda iki istekte — okuma + yazma —, art arda 40 ve eşzamanlı 20 istekte). Sayım sahte veritabanı istemcisinin sınırındadır; gerçek istemcinin kendi yeniden bağlanma davranışı ölçülmedi |
+| İstemci yanıtında işaret, bağlantı bilgisi ya da veritabanı ayrıntısı var mı | **Yok** — gövdede ve yanıt başlıklarında |
+| Korunan işleyici çağrılıyor mu | **Hayır** — okuma ve yazma işleyicisi çağrılmadı |
+
+Aynı ölçümün gözlemleri (hüküm değildir):
+
+- Süzgeç her 5xx yanıtı için bir hata kaydı yazmayı dener: istek başına bir yazım çağrısı yapılır. Yazım başarılı döndüğünde
+  (sahte istemci; gerçek satır yazımı ölçülmedi) kayıt girdisinde işaret ve bağlantı ayrıntısı yoktur — ileti genel metindir, büro
+  ve kullanıcı alanı boştur. Bu, korunan işlemin yazımı değildir.
+- Sunucu günlüğü — **GOZLEM-PORTAL-503-GUNLUK-01 · açık · etkilediği adım: 5xx yanıtında hata kaydı yazımının başarısız olması.**
+  Kesinti sürerken her istekte kapının bir uyarı satırı ve hata kaydı servisinin bir hata satırı oluşur (art arda 40 istekte
+  40 + 40). Süzgecin kendi konsol satırı kısa aralıkta kısılır (40 istekte 1), yoklama aralığında kısılmaz (30 saniye arayla 3
+  istekte 3; saat enjekte edilerek ölçüldü). İstemciye bir şey gitmez; işaret günlük çağrılarında yoktur. Satır içeriğinin
+  ayrıntısı kısıtlı yerel kayıttadır; karar §11 KR-19. Bu davranış her 5xx yanıtı için önceden de vardı; yeni olan, portal
+  yoklamalarının kesinti boyunca bu yolu tetiklemesidir.
+- Ölçülmeyen: gerçek portal denetleyicisi ve modül bütünü, gerçek veritabanı kesintisi, gerçek günlükçünün yazdırma biçimi
+  (ölçümde günlük çağrıları yakalandı, yazdırılmadı), canlıdaki günlük hacmi.
+
+**Süreç notu (2026-10-11).** #2954 birleştirilirken iki kalem merge engeli sayılmadı: (i) başlatma hatasının kodundan bağımsız
+503 olması — gerekçe: erişim iki seçenekte de kapalıydı ve bağımsız inceleme bunu küçük bulgu olarak sınıflamıştı; (ii) genel
+hata süzgeciyle etkileşimin ölçülmemiş olması — gerekçe: süzgeç değişmemişti ve sınır PR gövdesine yazılmıştı. İkisi de karar ya
+da ölçüm borcuydu ve merge'den **önce** owner'a sunulmalıydı (PR gövdesindeki "owner'a ayrıca bildirildi" ifadesi merge'den
+önce yazılmıştı; bildirim merge'den sonraki kapanış raporunda yapıldı, merge'den önce karar alınmamıştı). (i) owner kararıyla kapandı; (ii) yukarıdaki izole
+ölçümle giderildi — ölçülmeyenler yukarıda sayılıdır. Kural (owner, 2026-10-11): karar gerektiren bulgu merge sonrasına
+bırakılmaz. Geçmiş kayıtlar değiştirilmedi.
 
 ## 3. D-5 — düzeltilmiş teşhis, kanıt durumu, uygulanabilir sıra
 
@@ -463,17 +543,23 @@ Bu bölümde "R27 §10 K-n" R27 paket belgesinin karar numaralarıdır; bu belge
 |---|---|---|---|---|---|---|
 | H1 Kimlik | yok (teknik: İ9 `d19ce2c7` 14/0/0) | tazelik: ölçümden sonra müvekkil servisi değişti (#2645); canlı R27'de yeniden ölçülmedi | hüküm bekliyor | R27 §10 K-12 | hüküm → beyan | B-2 hükmü · tazelik seçimi · imza (§11 KR-12) |
 | H2 Adres/iletişim | yok (teknik: `8811f395` 13/13) | — | hüküm bekliyor | R27 §10 K-12 | hüküm → beyan | KB-03 (a)/(b) · imza (§11 KR-12) |
-| **H3 Vekâlet** | yok (teknik: İ10 `c9b07bcb` 10/0/0) | yok — ölçüt kümesi tamam; ölçülmeyen yollar beyanda "kapsam dışı" yazılmalı | **beyan taslağı hazır** | — (vekâlet yolları yayın adayı taslağında değişmiyor [Ö]) | owner beyanı imzalar | **imza + bir seçim**: ölçülmeyen kalemler "kabul dışı" mı, "ayrı canlı ölçüm" mü. İkincisi seçilirse H3 yalnız imzayla kapanmaz (§11 KR-12) |
+| **H3 Vekâlet** | yok (teknik: İ10 `c9b07bcb` 10/0/0) | yok — ölçüt kümesi tamam; ölçülmeyen on iki yol beyan taslağında (R02, madde 3) tek tek adlandırıldı, kutuları **boştur** | **beyan taslağı hazır (R02)** | — (vekâlet yolları yayın adayı taslağında değişmiyor [Ö]) | owner beyanı imzalar | **imza + on iki ayrı seçim** (beyan taslağı R02, madde 3): ölçülmeyen on iki yolun **her biri** için "kabul dışı / sonraki iş" ya da "ayrı canlı ölçüm". Hepsi "kabul dışı / sonraki iş" ise H3 imzayla kapanır; biri bile "ayrı canlı ölçüm", işaretsiz ya da çift işaretliyse H3 açık kalır (madde 5; §11 KR-12) |
 | H4 Talimat/beyan/rıza | yok (teknik: `e28c5c06` 14/14) | H4-08 gerçek yayın ayağı gerçek sağlayıcıyla ölçülmedi | hüküm bekliyor | R27 §10 K-12; H6 beyanıyla çelişmemeli | hüküm → beyan | H4-08 hükmü · imza (§11 KR-12) |
 | H5 Bilgi/belge toplama | yok (dar kabul `dda5d8c3` hizmet kabulü **değildir**) | — | hüküm bekliyor | R27 §10 K-13 | ayrı hizmet-kabulü satırı | R27 §10 K-13 · B-I11-2 hükmü (§11 KR-12) |
-| **H6 Gönderim** | yok (teknik: İ12 `92d04ef3` 17/17; bağımsız doğrulama 10/10) | yok — ölçüt kümesi tamam; gerçek alıcı/sağlayıcı ölçülmedi (test alıcısı) | **beyan taslağı hazır** | **yayın adayına karşı yeniden değerlendirildi (§7.1)**: aday yayın yetkisine kilit + görüntüleyici reddi ekliyor; G1–G7 davranışı değişmiyor; adaydaki odak testleri yeşil [K] | owner beyanı imzalar | imza — yayından önce mi sonra mı (§11 KR-12) |
+| **H6 Gönderim** | yok (teknik: İ12 `92d04ef3` 17/17; bağımsız doğrulama 10/10) | yok — ölçüt kümesi tamam; gerçek sağlayıcı, gerçek alıcı ve gerçek posta kutusuna teslim ölçülmedi (kanıt yerel test alıcısıyladır; beyan taslağı R02, madde 2 ve 4) | **beyan taslağı hazır (R02)** | **yayın adayına karşı yeniden değerlendirildi (§7.1)**: aday yayın yetkisine kilit + görüntüleyici reddi ekliyor; G1–G7 davranışı değişmiyor; adaydaki odak testleri yeşil [K] | owner beyanı imzalar | imza — yayından önce mi sonra mı (§11 KR-12) |
 | H7 Portal | yok (teknik: İ16 `6b883b16` 12/12, R25B) | tazelik: ölçümden sonra portal kodu değişti; H7-05b · K-1 yazma matrisi (portal ölçütü) · PSUS yalnız tek kullanımlık ortamda | hüküm bekliyor | R27 §10 K-12 ve K-11; D-5 tamamlanmadı | hüküm → beyan | hükümler · tazelik · "D-5 tamamlanmadan imzalanır mı" (§11 KR-12) |
-| **H8 Muhasebe kayıt kapanışı (F04)** | yok (teknik: İ15 `1b83637a` 5/5; bağımsız doğrulama 7/7; test kanıtı 10/10) | yok — ölçüt kümesi tamam; **canlı yarış testi değildir** | **beyan taslağı hazır** | **yayın adayına karşı yeniden değerlendirildi (§7.1)**: aday muhasebeleştirme işlemine yetki kilidi ekliyor; yedi senaryoluk test kanıtı adayda **yenilendi** (10/10 [K]) | owner beyanı imzalar | imza — yayından önce mi sonra mı (§11 KR-12) |
+| **H8 Muhasebe kayıt kapanışı (F04)** | yok (teknik: İ15 `1b83637a` 5/5; bağımsız doğrulama 7/7; test kanıtı 10/10) | yok — ölçüt kümesi tamam; **canlı yarış testi değildir** | **beyan taslağı hazır (R02)** | **yayın adayına karşı yeniden değerlendirildi (§7.1)**: aday muhasebeleştirme işlemine yetki kilidi ekliyor; yedi senaryoluk test kanıtı adayda **yenilendi** (10/10 [K]) | owner beyanı imzalar | imza — yayından önce mi sonra mı (§11 KR-12) |
 
-**"Yalnız imza bekliyor" iddiası kayıt düzeyinde doğrulandı — H6 ve H8 için yalnız imza; H3 için imza + bir seçim.** Üçünde de
+**"Yalnız imza bekliyor" iddiası kayıt düzeyinde doğrulandı — H6 ve H8 için yalnız imza; H3 için imza + on iki ayrı seçim
+(R02).** Üçünde de
 bekleyen ayrı hüküm (R27 §10 K-12 kalemi) yoktur. Ölçüt, tamamlanmış kanıt, sınırlar, kaynak tazeliği (ölçümü belirleyen kaynak
 dosyalarda ölçüm kaynağı → canlı R27 arasında 0 fark; kapsam beyan belgesinde) ve owner'ın imzalayacağı **gerçek beyan metinleri**:
 `H3-H6-H8-OWNER-BEYAN-TASLAKLARI-R01.md`. Taslaklar imzalanmadıkça sayaç **0/8** kalır.
+
+**R02 (2026-10-10, #2955):** yalnız taslak metinleri owner düzeltmeleriyle yeniden yazıldı; kabul ve imza verilmedi, H3'teki on iki
+kutu boştur. Beyanlarda madde numaraları: kapsam dışı kalemler H3'te 3., H6'da 4., H8'de 3. ve 4. madde; "kanıtın sürümü ve
+yeniden değerlendirme" H3'te **4.**, H6 ve H8'de **5.** madde; karar H3'te 5., H6 ve H8'de 6. madde. Beyan belgesinin başındaki
+"Başka belgedeki atıflar" notu bu hizalamadan önceki duruma aittir (o belge bu değişiklikte düzenlenmedi).
 
 `office-remaining-decisions-r01` §4'teki toplu metin olduğu gibi imzalanmamalıdır (açık kalemleri örtük kabul ettirir).
 
@@ -489,7 +575,12 @@ modüllerde şunları değiştirir [Ö, `git diff`; sonraki aday commit'leri bu 
 
 Bu sonuçlar koordinatörün aday doğrulama koşusundandır (tek kullanımlık veritabanı; depoya alınmadı) ve bu çalışmada yeniden
 koşulmadı. Eski kabul taslağı yeni sürüme **otomatik taşınmaz**: H6 / H8 beyanları canlı R27 için yazılmıştır; aday yayınlanırsa
-beyanın 4. maddesi gereği owner, adaydaki bu kanıtla yeniden değerlendirir.
+beyanın **5. maddesi** (H6: 5(e); H8: 5(e)) gereği owner yeniden değerlendirir. H8'de kural kaynağa bağlıdır (5(e); "kapsam" =
+ilgili muhasebe yolları + onları etkileyen ortak yetki katmanı, bağımlılıklar ve şema): kapsamın yayınlanan kaynağı geçerli bir
+test ortamı kanıtının kaynağıyla birebir aynıysa o kanıt kullanılabilir, değilse yedi senaryoluk kanıt yayınlanan kaynakta
+yenilenir ve yenilenene kadar kabul o sürüm için geçerli sayılmaz; yalnız yayın yapılmış olması yeniden koşma doğurmaz. Kapsam
+değişmişse hangi canlı kanıtın yenileneceğine owner karar verir. Geçerlilik hükmünü owner verir; beyan ve sayaç yeni sürüme
+kendiliğinden taşınmaz. (R01 metninde bu koşul 4. maddedeydi; R02'de H6 ve H8 için 5. maddedir.)
 
 ### 7.2 H1 / H2 / H4 / H5 / H7 — kalan kararlar günlük dille
 
@@ -616,7 +707,8 @@ yeterli sayılmaz) · KR-15'in birleştirme kısmı (R03-b: #2904, #2905, #2906 
 | KR-9 | D-8 — **kararların çoğu verildi (owner, 2026-10-05):** engellenmesi gereken isteğin API'ye ulaştığı kanıtlanırsa bulgu adayıdır, API'nin 403 vermesi bunu kapatmaz · kalibrasyon eksik ya da başarısızsa "kapalı" hükmü verilmez, bağımsız kanıtlanan ihlal korunur · sınama (challenge) yanıtı erişim kuralının uygulandığını kanıtlamaz, kenar engelleme ÖLÇÜLEMEYEN kalır · her ad için HTTP / ret sonucu, kenar engelleme sonucu ve katman doğrulaması ayrı alanlardır, kanıtın desteklediği PASS / FAIL / ÖLÇÜLEMEYEN değeri yazılır · 403 yerine doğrulanmış başka yanıt FAIL, yanıt alınamaması ÖLÇÜLEMEYEN · diğer adın kapsam yetkisi: yetkili sağlayıcı hesabındaki bölge / özel ad kaydı + DNS zinciri (tünel kaydı tek başına yetmez). **Owner, 2026-10-06 (gerçek API ile izole provanın sonucu üzerine):** başlığı silinen API reddinde kenar engelleme PASS kabul edilmez — kenar engelleme bağımsız yeterli kanıt yoksa ÖLÇÜLEMEYEN'dir, API'ye ulaşma kanıtı FAIL olarak korunur, "API değil" çıkarımı ve çıkış kodu aynı kanıt sınırına uyar (sonda kenar engellemesi için PASS ve çıkış 0 üretmez) · izinli yolda beklenen kod yerine doğrulanmış başka her yanıt, 403 dahil, pozitif kontrolde FAIL'dir (ölçüt ihlali / bulgu adayı; "kusur kesinleşti" değil); yanıt alınamaması ÖLÇÜLEMEYEN · kapsam yetkisi: iki kanıt türü tek birleşik belgede olabilir; iki ayrı kanıt unsuru, içerik incelemesi ve ad bağı zorunlu; dosya bütünlüğü ile içerik incelemesi ayrı kaydedilir; boş / özeti uyuşmayan kanıt reddi kalır. **AÇIK KALAN (iki kalem):** (1) canlı sonda kapsamı (hangi adlar, hangi pencere, hangi istek profili) ve ad başına GO; R27 sonrası telefon beyanının yenilenmesi ve ad başına alınıp alınmayacağı bu GO ile birlikte netleşir · (2) **kesin kenar kabulünün yöntemi**: sonda "ulaşmama"yı kanıtlayamadığından bir adın "dışarıdan kapalı" sayılması sonda dışı bağımsız kanıt ve owner değerlendirmesi gerektirir (yöntem önerisi ayrıca sunulur); karar verilene kadar D-8 sonda koşsa da kapanmaz | §5 R05 / R06; paket belgesi §3b ve §3c (kararların açık metni). "Katman `unknown` iken PASS'in kabulü" sorusu kalktı: tek bir PASS yoktur, katman doğrulaması ayrı alandır | D-8 koşumundan önce (2. kalem: D-8'in kapanışından önce) |
 | KR-10 | D-6: GO · telefon yüklemesi · kalıcı izlerin kabulü · belge onay/ret akışı ayrı paket mi | — | D-6 koşumundan önce |
 | KR-11 | D-7: GO · kalan mesaj/bildirim satırları "saklandı" · SEC-PORTAL-ADMIN-MSG-01 açıkken koşum teyidi · kapsam dışı dosya referansında 400'ün ölçüt sayılması | — | D-7 koşumundan önce |
-| KR-12 | H beyanları: H6 · H8 imzası (yayından önce mi sonra mı); H3 imza + kapsam seçimi (açık bırakıldı) · H1 / H2 / H4 / H5 / H7 hükümleri (§7.2, günlük dille) | taslaklar: `H3-H6-H8-OWNER-BEYAN-TASLAKLARI-R01.md` | herhangi bir zaman |
+| KR-12 | H beyanları: H6 · H8 imzası (yayından önce mi sonra mı); H3 imza + on iki ayrı kapsam seçimi (beyan taslağı R02, madde 3; hepsi açık bırakıldı) · H1 / H2 / H4 / H5 / H7 hükümleri (§7.2, günlük dille) | taslaklar: `H3-H6-H8-OWNER-BEYAN-TASLAKLARI-R01.md` (R02) | herhangi bir zaman |
+| KR-19 | GOZLEM-PORTAL-503-GUNLUK-01 (§2.1): portal oturum kapısının 503'ü sırasında, hata kaydı yazımı da başarısızken sunucu günlüğünde her istekte yinelenen satırlar | (a) mevcut hâliyle kabul · (b) dar düzeltme (ayrı kod PR'ı; genel süzgeç yeniden tasarlanmaz) — ayrıntı kısıtlı yerel kayıtta | sunucu yayınından önce ya da sonra — owner |
 | KR-14 | Güvenlik öncelikleri: SEC-MAIL-LOG-01 · SEC-STAFF-XFF-01 / SEC-API-BIND-01 kalıcı düzeltme · SEC-PORTAL-ADMIN-MSG-01 · SEC-PORTAL-REQ-01-K4 · FRK-1 · LS-1 · R27 §10 K-5 / K-14 / K-15 | — | herhangi bir zaman |
 | KR-15 | Kalan küçük işler: D-6 / D-7 PR açıklamalarındaki bilinen sınırlar · D-6 blok metnindeki kalan eksikler (OK-4) · ~~makbuz kurtarma dosyasını kimin, nereye yazacağı (D-6 / D-7)~~ — karar ve uygulama kapandı (owner kararı 2026-10-04; R04 `main`'de, #2923); canlı Recover'da doğrulanmadı — bu, D-6 / D-7 koşumunda Recover gerekirse ölçülür | — | D-6 / D-7 koşumundan önce (sonuncusu) / herhangi bir zaman |
 | KR-16 | Public depodaki dal commit'lerinde görünen yazar adresi | dal commit'leri yerel git yapılandırmasındaki adresle yazılıyor; adres bu belgeye yazılmaz; yalnız ileriye dönük karar | herhangi bir zaman |
