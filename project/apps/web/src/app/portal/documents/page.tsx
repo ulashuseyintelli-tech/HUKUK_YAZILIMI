@@ -13,6 +13,7 @@ import { toActionErrorMessage } from "@/lib/action-error";
 import { runMutation, runRefreshOnly } from "@/lib/mutation-outcome";
 import { downloadVerified } from "@/lib/verified-download";
 import { useSubmitLock } from "@/lib/use-submit-lock";
+import { handlePortalSessionRejection, newerPortalSessionToken } from "@/lib/portal-session";
 
 interface Document {
   id: string;
@@ -45,6 +46,19 @@ export default function PortalDocumentsPage() {
   const [staleNotice, setStaleNotice] = useState<string | null>(null);
   const [refreshingStale, setRefreshingStale] = useState(false);
   const submitLock = useSubmitLock();
+  // Oturum reddedildi (401): portal çerçevesi giriş sayfasına yönlendirir; o ana kadar bu sayfa
+  // sunucunun ret metnini ("Geçersiz token") ya da boş liste GÖSTERMEZ.
+  const [sessionRejected, setSessionRejected] = useState(false);
+  const sessionRejectedRef = useRef(false);
+  /** Oturum reddini işler; "REJECTED" ise sayfa içeriği gizlenir. */
+  const checkSessionRejection = (res: Response, sentToken: string) => {
+    const outcome = handlePortalSessionRejection({ status: res.status, sentToken });
+    if (outcome === "REJECTED") {
+      sessionRejectedRef.current = true;
+      setSessionRejected(true);
+    }
+    return outcome;
+  };
   const handleStaleRefresh = async () => {
     setRefreshingStale(true);
     const ok = await runRefreshOnly(() => fetchDocuments({ propagateError: true }));
@@ -67,7 +81,7 @@ export default function PortalDocumentsPage() {
     fetchDocuments();
   }, []);
 
-  const fetchDocuments = async (opts?: { propagateError?: boolean }) => {
+  const fetchDocuments = async (opts?: { propagateError?: boolean; retried?: boolean }): Promise<void> => {
     const token = localStorage.getItem("portal_token");
     // CLIENT-REMEDIATION-CLOSEOUT-R01: erken dönüşte de loading KESİN olarak kapatılır.
     // Önceki halde `return` ifadesi aşağıdaki try/finally'den ÖNCE çalıştığı için
@@ -81,11 +95,20 @@ export default function PortalDocumentsPage() {
     try {
       // PR-2A1 DEPENDENCY_FIXED: !ok sessizce yutuluyordu (liste bayat kaliyordu);
       // malformed yanit GERCEK EMPTY sayilmaz.
-      const res = await throwIfNotOk(
-        await fetch(portalApiUrl("/api/portal/documents"), {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-      );
+      const raw = await fetch(portalApiUrl("/api/portal/documents"), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const session = checkSessionRejection(raw, token);
+      if (session === "REJECTED") return;
+      if (session === "STALE") {
+        // İstek eski oturumla gitmişti: geçerli oturum varsa liste onunla BİR kez yeniden okunur
+        // ("Henüz belge yüklemediniz" sahte boş durumu görünmesin). Geçerli oturum yoksa oturum
+        // zaten temizlenmiştir; yönlendirme başlamıştır.
+        // `await`: yeniden okuma bitmeden aşağıdaki `finally` yüklemeyi kapatırsa boş liste görünürdü.
+        if (!opts?.retried && newerPortalSessionToken(token)) await fetchDocuments({ ...opts, retried: true });
+        return;
+      }
+      const res = await throwIfNotOk(raw);
       const data: unknown = await res.json();
       if (!Array.isArray(data)) throw new Error("MALFORMED_LIST_RESPONSE");
       setDocuments(data as Document[]);
@@ -115,20 +138,23 @@ export default function PortalDocumentsPage() {
         if (uploadForm.description) formData.append("description", uploadForm.description);
 
         const outcome = await runMutation({
-          mutate: async () =>
-            throwIfNotOk(
-              await fetch(portalApiUrl("/api/portal/documents/upload"), {
-                method: "POST",
-                headers: { Authorization: `Bearer ${token}` },
-                body: formData,
-              }),
-            ),
+          mutate: async () => {
+            const raw = await fetch(portalApiUrl("/api/portal/documents/upload"), {
+              method: "POST",
+              headers: { Authorization: `Bearer ${token}` },
+              body: formData,
+            });
+            checkSessionRejection(raw, token);
+            return throwIfNotOk(raw);
+          },
           refresh: () => fetchDocuments({ propagateError: true }),
           failureMessage: "Belge yüklenemedi. Dosya GÖNDERİLMEDİ, lütfen tekrar deneyin.",
           staleMessage: "Belge YÜKLENDİ, ancak liste yenilenemedi.",
         });
 
         if (!submitLock.isMounted()) return;
+        // Oturum reddinde yönlendirme başladı: hata bandı basılmaz.
+        if (sessionRejectedRef.current) return;
         if (outcome.status === "FAILED") {
           // Form ve modal KORUNUR; eski davranis !ok'ta SESSIZCE hicbir sey yapmiyordu.
           setActionError(outcome.error.message);
@@ -159,11 +185,11 @@ export default function PortalDocumentsPage() {
     if (!token) return;
     setActionError(null);
     try {
-      const res = await throwIfNotOk(
-        await fetch(portalApiUrl(`/api/portal/documents/${doc.id}/download`), {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-      );
+      const raw = await fetch(portalApiUrl(`/api/portal/documents/${doc.id}/download`), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (checkSessionRejection(raw, token) === "REJECTED") return;
+      const res = await throwIfNotOk(raw);
       const blob = await res.blob();
       const outcome = downloadVerified(blob, {
         fileName: doc.fileName,
@@ -189,17 +215,19 @@ export default function PortalDocumentsPage() {
     setActionError(null);
     const outcome = await runMutation({
       mutate: async () => {
-        await throwIfNotOk(
-          await fetch(portalApiUrl(`/api/portal/documents/${id}`), {
-            method: "DELETE",
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-        );
+        const raw = await fetch(portalApiUrl(`/api/portal/documents/${id}`), {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        checkSessionRejection(raw, token);
+        await throwIfNotOk(raw);
         return true;
       },
       refresh: fetchDocuments,
       failureMessage: "Belge silinemedi.",
     });
+    // Oturum reddinde yönlendirme başladı: hata bandı basılmaz.
+    if (sessionRejectedRef.current) return;
     if (outcome.status === "FAILED") {
       setActionError(outcome.error.message);
       return;
@@ -226,7 +254,7 @@ export default function PortalDocumentsPage() {
     }
   };
 
-  if (loading) {
+  if (loading || sessionRejected) {
     return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>;
   }
 

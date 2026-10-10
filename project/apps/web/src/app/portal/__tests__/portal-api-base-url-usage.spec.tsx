@@ -231,10 +231,14 @@ describe("PortalDocumentsPage — configured base URL (CLIENT-CONFIG-P01)", () =
     errSpy.mockRestore();
   });
 
-  it("[12] authorization failure (401) davranışı korunur — liste boş kalır, çökmez", async () => {
+  it("[12] authorization failure (401) = OTURUM REDDİ — boş liste / ret metni GÖSTERİLMEZ, oturum işareti silinir, çökmez", async () => {
+    // Eski beklenti ("liste boş kalır") kapatılmış oturumu GERÇEKTEN belgesiz müvekkille aynı
+    // gösteriyordu. Artık 401 oturum reddidir (bkz. portal-session-rejection.spec.tsx).
     fetchMock.mockResolvedValue({ ok: false, status: 401, json: async () => ({ message: "Unauthorized" }) });
     render(<PortalDocumentsPage />);
-    await waitFor(() => expect(screen.getByText("Henüz belge yüklemediniz")).toBeTruthy());
+    await waitFor(() => expect(localStorage.getItem("portal_token")).toBeNull());
+    expect(screen.queryByText("Henüz belge yüklemediniz")).toBeNull();
+    expect(screen.queryByText("Unauthorized")).toBeNull();
   });
 
   it("[13] token YOKSA istek atılmaz VE loading kapanır (CLIENT-REMEDIATION-CLOSEOUT-R01 R1)", async () => {
