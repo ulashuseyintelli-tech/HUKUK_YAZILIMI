@@ -150,6 +150,7 @@ describe("portal çerçevesi — oturum reddi", () => {
 
   it.each([
     ["500", () => ({ status: 500, body: { message: "iç hata" } }) as Reply],
+    ["503 (sunucu oturumu doğrulayamadı — altyapı)", () => ({ status: 503, body: { message: "Hizmet geçici olarak kullanılamıyor" } }) as Reply],
     ["403", () => ({ status: 403, body: { message: "yetki yok" } }) as Reply],
     ["ağ hatası", () => new TypeError("Failed to fetch") as Reply],
     ["bozuk gövde", () => ({ status: 200, body: { count: "üç" } }) as Reply],
@@ -316,6 +317,7 @@ describe("Mesajlar — oturum reddi", () => {
 
   it.each([
     ["500", () => ({ status: 500, body: {} }) as Reply],
+    ["503 (sunucu oturumu doğrulayamadı — altyapı)", () => ({ status: 503, body: { message: "Hizmet geçici olarak kullanılamıyor" } }) as Reply],
     ["403", () => ({ status: 403, body: {} }) as Reply],
     ["ağ hatası", () => new TypeError("Failed to fetch") as Reply],
   ])("[M2] liste %s → oturum KORUNUR; mevcut hata davranışı (hata metni görünür)", async (_ad, reply) => {
@@ -399,6 +401,53 @@ describe("Mesajlar — oturum reddi", () => {
     await act(async () => { pending.resolve({ status: 401 }); await pending.promise; });
     await screen.findByText(/Mesaj gönderilemedi/);
     sessionKept("T2");
+    // yazma isteği otomatik YİNELENMEZ (yeni oturumla da) ve yazılan metin korunur
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(callsTo("/api/portal/messages", "POST")).toBe(1);
+    expect((screen.getByPlaceholderText("Mesajınızı yazın...") as HTMLTextAreaElement).value).toBe("Merhaba");
+  });
+
+  it("[M7] gönderme 503 → oturum ve YAZILAN METİN korunur; hata görünür; yönlendirme yok; istek yinelenmez", async () => {
+    primeFetch({ send: () => ({ status: 503, body: { message: "Hizmet geçici olarak kullanılamıyor" } }) });
+    render(<PortalMessagesPage />);
+    await screen.findByText("İlk mesaj");
+    fireEvent.change(screen.getByPlaceholderText("Mesajınızı yazın..."), { target: { value: "Yarım kalmasın" } });
+    fireEvent.click(screen.getByText("Gönder"));
+    await screen.findByText(/Mesaj gönderilemedi/);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect((screen.getByPlaceholderText("Mesajınızı yazın...") as HTMLTextAreaElement).value).toBe("Yarım kalmasın");
+    expect(callsTo("/api/portal/messages", "POST")).toBe(1);
+    sessionKept();
+  });
+
+  it("[M9] yazarken ARKA PLAN yoklaması 503 alır → yazılmakta olan metin ve oturum korunur; çıkış / yönlendirme yok; yoklama sürer", async () => {
+    vi.useFakeTimers();
+    let n = 0;
+    primeFetch({ messages: () => (++n === 1 ? { status: 200, body: MSGS } : { status: 503, body: { message: "Hizmet geçici olarak kullanılamıyor" } }) });
+    render(<PortalMessagesPage />);
+    await vi.waitFor(() => expect(screen.queryByText("İlk mesaj")).not.toBeNull());
+    fireEvent.change(screen.getByPlaceholderText("Mesajınızı yazın..."), { target: { value: "Yarıda kalan taslak" } });
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(callsTo("/api/portal/messages")).toBe(2);
+    expect((screen.getByPlaceholderText("Mesajınızı yazın...") as HTMLTextAreaElement).value).toBe("Yarıda kalan taslak");
+    sessionKept();
+    // 503 oturum reddi değildir: yoklama DURMAZ (bir sonraki turda yeniden dener)
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(callsTo("/api/portal/messages")).toBe(3);
+    expect((screen.getByPlaceholderText("Mesajınızı yazın...") as HTMLTextAreaElement).value).toBe("Yarıda kalan taslak");
+    sessionKept();
+  });
+
+  it("[M8] okundu çağrısı — GECİKMİŞ RET: yazma isteği yinelenmez; yeni oturum korunur", async () => {
+    const pending = deferred();
+    primeFetch({ markRead: () => pending.promise });
+    render(<PortalMessagesPage />);
+    await waitFor(() => expect(callsTo("/api/portal/messages/mark-read", "POST")).toBe(1));
+    openSession("T2");
+    await act(async () => { pending.resolve({ status: 401 }); await pending.promise; });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(callsTo("/api/portal/messages/mark-read", "POST")).toBe(1);
+    sessionKept("T2");
   });
 });
 
@@ -415,6 +464,7 @@ describe("Belgelerim — oturum reddi", () => {
 
   it.each([
     ["500", () => ({ status: 500, body: { message: "iç hata" } }) as Reply],
+    ["503 (sunucu oturumu doğrulayamadı — altyapı)", () => ({ status: 503, body: { message: "Hizmet geçici olarak kullanılamıyor" } }) as Reply],
     ["403", () => ({ status: 403, body: { message: "yetki yok" } }) as Reply],
     ["ağ hatası", () => new TypeError("Failed to fetch") as Reply],
   ])("[D2] liste %s → oturum KORUNUR; mevcut hata davranışı (hata görünür)", async (_ad, reply) => {
@@ -508,6 +558,69 @@ describe("Belgelerim — oturum reddi", () => {
     await act(async () => { await Promise.resolve(); });
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.queryByText(/Belge yüklenemedi/)).toBeNull();
+  });
+
+  const openUploadForm = async () => {
+    render(<PortalDocumentsPage />);
+    await screen.findByText("Kira sözleşmesi");
+    fireEvent.click(screen.getByRole("button", { name: /Belge Yükle/i }));
+    fireEvent.change(await screen.findByPlaceholderText("Belge başlığı"), { target: { value: "Kimlik" } });
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [new File(["x"], "kimlik.pdf", { type: "application/pdf" })] } });
+    return screen.getByRole("button", { name: "Yükle" }) as HTMLButtonElement;
+  };
+  const uploadCalls = () => fetchMock.mock.calls.filter(([u]) => String(u).endsWith("/api/portal/documents/upload")).length;
+
+  it("[D8] yükleme 503 → oturum ve DOLDURULMUŞ FORM korunur (pencere açık, başlık ve dosya yerinde); hata görünür; istek yinelenmez", async () => {
+    primeFetch({ upload: () => ({ status: 503, body: { message: "Hizmet geçici olarak kullanılamıyor" } }) });
+    const btn = await openUploadForm();
+    fireEvent.click(btn);
+    await waitFor(() => expect(screen.getAllByRole("alert").length).toBeGreaterThan(0));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect((screen.getByPlaceholderText("Belge başlığı") as HTMLInputElement).value).toBe("Kimlik");
+    expect((screen.getByRole("button", { name: "Yükle" }) as HTMLButtonElement).disabled).toBe(false); // dosya hâlâ seçili
+    expect(uploadCalls()).toBe(1);
+    sessionKept();
+  });
+
+  it("[D9] yükleme — GECİKMİŞ RET: dosya YÜKLENMEDİ, hata görünür; istek yeni oturumla da yinelenmez; form korunur", async () => {
+    const pending = deferred();
+    primeFetch({ upload: () => pending.promise });
+    const btn = await openUploadForm();
+    fireEvent.click(btn);
+    await waitFor(() => expect(uploadCalls()).toBe(1));
+    openSession("T2");
+    await act(async () => { pending.resolve({ status: 401, body: { message: "Geçersiz token" } }); await pending.promise; });
+    await waitFor(() => expect(screen.getAllByRole("alert").length).toBeGreaterThan(0));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(uploadCalls()).toBe(1);
+    expect((screen.getByPlaceholderText("Belge başlığı") as HTMLInputElement).value).toBe("Kimlik");
+    sessionKept("T2");
+  });
+
+  it("[D10] silme 503 → oturum korunur; hata görünür; istek yinelenmez", async () => {
+    primeFetch({ del: () => ({ status: 503, body: { message: "Hizmet geçici olarak kullanılamıyor" } }) });
+    render(<PortalDocumentsPage />);
+    fireEvent.click(await screen.findByTitle("Sil"));
+    await screen.findByRole("alert");
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === "DELETE").length).toBe(1);
+    expect(screen.getByText("Kira sözleşmesi")).toBeTruthy();
+    sessionKept();
+  });
+
+  it("[D11] silme — GECİKMİŞ RET: belge SİLİNMEDİ, hata görünür; istek yeni oturumla da yinelenmez", async () => {
+    const pending = deferred();
+    primeFetch({ del: () => pending.promise });
+    render(<PortalDocumentsPage />);
+    fireEvent.click(await screen.findByTitle("Sil"));
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === "DELETE").length).toBe(1));
+    openSession("T2");
+    await act(async () => { pending.resolve({ status: 401, body: { message: "Geçersiz token" } }); await pending.promise; });
+    await screen.findByRole("alert");
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === "DELETE").length).toBe(1);
+    sessionKept("T2");
   });
 
   it("[D7] indirme 403 → oturum KORUNUR; mevcut hata davranışı (hata görünür)", async () => {

@@ -10,9 +10,10 @@
  *    üretebildiği uçlarda bu yardımcıya verilir. Giriş ve şifre değiştirme uçları 401'i başka
  *    anlamda da döndürür ("mevcut şifre yanlış") — o çağrılar bu yardımcıyı KULLANMAZ.
  *  - Ağ hatası, 5xx, 403, 404 ve bozuk gövde oturum reddi DEĞİLDİR; oturum korunur.
- *  - BİLİNEN SINIR: sunucunun portal oturum kapısı, oturumu doğrularken aldığı altyapı hatasını da
- *    (ör. veritabanına ulaşamama) bilerek aynı genel 401 ile yanıtlar. İstemci bu durumu gerçek
- *    oturum reddinden AYIRAMAZ; öyle bir anda kullanıcı girişe yönlendirilir.
+ *  - SUNUCU AYRIMI: portal oturum kapısı, oturumu doğrularken TANINAN bir veritabanı erişim
+ *    hatası alırsa 503 döner (oturum reddi değil) — bu istemci onu "oturum korunur" sınıfında
+ *    işler. SÜRÜM EŞLEŞMESİ: bu ayrımı yapmayan ESKİ bir sunucu aynı durumu 401 ile yanıtlar;
+ *    istemci onu gerçek oturum reddinden AYIRAMAZ ve kullanıcı girişe yönlendirilir.
  *  - GECİKMİŞ RET: istek hangi işaretle gönderildiyse ret yalnız o işaret hâlâ
  *    tarayıcıdaysa işlenir. Bu arada yeni oturum açıldıysa (işaret değiştiyse) ya da oturum
  *    zaten temizlendiyse ret BAYATTIR: hiçbir şey silinmez, yönlendirme yapılmaz.
