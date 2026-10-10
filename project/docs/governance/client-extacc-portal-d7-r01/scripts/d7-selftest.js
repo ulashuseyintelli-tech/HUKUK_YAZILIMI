@@ -80,6 +80,9 @@
  *           (hatasız akış korunur: Z1 koşumunda üç ölçüt kapıda PASS, `scopeStop` yok, gösterim yapıldı) · T-15 (statik: üç durdurma noktası kendi dosyasıyla
  *           mesajdan ÖNCE; kapı listesi; durdurma istisna fırlatmaz). DEĞİŞEN: Z3 (eski baytlar ihlalden sonra akışı sürdürüp gösterim yapıyordu — artık D7-4N'de
  *           durur) · Z4-a (müvekkil mesajı 500 iken kapsam denemesi de 500 → D7-4N FAIL → durur; koşucu hiç mesaj yazmadığı için P7-MSG-KEPT ÖLÇÜLEMEYEN).
+ * R06     : (2026-10-09; owner kararı "300 saniyelik gözlem penceresi") DEĞİŞEN: P-1 (canlı inceleme süresi 300000 ms açıkça ölçülür). YENİ: P-VIEW (statik +
+ *           ekran): canlı `D7_VIEW_MS` = 300000 ve tek bekleme; giriş bekleme 20 dk aynı; koşucu konsoldan girdi OKUMAZ; owner ekranı numaralı telefon
+ *           adımlarını, GÖZLEM A (mesaj listesi) ile GÖZLEM B'yi (ikinci yanıt) AYRI adımlar olarak ve süreyi gösterir — Z1 koşumunun gösterim dosyasında, Z1 kanıtındaki süre değerleriyle birebir; QR + giriş bilgisi ilk ekranın SONUNDADIR.
  */
 const { spawn, spawnSync, execFileSync } = require('child_process');
 const fs = require('fs'); const path = require('path'); const os = require('os'); const crypto = require('crypto');
@@ -118,7 +121,7 @@ const API = `http://127.0.0.1:${API_PORT}/api`; const EXT = `https://localhost:$
 const PHONE_UA = 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/129 Mobile Safari/537.36';
 const R27_CAND_DIST = 'E28A6863CF109A1A3AE1F53E096D5F5C2037E382EF2D8D3EC87FEE3B827E5134'; // canlı ön koşul: R27 dist (D-5 ile aynı)
 
-const rows = []; const check = (id, desc, ok, obs) => rows.push({ id, sonuc: ok ? 'PASS' : 'FAIL', aciklama: desc, gozlem: obs });
+let P2DIR = null; const rows = []; const check = (id, desc, ok, obs) => rows.push({ id, sonuc: ok ? 'PASS' : 'FAIL', aciklama: desc, gozlem: obs });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms)); const hex8 = () => crypto.randomBytes(4).toString('hex');
 const sha256 = (b) => crypto.createHash('sha256').update(b).digest('hex');
 
@@ -278,7 +281,7 @@ async function withInsertFault(table, column, value, fn) {
   DBURL = dbUrl();
   if (!DBURL) { console.log('OLCULEMEDI: disposable DB (D7T_DB_URL → 127.0.0.1:<5432 dışı port>/<ad>_test; hukuk_db değil) yok — test BAŞLAMADI'); process.exit(2); }
   console.log(`disposable DB: 127.0.0.1:${new URL(DBURL).port}/${DB_NAME}`);
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'd7-selftest-'));
+  const dir = P2DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'd7-selftest-'));
   certFile = path.join(dir, 'cert.pem'); const keyFile = path.join(dir, 'key.pem');
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', keyFile, '-out', certFile, '-days', '1', '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1'], { stdio: 'ignore' });
   const { PrismaClient } = require(PRISMA_ROOT); prisma = new PrismaClient({ datasources: { db: { url: DBURL } } });
@@ -1142,8 +1145,21 @@ async function withInsertFault(table, column, value, fn) {
   check('T-2', 'gösterimsiz test dosyası (sink) kaynakta TEK yerde ve yalnız `display === \'none\'` koşuluyla (konsol varken asla)', sinkLines.length === 1 && /g\.display === 'none' && process\.env\.D7_TEST_DISPLAY_SINK/.test(sinkLines[0]) && /if \(con\) return DISPLAY\.show/.test(sinkLines[0]), `satır=${sinkLines.length}`);
   const liveEnv = { AH_DATABASE_URL: 'postgresql://u:p@127.0.0.1:5432/hukuk_db', D7_EXPECT_DB: 'hukuk_db', D7_WAIT_MS: '1', D7_POLL_MS: '1', D7_VIEW_MS: '1', D7_HTTP_TIMEOUT_MS: '1', D7_CALL_TIMEOUT_MS: '1', D7_LATE_CREATE_MS: '1' };
   const pl = EX.effectiveParams(liveEnv); const pt = EX.effectiveParams(Object.assign({}, liveEnv, { AH_DATABASE_URL: `postgresql://u:p@127.0.0.1:${new URL(DBURL).port}/${DB_NAME}`, D7_EXPECT_DB: DB_NAME }));
-  check('P-1', 'canlı DB: devralınan 6 süre değişkeni YOK SAYILIR (20 dk bekleme, 5 sn yoklama, 120 sn inceleme, 120 sn geç oluşma); test kısa süreleri korur',
-    pl.live && Object.keys(EX.LIVE_PARAMS).length === 6 && Object.keys(EX.LIVE_PARAMS).every((k) => pl[k] === EX.LIVE_PARAMS[k]) && pl.D7_WAIT_MS === 1200000 && pl.D7_LATE_CREATE_MS === 120000 && !pt.live && pt.D7_WAIT_MS === 1, `canlı=${pl.live}/${pl.D7_WAIT_MS} · test=${pt.live}/${pt.D7_WAIT_MS}`);
+  check('P-1', 'canlı DB: devralınan 6 süre değişkeni YOK SAYILIR (20 dk bekleme, 5 sn yoklama, 300 sn inceleme — R06; önceki 120 sn, 120 sn geç oluşma); test kısa süreleri korur',
+    pl.live && Object.keys(EX.LIVE_PARAMS).length === 6 && Object.keys(EX.LIVE_PARAMS).every((k) => pl[k] === EX.LIVE_PARAMS[k]) && pl.D7_WAIT_MS === 1200000 && pl.D7_VIEW_MS === 300000 && pl.D7_LATE_CREATE_MS === 120000 && !pt.live && pt.D7_WAIT_MS === 1 && pt.D7_VIEW_MS === 1, `canlı=${pl.live}/${pl.D7_WAIT_MS}/${pl.D7_VIEW_MS} · test=${pt.live}/${pt.D7_WAIT_MS}/${pt.D7_VIEW_MS}`);
+  // P-VIEW (R06): gözlem penceresi 300 sn; ekranda numaralı adımlar + GÖZLEM A / B ayrı + süre (Z1'in gösterim dosyası ve kanıtındaki süre değerleriyle BİREBİR).
+  const viewSleeps = (src.match(/await sleep\(P\.D7_VIEW_MS\)/g) || []).length;
+  let z1Sink = ''; try { z1Sink = fs.readFileSync(path.join(P2DIR, 'z1-normal-display.sink'), 'utf8'); } catch (e) { z1Sink = ''; }
+  let z1P = null; try { z1P = JSON.parse(fs.readFileSync(path.join(P2DIR, 'z1-normal-evidence.json'), 'utf8')).params; } catch (e) { z1P = null; }
+  const vS = z1P ? Math.round(z1P.D7_VIEW_MS / 1000) : null; const wM = z1P ? Math.round(z1P.D7_WAIT_MS / 60000) : null;
+  const stepsOk = ['  1) Aşağıdaki QR', '  2) Üst menüden "Mesajlar"', '  3) GÖZLEM A — MESAJ LİSTESİ', '  4) GÖZLEM B — İKİNCİ YANIT', '  5) Koşum bitince owner bloğu sayfayı yenilemenizi ister'].every((x) => z1Sink.includes(x));
+  const sureOk = z1Sink.includes(`SÜRELER: giriş için en fazla ${wM} dk beklenir · giriş algılanınca GÖZLEM A + B için ${vS} sn.`);
+  const order = ['  3) GÖZLEM A', '  4) GÖZLEM B', 'SÜRELER:', '\x1b[30;47m', 'E-posta :', 'Parola  :', 'GÖZLEM süresi başladı'].map((x) => z1Sink.indexOf(x));
+  const afterCreds = order[5] >= 0 && order[6] > order[5] ? z1Sink.slice(z1Sink.indexOf('\n', order[5]), order[6]).split('\n').filter((l) => l.trim() && !/Giriş algılandı/.test(l)) : ['?'];
+  check('P-VIEW', 'R06: canlı inceleme süresi sabiti 300000 ms; giriş bekleme 1200000 ms DEĞİŞMEDİ; koşucu kaynağında inceleme beklemesi çağrısı TAM 1 (sayı) ve `process.stdin` geçmiyor (kaynak araması); Z1 gösterim dosyasında numaralı beş telefon adımı — mesaj listesi (GÖZLEM A) ile ikinci yanıt (GÖZLEM B) AYRI adımlar; ikinci yanıtın metni (…-OFFICE-2) ekranda; "SÜRELER:" satırı Z1 kanıtındaki süre değerleriyle BİREBİR; sıra: adımlar → SÜRELER → ilk QR satırı → giriş bilgisi (ilk ekranın SON satırları; ardından başka yönerge yok) → "GÖZLEM süresi başladı"; 5. adım yenilemeyi owner bloğunun isteğine bağlar',
+    EX.LIVE_PARAMS.D7_VIEW_MS === 300000 && EX.LIVE_PARAMS.D7_WAIT_MS === 1200000 && viewSleeps === 1 && !/process\.stdin/.test(src)
+      && !!z1P && stepsOk && sureOk && /-OFFICE-2 \(ilk yanıttan son ekiyle ayrılır\)/.test(z1Sink) && order.every((x) => x >= 0) && order.every((x, i) => i === 0 || x > order[i - 1]) && afterCreds.length === 0,
+    `canlı inceleme=${EX.LIVE_PARAMS.D7_VIEW_MS} · bekleme çağrısı=${viewSleeps} · Z1 süreleri=${vS} sn/${wM} dk · adımlar=${stepsOk} · SÜRELER=${sureOk} · sıra=${order.join(',')} · giriş bilgisinden sonra yönerge satırı=${afterCreds.length}`);
   const g = EX.runGates({ D7_DISPLAY: 'none', D7_EXPECT_DB: 'x', AH_DATABASE_URL: 'postgresql://u:p@h:1/x', D7_API_BASE: 'a', D7_EXPECT_API: 'a', D7_EXPECT_BASE_URL: 'https://ornek.invalid', D7_LIVE_CONFIRM: '1', D7_LIVE_GO_REF: 'OWNER-GO-CLIENT-EXTACC-D7-20000101-R01', D7_RUNID: 'abcdef12', D7_EXPECT_TENANT_SLUG: 'ah-abcdef12' });
   check('P-2', 'kapılar: doğru D-7 GO + runId + slug kabul; origin yolsuz https; FOREIGN_CASE_EXPECT=400 (kaynak); listOnlyOwn boş listeyi kabul etmez', g.code === 0 && g.origin === 'https://ornek.invalid' && EX.FOREIGN_CASE_EXPECT === 400 && EX.listOnlyOwn([], []).ok === false && EX.listOnlyOwn([{ id: 'a' }], ['a']).ok === true && EX.listOnlyOwn([{ id: 'a' }, { id: 'b' }], ['a']).ok === false, `kod=${g.code}`);
   if (fs.existsSync(WRAPPER)) {

@@ -108,6 +108,12 @@
  *          eklendi (ikinci emniyet). Önceki baytlar bu durumda akışı sürdürüyor, giriş bilgisini gösteriyor ve telefonu bekliyordu. KAPANIŞ DEĞİŞMEDİ:
  *          `finally` bloğu (portal kapatma, personel / dosya kapanışı, mesaj kalıntısı, kanıt yazımı) aynen çalışır; o ana kadar yazılan mesaj kimlikleri
  *          (ürünün yanlışlıkla kabul ettiği satır dahil) makbuza yazılır. Çıkış kodu fonksiyonları ve öncelik DEĞİŞMEDİ; kanıttaki `revision` R03 kalır.
+ * R06    : (2026-10-09; owner kararı "300 saniyelik gözlem penceresi") GÖZLEM SÜRESİ 120 sn → 300 sn: `D7_VIEW_MS` canlı değeri 300000 (telefon girişi
+ *          algılandıktan ve ikinci personel yanıtı gönderildikten sonraki tek pencere). Owner ekranı telefon adımlarını numaralı ve süresiyle gösterir;
+ *          mesaj listesinin görülmesi (GÖZLEM A) ile ikinci personel yanıtının görülmesi (GÖZLEM B) ayrı adımlardır. Giriş bekleme sınırı (20 dk),
+ *          R05 kapsam durdurması, kapanış (`finally`), verdict'ler ve çıkış kodu fonksiyonları DEĞİŞMEDİ; "tamamlandı" girdisi YOKTUR (koşucu konsoldan
+ *          girdi okumaz) — süre dolunca kendiliğinden kapanışa geçer. Gerekçe: 2026-10-09 canlı koşumunda telefonda mesaj listesi ve ikinci
+ *          yanıt gözlenmedi; zaman çizelgesi 120 sn'lik pencerenin yetmemesiyle UYUMLUDUR (kesin kök neden olarak ölçülmedi). `revision` R03 kalır.
  */
 const fs = require('fs'); const crypto = require('crypto'); const path = require('path');
 const H5 = require('../../client-h5-intake-url-r01/scripts/h5-url-live-run');
@@ -127,7 +133,7 @@ const EXTERNAL_ADMIN_RE = /^<DIŞ>\/api\/portal\/admin/;
 const FOREIGN_CASE_EXPECT = 400;
 
 // CANLI SÜRELER SABİT (bağlı DB `hukuk_db` ise ortam yok sayılır); izole testler kısaltabilir.
-const LIVE_PARAMS = Object.freeze({ D7_WAIT_MS: 20 * 60 * 1000, D7_POLL_MS: 5000, D7_VIEW_MS: 120000, D7_HTTP_TIMEOUT_MS: 15000, D7_CALL_TIMEOUT_MS: 30000,
+const LIVE_PARAMS = Object.freeze({ D7_WAIT_MS: 20 * 60 * 1000, D7_POLL_MS: 5000, D7_VIEW_MS: 300000, D7_HTTP_TIMEOUT_MS: 15000, D7_CALL_TIMEOUT_MS: 30000,
   D7_LATE_CREATE_MS: 120000 });
 function effectiveParams(env) {
   const live = dbName(env.AH_DATABASE_URL || '') === 'hukuk_db' || (env.D7_EXPECT_DB || '') === 'hukuk_db';
@@ -863,15 +869,19 @@ async function runMode() {
       const qr = DISPLAY.renderQr(`${origin}/portal/messages`);
       await showOwner([
         '============ EXTACC D-7 — YALNIZ OWNER EKRANI (kayda ALINMAZ) ============',
-        'TELEFON: Wi-Fi KAPALI, mobil veri AÇIK, gizli sekme. QR portal MESAJ sayfasını açar (giriş istenir).', '', ...qr.lines, '', `${origin}/portal/messages`, `Giriş sayfası: ${origin}/portal/login`, '',
-        'Giriş bilgisi (yalnız bu koşum için; koşum sonunda kapatma adımı çalışır, sonucu owner bloğu bildirir):', `    E-posta : ${portalEmail}`, `    Parola  : ${portalPw}`, '',
-        `Girişten sonra mesaj sayfasında bu koşumun ÜÇ mesajı görünmeli: ${MSG.client} · ${MSG.clientCase} · ${MSG.office1}`,
+        'TELEFON: Wi-Fi KAPALI, mobil veri AÇIK, gizli sekme. QR portal MESAJ sayfasını açar (giriş istenir).', '',
+        'TELEFON ADIMLARI — sırayla; onay beklenmez, süre dolunca koşucu kendiliğinden kapanışa geçer:',
+        '  1) Aşağıdaki QR\'ı okutun; altındaki bilgilerle BİR KEZ giriş yapın. Önce portal ANA SAYFASI açılır.',
+        '  2) Üst menüden "Mesajlar" sekmesine HEMEN geçin.',
+        '  3) GÖZLEM A — MESAJ LİSTESİ: bu koşumun mesajlarını görün; ilk bakıştaki sayıyı aklınızda tutun.',
+        `     Girişten önce yazılan üç mesaj: ${MSG.client} · ${MSG.clientCase} · ${MSG.office1}`,
+        '  4) GÖZLEM B — İKİNCİ YANIT: giriş algılanınca koşucu ikinci personel yanıtını gönderir.',
+        `     Metni ${MSG.office2} (ilk yanıttan son ekiyle ayrılır); listede görünmesini bekleyin, zil rozetine de bakın.`,
+        '  5) Koşum bitince owner bloğu sayfayı yenilemenizi ister: O ZAMAN bir kez yenileyin ve gördüğünüzü yanıtlayın.',
         'İsterseniz telefondan KISA bir mesaj gönderin (kişisel veri YAZMAYIN; içerik kanıta yazılmaz, yalnız sayısı).',
-        `Giriş algılanınca koşucu İKİNCİ bir personel yanıtı gönderir (${MSG.office2}); rozet/okunmamış sayacını ve yeni mesajı izleyin.`,
-        `Girişi BİR KEZ yapın. Giriş algılanınca ${Math.round(P.D7_VIEW_MS / 1000)} sn inceleme süresi verilir; sonra ekran temizlenir ve kapatma adımı çalışır.`,
-        'Owner bloğu sorduğunda telefonda sayfayı YENİLEYİN ve ekranda gördüğünüzü yanıtlayın.',
-        `Bekleme: en fazla ${Math.round(P.D7_WAIT_MS / 60000)} dk.`,
-      ]);
+        `SÜRELER: giriş için en fazla ${Math.round(P.D7_WAIT_MS / 60000)} dk beklenir · giriş algılanınca GÖZLEM A + B için ${Math.round(P.D7_VIEW_MS / 1000)} sn.`,
+        '', ...qr.lines, '', `${origin}/portal/messages`, `Giriş sayfası: ${origin}/portal/login`, '',
+        'Giriş bilgisi (yalnız bu koşum için; koşum sonunda kapatma adımı çalışır, sonucu owner bloğu bildirir):', `    E-posta : ${portalEmail}`, `    Parola  : ${portalPw}`, '']);
       displayed = true;
       R.check('P7-DISP', 'giriş bilgisi + mesaj sayfası QR yalnız yerel konsola gösterildi', true, g.display === 'conout' ? 'CONOUT$' : 'gösterimsiz izole test');
       const t0 = Date.now();
@@ -898,7 +908,7 @@ async function runMode() {
         if (o2.indeterminate) R.unmeasured('D7-3B', 'telefon girişinden sonra 2. personel yanıtı', 'yanıt alınamadı');
         else R.check('D7-3B', 'telefon girişinden SONRA 2. personel yanıtı yerel 201 + DB OFFICE satırı (clientId/tenantId/senderId/content); okunmamış sayacı raporlandı (telefon sayfası mark-read çağırabilir — yargılanmaz)', o2.status === 201 && o2ok,
           `HTTP ${o2.status} · satır=${o2ok} · unread-count(2. yanıt sonrası)=${u3c === null ? '-' : u3c}`);
-        await showOwner(['', `Giriş algılandı; 2. personel yanıtı gönderildi (${MSG.office2}). ${Math.round(P.D7_VIEW_MS / 1000)} sn sonra kapatma adımı çalışacak; mesaj sayfasını ve rozeti şimdi inceleyin.`]);
+        await showOwner(['', `Giriş algılandı; 2. personel yanıtı gönderildi (${MSG.office2}). GÖZLEM süresi başladı: ${Math.round(P.D7_VIEW_MS / 1000)} sn — "Mesajlar"da listeyi (GÖZLEM A) ve yeni yanıtı (GÖZLEM B) ŞİMDİ görün; süre dolunca kapatma adımı çalışır.`]);
         await sleep(P.D7_VIEW_MS);
         const o2after = o2id ? await prisma.portalMessage.findUnique({ where: { id: o2id }, select: { isRead: true } }) : null;
         out.phoneObservation = { office2ReadByPhone: o2after ? o2after.isRead : null, note: 'yalnız gözlem: telefon sayfası mark-read çağırdıysa true; owner beyanıyla birlikte değerlendirilir' };

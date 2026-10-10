@@ -1,6 +1,6 @@
 # EXTACC D-7 — PORTAL MESAJ AKIŞI CANLI KABUL PAKETİ (R01 · owner bloğu metni R02 · koşucu kapanışı R03)
 
-> **DURUM: HAZIR — CANLIDA KOŞULMADI.** Canlı Run/Recover ve yayın bu paketle yetkilendirilmez; GO biçimi `OWNER-GO-CLIENT-EXTACC-D7-YYYYMMDD-RNN`
+> **DURUM: HAZIR — güncel (R06) baytlar CANLIDA KOŞULMADI.** Önceki baytlarla 2026-10-09'da owner onayıyla canlı koşum yapıldı (aşağıdaki R06 notu; o koşumların sonuç kaydı bu belgede değildir). Canlı Run/Recover ve yayın bu paketle yetkilendirilmez; GO biçimi `OWNER-GO-CLIENT-EXTACC-D7-YYYYMMDD-RNN`
 > (D-4/D-5 GO'ları kabul **edilmez**). Tanım: `client-extacc-d8-staff-surface-r01` §5 (D-7) ve §6 (birleşik D-9); şablon: D-5 paketi + D-4 koşucusu (R03).
 > **ÖN KOŞUL:** canlı API dist'i **R27** (`E28A6863…5134`; D-5 ile aynı pin). Owner bloğunun salt okuma kapıları (paket pinleri, dist pini,
 > `.env` pini) **tüm modlarda** — Preflight, QrTest, Run **ve Recover** — mod dalından önce koşar; canlı dist R27 değilse blok **her modda DUR** verir
@@ -123,6 +123,14 @@
 > gösterebiliyordu. Çıkış kodu fonksiyonları ve öncelik **değişmedi**. "Kimlikten makbuz" yaması **yapılmadı** (owner kararı — §10 K-7). **Ölçülen (son baytlar):**
 > koşucu öz-testi **98/98**, blok öz-testi **88/88** iki kabukta. Pinler: **§7**. Canlı Run / Recover **koşulmadı**; bu revizyon hiçbir canlı koşum
 > ya da Recover için yetki DEĞİLDİR.
+>
+> **R06 (2026-10-09) — 300 saniyelik gözlem penceresi (owner kararı; koşucu, koşucu öz-testi, blok, blok öz-testi ve bu belge değişti; sahte API ve QR betiği
+> DEĞİŞMEDİ) — §16:** canlı inceleme süresi 120 sn → **300 sn**; süre telefon girişi algılanıp ikinci personel yanıtı gönderildikten sonraki **tek gözlem penceresidir**; pencerede iki ayrı gözlem yapılır: GÖZLEM A (telefonda **mesaj listesi**) ve GÖZLEM B (telefonda **ikinci personel yanıtı**). Owner ekranı telefon adımlarını
+> numaralı ve süreleriyle gösterir. Giriş bekleme sınırı (20 dk), kapanış mantığı ve çıkış kodları **değişmedi**; "tamamlandı" girdisi **yoktur** — her süre dolunca koşucu
+> kendiliğinden ilerler. **Ölçülen (son baytlar):** koşucu öz-testi **99/99**, blok öz-testi **88/88** iki kabukta. Pinler: **§7**.
+> **Durum satırlarına not:** 2026-10-09'da owner onayıyla, bu revizyondan ÖNCEKİ (120 saniyelik pencereli) baytlarla canlı koşum yapıldı; R06 (300 saniyelik) baytlar canlıda **koşulmadı**. O koşumların
+> **sonuç kaydı bu belgede DEĞİLDİR** (yerel kayıt; public kayıt ayrı owner kararıdır) ve bu paketin kabulü **yoktur**; yukarıdaki "canlıda koşulmadı" ifadeleri yazıldıkları
+> revizyonun tarihini taşır. Bu revizyon yeni bir canlı Run / Recover için yetki DEĞİLDİR.
 
 ## 1. Ne ölçer ve ne yapmaz
 
@@ -242,7 +250,7 @@ süreci yok, DB kimliği, dış zincir: 8081 yalnız loopback = HY-Caddy, Cloudf
 `/portal/messages` — `extacc-qr-test.js` yalnız `/portal/login` kabul ettiğinden kullanılmaz) · **Run**: konsol → bağımsız pencere teyidi → canlı
 veri işleme "EVET" → GO (yerel) → defter (sha256) → koşum → ekran temizliği → owner beyanı (8 soru, ayrı dosya) → manifest · **Recover**: `-ReceiptFile`;
 soru/GO yok. `owner-block.json`: `emailSendsPlanned=0`, `messageRowsDeleted=false`. Canlı süreler bloğun içinden zorlanır (20 dk bekleme · 5 sn yoklama ·
-120 sn inceleme · 120 sn geç oluşma). Kanıt JSON'ları **UTF-8** olarak okunur (WinPS 5.1 varsayılanı ANSI; kalıntı metni bozulmasın).
+**300 sn inceleme — R06; önceki 120 sn** · 120 sn geç oluşma). Kanıt JSON'ları **UTF-8** olarak okunur (WinPS 5.1 varsayılanı ANSI; kalıntı metni bozulmasın).
 
 **R04 — Recover girdisi (2026-10-04; §14.9).** Recover artık `-ReceiptFile <makbuz>` **ya da** `-RunEvidenceDir <tamamlanmış Run kanıt dizini>` ile başlatılır (biri;
 ikisi birlikte DUR). `-RunEvidenceDir` yolunda makbuzu blok, owner bu modu ayrıca başlattıktan sonra, Run kanıtındaki `recovery.makbuzJson` alanından Run kanıt
@@ -292,12 +300,12 @@ değiştirilirse mantık eşitliği bozulurdu). Koşumun hangi blok baytlarıyla
    bu durumu kendisi düzeltmez. Bu yol kullanılacaksa çocuk süreç için modül yolu önce düzeltilmelidir (ölçülen düzeltme: `Start-Process`
    öncesinde ebeveyn ortamından `PSModulePath` geçici olarak kaldırılır → çocuk kendi varsayılanını kurar → `Get-FileHash=True`).
 2. `-Mode QrTest` → R05 kararındaki public portal adresini yazın (canlı `.env` değeriyle eşleşmeli) → QR'ı okutun; portal sayfası (giriş sayfasına yönlenir) açılırsa **E**; giriş yapmayın.
-3. `-Mode Run`: pencere teyidi, R05 public portal adresi (https://…), EVET, GO ref. Koşucu önce makine ölçümlerini yapar (D7-1…D7-3F); konsolda QR + giriş bilgisi görünür.
+3. `-Mode Run`: pencere teyidi, R05 public portal adresi (https://…), EVET, GO ref. Koşucu önce makine ölçümlerini yapar (D7-1…D7-3F); konsolda QR + giriş bilgisi görünür. **Run'dan önce konsol penceresini büyütün:** ilk ekran uzundur (numaralı adımlar + QR + giriş bilgisi; kesin satır sayısı adres uzunluğuna bağlıdır, ölçülmedi) ve numaralı telefon adımları QR'ın **üstündedir** — pencere kısaysa yukarı kaydırın.
 4. Telefonda giriş yapın. Girişten sonra açılan sayfa mesaj sayfası **değildir**: portal **ana sayfası (özet)** açılır (kaynak: giriş sayfası
    `/portal`'a yönlendirir). Üst menüden **Mesajlar sekmesine geçin**; mesaj sayfasında **üç** mesaj görünmeli (ekrandaki `D7-…` metinleri).
    İsterseniz kısa bir mesaj gönderin (kişisel veri yazmayın).
 5. Giriş algılanınca ikinci personel yanıtı gelir; mesaj sayfasında yeni mesajı (sayfa listeyi 10 sn'de bir yeniler) ve üst çubuktaki **zil
-   simgesinin rozetini** izleyin. Rozet **okunmamış bildirim sayacıdır** (mesaj sayacı değildir; açıklama §9). 120 sn sonra ekran temizlenir, kapatma çalışır.
+   simgesinin rozetini** izleyin. Rozet **okunmamış bildirim sayacıdır** (mesaj sayacı değildir; açıklama §9). **300 sn (R06; önceki 120 sn)** sonra ekran temizlenir, kapatma çalışır.
 6. Beyan sorularını (8) yanıtlayın; sayfayı yenileyip gördüğünüzü bildirin. Girişten sonra ana sayfa ya da mesaj sayfası açıldıysa **M**, yine
    giriş sayfası geldiyse **G**, hata sayfası ya da portal dışı bir sayfa geldiyse **D** yazın (§4, R02). Pencereyi kapatın. Mesaj satırları
    DB'de **kalır** (kanıt); silme beklemeyin.
@@ -488,8 +496,14 @@ kullanıcı adından ve test DB parolasından arındırılarak yazılır.
 
 ## 7. Pinler
 
+**R06 (2026-10-09) — güncel baytlar tablonun ilk dört satırıdır.** Onların altındaki satırlarda geçen "son baytlar" ifadeleri yazıldıkları revizyona aittir: koşucu, blok, koşucu öz-testi ve blok öz-testi için o satırlar artık **ÖNCEKİ** baytları gösterir (sahte API ve QR betiği R06'da değişmedi; onların satırları günceldir).
+
 | Dosya | sha256 |
 |---|---|
+| `d7-portal-messages-live-run.js` **R06** (son baytlar; §16: canlı inceleme süresi 300000 ms + owner ekranında numaralı telefon adımları ve aşama süreleri; giriş bekleme, kapanış, verdict ve çıkış kodları aynı; bloğun PkgPins'inde) | `E3B4D217D1551DF6E59908B62B461B75CD1001F0047E1DF4F36F9B90FEBE1413` |
+| `d7-owner-live-block.ps1` **R06** (son baytlar; §16: YALNIZ `$LiveParams` inceleme süresi 300000 + koşucu pini + `$ExpPackage` + başlık notu) | `CC2B85AB80108AF6B4730237CAECEC50AFDC11C52D68FD29447BCC3614E4263D` |
+| `d7-selftest.js` **R06** (son baytlar; P-VIEW yeni (1) + P-1 değişti (1); 99 ölçüt — son baytlarda **99/99 PASS**; §16) | `46813EDC37EF66B3E5AE1574334D8D2DFC273C9663EF654ECFD6F42969BD086C` |
+| `d7-owner-block-selftest.ps1` **R06** (son baytlar; YALNIZ canlı süre tablosu beklentisi 300000 ve L-1 açıklaması; 88 ölçüt — son baytlarda iki kabukta **88/88 PASS**; §16) | `290BC95B58528D4B3445479D1F428BA5B02D62A3FEC11DE826CBD93A5EAD3653` |
 | `d7-portal-messages-live-run.js` **R05** (son baytlar; §15: kapsam dışı üç ölçütten biri PASS değilse durur — kalan adımlar ve gösterim yok, kapanış aynen; üç ölçüt gösterim kapısında; kanıtta `scopeStop`; çıkış kodu fonksiyonları aynı; bloğun PkgPins'inde) | `6E88FCCB33C0943C0D7BBF391509C05D646CA0E06483E0FA82DB58EFA31BBA49` |
 | `d7-owner-live-block.ps1` **R05** (son baytlar; §15: YALNIZ koşucu pini + `$ExpPackage` + başlık notu; kapılar, Run sırası, node çağrısı, çıkış kodları, ekran metinleri, Recover yolu değişmedi) | `2CACFA3FCD69DCBAAB148A875A5CDA81D59C0208E0BFE2E95301849228687DC5` |
 | `d7-fake-portal-api.js` **R05** (son baytlar; §15: `scope` düğmesi (tür N / S / U · davranış accept / 429 / 503 / hang) — yalnız o kapsam dışı denemeye uygulanır; diğer davranışlar aynı) | `ED7FCBEFF6AFE3DFAB066C54CA2D202DD9C245B597A136B25F765EEDEE5D6814` |
@@ -520,7 +534,9 @@ kullanıcı adından ve test DB parolasından arındırılarak yazılır.
 | önceki (**R02 kütüphane kökü düzeltmesi**; 2026-10-03; §6.4): `d7-selftest.js` | `2867FBC58282982F79218F2A468884677626B89D34BE91F963FB58FEAD32A1E3` |
 | önceki (R01 düzeltme baytları; R02'nin ilk iki turunda değişmedi): `d7-selftest.js` | `D5E12B00D1F708D056F1949CAE9EC76519DF3B71F4CBCDC0C67473CE630345DB` (kütüphane kökü sabit olarak canlı yayın dizini; yalnız ayna kopyada koşuldu) |
 
-**Paket digest (R05 — son; blok içinde `$ExpPackage`): `FBE19948B35319DB170B333826FF2DFA07659E221A97BB2E8AB57EE8DB45DC5D`** — pin listesindeki 9 dosyadan bloğun `Digest` kuralıyla (dosya yolu + NUL + sha256 + satır
+**Paket digest (R06 — son; blok içinde `$ExpPackage`): `2008ABE78FBCD74309A408931311720E246A9D2FF4186ADEEF2B2A9B97BF2610`** — pin listesindeki 9 dosyadan bloğun `Digest` kuralıyla yeniden hesaplandı (önce önceki pinlerle `FBE19948…` elde edilerek hesap doğrulandı); pin listesinde değişen **yalnız koşucu satırı**. Blok öz-testi **PIN-1** aynı eşitliği her koşumda ölçer (R06 son koşumları: iki kabukta 9/9). Aşağıdaki paragraflar önceki revizyonların kaydıdır.
+
+**Paket digest (R05; **R06'da geçersiz**; blok içinde `$ExpPackage`): `FBE19948B35319DB170B333826FF2DFA07659E221A97BB2E8AB57EE8DB45DC5D`** — pin listesindeki 9 dosyadan bloğun `Digest` kuralıyla (dosya yolu + NUL + sha256 + satır
 sonu; sıralı; UTF-8 sha256) yeniden hesaplandı: önce R04-b pinleriyle `16D95F54…D1C5` elde edilerek hesap doğrulandı, sonra R05 baytlarıyla bu değer bulundu; pin listesinde
 değişen **yalnız koşucu satırı** (`20DC82E2…1965` → `6E88FCCB…BA49`). Blok öz-testi **PIN-1** aynı eşitliği her koşumda ölçer (R05 son koşumları: iki kabukta 9/9).
 Kanıttaki `revision` yine `R03`; R05 koşucusu `packageDigest` `FBE19948…` ile ve kanıttaki `displayGate` alanının dokuz kalemli olmasıyla ayırt edilir. Aşağıdaki
@@ -703,7 +719,7 @@ Bu metin bir öneridir; yetki değildir ve ikinci bir Recover'ı tanımlamaz. R0
   (`POST /portal/admin/disable-user`) koşumun başında alınan personel (elev1) token'ını kullanır; Run'da oturumu yenileyen bir yol yoktur
   (yeniden oturum açma yalnız Recover'da vardır — §8.1 adım 1). Token kapanış anında geçersizse yetkili uç isteği 4xx ile reddeder
   (`JwtAuthGuard`; beklenen 401), koşucu 4xx yanıtta ikinci denemeyi yapmaz, portal erişimi açık kalır ve koşum **çıkış 6** ile biter
-  (personel/dosya kapanışı yine denenir). Koşum, telefon beklemesi (en çok 20 dk) ve inceleme süresi (120 sn) boyunca sürer. Personel token
+  (personel/dosya kapanışı yine denenir). Koşum, telefon beklemesi (en çok 20 dk) ve inceleme süresi (R06: 300 sn; önceki 120 sn) boyunca sürer. Personel token
   süresi kaynakta `JWT_EXPIRES_IN` ile belirlenir (kaynak varsayılanı `7d`; R27 aday commit'inde aynı); canlıdaki değer ve canlıdaki token
   süresi **ölçülmedi**. **R03: DEĞİŞTİ** — Run'ın kendi kapanışında kapatma ucu 401/403 dönerse koşucu bir kez yeniden giriş + bir kez yeniden
   deneme yapar (§13.2; öz-test Z16-a: 401 → çıkış 0). Başka 4xx'te (ör. 404), yeniden giriş reddedilirse ya da 429 alınırsa yeniden deneme yoktur
@@ -1849,3 +1865,49 @@ Yeni / değişen ölçütler:
 ### 15.6 Durum
 
 **HAZIR — CANLIDA KOŞULMADI.** Güncel baytlar R05'tir (§7). Preflight / QrTest / Run / Recover canlıda koşulmadı; D-7 kabulü **yok**.
+
+*(Bu satır R05 tarihlidir. Güncel baytlar R06'dır — §16; 2026-10-09'daki canlı koşumlar için belge başındaki R06 notuna bakın. D-7 kabulü yine **yok**.)*
+
+## 16. R06 — 300 saniyelik gözlem penceresi (2026-10-09; owner kararı)
+
+**Karar (owner, 2026-10-09).** Gözlem penceresi 120 saniyeden 300 saniyeye çıkarılır; D-7'de bu, giriş algılandıktan sonraki tek gözlem penceresidir. Giriş bekleme sınırı, kapanış mantığı ve çıkış kodları
+değişmez; "tamamlandı" girdisi eklenmez. QR ekranında numaralı telefon adımları ve aşama süreleri açıkça görünür. Bu revizyon yeni canlı Run / Recover yetkisi **değildir**.
+
+**Gerekçe (değerlendirme; kesin kök neden DEĞİL).** 2026-10-09'daki canlı koşumda telefonda mesaj listesi ve ikinci personel yanıtı gözlenmedi. Ölçülen zaman çizelgesi 120 saniyelik pencerenin
+telefon adımları için yetmemesiyle **uyumludur**; bunun tek neden olduğu ölçülmedi (telefondaki işlemlerin kesin zamanı kayıtlı değildir).
+
+### 16.1 Değişiklik
+
+| Dosya | Değişen |
+|---|---|
+| `d7-portal-messages-live-run.js` | canlı `D7_VIEW_MS` 120000 → **300000** (tek sabit); owner ekranı metni: numaralı beş telefon adımı ve "SÜRELER:" satırı. Bekleme döngüsü, kapanış (`finally`), verdict'ler ve çıkış kodu fonksiyonları **değişmedi**; koşucu konsoldan girdi **okumaz** |
+| `d7-owner-live-block.ps1` | `$LiveParams` içindeki aynı süre 300000; koşucu pini; `$ExpPackage`; başlık notu. Kapılar, Run sırası, node çağrısı, ekran metinleri, Recover yolu değişmedi |
+| `d7-selftest.js` | P-1 canlı inceleme süresini açıkça ölçer; **P-VIEW** yeni (aşağıda) |
+| `d7-owner-block-selftest.ps1` | canlı süre tablosu beklentisinde yalnız inceleme süresi 300000 |
+
+**Telefon adımları (owner ekranındaki sıra).** 1) QR → bir kez giriş (portal Ana Sayfası açılır; mesaj sayfası değil) · 2) üst menüden "Mesajlar" · 3) **GÖZLEM A — mesaj listesi** (girişten önce yazılan üç mesaj) · 4) **GÖZLEM B — ikinci yanıt** (metni `…-OFFICE-2`; ilk yanıttan son ekiyle ayrılır) ve zil rozeti · 5) koşum bitince owner bloğu isteyince bir kez yenileme ve beyan. Adım listesi QR'ın ÜSTÜNDEdir; QR, adres ve giriş bilgisi ilk ekranın son satırlarıdır.
+
+### 16.2 Süreler — bunlar BEKLEME sürelerinin üst sınırlarıdır, kesin toplam koşum süresi DEĞİLDİR
+
+Giriş bekleme en çok 20 dk · gözlem penceresi 300 sn. Koşumun toplam süresi bu beklemelere ek olarak kurulum, makine ölçümleri, kapanış çağrıları ve owner'ın giriş / beyan sürelerini içerir;
+belgede kesin bir toplam süre sınırı **verilmez** ve kodda toplam koşum için ayrı bir üst sınır **yoktur** (giriş beklemesinin ve gözlem beklemesinin kendi üst sınırı vardır; yoklama döngüsündeki tek tek veritabanı sorguları için ayrı bir zaman aşımı bu revizyonda ölçülmedi).
+Pencere uzadığı için sentetik portal hesabı ve personel oturumu daha uzun açık kalır: personel token süresi canlıda ölçülmedi; kapanışta 401 / 403 gelirse mevcut tek yeniden
+giriş yolu (R03) çalışır — değişmedi.
+
+### 16.3 Hedefli doğrulama (son baytlarla; ölçülen)
+
+| Koşu | Sonuç |
+|---|---|
+| `d7-selftest.js` (tek kullanımlık `postgres:16-alpine` konteyneri, yalnız geri döngü, `_test` adlı veritabanı; kütüphane kökü canlı olmayan R27 çalışma ağacı; sahte API; iş sonunda konteyner kaldırıldı) | **99/99 PASS**, çıkış 0 |
+| `d7-owner-block-selftest.ps1` — Windows PowerShell 5.1 | **88/88 PASS**, çıkış 0 |
+| `d7-owner-block-selftest.ps1` — PowerShell 7 | **88/88 PASS**, çıkış 0 |
+
+**P-VIEW** (yeni) — ölçtükleri: canlı inceleme süresi sabitinin 300000 ms olması; giriş bekleme süresinin değişmemesi; koşucu kaynağında inceleme beklemesi çağrısının sayısı (tam bir) ve `process.stdin` geçmemesi (ikisi de kaynak aramasıdır — çalışma anı davranışı değil); normal senaryonun (Z1) gösterim dosyasında numaralı beş adım, iki gözlemin ayrı adımlar olması, ikinci yanıt metninin (`…-OFFICE-2`) ekranda bulunması, "SÜRELER:" satırının Z1 kanıtındaki süre değerleriyle (ekrandaki gibi saniyeye / dakikaya yuvarlanmış hâliyle) **birebir** eşleşmesi (D-7 adımlarında süre geçmez), ilk QR satırının 3. ve 4. adımdan ve "SÜRELER:" satırından SONRA, giriş bilgisinden ÖNCE gelmesi (sıra yalnız 3. ve 4. adım için ölçülür; 1., 2. ve 5. adımın yalnız ekranda BULUNDUĞU ölçülür, konumu değil), giriş bilgisinin ilk ekranın son satırları olması ve "GÖZLEM süresi başladı" satırının giriş bilgisinden SONRA gelmesi. Öz-testler kısa test süreleriyle koşar: ekranda **300 sn yazdığı** ve 300 saniyenin **gerçek süre olarak beklendiği ölçülmedi** (ölçülen: canlı kipte sabitin 300000 olması, pencereden devralınan değerlerin yok sayılması ve ekranın süreyi koşumun süre değerinden yazması). Mutasyon turu **koşulmadı**.
+
+### 16.4 Sınırlar
+
+1. Canlıda bu baytlarla koşum **yapılmadı**. Telefon gözlemlerinin 300 saniyede tamamlanacağı bir **öngörüdür**, ölçüm değildir.
+2. İş erken bitse de koşucu sürenin dolmasını bekler ("tamamlandı" girdisi yoktur — owner kararı).
+3. Kapalı / geçersiz oturumda portalın giriş sayfasına yönlendirmek yerine hata ya da boş durum göstermesi ayrı bir ürün gözlemidir; bu revizyonun **kapsamı dışındadır**.
+4. Önceki koşumların kanıtlarına dokunulmadı.
+5. Ekran pencereyi boyutlandırmaz ve temizlemeden alta ekler: ilk ekran kısa bir konsol penceresine sığmayabilir; numaralı adımlar QR'ın üstünde kalır (Run adımındaki "pencereyi büyütün" notu). Owner'ın pencere yüksekliği ölçülmedi.

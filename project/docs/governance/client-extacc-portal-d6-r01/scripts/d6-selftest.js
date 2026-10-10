@@ -70,6 +70,10 @@
  *           kalan yollar Recover kanıtında; bayrak yokken eski davranış) · T-12 (statik: koşucuda elle komut / `receiptFromEvidenceCommand` yok; bayrak yalnız
  *           Recover'da okunur; blok aynı seçeneği gösterir ve bayrağı yalnız -RunEvidenceDir yolunda verir). Elle komutu iki kabukta koşan eski ölçüm
  *           kaldırıldı: komut artık hiçbir çıktıda yok; makbuzu bloğun yazdığı yol blok öz-testi RG-1'de (sahte koşucu kanıtı) ve burada (gerçek koşucu kanıtı) ölçülür.
+ * R06     : (2026-10-09; owner kararı "300 saniyelik gözlem penceresi") DEĞİŞEN: P-1 (canlı inceleme süresi 300000 ms açıkça ölçülür). YENİ: P-VIEW (statik +
+ *           ekran): canlı `D6_VIEW_MS` = 300000 ve iki aşamada ayrı ayrı kullanılır (tam iki bekleme); giriş bekleme 20 dk ve kalıntı bekleme 5 dk aynı;
+ *           koşucu konsoldan girdi OKUMAZ ("tamamlandı" girdisi yok); owner ekranı numaralı telefon adımlarını ve AŞAMA 1 (indirme) / AŞAMA 2 (silme
+ *           sonrası yenileme) sürelerini ayrı gösterir — Z1 koşumunun gösterim dosyasında, Z1 kanıtındaki süre değerleriyle birebir ölçülür; QR + giriş bilgisi ilk ekranın SONUNDADIR.
  */
 const { spawn, spawnSync, execFileSync } = require('child_process');
 const fs = require('fs'); const path = require('path'); const os = require('os'); const crypto = require('crypto');
@@ -125,7 +129,7 @@ const PHONE_UA = 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/129 
 const R27_CAND_DIST = 'E28A6863CF109A1A3AE1F53E096D5F5C2037E382EF2D8D3EC87FEE3B827E5134'; // canlı ön koşul: R27 dist
 const EX = require(RUN);
 
-const rows = []; const check = (id, desc, ok, obs) => rows.push({ id, sonuc: ok ? 'PASS' : 'FAIL', aciklama: desc, gozlem: obs });
+let P2DIR = null; const rows = []; const check = (id, desc, ok, obs) => rows.push({ id, sonuc: ok ? 'PASS' : 'FAIL', aciklama: desc, gozlem: obs });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms)); const hex8 = () => crypto.randomBytes(4).toString('hex');
 const sha256 = (b) => crypto.createHash('sha256').update(b).digest('hex');
 
@@ -246,7 +250,7 @@ const CLOSE_NO_S = CLOSE.filter((id) => id !== 'P6-C4L' && id !== 'P6-C4D' && id
   DBURL = dbUrl();
   if (!DBURL) { console.log('OLCULEMEDI: disposable DB (D6T_DB_URL → 127.0.0.1:<5432 dışı port>/<ad>_test; hukuk_db değil) yok — test BAŞLAMADI'); process.exit(2); }
   console.log(`disposable DB: 127.0.0.1:${new URL(DBURL).port}/${DB_NAME}`);
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'd6-selftest-')); dataRoot = path.join(dir, 'data'); fs.mkdirSync(dataRoot);
+  const dir = P2DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'd6-selftest-')); dataRoot = path.join(dir, 'data'); fs.mkdirSync(dataRoot);
   certFile = path.join(dir, 'cert.pem'); const keyFile = path.join(dir, 'key.pem');
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', keyFile, '-out', certFile, '-days', '1', '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1'], { stdio: 'ignore' });
   const { PrismaClient } = require(PRISMA_ROOT); prisma = new PrismaClient({ datasources: { db: { url: DBURL } } });
@@ -1109,7 +1113,20 @@ const CLOSE_NO_S = CLOSE.filter((id) => id !== 'P6-C4L' && id !== 'P6-C4D' && id
   check('T-2', 'gösterimsiz test dosyası (sink) kaynakta TEK yerde ve yalnız `display === \'none\'` koşuluyla (konsol varken asla)', sinkLines.length === 1 && /g\.display === 'none' && process\.env\.D6_TEST_DISPLAY_SINK/.test(sinkLines[0]) && /if \(con\) return DISPLAY\.show/.test(sinkLines[0]), `satır=${sinkLines.length}`);
   const liveEnv = { AH_DATABASE_URL: 'postgresql://u:p@127.0.0.1:5432/hukuk_db', D6_EXPECT_DB: 'hukuk_db', D6_WAIT_MS: '1', D6_POLL_MS: '1', D6_VIEW_MS: '1', D6_HTTP_TIMEOUT_MS: '1', D6_CALL_TIMEOUT_MS: '1', D6_LATE_CREATE_MS: '1', D6_RESIDUE_WAIT_MS: '1' };
   const pl = EX.effectiveParams(liveEnv); const pt = EX.effectiveParams(Object.assign({}, liveEnv, { AH_DATABASE_URL: 'postgresql://u:p@127.0.0.1:5448/d5_reset_test', D6_EXPECT_DB: 'd5_reset_test' }));
-  check('P-1', 'canlı DB: devralınan 7 süre değişkeni YOK SAYILIR (20 dk bekleme, 5 sn yoklama, 120 sn inceleme, 5 dk kalıntı bekleme); test kısa süreleri korur', pl.live && Object.keys(EX.LIVE_PARAMS).length === 7 && Object.keys(EX.LIVE_PARAMS).every((k) => pl[k] === EX.LIVE_PARAMS[k]) && pl.D6_WAIT_MS === 1200000 && pl.D6_RESIDUE_WAIT_MS === 300000 && !pt.live && pt.D6_WAIT_MS === 1, `canlı=${pl.live}/${pl.D6_WAIT_MS} · test=${pt.live}/${pt.D6_WAIT_MS}`);
+  check('P-1', 'canlı DB: devralınan 7 süre değişkeni YOK SAYILIR (20 dk bekleme, 5 sn yoklama, 300 sn inceleme — R06; önceki 120 sn, 5 dk kalıntı bekleme); test kısa süreleri korur', pl.live && Object.keys(EX.LIVE_PARAMS).length === 7 && Object.keys(EX.LIVE_PARAMS).every((k) => pl[k] === EX.LIVE_PARAMS[k]) && pl.D6_WAIT_MS === 1200000 && pl.D6_VIEW_MS === 300000 && pl.D6_RESIDUE_WAIT_MS === 300000 && !pt.live && pt.D6_WAIT_MS === 1 && pt.D6_VIEW_MS === 1, `canlı=${pl.live}/${pl.D6_WAIT_MS}/${pl.D6_VIEW_MS} · test=${pt.live}/${pt.D6_WAIT_MS}/${pt.D6_VIEW_MS}`);
+  // P-VIEW (R06): gözlem penceresi 300 sn; ekranda numaralı adımlar + aşama süreleri (Z1'in gösterim dosyası ve kanıtındaki süre değerleriyle BİREBİR).
+  const viewSleeps = (src.match(/await sleep\(P\.D6_VIEW_MS\)/g) || []).length;
+  let z1Sink = ''; try { z1Sink = fs.readFileSync(path.join(P2DIR, 'z1-normal-display.sink'), 'utf8'); } catch (e) { z1Sink = ''; }
+  let z1P = null; try { z1P = JSON.parse(fs.readFileSync(path.join(P2DIR, 'z1-normal-evidence.json'), 'utf8')).params; } catch (e) { z1P = null; }
+  const vS = z1P ? Math.round(z1P.D6_VIEW_MS / 1000) : null; const wM = z1P ? Math.round(z1P.D6_WAIT_MS / 60000) : null;
+  const stepsOk = ['  1) Aşağıdaki QR', '  2) "Belgelerim" sekmesine geçin', `  3) AŞAMA 1 — İNDİRME (giriş algılanınca ${vS} sn)`, `  4) AŞAMA 2 — SİLME SONRASI YENİLEME (2. ekran gelince ${vS} sn)`, '  5) Koşum bitince owner bloğu sayfayı yenilemenizi ister'].every((x) => z1Sink.includes(x));
+  const sureOk = z1Sink.includes(`SÜRELER: giriş için en fazla ${wM} dk beklenir · AŞAMA 1 ${vS} sn · AŞAMA 2 ${vS} sn (ayrı ayrı).`);
+  const order = ['  3) AŞAMA 1', '  4) AŞAMA 2', 'SÜRELER:', '\x1b[30;47m', 'E-posta :', 'Parola  :', 'AŞAMA 1 başladı', '(2/2) — AŞAMA 2'].map((x) => z1Sink.indexOf(x));
+  const afterCreds = order[5] >= 0 && order[6] > order[5] ? z1Sink.slice(z1Sink.indexOf('\n', order[5]), order[6]).split('\n').filter((l) => l.trim() && !/Giriş algılandı/.test(l)) : ['?'];
+  check('P-VIEW', 'R06: canlı inceleme süresi sabiti 300000 ms; giriş bekleme 1200000 ms ve kalıntı bekleme 300000 ms DEĞİŞMEDİ; koşucu kaynağında inceleme beklemesi çağrısı TAM 2 (sayı; konum Z1 ekran sırasıyla ölçülür) ve `process.stdin` geçmiyor (kaynak araması); Z1 gösterim dosyasında numaralı beş telefon adımı — indirme (AŞAMA 1) ile silme sonrası yenileme (AŞAMA 2) AYRI adımlar ve adımlardaki süre Z1 kanıtındaki süre değeriyle BİREBİR; "SÜRELER:" satırı aynı değerlerle birebir; sıra: adımlar → SÜRELER → ilk QR satırı → giriş bilgisi (ilk ekranın SON satırları; ardından başka yönerge yok) → "AŞAMA 1 başladı" → "(2/2) — AŞAMA 2"; 5. adım yenilemeyi owner bloğunun isteğine bağlar',
+    EX.LIVE_PARAMS.D6_VIEW_MS === 300000 && EX.LIVE_PARAMS.D6_WAIT_MS === 1200000 && EX.LIVE_PARAMS.D6_RESIDUE_WAIT_MS === 300000 && viewSleeps === 2 && !/process\.stdin/.test(src)
+      && !!z1P && stepsOk && sureOk && order.every((x) => x >= 0) && order.every((x, i) => i === 0 || x > order[i - 1]) && afterCreds.length === 0,
+    `canlı inceleme=${EX.LIVE_PARAMS.D6_VIEW_MS} · bekleme çağrısı=${viewSleeps} · Z1 süreleri=${vS} sn/${wM} dk · adımlar=${stepsOk} · SÜRELER=${sureOk} · sıra=${order.join(',')} · giriş bilgisinden sonra yönerge satırı=${afterCreds.length}`);
   const g = EX.runGates({ D6_DISPLAY: 'none', D6_EXPECT_DB: 'x', AH_DATABASE_URL: 'postgresql://u:p@h:1/x', D6_API_BASE: API, D6_EXPECT_API: API, D6_EXPECT_BASE_URL: 'https://ornek.invalid', D6_LIVE_CONFIRM: '1', D6_LIVE_GO_REF: 'OWNER-GO-CLIENT-EXTACC-D6-20000101-R01', D6_RUNID: 'abcdef12', D6_EXPECT_TENANT_SLUG: 'ah-abcdef12' });
   const pdf = EX.buildPdf('abcdef12');
   check('P-2', 'kapılar: doğru D-6 GO + runId + slug kabul; origin yolsuz https; sentetik PDF %PDF ile başlar, runId içerir, ≤ 50 KB', g.code === 0 && g.origin === 'https://ornek.invalid' && pdf.subarray(0, 5).toString() === '%PDF-' && pdf.includes('D6-abcdef12') && pdf.length <= EX.MAX_PDF_BYTES, `kod=${g.code} · pdf=${pdf.length} B`);

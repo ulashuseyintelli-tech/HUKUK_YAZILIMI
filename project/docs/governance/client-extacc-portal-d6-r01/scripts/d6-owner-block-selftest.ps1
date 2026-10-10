@@ -283,12 +283,12 @@ try {
   # ---- CANLI SÜRELER: pencereden devralınan değerler canlı süreleri DEĞİŞTİREMEZ
   foreach ($k in 'D6_WAIT_MS', 'D6_POLL_MS', 'D6_VIEW_MS', 'D6_HTTP_TIMEOUT_MS', 'D6_CALL_TIMEOUT_MS', 'D6_LATE_CREATE_MS', 'D6_RESIDUE_WAIT_MS') { Set-Item -Path "Env:$k" -Value '1' }
   $script:goN = 70; $r = Invoke-Mode 'Run' $real.Exe 0 $true
-  $exp = @('1200000', '5000', '120000', '15000', '30000', '120000', '300000')
+  $exp = @('1200000', '5000', '300000', '15000', '30000', '120000', '300000')   # R06: inceleme 300 sn (önceki 120 sn)
   $saved = $LiveParams; $LiveParams = $null; $script:goN = 72
   $r2 = Invoke-Mode 'Run' $real.Exe 0 $true
   $LiveParams = $saved
   Check 'L-2' 'Run: canlı süre tablosu eksikse node BAŞLAMAZ (sessizce devralınan değerlerle koşmaz)' ($r2.threw -like 'EXTACC-D6-DUR:*' -and $r2.threw -match 'süre tablosu' -and $r2.nodeCalls -eq 0) "mesaj=$($r2.threw)"
-  Check 'L-1' 'Run: devralınan 7 süre değişkeni (=1) node''a CANLI değerlerle geçer (20 dk bekleme / 5 sn yoklama / 120 sn inceleme / zaman aşımları / 120 sn geç oluşma / 5 dk kalıntı bekleme) ve sonra temizlenir' (($r.last.params -join ',') -eq ($exp -join ',') -and $r.secretsLeft -eq 0) "node gördü=$($r.last.params -join ',') · kalan=$($r.secretsLeft)"
+  Check 'L-1' 'Run: devralınan 7 süre değişkeni (=1) node''a CANLI değerlerle geçer (20 dk bekleme / 5 sn yoklama / 300 sn inceleme / zaman aşımları / 120 sn geç oluşma / 5 dk kalıntı bekleme) ve sonra temizlenir' (($r.last.params -join ',') -eq ($exp -join ',') -and $r.secretsLeft -eq 0) "node gördü=$($r.last.params -join ',') · kalan=$($r.secretsLeft)"
 
   # ---- OWNER METNİ: kapanış metni kanıta bağlı; koşulsuz "kapatıldı" yok; sorular yönlendirmesiz
   $env:EXSTUB_D9 = 'FAIL'; $env:EXSTUB_DOC = 'FAIL'; $script:goN = 80; $r = Invoke-Mode 'Run' $real.Exe 6 $true; $env:EXSTUB_D9 = 'PASS'; $env:EXSTUB_DOC = 'PASS'
