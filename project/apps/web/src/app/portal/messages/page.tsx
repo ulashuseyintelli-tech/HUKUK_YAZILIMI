@@ -7,6 +7,7 @@ import { MessageCircle, Send, User, Building2 } from "lucide-react";
 // (listeleme/okundu-işaretleme/gönderme) sessizce çalışmıyordu.
 import { portalApiUrl } from "@/lib/config/portal-api-url";
 import { toActionErrorMessage } from "@/lib/action-error";
+import { handlePortalSessionRejection, newerPortalSessionToken } from "@/lib/portal-session";
 
 interface Message {
   id: string;
@@ -25,14 +26,35 @@ export default function PortalMessagesPage() {
   // WSMR-A4g: okuma ve gonderme hatalari AYRI ayri gorunur olur.
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
+  // Oturum reddedildi (401): portal çerçevesi giriş sayfasına yönlendirir; o ana kadar bu sayfa
+  // "Mesajlar yüklenemedi" / "Henüz mesaj yok" GÖSTERMEZ ve yoklama durur.
+  const [sessionRejected, setSessionRejected] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  /** Oturum reddini işler; "REJECTED" ise yoklama durur ve sayfa içeriği gizlenir. */
+  const checkSessionRejection = (res: Response, sentToken: string) => {
+    const outcome = handlePortalSessionRejection({ status: res.status, sentToken });
+    if (outcome === "REJECTED") {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+      setSessionRejected(true);
+    }
+    return outcome;
+  };
 
   useEffect(() => {
     fetchMessages();
     markAsRead();
     // Her 10 saniyede bir mesajları güncelle
-    const interval = setInterval(fetchMessages, 10000);
-    return () => clearInterval(interval);
+    const interval = setInterval(() => fetchMessages(), 10000);
+    pollRef.current = interval;
+    return () => {
+      clearInterval(interval);
+      pollRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
@@ -43,7 +65,7 @@ export default function PortalMessagesPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  const fetchMessages = async () => {
+  const fetchMessages = async (retried = false) => {
     const token = localStorage.getItem("portal_token");
     // CLIENT-REMEDIATION-CLOSEOUT-R01: erken dönüşte de loading KESİN olarak kapatılır.
     // Önceki halde `return` ifadesi aşağıdaki try/finally'den ÖNCE çalıştığı için
@@ -58,6 +80,15 @@ export default function PortalMessagesPage() {
       const res = await fetch(portalApiUrl("/api/portal/messages"), {
         headers: { Authorization: `Bearer ${token}` },
       });
+      // Oturum reddi: liste temizlenmez, hata bandı basılmaz.
+      const session = checkSessionRejection(res, token);
+      if (session === "REJECTED") return;
+      if (session === "STALE") {
+        // İstek eski oturumla gitmişti: geçerli oturum varsa liste onunla BİR kez yeniden okunur
+        // ("Henüz mesaj yok" sahte boş durumu görünmesin).
+        if (!retried && newerPortalSessionToken(token)) await fetchMessages(true);
+        return;
+      }
       if (!res.ok) throw new Error(`MESSAGES_HTTP_${res.status}`);
       const data = await res.json();
       // Govde SOZLESMEYE karsi dogrulanir: dizi degilse basari sayilmaz.
@@ -81,6 +112,7 @@ export default function PortalMessagesPage() {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (checkSessionRejection(res, token) !== "NOT_REJECTED") return;
       if (!res.ok) throw new Error(`MARK_READ_HTTP_${res.status}`);
     } catch {
       // WSMR-A4g · KASITLI SESSIZ — terminal sinif: FALSE_POSITIVE_WITH_TESTED_RULE_REASON.
@@ -112,9 +144,11 @@ export default function PortalMessagesPage() {
         body: JSON.stringify({ content: newMessage }),
       });
 
+      // Oturum reddinde yönlendirme başlar. Bayat rette mesaj GÖNDERİLMEDİ — hata görünür kalır.
+      if (checkSessionRejection(res, token) === "REJECTED") return;
       if (!res.ok) throw new Error(`SEND_MESSAGE_HTTP_${res.status}`);
       setNewMessage("");
-      fetchMessages();
+      void fetchMessages();
     } catch (e) {
       // WSMR-A4g · SESSIZ GONDERIM HATASI KALDIRILDI.
       //
@@ -135,7 +169,7 @@ export default function PortalMessagesPage() {
     }
   };
 
-  if (loading) {
+  if (loading || sessionRejected) {
     return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>;
   }
 
@@ -155,7 +189,7 @@ export default function PortalMessagesPage() {
               <p className="text-sm font-medium text-red-600">{loadError}</p>
               <button
                 type="button"
-                onClick={fetchMessages}
+                onClick={() => void fetchMessages()}
                 className="mt-2 text-xs text-blue-600 underline hover:text-blue-800"
               >
                 Tekrar dene
