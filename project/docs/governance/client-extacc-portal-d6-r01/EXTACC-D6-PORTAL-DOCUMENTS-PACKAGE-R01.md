@@ -1,6 +1,6 @@
 # EXTACC D-6 — PORTAL BELGE AKIŞI CANLI KABUL PAKETİ (R01)
 
-> **DURUM: HAZIR — güncel (R06) baytlar CANLIDA KOŞULMADI.** Önceki baytlarla 2026-10-09'da owner onayıyla canlı koşum yapıldı (aşağıdaki R06 notu; o koşumların sonuç kaydı bu belgede değildir). Canlı Run/Recover ve yayın bu paketle yetkilendirilmez.
+> **DURUM: KABUL — tanımlı paket kapsamı (owner kararı 2026-10-10).** R06 baytlarıyla canlı koşum `e1a9a546` yapıldı ve owner tarafından kabul edildi (§15). Önceki baytlarla 2026-10-09'da yapılan koşumun sonucu değişmedi. Canlı Run/Recover ve yayın bu paketle yetkilendirilmez.
 > **ÖN KOŞUL:** canlı API dist'i **R27** (`E28A6863CF109A1A3AE1F53E096D5F5C2037E382EF2D8D3EC87FEE3B827E5134`); owner bloğu bu pini doğrular,
 > R26 canlı ile **her modda** (Preflight, QrTest, Run ve Recover) **DUR** verir — R02-b düzeltmesi: önceki metin yalnız "Preflight/Run" diyordu;
 > kapılar mod dalından önce koşar (§10.1). Uygulama sırası: R27 yayınından **sonra** (D-5 ile aynı koşul).
@@ -139,9 +139,9 @@
 > DEĞİŞMEDİ) — §14:** canlı inceleme süresi 120 sn → **300 sn**; süre **iki gözlem aşamasında ayrı ayrı** uygulanır: AŞAMA 1 (telefon girişi algılandıktan sonra — telefonla **indirme**) ve AŞAMA 2 (koşucu kendi belgesini sildikten sonra — telefonda **listeyi yenileme**; liste boş olmalı). Owner ekranı telefon adımlarını
 > numaralı ve süreleriyle gösterir. Giriş bekleme sınırı (20 dk), kapanış mantığı ve çıkış kodları **değişmedi**; "tamamlandı" girdisi **yoktur** — her süre dolunca koşucu
 > kendiliğinden ilerler. **Ölçülen (son baytlar):** koşucu öz-testi **106/106**, blok öz-testi **97/97** iki kabukta. Pinler: **§6**.
-> **Durum satırlarına not:** 2026-10-09'da owner onayıyla, bu revizyondan ÖNCEKİ (120 saniyelik pencereli) baytlarla canlı koşum yapıldı; R06 (300 saniyelik) baytlar canlıda **koşulmadı**. O koşumların
-> **sonuç kaydı bu belgede DEĞİLDİR** (yerel kayıt; public kayıt ayrı owner kararıdır) ve bu paketin kabulü **yoktur**; yukarıdaki "canlıda koşulmadı" ifadeleri yazıldıkları
-> revizyonun tarihini taşır. Bu revizyon yeni bir canlı Run / Recover için yetki DEĞİLDİR.
+> **Durum satırlarına not (2026-10-10'da güncellendi):** 2026-10-09'da owner onayıyla, bu revizyondan ÖNCEKİ (120 saniyelik pencereli) baytlarla canlı koşum yapıldı. 2026-10-10'da R06 (300 saniyelik) baytlarla
+> canlı koşum `e1a9a546` yapıldı ve owner bu koşumu **tanımlı paket kapsamıyla kabul etti** — kayıt **§15**'tedir. Yukarıdaki ve aşağıdaki "canlıda koşulmadı" ifadeleri yazıldıkları
+> revizyonun tarihini taşır. Bu belge yeni bir canlı Run / Recover için yetki DEĞİLDİR.
 
 ## 1. Ne ölçer ve ne yapmaz
 
@@ -1912,9 +1912,28 @@ giriş yolu (R03) çalışır — değişmedi.
 
 ### 14.4 Sınırlar
 
-1. Canlıda bu baytlarla koşum **yapılmadı**. Telefon gözlemlerinin 300 saniyede tamamlanacağı bir **öngörüdür**, ölçüm değildir.
+1. Bu bölüm yazıldığında canlıda bu baytlarla koşum yapılmamıştı; 2026-10-10'da yapıldı (§15). Telefon gözlemlerinin 300 saniyede tamamlanacağı o tarihte bir **öngörüydü**.
 2. İş erken bitse de koşucu sürenin dolmasını bekler ("tamamlandı" girdisi yoktur — owner kararı).
 3. Kapalı / geçersiz oturumda portalın giriş sayfasına yönlendirmek yerine hata ya da boş durum göstermesi ayrı bir ürün gözlemidir; bu revizyonun **kapsamı dışındadır**.
 4. Önceki koşumların kanıtlarına dokunulmadı.
 5. Ekran pencereyi boyutlandırmaz ve temizlemeden alta ekler: ilk ekran kısa bir konsol penceresine sığmayabilir; numaralı adımlar QR'ın üstünde kalır (Run adımındaki "pencereyi büyütün" notu). Owner'ın pencere yüksekliği ölçülmedi.
 6. Owner bloğunun beyan sorusu **değişmedi**: "Girişten sonra ne gördünüz?" seçenekleri B / G / D / ?'dir ve "Ana Sayfa" seçeneği içermez; R06 ekranı ise girişten sonra önce Ana Sayfa'nın açıldığını söyler. Karşılığı owner adımlarında yazılıdır (§4, 4. adım); blok metnini genişletmek ayrı bir değişikliktir.
+
+## 15. R06 canlı koşumu ve owner kabulü (2026-10-10)
+
+**Owner kararı (2026-10-10):** `e1a9a546` koşumu **tanımlı paket kapsamıyla kabul edildi**. Bu bölüm kabulün public kaydıdır; ham kanıt, manifest, owner beyan dosyası, adres ve hesap
+bilgisi kısıtlı yerel kayıttadır ve burada yayımlanmaz. Bu kayıt yeni bir canlı Run / Recover için yetki **değildir**.
+
+| Kalem | Kayıt |
+|---|---|
+| Baytlar | R06 (#2952 → `88caf7ba`); Preflight ve QrTest koşumdan önce çıkış 0 |
+| Makine ölçütleri [Ö] | çıkış 0 · 33 / 33 PASS · 0 FAIL · 0 ÖLÇÜLEMEYEN · ürün bulgusu alanı boş (yalnız makine ölçütleri için) · yasak uç çağrılmadı |
+| Gözlem süresi [Ö] | canlı kipte 300000 ms; telefon girişi ile kanıt yazımı arasındaki süre iki 300 saniyelik bekleme ile uyumlu (her beklemenin ayrı süresi kayıtlı değildir) |
+| Kapanış [Ö] | portal hesabı pasif, oturum sürümü arttı; yeni giriş ve mevcut oturum reddi (yerel + dış); iki sentetik büroda aktif kullanıcı ve aktif dosya yok; Recover gerekmedi; koşucu belgesi silindi, belge kalıntısı yok |
+| Telefon gözlemleri [O] | girişten sonra portal Ana Sayfası açıldı; "Belgelerim"de yalnız koşumun belgesi görüldü; belge indirildi, açıldı ve koşum kimliği görüldü; koşucu silmesinden sonra yenilenen liste boştu; telefondan yükleme yapılmadı; telefon mobil verideydi |
+| Kanıt bütünlüğü [Ö] | manifest 6 / 6; GO referansının açık değeri kanıt dosyalarına ve deftere yazılmadı (yalnız özeti) |
+| Yöntem | **owner onaylı yöntem değişikliği:** gizli sekme yerine normal tarayıcı (önce eski portal oturumundan çıkış; ağ beyanı [O]: mobil veri, Wi-Fi kapalı). "Gizli sekmede sınandı" yazılmaz |
+| Önceki koşumlar | `7bf59f6d` (2026-10-09; R06 öncesi baytlar): çıkış 0 · 33 / 33 PASS · kapanış doğrulandı; iki telefon ölçütü o koşumda karşılanmamıştı (başarılı indirme gözlenmedi · silme sonrası liste yenilemesi yapılmadı) ve o koşum için kabul hükmü verilmemişti — **sonucu değişmedi** |
+
+**Bu kabulün kapatmadıkları:** kapatılmış / geçersiz oturumda giriş sayfasına yönlendirme yerine hata metni görünmesi (ürün gözlemi; bu koşumda da görüldü; erişim kapalıdır) ·
+birleşik D-9 · CLIENT genel kabulü. Telefon gözlemleri owner beyanıdır; makine ölçümü değildir. Etiketler: [Ö] bu çalışmanın ölçümü · [O] owner beyanı.
