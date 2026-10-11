@@ -43,6 +43,10 @@
 > başarısız olduğunda sunucu günlüğüne ham hata nesnesi aktarılmaz (§2.1 "KR-19 düzeltmesi", §11 KR-19). Günlük tekrarı sürer;
 > canlıda doğrulanmadı. Düzeltme, #2954'ün sunucu tarafını içeren yayının ön koşuludur [O 2026-10-11; koordinasyon kaydında, depoda değil] (ölçüt §2.1).
 >
+> **KR-20 kararları (2026-10-11; owner — dar kod düzeltmesi yalnız -03 için; canlıya uygulanmadı):** hata kaydı saklama süresi
+> temizliği başarısız olduğunda sunucu günlüğüne ham hata nesnesi aktarılmaz (§2.1 "KR-20 / -03 düzeltmesi", §11 KR-20). -02 ve
+> -04'e dokunulmadı. Bu düzeltme #2954 sunucu yayınının yeni zorunlu ön koşulu **değildir**; KR-19 ön koşulu aynen sürer.
+>
 > Kaynak ayrımı: **[Ö]** bu çalışmanın kendi ölçümü (salt okuma ya da izole test) · **[B]** mevcut kayıt belgesinin iddiası
 > (yeniden ölçülmedi) · **[K]** yayın koordinatörünün ölçümü (aday doğrulama kaydı; depoda değil) · **[O]** owner beyanı (makine
 > ölçümü değildir).
@@ -162,12 +166,39 @@ yoluyla sınırlıdır: genel hata süzgeci değişmedi; yeni bağımlılık, mi
 GOZLEM-PORTAL-503-GUNLUK-01: ham içerik kısmı bu düzeltmeyle kapanır; tekrar kısmı **açık** kalır. Bu düzeltme, #2954'ün sunucu
 tarafını içeren yayının **ön koşuludur**: #2954'ün sunucu tarafını içeren hiçbir paket, bu düzeltmeyi de içermeden ve gerekli
 sürüm eşleşmesi doğrulanmadan yayınlanmaz; düzeltmenin yalnız `main`'e girmiş olması yeterli değildir [O 2026-10-11; koordinasyon kaydında, depoda değil].
-Kapsam dışında kalan ve bu değişiklikte dokunulmayan benzer
-günlük satırları kimlik + durum + etkilediği adımla kaydedildi; karar owner'dadır (§11 KR-20):
+KR-19 düzeltmesinin kapsamı dışında bırakılan benzer günlük satırları kimlik + durum + etkilediği adımla kaydedilmişti; owner
+kararları 2026-10-11'de verildi (§11 KR-20). Güncel durum:
 
-- GOZLEM-HATA-KAYDI-GUNLUK-02 · açık · etkilediği adım: genel süzgecin kayıt hattının eşzamanlı hata yakalaması.
-- GOZLEM-HATA-KAYDI-GUNLUK-03 · açık · etkilediği adım: hata kaydı saklama süresi temizliğinin başarısız olması.
-- GOZLEM-PORTAL-KAPI-GUNLUK-04 · açık · etkilediği adım: portal oturum kapısının uyarı / hata satırında tür adının yazılması.
+- GOZLEM-HATA-KAYDI-GUNLUK-02 · **açık** · etkilediği adım: genel süzgecin kayıt hattının eşzamanlı hata yakalaması. Owner kararı
+  (2026-10-11): dokunulmadı — somut hassas içerik yolu doğrulanmadı; güvenli olduğu kesinleşmiş **sayılmaz**, kalem kapatılmadı.
+- GOZLEM-HATA-KAYDI-GUNLUK-03 · **kodda düzeltildi; canlıda değil** · etkilediği adım: hata kaydı saklama süresi temizliğinin
+  başarısız olması (aşağıda "KR-20 / -03 düzeltmesi").
+- GOZLEM-PORTAL-KAPI-GUNLUK-04 · dokunulmadı · etkilediği adım: portal oturum kapısının uyarı / hata satırında tür adının yazılması.
+  Owner kararı (2026-10-11): mevcut kaynak değerlendirmesiyle ek değişiklik gerekmiyor. Kaynak okuması [Ö 2026-10-11]: satır, hata
+  nesnesinin kurucu (sınıf) adını ve yalnız bir harf + dört rakam biçimindeki kodu yazar; ileti, yığın izi ve ek alan yazmaz. Ad
+  kapalı listeden seçilmez, nesneden okunur.
+
+**KR-20 / -03 düzeltmesi (2026-10-11; owner kararı).** Hata kaydı saklama süresi temizliği başarısız olduğunda sunucu günlüğüne
+artık ham hata nesnesi **aktarılmaz**; satır yalnız sabit bir olay etiketinden ve kapalı listeden sınıflandırılmış hata türü /
+kodundan oluşur (tanınmayan değerler için sabit "unknown"). KR-19'daki yardımcı yeniden kullanıldı — ikinci bir sınıflandırıcı
+yoktur; yardımcının adı iki kullanım yerini kapsayacak biçimde düzeltildi. Temizliğin açık / kapalı koşulu, zamanlaması, saklama
+süreleri, silme sorguları ve hata sonrası akışı (kısmi sayının dönmesi, kalan kategorilerin çalışmaması, zamanlanmış iş
+bildiriminin bir kez yapılması) **değişmedi**; günlük kısma, yeniden deneme, kuyruk, bağımlılık ya da migration eklenmedi.
+
+| Durum | Hüküm |
+|---|---|
+| Kodda düzelen davranış | Saklama temizliğinin başarısızlık satırı ham hata nesnesi yerine sabit etiket + güvenli tür / kod yazar. İzole ölçüm [Ö 2026-10-11]: bağlantı adresi, kullanıcı / parola, işaret ve satır sonu içeren sentetik hatalarla, hem günlük çağrısında hem **gerçek günlükçünün ürettiği çıktıda** bu değerler yoktur; satır tek satırdır. Hata sonrası akış ve başarı davranışı aynıdır (ek silme ya da tekrar yok) |
+| Canlı | **Uygulanmadı, doğrulanmadı** — canlı temizlik tetiklenmedi, canlı ayar okunmadı, gerçek kayıt silinmedi. Canlıda temizliğin açık olup olmadığı bu çalışmada okunmadı |
+| Yayın | #2954 sunucu yayınının yeni zorunlu ön koşulu **değildir**. KR-19'un ön koşulu aynen sürer. Yayın adayına ekleme ve canlı yayın ayrı karardır |
+
+Aynı hata bloğundaki zamanlanmış iş bildirimi — kaynak okuması (yol **değiştirilmedi**): bildirim dışarıya gönderim yapmaz;
+uygulamanın hata kaydı tablosuna yazar — aynı açık kayıt yoksa bir satır açar, varsa yeni satır açmadan o kaydın sayacını
+artırır. Satıra hata iletisi ve yığın izi kişisel veri maskelemesinden geçirilerek yazılır; bu maskeleme bağlantı ayrıntısını
+hedeflemez, yani ileti bağlantı ayrıntısı taşıyorsa tabloda maskelenmeden durabilir. Satırın büro alanı boştur ve hata
+kayıtlarını okuyan uçların hepsi büro süzgeci uygular; bu yüzden satır bu uçlardan hiçbir büroya dönmez (aynı nedenle uygulama
+ekranından görülemez ve çözüldü işaretlenemez). Sunucu günlüğüne ayrı bir yazım yoktur (kayıt yazımı da başarısız olursa
+KR-19'daki güvenli satır yazılır). Uygulama uçları üzerinden ayrı somut sızıntı yolu görülmedi. Okunmayan: tabloya uçlar
+dışından (doğrudan veritabanı) erişen araçlar ve veritabanı yedekleri.
 
 **Süreç notu (2026-10-11).** #2954 birleştirilirken iki kalem merge engeli sayılmadı: (i) başlatma hatasının kodundan bağımsız
 503 olması — gerekçe: erişim iki seçenekte de kapalıydı ve bağımsız inceleme bunu küçük bulgu olarak sınıflamıştı; (ii) genel
@@ -736,7 +767,7 @@ yeterli sayılmaz) · KR-15'in birleştirme kısmı (R03-b: #2904, #2905, #2906 
 | KR-11 | D-7: GO · kalan mesaj/bildirim satırları "saklandı" · SEC-PORTAL-ADMIN-MSG-01 açıkken koşum teyidi · kapsam dışı dosya referansında 400'ün ölçüt sayılması | — | D-7 koşumundan önce |
 | KR-12 | H beyanları: H6 · H8 imzası (yayından önce mi sonra mı); H3 imza + on iki ayrı kapsam seçimi (beyan taslağı R02, madde 3; hepsi açık bırakıldı) · H1 / H2 / H4 / H5 / H7 hükümleri (§7.2, günlük dille) | taslaklar: `H3-H6-H8-OWNER-BEYAN-TASLAKLARI-R01.md` (R02) | herhangi bir zaman |
 | KR-19 | GOZLEM-PORTAL-503-GUNLUK-01 (§2.1): portal oturum kapısının 503'ü sırasında, hata kaydı yazımı da başarısızken sunucu günlüğünde her istekte yinelenen satırlar — **karar verildi (owner, 2026-10-11): (b) dar düzeltme**; ham hata nesnesi günlüğe aktarılmaz (§2.1 "KR-19 düzeltmesi"). Günlük tekrarı açık işletim sınırı olarak kalır; canlıda doğrulanmadı | (a) mevcut hâliyle kabul · (b) dar düzeltme (ayrı kod PR'ı; genel süzgeç yeniden tasarlanmaz) — ayrıntı kısıtlı yerel kayıtta | düzeltme, #2954'ün sunucu tarafını içeren yayının ön koşuludur [O 2026-10-11; koordinasyon kaydında, depoda değil] (ölçüt §2.1) |
-| KR-20 | Benzer günlük satırları (§2.1): GOZLEM-HATA-KAYDI-GUNLUK-02 · GOZLEM-HATA-KAYDI-GUNLUK-03 · GOZLEM-PORTAL-KAPI-GUNLUK-04 — KR-19 düzeltmesinin kapsamı dışında bırakıldı | (a) mevcut hâliyle kabul · (b) aynı kuralla dar düzeltme (ayrı kod PR'ı) — ayrıntı kısıtlı yerel kayıtta | herhangi bir zaman — owner |
+| KR-20 | Benzer günlük satırları (§2.1): GOZLEM-HATA-KAYDI-GUNLUK-02 · GOZLEM-HATA-KAYDI-GUNLUK-03 · GOZLEM-PORTAL-KAPI-GUNLUK-04 — KR-19 düzeltmesinin kapsamı dışında bırakılmıştı. **Karar verildi (owner, 2026-10-11):** -03 için (b) dar düzeltme uygulandı (kodda; canlıda değil) · -02'ye dokunulmadı, kalem **açık** (somut hassas içerik yolu doğrulanmadı; güvenli olduğu kesinleşmiş sayılmaz) · -04'e dokunulmadı (ek değişiklik gerekmiyor) | (a) mevcut hâliyle kabul · (b) aynı kuralla dar düzeltme (ayrı kod PR'ı) — ayrıntı kısıtlı yerel kayıtta | -03 düzeltmesi #2954 sunucu yayınının ön koşulu değildir; yayın adayına ekleme ayrı karar |
 | KR-14 | Güvenlik öncelikleri: SEC-MAIL-LOG-01 · SEC-STAFF-XFF-01 / SEC-API-BIND-01 kalıcı düzeltme · SEC-PORTAL-ADMIN-MSG-01 · SEC-PORTAL-REQ-01-K4 · FRK-1 · LS-1 · R27 §10 K-5 / K-14 / K-15 | — | herhangi bir zaman |
 | KR-15 | Kalan küçük işler: D-6 / D-7 PR açıklamalarındaki bilinen sınırlar · D-6 blok metnindeki kalan eksikler (OK-4) · ~~makbuz kurtarma dosyasını kimin, nereye yazacağı (D-6 / D-7)~~ — karar ve uygulama kapandı (owner kararı 2026-10-04; R04 `main`'de, #2923); canlı Recover'da doğrulanmadı — bu, D-6 / D-7 koşumunda Recover gerekirse ölçülür | — | D-6 / D-7 koşumundan önce (sonuncusu) / herhangi bir zaman |
 | KR-16 | Public depodaki dal commit'lerinde görünen yazar adresi | dal commit'leri yerel git yapılandırmasındaki adresle yazılıyor; adres bu belgeye yazılmaz; yalnız ileriye dönük karar | herhangi bir zaman |
