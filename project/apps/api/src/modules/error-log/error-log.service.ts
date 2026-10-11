@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { computePersistentFingerprint, computeActiveDedupeKey } from './internal/error-dedupe-key';
+import { describeErrorLogWriteFailure } from './internal/error-log-write-failure';
 
 export interface LogErrorParams {
   tenantId?: string;
@@ -80,7 +81,9 @@ export class ErrorLogService {
       }
     } catch (e) {
       // LOGGING-FAILURE ISOLATION: hiçbir loglama hatası çağıran isteği bozmaz.
-      this.logger.error('Error logging failed', e);
+      // KR-19: ham hata nesnesi / message / stack / cause / meta günlüğe AKTARILMAZ (veritabanı hata iletisi
+      // bağlantı ayrıntısı taşıyabilir). Yalnız sabit olay etiketi + kapalı listeden sınıflandırılmış tür / kod.
+      this.logger.error(describeErrorLogWriteFailure(e));
     }
   }
 
