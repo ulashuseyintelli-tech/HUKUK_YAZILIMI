@@ -9,6 +9,13 @@ import { Scale, FileText, FileCheck, LogOut, User, Home, Bell, Check, FolderOpen
 // production) bildirim zili sessizce çalışmıyordu (catch blokları hatayı yutuyor).
 import { portalApiUrl } from "@/lib/config/portal-api-url";
 import { toActionErrorMessage } from "@/lib/action-error";
+import {
+  PORTAL_LOGIN_PATH,
+  PORTAL_SESSION_REJECTED_EVENT,
+  PORTAL_TOKEN_STORAGE_KEY,
+  handlePortalSessionRejection,
+  newerPortalSessionToken,
+} from "@/lib/portal-session";
 
 interface Notification {
   id: string;
@@ -31,6 +38,11 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   // WSMR-A4g: bildirim okuma/isaretleme hatalari GORUNUR olur; sahte yerel
   // "okundu" durumu uretilmez.
   const [notificationError, setNotificationError] = useState<string | null>(null);
+  // Oturum reddedildi (401): giriş sayfasına yönlendirme başladıktan sonra, gezinme tamamlanana
+  // kadar geçen karede sayfa içeriği / hata metni GÖRÜNMEZ.
+  const [sessionRejected, setSessionRejected] = useState(false);
+  // Aynı oturum kapanışı için yönlendirme TEK kez yapılır (ör. öteki sekmeden art arda gelen depolama olayları).
+  const redirectIssuedRef = useRef(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -45,19 +57,55 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     if (userData) {
       setUser(JSON.parse(userData));
     }
+    // Yeni oturum açıldıysa (işaret var) önceki reddin "yönlendiriliyor" durumu kalkar.
+    if (token) {
+      redirectIssuedRef.current = false;
+      setSessionRejected(false);
+    }
     setLoading(false);
   }, [pathname, router]);
 
+  // Oturum reddi — TEK yönlendirme noktası. Ret, çerçevenin kendi isteğinden de sayfanın
+  // isteğinden de gelebilir; `handlePortalSessionRejection` aynı oturum için olayı bir kez üretir.
+  useEffect(() => {
+    const onSessionRejected = () => {
+      if (redirectIssuedRef.current) return;
+      redirectIssuedRef.current = true;
+      setSessionRejected(true);
+      router.push(PORTAL_LOGIN_PATH);
+    };
+    // Başka sekmede oturum kapandıysa (ret ya da çıkış) bu sekme bayat ekranda kalmaz. Tarayıcı bu
+    // olayı yalnız ÖTEKİ sekmelere iletir; aynı sekmedeki ret yukarıdaki olayla gelir.
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== null && e.key !== PORTAL_TOKEN_STORAGE_KEY) return;
+      if (localStorage.getItem(PORTAL_TOKEN_STORAGE_KEY)) return;
+      if (pathname === "/portal/login" || pathname === "/portal/forgot-password" || pathname === "/portal/reset-password") return;
+      onSessionRejected();
+    };
+    window.addEventListener(PORTAL_SESSION_REJECTED_EVENT, onSessionRejected);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(PORTAL_SESSION_REJECTED_EVENT, onSessionRejected);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [router, pathname]);
+
   // Bildirim sayısını çek
   useEffect(() => {
-    const token = localStorage.getItem("portal_token");
-    if (!token || pathname === "/portal/login" || pathname === "/portal/forgot-password" || pathname === "/portal/reset-password") return;
+    const initialToken = localStorage.getItem("portal_token");
+    if (!initialToken || pathname === "/portal/login" || pathname === "/portal/forgot-password" || pathname === "/portal/reset-password") return;
 
     const fetchUnreadCount = async () => {
+      // İşaret HER çağrıda yeniden okunur: oturum kapandıysa istek GÖNDERİLMEZ; başka sekmede yeni
+      // oturum açıldıysa yoklama o oturumla sürer (eski işaretle istek gitmez).
+      const token = localStorage.getItem("portal_token");
+      if (!token) return;
       try {
         const res = await fetch(portalApiUrl("/api/portal/notifications/unread-count"), {
           headers: { Authorization: `Bearer ${token}` },
         });
+        // Oturum reddi (ya da bayat ret): hata bandı basılmaz.
+        if (handlePortalSessionRejection({ status: res.status, sentToken: token }) !== "NOT_REJECTED") return;
         if (!res.ok) throw new Error(`UNREAD_COUNT_HTTP_${res.status}`);
         const data = await res.json();
         // Govde sozlesmeye karsi dogrulanir: sayi degilse rozet BASILMAZ.
@@ -89,7 +137,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const fetchNotifications = async () => {
+  const fetchNotifications = async (retried = false) => {
     const token = localStorage.getItem("portal_token");
     if (!token) return;
     setNotificationError(null);
@@ -97,6 +145,13 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       const res = await fetch(portalApiUrl("/api/portal/notifications"), {
         headers: { Authorization: `Bearer ${token}` },
       });
+      const session = handlePortalSessionRejection({ status: res.status, sentToken: token });
+      if (session === "REJECTED") return;
+      if (session === "STALE") {
+        // İstek eski oturumla gitmişti: geçerli oturum varsa liste onunla BİR kez yeniden okunur.
+        if (!retried && newerPortalSessionToken(token)) await fetchNotifications(true);
+        return;
+      }
       if (!res.ok) throw new Error(`NOTIFICATIONS_HTTP_${res.status}`);
       const data = await res.json();
       // Govde SOZLESMEYE karsi dogrulanir: dizi degilse basari sayilmaz.
@@ -112,7 +167,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 
   const handleBellClick = () => {
     if (!showNotifications) {
-      fetchNotifications();
+      void fetchNotifications();
     }
     setShowNotifications(!showNotifications);
   };
@@ -136,6 +191,8 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
+      // Oturum reddinde yönlendirme başlar; bayat rette işlem YAPILMADI — hata görünür kalır.
+      if (handlePortalSessionRejection({ status: res.status, sentToken: token }) === "REJECTED") return;
       if (!res.ok) throw new Error(`MARK_READ_HTTP_${res.status}`);
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
       setUnreadCount(prev => Math.max(0, prev - 1));
@@ -153,6 +210,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (handlePortalSessionRejection({ status: res.status, sentToken: token }) === "REJECTED") return;
       if (!res.ok) throw new Error(`MARK_ALL_READ_HTTP_${res.status}`);
       setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
       setUnreadCount(0);
@@ -172,7 +230,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     return <>{children}</>;
   }
 
-  if (loading) {
+  if (loading || sessionRejected) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -215,7 +273,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                       <p className="font-medium">{notificationError}</p>
                       <button
                         type="button"
-                        onClick={fetchNotifications}
+                        onClick={() => void fetchNotifications()}
                         className="mt-1 underline hover:text-red-900"
                       >
                         Tekrar dene
