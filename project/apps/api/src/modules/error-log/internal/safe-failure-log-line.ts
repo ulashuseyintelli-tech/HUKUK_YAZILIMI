@@ -1,4 +1,5 @@
-// KR-19: hata kaydı YAZIMI başarısız olduğunda sunucu günlüğüne yazılacak GÜVENLİ satırı üretir.
+// KR-19 / KR-20: bir işlem BAŞARISIZ olduğunda sunucu günlüğüne yazılacak GÜVENLİ satırı üretir.
+// Kullananlar: hata kaydı yazımı (`ErrorLogService.log`) ve hata kaydı saklama süresi temizliği.
 //
 // Kural: günlüğe ham hata nesnesi, `message`, `stack`, `cause` ya da `meta` AKTARILMAZ. Veritabanı hata
 // iletileri bağlantı adresi / kullanıcı adı taşıyabilir; serbest metin satır sonu da taşıyabilir.
@@ -12,22 +13,24 @@
 // metin hiç yazılmadığı için maskeleme kullanılmaz — iki yardımcı farklı işi yapar.
 import { Prisma } from "@prisma/client";
 
-/** Günlüğe yazılan SABİT olay etiketi. */
+/** Günlüğe yazılan SABİT olay etiketleri (kapalı liste). */
 export const ERROR_LOG_WRITE_FAILED_EVENT = "error-log write failed";
+export const ERROR_LOG_RETENTION_FAILED_EVENT = "error-log retention cleanup failed";
+export type SafeFailureLogEvent = typeof ERROR_LOG_WRITE_FAILED_EVENT | typeof ERROR_LOG_RETENTION_FAILED_EVENT;
 
 /** Tanınmayan hata türü / kodu için SABİT etiket. */
 export const UNKNOWN_ERROR_LABEL = "unknown";
 
 /**
  * Günlüğe yazılabilen Prisma hata kodları (kapalı liste): veritabanına erişim / bağlantı kodları ile bu
- * yazım yolunda görülebilecek sorgu kodları. Listede olmayan her değer "unknown" yazılır.
+ * yollarda görülebilecek sorgu kodları. Listede olmayan her değer "unknown" yazılır.
  */
 const LOGGABLE_PRISMA_CODES: ReadonlySet<string> = new Set([
   "P1000", "P1001", "P1002", "P1003", "P1008", "P1010", "P1011", "P1017",
   "P2002", "P2003", "P2021", "P2022", "P2024", "P2025", "P2028", "P2034", "P2037",
 ]);
 
-export interface ErrorLogWriteFailureClass {
+export interface SafeErrorClass {
   /** Kapalı listeden hata türü etiketi. */
   kind: string;
   /** Yalnız Prisma türlerinde: kapalı listeden kod ya da "unknown". */
@@ -39,7 +42,7 @@ function loggableCode(value: unknown): string {
 }
 
 /** Hata nesnesini SINIFINA göre sınıflandırır. Hiçbir koşulda atmaz; serbest metin döndürmez. */
-export function classifyErrorLogWriteFailure(error: unknown): ErrorLogWriteFailureClass {
+export function classifyErrorForLog(error: unknown): SafeErrorClass {
   try {
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       return { kind: "PrismaClientKnownRequestError", code: loggableCode(error.code) };
@@ -59,10 +62,11 @@ export function classifyErrorLogWriteFailure(error: unknown): ErrorLogWriteFailu
   return { kind: UNKNOWN_ERROR_LABEL };
 }
 
-/** Günlük satırı: sabit olay etiketi + sınıflandırılmış tür (+ kod). Tek satırdır; serbest metin içermez. */
-export function describeErrorLogWriteFailure(error: unknown): string {
-  const { kind, code } = classifyErrorLogWriteFailure(error);
-  return code === undefined
-    ? `${ERROR_LOG_WRITE_FAILED_EVENT} (kind=${kind})`
-    : `${ERROR_LOG_WRITE_FAILED_EVENT} (kind=${kind} code=${code})`;
+/**
+ * Günlük satırı: sabit olay etiketi + sınıflandırılmış tür (+ kod). Tek satırdır; serbest metin içermez.
+ * `event` yalnız bu dosyadaki sabitlerden biri olabilir (tür düzeyinde kapalı liste).
+ */
+export function describeFailureForLog(event: SafeFailureLogEvent, error: unknown): string {
+  const { kind, code } = classifyErrorForLog(error);
+  return code === undefined ? `${event} (kind=${kind})` : `${event} (kind=${kind} code=${code})`;
 }
