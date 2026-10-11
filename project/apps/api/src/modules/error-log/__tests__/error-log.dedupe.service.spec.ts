@@ -4,9 +4,9 @@ import { ErrorLogService } from "../error-log.service";
 import {
   ERROR_LOG_WRITE_FAILED_EVENT,
   UNKNOWN_ERROR_LABEL,
-  classifyErrorLogWriteFailure,
-  describeErrorLogWriteFailure,
-} from "../internal/error-log-write-failure";
+  classifyErrorForLog,
+  describeFailureForLog,
+} from "../internal/safe-failure-log-line";
 
 function makePrisma() {
   return {
@@ -210,32 +210,32 @@ describe("ErrorLogService.log — yazım başarısızlığı günlüğü (KR-19)
   it("sınıflandırma — listedeki HER kod kendisi olarak yazılır; liste dışı / biçimi bozuk değerler 'unknown' olur", () => {
     const loggable = ["P1000", "P1001", "P1002", "P1003", "P1008", "P1010", "P1011", "P1017", "P2002", "P2003", "P2021", "P2022", "P2024", "P2025", "P2028", "P2034", "P2037"];
     for (const code of loggable) {
-      expect(classifyErrorLogWriteFailure(prismaKnown(code))).toEqual({ kind: "PrismaClientKnownRequestError", code });
+      expect(classifyErrorForLog(prismaKnown(code))).toEqual({ kind: "PrismaClientKnownRequestError", code });
     }
     for (const code of ["P9999", "p1001", " P1001", "P1001 ", "P1001\n", "P10011", "", GIZLI_ISARET]) {
-      expect(classifyErrorLogWriteFailure(prismaKnown(code))).toEqual({ kind: "PrismaClientKnownRequestError", code: UNKNOWN_ERROR_LABEL });
+      expect(classifyErrorForLog(prismaKnown(code))).toEqual({ kind: "PrismaClientKnownRequestError", code: UNKNOWN_ERROR_LABEL });
     }
     // yardımcı, Prisma sınıfı olmayan nesnenin HİÇBİR alanını okumaz: erişimciler ÇAĞRILMAZ, sonuç "unknown"
     const codeGetter = jest.fn(() => GIZLI_METIN);
     const nameGetter = jest.fn(() => GIZLI_METIN);
     const messageGetter = jest.fn(() => GIZLI_METIN);
     const watched = Object.defineProperties({}, { code: { get: codeGetter }, name: { get: nameGetter }, message: { get: messageGetter } });
-    expect(classifyErrorLogWriteFailure(watched)).toEqual({ kind: UNKNOWN_ERROR_LABEL });
+    expect(classifyErrorForLog(watched)).toEqual({ kind: UNKNOWN_ERROR_LABEL });
     expect(codeGetter).not.toHaveBeenCalled();
     expect(nameGetter).not.toHaveBeenCalled();
     expect(messageGetter).not.toHaveBeenCalled();
     // yardımcı HİÇBİR koşulda atmaz: sınıflandırma sırasında fırlatılan hata yutulur, sonuç "unknown" (serbest metin yok)
-    expect(classifyErrorLogWriteFailure(throwingPrototypeProxy())).toEqual({ kind: UNKNOWN_ERROR_LABEL });
-    expect(classifyErrorLogWriteFailure(prismaLikeWithThrowingCode())).toEqual({ kind: UNKNOWN_ERROR_LABEL });
-    expect(describeErrorLogWriteFailure(prismaLikeWithThrowingCode())).toBe("error-log write failed (kind=unknown)");
-    expect(classifyErrorLogWriteFailure(throwingGetters())).toEqual({ kind: UNKNOWN_ERROR_LABEL });
-    expect(classifyErrorLogWriteFailure({ name: "TypeError", code: "P1001" })).toEqual({ kind: UNKNOWN_ERROR_LABEL });
-    expect(classifyErrorLogWriteFailure(null)).toEqual({ kind: UNKNOWN_ERROR_LABEL });
+    expect(classifyErrorForLog(throwingPrototypeProxy())).toEqual({ kind: UNKNOWN_ERROR_LABEL });
+    expect(classifyErrorForLog(prismaLikeWithThrowingCode())).toEqual({ kind: UNKNOWN_ERROR_LABEL });
+    expect(describeFailureForLog(ERROR_LOG_WRITE_FAILED_EVENT, prismaLikeWithThrowingCode())).toBe("error-log write failed (kind=unknown)");
+    expect(classifyErrorForLog(throwingGetters())).toEqual({ kind: UNKNOWN_ERROR_LABEL });
+    expect(classifyErrorForLog({ name: "TypeError", code: "P1001" })).toEqual({ kind: UNKNOWN_ERROR_LABEL });
+    expect(classifyErrorForLog(null)).toEqual({ kind: UNKNOWN_ERROR_LABEL });
     expect(ERROR_LOG_WRITE_FAILED_EVENT).toBe("error-log write failed");
-    expect(describeErrorLogWriteFailure(prismaKnown("P2024"))).toBe("error-log write failed (kind=PrismaClientKnownRequestError code=P2024)");
+    expect(describeFailureForLog(ERROR_LOG_WRITE_FAILED_EVENT, prismaKnown("P2024"))).toBe("error-log write failed (kind=PrismaClientKnownRequestError code=P2024)");
     // satır tek satırdır ve yalnız sabit karakterlerden oluşur
     for (const [, make] of WRITE_FAILURES) {
-      expect(describeErrorLogWriteFailure(make())).toMatch(/^error-log write failed \(kind=[A-Za-z]+( code=(P\d{4}|unknown))?\)$/);
+      expect(describeFailureForLog(ERROR_LOG_WRITE_FAILED_EVENT, make())).toMatch(/^error-log write failed \(kind=[A-Za-z]+( code=(P\d{4}|unknown))?\)$/);
     }
   });
 

@@ -10,6 +10,7 @@ import { SCHEDULER_TIMEZONE } from '../../../common/scheduler-timezone';
 import { reportCronJobFailure } from '../../../common/cron-failure-reporting';
 import { runWithOverlapGuard } from '../../../common/scheduler-overlap-guard';
 import { IntegrationErrorReporter } from '../integration-error-reporter';
+import { ERROR_LOG_RETENTION_FAILED_EVENT, describeFailureForLog } from '../internal/safe-failure-log-line';
 
 // PR-6: Hata logu retention temizliği (config-tabanlı, hard delete, batch).
 // MODEL A (K1): çözüm-durumu birincil, kaynak ikincil. unresolved kayıtlar yalnız
@@ -90,7 +91,9 @@ export class ErrorLogRetentionService {
       return { enabled: true, deleted, byCategory };
     } catch (e) {
       // Retention ASLA app'i düşürmez: logla + yut.
-      this.logger.error('Hata logu retention temizliği başarısız', e as any);
+      // KR-20: ham hata nesnesi / message / stack günlüğe AKTARILMAZ (veritabanı hata iletisi bağlantı ayrıntısı
+      // taşıyabilir). Yalnız sabit olay etiketi + kapalı listeden sınıflandırılmış tür / kod.
+      this.logger.error(describeFailureForLog(ERROR_LOG_RETENTION_FAILED_EVENT, e));
       reportCronJobFailure(this.errorReporter, 'errorLogRetention.handleCron', e);
       const deleted = Object.values(byCategory).reduce((a, b) => a + b, 0);
       return { enabled: true, deleted, byCategory };
