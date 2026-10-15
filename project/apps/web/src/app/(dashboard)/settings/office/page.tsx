@@ -23,9 +23,15 @@ import {
 
 // Okuma yüzeyi (owner kararı 2026-10-03, madde 6): hesap kimliği + varsayılan bilgisi + MASKELİ IBAN. Banka adı / şube /
 // hesap sahibi okuma yüzeyinde YOKTUR (undefined = bilinmiyor, boş değil).
-interface BankAccount { id: string; officeId?: string; bankName?: string; branchName?: string | null; iban?: string; accountName?: string | null; isDefault: boolean; }
+interface BankAccount { id?: string; officeId?: string; bankName?: string; branchName?: string | null; iban?: string; accountName?: string | null; isDefault: boolean; }
 /** Satır başlığı: banka adı bilinmiyorsa maskeli IBAN, o da yoksa genel ad. */
 const bankAccountTitle = (acc: Pick<BankAccount, "bankName" | "iban">): string => acc.bankName || acc.iban || "Banka hesabı";
+/**
+ * Kimliği okunamayan satır düzenlenemez / silinemez: kimliksiz istek (`DELETE …/undefined`) ve kimliksiz "Düzenle" →
+ * oluşturma dalı ASLA çıkmaz. Düğmeler baştan kapalıdır (neden satırda görünür); işleyiciler ikinci savunmadır.
+ */
+const hasBankAccountId = (acc: { id?: unknown }): boolean => typeof acc.id === "string" && acc.id.trim() !== "";
+const BANK_ROW_UNREADABLE_REASON = "Hesap kimliği okunamadı; bu satır düzenlenemez ve silinemez. Sayfayı yenileyip tekrar deneyin.";
 interface Lawyer { 
   id: string; 
   name: string; 
@@ -798,7 +804,22 @@ function OfficeSettingsInner() {
     });
   };
 
-  const handleDeleteBankAccount = async (id: string) => {
+  // Düzenle MEVCUT, kimliği okunabilir hesabı açar; kimliksiz satırda pencere HİÇ açılmaz (oluşturma dalına düşemez).
+  const openBankEdit = (acc: BankAccount) => {
+    if (!hasBankAccountId(acc)) {
+      setBankActionError(BANK_ROW_UNREADABLE_REASON);
+      return;
+    }
+    setEditingBank(acc);
+    setShowBankModal(true);
+  };
+
+  const handleDeleteBankAccount = async (id: string | undefined) => {
+    // Kimliksiz satır: onay penceresi de istek de ÇIKMAZ; neden görünür.
+    if (!hasBankAccountId({ id })) {
+      setBankActionError(BANK_ROW_UNREADABLE_REASON);
+      return;
+    }
     // Cancel mutation BAŞLATMAZ.
     if (!confirm("Silmek istediğinize emin misiniz?")) return;
     setBankActionError(null);
@@ -1206,21 +1227,25 @@ function OfficeSettingsInner() {
           <div className="px-5 py-4">
             <div className="rounded-xl border-2 border-blue-300 bg-blue-50/30 p-2">
               <div className="divide-y divide-blue-100">
-                {office?.bankAccounts?.map(acc => (
-                  <div key={acc.id} className={`flex items-center justify-between gap-2 px-2.5 py-2 border-l-2 ${acc.isDefault ? "border-amber-400" : "border-transparent"} hover:bg-white/60 transition-colors`}>
+                {office?.bankAccounts?.map((acc, bankIndex) => {
+                  const rowReady = hasBankAccountId(acc);
+                  return (
+                  <div key={rowReady ? acc.id : `bank-row-${bankIndex}`} className={`flex items-center justify-between gap-2 px-2.5 py-2 border-l-2 ${acc.isDefault ? "border-amber-400" : "border-transparent"} hover:bg-white/60 transition-colors`}>
                     <div className="flex items-center gap-2 min-w-0">
                       {acc.isDefault && <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500 shrink-0" />}
                       <div className="min-w-0">
                         <p className="text-[13px] font-semibold text-gray-900 truncate">{acc.bankName || "Banka hesabı"}</p>
                         <p className="text-[11px] text-gray-500 font-mono truncate">{acc.iban}</p>
+                        {!rowReady && <p data-testid="bank-row-unreadable" className="text-[11px] text-amber-700">{BANK_ROW_UNREADABLE_REASON}</p>}
                       </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
-                      <button onClick={() => { setEditingBank(acc); setShowBankModal(true); }} className="p-1.5 hover:bg-blue-100 rounded-md" title="Düzenle"><Pencil className="h-3.5 w-3.5 text-gray-500" /></button>
-                      <button type="button" onClick={() => handleDeleteBankAccount(acc.id)} disabled={staleLockedIds.includes(`bank:${acc.id}`)} aria-label={`${bankAccountTitle(acc)} banka hesabını sil`} className="p-1.5 hover:bg-red-100 rounded-md disabled:opacity-40" title="Sil"><Trash2 className="h-3.5 w-3.5 text-red-500" /></button>
+                      <button type="button" onClick={() => openBankEdit(acc)} disabled={!rowReady} aria-label="Düzenle" className="p-1.5 hover:bg-blue-100 rounded-md disabled:opacity-40" title={rowReady ? "Düzenle" : BANK_ROW_UNREADABLE_REASON}><Pencil className="h-3.5 w-3.5 text-gray-500" /></button>
+                      <button type="button" onClick={() => handleDeleteBankAccount(acc.id)} disabled={!rowReady || staleLockedIds.includes(`bank:${acc.id}`)} aria-label={`${bankAccountTitle(acc)} banka hesabını sil`} className="p-1.5 hover:bg-red-100 rounded-md disabled:opacity-40" title={rowReady ? "Sil" : BANK_ROW_UNREADABLE_REASON}><Trash2 className="h-3.5 w-3.5 text-red-500" /></button>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
                 {(!office?.bankAccounts || office.bankAccounts.length === 0) && <p className="text-[12px] text-gray-400 text-center py-6">Henüz banka hesabı eklenmemiş</p>}
               </div>
             </div>

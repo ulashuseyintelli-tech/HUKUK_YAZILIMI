@@ -80,9 +80,10 @@ describe('OFFICE banka hesabı uçları — gerçek HTTP zincirinde sözleşme',
         events.push('tx.findFirst');
         return where.id === OWN_ACCOUNT.id && where.officeId === OFFICE ? { ...OWN_ACCOUNT } : null;
       }),
-      updateMany: jest.fn(async () => { events.push('tx.updateMany'); return { count: 1 }; }),
+      updateMany: jest.fn(async (_args?: unknown) => { events.push('tx.updateMany'); return { count: 1 }; }),
       create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => { events.push('tx.create'); return { id: 'acc-new', isDefault: false, ...data }; }),
       update: jest.fn(async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => { events.push('tx.update'); return { ...OWN_ACCOUNT, ...data, id: where.id }; }),
+      delete: jest.fn(async ({ where }: { where: { id: string } }) => { events.push('tx.delete'); return { ...OWN_ACCOUNT, id: where.id }; }),
     },
   };
   const prisma = {
@@ -94,18 +95,22 @@ describe('OFFICE banka hesabı uçları — gerçek HTTP zincirinde sözleşme',
       }),
     },
     office: { findUnique: jest.fn(async () => OFFICE_ROW) },
-    officeBankAccount: {
-      findFirst: jest.fn(async ({ where }: { where: { id: string; officeId: string } }) =>
-        where.id === OWN_ACCOUNT.id && where.officeId === OFFICE ? { ...OWN_ACCOUNT } : null),
-      delete: jest.fn(async ({ where }: { where: { id: string } }) => ({ ...OWN_ACCOUNT, id: where.id })),
-    },
+    // Banka yazmalarının HEPSİ (ekle / güncelle / sil) `$transaction` içindeki tx üzerinden yazar; dış istemcide banka yazma yolu YOK.
+    officeBankAccount: {},
     $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => { events.push('begin'); return fn(tx); }),
   };
-  const audit = { log: jest.fn() };
+  const audit = {
+    log: jest.fn(),
+    // Denetim kaydı mutasyonla AYNI işlemde (tx) yazılır; olay günlüğüne 'audit' düşer.
+    logInTransaction: jest.fn(async () => { events.push('audit'); }),
+  };
 
   const txWrites = () =>
-    tx.officeBankAccount.create.mock.calls.length + tx.officeBankAccount.update.mock.calls.length + tx.officeBankAccount.updateMany.mock.calls.length;
-  const anyWrites = () => txWrites() + prisma.officeBankAccount.delete.mock.calls.length;
+    tx.officeBankAccount.create.mock.calls.length + tx.officeBankAccount.update.mock.calls.length
+    + tx.officeBankAccount.updateMany.mock.calls.length + tx.officeBankAccount.delete.mock.calls.length;
+  const anyWrites = () => txWrites();
+  /** Reddedilen / yazmayan istekte HİÇ denetim satırı da yazılmaz. */
+  const auditCalls = () => audit.logInTransaction.mock.calls as unknown as [unknown, Record<string, unknown>][];
 
   beforeAll(async () => {
     const approval = new OfficeApprovalService(prisma as any, { log: jest.fn() } as any);
@@ -130,7 +135,7 @@ describe('OFFICE banka hesabı uçları — gerçek HTTP zincirinde sözleşme',
   afterAll(async () => { await app.close(); });
   beforeEach(() => {
     events.length = 0;
-    for (const m of [tx.$queryRaw, ...Object.values(tx.officeBankAccount), prisma.officeBankAccount.findFirst, prisma.officeBankAccount.delete, prisma.$transaction, audit.log]) {
+    for (const m of [tx.$queryRaw, ...Object.values(tx.officeBankAccount), prisma.$transaction, audit.log, audit.logInTransaction]) {
       (m as jest.Mock).mockClear();
     }
   });
@@ -159,7 +164,7 @@ describe('OFFICE banka hesabı uçları — gerçek HTTP zincirinde sözleşme',
 
     it('varsayılan yazan yol kilitli işlemde çalışır: işlemin İLK ifadesi büro satırı kilidi, temizlik yazmadan ÖNCE', async () => {
       await post(valid);
-      expect(events).toEqual(['begin', 'lock', 'tx.updateMany', 'tx.create']);
+      expect(events).toEqual(['begin', 'lock', 'tx.updateMany', 'tx.create', 'audit']);
     });
 
     it('isDefault gönderilmezse varsayılan temizliği YOK ve ilk hesap otomatik varsayılan OLMAZ (yeni politika yok)', async () => {
@@ -225,7 +230,7 @@ describe('OFFICE banka hesabı uçları — gerçek HTTP zincirinde sözleşme',
 
     it('varsayılan yapma: kilit İLK ifade, sahiplik kilit altında, diğerlerinin varsayılanı yazmadan ÖNCE kalkar', async () => {
       await put('acc-1', { isDefault: true });
-      expect(events).toEqual(['begin', 'lock', 'tx.findFirst', 'tx.updateMany', 'tx.update']);
+      expect(events).toEqual(['begin', 'lock', 'tx.findFirst', 'tx.updateMany', 'tx.update', 'audit']);
       expect(tx.officeBankAccount.updateMany.mock.calls[0][0]).toEqual({ where: { officeId: OFFICE, id: { not: 'acc-1' } }, data: { isDefault: false } });
     });
 
@@ -282,25 +287,30 @@ describe('OFFICE banka hesabı uçları — gerçek HTTP zincirinde sözleşme',
     it('doğru kimlikle siler; yanıt maskeli ve kimlikli', async () => {
       const res = await del('acc-1');
       expect(res.status).toBe(200);
-      expect(prisma.officeBankAccount.delete).toHaveBeenCalledWith({ where: { id: 'acc-1' } });
+      expect(tx.officeBankAccount.delete).toHaveBeenCalledWith({ where: { id: 'acc-1' } });
       expect(res.body).toEqual({ officeId: OFFICE, id: 'acc-1', isDefault: false, iban: MASKED_IBAN });
+      // silme tek işlemde: kilit İLK ifade, sahiplik kilit altında, silme, denetim
+      expect(events).toEqual(['begin', 'lock', 'tx.findFirst', 'tx.delete', 'audit']);
     });
 
     it('başka büronun hesabı → 404; HİÇ silme', async () => {
       const res = await del('acc-VICTIM');
       expect(res.status).toBe(404);
-      expect(prisma.officeBankAccount.delete).not.toHaveBeenCalled();
+      expect(tx.officeBankAccount.delete).not.toHaveBeenCalled();
+      expect(auditCalls()).toHaveLength(0);
     });
 
     it('"undefined" kimliği → 404 (eski ekran kusuru artık kimliksiz satır üretmez ama sunucu da korunur)', async () => {
       const res = await del('undefined');
       expect(res.status).toBe(404);
-      expect(prisma.officeBankAccount.delete).not.toHaveBeenCalled();
+      expect(tx.officeBankAccount.delete).not.toHaveBeenCalled();
+      expect(auditCalls()).toHaveLength(0);
     });
 
-    it('VIEWER → 403; HİÇ silme', async () => {
+    it('VIEWER → 403; HİÇ silme, HİÇ denetim', async () => {
       expect((await del('acc-1', 'viewer-partner')).status).toBe(403);
-      expect(prisma.officeBankAccount.delete).not.toHaveBeenCalled();
+      expect(tx.officeBankAccount.delete).not.toHaveBeenCalled();
+      expect(auditCalls()).toHaveLength(0);
     });
   });
 
@@ -331,6 +341,117 @@ describe('OFFICE banka hesabı uçları — gerçek HTTP zincirinde sözleşme',
     it.each([[''], ['   '], [MASKED_IBAN], [null], [7]])('update: IBAN %p → BadRequest; HİÇ işlem', async (bad) => {
       await expect(direct.updateBankAccount('tenant-A', 'acc-1', { iban: bad } as any)).rejects.toThrow();
       expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('denetim kaydı — yalnız alan adları, hassas değer YOK (B11 deseni)', () => {
+    const SENSITIVE = [REAL_IBAN, 'Ziraat', 'Merkez', 'Büro Hesabı', 'Yeni Banka', 'Şube', 'Sahip', 'Yeni Ad'];
+    const lastAudit = () => auditCalls()[auditCalls().length - 1][1];
+    const noSensitive = () => {
+      const text = JSON.stringify(auditCalls().map((c) => c[1]));
+      for (const v of SENSITIVE) expect(text).not.toContain(v);
+    };
+
+    it('ekle → CREATE; entityId yeni hesap; metadata yalnız GÖNDERİLEN alan adları; aktör ve tür', async () => {
+      const res = await post({ bankName: 'Yeni Banka', branchName: 'Şube', iban: REAL_IBAN, accountName: 'Sahip', isDefault: true });
+      expect(res.status).toBe(201);
+      expect(auditCalls()).toHaveLength(1);
+      expect(auditCalls()[0][0]).toBe(tx);
+      expect(lastAudit()).toEqual({
+        tenantId: 'tenant-A',
+        action: 'CREATE',
+        entityType: 'OFFICE_BANK_ACCOUNT',
+        entityId: 'acc-new',
+        userId: 'u-p',
+        actorType: 'USER',
+        metadata: { changedFields: ['bankName', 'branchName', 'iban', 'accountName', 'isDefault'] },
+      });
+      noSensitive();
+    });
+
+    it('ekle (yalnız zorunlu alanlar) → changedFields yalnız gönderilenler; isDefault gönderilmediyse listede YOK', async () => {
+      await post({ bankName: 'B', iban: REAL_IBAN });
+      expect(lastAudit().metadata).toEqual({ changedFields: ['bankName', 'iban'] });
+    });
+
+    it('güncelle → UPDATE; changedFields yalnız GERÇEKTEN DEĞİŞEN alan adları; eski / yeni değer yok', async () => {
+      const res = await put('acc-1', { bankName: 'Yeni Ad', branchName: 'Merkez' });
+      expect(res.status).toBe(200);
+      expect(auditCalls()).toHaveLength(1);
+      expect(lastAudit()).toMatchObject({ action: 'UPDATE', entityType: 'OFFICE_BANK_ACCOUNT', entityId: 'acc-1', userId: 'u-p', actorType: 'USER' });
+      // `branchName: 'Merkez'` kayıtlı değerle AYNI → listede yok; yalnız bankName değişti.
+      expect(lastAudit().metadata).toEqual({ changedFields: ['bankName'] });
+      noSensitive();
+    });
+
+    it('güncelle → IBAN değişti: yalnız "iban" ADI yazılır, değer ASLA', async () => {
+      await put('acc-1', { iban: 'TR000000000000000000000099' });
+      expect(lastAudit().metadata).toEqual({ changedFields: ['iban'] });
+      expect(JSON.stringify(auditCalls().map((c) => c[1]))).not.toContain('TR000000000000000000000099');
+      noSensitive();
+    });
+
+    it('güncelle → varsayılan yapıldı: "isDefault" adı; değer ve temizlenen hesap sayısı YOK', async () => {
+      await put('acc-1', { isDefault: true });
+      expect(lastAudit().metadata).toEqual({ changedFields: ['isDefault'] });
+      expect(JSON.stringify(auditCalls().map((c) => c[1]))).not.toMatch(/count|cleared|true/);
+    });
+
+    it('güncelle → hedef ZATEN varsayılan ama başka hesabın varsayılanı kalktı: varsayılan durumu değiştiği için "isDefault" yazılır', async () => {
+      tx.officeBankAccount.findFirst.mockImplementationOnce(async () => ({ ...OWN_ACCOUNT, isDefault: true }));
+      await put('acc-1', { isDefault: true });
+      expect(lastAudit().metadata).toEqual({ changedFields: ['isDefault'] });
+    });
+
+    it('güncelle → GERÇEK değişiklik yok (aynı değerler, başka varsayılan da yok): audit YAZILMAZ (no-op kayıt yok)', async () => {
+      tx.officeBankAccount.findFirst.mockImplementationOnce(async () => ({ ...OWN_ACCOUNT, isDefault: true }));
+      tx.officeBankAccount.updateMany.mockImplementationOnce(async () => ({ count: 0 }));
+      const res = await put('acc-1', { bankName: 'Ziraat', isDefault: true });
+      expect(res.status).toBe(200);
+      expect(auditCalls()).toHaveLength(0);
+    });
+
+    it('sil → DELETE; entityId; metadata YOK (silinen değerler kopyalanmaz); aynı işlemde', async () => {
+      const res = await del('acc-1');
+      expect(res.status).toBe(200);
+      expect(auditCalls()).toHaveLength(1);
+      expect(lastAudit()).toEqual({
+        tenantId: 'tenant-A',
+        action: 'DELETE',
+        entityType: 'OFFICE_BANK_ACCOUNT',
+        entityId: 'acc-1',
+        userId: 'u-p',
+        actorType: 'USER',
+      });
+      noSensitive();
+    });
+
+    it('reddedilen istekler (geçersiz gövde 400, yasak anahtar 400, yetkisiz 403, VIEWER 403, 404) → HİÇ denetim, HİÇ yazma', async () => {
+      await post({ bankName: 'B', iban: '' });
+      await post({ bankName: 'B', iban: REAL_IBAN, officeId: 'office-VICTIM' });
+      await put('acc-1', { iban: MASKED_IBAN });
+      await put('acc-1', { tenantId: 'tenant-VICTIM' });
+      await put('acc-VICTIM', { isDefault: true });
+      await del('acc-VICTIM');
+      await post({ bankName: 'B', iban: REAL_IBAN }, 'plain-lawyer');
+      await put('acc-1', { isDefault: true }, 'viewer-partner');
+      await del('acc-1', 'viewer-partner');
+      expect(auditCalls()).toHaveLength(0);
+      expect(anyWrites()).toBe(0);
+    });
+
+    it('audit yazılamazsa istek BAŞARISIZ olur (logInTransaction hata YUTMAZ → mutasyon işlemi geri alınır; gerçek geri alma DB-gated testte)', async () => {
+      audit.logInTransaction.mockRejectedValueOnce(new Error('audit down'));
+      const res = await post({ bankName: 'B', iban: REAL_IBAN });
+      expect(res.status).toBe(500);
+      expect(audit.log).not.toHaveBeenCalled(); // hata yutan yol KULLANILMAZ
+    });
+
+    it('aktörsüz doğrudan servis çağrısı → actorType SYSTEM, userId yok', async () => {
+      const approval = new OfficeApprovalService(prisma as any, { log: jest.fn() } as any);
+      const direct = new OfficeService(prisma as any, audit as any, approval);
+      await direct.addBankAccount('tenant-A', { bankName: 'B', iban: REAL_IBAN } as any);
+      expect(lastAudit()).toMatchObject({ action: 'CREATE', actorType: 'SYSTEM', userId: undefined });
     });
   });
 

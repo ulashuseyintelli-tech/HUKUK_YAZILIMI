@@ -175,15 +175,65 @@ describe('Düzenle MEVCUT hesabı günceller (PUT), yeni hesap oluşturmaz (POST
     expect(mocked.post).not.toHaveBeenCalled();
   });
 
-  it('KİMLİKSİZ satırda Kaydet → istek ÇIKMAZ (oluşturma dalına düşmez), hata görünür', async () => {
-    prime([{ officeId: 'o1', isDefault: false, iban: MASKED_1 }]); // eski kusurun şekli: id yok
-    const d = await openBank();
-    const { kaydet, inputs } = await openEdit(d);
-    fireEvent.change(inputs[0], { target: { value: 'X' } });
-    fireEvent.click(kaydet);
-    await screen.findAllByText(/Hesap kimliği okunamadı/);
-    expect(mocked.post).not.toHaveBeenCalled();
-    expect(mocked.put).not.toHaveBeenCalled();
+  describe('KİMLİKSİZ satır (eski kusurun şekli: sunucu satırı kimliksiz) — düzenle / sil BAŞTAN kapalı, neden görünür', () => {
+    const ID_LESS = [{ officeId: 'o1', isDefault: false, iban: MASKED_1 }];
+    const REASON = /Hesap kimliği okunamadı/;
+
+    it('Düzenle ve Sil düğmeleri devre dışı; neden satırda görünür; sağlam satır etkilenmez', async () => {
+      prime([...ID_LESS, { officeId: 'o1', id: 'b2', isDefault: false, iban: MASKED_2 }]);
+      const d = await openBank();
+      const rows = Array.from(document.querySelectorAll('.divide-y.divide-blue-100 > div'));
+      expect(rows).toHaveLength(2);
+      const [bozuk, saglam] = rows.map((r) => within(r as HTMLElement));
+      expect((bozuk.getByRole('button', { name: 'Düzenle' }) as HTMLButtonElement).disabled).toBe(true);
+      expect((bozuk.getByRole('button', { name: `${MASKED_1} banka hesabını sil` }) as HTMLButtonElement).disabled).toBe(true);
+      expect(bozuk.getByTestId('bank-row-unreadable').textContent).toMatch(REASON);
+      expect((saglam.getByRole('button', { name: 'Düzenle' }) as HTMLButtonElement).disabled).toBe(false);
+      expect((saglam.getByRole('button', { name: `${MASKED_2} banka hesabını sil` }) as HTMLButtonElement).disabled).toBe(false);
+      expect(saglam.queryByTestId('bank-row-unreadable')).toBeNull();
+      expect(d).toBeTruthy();
+    });
+
+    it('Düzenle tıklanınca pencere AÇILMAZ ve HİÇBİR istek çıkmaz (oluşturma dalına düşmez)', async () => {
+      prime(ID_LESS);
+      const d = await openBank();
+      fireEvent.click(d.getByRole('button', { name: 'Düzenle' }));
+      expect(screen.queryByRole('button', { name: 'Kaydet' })).toBeNull();
+      expect(mocked.post).not.toHaveBeenCalled();
+      expect(mocked.put).not.toHaveBeenCalled();
+    });
+
+    it('Sil tıklanınca onay penceresi SORULMAZ ve DELETE …/undefined ASLA çıkmaz', async () => {
+      prime(ID_LESS);
+      const d = await openBank();
+      fireEvent.click(d.getByRole('button', { name: `${MASKED_1} banka hesabını sil` }));
+      expect(window.confirm).not.toHaveBeenCalled();
+      expect(mocked.delete).not.toHaveBeenCalled();
+    });
+
+    it('kimlik boş metin / boşluk olsa da aynı: düğmeler kapalı, istek yok', async () => {
+      prime([{ officeId: 'o1', id: '   ', isDefault: false, iban: MASKED_1 }]);
+      const d = await openBank();
+      expect((d.getByRole('button', { name: 'Düzenle' }) as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.click(d.getByRole('button', { name: `${MASKED_1} banka hesabını sil` }));
+      expect(mocked.delete).not.toHaveBeenCalled();
+      expect(mocked.put).not.toHaveBeenCalled();
+      expect(mocked.post).not.toHaveBeenCalled();
+    });
+
+    it('"Ekle" (yeni hesap) kimliksiz satırdan etkilenmez: POST çıkar', async () => {
+      prime(ID_LESS);
+      const d = await openBank();
+      fireEvent.click(d.getAllByRole('button', { name: /Ekle/ })[0]);
+      const kaydet = await screen.findByRole('button', { name: 'Kaydet' });
+      const form = kaydet.closest('form') as HTMLFormElement;
+      const inputs = Array.from(form.querySelectorAll('input')) as HTMLInputElement[];
+      fireEvent.change(inputs[0], { target: { value: 'Yeni' } });
+      fireEvent.change(inputs[2], { target: { value: 'TR330006100519786457841326' } });
+      fireEvent.click(kaydet);
+      await waitFor(() => expect(mocked.post).toHaveBeenCalledTimes(1));
+      expect(mocked.post.mock.calls[0][0]).toBe('/office/bank-accounts');
+    });
   });
 
   it('sunucu reddederse (400) pencere AÇIK kalır, hata görünür, form korunur', async () => {

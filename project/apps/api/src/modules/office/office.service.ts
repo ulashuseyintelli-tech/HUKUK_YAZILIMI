@@ -47,6 +47,9 @@ import {
   OFFICE_WORK_POOL_KINDS,
 } from "./work-pool/office-work-pool.mutation-contract";
 
+/** Banka hesabı yazmalarının denetim varlık türü (`OFFICE_SETTINGS` kardeşi; bkz. auditBankAccountWrite). */
+const OFFICE_BANK_ACCOUNT_AUDIT_ENTITY = "OFFICE_BANK_ACCOUNT";
+
 /** Banka hesabı IBAN ret mesajı (avukat güncellemesindeki sözleşmeyle aynı: boş / maskeli / null kabul edilmez). */
 const BANK_IBAN_REJECT_MESSAGE =
   "IBAN için geçerli tam değer girin. Boş, boşluk, maskeli veya null değer kabul edilmez; değiştirmek istemiyorsanız alanı göndermeyin.";
@@ -301,8 +304,9 @@ export class OfficeService {
    * emsal: office-work-pool.mutation.service.ts (işlemin İLK ifadesi `SELECT … FROM "Office" … FOR UPDATE`).
    * Şema / göç değişmez; ikinci çağrı hata almaz, sıraya girer.
    *
-   * @remarks Çağrıldığı yerler: addBankAccount · updateBankAccount (POST /office/bank-accounts,
-   * PUT /office/bank-accounts/:id). deleteBankAccount varsayılan YAZMAZ (silme varsayılanı devretmez — bugünkü davranış).
+   * @remarks Çağrıldığı yerler: addBankAccount · updateBankAccount · deleteBankAccount (POST /office/bank-accounts,
+   * PUT / DELETE /office/bank-accounts/:id). deleteBankAccount varsayılan YAZMAZ (silme varsayılanı devretmez —
+   * bugünkü davranış); büro kilidine yalnız banka yazmalarının sıralanması ve silme + denetimin tek işlemde olması için girer.
    */
   private async withOfficeBankLock<T>(
     officeId: string,
@@ -326,6 +330,35 @@ export class OfficeService {
     return bankAccounts?.[0] ?? projected;
   }
 
+  /**
+   * Banka hesabı yazmalarının denetim kaydı — B11 (`LAWYER_PRIVILEGE_CHANGED`) ile AYNI onaylı desen:
+   *  - mutasyonla AYNI transaction'da `logInTransaction` (hata YUTMAZ → audit yazılamazsa mutasyon GERİ ALINIR);
+   *  - metadata YALNIZ ALAN ADLARIDIR: IBAN, banka adı, şube, hesap sahibi, `isDefault` değeri, eski/yeni değer,
+   *    istek gövdesi ve türev sayılar (matris S3: türev / özet değer de sınıfı korur) KOPYALANMAZ;
+   *  - hedef kayıt `entityId` (OFF-INV-08 "target resource"); serbest metin (`description`) YOK.
+   * Yeni audit politikası İCAT EDİLMEDİ: eylem adları şemadaki CREATE / UPDATE / DELETE, `OFFICE_SETTINGS` kardeşi.
+   *
+   * @remarks Çağrıldığı yerler: addBankAccount · updateBankAccount · deleteBankAccount.
+   */
+  private async auditBankAccountWrite(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    action: "CREATE" | "UPDATE" | "DELETE",
+    accountId: string,
+    changedFields: string[] | null,
+    actor?: { userId?: string; role?: string },
+  ): Promise<void> {
+    await this.audit.logInTransaction(tx, {
+      tenantId,
+      action,
+      entityType: OFFICE_BANK_ACCOUNT_AUDIT_ENTITY,
+      entityId: accountId,
+      userId: actor?.userId,
+      actorType: actor?.userId ? "USER" : "SYSTEM",
+      ...(changedFields ? { metadata: { changedFields } } : {}),
+    });
+  }
+
   // Banka hesabı ekle
   async addBankAccount(
     tenantId: string,
@@ -347,10 +380,13 @@ export class OfficeService {
           data: { isDefault: false },
         });
       }
-      return tx.officeBankAccount.create({
+      const row = await tx.officeBankAccount.create({
         // `officeId` her zaman sunucudan; alan haritası dışındaki hiçbir anahtar buraya ulaşamaz.
         data: { officeId: office.id, ...(fields as { bankName: string; iban: string }) },
       });
+      // Oluşturmada gönderilen alanların ADLARI (değerleri değil).
+      await this.auditBankAccountWrite(tx, tenantId, "CREATE", row.id, Object.keys(fields), actor);
+      return row;
     });
     return this.projectBankAccount(tenantId, office.id, created, actor);
   }
@@ -377,19 +413,31 @@ export class OfficeService {
         throw new NotFoundException("Banka hesabı bulunamadı");
       }
 
+      // Gerçekten DEĞİŞEN alanların adları (kayıtlı değerle karşılaştırma yalnız bellekte; hiçbir değer günlüğe girmez).
+      const changedFields = Object.keys(fields).filter(
+        (key) => (account as Record<string, unknown>)[key] !== fields[key],
+      );
+
       // Eğer varsayılan olarak işaretlendiyse, diğerlerini kaldır
       if (fields.isDefault === true) {
-        await tx.officeBankAccount.updateMany({
+        const cleared = await tx.officeBankAccount.updateMany({
           where: { officeId: office.id, id: { not: accountId } },
           data: { isDefault: false },
         });
+        // Başka hesabın varsayılanı kalktıysa varsayılan durumu değişmiştir (hedef zaten varsayılan olsa bile).
+        if (cleared.count > 0 && !changedFields.includes("isDefault")) changedFields.push("isDefault");
       }
 
       // Gönderilmeyen alan (undefined) YAZILMAZ: değişmeyen hassas alanlar (şube, hesap sahibi, IBAN) korunur.
-      return tx.officeBankAccount.update({
+      const row = await tx.officeBankAccount.update({
         where: { id: accountId },
         data: fields,
       });
+      // B11: gerçek değişiklik yoksa audit YOK (no-op kayıt üretilmez).
+      if (changedFields.length > 0) {
+        await this.auditBankAccountWrite(tx, tenantId, "UPDATE", accountId, changedFields, actor);
+      }
+      return row;
     });
     return this.projectBankAccount(tenantId, office.id, updated, actor);
   }
@@ -402,16 +450,22 @@ export class OfficeService {
   ) {
     const office = await this.getOrCreate(tenantId);
 
-    const account = await this.prisma.officeBankAccount.findFirst({
-      where: { id: accountId, officeId: office.id },
-    });
+    // Aynı büro kilidi: tüm banka yazmaları büro başına sıraya girer; sahiplik kontrolü + silme + audit TEK işlemde.
+    const deleted = await this.withOfficeBankLock(office.id, async (tx) => {
+      const account = await tx.officeBankAccount.findFirst({
+        where: { id: accountId, officeId: office.id },
+      });
 
-    if (!account) {
-      throw new NotFoundException("Banka hesabı bulunamadı");
-    }
+      if (!account) {
+        throw new NotFoundException("Banka hesabı bulunamadı");
+      }
 
-    const deleted = await this.prisma.officeBankAccount.delete({
-      where: { id: accountId },
+      const row = await tx.officeBankAccount.delete({
+        where: { id: accountId },
+      });
+      // Silmede alan adı listesi yoktur: eylem (DELETE) + hedef kimlik yeterlidir; silinen değerler KOPYALANMAZ.
+      await this.auditBankAccountWrite(tx, tenantId, "DELETE", accountId, null, actor);
+      return row;
     });
     return this.projectBankAccount(tenantId, office.id, deleted, actor);
   }
