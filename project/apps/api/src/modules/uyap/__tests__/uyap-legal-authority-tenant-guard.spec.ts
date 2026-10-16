@@ -172,10 +172,12 @@ const civilReq = (over: Record<string, unknown> = {}) =>
     ...over,
   }) as any;
 
+// Güvenlik paketi 01 P1 UYARLAMASI: HACIZ_TALEBI artık evrak ucunda yetki kapısından ÖNCE 400 ile reddedilir (owner Ek 91 B3-iii;
+// ayrı testte: uyap-submit-runtime-policy-gate.spec.ts). Bu dosyanın tenant / vekalet senaryoları için kapıya ULAŞAN tür kullanılır.
 const docReq = (over: Record<string, unknown> = {}) =>
   ({
     caseId: 'case-a1',
-    documentType: 'HACIZ_TALEBI',
+    documentType: 'DILEKCE',
     documentContent: 'ZG9j',
     documentName: 'evrak.pdf',
     ...over,

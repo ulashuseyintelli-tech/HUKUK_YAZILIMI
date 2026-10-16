@@ -85,6 +85,10 @@ export const OFFICE_WORK_ACTION_CATEGORY: Record<ActionCode, OfficeWorkActionCat
   // JUDICIAL — yargisal/icra sureci, UYAP, hukuki belge/iletisim, dosya yasam dongusu
   // ============================================
   [ActionCode.UYAP_SEND]: 'JUDICIAL',
+  /** Owner Ek 91 (B1-a, 2026-10-16): UYAP evrak gönderimi → JUDICIAL (öncelik kuralı 2: UYAP işlemi). */
+  [ActionCode.UYAP_DOCUMENT_SUBMIT]: 'JUDICIAL',
+  /** Owner Ek 91 (B1-a, 2026-10-16): UYAP ilgili dava gönderimi → JUDICIAL (öncelik kuralı 2: UYAP işlemi). */
+  [ActionCode.UYAP_LAWSUIT_FILE]: 'JUDICIAL',
   [ActionCode.SEND_NOTIFICATION]: 'JUDICIAL',
   [ActionCode.SEND_PAYMENT_ORDER]: 'JUDICIAL',
   [ActionCode.NOTIFICATION_DELIVERED]: 'JUDICIAL',

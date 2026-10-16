@@ -51,6 +51,9 @@ export const VALIDITY_ROUTE_ACTIONS: ReadonlySet<ActionCode> = new Set([ActionCo
 /** Hardware: devlete resmî gönderim → e-imza donanımı. fullAuthority AŞAMAZ. */
 export const HARDWARE_ACTIONS: ReadonlySet<ActionCode> = new Set([
   ActionCode.UYAP_SEND,
+  // Güvenlik paketi 01 P1: UYAP_SEND ile aynı sınıf (devlete resmî gönderim → e-imza donanımı).
+  ActionCode.UYAP_DOCUMENT_SUBMIT,
+  ActionCode.UYAP_LAWSUIT_FILE,
   ActionCode.TRIGGER_HACIZ,
 ]);
 

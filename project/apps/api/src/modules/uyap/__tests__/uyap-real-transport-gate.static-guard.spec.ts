@@ -6,11 +6,13 @@
  * hattı üretime bağlanırsa ya da bugünkü sahte taşımanın doğruluk işareti düşerse CI kırmızıya döner.
  *
  * ## BU TEST NE DEĞİLDİR (sınır — okumadan geçme)
- * Bu bir STATİK (kaynak tarayan) testtir. **Runtime yetki açığını KAPATMAZ.** Bugün AÇIK olan ürün işi (bu testin kapsamı DIŞINDA):
- *  - `submitDocument` / `submitCriminalComplaint` / `submitCivilLawsuit` ve `POST /uyap/xml/submit/:caseId` politika motorunu
- *    (CasePolicyEngine) ÇAĞIRMIYOR; yalnız `assertUyapLegalAuthority` (dosya sahipliği + vekalet) çalışıyor.
- *  - `validateCasePoaForUyap` müvekkil ya da avukat BOŞKEN `isValid: true` döner (vekalet denetimi hiç çalışmaz).
- *  - `UyapController` yalnız `JwtAuthGuard` taşır; `CpeRequiredGuard` bağlı değil (`@CpeRequired` yalnız işarettir).
+ * Bu bir STATİK (kaynak tarayan) testtir. **Runtime yetki açığını KAPATMAZ.** Runtime kapı güvenlik paketi 01 P1 ile eklendi (bu
+ * testin kapsamı DIŞINDA; runtime kanıtı: uyap-submit-runtime-policy-gate.spec.ts + uyap-submit-runtime-authz.http.db-gated.integration.spec.ts):
+ *  - `submitDocument` / `submitCriminalComplaint` / `submitCivilLawsuit` artık `assertUyapLegalAuthority`'den SONRA politika motorunu
+ *    çağırır (UYAP_DOCUMENT_SUBMIT / UYAP_LAWSUIT_FILE; `POST /uyap/xml/submit/:caseId` iç çağrıda UYAP_SEND, TEK karar).
+ *  - `validateCasePoaForUyap` müvekkil ya da avukat BOŞKEN hâlâ `isValid: true` döner (okuma ucu DEĞİŞMEDİ); yazma yolunda boş
+ *    kümede vekalet kararı politika motorunun aktör eşlemesindedir (POWER_OF_ATTORNEY_MISSING).
+ *  - `UyapController` `JwtAuthGuard` + `ViewerWriteDenyGuard` taşır; `CpeRequiredGuard` bağlı değil (`@CpeRequired` yalnız işarettir).
  *  - Vekalet politikası ve gerçek gönderim uygulaması bu işin DIŞINDADIR (owner kararı 10).
  * Bu testin yakaladığı tek şey: gerçek taşımanın bu açıklar kapanmadan KAPISIZ bağlanması.
  *

@@ -90,11 +90,16 @@ describe('UYAP-SEND-HARD-GATE-PREFLIGHT-R02', () => {
       expect(soft.map((g) => g.gateCode)).toEqual([]);
     });
 
-    it('preflight gate yalniz UYAP_SEND\'e uygulanir (scope siniri)', () => {
+    it('preflight gate yalniz UYAP_SEND kapi ailesine uygulanir (scope siniri; P1: + UYAP_DOCUMENT_SUBMIT / UYAP_LAWSUIT_FILE)', () => {
       const gate = COMPILED_GATES.find((g) => g.gateCode === PREFLIGHT_GATE);
       expect(gate).toBeDefined();
       expect(gate?.severity).toBe('HARD');
-      expect(gate?.actionCodes).toEqual([ActionCode.UYAP_SEND]);
+      // Güvenlik paketi 01 P1 (owner Ek 90): yeni kodlar UYAP_SEND ile AYNI kapı kümesini taşır; başka eyleme SIZMAZ.
+      expect(gate?.actionCodes).toEqual([
+        ActionCode.UYAP_SEND,
+        ActionCode.UYAP_DOCUMENT_SUBMIT,
+        ActionCode.UYAP_LAWSUIT_FILE,
+      ]);
     });
 
     it('preflight gate, ondan ONCE calisan gate\'lerin mesajini bastirmaz (priority > 12)', () => {

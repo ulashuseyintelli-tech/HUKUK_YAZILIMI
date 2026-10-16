@@ -56,31 +56,34 @@ describe('CLIENT-SEC-H2C-P02-R1 — UYAP write-ownership completion', () => {
       expect(call[2]).toBe('u1'); // actorUserId = req.user.id (client lawyerId DEĞİL)
     });
 
-    it('POST /uyap/document/submit → submitDocument(dto, trustedTenant)', async () => {
+    // Güvenlik paketi 01 P1 UYARLAMASI: imza (dto, trustedTenant, actorUserId) oldu; actorUserId = req.user.id (gövdeden DEĞİL).
+    it('POST /uyap/document/submit → submitDocument(dto, trustedTenant, req.user.id)', async () => {
       const { controller, uyapService } = buildController();
-      await controller.submitDocument({ caseId: 'c1' }, 'tenant-A');
-      expect(uyapService.submitDocument).toHaveBeenCalledWith(
-        expect.objectContaining({ tenantId: 'tenant-A' }),
-        'tenant-A',
-      );
+      await controller.submitDocument({ caseId: 'c1', lawyerId: 'spoofed-lawyer' }, 'tenant-A', { user: { id: 'u1' } });
+      const call = uyapService.submitDocument.mock.calls[0];
+      expect(call[0]).toEqual(expect.objectContaining({ tenantId: 'tenant-A' }));
+      expect(call[1]).toBe('tenant-A'); // trusted tenant (güvenlik değişmezi)
+      expect(call[2]).toBe('u1'); // actorUserId = req.user.id (body lawyerId DEĞİL)
     });
 
-    it('POST /uyap/lawsuit/criminal → submitCriminalComplaint(dto, trustedTenant)', async () => {
+    // Güvenlik paketi 01 P1 UYARLAMASI: imza (dto, trustedTenant, actorUserId) oldu; actorUserId = req.user.id (gövdeden DEĞİL).
+    it('POST /uyap/lawsuit/criminal → submitCriminalComplaint(dto, trustedTenant, req.user.id)', async () => {
       const { controller, uyapService } = buildController();
-      await controller.submitCriminalComplaint({ caseId: 'c1' }, 'tenant-A');
-      expect(uyapService.submitCriminalComplaint).toHaveBeenCalledWith(
-        expect.objectContaining({ tenantId: 'tenant-A' }),
-        'tenant-A',
-      );
+      await controller.submitCriminalComplaint({ caseId: 'c1', lawyerId: 'spoofed-lawyer' }, 'tenant-A', { user: { id: 'u1' } });
+      const call = uyapService.submitCriminalComplaint.mock.calls[0];
+      expect(call[0]).toEqual(expect.objectContaining({ tenantId: 'tenant-A' }));
+      expect(call[1]).toBe('tenant-A'); // trusted tenant (güvenlik değişmezi)
+      expect(call[2]).toBe('u1'); // actorUserId = req.user.id (body lawyerId DEĞİL)
     });
 
-    it('POST /uyap/lawsuit/civil → submitCivilLawsuit(dto, trustedTenant)', async () => {
+    // Güvenlik paketi 01 P1 UYARLAMASI: imza (dto, trustedTenant, actorUserId) oldu; actorUserId = req.user.id (gövdeden DEĞİL).
+    it('POST /uyap/lawsuit/civil → submitCivilLawsuit(dto, trustedTenant, req.user.id)', async () => {
       const { controller, uyapService } = buildController();
-      await controller.submitCivilLawsuit({ caseId: 'c1' }, 'tenant-A');
-      expect(uyapService.submitCivilLawsuit).toHaveBeenCalledWith(
-        expect.objectContaining({ tenantId: 'tenant-A' }),
-        'tenant-A',
-      );
+      await controller.submitCivilLawsuit({ caseId: 'c1', lawyerId: 'spoofed-lawyer' }, 'tenant-A', { user: { id: 'u1' } });
+      const call = uyapService.submitCivilLawsuit.mock.calls[0];
+      expect(call[0]).toEqual(expect.objectContaining({ tenantId: 'tenant-A' }));
+      expect(call[1]).toBe('tenant-A'); // trusted tenant (güvenlik değişmezi)
+      expect(call[2]).toBe('u1'); // actorUserId = req.user.id (body lawyerId DEĞİL)
     });
   });
 

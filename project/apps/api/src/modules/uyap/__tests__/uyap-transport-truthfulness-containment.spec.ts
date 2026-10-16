@@ -241,7 +241,7 @@ describe('UyapService — TRANSPORT-CONTAIN-01 truthfulness containment', () => 
     });
 
     it('submitDocument: simulated/dispatched/providerAccepted/legalEffectConfirmed + stubReference + evkNo yok', async () => {
-      const { svc } = buildService();
+      const { svc } = buildService({ casePolicyEngine: buildCpeAllow() } /* P1: evrak / dava uçları artık politika kapısından geçer */);
       const res: any = await svc.submitDocument(documentRequest(), 't1');
 
       expect(res.success).toBe(true);
@@ -255,7 +255,7 @@ describe('UyapService — TRANSPORT-CONTAIN-01 truthfulness containment', () => 
     });
 
     it('submitCriminalComplaint: simulated/dispatched/providerAccepted/legalEffectConfirmed + stubReference + evkNo yok', async () => {
-      const { svc } = buildService();
+      const { svc } = buildService({ casePolicyEngine: buildCpeAllow() } /* P1: evrak / dava uçları artık politika kapısından geçer */);
       const res: any = await svc.submitCriminalComplaint(criminalRequest(), 't1');
 
       expect(res.success).toBe(true);
@@ -269,7 +269,7 @@ describe('UyapService — TRANSPORT-CONTAIN-01 truthfulness containment', () => 
     });
 
     it('submitCivilLawsuit: simulated/dispatched/providerAccepted/legalEffectConfirmed + stubReference + evkNo yok', async () => {
-      const { svc } = buildService();
+      const { svc } = buildService({ casePolicyEngine: buildCpeAllow() } /* P1: evrak / dava uçları artık politika kapısından geçer */);
       const res: any = await svc.submitCivilLawsuit(civilRequest(), 't1');
 
       expect(res.success).toBe(true);
@@ -285,7 +285,7 @@ describe('UyapService — TRANSPORT-CONTAIN-01 truthfulness containment', () => 
 
   describe('kalıcı (persisted) lifecycle/audit truthfulness', () => {
     it('submitCriminalComplaint: caseLifecycle description koşulsuz "UYAP\'a gönderildi" İÇERMEZ + simulation marker taşır', async () => {
-      const { svc, prisma } = buildService();
+      const { svc, prisma } = buildService({ casePolicyEngine: buildCpeAllow() } /* P1: evrak / dava uçları artık politika kapısından geçer */);
       const res: any = await svc.submitCriminalComplaint(criminalRequest(), 't1');
 
       const call = prisma.caseLifecycle.create.mock.calls[0][0].data;
@@ -300,7 +300,7 @@ describe('UyapService — TRANSPORT-CONTAIN-01 truthfulness containment', () => 
     });
 
     it('submitCivilLawsuit: caseLifecycle description koşulsuz "UYAP\'a gönderildi" İÇERMEZ + simulation marker taşır', async () => {
-      const { svc, prisma } = buildService();
+      const { svc, prisma } = buildService({ casePolicyEngine: buildCpeAllow() } /* P1: evrak / dava uçları artık politika kapısından geçer */);
       const res: any = await svc.submitCivilLawsuit(civilRequest(), 't1');
 
       const call = prisma.caseLifecycle.create.mock.calls[0][0].data;

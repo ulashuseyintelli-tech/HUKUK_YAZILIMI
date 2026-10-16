@@ -64,6 +64,7 @@ export interface ActionMatrixEntry {
    * aşamaları CLOSED ve SUSPENDED durum makinesi sözlüğünde terminal DEĞİLDİR (bilinmeyen aşama) → bu eylem için izinlidir;
    * dosyanın hukuki kapanışı caseStatus + isArchived ile belirlenir. Varsayılan: yok (= aşamaya bağlı). Bu alan yalnız owner'ın adıyla anıp
    * açtığı eylemlere verilir; "48 eylemi topluca açma" yasaktır (bkz. case-policy-engine-stage-independence.spec.ts).
+   * Owner'ın adıyla açtıkları: APPROVE_EXPENSE (karar 8), UYAP_DOCUMENT_SUBMIT + UYAP_LAWSUIT_FILE (güvenlik paketi 01 P1, Ek 90 / Ek 91).
    */
   stageIndependent?: boolean;
 }
@@ -87,6 +88,34 @@ export const ACTION_MATRIX: ActionMatrixEntry[] = [
     cpeRequiredMandatory: true,
     scope: Scope.CASE,
     notes: 'UYAP işlemleri geri alınamaz',
+  },
+  // Güvenlik paketi 01 P1 (owner Ek 90 / Ek 91): UYAP_SEND girdisinin BİREBİR kopyası + YALNIZ `stageIndependent: true`.
+  // Eşitlik testi: uyap-stage-independent-action-parity.spec.ts (alan alan + kapı kümesi). Gevşetme yasak.
+  {
+    actionCode: ActionCode.UYAP_DOCUMENT_SUBMIT,
+    riskLevel: RiskLevel.HIGH,
+    failMode: 'CLOSED',
+    resolverFailureMode: 'FAIL_CLOSED',
+    lockRequired: true,
+    lockScope: 'CASE',
+    gateSeverity: 'HARD',
+    cpeRequiredMandatory: true,
+    scope: Scope.CASE,
+    stageIndependent: true,
+    notes: 'UYAP evrak gönderimi (haciz talebi hariç); UYAP işlemleri geri alınamaz',
+  },
+  {
+    actionCode: ActionCode.UYAP_LAWSUIT_FILE,
+    riskLevel: RiskLevel.HIGH,
+    failMode: 'CLOSED',
+    resolverFailureMode: 'FAIL_CLOSED',
+    lockRequired: true,
+    lockScope: 'CASE',
+    gateSeverity: 'HARD',
+    cpeRequiredMandatory: true,
+    scope: Scope.CASE,
+    stageIndependent: true,
+    notes: 'UYAP ilgili dava (ceza / hukuk) gönderimi; UYAP işlemleri geri alınamaz',
   },
   {
     actionCode: ActionCode.TRIGGER_HACIZ,

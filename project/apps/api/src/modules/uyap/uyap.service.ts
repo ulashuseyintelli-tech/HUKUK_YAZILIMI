@@ -120,6 +120,20 @@ const STUB_TRANSPORT_TRUTH = {
   legalEffectConfirmed: false,
 } as const;
 
+/**
+ * Güvenlik paketi 01 P1 (owner Ek 91 B3-iii): haciz talebi evrak ucundan gönderilemez. Haciz YALNIZ `POST /uyap/haciz`
+ * yolundadır (borçlu hedef bağı + aktöre özel yetki zinciri orada). Bu kod o yolun aşama sözlüğünü / yetkisini DEĞİŞTİRMEZ.
+ */
+export const UYAP_HACIZ_TALEBI_ENDPOINT_REQUIRED = 'UYAP_HACIZ_TALEBI_ENDPOINT_REQUIRED';
+
+/**
+ * Güvenlik paketi 01 P1: `submitDocument`'ın değerlendirebileceği politika eylemleri (kapalı küme).
+ * - UYAP_DOCUMENT_SUBMIT: `POST /uyap/document/submit` (aşamadan bağımsız; kapıları UYAP_SEND ile aynı).
+ * - UYAP_SEND: `POST /uyap/xml/submit/:caseId` (owner Ek 91 B2-a: aşama kısıtı KORUNUR; kapı bu çağrıda TEK kez değerlendirilir).
+ */
+export type UyapDocumentPolicyAction = ActionCode.UYAP_DOCUMENT_SUBMIT | ActionCode.UYAP_SEND;
+const UYAP_DOCUMENT_POLICY_ACTIONS: ReadonlySet<ActionCode> = new Set([ActionCode.UYAP_DOCUMENT_SUBMIT, ActionCode.UYAP_SEND]);
+
 @Injectable()
 export class UyapService {
   private readonly logger = new Logger(UyapService.name);
@@ -365,6 +379,74 @@ export class UyapService {
         message: `${operation} yapilamaz: yetki dogrulanamadi`,
         details: 'Dosya sahipligi veya gecerli vekalet dogrulanamadi',
       });
+    }
+  }
+
+  /**
+   * Güvenlik paketi 01 P1 (DV-198 / GR-8; owner Ek 90 / Ek 91) — UYAP gönderim uçlarında ÇALIŞMA ZAMANI politika kapısı.
+   *
+   * `assertUyapLegalAuthority` (dosya sahipliği + dosya düzeyi vekalet) KALIR; bu kapı onun ARKASINDAN, her yan etkiden
+   * (logRequest / yaşam döngüsü kaydı) ÖNCE ve koşulsuz çalışır. Aktör YALNIZ kimliği doğrulanmış kullanıcıdır
+   * (`req.user.id`); istemci gövdesindeki `lawyerId` / `clientId` yetki girdisi DEĞİLDİR. Vekalet kararı politika motorunun
+   * aktör eşlemesindedir (POWER_OF_ATTORNEY_MISSING: eşleşen etkin vekaleti olan avukat aktör); personel / avukat olmayan
+   * aktör reddedilir. Fail-closed: motor yoksa ya da teknik hata verirse işlem engellenir (sendPaymentOrder ile aynı kodlar).
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - UyapService.submitDocument() → UYAP_DOCUMENT_SUBMIT (document/submit) ya da UYAP_SEND (xml/submit iç çağrısı; TEK karar)
+   * - UyapService.submitCriminalComplaint() → UYAP_LAWSUIT_FILE
+   * - UyapService.submitCivilLawsuit() → UYAP_LAWSUIT_FILE
+   * </remarks>
+   */
+  private async assertUyapPolicyAllows(params: {
+    tenantId: string;
+    caseId: string;
+    actionCode: ActionCode;
+    actorUserId?: string;
+    operation: string;
+  }): Promise<void> {
+    const { tenantId, caseId, actionCode, actorUserId, operation } = params;
+
+    if (!this.casePolicyEngine) {
+      this.logger.error(`${operation} engellendi: Policy engine kullanılamıyor (fail-closed)`);
+      throw new BadRequestException({
+        code: 'CPE_CHECK_FAILED',
+        message: 'UYAP işlemi yapılamaz: Güvenlik kontrolü kullanılamıyor',
+        details: 'Policy engine kullanılamıyor, güvenlik nedeniyle işlem engellendi',
+      });
+    }
+
+    let decision: Awaited<ReturnType<CasePolicyEngine['canPerformAction']>>;
+    try {
+      decision = await this.casePolicyEngine.canPerformAction(tenantId, caseId, actionCode, {
+        tenantId,
+        authenticatedUserId: actorUserId,
+        evaluatedAt: new Date(),
+      });
+    } catch (error: any) {
+      // Ham hata / PII günlüğe aktarılmaz; yalnız tür adı.
+      this.logger.error(`${operation}: CPE kontrolü başarısız (${actionCode}), işlem engelleniyor: ${error?.name ?? 'error'}`);
+      throw new BadRequestException({
+        code: 'CPE_CHECK_FAILED',
+        message: 'UYAP işlemi yapılamaz: Güvenlik kontrolü başarısız',
+        details: 'Policy engine kontrolü yapılamadı, güvenlik nedeniyle işlem engellendi',
+      });
+    }
+
+    if (!decision?.allowed) {
+      this.logger.error(`${operation} CPE tarafından engellendi (${actionCode}): ${decision?.reason}`);
+      throw new BadRequestException({
+        code: 'CPE_GATE_BLOCKED',
+        message: `${operation} yapılamaz: ${decision?.reason ?? 'politika kararı olumsuz'}`,
+        details: 'Policy engine bu işleme izin vermiyor',
+        cpeTraceId: decision?.traceId,
+        cpeCode: decision?.code,
+        cpeGateCode: decision?.blockedBy?.gateCode ?? null,
+      });
+    }
+
+    if (decision.warnings && decision.warnings.length > 0) {
+      this.logger.warn(`CPE warnings for ${actionCode}:`, decision.warnings);
     }
   }
 
@@ -827,6 +909,13 @@ export class UyapService {
    */
   // CLIENT-SEC-H2C-P02-R1: `tenantId` trusted execution context — DTO'nun opsiyonel `request.tenantId`
   // (POA) alanından AYRI ve zorunlu; log ownership yalnız buradan gelir.
+  /**
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - UyapController.submitDocument() → POST /uyap/document/submit (policyAction = UYAP_DOCUMENT_SUBMIT, varsayılan)
+   * - UyapController.submitXmlToUyap() → POST /uyap/xml/submit/:caseId (policyAction = UYAP_SEND; owner Ek 91 B2-a)
+   * </remarks>
+   */
   async submitDocument(request: {
     caseId: string;
     documentType: 'TAKIP_TALEBI' | 'DILEKCE' | 'BEYAN' | 'ITIRAZ' | 'HACIZ_TALEBI' | 'DIGER';
@@ -836,10 +925,32 @@ export class UyapService {
     lawyerId?: string;
     tenantId?: string;
     // I06: `skipPoaCheck` KALDIRILDI — okunmuyordu; bypass sözleşmesi YOKTUR.
-  }, tenantId: string): Promise<UyapResponse> {
+  }, tenantId: string,
+  // Güvenlik paketi 01 P1: aktör = kimliği doğrulanmış kullanıcı (controller req.user.id); gövdeden ALINMAZ.
+  actorUserId?: string,
+  // Kapalı küme: UYAP_DOCUMENT_SUBMIT (varsayılan) | UYAP_SEND (yalnız xml/submit). Atlama seçeneği YOKTUR: her çağrıda TEK karar.
+  policyAction: UyapDocumentPolicyAction = ActionCode.UYAP_DOCUMENT_SUBMIT,
+  ): Promise<UyapResponse> {
+    // Güvenlik paketi 01 P1 (owner Ek 91 B3-iii): haciz talebi bu uçtan gönderilemez (veri erişiminden ÖNCE, yan etkisiz).
+    if (request?.documentType === 'HACIZ_TALEBI') {
+      throw new BadRequestException({
+        code: UYAP_HACIZ_TALEBI_ENDPOINT_REQUIRED,
+        message: 'Haciz talebi yalnız /uyap/haciz ucundan gönderilebilir.',
+        details: 'Evrak gönderim ucu haciz talebi kabul etmez; haciz için borçlu hedefi ve aktöre özel yetki zinciri gereklidir.',
+      });
+    }
+    if (!UYAP_DOCUMENT_POLICY_ACTIONS.has(policyAction)) {
+      // Kapalı küme dışı eylem (yalnız tip zorlaması / hata ile ulaşılabilir) → fail-closed.
+      throw new BadRequestException({
+        code: 'CPE_CHECK_FAILED',
+        message: 'UYAP işlemi yapılamaz: Güvenlik kontrolü başarısız',
+        details: 'Evrak gönderimi için tanımsız politika eylemi',
+      });
+    }
+
     // DEBTOR-UYAP-HACIZ-TENANT-GUARD-P1-I02 — SIBLING PATH, AYNI KOK NEDEN.
-    // `submitDocument` de UYAP'a hukuki sonuc doguran evrak (takip talebi, dilekce, itiraz,
-    // HACIZ_TALEBI) gonderir ve ayni fail-open desenini tasiyordu: dosya sahipligi HIC
+    // `submitDocument` de UYAP'a hukuki sonuc doguran evrak (takip talebi, dilekce, itiraz)
+    // gonderir ve ayni fail-open desenini tasiyordu: dosya sahipligi HIC
     // dogrulanmiyordu (DEBTOR-IDOR-03) ve vekalet kosullu/istemci-tenant'li idi
     // (DEBTOR-IDOR-04). Uc hedef operasyonla ayni kapidan gecirilir.
     await this.assertUyapLegalAuthority({
@@ -847,6 +958,15 @@ export class UyapService {
       caseId: request.caseId,
       operation: 'Evrak gonderimi',
       payloadTenantId: request.tenantId,
+    });
+
+    // Güvenlik paketi 01 P1: politika motoru kapısı (yan etkiden ÖNCE; aktör sunucudan).
+    await this.assertUyapPolicyAllows({
+      tenantId,
+      caseId: request.caseId,
+      actionCode: policyAction,
+      actorUserId,
+      operation: 'Evrak gönderimi',
     });
 
     const requestId = await this.logRequest('submitDocument', {
@@ -1286,7 +1406,10 @@ export class UyapService {
     lawyerId?: string;
     tenantId?: string;
     // I06: `skipPoaCheck` KALDIRILDI — okunmuyordu; bypass sözleşmesi YOKTUR.
-  }, tenantId: string): Promise<UyapResponse> {
+  }, tenantId: string,
+  // Güvenlik paketi 01 P1: aktör = kimliği doğrulanmış kullanıcı (controller req.user.id); gövdeden ALINMAZ.
+  actorUserId?: string,
+  ): Promise<UyapResponse> {
     // DEBTOR-UYAP-HACIZ-TENANT-GUARD-P1-I02 (DEBTOR-IDOR-03): bu yolda ONCEDEN HICBIR
     // dosya sahipligi kontrolu YOKTU — `caseId` dogrudan istemci govdesinden geliyor ve
     // dogrulanmadan ceza sikayeti gonderimine gidiyordu. Vekalet de kosullu/fail-open idi
@@ -1296,6 +1419,15 @@ export class UyapService {
       caseId: request.caseId,
       operation: 'Sikayet dilekcesi gonderimi',
       payloadTenantId: request.tenantId,
+    });
+
+    // Güvenlik paketi 01 P1: politika motoru kapısı (UYAP_LAWSUIT_FILE; yan etkiden ÖNCE; aktör sunucudan).
+    await this.assertUyapPolicyAllows({
+      tenantId,
+      caseId: request.caseId,
+      actionCode: ActionCode.UYAP_LAWSUIT_FILE,
+      actorUserId,
+      operation: 'Şikayet dilekçesi gönderimi',
     });
 
     // CLIENT-SEC-H2C-P02-R1: log ownership trusted `tenantId` param'ından (DTO'dan DEĞİL).
@@ -1405,7 +1537,10 @@ export class UyapService {
     lawyerId?: string;
     tenantId?: string;
     // I06: `skipPoaCheck` KALDIRILDI — okunmuyordu; bypass sözleşmesi YOKTUR.
-  }, tenantId: string): Promise<UyapResponse> {
+  }, tenantId: string,
+  // Güvenlik paketi 01 P1: aktör = kimliği doğrulanmış kullanıcı (controller req.user.id); gövdeden ALINMAZ.
+  actorUserId?: string,
+  ): Promise<UyapResponse> {
     // DEBTOR-UYAP-HACIZ-TENANT-GUARD-P1-I02 (DEBTOR-IDOR-03): bu yolda ONCEDEN HICBIR
     // dosya sahipligi kontrolu YOKTU — `caseId` dogrudan istemci govdesinden geliyor ve
     // dogrulanmadan hukuk davasi gonderimine gidiyordu. Vekalet de kosullu/fail-open idi
@@ -1415,6 +1550,15 @@ export class UyapService {
       caseId: request.caseId,
       operation: 'Dava dilekcesi gonderimi',
       payloadTenantId: request.tenantId,
+    });
+
+    // Güvenlik paketi 01 P1: politika motoru kapısı (UYAP_LAWSUIT_FILE; yan etkiden ÖNCE; aktör sunucudan).
+    await this.assertUyapPolicyAllows({
+      tenantId,
+      caseId: request.caseId,
+      actionCode: ActionCode.UYAP_LAWSUIT_FILE,
+      actorUserId,
+      operation: 'Dava dilekçesi gönderimi',
     });
 
     // CLIENT-SEC-H2C-P02-R1: log ownership trusted `tenantId` param'ından (DTO'dan DEĞİL).
