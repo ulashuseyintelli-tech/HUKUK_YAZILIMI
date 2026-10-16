@@ -1,8 +1,18 @@
 "use client";
 
 // K1-7: Davet kabul / parola belirleme sayfası.
-// URL'deki tek-kullanımlık token + kullanıcının belirlediği parola → hesap aktifleşir.
-import { Suspense, useState } from "react";
+// Bağlantıdaki tek-kullanımlık token + kullanıcının belirlediği parola → hesap aktifleşir.
+//
+// GÜV-01 P3 (DV-201): yeni davet bağlantıları token'ı adres PARÇASINDA taşır
+// (`/auth/accept-invite#token=…`); parça tarayıcı dışına gönderilmez → sunucu / kenar katmanı
+// erişim günlüklerine ve `Referer` başlığına düşmez. Geçiş süresince ESKİ `?token=` bağlantıları
+// kendi geçerlilikleri boyunca desteklenir (süre uzatılmaz; sunucu süreyi ve tek kullanımı denetler).
+// Token okunur okunmaz `history.replaceState` ile adresten (çubuk + geçerli geçmiş girdisi) silinir;
+// yalnız bellekte (React durumu) tutulur, konsola / günlüğe / localStorage / sessionStorage / çereze
+// YAZILMAZ ve yalnız kabul POST gövdesinde gider (`api.acceptInvite`).
+// Eski yolun kaldırılması: geçişten önce üretilmiş son davetin gerçek geçerlilik süresi ölçülene
+// kadar YAPILMAZ (varsayılan 72 saat kesin kesim sayılmaz).
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Scale } from "lucide-react";
@@ -12,9 +22,31 @@ import { useHydrated } from "@/lib/use-hydrated";
 
 function AcceptInviteInner() {
   const router = useRouter();
+  // Yalnız geçiş yolu (eski `?token=` bağlantıları) için; yeni bağlantılar parçayı kullanır.
   const searchParams = useSearchParams();
-  const token = searchParams.get("token") || "";
   const hydrated = useHydrated();
+  const [token, setToken] = useState("");
+  const [tokenChecked, setTokenChecked] = useState(false);
+
+  useEffect(() => {
+    const rawHash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "";
+    // Önce parça (yeni bağlantı); yoksa geçiş için sorgu dizesi (eski bağlantı).
+    const found = new URLSearchParams(rawHash).get("token") || searchParams.get("token") || "";
+    // React StrictMode (geliştirme) bu etkiyi iki kez çalıştırır; ikinci çalışma aşağıda temizlenmiş
+    // adresi okur. Boş okuma önceki geçerli token'ı EZMEZ (reset-password/page.tsx ile aynı desen).
+    if (found) setToken(found);
+    setTokenChecked(true);
+
+    // Ham token adres çubuğunda / tarayıcı geçmişinde / sonraki isteklerin `Referer` başlığında kalmasın:
+    // parça bütünüyle, sorgu dizesinden yalnız `token` çıkarılır (yol ve başka parametreler korunur).
+    const query = new URLSearchParams(window.location.search);
+    const hadQueryToken = query.has("token");
+    if (window.location.hash || hadQueryToken) {
+      query.delete("token");
+      const rest = query.toString();
+      window.history.replaceState(null, "", window.location.pathname + (rest ? `?${rest}` : ""));
+    }
+  }, [searchParams]);
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
@@ -86,6 +118,10 @@ function AcceptInviteInner() {
               required
               className="w-full border rounded px-3 py-2"
             />
+            {/* Token'sız açılış: gönder düğmesi kapalı kalır; mevcut "geçersiz" iletisi baştan gösterilir. */}
+            {tokenChecked && !token && !error && (
+              <p className="text-sm text-red-600">Davet bağlantısı geçersiz (token bulunamadı).</p>
+            )}
             {error && <p className="text-sm text-red-600">{error}</p>}
             <button
               type="submit"
