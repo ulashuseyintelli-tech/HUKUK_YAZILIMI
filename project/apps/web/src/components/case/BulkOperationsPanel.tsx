@@ -12,6 +12,14 @@ import {
   X,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { classifyUyapSubmitResult, type UyapGeneralDocumentType } from "@/lib/uyap-submit-result";
+
+// DV-198/e (owner Ek 94): toplu UYAP gönderiminde yalnız genel evrak ucunun kabul ettiği türler.
+// Haciz Talebi (400 UYAP_HACIZ_TALEBI_ENDPOINT_REQUIRED) ve Takip Talebi (yalnız XML gönderim yolu)
+// bu listede YOKTUR; tür tip düzeyinde de dışlanır.
+const BULK_UYAP_DOCUMENT_TYPES: ReadonlyArray<{ value: UyapGeneralDocumentType; label: string }> = [
+  { value: "DILEKCE", label: "Dilekçe" },
+];
 
 interface BulkCase {
   id: string;
@@ -51,7 +59,7 @@ export function BulkOperationsPanel({ cases, onComplete }: BulkOperationsPanelPr
   const [tebligatChannel, setTebligatChannel] = useState("PTT");
 
   // UYAP options
-  const [uyapDocType, setUyapDocType] = useState("TAKIP_TALEBI");
+  const [uyapDocType, setUyapDocType] = useState<UyapGeneralDocumentType>(BULK_UYAP_DOCUMENT_TYPES[0].value);
 
   // Status options
   const [newStatus, setNewStatus] = useState("");
@@ -121,14 +129,23 @@ export function BulkOperationsPanel({ cases, onComplete }: BulkOperationsPanelPr
             });
             // Güvenlik paketi 01 P1: gerçek UYAP taşıması YOK (sunucu `dispatched:false` döner). Başarılı yanıt "gönderildi"
             // diye GÖSTERİLMEZ; 400 / 403 (politika / salt okur reddi) api katmanında hata olarak fırlar ve aşağıdaki catch'e düşer.
-            operationResults.push({
-              caseId,
-              fileNumber: caseData?.fileNumber || caseId,
-              success: result.data?.success === true,
-              message: result.data?.success === true
-                ? (result.data?.data?.dispatched === true ? "UYAP'a iletildi" : "Yerel simülasyon; UYAP'a iletilmedi")
-                : (result.data?.errorMessage || "Hata"),
-            });
+            // DV-198/e: sonuç yalnız sunucu beyanından türer; belirsiz yanıt (alan yok / bozuk) başarı veya iletim SAYILMAZ.
+            {
+              const kind = classifyUyapSubmitResult(result?.data);
+              operationResults.push({
+                caseId,
+                fileNumber: caseData?.fileNumber || caseId,
+                success: kind === "DISPATCHED" || kind === "SIMULATED",
+                message:
+                  kind === "DISPATCHED"
+                    ? "UYAP'a iletildi"
+                    : kind === "SIMULATED"
+                      ? "Yerel simülasyon; UYAP'a iletilmedi"
+                      : kind === "REJECTED"
+                        ? (result.data?.errorMessage || "Hata")
+                        : "Sunucu yanıtı doğrulanamadı; UYAP iletimi iddia edilmez",
+              });
+            }
             break;
 
           case "document":
@@ -242,13 +259,14 @@ export function BulkOperationsPanel({ cases, onComplete }: BulkOperationsPanelPr
               <div>
                 <label className="text-sm font-medium mb-2 block">Belge Türü</label>
                 <select
+                  aria-label="Belge Türü"
                   value={uyapDocType}
-                  onChange={(e) => setUyapDocType(e.target.value)}
+                  onChange={(e) => setUyapDocType(e.target.value as UyapGeneralDocumentType)}
                   className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                 >
-                  <option value="TAKIP_TALEBI">Takip Talebi</option>
-                  <option value="HACIZ_TALEBI">Haciz Talebi</option>
-                  <option value="DILEKCE">Dilekçe</option>
+                  {BULK_UYAP_DOCUMENT_TYPES.map((dt) => (
+                    <option key={dt.value} value={dt.value}>{dt.label}</option>
+                  ))}
                 </select>
               </div>
             )}
