@@ -21,6 +21,10 @@ const BULK_UYAP_DOCUMENT_TYPES: ReadonlyArray<{ value: UyapGeneralDocumentType; 
   { value: "DILEKCE", label: "Dilekçe" },
 ];
 
+// Owner Ek 95 / E1: belirsiz 2xx yanıt başarısız sayılır, otomatik tekrar YAPILMAZ; mükerrer riski satırda yazılır.
+const BULK_UYAP_UNVERIFIED_MESSAGE =
+  "Sunucu yanıtı doğrulanamadı; UYAP iletimi iddia edilmez. Kayıt oluşmuş olabilir: yeniden göndermek mükerrer işlem oluşturabilir — önce dosya geçmişini kontrol edin";
+
 interface BulkCase {
   id: string;
   fileNumber: string;
@@ -143,7 +147,7 @@ export function BulkOperationsPanel({ cases, onComplete }: BulkOperationsPanelPr
                       ? "Yerel simülasyon; UYAP'a iletilmedi"
                       : kind === "REJECTED"
                         ? (result.data?.errorMessage || "Hata")
-                        : "Sunucu yanıtı doğrulanamadı; UYAP iletimi iddia edilmez",
+                        : BULK_UYAP_UNVERIFIED_MESSAGE,
               });
             }
             break;

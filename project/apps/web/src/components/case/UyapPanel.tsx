@@ -43,17 +43,21 @@ const RISK_LEVEL_BADGE: Record<PreHacizRiskLevel, string> = {
 // "iletildi / gönderildi" DENMEZ; iletim yalnız `dispatched === true` beyanında söylenir; belirsiz
 // yanıtta iletim iddia EDİLMEZ. REJECTED (gövdede `success:false`) hata yoluna gider, burada yoktur.
 type SubmitNotice = { kind: Exclude<UyapSubmitResultKind, 'REJECTED'>; text: string };
+// Owner Ek 95 / E1: belirsiz 2xx yanıtta form KORUNUR, otomatik yeniden gönderme YAPILMAZ; kullanıcıya
+// sonucun doğrulanamadığı ve tekrarın mükerrer işlem oluşturabileceği açıkça söylenir. Yeni bir genel
+// idempotency sistemi EKLENMEDİ; çift tıklamaya karşı mevcut senkron gönderim kilidi aynen geçerlidir.
+const UNVERIFIED_RESULT_TEXT =
+  'Sunucu yanıtı doğrulanamadı; UYAP iletimi iddia EDİLMEZ. Kayıt oluşmuş olabilir: aynı içeriği yeniden ' +
+  'göndermek mükerrer işlem oluşturabilir. Yeniden göndermeden önce Geçmiş sekmesini kontrol edin.';
 const DOCUMENT_RESULT_TEXT: Record<SubmitNotice['kind'], string> = {
   DISPATCHED: "Sunucu evrakın UYAP'a iletimini bildirdi.",
   SIMULATED: 'Evrak için yalnız yerel simülasyon kaydı oluşturuldu; gerçek UYAP gönderimi YAPILMADI.',
-  UNVERIFIED:
-    'Sunucu yanıtı doğrulanamadı; UYAP iletimi iddia EDİLMEZ. Sonucu Geçmiş sekmesinden kontrol edin.',
+  UNVERIFIED: UNVERIFIED_RESULT_TEXT,
 };
 const HACIZ_RESULT_TEXT: Record<SubmitNotice['kind'], string> = {
   DISPATCHED: "Sunucu haciz talebinin UYAP'a iletimini bildirdi.",
   SIMULATED: 'Haciz talebi için yalnız yerel simülasyon kaydı oluşturuldu; gerçek UYAP gönderimi YAPILMADI.',
-  UNVERIFIED:
-    'Sunucu yanıtı doğrulanamadı; UYAP iletimi iddia EDİLMEZ. Sonucu Geçmiş sekmesinden kontrol edin.',
+  UNVERIFIED: UNVERIFIED_RESULT_TEXT,
 };
 // Tazeleme başarısızsa (SUCCESS_STALE) iletim İDDİA EDİLMEZ; sonuç ayrı bildirimde, yanıta göre yazılır.
 const SUBMIT_STALE_MESSAGE = 'Sunucu yanıt verdi, ancak panel yenilenemedi. Görünen bilgiler güncel olmayabilir.';
@@ -237,8 +241,11 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
           return;
         }
         setSubmitNotice({ kind, text: DOCUMENT_RESULT_TEXT[kind] });
-        // Sunucu isteği kabul etti (yerel simülasyon kaydı / doğrulanamayan yanıt) → aynı evrak
-        // yeniden gönderilmez (çift kayıt önlenir); bu UYAP'a iletim KANITI DEĞİLDİR.
+        // Ek 95 / E1: belirsiz yanıtta form (tür / ad / dosya) KORUNUR; otomatik yeniden gönderme YOK.
+        // Kullanıcı Geçmiş'i kontrol edip bilerek yeniden gönderebilir (mükerrer riski iletide yazılı).
+        if (kind === 'UNVERIFIED') return;
+        // Sunucu kaydı doğrulandı (yerel simülasyon / iletim beyanı) → aynı evrak yeniden gönderilmez;
+        // simülasyon UYAP'a iletim KANITI DEĞİLDİR.
         setDocumentName('');
         setDocumentFile(null);
         onDocumentSubmitted?.();
@@ -297,7 +304,9 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
           return;
         }
         setSubmitNotice({ kind, text: HACIZ_RESULT_TEXT[kind] });
-        // Reset YALNIZ sunucunun isteği kabul ettiği yanıt sonrası (iletim kanıtı DEĞİLDİR).
+        // Ek 95 / E1: belirsiz yanıtta tutar / ayrıntı KORUNUR; otomatik yeniden gönderme YOK.
+        if (kind === 'UNVERIFIED') return;
+        // Reset YALNIZ sunucunun kaydı doğruladığı yanıt sonrası (simülasyon iletim kanıtı DEĞİLDİR).
         setHacizAmount('');
         setHacizDetails('');
       } finally {

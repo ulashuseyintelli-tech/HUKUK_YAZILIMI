@@ -75,6 +75,17 @@ async function fillAndSubmitDocument() {
   return panel;
 }
 
+/**
+ * Gönderimden sonra tazeleme sırasında panel yükleme iskeletine döner ve sekme paneli YENİDEN oluşturulur;
+ * önceki `panel` referansı DOM'dan kopar. Form durumu sorguları tazeleme bittikten sonra CANLI panelde yapılır.
+ */
+async function livePanelAfterRefresh() {
+  await waitFor(() => expect(mocked.getUyapStatus).toHaveBeenCalledTimes(2));
+  const live = await screen.findByRole('tabpanel');
+  expect(live.isConnected).toBe(true);
+  return live;
+}
+
 async function fillAndSubmitHaciz() {
   const panel = await openTab('Haciz Talebi');
   await within(panel).findByText('Ahmet Yılmaz');
@@ -157,6 +168,46 @@ describe('DV-198/e — evrak gönderim sonucu sunucu yanıtına dayanır', () =>
     expect(document.body.textContent).not.toMatch(DISPATCH_CLAIM);
   });
 
+  it.each([
+    ['dispatched alanı yok', { success: true, requestId: 'r', data: { simulated: true } }],
+    ['gövde null', null],
+  ])('Ek 95 / E1 — belirsiz yanıt (%s) → form KORUNUR, mükerrer uyarısı görünür, otomatik ikinci istek YOK', async (_label, response) => {
+    mocked.submitUyapDocument.mockResolvedValue(response);
+    const stalePanel = await fillAndSubmitDocument();
+
+    const notice = await screen.findByTestId('submit-result-notice');
+    expect(notice.textContent).toContain('Sunucu yanıtı doğrulanamadı');
+    expect(notice.textContent).toContain('Kayıt oluşmuş olabilir');
+    expect(notice.textContent).toContain('mükerrer işlem oluşturabilir');
+    expect(notice.textContent).toContain('Geçmiş sekmesini kontrol edin');
+
+    // Form (tür / ad / dosya) korunur; kullanıcı bilerek yeniden gönderebilir.
+    const panel = await livePanelAfterRefresh();
+    expect(panel).not.toBe(stalePanel);
+    const select = within(panel).getByRole('combobox', { name: 'Evrak Türü' }) as HTMLSelectElement;
+    expect(select.value).toBe('DILEKCE');
+    expect(within(panel).getByDisplayValue('Dilekçe - 2026/1')).toBeTruthy();
+    const submit = within(panel).getByRole('button', { name: "UYAP'a Gönder" }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(false); // dosya state'i korundu (dosya yoksa düğme kapalı olurdu)
+
+    // Otomatik yeniden gönderme YOK: tazeleme tamamlandıktan sonra da tek istek.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(mocked.submitUyapDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it('Ek 95 / E1 — yerel simülasyon yolu önceki gibi: form temizlenir, mükerrer uyarısı YOK, tek istek', async () => {
+    mocked.submitUyapDocument.mockResolvedValue(SIMULATED_OK);
+    await fillAndSubmitDocument();
+
+    const notice = await screen.findByTestId('submit-result-notice');
+    expect(notice.getAttribute('data-result-kind')).toBe('SIMULATED');
+    expect(notice.textContent).not.toContain('mükerrer');
+    const panel = await livePanelAfterRefresh();
+    expect(within(panel).queryByDisplayValue('Dilekçe - 2026/1')).toBeNull();
+    expect((within(panel).getByRole('button', { name: "UYAP'a Gönder" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(mocked.submitUyapDocument).toHaveBeenCalledTimes(1);
+  });
+
   it('yalnız sunucu dispatched:true beyan ederse iletim bildirilir', async () => {
     mocked.submitUyapDocument.mockResolvedValue({ success: true, data: { simulated: false, dispatched: true } });
     await fillAndSubmitDocument();
@@ -164,6 +215,11 @@ describe('DV-198/e — evrak gönderim sonucu sunucu yanıtına dayanır', () =>
     const notice = await screen.findByTestId('submit-result-notice');
     expect(notice.getAttribute('data-result-kind')).toBe('DISPATCHED');
     expect(notice.textContent).toBe("Sunucu evrakın UYAP'a iletimini bildirdi.");
+    // Ek 95 / E1: doğrulanmış iletim yolu önceki gibi formu temizler; tek istek.
+    const panel = await livePanelAfterRefresh();
+    expect(within(panel).getByPlaceholderText(/Örn:/)).toBeTruthy();
+    expect(within(panel).queryByDisplayValue('Dilekçe - 2026/1')).toBeNull();
+    expect(mocked.submitUyapDocument).toHaveBeenCalledTimes(1);
   });
 
   it('tazeleme başarısız (stale) → bayat uyarısında iletim iddiası YOK; sonuç yine simülasyon', async () => {
@@ -269,5 +325,38 @@ describe('DV-198/e — Haciz sekmesi kısıtı', () => {
     const notice = await screen.findByTestId('submit-result-notice');
     expect(notice.getAttribute('data-result-kind')).toBe('UNVERIFIED');
     expect(document.body.textContent).not.toMatch(DISPATCH_CLAIM);
+  });
+
+  it('Ek 95 / E1 — haciz belirsiz yanıt → tutar / ayrıntı KORUNUR, mükerrer uyarısı görünür, otomatik ikinci istek YOK', async () => {
+    mocked.sendUyapHacizRequest.mockResolvedValue({ success: true, requestId: 'req-h' });
+    const panel = await openTab('Haciz Talebi');
+    await within(panel).findByText('Ahmet Yılmaz');
+    fireEvent.change(within(panel).getByPlaceholderText('0.00'), { target: { value: '1000' } });
+    fireEvent.change(within(panel).getByPlaceholderText(/Banka adı/), { target: { value: 'Banka X' } });
+    fireEvent.click(within(panel).getByRole('button', { name: 'Haciz Talebi Gönder' }));
+
+    const notice = await screen.findByTestId('submit-result-notice');
+    expect(notice.textContent).toContain('Kayıt oluşmuş olabilir');
+    expect(notice.textContent).toContain('mükerrer işlem oluşturabilir');
+    const live = await livePanelAfterRefresh();
+    expect(live).not.toBe(panel);
+    expect(within(live).getByDisplayValue('1000')).toBeTruthy();
+    expect(within(live).getByDisplayValue('Banka X')).toBeTruthy();
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(mocked.sendUyapHacizRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('Ek 95 / E1 — haciz simülasyon yolu önceki gibi: tutar temizlenir, mükerrer uyarısı YOK', async () => {
+    mocked.sendUyapHacizRequest.mockResolvedValue({ success: true, data: { simulated: true, dispatched: false } });
+    await fillAndSubmitHaciz();
+
+    const notice = await screen.findByTestId('submit-result-notice');
+    expect(notice.getAttribute('data-result-kind')).toBe('SIMULATED');
+    expect(notice.textContent).not.toContain('mükerrer');
+    const panel = await livePanelAfterRefresh();
+    expect(within(panel).getByPlaceholderText('0.00')).toBeTruthy();
+    expect(within(panel).queryByDisplayValue('1000')).toBeNull();
+    expect(mocked.sendUyapHacizRequest).toHaveBeenCalledTimes(1);
   });
 });
