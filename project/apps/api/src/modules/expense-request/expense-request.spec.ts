@@ -1859,9 +1859,55 @@ describe('ExpenseViewService - Property Tests', () => {
       expect(clientRequest.status).toBe('KISMI');
     });
 
-    it('should include payment info with IBAN', () => {
-      const clientRequest = viewService.expenseToClientRequest(mockExpenseData, 'TR12 3456 7890');
-      expect(clientRequest.paymentInfo.iban).toBe('TR12 3456 7890');
+    // Bilinçli güncelleme (güvenlik paketi 01 / P2; önceki ad: "should include payment info with IBAN"): büro IBAN'ı
+    // müvekkil talebi görünümünde YOK — ödeme bilgisi yalnız açıklamadır. Masraf e-postası IBAN'ı kendi yolundan alır.
+    it('should not include office IBAN in payment info (description only)', () => {
+      const clientRequest = viewService.expenseToClientRequest(mockExpenseData);
+      expect(clientRequest.paymentInfo).toEqual({ description: '2024/12345 - Masraf' });
+      expect(Object.keys(clientRequest.paymentInfo)).not.toContain('iban');
+    });
+
+    describe('three-view / client requests: office default bank account is not read or returned', () => {
+      const OFFICE_IBAN = 'TR00 0000 0000 0000 0000 0000 01';
+      let officeFindFirst: jest.Mock;
+
+      beforeEach(() => {
+        // Büroda varsayılan hesap VAR: eski kod bu satırı okuyup yanıta koyuyordu
+        officeFindFirst = jest.fn().mockResolvedValue({ bankAccounts: [{ iban: OFFICE_IBAN }] });
+        mockPrismaService.office = { findFirst: officeFindFirst };
+        mockPrismaService.expensePayment.findMany = jest.fn().mockResolvedValue(mockExpenseData.payments);
+      });
+
+      afterEach(() => {
+        delete mockPrismaService.office;
+        delete mockPrismaService.expensePayment.findMany;
+      });
+
+      const expectNoOfficeIban = (clientRequests: ExpenseClientRequestView[]) => {
+        expect(clientRequests).toHaveLength(1);
+        for (const clientRequest of clientRequests) {
+          expect(clientRequest.paymentInfo).toEqual({ description: '2024/12345 - Masraf' });
+          expect(JSON.stringify(clientRequest)).not.toContain(OFFICE_IBAN);
+        }
+        expect(officeFindFirst).not.toHaveBeenCalled();
+      };
+
+      it('getThreeViewData (GET /expense-requests/:id/three-view)', async () => {
+        mockPrismaService.expenseRequest.findFirst.mockResolvedValueOnce(mockExpenseData);
+        const data = await viewService.getThreeViewData('tenant-1', 'exp-1');
+        expectNoOfficeIban([data.clientRequest]);
+      });
+
+      it('getThreeViewDataForCase (GET /expense-requests/case/:caseId/three-view)', async () => {
+        mockPrismaService.expenseRequest.findMany.mockResolvedValueOnce([mockExpenseData]);
+        const data = await viewService.getThreeViewDataForCase('tenant-1', 'case-1');
+        expectNoOfficeIban(data.map((entry) => entry.clientRequest));
+      });
+
+      it('getExpenseClientRequests (GET /expense-requests/client/:clientId/requests)', async () => {
+        mockPrismaService.expenseRequest.findMany.mockResolvedValueOnce([mockExpenseData]);
+        expectNoOfficeIban(await viewService.getExpenseClientRequests('tenant-1', 'client-1'));
+      });
     });
 
     it('should include case file number in payment description', () => {
