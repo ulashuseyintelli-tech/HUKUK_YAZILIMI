@@ -41,11 +41,19 @@ export class UserInviteService {
     return Number.isFinite(n) && n > 0 ? n : 72;
   }
 
+  /**
+   * GÜV-01 P3 (DV-201): ham belirteç adres PARÇASINDA (`#token=`) taşınır, sorgu dizesinde DEĞİL.
+   * Parça tarayıcı dışına gönderilmez → sunucu / kenar katmanı erişim günlüklerine ve `Referer`
+   * başlığına düşmez. Kabul sayfası belirteci okuyup adresten temizler (accept-invite/page.tsx).
+   * Eski `?token=` bağlantıları kendi geçerlilik süreleri boyunca sayfa tarafında desteklenir;
+   * süre (`expiresAt`, TTL) ve yeniden gönderim davranışı bu değişiklikle DEĞİŞMEZ.
+   * Çağıran: sendInviteEmail (issue + resend).
+   */
   private acceptUrl(rawToken: string): string {
     const base = (this.config.get("WEB_BASE_URL") || this.config.get("APP_BASE_URL") || "")
       .toString()
       .replace(/\/+$/, "");
-    return `${base}/auth/accept-invite?token=${encodeURIComponent(rawToken)}`;
+    return `${base}/auth/accept-invite#token=${encodeURIComponent(rawToken)}`;
   }
 
   /**
