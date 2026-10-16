@@ -245,6 +245,13 @@ src/modules/expense-request/__tests__/opening-expense-fx-basis.http.db-gated.int
 #   sabitleyen 9 test duzeltmesiz kodla da GECER (RED kanitlandi).
 src/modules/expense-request/__tests__/expense-tenant-boundary.http.db-gated.integration.spec.ts
 #
+# Masraf okuma uclarinda buro varsayilan hesabinin IBAN'i (guvenlik paketi 01 / P2), GERCEK HTTP + disposable PostgreSQL:
+#   GET /expense-requests/case/:caseId/three-view, /:id/three-view ve /client/:clientId/requests yanitinda paymentInfo yalniz
+#   { description } tasir (IBAN yok); bes aktor (ADMIN, avukat, ortak, profilsiz USER, VIEWER) ayni govdeyi alir; baska
+#   buronun verisi icin yanit (bos liste / var olmayan kimlikle ayni yanit) degismez. 10 test; eski kodla 10 testin 7'si DUSER,
+#   uc uctan yalniz birine IBAN geri konunca 6 - 7'si DUSER. Bu konum bilerek dosya sonu DEGIL: es zamanli PR'lar sona ekler.
+src/modules/expense-request/__tests__/expense-view-office-iban.http.db-gated.integration.spec.ts
+#
 # Masraf kesinlestirme / onaylama / reddetme: dosya ASAMASINDAN BAGIMSIZ (owner karari 8, 2026-10-05), GERCEK HTTP + disposable
 #   PostgreSQL. Olculen kusur (main 99368b6c): karar motorunun durum makinesi asama kodlari ile veritabani WorkflowStage degerleri
 #   yalniz INITIAL da kesisir; dosya ilk asamadan cikinca uc 403 Gecersiz asama verir (12/13 asama). Korunanlar AYRI AYRI kilitli:
