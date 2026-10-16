@@ -254,9 +254,11 @@ describe('CLIENT-SEC-H2C-P02 — UyapRequestLog tenant write population', () => 
       const { service, prisma } = buildService();
       await service.submitDocument({
         caseId: 'case-1',
-        documentType: 'TAKIP_TALEBI',
+        // P5 (owner Ek 94, karar b2): takip talebi evrak ucunda (UYAP_DOCUMENT_SUBMIT) veri erişiminden ÖNCE 400 verir;
+        // bu test log sahipliğini ölçtüğü için evrak ucunun kabul ettiği bir tür kullanılır.
+        documentType: 'DILEKCE',
         documentContent: 'YmFzZTY0',
-        documentName: 'takip.xml',
+        documentName: 'dilekce.pdf',
         skipPoaCheck: true,
       }, 'tenant-A');
       expect(prisma.uyapRequestLog.create).toHaveBeenCalledWith(

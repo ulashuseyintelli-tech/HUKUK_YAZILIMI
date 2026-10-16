@@ -30,6 +30,8 @@ const UYAP_SEND_HARD_GATES = [
   'UYAP_TEMPORARILY_UNAVAILABLE_SEND',
   'UYAP_SEND_PRECONDITIONS_UNPROVEN',
   'POWER_OF_ATTORNEY_MISSING',
+  // P5 (owner Ek 94, karar a2): vekalete EK dosya ataması kapısı — bilinçli güncelleme (7 → 8).
+  'ACTING_LAWYER_NOT_ASSIGNED_TO_CASE',
 ];
 
 const DB_STAGES = [
@@ -50,6 +52,7 @@ const READY_FACTS: Record<string, unknown> = {
   'poa.is_effective_at_evaluation_time': true,
   'poa.covers_requested_operation': true,
   'authority.is_unambiguous': true,
+  'actor.is_assigned_to_case': true, // P5 (owner Ek 94): vekalete EK olarak dosya ataması
 };
 
 function buildEngine(facts: Record<string, unknown>) {
@@ -87,7 +90,7 @@ const decide = async (facts: Record<string, unknown>, stage: string, action: Act
 
 describe('P1 eşitlik kilidi — yeni UYAP kodları = UYAP_SEND kapı kümesi; TEK fark aşama reddi', () => {
   describe('statik: derlenmiş kapılar ve eylem matrisi', () => {
-    it('UYAP_SEND HARD kapı kümesi beklenen 7 kapıdır (0 = kör; kapı eksilirse / eklenirse bilinçli güncellenir)', () => {
+    it('UYAP_SEND HARD kapı kümesi beklenen 8 kapıdır (0 = kör; kapı eksilirse / eklenirse bilinçli güncellenir)', () => {
       const hard = getGatesForAction(ActionCode.UYAP_SEND).filter((g) => g.severity === 'HARD').map((g) => g.gateCode);
       expect(hard).toEqual(UYAP_SEND_HARD_GATES);
     });
@@ -172,6 +175,9 @@ describe('P1 eşitlik kilidi — yeni UYAP kodları = UYAP_SEND kapı kümesi; T
       ['vekalet kapsamı yetmez', { 'poa.covers_requested_operation': false }],
       ['yetki belirsiz', { 'authority.is_unambiguous': false }],
       ['vekalet olgusu hiç yok', { 'actor.is_canonical_lawyer': undefined }],
+      // P5 (owner Ek 94): vekalet geçerli ama aktör dosyaya atanmamış / avukatsız dosya / olgu hiç yok.
+      ['aktör dosyaya atanmamış', { 'actor.is_assigned_to_case': false }],
+      ['atama olgusu hiç yok', { 'actor.is_assigned_to_case': undefined }],
     ];
 
     it.each(NEGATIVE)('%s → üç eylem de GATE_BLOCKED ve kapı kodu AYNI (INITIAL + SEIZURE)', async (_label, patch) => {

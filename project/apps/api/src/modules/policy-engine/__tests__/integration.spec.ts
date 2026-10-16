@@ -166,6 +166,8 @@ describe('CasePolicyEngine - Integration Tests', () => {
         { key: 'poa.is_effective_at_evaluation_time', value: true },
         { key: 'poa.covers_requested_operation', value: true },
         { key: 'authority.is_unambiguous', value: true },
+        // P5 (owner Ek 94): ACTING_LAWYER_NOT_ASSIGNED_TO_CASE — vekalete EK olarak dosya ataması.
+        { key: 'actor.is_assigned_to_case', value: true },
         { key: 'expense.opening.paid', value: true },
         // UYAP-SEND-HARD-GATE-PREFLIGHT-R02: masraf engelinin YOKLUGU da POZITIF
         // kanit ister. Production'da bu fact `UyapExpenseBlockingFactProvider`

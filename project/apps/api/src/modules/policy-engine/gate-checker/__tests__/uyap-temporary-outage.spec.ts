@@ -84,6 +84,8 @@ describe('P3 — UYAP geçici arıza gate\'leri (gate-checker)', () => {
         'poa.is_effective_at_evaluation_time': true,
         'poa.covers_requested_operation': true,
         'authority.is_unambiguous': true,
+        // P5 (owner Ek 94): ACTING_LAWYER_NOT_ASSIGNED_TO_CASE — vekalete EK olarak dosya ataması.
+        'actor.is_assigned_to_case': true,
       });
 
       const result = await gateChecker.checkGates('case-x', ActionCode.UYAP_SEND, facts);

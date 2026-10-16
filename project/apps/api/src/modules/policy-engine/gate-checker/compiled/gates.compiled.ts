@@ -232,6 +232,23 @@ export const COMPILED_GATES: CompiledGate[] = [
     priority: 25,
   },
 
+  {
+    gateCode: 'ACTING_LAWYER_NOT_ASSIGNED_TO_CASE',
+    name: 'Avukat Dosyaya Atanmamış',
+    description:
+      'Güvenlik paketi 01 P5 (owner Ek 94, karar a2): UYAP gönderim ailesinde aktör, geçerli vekalete EK olarak ' +
+      'dosyaya etkin biçimde atanmış olmalıdır (CaseLawyer; aynı kiracı; avukat kaydı etkin). Atama tek başına yetki ' +
+      'vermez; vekalet de tek başına yeterli değildir. Avukatsız dosya ve dosyaya atanmamış aktör reddedilir.',
+    // Kapsam: POWER_OF_ATTORNEY_MISSING ile AYNI liste (UYAP_SEND, UYAP_DOCUMENT_SUBMIT, UYAP_LAWSUIT_FILE).
+    // TRIGGER_HACIZ bu listede DEĞİL (POWER_OF_ATTORNEY_MISSING de taşımaz; haciz yetkisi ayrı zincirdedir).
+    actionCodes: [...UYAP_SEND_GATE_FAMILY],
+    // Olgu eksik / undefined ise de bloklar (pozitif ispat). Olguyu YALNIZ UyapAuthorityFactProvider yazar.
+    condition: (facts: FactMap) => facts.get('actor.is_assigned_to_case') !== true,
+    severity: 'HARD',
+    reason: 'UYAP işlemi için avukatın dosyaya atanmış olması gerekir.',
+    priority: 26,
+  },
+
   // ==================== SOFT GATES (WARNINGS) ====================
 
   {

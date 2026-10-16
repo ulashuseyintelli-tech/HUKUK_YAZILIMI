@@ -46,6 +46,8 @@ const AUTHORITY_FACTS: Record<string, FactValue> = {
   'poa.is_effective_at_evaluation_time': true,
   'poa.covers_requested_operation': true,
   'authority.is_unambiguous': true,
+  // P5 (owner Ek 94): ACTING_LAWYER_NOT_ASSIGNED_TO_CASE — vekalete EK olarak dosya ataması.
+  'actor.is_assigned_to_case': true,
 };
 
 const baselineFacts = (): FactMap =>
@@ -72,6 +74,8 @@ describe('UYAP-SEND-HARD-GATE-PREFLIGHT-R02', () => {
       // Yeni bir gate eklenirse bu envanter BILINCLI olarak guncellenmelidir.
       expect(codes).toEqual(
         [
+          // P5 (owner Ek 94): vekalete EK dosya ataması kapısı — bilinçli envanter güncellemesi.
+          'ACTING_LAWYER_NOT_ASSIGNED_TO_CASE',
           'CASE_ARCHIVED',
           'CASE_CLOSED',
           'EXPENSE_BLOCKING',

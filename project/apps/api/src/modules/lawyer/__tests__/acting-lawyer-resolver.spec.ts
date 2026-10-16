@@ -216,4 +216,57 @@ describe("ActingLawyerResolverService", () => {
       }
     });
   });
+
+  describe("isAssignedToCase — P5 (owner Ek 94, karar a2): vekalete EK dosya ataması", () => {
+    const CASE_ID = "case-1";
+    const row = (over: Record<string, unknown> = {}) => ({
+      id: "cl-1",
+      case: { tenantId: TENANT },
+      lawyer: { tenantId: TENANT, isActive: true },
+      ...over,
+    });
+    const make = (rows: unknown[]) => {
+      const findMany = jest.fn().mockResolvedValue(rows);
+      const service = new ActingLawyerResolverService({ caseLawyer: { findMany } } as any);
+      return { service, findMany };
+    };
+    const params = { actingLawyerId: LAWYER_ID, caseId: CASE_ID, tenantId: TENANT };
+
+    it("tek, aynı kiracı, etkin avukatlı atama → true; sorgu YALNIZ (caseId, lawyerId) ile kurulur", async () => {
+      const { service, findMany } = make([row()]);
+      expect(await service.isAssignedToCase(params)).toBe(true);
+      const args = findMany.mock.calls[0][0];
+      expect(args.where).toEqual({ caseId: CASE_ID, lawyerId: LAWYER_ID });
+      expect(args.take).toBe(2);
+    });
+
+    it.each([
+      ["atama yok (avukatsız dosya / başka avukat atanmış)", []],
+      ["birden fazla satır (@@unique ihlali)", [row(), row({ id: "cl-2" })]],
+      ["dosya başka kiracıda", [row({ case: { tenantId: OTHER_TENANT } })]],
+      ["avukat kaydı başka kiracıda", [row({ lawyer: { tenantId: OTHER_TENANT, isActive: true } })]],
+      ["avukat kaydı pasif", [row({ lawyer: { tenantId: TENANT, isActive: false } })]],
+      ["ilişki satırı eksik (bozuk veri)", [row({ case: null, lawyer: null })]],
+    ])("%s → false (fail-closed)", async (_label, rows) => {
+      const { service } = make(rows as unknown[]);
+      expect(await service.isAssignedToCase(params)).toBe(false);
+    });
+
+    it.each([
+      ["avukat kimliği yok", { ...params, actingLawyerId: "" }],
+      ["dosya kimliği yok", { ...params, caseId: "" }],
+      ["kiracı yok", { ...params, tenantId: "" }],
+    ])("%s → false; sorgu YAPILMAZ", async (_label, p) => {
+      const { service, findMany } = make([row()]);
+      expect(await service.isAssignedToCase(p)).toBe(false);
+      expect(findMany).not.toHaveBeenCalled();
+    });
+
+    it("işlem istemcisi verilirse okuma onunla yapılır", async () => {
+      const { service, findMany } = make([]);
+      const tx = { caseLawyer: { findMany: jest.fn().mockResolvedValue([row()]) } };
+      expect(await service.isAssignedToCase(params, tx as any)).toBe(true);
+      expect(findMany).not.toHaveBeenCalled();
+    });
+  });
 });

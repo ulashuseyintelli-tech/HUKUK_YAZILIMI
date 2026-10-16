@@ -54,6 +54,7 @@
  * | `poa.covers_requested_operation` | `UyapAuthorityFactProvider` (I04) |
  * | `authority.is_unambiguous` | `UyapAuthorityFactProvider` (I04) |
  * | `authority.failure_code` | `UyapAuthorityFactProvider` (I04) — evidence |
+ * | `actor.is_assigned_to_case` | `UyapAuthorityFactProvider` (P5, owner Ek 94) |
  * | `case.has_unpaid_blocking_expense` | `UyapExpenseBlockingFactProvider` (I04B) |
  * | `system.uyap_available` | `SystemUyapAvailableProvider` |
  * | `system.uyap_availability_explicit` | `SystemUyapAvailableProvider` (PREFLIGHT-R02) |
@@ -66,6 +67,7 @@ export const COMPUTED_OWNED_FACT_KEYS: readonly string[] = Object.freeze([
   'poa.covers_requested_operation',
   'authority.is_unambiguous',
   'authority.failure_code',
+  'actor.is_assigned_to_case',
   'case.has_unpaid_blocking_expense',
   'system.uyap_available',
   'system.uyap_availability_explicit',

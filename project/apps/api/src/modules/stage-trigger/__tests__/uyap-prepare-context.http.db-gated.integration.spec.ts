@@ -84,6 +84,7 @@ describeWithDisposableDb('UYAP hazırlığı — büro / kullanıcı bağlamı v
   let adminId: string;
   let otherAdminId: string;
   let lawyerUserId: string;
+  let lawyerId: string;
   let noPoaLawyerUserId: string;
   let clientId: string;
   let costPackageId: string;
@@ -124,7 +125,7 @@ describeWithDisposableDb('UYAP hazırlığı — büro / kullanıcı bağlamı v
     otherAdminId = (await prisma.user.create({ data: { tenantId: otherTenantId, email: `b-${suffix}@example.test`, name: 'b', surname: 'UPC', role: 'ADMIN' } })).id;
     const office = await prisma.office.create({ data: { tenantId, name: 'UPC Bürosu' } });
     lawyerUserId = (await prisma.user.create({ data: { tenantId, email: `av-${suffix}@example.test`, name: 'av', surname: 'UPC', role: 'USER' } })).id;
-    const lawyerId = (await prisma.lawyer.create({ data: { tenantId, officeId: office.id, userId: lawyerUserId, name: 'av', surname: 'UPC', lawyerRank: 'LAWYER' } })).id;
+    lawyerId = (await prisma.lawyer.create({ data: { tenantId, officeId: office.id, userId: lawyerUserId, name: 'av', surname: 'UPC', lawyerRank: 'LAWYER' } })).id;
     noPoaLawyerUserId = (await prisma.user.create({ data: { tenantId, email: `av2-${suffix}@example.test`, name: 'av2', surname: 'UPC', role: 'USER' } })).id;
     await prisma.lawyer.create({ data: { tenantId, officeId: office.id, userId: noPoaLawyerUserId, name: 'av2', surname: 'UPC', lawyerRank: 'LAWYER' } });
     clientId = (await prisma.client.create({ data: { tenantId, type: 'COMPANY', companyName: 'UPC müvekkil', displayName: 'UPC müvekkil' } })).id;
@@ -187,6 +188,9 @@ describeWithDisposableDb('UYAP hazırlığı — büro / kullanıcı bağlamı v
     });
     expect(res.status).toBe(201);
     const caseId = res.body.id as string;
+    // P5 (owner Ek 94, karar a2): UYAP gönderim ailesi (UYAP_SEND dahil) vekalete EK olarak aktörün dosyaya atanmasını arar.
+    // Bu test masraf / bağlam davranışını ölçer; vekaletli avukat dosyaya atanır (atama kapısının kendisi uyap-submit-runtime-authz testindedir).
+    await prisma.caseLawyer.create({ data: { caseId, lawyerId } as never });
     // Arka plandaki açılış masraf talebi görünene dek sınırlı bekleme (en çok ~8 sn)
     for (let attempt = 0; attempt < 40; attempt += 1) {
       if ((await prisma.expenseRequest.count({ where: { tenantId, caseId } })) > 0) return caseId;
@@ -332,6 +336,15 @@ describeWithDisposableDb('UYAP hazırlığı — büro / kullanıcı bağlamı v
       const allowed = await prepare(caseId, lawyerUserId);
       expect(allowed.body.action).not.toBe('BLOCKED');
       expect(await lastEngineDecision(caseId)).toEqual({ allowed: true, gate: null, reason: 'OK' });
+    });
+
+    it('P5 (owner Ek 94): vekaletli ama dosyaya ATANMAMIŞ avukat → "avukatın dosyaya atanmış olması gerekir"', async () => {
+      const caseId = await openPaidCase('atamasiz');
+      await prisma.caseLawyer.deleteMany({ where: { caseId } }); // yalnız bu testin dosyası: atama kaldırılır
+
+      const prepared = await prepare(caseId, lawyerUserId);
+      expect(prepared.body).toMatchObject({ action: 'BLOCKED', blockReason: 'UYAP işlemi için avukatın dosyaya atanmış olması gerekir.' });
+      expect(await lastEngineDecision(caseId)).toMatchObject({ allowed: false, gate: 'ACTING_LAWYER_NOT_ASSIGNED_TO_CASE' });
     });
 
     it('UYAP geçici arıza (UYAP_AVAILABLE=false) ve yapılandırılmamış sinyal → gerçek neden; ayar geri alınınca hazırlık sürer', async () => {

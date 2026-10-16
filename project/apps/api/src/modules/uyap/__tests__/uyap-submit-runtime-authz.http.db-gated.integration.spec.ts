@@ -33,6 +33,13 @@ import { UyapModule } from '../uyap.module';
  * Owner kararı (Ek 90 + Ek 91): yeni kodlar (UYAP_DOCUMENT_SUBMIT, UYAP_LAWSUIT_FILE) YALNIZ aşama bağını ayırır, öteki kapılar
  * korunur · personelin avukat adına gönderimi AÇILMAZ · salt okur yazma reddi · xml/submit UYAP_SEND kapısından BİR kez geçer
  * (aşama kısıtı korunur) · HACIZ_TALEBI evrak ucunda 400 · can-perform-action istemci `context`'i 400 · gerçek taşıma kapalı.
+ *
+ * Güvenlik paketi 01 P5 (owner Ek 94): (a2) UYAP gönderim ailesinde aktör vekalete EK olarak dosyaya ATANMIŞ olmalı — kapı
+ * ACTING_LAWYER_NOT_ASSIGNED_TO_CASE; atanmamış aktör ve avukatsız dosya RET, personel açılmadı, okuma uçları aynı.
+ * Değişiklikten ÖNCE main 6c12f009'da ölçüldü: başka (vekaletli) avukatın atandığı dosyada atanmamış vekaletli avukat ve
+ * avukatsız dosyada vekaletli avukat dört uçta da 201 İZİN alıyordu. (b2) TAKIP_TALEBI evrak ucunda 400
+ * UYAP_TAKIP_TALEBI_XML_SUBMIT_REQUIRED (main'de 201 izinliydi); xml/submit yolu etkilenmez. Bu ret dosya başına tek
+ * gönderim garantisi DEĞİLDİR.
  */
 const TEST_DB_URL = resolveTestDatabaseUrl(process.env);
 if (process.env.CI && !TEST_DB_URL) {
@@ -79,6 +86,9 @@ describeWithDisposableDb('UYAP gönderim uçları — çalışma zamanı yetkisi
   let noPoaLawyerUserId: string;
   let poaClientId: string;
   let noPoaClientId: string;
+  let noPoaLawyerId: string;
+  let otherLawyerId: string; // P5: dosyaya atanan BAŞKA vekaletli avukat
+  let otherLawyerUserId: string;
   const suffix = randomUUID().slice(0, 8);
   const previousUyapAvailable = process.env.UYAP_AVAILABLE;
 
@@ -118,12 +128,16 @@ describeWithDisposableDb('UYAP gönderim uçları — çalışma zamanı yetkisi
     lawyerUserId = await user(tenantId, 'av', 'USER');
     lawyerId = (await prisma.lawyer.create({ data: { tenantId, officeId: office.id, userId: lawyerUserId, name: 'av', surname: 'USRA', lawyerRank: 'LAWYER' } })).id;
     noPoaLawyerUserId = await user(tenantId, 'av2', 'USER');
-    await prisma.lawyer.create({ data: { tenantId, officeId: office.id, userId: noPoaLawyerUserId, name: 'av2', surname: 'USRA', lawyerRank: 'LAWYER' } });
+    noPoaLawyerId = (await prisma.lawyer.create({ data: { tenantId, officeId: office.id, userId: noPoaLawyerUserId, name: 'av2', surname: 'USRA', lawyerRank: 'LAWYER' } })).id;
+    otherLawyerUserId = await user(tenantId, 'av3', 'USER');
+    otherLawyerId = (await prisma.lawyer.create({ data: { tenantId, officeId: office.id, userId: otherLawyerUserId, name: 'av3', surname: 'USRA', lawyerRank: 'LAWYER' } })).id;
     poaClientId = (await prisma.client.create({ data: { tenantId, type: 'COMPANY', companyName: 'USRA vekaletli', displayName: 'USRA vekaletli' } })).id;
     noPoaClientId = (await prisma.client.create({ data: { tenantId, type: 'COMPANY', companyName: 'USRA vekaletsiz', displayName: 'USRA vekaletsiz' } })).id;
     // Yalnız avukat 1'in, yalnız vekaletli müvekkil için yürürlükte GENEL vekaleti var
     const poa = await prisma.clientPowerOfAttorney.create({ data: { tenantId, clientId: poaClientId, dateIssued: new Date('2026-01-10'), status: 'ACTIVE', isActive: true, isLimited: false, scopeType: 'GENEL' } });
     await prisma.poaLawyer.create({ data: { tenantId, poaId: poa.id, lawyerId, isPrimary: true } });
+    // P5: aynı vekalette BAŞKA bir avukat da vekil (o avukat dosyaya atanınca dosya düzeyi vekalet kapısı da geçer)
+    await prisma.poaLawyer.create({ data: { tenantId, poaId: poa.id, lawyerId: otherLawyerId, isPrimary: false } });
   });
 
   afterAll(async () => {
@@ -267,10 +281,112 @@ describeWithDisposableDb('UYAP gönderim uçları — çalışma zamanı yetkisi
       }
     });
 
-    it('BİLİNEN SINIR (ölçüm, bu PR değiştirmedi): avukatsız dosyada müvekkilin vekaletli avukatı izin alır — vekalet modeli (MODEL B) dosya ataması aramaz', async () => {
-      const caseId = await openCase('avukatsiz-vekaletli', { assignLawyer: false });
-      const res = await as(lawyerUserId).post('/uyap/document/submit', docBody(caseId));
+    // P5 (owner Ek 94, karar a2): P1'deki "BİLİNEN SINIR — avukatsız dosyada müvekkilin vekaletli avukatı izin alır" testi
+    // artık RET bekler (main 6c12f009'da 201 izin ölçülmüştü). Vekalet geçerli; ret dosya ataması kapısından gelir.
+    it('avukatsız dosyada müvekkilin vekaletli avukatı → üç uçta 400 ACTING_LAWYER_NOT_ASSIGNED_TO_CASE (P5; P1 bilinen sınırı KAPANDI)', async () => {
+      for (const ep of ENDPOINTS) {
+        const caseId = await openCase(`avukatsiz-vekaletli-${ep.name.replace('/', '-')}`, { assignLawyer: false });
+        await expectPolicyDenied(`avukatsız vekaletli ${ep.name}`, await ep.send(lawyerUserId, caseId), caseId, 'ACTING_LAWYER_NOT_ASSIGNED_TO_CASE', ep.action);
+      }
+    });
+  });
+
+  describe('P5 (owner Ek 94, karar a2) — vekalet + dosya ataması matrisi × dört gönderim ucu (xml/submit INITIAL)', () => {
+    const ALL4 = [
+      ...ENDPOINTS.map((e) => ({ name: e.name as string, action: e.action as string, xml: false, send: e.send })),
+      { name: 'xml/submit', action: 'UYAP_SEND', xml: true, send: (userId: string, caseId: string) => as(userId).post(`/uyap/xml/submit/${caseId}`) },
+    ];
+    const OK_READ = { status: 200, body: { isValid: true, errors: [], canProceedToUyap: true, errorCount: 0 } };
+    const label = (prefix: string, ep: { name: string }) => `${prefix}-${ep.name.replace('/', '-')}`;
+
+    it('atanmış + vekaletli avukat → dört uçta 201 yerel simülasyon; uç başına TEK izinli karar', async () => {
+      for (const ep of ALL4) {
+        const caseId = await openCase(label('p5-izin', ep), { withDebtor: ep.xml });
+        const res = await ep.send(lawyerUserId, caseId);
+        const rows = await cpeRows(caseId);
+        expect({ ep: ep.name, status: res.status, success: res.body?.success }).toEqual({ ep: ep.name, status: 201, success: true });
+        expect({ ep: ep.name, rows: rows.map((r) => ({ action: r.actionCode, allowed: r.allowed })) }).toEqual({ ep: ep.name, rows: [{ action: ep.action, allowed: true }] });
+        if (ep.xml) expect({ mode: res.body?.mode, transmitted: res.body?.transmitted }).toEqual({ mode: 'STUB', transmitted: false });
+        else expect(res.body?.data).toMatchObject({ simulated: true, dispatched: false });
+      }
+    });
+
+    it('ÖNCE ÖLÇÜLMEMİŞ DURUM: başka (vekaletli) avukatın atandığı dosyada ATANMAMIŞ vekaletli avukat → dört uçta 400 ACTING_LAWYER_NOT_ASSIGNED_TO_CASE; okuma ucu aynı', async () => {
+      for (const ep of ALL4) {
+        const caseId = await openCase(label('p5-baska', ep), { assignLawyer: false, withDebtor: ep.xml });
+        await prisma.caseLawyer.create({ data: { caseId, lawyerId: otherLawyerId } as never });
+        const read = await as(lawyerUserId).get(`/uyap/poa/validate/case/${caseId}`);
+        expect({ ep: ep.name, status: read.status, body: read.body }).toEqual({ ep: ep.name, ...OK_READ });
+        await expectPolicyDenied(`başka avukat atanmış ${ep.name}`, await ep.send(lawyerUserId, caseId), caseId, 'ACTING_LAWYER_NOT_ASSIGNED_TO_CASE', ep.action);
+      }
+    });
+
+    it('aynı dosyaya atanmış öteki vekaletli avukat → izin (kapı aktöre özgüdür, dosyayı kilitlemez)', async () => {
+      const caseId = await openCase('p5-baska-kendisi', { assignLawyer: false });
+      await prisma.caseLawyer.create({ data: { caseId, lawyerId: otherLawyerId } as never });
+      const res = await as(otherLawyerUserId).post('/uyap/document/submit', docBody(caseId));
       expect({ status: res.status, dispatched: res.body?.data?.dispatched }).toEqual({ status: 201, dispatched: false });
+    });
+
+    it('avukatsız dosya + vekaletli avukat → dört uçta 400 ACTING_LAWYER_NOT_ASSIGNED_TO_CASE; okuma ucu aynı', async () => {
+      for (const ep of ALL4) {
+        const caseId = await openCase(label('p5-avsiz', ep), { assignLawyer: false, withDebtor: ep.xml });
+        const read = await as(lawyerUserId).get(`/uyap/poa/validate/case/${caseId}`);
+        expect({ ep: ep.name, status: read.status, body: read.body }).toEqual({ ep: ep.name, ...OK_READ });
+        await expectPolicyDenied(`avukatsız vekaletli ${ep.name}`, await ep.send(lawyerUserId, caseId), caseId, 'ACTING_LAWYER_NOT_ASSIGNED_TO_CASE', ep.action);
+      }
+    });
+
+    it('atanmış + vekaletsiz avukat → dört uçta red (dosya düzeyi vekalet kapısı motordan ÖNCE); karar / istek kaydı YOK', async () => {
+      for (const ep of ALL4) {
+        const caseId = await openCase(label('p5-vekaletsiz', ep), { assignLawyer: false, withDebtor: ep.xml });
+        await prisma.caseLawyer.create({ data: { caseId, lawyerId: noPoaLawyerId } as never });
+        const res = await ep.send(noPoaLawyerUserId, caseId);
+        if (ep.xml) {
+          // xml/submit denetleyicisi dosya düzeyi vekalet reddini bugün gövdede döndürür (bu PR değiştirmedi).
+          expect({ status: res.status, success: res.body?.success, error: res.body?.error }).toEqual({ status: 201, success: false, error: 'POA_VALIDATION_FAILED' });
+        } else {
+          expect({ ep: ep.name, status: res.status, code: res.body?.code }).toEqual({ ep: ep.name, status: 400, code: 'UYAP_LEGAL_AUTHORITY_DENIED' });
+        }
+        expect({ ep: ep.name, rows: await cpeRows(caseId), logs: await requestLogs(caseId) }).toEqual({ ep: ep.name, rows: [], logs: 0 });
+      }
+    });
+
+    it.each([
+      ['personel (USER, avukat kaydı yok)', () => staffId],
+      ['yönetici (ADMIN, avukat kaydı yok)', () => adminId],
+    ])('%s → dört uçta 400 POWER_OF_ATTORNEY_MISSING (personelin avukat adına gönderimi AÇILMADI)', async (who, actor) => {
+      for (const ep of ALL4) {
+        const caseId = await openCase(label(`p5-${who.slice(0, 5)}`.replace(/[^A-Za-z0-9-]/g, ''), ep), { withDebtor: ep.xml });
+        await expectPolicyDenied(`${who} ${ep.name}`, await ep.send(actor(), caseId), caseId, 'POWER_OF_ATTORNEY_MISSING', ep.action);
+      }
+    });
+  });
+
+  describe('P5 (owner Ek 94, karar b2) — TAKIP_TALEBI yalnız xml/submit yolundan', () => {
+    it('document/submit TAKIP_TALEBI (atanmış vekaletli avukat) → 400 UYAP_TAKIP_TALEBI_XML_SUBMIT_REQUIRED + açık ileti; karar / istek kaydı YOK', async () => {
+      for (const stage of ['INITIAL', 'SEIZURE']) {
+        const caseId = await openCase(`p5-takip-${stage}`);
+        await setStage(caseId, stage);
+        const res = await as(lawyerUserId).post('/uyap/document/submit', docBody(caseId, { documentType: 'TAKIP_TALEBI' }));
+        expect({ stage, status: res.status, code: res.body?.code, message: res.body?.message }).toEqual({
+          stage,
+          status: 400,
+          code: 'UYAP_TAKIP_TALEBI_XML_SUBMIT_REQUIRED',
+          message: 'Takip talebi yalnız XML gönderim yolundan (xml/submit) gönderilebilir.',
+        });
+        expect({ stage, rows: await cpeRows(caseId), logs: await requestLogs(caseId) }).toEqual({ stage, rows: [], logs: 0 });
+      }
+    });
+
+    it('xml/submit INITIAL hâlâ izinli: iç çağrı TAKIP_TALEBI ile tek UYAP_SEND kararı + istek kaydı TAKIP_TALEBI', async () => {
+      const caseId = await openCase('p5-xml-takip', { withDebtor: true });
+      const res = await as(lawyerUserId).post(`/uyap/xml/submit/${caseId}`);
+      expect({ status: res.status, success: res.body?.success, transmitted: res.body?.transmitted }).toEqual({ status: 201, success: true, transmitted: false });
+      const rows = await cpeRows(caseId);
+      expect(rows.map((r) => ({ action: r.actionCode, allowed: r.allowed }))).toEqual([{ action: 'UYAP_SEND', allowed: true }]);
+      const logs = await prisma.uyapRequestLog.findMany({ where: { caseId } });
+      expect(logs.map((l) => ({ type: l.requestType, documentType: (l.requestData as any)?.documentType }))).toEqual([{ type: 'submitDocument', documentType: 'TAKIP_TALEBI' }]);
     });
   });
 
