@@ -20,6 +20,18 @@ export const RULE_VERSION = 'gates-v1.1.0-compiled-2026-06-13';
 export const COMPILED_AT = '2026-06-13T00:00:00.000Z';
 
 /**
+ * Güvenlik paketi 01 P1 (owner Ek 90 / Ek 91): UYAP_SEND ile AYNI kapı kümesini taşıyan eylemler.
+ * Yeni kodlar (UYAP_DOCUMENT_SUBMIT, UYAP_LAWSUIT_FILE) UYAP_SEND'in bütün UYAP kapılarına bu TEK liste üzerinden bağlanır;
+ * UYAP_SEND'e kapı eklenir / çıkarılırsa yeni kodlar da aynı anda değişir. Eşitlik testi:
+ * policy-engine/__tests__/uyap-stage-independent-action-parity.spec.ts. TEK fark (aşamadan bağımsızlık) action-matrix'tedir.
+ */
+export const UYAP_SEND_GATE_FAMILY: readonly ActionCode[] = [
+  ActionCode.UYAP_SEND,
+  ActionCode.UYAP_DOCUMENT_SUBMIT,
+  ActionCode.UYAP_LAWSUIT_FILE,
+];
+
+/**
  * Compiled Gates - Priority sırasına göre
  */
 export const COMPILED_GATES: CompiledGate[] = [
@@ -52,7 +64,7 @@ export const COMPILED_GATES: CompiledGate[] = [
     name: 'Masraf Engeli',
     description: 'Ödenmemiş masraf talebi varken UYAP işlemi yapılamaz',
     actionCodes: [
-      ActionCode.UYAP_SEND,
+      ...UYAP_SEND_GATE_FAMILY,
       ActionCode.SEND_NOTIFICATION,
       ActionCode.SEND_PAYMENT_ORDER,
       ActionCode.TRIGGER_HACIZ,
@@ -69,7 +81,7 @@ export const COMPILED_GATES: CompiledGate[] = [
     name: 'UYAP Devre Dışı',
     description: 'Bu dosya için UYAP işlemleri kapatılmış',
     actionCodes: [
-      ActionCode.UYAP_SEND,
+      ...UYAP_SEND_GATE_FAMILY,
       ActionCode.UYAP_QUERY,
       ActionCode.SEND_NOTIFICATION,
       ActionCode.SEND_PAYMENT_ORDER,
@@ -84,7 +96,7 @@ export const COMPILED_GATES: CompiledGate[] = [
     gateCode: 'UYAP_TEMPORARILY_UNAVAILABLE_SEND',
     name: 'UYAP Geçici Arıza - Gönderim Engeli',
     description: 'UYAP sistemi geçici arızadayken gönderim (UYAP_SEND) yapılamaz (P3). Kalıcı per-case kapatma (UYAP_DISABLED / allow_uyap_actions) ile karıştırılmamalı.',
-    actionCodes: [ActionCode.UYAP_SEND],
+    actionCodes: [...UYAP_SEND_GATE_FAMILY],
     condition: (facts: FactMap) => facts.get('system.uyap_available') === false,
     severity: 'HARD',
     reason: 'UYAP sistemi geçici olarak devre dışı. Gönderim yapılamaz.',
@@ -101,8 +113,9 @@ export const COMPILED_GATES: CompiledGate[] = [
       'Diger gate\'ler (CASE_CLOSED, CASE_ARCHIVED, UYAP_DISABLED, EXPENSE_BLOCKING) ' +
       'yalniz POZITIF kotu-durum sinyalinde bloklar (`=== true` / `=== false`); bu ' +
       'gate onlarin fact-yoklugu (fail-open) bosuklugunu UYAP_SEND icin kapatir. ' +
-      'Kapsam bilerek yalniz UYAP_SEND\'dir: diger action\'larin davranisi DEGISMEZ.',
-    actionCodes: [ActionCode.UYAP_SEND],
+      'Kapsam bilerek yalniz UYAP_SEND\'dir (P1: + ayni kapi ailesindeki UYAP_DOCUMENT_SUBMIT / UYAP_LAWSUIT_FILE): ' +
+      'diger action\'larin davranisi DEGISMEZ.',
+    actionCodes: [...UYAP_SEND_GATE_FAMILY],
     condition: (facts: FactMap) =>
       // Her kosul POZITIF ispat ister; eksik fact => sol taraf undefined => blok.
       facts.get('case.is_closed') !== false ||
@@ -201,7 +214,9 @@ export const COMPILED_GATES: CompiledGate[] = [
     gateCode: 'POWER_OF_ATTORNEY_MISSING',
     name: 'Vekaletname Eksik',
     description: 'UYAP işlemleri için vekaletname gerekli',
-    actionCodes: [ActionCode.UYAP_SEND],
+    // P1: vekalet olgusu yeni kodlarda da AYNI `operationType: "UYAP_SEND"` ile çözülür (uyap-authority-fact.provider.ts):
+    // vekalet kapsamı genişlemez.
+    actionCodes: [...UYAP_SEND_GATE_FAMILY],
     // UYAP-CPE-AUTHORITY-FACT-BRIDGE-I01: gate artik MANUEL/PERSISTED bir flag'e degil,
     // canonical authority zincirinden HESAPLANAN granular fact'lere bakar (MODEL B).
     // Fact'lerden biri bile true degilse (eksik/undefined dahil) UYAP_SEND bloklanir.

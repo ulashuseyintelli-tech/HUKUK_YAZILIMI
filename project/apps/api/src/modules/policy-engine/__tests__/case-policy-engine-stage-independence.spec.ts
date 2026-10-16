@@ -31,7 +31,10 @@ const DB_STAGES = [
 
 /** Düzeltme sonrası beklenen: eylem → izinli aşamalar (listede olmayan eylem hiçbir aşamada izinli DEĞİLDİR). */
 const EXPECTED_ALLOWED_STAGES: Partial<Record<ActionCode, readonly string[]>> = {
-  [ActionCode.APPROVE_EXPENSE]: DB_STAGES, // owner kararı 8: tek değişen eylem
+  [ActionCode.APPROVE_EXPENSE]: DB_STAGES, // owner kararı 8
+  // Güvenlik paketi 01 P1 (owner Ek 90 / Ek 91): owner'ın adıyla açtığı iki yeni UYAP gönderim kodu (kapıları UYAP_SEND ile aynı)
+  [ActionCode.UYAP_DOCUMENT_SUBMIT]: DB_STAGES,
+  [ActionCode.UYAP_LAWSUIT_FILE]: DB_STAGES,
   [ActionCode.UYAP_SEND]: ['INITIAL'],
   [ActionCode.REQUEST_EXPENSE]: ['INITIAL'],
 };
@@ -62,19 +65,21 @@ function buildEngine(options: { facts?: Record<string, unknown>; gatesBlocked?: 
 }
 
 describe('Aşamadan bağımsız eylem — karar motoru kilidi (gerçek motor + gerçek durum makinesi)', () => {
-  it('matriste aşamadan bağımsız işaretli TEK eylem APPROVE_EXPENSE', () => {
+  it('matriste aşamadan bağımsız işaretli eylemler TAM olarak owner kararlarıyla adı anılıp açılanlar: APPROVE_EXPENSE + P1 UYAP gönderim kodları', () => {
     const flagged = ACTION_MATRIX.filter((entry) => entry.stageIndependent === true).map((entry) => entry.actionCode);
-    expect(flagged).toEqual([ActionCode.APPROVE_EXPENSE]);
+    expect([...flagged].sort()).toEqual([ActionCode.APPROVE_EXPENSE, ActionCode.UYAP_DOCUMENT_SUBMIT, ActionCode.UYAP_LAWSUIT_FILE].sort());
+    // UYAP_SEND (xml/submit) aşamaya BAĞLI kalır (owner Ek 91 B2-a: mevcut aşama kısıtı korunur)
+    expect(isStageIndependent(ActionCode.UYAP_SEND)).toBe(false);
     expect(isStageIndependent(ActionCode.APPROVE_EXPENSE)).toBe(true);
     // Masraf ödeme kaydı eylemleri (karar maddesi bekliyor) ve borçlu tahsilatı AÇILMADI
     expect(isStageIndependent(ActionCode.RECORD_COLLECTION)).toBe(false);
     expect(isStageIndependent(ActionCode.RECORD_EXPENSE_PAYMENT)).toBe(false);
   });
 
-  it('48 eylem × 13 aşama: izinli küme TAM olarak beklenen (yalnız APPROVE_EXPENSE değişti)', async () => {
+  it('50 eylem × 13 aşama: izinli küme TAM olarak beklenen (APPROVE_EXPENSE + P1 UYAP gönderim kodları)', async () => {
     const { engine, setStage } = buildEngine({ gatesBlocked: false });
     const actions = Object.values(ActionCode);
-    expect(actions.length).toBe(48); // yeni eylem eklenirse bu kilit bilinçli güncellenmeli
+    expect(actions.length).toBe(50); // yeni eylem eklenirse bu kilit bilinçli güncellenmeli (P1: 48 + UYAP_DOCUMENT_SUBMIT + UYAP_LAWSUIT_FILE)
     let inspected = 0;
     const actual: Record<string, string[]> = {};
     for (const action of actions) {
@@ -85,7 +90,7 @@ describe('Aşamadan bağımsız eylem — karar motoru kilidi (gerçek motor + g
         if (decision.allowed) (actual[action] = actual[action] || []).push(stage);
       }
     }
-    expect(inspected).toBe(48 * 13); // 0 = kör
+    expect(inspected).toBe(50 * 13); // 0 = kör
     const expected: Record<string, string[]> = {};
     for (const [action, stages] of Object.entries(EXPECTED_ALLOWED_STAGES)) expected[action] = [...(stages as readonly string[])];
     expect(actual).toEqual(expected);
@@ -216,6 +221,7 @@ describe('Aşamadan bağımsız eylem — karar motoru kilidi (gerçek motor + g
       ActionCode.REQUEST_SALE,
       ActionCode.CLOSE_CASE,
       ActionCode.UYAP_QUERY,
+      ActionCode.UYAP_SEND,
     ])('%s hâlâ AŞAMA denetimine tabi (SEIZURE: Geçersiz aşama)', async (action) => {
       const { engine, setStage } = buildEngine({ gatesBlocked: false });
       setStage('SEIZURE');

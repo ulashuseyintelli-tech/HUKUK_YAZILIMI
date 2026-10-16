@@ -118,8 +118,14 @@ describe('OFFICE-WR01-B01 — D-WR-4 actionCode taksonomisi', () => {
       { FINANCIAL: 0, JUDICIAL: 0, ADMIN: 0 },
     );
 
-    expect(allActionCodes).toHaveLength(48);
-    expect(distribution).toEqual({ FINANCIAL: 21, JUDICIAL: 21, ADMIN: 6 });
+    // Owner Ek 91 (B1-a, 2026-10-16): UYAP_DOCUMENT_SUBMIT + UYAP_LAWSUIT_FILE eklendi → 48 + 2 = 50; JUDICIAL 21 + 2 = 23.
+    expect(allActionCodes).toHaveLength(50);
+    expect(distribution).toEqual({ FINANCIAL: 21, JUDICIAL: 23, ADMIN: 6 });
+  });
+
+  it('owner Ek 91 (B1-a): iki yeni UYAP gönderim kodu JUDICIAL sınıfındadır', () => {
+    expect(getOfficeWorkActionCategory(ActionCode.UYAP_DOCUMENT_SUBMIT)).toBe('JUDICIAL');
+    expect(getOfficeWorkActionCategory(ActionCode.UYAP_LAWSUIT_FILE)).toBe('JUDICIAL');
   });
 
   it('owner kararinin exact mapping kalemlerini birebir uygular', () => {

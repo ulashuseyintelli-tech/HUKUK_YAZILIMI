@@ -27,6 +27,7 @@ import {
   Logger,
   UseGuards,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { CasePolicyEngine } from './case-policy-engine.service';
 import { DecisionLoggerService } from './decision-logger';
@@ -41,10 +42,14 @@ import { PrismaService } from '../../prisma/prisma.service';
 // DTOs
 // ============================================
 
+// Güvenlik paketi 01 P1 / K3 (owner Ek 90): karar bağlamı (`context`) istemciden ALINMAZ — sunucuda üretilir.
+// `context` içinde `authenticatedUserId` / `tenantId` / `actingLawyerId` gibi aktör alanları vardı (aktör sahteciliği yüzeyi).
+// Gövdede `context` anahtarı gelirse 400 CPE_CLIENT_CONTEXT_REJECTED (UYUMLULUK DEĞİŞİKLİĞİ; uç korunur).
 class CanPerformActionDto {
   actionCode: ActionCode;
-  context?: ActionContext;
 }
+
+export const CPE_CLIENT_CONTEXT_REJECTED = 'CPE_CLIENT_CONTEXT_REJECTED';
 
 class ActionExecutedDto {
   actionCode: ActionCode;
@@ -97,6 +102,8 @@ export class PolicyEngineController {
   /// Çağrıldığı yerler:
   /// - PolicyEngineController.canPerformAction() → POST /policy-engine/cases/:caseId/can-perform-action
   /// B1 hardening: class-level JwtAuthGuard + tenant-ownership kontrolü eklendi (önceden guard'sızdı).
+  /// Güvenlik paketi 01 P1 / K3: istemci `context`'i 400 ile reddedilir; bağlam sunucuda (tenant + kimliği doğrulanmış kullanıcı +
+  /// değerlendirme anı) üretilir. Yanıt biçimi `{ success, data: decision }` DEĞİŞMEDİ.
   /// </remarks>
   /**
    * POST /api/policy-engine/cases/:caseId/can-perform-action
@@ -109,15 +116,30 @@ export class PolicyEngineController {
     @CurrentUser('tenantId') tenantId: string,
     @Param('caseId') caseId: string,
     @Body() dto: CanPerformActionDto,
+    @CurrentUser('id') authenticatedUserId?: string,
   ) {
+    // K3: istemci karar bağlamı göndermez. Tenant / dosya sorgusundan ÖNCE reddedilir (yan etki yok).
+    if (dto && typeof dto === 'object' && Object.prototype.hasOwnProperty.call(dto, 'context')) {
+      throw new BadRequestException({
+        code: CPE_CLIENT_CONTEXT_REJECTED,
+        message: 'Karar bağlamı (context) istemciden kabul edilmez; bağlam sunucuda üretilir.',
+      });
+    }
     await this.assertCaseInTenant(tenantId, caseId);
-    this.logger.log(`canPerformAction: ${dto.actionCode} for case ${caseId}`);
+    this.logger.log(`canPerformAction: ${dto?.actionCode} for case ${caseId}`);
+
+    // Sunucu tarafı bağlam: aktör yalnız kimliği doğrulanmış kullanıcıdan (req.user.id), tenant yalnız JWT'den.
+    const context: ActionContext = {
+      tenantId,
+      authenticatedUserId,
+      evaluatedAt: new Date(),
+    };
 
     const decision = await this.cpe.canPerformAction(
       tenantId,
       caseId,
-      dto.actionCode,
-      dto.context,
+      dto?.actionCode,
+      context,
     );
 
     return {

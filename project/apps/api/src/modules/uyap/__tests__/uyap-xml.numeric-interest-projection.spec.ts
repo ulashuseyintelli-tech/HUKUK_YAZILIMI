@@ -259,12 +259,15 @@ describe('PR-A4-N2 preview/download/submit runtime parity', () => {
     expect(preview.xml).toBe(generatedXml);
     expect(response.send).toHaveBeenCalledWith(generatedXml);
     // CLIENT-SEC-H2C-P02-R1: submitDocument artık trusted tenant'ı 2. arg olarak da alır.
+    // Güvenlik paketi 01 P1 (owner Ek 91 B2-a): 3. arg aktör (req.user.id), 4. arg UYAP_SEND politika eylemi (TEK karar).
     expect(uyapService.submitDocument).toHaveBeenCalledWith(
       expect.objectContaining({
         documentContent: Buffer.from(generatedXml).toString('base64'),
         tenantId: 'tenant-1',
       }),
       'tenant-1',
+      'user-1',
+      'UYAP_SEND',
     );
   });
 

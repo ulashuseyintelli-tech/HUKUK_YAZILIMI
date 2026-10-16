@@ -56,7 +56,12 @@ describe("B1 — PolicyEngineController tenant-ownership (case-scoped endpoints)
     const { controller, cpe, prisma } = mk({ id: "c1" });
     const res = await controller.canPerformAction("t1", "c1", { actionCode: ActionCode.UYAP_SEND } as never);
     expect((prisma as any).case.findFirst).toHaveBeenCalledWith({ where: { id: "c1", tenantId: "t1" }, select: { id: true } });
-    expect(cpe.canPerformAction).toHaveBeenCalledWith("t1", "c1", ActionCode.UYAP_SEND, undefined);
+    // Güvenlik paketi 01 P1 / K3: bağlam artık sunucuda üretilir (istemci `context`'i kabul edilmez).
+    expect(cpe.canPerformAction).toHaveBeenCalledWith("t1", "c1", ActionCode.UYAP_SEND, {
+      tenantId: "t1",
+      authenticatedUserId: undefined,
+      evaluatedAt: expect.any(Date),
+    });
     expect(res).toEqual({ success: true, data: { allowed: true, code: "OK" } });
   });
 

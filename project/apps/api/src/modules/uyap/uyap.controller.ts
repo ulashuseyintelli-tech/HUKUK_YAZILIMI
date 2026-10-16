@@ -3,6 +3,8 @@ import { Response } from 'express';
 import { UyapService } from './uyap.service';
 import { UyapXmlService } from './uyap-xml.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+// Güvenlik paketi 01 P1: salt okur (VIEWER) rolü bu denetleyicide yazma / yürütme POST'u çağıramaz.
+import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 // CPE Integration - Phase 3
 import { CpeRequired, ScopeResolvers } from '@/modules/policy-engine';
@@ -27,8 +29,11 @@ const RETRY_CONTAINMENT_ERROR = {
   message: 'UYAP yeniden deneme işlemi, tenant ve hukukî yetki doğrulaması tamamlanana kadar kullanılamıyor.',
 };
 
+// Güvenlik paketi 01 P1 (owner Ek 90): ViewerWriteDenyGuard JwtAuthGuard'dan SONRA. Okuma nitelikli POST'lar
+// (xml/validate, debtor/assets) @AllowViewerReadOnlyPost ile işaretli; öteki POST'lar (gönderim uçları, haciz, test/payment-order,
+// xml/import taslağı, retry-failed) salt okura 403 VIEWER_WRITE_DENIED verir.
 @Controller('uyap')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class UyapController {
   constructor(
     private uyapService: UyapService,
@@ -153,8 +158,12 @@ export class UyapController {
   /**
    * UYAP'a evrak gönder
    */
+  /// <remarks>
+  /// Güvenlik paketi 01 P1: politika kapısı UYAP_DOCUMENT_SUBMIT (aşamadan bağımsız; kapıları UYAP_SEND ile aynı); aktör
+  /// req.user.id. HACIZ_TALEBI 400 UYAP_HACIZ_TALEBI_ENDPOINT_REQUIRED (yalnız /uyap/haciz). Gerçek iletim YOK (taslak).
+  /// </remarks>
   @Post('document/submit')
-  async submitDocument(@Body() body: any, @CurrentUser('tenantId') tenantId: string) {
+  async submitDocument(@Body() body: any, @CurrentUser('tenantId') tenantId: string, @Req() req?: any) {
     return this.uyapService.submitDocument({
       caseId: body.caseId,
       documentType: body.documentType,
@@ -163,7 +172,7 @@ export class UyapController {
       clientId: body.clientId,
       lawyerId: body.lawyerId,
       tenantId,
-    }, tenantId);
+    }, tenantId, req?.user?.id);
   }
 
   /**
@@ -182,6 +191,7 @@ export class UyapController {
    * Borçlu mal varlığı sorgula
    */
   @Post('debtor/assets')
+  @AllowViewerReadOnlyPost() // okuma: taslak mal varlığı sorgusu; dosya / iş verisi yazmaz (yalnız UyapRequestLog izi, GET sorguları gibi)
   async queryDebtorAssets(@Body() body: { debtorIdentityNo: string; caseId: string }, @CurrentUser('tenantId') tenantId: string) {
     return this.uyapService.queryDebtorAssets(body.debtorIdentityNo, body.caseId, tenantId);
   }
@@ -238,8 +248,11 @@ export class UyapController {
    * UYAP'a ceza davası (şikayet) gönder
    * Karşılıksız çek, dolandırıcılık vb.
    */
+  /// <remarks>
+  /// Güvenlik paketi 01 P1: politika kapısı UYAP_LAWSUIT_FILE (aşamadan bağımsız; kapıları UYAP_SEND ile aynı); aktör req.user.id.
+  /// </remarks>
   @Post('lawsuit/criminal')
-  async submitCriminalComplaint(@Body() body: any, @CurrentUser('tenantId') tenantId: string) {
+  async submitCriminalComplaint(@Body() body: any, @CurrentUser('tenantId') tenantId: string, @Req() req?: any) {
     return this.uyapService.submitCriminalComplaint({
       caseId: body.caseId,
       lawsuitType: body.lawsuitType,
@@ -253,15 +266,18 @@ export class UyapController {
       clientId: body.clientId,
       lawyerId: body.lawyerId,
       tenantId,
-    }, tenantId);
+    }, tenantId, req?.user?.id);
   }
 
   /**
    * UYAP'a hukuk davası gönder
    * İtirazın iptali, tasarrufun iptali vb.
    */
+  /// <remarks>
+  /// Güvenlik paketi 01 P1: politika kapısı UYAP_LAWSUIT_FILE (aşamadan bağımsız; kapıları UYAP_SEND ile aynı); aktör req.user.id.
+  /// </remarks>
   @Post('lawsuit/civil')
-  async submitCivilLawsuit(@Body() body: any, @CurrentUser('tenantId') tenantId: string) {
+  async submitCivilLawsuit(@Body() body: any, @CurrentUser('tenantId') tenantId: string, @Req() req?: any) {
     return this.uyapService.submitCivilLawsuit({
       caseId: body.caseId,
       lawsuitType: body.lawsuitType,
@@ -277,7 +293,7 @@ export class UyapController {
       clientId: body.clientId,
       lawyerId: body.lawyerId,
       tenantId,
-    }, tenantId);
+    }, tenantId, req?.user?.id);
   }
 
   /**
@@ -348,6 +364,7 @@ export class UyapController {
    * POST /uyap/xml/validate
    */
   @Post('xml/validate')
+  @AllowViewerReadOnlyPost() // okuma: saf XML doğrulaması; yazma YAPMAZ (kaynaktan doğrulandı)
   validateXml(@Body() body: { xml: string }) {
     return this.uyapXmlService.validateXml(body.xml);
   }
@@ -361,6 +378,9 @@ export class UyapController {
   /// <remarks>
   /// Çağrıldığı yerler:
   /// - UyapController.submitXmlToUyap() → POST /uyap/xml/submit/:caseId (case bazlı UYAP XML gönderimi)
+  /// Güvenlik paketi 01 P1 (owner Ek 91 B2-a): `@CpeRequired` yalnız işarettir (CpeRequiredGuard bu denetleyiciye bağlı DEĞİL);
+  /// UYAP_SEND politika kapısı artık iç `submitDocument(..., UYAP_SEND)` çağrısında TEK kez değerlendirilir (ikinci karar yok).
+  /// Mevcut aşama kısıtı KORUNUR (UYAP_SEND aşamaya bağlı); personel / avukat olmayan aktör reddedilir.
   /// </remarks>
   @Post('xml/submit/:caseId')
   @CpeRequired(ActionCode.UYAP_SEND)
@@ -411,7 +431,7 @@ export class UyapController {
       documentContent: Buffer.from(xml).toString('base64'),
       documentName: `e-takip-${caseId}.xml`,
       tenantId,
-    }, tenantId);
+    }, tenantId, req?.user?.id, ActionCode.UYAP_SEND);
 
     // F3 (DBP-P2-UYAP-CONTRACT-A-P01): submitDocument STUB'tir; GERCEK UYAP ILETIMI YOKTUR.
     // Response sahte resmi EVK veya UYAP-a-gonderildi izlenimi URETMEZ.

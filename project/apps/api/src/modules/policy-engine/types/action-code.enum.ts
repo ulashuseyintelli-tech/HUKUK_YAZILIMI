@@ -19,6 +19,19 @@ export enum ActionCode {
   /** UYAP sorgulaması - LOW risk, sadece okuma */
   UYAP_QUERY = 'UYAP_QUERY',
 
+  /**
+   * UYAP'a evrak gönderimi (POST /uyap/document/submit; HACIZ_TALEBI HARİÇ) - HIGH risk, geri alınamaz.
+   * Güvenlik paketi 01 P1 (owner Ek 90 / Ek 91): kapı kümesi, risk, fail modu ve vekalet olgusu UYAP_SEND ile BİREBİR aynıdır;
+   * TEK fark aşamadan bağımsızlıktır (`stageIndependent: true`). Dosyanın aşamasını DEĞİŞTİRMEZ (durum geçişi tanımlı değil).
+   */
+  UYAP_DOCUMENT_SUBMIT = 'UYAP_DOCUMENT_SUBMIT',
+
+  /**
+   * UYAP'a ilgili dava (ceza şikayeti / hukuk davası) gönderimi (POST /uyap/lawsuit/{criminal,civil}) - HIGH risk, geri alınamaz.
+   * UYAP_DOCUMENT_SUBMIT ile aynı sözleşme: UYAP_SEND kapı kümesi + yalnız aşamadan bağımsızlık; aşama geçişi üretmez.
+   */
+  UYAP_LAWSUIT_FILE = 'UYAP_LAWSUIT_FILE',
+
   // ============================================
   // Expense Actions
   // ============================================
@@ -285,6 +298,8 @@ export enum RiskLevel {
 export const ACTION_RISK_LEVELS: Record<ActionCode, RiskLevel> = {
   // HIGH Risk
   [ActionCode.UYAP_SEND]: RiskLevel.HIGH,
+  [ActionCode.UYAP_DOCUMENT_SUBMIT]: RiskLevel.HIGH, // P1: UYAP_SEND ile aynı risk
+  [ActionCode.UYAP_LAWSUIT_FILE]: RiskLevel.HIGH, // P1: UYAP_SEND ile aynı risk
   [ActionCode.SEND_NOTIFICATION]: RiskLevel.HIGH,
   [ActionCode.SEND_PAYMENT_ORDER]: RiskLevel.HIGH,
   [ActionCode.TRIGGER_HACIZ]: RiskLevel.HIGH,

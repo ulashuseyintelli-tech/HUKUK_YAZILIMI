@@ -119,11 +119,15 @@ export function BulkOperationsPanel({ cases, onComplete }: BulkOperationsPanelPr
               documentContent: "Toplu işlem",
               documentName: `${uyapDocType}_${caseData?.fileNumber}`,
             });
+            // Güvenlik paketi 01 P1: gerçek UYAP taşıması YOK (sunucu `dispatched:false` döner). Başarılı yanıt "gönderildi"
+            // diye GÖSTERİLMEZ; 400 / 403 (politika / salt okur reddi) api katmanında hata olarak fırlar ve aşağıdaki catch'e düşer.
             operationResults.push({
               caseId,
               fileNumber: caseData?.fileNumber || caseId,
-              success: result.data?.success || false,
-              message: result.data?.success ? "UYAP'a gönderildi" : (result.data?.errorMessage || "Hata"),
+              success: result.data?.success === true,
+              message: result.data?.success === true
+                ? (result.data?.data?.dispatched === true ? "UYAP'a iletildi" : "Yerel simülasyon; UYAP'a iletilmedi")
+                : (result.data?.errorMessage || "Hata"),
             });
             break;
 

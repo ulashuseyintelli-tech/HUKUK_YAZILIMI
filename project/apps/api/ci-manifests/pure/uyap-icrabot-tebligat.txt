@@ -342,3 +342,10 @@ src/modules/case/inventory/__tests__/rich-interest-uyap-readiness.fixture.spec.t
 #   varligi yetmez (pesin harc kalemi TUTARIYLA kayitli olmali, gerisi mevcut kural: BLOCKING talep karsilanmadan kilit);
 #   tutar, kur ya da toplam URETILMEZ; TL dosyada sonuc mevcut yontemlerle AYNI; baska buronun dosyasi "bulunamadi".
 src/modules/expense-request/__tests__/opening-expense-requirement.spec.ts
+
+# Guvenlik paketi 01 P1 (owner Ek 90 / Ek 91; DV-198 / GR-8): UYAP gonderim uclarinda CALISMA ZAMANI politika kapisi (saf; DB yok).
+#   Esitlik kilidi: UYAP_DOCUMENT_SUBMIT / UYAP_LAWSUIT_FILE kapi kumesi = UYAP_SEND, TEK fark asama reddi, asama gecisi yok.
+#   Kapi: document/submit, lawsuit/{criminal,civil}, xml/submit (UYAP_SEND, TEK karar); aktor req.user.id; HACIZ_TALEBI 400;
+#   UyapController ViewerWriteDenyGuard; can-perform-action istemci context'i 400 (K3).
+src/modules/uyap/__tests__/uyap-stage-independent-action-parity.spec.ts
+src/modules/uyap/__tests__/uyap-submit-runtime-policy-gate.spec.ts
