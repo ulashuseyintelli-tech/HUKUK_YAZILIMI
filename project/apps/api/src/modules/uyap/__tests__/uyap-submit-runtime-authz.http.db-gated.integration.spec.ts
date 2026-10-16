@@ -1,5 +1,5 @@
-// CaseModule grafiği `pdf-poppler`'ı yükler; paket Linux'ta yükleme anında process.exit(1) verir
-// (CI emsali: case-create-due-currency.http.db-gated.integration.spec.ts).
+// Güvenlik ağı: modül grafiği dolaylı olarak `pdf-poppler` yüklerse Linux'ta yükleme anında process.exit(1) verir
+// (CI emsali: case-create-due-currency.http.db-gated.integration.spec.ts). Bu test CaseModule'ü BİLEREK yüklemez.
 jest.mock('pdf-poppler', () => ({
   convert: async () => {
     throw new Error('pdf-poppler is stubbed in unit tests');
@@ -17,10 +17,8 @@ import * as request from 'supertest';
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
 import { StorageModule } from '../../../common/storage/storage.module';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
-import { CaseModule } from '../../case/case.module';
 import { ErrorLogModule } from '../../error-log/error-log.module';
 import { MetricsRegistryModule } from '../../metrics-registry/metrics-registry.module';
-import { StageTriggerModule } from '../../stage-trigger/stage-trigger.module';
 import { UyapModule } from '../uyap.module';
 
 /**
@@ -89,16 +87,9 @@ describeWithDisposableDb('UYAP gönderim uçları — çalışma zamanı yetkisi
     prisma = new PrismaClient({ datasources: { db: { url: TEST_DB_URL } } });
     await prisma.$connect();
     const identity = new DbUserIdentityGuard(() => prisma);
+    // BELLEK: db/domain-integration tek Jest sürecidir (runInBand). CaseModule grafiği yüklenmez; dosyalar doğrudan DB ile kurulur.
     const moduleRef = await Test.createTestingModule({
-      imports: [
-        ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true }),
-        StorageModule,
-        ErrorLogModule,
-        MetricsRegistryModule,
-        CaseModule,
-        StageTriggerModule,
-        UyapModule,
-      ],
+      imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true }), StorageModule, ErrorLogModule, MetricsRegistryModule, UyapModule],
     })
       .overrideGuard(JwtAuthGuard)
       .useValue(identity)
@@ -110,7 +101,8 @@ describeWithDisposableDb('UYAP gönderim uçları — çalışma zamanı yetkisi
     await app.init();
     // Uygulama kendi portunda dinler (supertest sunucuyu sahiplenmez): Linux ECONNRESET önlemi.
     await app.listen(0, '127.0.0.1');
-    for (const job of app.get(SchedulerRegistry, { strict: false }).getCronJobs().values()) job.stop();
+    const scheduler = app.get(SchedulerRegistry, { strict: false });
+    if (scheduler) for (const job of scheduler.getCronJobs().values()) job.stop();
 
     tenantId = `test-ci-usra-${suffix}`;
     otherTenantId = `test-ci-usra-b-${suffix}`;
@@ -153,34 +145,24 @@ describeWithDisposableDb('UYAP gönderim uçları — çalışma zamanı yetkisi
     get: (path: string) => request(app.getHttpServer()).get(path).set('x-test-user-id', userId),
   });
 
-  /** Ödenmiş açılış masraflı (EXPENSE_BLOCKING yok) dosya; varsayılan: vekaletli müvekkil + avukat 1 dosyaya atanmış. */
-  const openCase = async (label: string, opts: { clientId?: string; assignLawyer?: boolean; pay?: boolean; withDebtor?: boolean } = {}) => {
-    const clientId = opts.clientId ?? poaClientId;
-    const res = await as(adminId).post('/cases', {
-      fileNumber: `CI-USRA-${label}-${suffix}`,
-      type: 'GENERAL_EXECUTION',
-      interestType: 'YASAL',
-      startDate: '2026-02-01',
-      currency: 'TRY',
-      creditors: [{ id: clientId, type: 'COMPANY', name: 'USRA müvekkil' }],
-      dues: [{ type: 'PRINCIPAL', description: 'Asıl alacak', amount: 10_000, dueDate: '2026-01-15' }],
+  /**
+   * Dosya kurulumu doğrudan DB ile (HTTP dosya açılışı bu testin konusu değil). Varsayılan: vekaletli müvekkil + avukat 1 dosyaya
+   * atanmış; masraf engeli yok (EXPENSE_BLOCKING yalnız UYAP_SEND sınıflandırmalı AÇIK ExpenseBlockReason ile oluşur).
+   */
+  const openCase = async (label: string, opts: { clientId?: string; assignLawyer?: boolean; withDebtor?: boolean } = {}) => {
+    const created = await prisma.case.create({
+      data: { tenantId, fileNumber: `CI-USRA-${label}-${suffix}`, type: 'GENERAL_EXECUTION', workflowStage: 'INITIAL' } as never,
     });
-    expect({ label, status: res.status, body: res.status === 201 ? null : res.body }).toEqual({ label, status: 201, body: null });
-    const caseId = res.body.id as string;
-    // Arka plandaki açılış masraf talebi görünene dek sınırlı bekleme (en çok ~8 sn)
-    for (let attempt = 0; attempt < 40 && (await prisma.expenseRequest.count({ where: { tenantId, caseId } })) === 0; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
-    if (opts.pay !== false) await prisma.expenseRequest.updateMany({ where: { tenantId, caseId }, data: { status: 'PAID', paidTotal: 1431.1 } as never });
+    const caseId = created.id;
+    await prisma.caseClient.create({ data: { caseId, clientId: opts.clientId ?? poaClientId } });
     if (opts.assignLawyer !== false) await prisma.caseLawyer.create({ data: { caseId, lawyerId } as never });
-    // xml/submit XML üretimi aktif borçlu ister ("Operasyonel çıktı için aktif borçlu bulunmuyor" → kapıdan ÖNCE 400). Kurulum: doğrudan DB.
+    // xml/submit XML üretimi aktif borçlu ister ("Operasyonel çıktı için aktif borçlu bulunmuyor" → kapıdan ÖNCE 400).
     if (opts.withDebtor) {
       const debtor = await prisma.debtor.create({ data: { tenantId, type: 'COMPANY', name: `USRA borçlu ${label}` } as never });
       await prisma.caseDebtor.create({ data: { caseId, debtorId: debtor.id, role: 'ASIL_BORCLU' } as never });
-      // Faiz izdüşümü: faizsiz kalem (aksi hâlde XML üretimi kapıdan ÖNCE UYAP_NUMERIC_INTEREST_PROJECTION_FAILED verir)
-      await prisma.claimItem.updateMany({
-        where: { caseId },
-        data: { interestAccrualStatus: 'NO_INTEREST', interestTypeCode: null, interestType: null, interestRate: null, interestStartDate: null, interestStartDateProvenance: null } as never,
+      // XML doğrulaması en az bir alacak kalemi ister; faizsiz kalem (faiz izdüşümü kapıdan ÖNCE reddetmesin)
+      await prisma.claimItem.create({
+        data: { tenantId, caseId, itemType: 'PRINCIPAL', originalAmount: 10_000, demandedAmount: 10_000, amount: 10_000, currency: 'TRY', interestAccrualStatus: 'NO_INTEREST' } as never,
       });
     }
     return caseId;
@@ -294,9 +276,9 @@ describeWithDisposableDb('UYAP gönderim uçları — çalışma zamanı yetkisi
 
   describe('RED: korunan kapılar (kapalı / arşiv / masraf / UYAP kapalı) — aşama SEIZURE', () => {
     it.each([
-      ['kapalı dosya (HITAM)', 'CASE_CLOSED', (caseId: string) => prisma.case.update({ where: { id: caseId }, data: { caseStatus: 'HITAM' as never } }), true],
-      ['arşivdeki dosya', 'CASE_ARCHIVED', (caseId: string) => prisma.case.update({ where: { id: caseId }, data: { isArchived: true } }), true],
-      ['dosyada UYAP kapalı', 'UYAP_DISABLED', (caseId: string) => prisma.case.update({ where: { id: caseId }, data: { allowUyapActions: false } }), true],
+      ['kapalı dosya (HITAM)', 'CASE_CLOSED', (caseId: string) => prisma.case.update({ where: { id: caseId }, data: { caseStatus: 'HITAM' as never } })],
+      ['arşivdeki dosya', 'CASE_ARCHIVED', (caseId: string) => prisma.case.update({ where: { id: caseId }, data: { isArchived: true } })],
+      ['dosyada UYAP kapalı', 'UYAP_DISABLED', (caseId: string) => prisma.case.update({ where: { id: caseId }, data: { allowUyapActions: false } })],
       // Kanonik masraf engeli: UYAP_SEND sınıflandırmalı AÇIK ExpenseBlockReason (sıradan ödenmemiş talep tek başına bloklamaz;
       // uyap-expense-blocking-fact.provider.ts). Olgu dosya düzeyindedir → yeni kodlar UYAP_SEND ile AYNI olguyu okur.
       [
@@ -304,11 +286,10 @@ describeWithDisposableDb('UYAP gönderim uçları — çalışma zamanı yetkisi
         'EXPENSE_BLOCKING',
         (caseId: string) =>
           prisma.expenseBlockReason.create({ data: { tenantId, caseId, blockedActionCode: 'UYAP_SEND', reasonCode: 'PAYMENT_NOT_RECEIVED', createdById: adminId } as never }),
-        true,
       ],
-    ])('%s → üç uçta red (%s)', async (label, gate, mutate, pay) => {
+    ])('%s → üç uçta red (%s)', async (label, gate, mutate) => {
       for (const ep of ENDPOINTS) {
-        const caseId = await openCase(`kapi-${gate}-${ep.name.replace('/', '-')}`, { pay: pay as boolean });
+        const caseId = await openCase(`kapi-${gate}-${ep.name.replace('/', '-')}`);
         await setStage(caseId, 'SEIZURE');
         await (mutate as (id: string) => Promise<unknown>)(caseId);
         await expectPolicyDenied(`${label} ${ep.name}`, await ep.send(lawyerUserId, caseId), caseId, gate as string, ep.action);
