@@ -448,3 +448,124 @@ describe("W5-INVITE-LIFECYCLE-I01 — revoke/resend/issue yaşam döngüsü", ()
     expect(prisma.$transaction).toHaveBeenCalled();
   });
 });
+
+// ==========================================================================================
+// GÜV-01 P3 (DV-201) — davet bağlantısı belirteci adres PARÇASINDA (`#token=`) taşır.
+// Sorgu dizesi (`?token=`) sunucu / kenar katmanı erişim günlüklerine ve `Referer` başlığına
+// düşebilir; parça tarayıcı dışına gönderilmez. Kabul / tek kullanım / süre davranışı DEĞİŞMEZ.
+// ==========================================================================================
+describe("GÜV-01 P3 — davet bağlantısı belirteci parçada taşır", () => {
+  const BASE = "https://web.example.test";
+
+  /** make() ile aynı sahte bağımlılıklar; yalnız yapılandırmaya WEB_BASE_URL / TTL eklenir. */
+  function makeWithConfig(extra: Record<string, string | undefined>) {
+    const m = make();
+    const config = {
+      get: jest.fn((k: string) => (k === "LOGIN_INVITE_PROVISIONING_ENABLED" ? "true" : extra[k])),
+    } as any;
+    const svc = new UserInviteService(m.prisma, m.audit, m.email, config);
+    return { ...m, svc };
+  }
+
+  /** E-postadaki bağlantıyı metin VE html gövdesinden çıkarır; ikisi aynı olmalıdır. */
+  function linksFromEmail(email: any): { text: URL; html: URL } {
+    const sent = email.send.mock.calls.at(-1)[0];
+    const textUrl = sent.text.match(/https?:\/\/\S+/)![0];
+    const htmlUrl = sent.html.match(/href="([^"]+)"/)![1];
+    return { text: new URL(textUrl), html: new URL(htmlUrl) };
+  }
+
+  function expectFragmentOnly(url: URL, raw: string) {
+    expect(url.origin + url.pathname).toBe(`${BASE}/auth/accept-invite`);
+    expect(url.search).toBe("");
+    expect(url.searchParams.get("token")).toBeNull();
+    expect(url.hash.startsWith("#token=")).toBe(true);
+    expect(new URLSearchParams(url.hash.slice(1)).get("token")).toBe(raw);
+  }
+
+  it("[P3-1] issue: e-postadaki bağlantı `#token=` taşır, `?token=` / `&token=` TAŞIMAZ (metin + html)", async () => {
+    const { svc, email, userInvite } = makeWithConfig({ WEB_BASE_URL: `${BASE}/` });
+    await svc.issue(ACTOR, { email: "a@x.com", name: "Ad" });
+    const raw = rawFromEmail(email);
+    expect(userInvite.create.mock.calls[0][0].data.tokenHash).toBe(hashInviteToken(raw));
+
+    const { text, html } = linksFromEmail(email);
+    expectFragmentOnly(text, raw);
+    expectFragmentOnly(html, raw);
+    const sent = email.send.mock.calls.at(-1)[0];
+    for (const body of [sent.text, sent.html]) {
+      expect(body).not.toMatch(/[?&]token=/);
+      expect(body).toContain("/auth/accept-invite#token=");
+    }
+  });
+
+  it("[P3-2] resend: yeni bağlantı da `#token=` taşır, `?token=` TAŞIMAZ; yeni belirteç özeti kayda yazılır", async () => {
+    const { svc, prisma, email, userInvite } = makeWithConfig({ WEB_BASE_URL: BASE });
+    prisma.userInvite.findFirst.mockResolvedValue({
+      id: "inv1", tenantId: "t1", userId: "u9", email: "a@x.com", consumedAt: null, revokedAt: null, user: { isActive: false },
+    });
+    await svc.resend(ACTOR, "inv1");
+    const raw = rawFromEmail(email);
+    expect(userInvite.update.mock.calls[0][0].data.tokenHash).toBe(hashInviteToken(raw));
+    const { text, html } = linksFromEmail(email);
+    expectFragmentOnly(text, raw);
+    expectFragmentOnly(html, raw);
+  });
+
+  it("[P3-3] süre davranışı DEĞİŞMEZ: varsayılan 72 saat, LOGIN_INVITE_TTL_HOURS verilirse o değer (issue + resend)", async () => {
+    const now = new Date("2026-10-16T12:00:00.000Z").getTime();
+    const spy = jest.spyOn(Date, "now").mockReturnValue(now);
+    try {
+      const a = makeWithConfig({ WEB_BASE_URL: BASE });
+      const ra = await a.svc.issue(ACTOR, { email: "a@x.com", name: "Ad" });
+      expect(ra.expiresAt).toBe(new Date(now + 72 * 3600_000).toISOString());
+      expect(a.userInvite.create.mock.calls[0][0].data.expiresAt.getTime()).toBe(now + 72 * 3600_000);
+
+      const b = makeWithConfig({ WEB_BASE_URL: BASE, LOGIN_INVITE_TTL_HOURS: "5" });
+      const rb = await b.svc.issue(ACTOR, { email: "a@x.com", name: "Ad" });
+      expect(rb.expiresAt).toBe(new Date(now + 5 * 3600_000).toISOString());
+
+      const c = makeWithConfig({ WEB_BASE_URL: BASE });
+      c.prisma.userInvite.findFirst.mockResolvedValue({
+        id: "inv1", tenantId: "t1", userId: "u9", email: "a@x.com", consumedAt: null, revokedAt: null, user: { isActive: false },
+      });
+      const rc = await c.svc.resend(ACTOR, "inv1");
+      expect(rc.expiresAt).toBe(new Date(now + 72 * 3600_000).toISOString());
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("[P3-4] parçadan alınan belirteç kabulde bir kez geçer; ikinci kullanım ve süresi dolmuş belirteç aynı genel iletiyle reddedilir", async () => {
+    const { svc, prisma, email, userInvite, user } = makeWithConfig({ WEB_BASE_URL: BASE });
+    await svc.issue(ACTOR, { email: "a@x.com", name: "Ad" });
+    const raw = new URLSearchParams(linksFromEmail(email).text.hash.slice(1)).get("token")!;
+    const stored = userInvite.create.mock.calls[0][0].data;
+    const row = {
+      id: "inv1", tenantId: "t1", userId: "u9", email: "a@x.com", tokenHash: stored.tokenHash,
+      expiresAt: stored.expiresAt, consumedAt: null as Date | null, revokedAt: null,
+      user: { id: "u9", tenantId: "t1", email: "a@x.com", isActive: false, passwordHash: null },
+    };
+    // Kayıt yalnız ÖZETLE bulunur: ham belirteç sorguya girmez.
+    prisma.userInvite.findUnique.mockImplementation(async (args: any) =>
+      args.where.tokenHash === row.tokenHash ? row : null,
+    );
+
+    await expect(svc.accept(raw, "newpassword123")).resolves.toMatchObject({ ok: true, userId: "u9" });
+    expect(prisma.userInvite.findUnique.mock.calls[0][0]).toEqual({ where: { tokenHash: hashInviteToken(raw) }, include: { user: true } });
+    expect(user.update).toHaveBeenCalledTimes(1);
+
+    // Tek kullanım: tüketilmiş kayıt ikinci kez kabul edilmez.
+    row.consumedAt = new Date();
+    row.user.isActive = true;
+    await expect(svc.accept(raw, "newpassword123")).rejects.toThrow("Geçersiz veya süresi dolmuş davet");
+    expect(user.update).toHaveBeenCalledTimes(1);
+
+    // Süre: süresi dolmuş kayıt aynı genel iletiyle reddedilir.
+    row.consumedAt = null;
+    row.user.isActive = false;
+    row.expiresAt = new Date(Date.now() - 1000);
+    await expect(svc.accept(raw, "newpassword123")).rejects.toThrow("Geçersiz veya süresi dolmuş davet");
+    expect(user.update).toHaveBeenCalledTimes(1);
+  });
+});
