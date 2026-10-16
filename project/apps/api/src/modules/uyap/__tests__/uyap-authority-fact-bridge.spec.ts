@@ -9,7 +9,6 @@
  * - `POWER_OF_ATTORNEY_MISSING` gate'i granular fact konjonksiyonunu okur.
  */
 import {
-  ACTING_LAWYER_NOT_ASSIGNED_TO_CASE,
   UyapAuthorityFactProvider,
   UYAP_AUTHORITY_FACT_KEYS,
 } from "../authority/uyap-authority-fact.provider";
@@ -177,7 +176,7 @@ describe("UyapAuthorityFactProvider (I04)", () => {
   });
 
   describe("P5 (owner Ek 94, karar a2): dosya ataması EK koşulu", () => {
-    it("geçerli vekalet + dosyaya ATANMAMIŞ → atama olgusu false, ret nedeni ACTING_LAWYER_NOT_ASSIGNED_TO_CASE; vekalet olguları vekaleti anlatır", async () => {
+    it("geçerli vekalet + dosyaya ATANMAMIŞ → atama olgusu false; vekalet olguları ve ret nedeni (null) vekaleti anlatır (Ek 95 K1: main ile aynı)", async () => {
       const { provider } = makeProvider({ assigned: false });
       const facts: FactMap = new Map();
 
@@ -186,8 +185,7 @@ describe("UyapAuthorityFactProvider (I04)", () => {
       expect(alias).toBe(true); // alias = vekalet (atama ayrı olgudadır)
       expect(facts.get(UYAP_AUTHORITY_FACT_KEYS.actorHasMatchingPoa)).toBe(true);
       expect(facts.get(UYAP_AUTHORITY_FACT_KEYS.actorAssignedToCase)).toBe(false);
-      expect(facts.get(UYAP_AUTHORITY_FACT_KEYS.failureCode)).toBe(ACTING_LAWYER_NOT_ASSIGNED_TO_CASE);
-      expect(ACTING_LAWYER_NOT_ASSIGNED_TO_CASE).toBe("ACTING_LAWYER_NOT_ASSIGNED_TO_CASE");
+      expect(facts.get(UYAP_AUTHORITY_FACT_KEYS.failureCode)).toBeNull();
     });
 
     it("vekalet reddedildiyse atama SORGULANMAZ ve olgu false (fail-closed; ret nedeni vekaletin)", async () => {
@@ -218,15 +216,33 @@ describe("UyapAuthorityFactProvider (I04)", () => {
       expect(facts.get(UYAP_AUTHORITY_FACT_KEYS.failureCode)).toBe("AUTHORITY_CONTEXT_INVALID");
     });
 
-    const assignmentGate = COMPILED_GATES.find((g: any) => g.gateCode === "ACTING_LAWYER_NOT_ASSIGNED_TO_CASE")!;
+    const assignmentGates = COMPILED_GATES.filter((g: any) => g.gateCode === "ACTING_LAWYER_NOT_ASSIGNED_TO_CASE");
+    const gateFor = (code: ActionCode) => getGatesForAction(code).find((g) => g.gateCode === "ACTING_LAWYER_NOT_ASSIGNED_TO_CASE")!;
+    const XML = { uyapSubmitChannel: "XML_SUBMIT" } as any;
 
-    it("kapı: olgu true iken geçirir; false / eksik iken bloklar (pozitif ispat)", () => {
-      expect(assignmentGate).toBeDefined();
-      expect(assignmentGate.severity).toBe("HARD");
-      expect(assignmentGate.condition(new Map([["actor.is_assigned_to_case", true]]), undefined as any)).toBe(false);
-      expect(assignmentGate.condition(new Map([["actor.is_assigned_to_case", false]]), undefined as any)).toBe(true);
-      expect(assignmentGate.condition(new Map(), undefined as any)).toBe(true);
-      expect(assignmentGate.condition(new Map([["actor.is_assigned_to_case", "true" as any]]), undefined as any)).toBe(true);
+    it("kapı: evrak / dava kodlarında olgu true iken geçirir; false / eksik / true olmayan değerde bloklar (pozitif ispat, bağlamdan bağımsız)", () => {
+      expect(assignmentGates).toHaveLength(2);
+      for (const code of [ActionCode.UYAP_DOCUMENT_SUBMIT, ActionCode.UYAP_LAWSUIT_FILE]) {
+        const g = gateFor(code);
+        expect(g.severity).toBe("HARD");
+        for (const ctx of [undefined, {} as any, XML]) {
+          expect(g.condition(new Map([["actor.is_assigned_to_case", true]]), ctx)).toBe(false);
+          expect(g.condition(new Map([["actor.is_assigned_to_case", false]]), ctx)).toBe(true);
+          expect(g.condition(new Map(), ctx)).toBe(true);
+          expect(g.condition(new Map([["actor.is_assigned_to_case", "true" as any]]), ctx)).toBe(true);
+        }
+      }
+    });
+
+    it("Ek 95 K1: UYAP_SEND'de kapı YALNIZ xml/submit bağlamında (uyapSubmitChannel = XML_SUBMIT) tetiklenir; bağlamsız (hazırlık / ödeme emri) tetiklenmez", () => {
+      const g = gateFor(ActionCode.UYAP_SEND);
+      expect(g.severity).toBe("HARD");
+      expect(g.condition(new Map([["actor.is_assigned_to_case", false]]), XML)).toBe(true);
+      expect(g.condition(new Map(), XML)).toBe(true);
+      expect(g.condition(new Map([["actor.is_assigned_to_case", true]]), XML)).toBe(false);
+      expect(g.condition(new Map([["actor.is_assigned_to_case", false]]), undefined as any)).toBe(false);
+      expect(g.condition(new Map(), {} as any)).toBe(false);
+      expect(g.condition(new Map(), { uyapSubmitChannel: "OTHER" } as any)).toBe(false);
     });
 
     it("kapı kapsamı = POWER_OF_ATTORNEY_MISSING taşıyan HER eylem (UYAP_SEND, UYAP_DOCUMENT_SUBMIT, UYAP_LAWSUIT_FILE); başka eylem YOK", () => {
@@ -243,8 +259,10 @@ describe("UyapAuthorityFactProvider (I04)", () => {
       expect(withAssignment).not.toContain("TRIGGER_HACIZ");
     });
 
-    it("kapı önceliği vekalet kapısından SONRA (vekalet reddi kendi koduyla görünür)", () => {
-      expect(assignmentGate.priority).toBeGreaterThan(poaGate.priority);
+    it("kapı önceliği vekalet kapısından SONRA (vekalet reddi kendi koduyla görünür); iki satırın kod / önem / öncelik / gerekçesi aynı", () => {
+      for (const g of assignmentGates) expect(g.priority).toBeGreaterThan(poaGate.priority);
+      const shape = (g: any) => ({ gateCode: g.gateCode, severity: g.severity, priority: g.priority, reason: g.reason });
+      expect(shape(assignmentGates[0])).toEqual(shape(assignmentGates[1]));
     });
   });
 

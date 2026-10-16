@@ -398,8 +398,10 @@ export class UyapService {
    * (logRequest / yaşam döngüsü kaydı) ÖNCE ve koşulsuz çalışır. Aktör YALNIZ kimliği doğrulanmış kullanıcıdır
    * (`req.user.id`); istemci gövdesindeki `lawyerId` / `clientId` yetki girdisi DEĞİLDİR. Vekalet kararı politika motorunun
    * aktör eşlemesindedir (POWER_OF_ATTORNEY_MISSING: eşleşen etkin vekaleti olan avukat aktör); personel / avukat olmayan
-   * aktör reddedilir. P5 (owner Ek 94, karar a2): vekalete EK olarak aktörün dosyaya etkin ataması aranır
-   * (ACTING_LAWYER_NOT_ASSIGNED_TO_CASE; atanmamış aktör ve avukatsız dosya reddedilir).
+   * aktör reddedilir. P5 (owner Ek 94 a2 / Ek 95 K1): vekalete EK olarak aktörün dosyaya geçerli avukat ataması aranır
+   * (ACTING_LAWYER_NOT_ASSIGNED_TO_CASE; atanmamış aktör, avukatsız dosya ve yalnız yardımcı / stajyer kaydı reddedilir).
+   * Kapsam YALNIZ bu yardımcının üç çağıranıdır: UYAP_SEND için kapı `uyapSubmitChannel: 'XML_SUBMIT'` bağlamıyla tetiklenir;
+   * sendPaymentOrder ve hazırlık bu bağlamı vermez (main davranışı korunur).
    * Fail-closed: motor yoksa ya da teknik hata verirse işlem engellenir (sendPaymentOrder ile aynı kodlar).
    *
    * <remarks>
@@ -433,6 +435,9 @@ export class UyapService {
         tenantId,
         authenticatedUserId: actorUserId,
         evaluatedAt: new Date(),
+        // P5 (owner Ek 95 K1): bu yardımcıda UYAP_SEND YALNIZ xml/submit iç çağrısıdır (submitDocument, policyAction =
+        // UYAP_SEND). Çağıran bağlamı kapıya bildirilir → dosya ataması UYAP_SEND için yalnız burada aranır.
+        ...(actionCode === ActionCode.UYAP_SEND ? { uyapSubmitChannel: 'XML_SUBMIT' as const } : {}),
       });
     } catch (error: any) {
       // Ham hata / PII günlüğe aktarılmaz; yalnız tür adı.

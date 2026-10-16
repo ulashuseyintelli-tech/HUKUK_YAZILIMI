@@ -64,7 +64,7 @@ const buildAuthorityPrisma = (opts: { validPoa: boolean; assigned?: boolean }) =
   // P5 (owner Ek 94): vekalete EK dosya ataması (CaseLawyer) — varsayılan: aktör dosyaya atanmış.
   caseLawyer: {
     findMany: jest.fn(async () =>
-      opts.assigned === false ? [] : [{ id: 'cl-1', case: { tenantId: TENANT }, lawyer: { tenantId: TENANT, isActive: true } }],
+      opts.assigned === false ? [] : [{ id: 'cl-1', role: 'ASSIGNED', case: { tenantId: TENANT }, lawyer: { tenantId: TENANT, isActive: true, lawyerRank: 'LAWYER', role: 'EMPLOYEE' } }],
     ),
   },
   lawyer: {
@@ -131,8 +131,8 @@ const CONTEXT = {
 } as any;
 
 /** Gate'in UYAP_SEND için blokladığı gate kodunu döndürür (yoksa null). */
-const gateBlock = async (facts: FactMap): Promise<string | null> => {
-  const result = await new GateCheckerService().checkGates(CASE, ActionCode.UYAP_SEND, facts);
+const gateBlock = async (facts: FactMap, action: ActionCode = ActionCode.UYAP_SEND): Promise<string | null> => {
+  const result = await new GateCheckerService().checkGates(CASE, action, facts);
   return result.blocked ? (result.gateCode ?? 'BLOCKED') : null;
 };
 
@@ -208,7 +208,7 @@ describe('I06 — LG-01/02/03/06: legacy POA flag authority ÜRETEMEZ', () => {
     expect(await gateBlock(facts)).toBe('POWER_OF_ATTORNEY_MISSING');
   });
 
-  it('P5 (owner Ek 94): manuel `actor.is_assigned_to_case = true` enjeksiyonu EZİLİR — geçerli vekalet + atama YOK → ACTING_LAWYER_NOT_ASSIGNED_TO_CASE', async () => {
+  it('P5 (owner Ek 94 / Ek 95): manuel `actor.is_assigned_to_case = true` enjeksiyonu EZİLİR — geçerli vekalet + atama YOK → evrak gönderiminde ACTING_LAWYER_NOT_ASSIGNED_TO_CASE', async () => {
     const facts: FactMap = new Map<string, FactValue>(
       Object.entries({ ...baseGreenFacts(), 'case.has_unpaid_blocking_expense': false, 'actor.is_assigned_to_case': true }),
     );
@@ -217,7 +217,9 @@ describe('I06 — LG-01/02/03/06: legacy POA flag authority ÜRETEMEZ', () => {
 
     expect(facts.get('actor.is_assigned_to_case')).toBe(false);
     expect(facts.get('actor.has_matching_power_of_attorney')).toBe(true);
-    expect(await gateBlock(facts)).toBe('ACTING_LAWYER_NOT_ASSIGNED_TO_CASE');
+    expect(await gateBlock(facts, ActionCode.UYAP_DOCUMENT_SUBMIT)).toBe('ACTING_LAWYER_NOT_ASSIGNED_TO_CASE');
+    // Ek 95 K1: bağlamsız UYAP_SEND (hazırlık / ödeme emri) atama kapısını taşımaz → main gibi geçer.
+    expect(await gateBlock(facts)).toBeNull();
   });
 });
 
@@ -252,7 +254,6 @@ describe('I06 — LG-04/LG-05: legacy expense flag policy girdisi DEĞİLDİR', 
       'poa.is_effective_at_evaluation_time',
       'poa.covers_requested_operation',
       'authority.is_unambiguous',
-      'actor.is_assigned_to_case', // P5 (owner Ek 94)
     ]) {
       facts.set(k, true);
     }

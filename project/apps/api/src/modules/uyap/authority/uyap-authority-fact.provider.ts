@@ -15,19 +15,14 @@ export const UYAP_AUTHORITY_FACT_KEYS = {
   poaCoversOperation: "poa.covers_requested_operation",
   authorityUnambiguous: "authority.is_unambiguous",
   /**
-   * P5 (owner Ek 94, karar a2): aktör dosyaya ETKİN biçimde atanmış mı (CaseLawyer; aynı kiracı; avukat kaydı etkin).
-   * Kapı: `ACTING_LAWYER_NOT_ASSIGNED_TO_CASE` (gates.compiled.ts). Vekalet olgularından AYRIDIR; birlikte aranır.
+   * P5 (owner Ek 94 a2 / Ek 95 K3): aktörün dosyada GEÇERLİ avukat ataması var mı (CaseLawyer; aynı kiracı; avukat kaydı
+   * etkin; rol RESPONSIBLE / ASSIGNED; stajyer kaydı değil). Kapı: `ACTING_LAWYER_NOT_ASSIGNED_TO_CASE` (gates.compiled.ts;
+   * owner Ek 95 K1 ile onaylanan gönderim ailesine daraltılmış). Vekalet olgularından AYRIDIR.
    */
   actorAssignedToCase: "actor.is_assigned_to_case",
   /** Ret nedeni — yalnız decision-log/evidence içindir, gate koşulu DEĞİLDİR. */
   failureCode: "authority.failure_code",
 } as const;
-
-/**
- * P5 (owner Ek 94): vekalet geçerli ama aktör dosyaya atanmamışsa `authority.failure_code` değeri.
- * Avukatsız dosya da bu koda düşer (tek kod: dosyadaki atama durumu dışarıya ayrıştırılmaz).
- */
-export const ACTING_LAWYER_NOT_ASSIGNED_TO_CASE = "ACTING_LAWYER_NOT_ASSIGNED_TO_CASE";
 
 /**
  * UYAP-CPE-AUTHORITY-FACT-BRIDGE-I01 — gerçek yetki zincirini CPE fact'lerine bağlar.
@@ -51,7 +46,7 @@ export const ACTING_LAWYER_NOT_ASSIGNED_TO_CASE = "ACTING_LAWYER_NOT_ASSIGNED_TO
  * **P5 (owner Ek 94, karar a2) — dosya ataması EK koşulu:** vekalet zinciri geçerse, aynı çağrıda
  * `ActingLawyerResolverService.isAssignedToCase` ile `actor.is_assigned_to_case` hesaplanır. Vekalet
  * olguları ve alias (`case.has_power_of_attorney`) vekaletin kendisini anlatmaya devam eder; atama
- * yoksa yalnız atama olgusu `false` olur ve `authority.failure_code` = `ACTING_LAWYER_NOT_ASSIGNED_TO_CASE`.
+ * yoksa yalnız atama olgusu `false` olur; `authority.failure_code` vekalet zincirini anlatmaya devam eder (null).
  * Vekalet reddedildiyse atama sorgulanmaz ve olgu `false` yazılır (fail-closed; ret nedeni vekaletinkidir).
  */
 @Injectable()
@@ -125,9 +120,11 @@ export class UyapAuthorityFactProvider implements ComputedFactProvider {
 
       // 3) P5 (owner Ek 94): dosya ataması EK koşulu — atama tek başına yetki vermez, burada
       //    yalnız GEÇERLİ vekaletin ÜSTÜNE aranır. Sorgu hatası catch'e düşer (fail-closed).
+      //    Ek 95 K1: `authority.failure_code` YALNIZ vekalet zincirini anlatır (main ile aynı) — atama kapısı her eylemde
+      //    tetiklenmediği için (hazırlık / ödeme emri) atama yokluğu buraya ret nedeni olarak yazılmaz; kanıtı kendi olgusudur.
       const assigned = await this.actingLawyerResolver.isAssignedToCase({ actingLawyerId, caseId, tenantId });
       write(UYAP_AUTHORITY_FACT_KEYS.actorAssignedToCase, assigned === true);
-      write(UYAP_AUTHORITY_FACT_KEYS.failureCode, assigned === true ? null : ACTING_LAWYER_NOT_ASSIGNED_TO_CASE);
+      write(UYAP_AUTHORITY_FACT_KEYS.failureCode, null);
       return true;
     } catch (error: any) {
       // Provider hatası authority üretemez (fail-closed). Ham hata/PII loglanmaz.

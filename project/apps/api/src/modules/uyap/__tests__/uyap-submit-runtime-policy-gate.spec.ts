@@ -203,6 +203,36 @@ describe('P5 — TAKIP_TALEBI evrak ucunda reddedilir; xml/submit yolu etkilenme
   });
 });
 
+describe('P5 (owner Ek 95 K1) — dosya ataması kapısı çağıran bağlamıyla daraltıldı', () => {
+  it('xml/submit iç çağrısı (UYAP_SEND) politika motoruna uyapSubmitChannel = XML_SUBMIT bildirir', async () => {
+    const ctx = buildService();
+    await ctx.service.submitDocument(doc({ documentType: 'TAKIP_TALEBI' }), T1, 'user-1', ActionCode.UYAP_SEND);
+    expect(ctx.cpe.canPerformAction.mock.calls[0][3]).toMatchObject({ uyapSubmitChannel: 'XML_SUBMIT' });
+  });
+
+  it.each([
+    ['document/submit', (svc: UyapService) => svc.submitDocument(doc(), T1, 'user-1')],
+    ['lawsuit/criminal', (svc: UyapService) => svc.submitCriminalComplaint(criminal(), T1, 'user-1')],
+    ['lawsuit/civil', (svc: UyapService) => svc.submitCivilLawsuit(civil(), T1, 'user-1')],
+  ] as Array<[string, (svc: UyapService) => Promise<unknown>]>)('%s bu bağlamı VERMEZ (kendi eylem kodunda kapı koşulsuzdur)', async (_n, run) => {
+    const ctx = buildService();
+    await run(ctx.service);
+    expect(ctx.cpe.canPerformAction.mock.calls[0][3]).not.toHaveProperty('uyapSubmitChannel');
+  });
+
+  it('ödeme emri test ucu (sendPaymentOrder, UYAP_SEND) bu bağlamı VERMEZ → atama kapısı uygulanmaz (main davranışı)', async () => {
+    const ctx = buildService();
+    await ctx.service.sendPaymentOrder(
+      { caseId: 'case-1', executionOfficeCode: 'X', creditor: { name: 'A' }, debtor: { name: 'B' }, amount: 1, currency: 'TRY' } as any,
+      T1,
+      'user-1',
+    ).catch(() => undefined); // yalnız politika çağrısının bağlamı ölçülür
+    expect(ctx.cpe.canPerformAction).toHaveBeenCalledTimes(1);
+    expect(ctx.cpe.canPerformAction.mock.calls[0][2]).toBe(ActionCode.UYAP_SEND);
+    expect(ctx.cpe.canPerformAction.mock.calls[0][3]).not.toHaveProperty('uyapSubmitChannel');
+  });
+});
+
 describe('P1 — UyapController: aktör sunucudan, xml/submit TEK karar (UYAP_SEND), salt okur koruması', () => {
   const mkController = () => {
     const uyapService: any = {

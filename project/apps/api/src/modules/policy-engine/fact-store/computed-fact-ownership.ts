@@ -54,7 +54,7 @@
  * | `poa.covers_requested_operation` | `UyapAuthorityFactProvider` (I04) |
  * | `authority.is_unambiguous` | `UyapAuthorityFactProvider` (I04) |
  * | `authority.failure_code` | `UyapAuthorityFactProvider` (I04) — evidence |
- * | `actor.is_assigned_to_case` | `UyapAuthorityFactProvider` (P5, owner Ek 94) |
+ * | `actor.is_assigned_to_case` | `UyapAuthorityFactProvider` (P5, owner Ek 94 / Ek 95) |
  * | `case.has_unpaid_blocking_expense` | `UyapExpenseBlockingFactProvider` (I04B) |
  * | `system.uyap_available` | `SystemUyapAvailableProvider` |
  * | `system.uyap_availability_explicit` | `SystemUyapAvailableProvider` (PREFLIGHT-R02) |

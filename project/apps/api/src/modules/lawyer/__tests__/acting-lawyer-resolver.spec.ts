@@ -11,7 +11,7 @@
  * INV-04 lawyer tenant'ı authenticated tenant ile aynıdır.
  */
 import { ForbiddenException } from "@nestjs/common";
-import { ActingLawyerResolverService } from "../acting-lawyer-resolver.service";
+import { ActingLawyerResolverService, CASE_ASSIGNMENT_COUNTED_ROLES } from "../acting-lawyer-resolver.service";
 
 const USER_ID = "user-1";
 const TENANT = "tenant-1";
@@ -219,10 +219,12 @@ describe("ActingLawyerResolverService", () => {
 
   describe("isAssignedToCase — P5 (owner Ek 94, karar a2): vekalete EK dosya ataması", () => {
     const CASE_ID = "case-1";
+    const LAWYER_OK = { tenantId: TENANT, isActive: true, lawyerRank: "LAWYER", role: "EMPLOYEE" };
     const row = (over: Record<string, unknown> = {}) => ({
       id: "cl-1",
+      role: "ASSIGNED",
       case: { tenantId: TENANT },
-      lawyer: { tenantId: TENANT, isActive: true },
+      lawyer: LAWYER_OK,
       ...over,
     });
     const make = (rows: unknown[]) => {
@@ -260,6 +262,40 @@ describe("ActingLawyerResolverService", () => {
       const { service, findMany } = make([row()]);
       expect(await service.isAssignedToCase(p)).toBe(false);
       expect(findMany).not.toHaveBeenCalled();
+    });
+
+    // Owner Ek 95 K3: CaseLawyerRole (schema.prisma) = RESPONSIBLE | ASSIGNED | ASSISTANT | INTERN.
+    it("sayılan roller kapalı küme: yalnız RESPONSIBLE ve ASSIGNED", () => {
+      expect([...CASE_ASSIGNMENT_COUNTED_ROLES].sort()).toEqual(["ASSIGNED", "RESPONSIBLE"]);
+    });
+
+    it.each([
+      ["RESPONSIBLE (Sorumlu avukat)", "RESPONSIBLE", true],
+      ["ASSIGNED (Atanmış avukat)", "ASSIGNED", true],
+      ["ASSISTANT (Yardımcı) — tek başına atama SAYILMAZ", "ASSISTANT", false],
+      ["INTERN (Stajyer) — tek başına atama SAYILMAZ", "INTERN", false],
+      ["şemada olmayan / bilinmeyen rol — fail-closed", "OBSERVER", false],
+      ["rol boş — fail-closed", null, false],
+    ])("dosya rolü %s → %s", async (_label, role, expected) => {
+      const { service } = make([row({ role })]);
+      expect(await service.isAssignedToCase(params)).toBe(expected);
+    });
+
+    it.each([
+      ["rütbe INTERN (Stajyer Avukat), dosya rolü ASSIGNED", { ...LAWYER_OK, lawyerRank: "INTERN" }],
+      ["eski alan Lawyer.role INTERN (Stajyer), rütbe LAWYER, dosya rolü ASSIGNED", { ...LAWYER_OK, role: "INTERN" }],
+    ])("stajyer kaydı: %s → false (fail-closed)", async (_label, lawyer) => {
+      const { service } = make([row({ lawyer })]);
+      expect(await service.isAssignedToCase(params)).toBe(false);
+    });
+
+    it("sorgu rol + rütbe + eski rol alanını okur (seçim kanıtı)", async () => {
+      const { service, findMany } = make([row()]);
+      await service.isAssignedToCase(params);
+      expect(findMany.mock.calls[0][0].select).toMatchObject({
+        role: true,
+        lawyer: { select: { tenantId: true, isActive: true, lawyerRank: true, role: true } },
+      });
     });
 
     it("işlem istemcisi verilirse okuma onunla yapılır", async () => {

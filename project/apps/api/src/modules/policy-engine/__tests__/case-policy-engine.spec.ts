@@ -111,8 +111,6 @@ const SCENARIO_2_READY_FOR_UYAP = {
     'poa.is_effective_at_evaluation_time': true,
     'poa.covers_requested_operation': true,
     'authority.is_unambiguous': true,
-    // P5 (owner Ek 94): ACTING_LAWYER_NOT_ASSIGNED_TO_CASE — vekalete EK olarak dosya ataması.
-    'actor.is_assigned_to_case': true,
   } as Record<string, unknown>,
   actionCode: ActionCode.UYAP_SEND,
   expectedAllowed: true,
