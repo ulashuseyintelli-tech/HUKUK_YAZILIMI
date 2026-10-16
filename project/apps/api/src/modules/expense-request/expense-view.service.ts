@@ -47,7 +47,12 @@ export interface ExpenseClientRequestView {
   dueDate?: string;
   completedAt?: string;
   items: Array<{ label: string; amount: number }>;
-  paymentInfo: { iban?: string; description: string };
+  /**
+   * Yalnız ödeme açıklaması (dosya numarası + " - Masraf"). Büronun banka hesabı (IBAN) bu okuma
+   * yanıtlarında BULUNMAZ: üç uç kiracıdaki her role açık ve hiçbir tüketici alanı okumuyordu.
+   * Müvekkile giden masraf e-postası IBAN'ı kendi yolundan (ExpenseNotificationService) alır; değişmedi.
+   */
+  paymentInfo: { description: string };
 }
 
 export interface ExpenseThreeViewData {
@@ -144,7 +149,13 @@ export class ExpenseViewService {
     };
   }
 
-  expenseToClientRequest(expense: any, officeIban?: string): ExpenseClientRequestView {
+  /**
+   * Cagrildigi yerler:
+   * - ExpenseViewService.getThreeViewData() -> GET /expense-requests/:id/three-view (clientRequest)
+   * - ExpenseViewService.getThreeViewDataForCase() -> GET /expense-requests/case/:caseId/three-view (clientRequest)
+   * - ExpenseViewService.getExpenseClientRequests() -> GET /expense-requests/client/:clientId/requests
+   */
+  expenseToClientRequest(expense: any): ExpenseClientRequestView {
     const totalAmount = Number(expense.totalAmount);
     const paidAmount = Number(expense.paidTotal || 0);
 
@@ -174,7 +185,7 @@ export class ExpenseViewService {
       dueDate: expense.dueDate?.toISOString?.() || expense.dueDate,
       completedAt: expense.paidAt?.toISOString?.() || expense.paidAt,
       items: (expense.requestItems || []).map((item: any) => ({ label: item.label, amount: Number(item.finalAmount) })),
-      paymentInfo: { iban: officeIban, description: `${expense.case?.fileNumber || 'N/A'} - Masraf` },
+      paymentInfo: { description: `${expense.case?.fileNumber || 'N/A'} - Masraf` },
     };
   }
 
@@ -194,17 +205,12 @@ export class ExpenseViewService {
       orderBy: { paymentDate: 'desc' },
     });
 
-    const office = await this.prisma.office.findFirst({
-      where: { tenantId },
-      select: { bankAccounts: { where: { isDefault: true }, take: 1, select: { iban: true } } },
-    });
-    const officeIban = office?.bankAccounts?.[0]?.iban;
     const expenseData = { ...expense, payments };
 
     return {
       task: this.expenseToTask(expenseData),
       finance: this.expenseToFinanceItem(expenseData),
-      clientRequest: this.expenseToClientRequest(expenseData, officeIban),
+      clientRequest: this.expenseToClientRequest(expenseData),
     };
   }
 
@@ -219,12 +225,6 @@ export class ExpenseViewService {
       orderBy: { createdAt: 'desc' },
     });
 
-    const office = await this.prisma.office.findFirst({
-      where: { tenantId },
-      select: { bankAccounts: { where: { isDefault: true }, take: 1, select: { iban: true } } },
-    });
-    const officeIban = office?.bankAccounts?.[0]?.iban;
-
     const results: ExpenseThreeViewData[] = [];
     for (const expense of expenses) {
       const payments = await (this.prisma as any).expensePayment.findMany({
@@ -235,7 +235,7 @@ export class ExpenseViewService {
       results.push({
         task: this.expenseToTask(expenseData),
         finance: this.expenseToFinanceItem(expenseData),
-        clientRequest: this.expenseToClientRequest(expenseData, officeIban),
+        clientRequest: this.expenseToClientRequest(expenseData),
       });
     }
     return results;
@@ -300,19 +300,13 @@ export class ExpenseViewService {
       orderBy: { createdAt: 'desc' },
     });
 
-    const office = await this.prisma.office.findFirst({
-      where: { tenantId },
-      select: { bankAccounts: { where: { isDefault: true }, take: 1, select: { iban: true } } },
-    });
-    const officeIban = office?.bankAccounts?.[0]?.iban;
-
     const results: ExpenseClientRequestView[] = [];
     for (const expense of expenses) {
       const payments = await (this.prisma as any).expensePayment.findMany({
         where: { expenseRequestId: expense.id },
         orderBy: { paymentDate: 'desc' },
       });
-      results.push(this.expenseToClientRequest({ ...expense, payments }, officeIban));
+      results.push(this.expenseToClientRequest({ ...expense, payments }));
     }
     return results;
   }
