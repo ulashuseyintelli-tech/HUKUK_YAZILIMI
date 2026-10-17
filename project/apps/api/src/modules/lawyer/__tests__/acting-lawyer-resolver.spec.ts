@@ -11,7 +11,7 @@
  * INV-04 lawyer tenant'ı authenticated tenant ile aynıdır.
  */
 import { ForbiddenException } from "@nestjs/common";
-import { ActingLawyerResolverService } from "../acting-lawyer-resolver.service";
+import { ActingLawyerResolverService, CASE_ASSIGNMENT_COUNTED_ROLES } from "../acting-lawyer-resolver.service";
 
 const USER_ID = "user-1";
 const TENANT = "tenant-1";
@@ -214,6 +214,95 @@ describe("ActingLawyerResolverService", () => {
         expect(error).toBeInstanceOf(ForbiddenException);
         expect(error.getResponse().code).toBe("LAWYER_TENANT_MISMATCH");
       }
+    });
+  });
+
+  describe("isAssignedToCase — P5 (owner Ek 94, karar a2): vekalete EK dosya ataması", () => {
+    const CASE_ID = "case-1";
+    const LAWYER_OK = { tenantId: TENANT, isActive: true, lawyerRank: "LAWYER", role: "EMPLOYEE" };
+    const row = (over: Record<string, unknown> = {}) => ({
+      id: "cl-1",
+      role: "ASSIGNED",
+      case: { tenantId: TENANT },
+      lawyer: LAWYER_OK,
+      ...over,
+    });
+    const make = (rows: unknown[]) => {
+      const findMany = jest.fn().mockResolvedValue(rows);
+      const service = new ActingLawyerResolverService({ caseLawyer: { findMany } } as any);
+      return { service, findMany };
+    };
+    const params = { actingLawyerId: LAWYER_ID, caseId: CASE_ID, tenantId: TENANT };
+
+    it("tek, aynı kiracı, etkin avukatlı atama → true; sorgu YALNIZ (caseId, lawyerId) ile kurulur", async () => {
+      const { service, findMany } = make([row()]);
+      expect(await service.isAssignedToCase(params)).toBe(true);
+      const args = findMany.mock.calls[0][0];
+      expect(args.where).toEqual({ caseId: CASE_ID, lawyerId: LAWYER_ID });
+      expect(args.take).toBe(2);
+    });
+
+    it.each([
+      ["atama yok (avukatsız dosya / başka avukat atanmış)", []],
+      ["birden fazla satır (@@unique ihlali)", [row(), row({ id: "cl-2" })]],
+      ["dosya başka kiracıda", [row({ case: { tenantId: OTHER_TENANT } })]],
+      ["avukat kaydı başka kiracıda", [row({ lawyer: { tenantId: OTHER_TENANT, isActive: true } })]],
+      ["avukat kaydı pasif", [row({ lawyer: { tenantId: TENANT, isActive: false } })]],
+      ["ilişki satırı eksik (bozuk veri)", [row({ case: null, lawyer: null })]],
+    ])("%s → false (fail-closed)", async (_label, rows) => {
+      const { service } = make(rows as unknown[]);
+      expect(await service.isAssignedToCase(params)).toBe(false);
+    });
+
+    it.each([
+      ["avukat kimliği yok", { ...params, actingLawyerId: "" }],
+      ["dosya kimliği yok", { ...params, caseId: "" }],
+      ["kiracı yok", { ...params, tenantId: "" }],
+    ])("%s → false; sorgu YAPILMAZ", async (_label, p) => {
+      const { service, findMany } = make([row()]);
+      expect(await service.isAssignedToCase(p)).toBe(false);
+      expect(findMany).not.toHaveBeenCalled();
+    });
+
+    // Owner Ek 95 K3: CaseLawyerRole (schema.prisma) = RESPONSIBLE | ASSIGNED | ASSISTANT | INTERN.
+    it("sayılan roller kapalı küme: yalnız RESPONSIBLE ve ASSIGNED", () => {
+      expect([...CASE_ASSIGNMENT_COUNTED_ROLES].sort()).toEqual(["ASSIGNED", "RESPONSIBLE"]);
+    });
+
+    it.each([
+      ["RESPONSIBLE (Sorumlu avukat)", "RESPONSIBLE", true],
+      ["ASSIGNED (Atanmış avukat)", "ASSIGNED", true],
+      ["ASSISTANT (Yardımcı) — tek başına atama SAYILMAZ", "ASSISTANT", false],
+      ["INTERN (Stajyer) — tek başına atama SAYILMAZ", "INTERN", false],
+      ["şemada olmayan / bilinmeyen rol — fail-closed", "OBSERVER", false],
+      ["rol boş — fail-closed", null, false],
+    ])("dosya rolü %s → %s", async (_label, role, expected) => {
+      const { service } = make([row({ role })]);
+      expect(await service.isAssignedToCase(params)).toBe(expected);
+    });
+
+    it.each([
+      ["rütbe INTERN (Stajyer Avukat), dosya rolü ASSIGNED", { ...LAWYER_OK, lawyerRank: "INTERN" }],
+      ["eski alan Lawyer.role INTERN (Stajyer), rütbe LAWYER, dosya rolü ASSIGNED", { ...LAWYER_OK, role: "INTERN" }],
+    ])("stajyer kaydı: %s → false (fail-closed)", async (_label, lawyer) => {
+      const { service } = make([row({ lawyer })]);
+      expect(await service.isAssignedToCase(params)).toBe(false);
+    });
+
+    it("sorgu rol + rütbe + eski rol alanını okur (seçim kanıtı)", async () => {
+      const { service, findMany } = make([row()]);
+      await service.isAssignedToCase(params);
+      expect(findMany.mock.calls[0][0].select).toMatchObject({
+        role: true,
+        lawyer: { select: { tenantId: true, isActive: true, lawyerRank: true, role: true } },
+      });
+    });
+
+    it("işlem istemcisi verilirse okuma onunla yapılır", async () => {
+      const { service, findMany } = make([]);
+      const tx = { caseLawyer: { findMany: jest.fn().mockResolvedValue([row()]) } };
+      expect(await service.isAssignedToCase(params, tx as any)).toBe(true);
+      expect(findMany).not.toHaveBeenCalled();
     });
   });
 });

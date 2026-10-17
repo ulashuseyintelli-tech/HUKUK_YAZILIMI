@@ -127,6 +127,15 @@ const STUB_TRANSPORT_TRUTH = {
 export const UYAP_HACIZ_TALEBI_ENDPOINT_REQUIRED = 'UYAP_HACIZ_TALEBI_ENDPOINT_REQUIRED';
 
 /**
+ * Güvenlik paketi 01 P5 (owner Ek 94, karar b2): takip talebi `POST /uyap/document/submit` (UYAP_DOCUMENT_SUBMIT)
+ * üzerinden gönderilemez; yalnız `POST /uyap/xml/submit/:caseId` yolundadır (iç çağrı UYAP_SEND; aşama kısıtı — yalnız
+ * INITIAL — ve politika koşulları aynen). Bu ret, evrak ucunun aşamadan bağımsız kodu üzerinden takip talebinin aşama
+ * kısıtını atlamasını kapatır. Dosya başına tek gönderim garantisi DEĞİLDİR (böyle bir garanti doğrulanmadı).
+ * Web yürütücüsü bu kod adını kullanır — DEĞİŞTİRME.
+ */
+export const UYAP_TAKIP_TALEBI_XML_SUBMIT_REQUIRED = 'UYAP_TAKIP_TALEBI_XML_SUBMIT_REQUIRED';
+
+/**
  * Güvenlik paketi 01 P1: `submitDocument`'ın değerlendirebileceği politika eylemleri (kapalı küme).
  * - UYAP_DOCUMENT_SUBMIT: `POST /uyap/document/submit` (aşamadan bağımsız; kapıları UYAP_SEND ile aynı).
  * - UYAP_SEND: `POST /uyap/xml/submit/:caseId` (owner Ek 91 B2-a: aşama kısıtı KORUNUR; kapı bu çağrıda TEK kez değerlendirilir).
@@ -389,7 +398,11 @@ export class UyapService {
    * (logRequest / yaşam döngüsü kaydı) ÖNCE ve koşulsuz çalışır. Aktör YALNIZ kimliği doğrulanmış kullanıcıdır
    * (`req.user.id`); istemci gövdesindeki `lawyerId` / `clientId` yetki girdisi DEĞİLDİR. Vekalet kararı politika motorunun
    * aktör eşlemesindedir (POWER_OF_ATTORNEY_MISSING: eşleşen etkin vekaleti olan avukat aktör); personel / avukat olmayan
-   * aktör reddedilir. Fail-closed: motor yoksa ya da teknik hata verirse işlem engellenir (sendPaymentOrder ile aynı kodlar).
+   * aktör reddedilir. P5 (owner Ek 94 a2 / Ek 95 K1): vekalete EK olarak aktörün dosyaya geçerli avukat ataması aranır
+   * (ACTING_LAWYER_NOT_ASSIGNED_TO_CASE; atanmamış aktör, avukatsız dosya ve yalnız yardımcı / stajyer kaydı reddedilir).
+   * Kapsam YALNIZ bu yardımcının üç çağıranıdır: UYAP_SEND için kapı `uyapSubmitChannel: 'XML_SUBMIT'` bağlamıyla tetiklenir;
+   * sendPaymentOrder ve hazırlık bu bağlamı vermez (main davranışı korunur).
+   * Fail-closed: motor yoksa ya da teknik hata verirse işlem engellenir (sendPaymentOrder ile aynı kodlar).
    *
    * <remarks>
    * Çağrıldığı yerler:
@@ -422,6 +435,9 @@ export class UyapService {
         tenantId,
         authenticatedUserId: actorUserId,
         evaluatedAt: new Date(),
+        // P5 (owner Ek 95 K1): bu yardımcıda UYAP_SEND YALNIZ xml/submit iç çağrısıdır (submitDocument, policyAction =
+        // UYAP_SEND). Çağıran bağlamı kapıya bildirilir → dosya ataması UYAP_SEND için yalnız burada aranır.
+        ...(actionCode === ActionCode.UYAP_SEND ? { uyapSubmitChannel: 'XML_SUBMIT' as const } : {}),
       });
     } catch (error: any) {
       // Ham hata / PII günlüğe aktarılmaz; yalnız tür adı.
@@ -937,6 +953,15 @@ export class UyapService {
         code: UYAP_HACIZ_TALEBI_ENDPOINT_REQUIRED,
         message: 'Haciz talebi yalnız /uyap/haciz ucundan gönderilebilir.',
         details: 'Evrak gönderim ucu haciz talebi kabul etmez; haciz için borçlu hedefi ve aktöre özel yetki zinciri gereklidir.',
+      });
+    }
+    // Güvenlik paketi 01 P5 (owner Ek 94, karar b2): takip talebi evrak ucundan (UYAP_DOCUMENT_SUBMIT) gönderilemez —
+    // veri erişiminden ve karar kaydından ÖNCE, yan etkisiz. xml/submit'in iç çağrısı (policyAction = UYAP_SEND) ETKİLENMEZ.
+    if (request?.documentType === 'TAKIP_TALEBI' && policyAction === ActionCode.UYAP_DOCUMENT_SUBMIT) {
+      throw new BadRequestException({
+        code: UYAP_TAKIP_TALEBI_XML_SUBMIT_REQUIRED,
+        message: 'Takip talebi yalnız XML gönderim yolundan (xml/submit) gönderilebilir.',
+        details: 'Evrak gönderim ucu takip talebi kabul etmez; takip talebi dosyanın aşama koşuluyla birlikte xml/submit yolundan gönderilir.',
       });
     }
     if (!UYAP_DOCUMENT_POLICY_ACTIONS.has(policyAction)) {

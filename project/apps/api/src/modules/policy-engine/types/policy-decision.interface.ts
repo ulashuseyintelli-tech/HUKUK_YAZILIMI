@@ -129,6 +129,15 @@ export interface ActionContext {
 
   /** Değerlendirme anı (temporal kurallar için). Verilmezse provider `now()` kullanır. */
   evaluatedAt?: Date;
+
+  /**
+   * Güvenlik paketi 01 P5 (owner Ek 95 K1): UYAP_SEND'i hangi ÇAĞIRANIN değerlendirdiği (kapalı küme, yalnız sunucu yazar).
+   * `'XML_SUBMIT'` yalnız `UyapService.assertUyapPolicyAllows` tarafından, `POST /uyap/xml/submit/:caseId` iç çağrısında
+   * (UYAP_SEND) verilir; dosya ataması kapısı (ACTING_LAWYER_NOT_ASSIGNED_TO_CASE) UYAP_SEND için YALNIZ bu bağlamda
+   * uygulanır. Hazırlık (`/cases/:id/uyap/prepare`) ve ödeme emri test ucu bu alanı VERMEZ → önceki (main) davranış.
+   * İstemci bu alanı veremez (can-perform-action istemci `context`'ini 400 ile reddeder); verse bile yalnız kapıyı SIKILAŞTIRIR.
+   */
+  uyapSubmitChannel?: 'XML_SUBMIT';
 }
 
 /**

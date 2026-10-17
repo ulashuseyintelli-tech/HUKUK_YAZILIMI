@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import * as fs from 'fs';
 import * as path from 'path';
 import { BadRequestException } from '@nestjs/common';
-import { UyapService, UYAP_HACIZ_TALEBI_ENDPOINT_REQUIRED } from '../uyap.service';
+import { UyapService, UYAP_HACIZ_TALEBI_ENDPOINT_REQUIRED, UYAP_TAKIP_TALEBI_XML_SUBMIT_REQUIRED } from '../uyap.service';
 import { UyapController } from '../uyap.controller';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { ViewerWriteDenyGuard } from '../../auth/guards/viewer-write-deny.guard';
@@ -158,6 +158,78 @@ describe('P1 — HACIZ_TALEBI evrak ucunda reddedilir (owner Ek 91 B3-iii)', () 
     });
     expect(ctx.cpe.canPerformAction).not.toHaveBeenCalled();
     expect(ctx.effects).toEqual([]);
+  });
+});
+
+describe('P5 — TAKIP_TALEBI evrak ucunda reddedilir; xml/submit yolu etkilenmez (owner Ek 94, karar b2)', () => {
+  it.each([
+    ['varsayılan eylem (document/submit)', undefined],
+    ['açık UYAP_DOCUMENT_SUBMIT', ActionCode.UYAP_DOCUMENT_SUBMIT],
+  ])('%s → 400 UYAP_TAKIP_TALEBI_XML_SUBMIT_REQUIRED + açık ileti; veri erişimi / politika kararı / yan etki YOK', async (_label, action) => {
+    const ctx = buildService();
+    let caught: any;
+    try {
+      await ctx.service.submitDocument(doc({ documentType: 'TAKIP_TALEBI' }), T1, 'user-1', action as any);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(BadRequestException);
+    expect(caught.getStatus()).toBe(400);
+    expect(caught.getResponse()).toMatchObject({
+      code: 'UYAP_TAKIP_TALEBI_XML_SUBMIT_REQUIRED',
+      message: 'Takip talebi yalnız XML gönderim yolundan (xml/submit) gönderilebilir.',
+    });
+    expect(UYAP_TAKIP_TALEBI_XML_SUBMIT_REQUIRED).toBe('UYAP_TAKIP_TALEBI_XML_SUBMIT_REQUIRED');
+    expect(ctx.prisma.case.findFirst).not.toHaveBeenCalled();
+    expect(ctx.cpe.canPerformAction).not.toHaveBeenCalled();
+    expect(ctx.effects).toEqual([]);
+  });
+
+  it('xml/submit iç çağrısı (UYAP_SEND) TAKIP_TALEBI ile ETKİLENMEZ: TEK UYAP_SEND kararı, sonra yerel simülasyon', async () => {
+    const ctx = buildService();
+    const res = await ctx.service.submitDocument(doc({ documentType: 'TAKIP_TALEBI' }), T1, 'user-1', ActionCode.UYAP_SEND);
+    expect(ctx.cpe.canPerformAction).toHaveBeenCalledTimes(1);
+    expect(ctx.cpe.canPerformAction.mock.calls[0][2]).toBe(ActionCode.UYAP_SEND);
+    expect(res.success).toBe(true);
+    expect(res.data).toMatchObject({ simulated: true, dispatched: false });
+  });
+
+  it.each(['DILEKCE', 'BEYAN', 'ITIRAZ', 'DIGER'])('evrak ucunda %s reddedilmez (yalnız TAKIP_TALEBI daraltıldı) → politika kararı TEK kez', async (type) => {
+    const ctx = buildService();
+    const res = await ctx.service.submitDocument(doc({ documentType: type }), T1, 'user-1');
+    expect(ctx.cpe.canPerformAction).toHaveBeenCalledTimes(1);
+    expect(ctx.cpe.canPerformAction.mock.calls[0][2]).toBe(ActionCode.UYAP_DOCUMENT_SUBMIT);
+    expect(res.success).toBe(true);
+  });
+});
+
+describe('P5 (owner Ek 95 K1) — dosya ataması kapısı çağıran bağlamıyla daraltıldı', () => {
+  it('xml/submit iç çağrısı (UYAP_SEND) politika motoruna uyapSubmitChannel = XML_SUBMIT bildirir', async () => {
+    const ctx = buildService();
+    await ctx.service.submitDocument(doc({ documentType: 'TAKIP_TALEBI' }), T1, 'user-1', ActionCode.UYAP_SEND);
+    expect(ctx.cpe.canPerformAction.mock.calls[0][3]).toMatchObject({ uyapSubmitChannel: 'XML_SUBMIT' });
+  });
+
+  it.each([
+    ['document/submit', (svc: UyapService) => svc.submitDocument(doc(), T1, 'user-1')],
+    ['lawsuit/criminal', (svc: UyapService) => svc.submitCriminalComplaint(criminal(), T1, 'user-1')],
+    ['lawsuit/civil', (svc: UyapService) => svc.submitCivilLawsuit(civil(), T1, 'user-1')],
+  ] as Array<[string, (svc: UyapService) => Promise<unknown>]>)('%s bu bağlamı VERMEZ (kendi eylem kodunda kapı koşulsuzdur)', async (_n, run) => {
+    const ctx = buildService();
+    await run(ctx.service);
+    expect(ctx.cpe.canPerformAction.mock.calls[0][3]).not.toHaveProperty('uyapSubmitChannel');
+  });
+
+  it('ödeme emri test ucu (sendPaymentOrder, UYAP_SEND) bu bağlamı VERMEZ → atama kapısı uygulanmaz (main davranışı)', async () => {
+    const ctx = buildService();
+    await ctx.service.sendPaymentOrder(
+      { caseId: 'case-1', executionOfficeCode: 'X', creditor: { name: 'A' }, debtor: { name: 'B' }, amount: 1, currency: 'TRY' } as any,
+      T1,
+      'user-1',
+    ).catch(() => undefined); // yalnız politika çağrısının bağlamı ölçülür
+    expect(ctx.cpe.canPerformAction).toHaveBeenCalledTimes(1);
+    expect(ctx.cpe.canPerformAction.mock.calls[0][2]).toBe(ActionCode.UYAP_SEND);
+    expect(ctx.cpe.canPerformAction.mock.calls[0][3]).not.toHaveProperty('uyapSubmitChannel');
   });
 });
 
