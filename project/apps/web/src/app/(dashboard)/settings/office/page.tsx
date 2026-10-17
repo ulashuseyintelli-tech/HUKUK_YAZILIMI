@@ -563,8 +563,12 @@ function OfficeSettingsInner() {
     const key = `${clientId}-${type}`;
     setSendingGreetingKey(key);
     try {
-      await api.post("/greetings/send", { clientId, type, channel: "EMAIL", specialDayId });
-      alert("Tebrik gönderildi.");
+      const response = await api.post("/greetings/send", { clientId, type, channel: "EMAIL", specialDayId });
+      const results = response.data;
+      const confirmed = Array.isArray(results) && results.length === 1 &&
+        results[0]?.channel === "EMAIL" && results[0]?.sent === true && results[0]?.success === true &&
+        (results[0]?.status === undefined || results[0]?.status === "SENT");
+      alert(confirmed ? "Tebrik gönderildi." : "Tebrik gönderimi doğrulanamadı. Bildirim durumunu kontrol edin; otomatik yeniden gönderim yapılmadı.");
     } catch (e: any) {
       alert(e.message || "Tebrik gönderilemedi.");
     } finally {
