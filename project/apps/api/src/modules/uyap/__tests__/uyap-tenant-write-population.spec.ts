@@ -1,5 +1,6 @@
 import { ForbiddenException } from '@nestjs/common';
 import { UyapService } from '../uyap.service';
+import { submitAuthorityFactsDouble } from './submit-authority-facts.test-double';
 // DEBTOR-UYAP-HACIZ-TENANT-GUARD-P1-I02 FIXTURE YUKSELTMESI (assertion ZAYIFLATILMADI):
 // UYAP hukuki gonderim yollari artik KOSULSUZ olarak dosya sahipligi + gecerli vekalet
 // ister. Bu spec'lerin amaci yetki DEGIL (transport truthfulness / evidence / log ownership
@@ -69,6 +70,8 @@ describe('CLIENT-SEC-H2C-P02 — UyapRequestLog tenant write population', () => 
       undefined,
       undefined,
       triggerHacizAuthorization,
+      // P5 (owner Ek 102 K2): işlem öncesi son yetki doğrulaması — bu dosyanın konusu değil; gerçek davranış HTTP + DB testinde.
+      submitAuthorityFactsDouble(),
     );
     return { service, prisma, casePolicyEngine, triggerHacizAuthorization };
   };

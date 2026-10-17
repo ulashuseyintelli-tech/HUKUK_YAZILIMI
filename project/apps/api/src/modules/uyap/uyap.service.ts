@@ -18,6 +18,7 @@ import { UyapAuthorityStaleError } from './authority/uyap-authority-stale.error'
 // own-POA-scope-coverage + explicit PermissionGrant). assertUyapLegalAuthority (asagida)
 // yalniz case-seviyesi bir on-kosuldur, actor-specific authority SAYILMAZ.
 import { TriggerHacizAuthorizationService } from './authority/trigger-haciz-authorization.service';
+import { UyapAuthorityFactProvider, UYAP_AUTHORITY_FACT_KEYS } from './authority/uyap-authority-fact.provider';
 
 /**
  * UYAP Entegrasyon Servisi
@@ -136,6 +137,23 @@ export const UYAP_HACIZ_TALEBI_ENDPOINT_REQUIRED = 'UYAP_HACIZ_TALEBI_ENDPOINT_R
 export const UYAP_TAKIP_TALEBI_XML_SUBMIT_REQUIRED = 'UYAP_TAKIP_TALEBI_XML_SUBMIT_REQUIRED';
 
 /**
+ * Güvenlik paketi 01 P5 (owner Ek 102, K2 kararı A): onaylanan gönderim uçlarında (document/submit, xml/submit,
+ * lawsuit/criminal, lawsuit/civil) politika kararından SONRA, işlemden (istek kaydı + yerel simülasyon yanıtı) ÖNCE yapılan
+ * son yetki doğrulaması başarısız. Dış ileti tek tiptir (hangi koşulun düştüğü dışarıya ayrıştırılmaz).
+ */
+export const UYAP_SUBMIT_AUTHORITY_REVALIDATION_FAILED = 'UYAP_SUBMIT_AUTHORITY_REVALIDATION_FAILED';
+
+/** Son doğrulamada HEPSİ `true` olması gereken olgular (politika kapılarıyla aynı kaynak: UyapAuthorityFactProvider). */
+const SUBMIT_REVALIDATION_REQUIRED_FACTS: readonly string[] = [
+  UYAP_AUTHORITY_FACT_KEYS.actorIsCanonicalLawyer,
+  UYAP_AUTHORITY_FACT_KEYS.actorHasMatchingPoa,
+  UYAP_AUTHORITY_FACT_KEYS.poaEffective,
+  UYAP_AUTHORITY_FACT_KEYS.poaCoversOperation,
+  UYAP_AUTHORITY_FACT_KEYS.authorityUnambiguous,
+  UYAP_AUTHORITY_FACT_KEYS.actorAssignedToCase,
+];
+
+/**
  * Güvenlik paketi 01 P1: `submitDocument`'ın değerlendirebileceği politika eylemleri (kapalı küme).
  * - UYAP_DOCUMENT_SUBMIT: `POST /uyap/document/submit` (aşamadan bağımsız; kapıları UYAP_SEND ile aynı).
  * - UYAP_SEND: `POST /uyap/xml/submit/:caseId` (owner Ek 91 B2-a: aşama kısıtı KORUNUR; kapı bu çağrıda TEK kez değerlendirilir).
@@ -166,6 +184,10 @@ export class UyapService {
     // gerçek bir örnek enjekte edilir (UyapModule.providers). Eksikse pushHacizRequest
     // fail-closed reddeder (aşağıda kontrol edilir); sessizce atlanmaz.
     @Optional() private readonly triggerHacizAuthorization?: TriggerHacizAuthorizationService,
+    // Güvenlik paketi 01 P5 (owner Ek 102, K2 kararı A): onaylanan gönderim uçlarında işlem ÖNCESİ son yetki doğrulaması
+    // (vekalet + geçerli avukat ataması). @Optional yalnız doğrudan-constructor test yüzeyi içindir; production DI'da
+    // UyapModule.providers her zaman verir. Yoksa gönderim fail-closed reddedilir (assertSubmitAuthorityStillValid).
+    @Optional() private readonly submitAuthorityFacts?: UyapAuthorityFactProvider,
   ) {}
 
   /**
@@ -463,6 +485,62 @@ export class UyapService {
 
     if (decision.warnings && decision.warnings.length > 0) {
       this.logger.warn(`CPE warnings for ${actionCode}:`, decision.warnings);
+    }
+  }
+
+  /**
+   * Güvenlik paketi 01 P5 (owner Ek 102, K2 kararı A) — onaylanan gönderim uçlarında İŞLEM ÖNCESİ SON yetki doğrulaması.
+   *
+   * Sıra (her onaylanan uçta): [1] belge türü reddi (veri yok) → [2] assertUyapLegalAuthority (dosya sahipliği + dosya düzeyi
+   * vekalet) → [3] assertUyapPolicyAllows (politika kararı + karar kaydı) → [4] BU DOĞRULAMA → [5] logRequest + yerel simülasyon.
+   * [3] ile [4] arasında kaldırılan vekalet / atama burada yakalanır. Mantık KOPYALANMAZ: kapıların okuduğu olguları üreten
+   * `UyapAuthorityFactProvider` aynı bağlamla yeniden çalıştırılır (vekalet: ActingLawyerResolver + UyapSendAuthorityResolver;
+   * atama: ActingLawyerResolverService.isAssignedToCase). Yeni karar satırı YAZILMAZ.
+   *
+   * KALAN PENCERE (bilinçli, kapatılmadı): [4]'ün okumaları ile [5]'in yazımı arasında kilit / işlem YOKTUR; bu aralıkta kaldırılan
+   * bir atama veya vekalet görülmez. Bugün [5] yalnız yerel kayıt + simülasyondur (gerçek taşıma kapalı). Bu doğrulama bütün
+   * yarışları KAPATMAZ; gerçek taşıma açılmadan önce pencere ayrıca kararlaştırılmalıdır.
+   *
+   * Hazırlık, ödeme emri test ucu ve haciz bu doğrulamayı ÇAĞIRMAZ (owner Ek 95 K1 / Ek 102).
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - UyapService.submitDocument() → document/submit ve xml/submit iç çağrısı
+   * - UyapService.submitCriminalComplaint() / submitCivilLawsuit() → lawsuit/criminal, lawsuit/civil
+   * </remarks>
+   */
+  private async assertSubmitAuthorityStillValid(params: {
+    tenantId: string;
+    caseId: string;
+    actorUserId?: string;
+    operation: string;
+  }): Promise<void> {
+    const { tenantId, caseId, actorUserId, operation } = params;
+    const reject = (reason: string): never => {
+      // Ham hata / PII günlüğe aktarılmaz; yalnız kapalı ret nedeni.
+      this.logger.error(`${operation}: son yetki doğrulaması başarısız (${reason})`);
+      throw new BadRequestException({
+        code: UYAP_SUBMIT_AUTHORITY_REVALIDATION_FAILED,
+        message: `${operation} yapılamaz: yetki son doğrulamada geçerli değil`,
+        details: 'İşlem öncesi son kontrolde geçerli vekalet ve dosya avukat ataması birlikte doğrulanamadı',
+      });
+    };
+    if (!this.submitAuthorityFacts) {
+      return reject('DOGRULAYICI_YOK');
+    }
+    const facts = new Map<string, unknown>();
+    try {
+      await this.submitAuthorityFacts.compute(
+        caseId,
+        { tenantId, authenticatedUserId: actorUserId, evaluatedAt: new Date() },
+        facts as any,
+      );
+    } catch (error: any) {
+      return reject(`HATA:${error?.name ?? 'error'}`);
+    }
+    const missing = SUBMIT_REVALIDATION_REQUIRED_FACTS.filter((key) => facts.get(key) !== true);
+    if (missing.length > 0) {
+      return reject(String(facts.get(UYAP_AUTHORITY_FACT_KEYS.failureCode) ?? missing.join(',')));
     }
   }
 
@@ -994,6 +1072,9 @@ export class UyapService {
       operation: 'Evrak gönderimi',
     });
 
+    // P5 (owner Ek 102, K2 kararı A): işlem ÖNCESİ son yetki doğrulaması (vekalet + geçerli avukat ataması).
+    await this.assertSubmitAuthorityStillValid({ tenantId, caseId: request.caseId, actorUserId, operation: 'Evrak gönderimi' });
+
     const requestId = await this.logRequest('submitDocument', {
       caseId: request.caseId,
       documentType: request.documentType,
@@ -1455,6 +1536,9 @@ export class UyapService {
       operation: 'Şikayet dilekçesi gönderimi',
     });
 
+    // P5 (owner Ek 102, K2 kararı A): işlem ÖNCESİ son yetki doğrulaması (vekalet + geçerli avukat ataması).
+    await this.assertSubmitAuthorityStillValid({ tenantId, caseId: request.caseId, actorUserId, operation: 'Şikayet dilekçesi gönderimi' });
+
     // CLIENT-SEC-H2C-P02-R1: log ownership trusted `tenantId` param'ından (DTO'dan DEĞİL).
     const requestId = await this.logRequest('submitCriminalComplaint', {
       caseId: request.caseId,
@@ -1585,6 +1669,9 @@ export class UyapService {
       actorUserId,
       operation: 'Dava dilekçesi gönderimi',
     });
+
+    // P5 (owner Ek 102, K2 kararı A): işlem ÖNCESİ son yetki doğrulaması (vekalet + geçerli avukat ataması).
+    await this.assertSubmitAuthorityStillValid({ tenantId, caseId: request.caseId, actorUserId, operation: 'Dava dilekçesi gönderimi' });
 
     // CLIENT-SEC-H2C-P02-R1: log ownership trusted `tenantId` param'ından (DTO'dan DEĞİL).
     const requestId = await this.logRequest('submitCivilLawsuit', {

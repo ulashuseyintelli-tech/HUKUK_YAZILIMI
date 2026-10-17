@@ -20,6 +20,7 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { ErrorLogModule } from '../../error-log/error-log.module';
 import { MetricsRegistryModule } from '../../metrics-registry/metrics-registry.module';
 import { UyapModule } from '../uyap.module';
+import { CasePolicyEngine } from '../../policy-engine/case-policy-engine.service';
 
 /**
  * UYAP gönderim uçlarında ÇALIŞMA ZAMANI yetkisi — güvenlik paketi 01 P1 (DV-198 / GR-8; owner Ek 90 / Ek 91).
@@ -442,6 +443,78 @@ describeWithDisposableDb('UYAP gönderim uçları — çalışma zamanı yetkisi
         { label: 'yardimci-rol', ...ALLOWED },
         { label: 'personel', status: 400, success: null, code: 'CPE_GATE_BLOCKED', simulated: null, dispatched: null, rows: [{ action: 'UYAP_SEND', allowed: false, gate: 'POWER_OF_ATTORNEY_MISSING' }], logs: 0 },
       ]);
+    });
+  });
+
+  describe('P5 (owner Ek 102, K2 kararı A) — karar ile işlem arasında yetki kaybı: işlem öncesi son doğrulama', () => {
+    const ALL4 = [
+      ...ENDPOINTS.map((e) => ({ name: e.name as string, action: e.action as string, xml: false, send: e.send })),
+      { name: 'xml/submit', action: 'UYAP_SEND', xml: true, send: (userId: string, caseId: string) => as(userId).post(`/uyap/xml/submit/${caseId}`) },
+    ];
+    /** GERÇEK politika motoru kararını verir (izin + karar satırı); dönmeden HEMEN SONRA DB'de yetki kaynağı değiştirilir. */
+    const mutateAfterDecision = (mutate: (caseId: string) => Promise<unknown>) => {
+      const engine = app.get(CasePolicyEngine, { strict: false });
+      const original = engine.canPerformAction.bind(engine);
+      return jest.spyOn(engine, 'canPerformAction').mockImplementationOnce(async (...args: Parameters<CasePolicyEngine['canPerformAction']>) => {
+        const decision = await original(...args);
+        await mutate(args[1]);
+        return decision;
+      });
+    };
+    const expectRevalidationDenied = async (label: string, res: request.Response, caseId: string, action: string) => {
+      expect({ label, status: res.status, code: res.body?.code }).toEqual({ label, status: 400, code: 'UYAP_SUBMIT_AUTHORITY_REVALIDATION_FAILED' });
+      // Karar İZİN vermişti (tek satır); işlem (istek kaydı / simülasyon) son doğrulamada durdu.
+      expect({ label, rows: (await cpeRows(caseId)).map((r) => ({ action: r.actionCode, allowed: r.allowed })) }).toEqual({ label, rows: [{ action, allowed: true }] });
+      expect({ label, logs: await requestLogs(caseId) }).toEqual({ label, logs: 0 });
+    };
+
+    it('dosya ataması karardan SONRA kaldırılır → dört uçta 400 UYAP_SUBMIT_AUTHORITY_REVALIDATION_FAILED; istek kaydı YOK', async () => {
+      for (const ep of ALL4) {
+        const caseId = await openCase(`k2-atama-${ep.name.replace('/', '-')}`, { withDebtor: ep.xml });
+        const spy = mutateAfterDecision((id) => prisma.caseLawyer.deleteMany({ where: { caseId: id, lawyerId } }));
+        const res = await ep.send(lawyerUserId, caseId);
+        expect(spy).toHaveBeenCalledTimes(1);
+        spy.mockRestore();
+        await expectRevalidationDenied(`atama ${ep.name}`, res, caseId, ep.action);
+      }
+    });
+
+    it('aktörün vekaleti karardan SONRA kaldırılır → dört uçta 400 UYAP_SUBMIT_AUTHORITY_REVALIDATION_FAILED; istek kaydı YOK', async () => {
+      const office = await prisma.office.findFirstOrThrow({ where: { tenantId } });
+      const poa = await prisma.clientPowerOfAttorney.findFirstOrThrow({ where: { tenantId, clientId: poaClientId } });
+      const k2UserId = (await prisma.user.create({ data: { tenantId, email: `av-k2-${suffix}@example.test`, name: 'av-k2', surname: 'USRA', role: 'USER' as never } })).id;
+      const k2LawyerId = (await prisma.lawyer.create({ data: { tenantId, officeId: office.id, userId: k2UserId, name: 'av-k2', surname: 'USRA', lawyerRank: 'LAWYER' } })).id;
+      for (const ep of ALL4) {
+        await prisma.poaLawyer.create({ data: { tenantId, poaId: poa.id, lawyerId: k2LawyerId, isPrimary: false } });
+        const caseId = await openCase(`k2-vekalet-${ep.name.replace('/', '-')}`, { assignLawyer: false, withDebtor: ep.xml });
+        await prisma.caseLawyer.create({ data: { caseId, lawyerId: k2LawyerId } as never });
+        const spy = mutateAfterDecision(() => prisma.poaLawyer.deleteMany({ where: { tenantId, poaId: poa.id, lawyerId: k2LawyerId } }));
+        const res = await ep.send(k2UserId, caseId);
+        expect(spy).toHaveBeenCalledTimes(1);
+        spy.mockRestore();
+        await expectRevalidationDenied(`vekalet ${ep.name}`, res, caseId, ep.action);
+      }
+    });
+
+    it('karardan sonra yetki DEĞİŞMEZSE dört uç 201 (kontrol: son doğrulama geçerli yetkiyi engellemez)', async () => {
+      for (const ep of ALL4) {
+        const caseId = await openCase(`k2-kontrol-${ep.name.replace('/', '-')}`, { withDebtor: ep.xml });
+        const spy = mutateAfterDecision(async () => undefined);
+        const res = await ep.send(lawyerUserId, caseId);
+        expect(spy).toHaveBeenCalledTimes(1);
+        spy.mockRestore();
+        expect({ ep: ep.name, status: res.status, success: res.body?.success }).toEqual({ ep: ep.name, status: 201, success: true });
+        expect(await requestLogs(caseId)).toBe(1);
+      }
+    });
+
+    it('ödeme emri test ucu son doğrulamayı ÇAĞIRMAZ: karardan sonra atama kalksa da 201 (Ek 95 K1 / Ek 102)', async () => {
+      const caseId = await openCase('k2-odeme');
+      const spy = mutateAfterDecision((id) => prisma.caseLawyer.deleteMany({ where: { caseId: id, lawyerId } }));
+      const res = await as(lawyerUserId).post('/uyap/test/payment-order', { caseId });
+      expect(spy).toHaveBeenCalledTimes(1);
+      spy.mockRestore();
+      expect({ status: res.status, success: res.body?.success }).toEqual({ status: 201, success: true });
     });
   });
 
