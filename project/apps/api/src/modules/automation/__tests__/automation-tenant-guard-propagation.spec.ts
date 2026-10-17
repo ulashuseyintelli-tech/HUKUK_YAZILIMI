@@ -208,7 +208,7 @@ describe('AutomationService tenant guard propagation (OD-3)', () => {
 
     await svc.processCaseManually('case1', 'tenant1');
 
-    expect(workflowEngine.processCase).toHaveBeenCalledWith('case1', 'tenant1');
+    expect(workflowEngine.processCase).toHaveBeenCalledWith('case1', 'tenant1', { propagateErrors: true });
   });
 
   it('processPendingCases (cron), her case için KENDİ satırından okunan tenantId\'yi aktarır', async () => {
