@@ -34,7 +34,8 @@ function make(opts?: { enabled?: boolean }) {
   };
   const tx = { user, userInvite, lawyer, staffMember };
   const prisma = { user, userInvite, lawyer, staffMember, $transaction: jest.fn(async (cb: any) => cb(tx)) } as any;
-  const audit = { log: jest.fn().mockResolvedValue(undefined) } as any;
+  const audit = { log: jest.fn().mockResolvedValue(undefined), logInTransaction: jest.fn() } as any;
+  audit.logInTransaction.mockImplementation(async (_tx: unknown, input: unknown) => audit.log(input));
   const email = { send: jest.fn().mockResolvedValue({ success: true }) } as any;
   const config = {
     get: jest.fn((k: string) =>
@@ -267,7 +268,7 @@ describe("UserInviteService", () => {
     const newRaw = rawFromEmail(email);
     const data = userInvite.update.mock.calls[0][0].data;
     expect(data.tokenHash).toBe(hashInviteToken(newRaw));
-    expect(data.revokedAt).toBeNull();
+    expect(data.revokedAt).toBeUndefined(); // revoked state is a CAS precondition, never cleared
     expect(email.send).toHaveBeenCalled();
   });
 

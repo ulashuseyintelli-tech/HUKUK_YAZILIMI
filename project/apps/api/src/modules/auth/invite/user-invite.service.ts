@@ -6,13 +6,14 @@ import {
   ForbiddenException, NotFoundException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { UserRole } from "@prisma/client";
+import { Prisma, UserRole } from "@prisma/client";
 import * as bcrypt from "bcrypt";
 import { PrismaService } from "@/prisma/prisma.service";
 import { AuditService } from "../../audit/audit.service";
 import { EmailProviderService } from "../../notification/email-provider.service";
 import { CreateInviteDto } from "./dto/user-invite.dto";
 import { generateRawInviteToken, hashInviteToken, redactEmail } from "./user-invite-token.util";
+import { ACTIVE_TENANT_LIFECYCLE } from "../../tenant/tenant-lifecycle";
 
 interface InviteActor {
   id: string;
@@ -214,16 +215,26 @@ export class UserInviteService {
     const raw = generateRawInviteToken();
     const tokenHash = hashInviteToken(raw);
     const expiresAt = new Date(Date.now() + this.ttlHours() * 3600_000);
-    await this.prisma.userInvite.update({
-      where: { id: invite.id },
-      data: { tokenHash, expiresAt, revokedAt: null },
-    });
+    try {
+      await this.prisma.$transaction(async tx => {
+        await tx.user.update({ where: this.pendingUserWhere(invite), data: { isActive: false } });
+        await tx.userInvite.update({
+          where: { id: invite.id, tenantId: actor.tenantId, tokenHash: invite.tokenHash, consumedAt: null, revokedAt: null },
+          data: { tokenHash, expiresAt },
+        });
+        await this.writeAudit("USER_INVITE_RESENT", actor.tenantId, actor.id, {
+          inviteId: invite.id, userId: invite.userId, emailRedacted: redactEmail(invite.email),
+          expiresAt: expiresAt.toISOString(), result: "RESENT",
+        }, tx);
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+        throw new ConflictException("Davet veya kullanıcı durumu değişti; yeniden gönderilmedi");
+      }
+      throw error;
+    }
 
     await this.sendInviteEmail(invite.email, raw);
-    await this.writeAudit("USER_INVITE_RESENT", actor.tenantId, actor.id, {
-      inviteId: invite.id, userId: invite.userId, emailRedacted: redactEmail(invite.email),
-      expiresAt: expiresAt.toISOString(), result: "RESENT",
-    });
     return { inviteId: invite.id, expiresAt: expiresAt.toISOString() };
   }
 
@@ -237,23 +248,37 @@ export class UserInviteService {
     if (!this.enabled()) throw new ForbiddenException("Login invite provisioning devre dışı");
     const invite = await this.prisma.userInvite.findFirst({
       where: { id: inviteId, tenantId: actor.tenantId },
+      include: { user: true },
     });
     if (!invite) throw new NotFoundException("Davet bulunamadı");
 
-    const unlinked = await this.prisma.$transaction(async (tx) => {
-      await tx.userInvite.update({ where: { id: invite.id }, data: { revokedAt: new Date() } });
-      const [lawyerUnlink, staffUnlink] = await Promise.all([
-        tx.lawyer.updateMany({ where: { userId: invite.userId, tenantId: actor.tenantId }, data: { userId: null } }),
-        tx.staffMember.updateMany({ where: { userId: invite.userId, tenantId: actor.tenantId }, data: { userId: null } }),
-      ]);
-      return { lawyer: lawyerUnlink.count > 0, staffMember: staffUnlink.count > 0 };
-    });
+    if (invite.consumedAt) throw new ConflictException("Davet zaten kabul edilmiş");
+    if (invite.revokedAt) return { inviteId: invite.id, revoked: true };
 
-    await this.writeAudit("USER_INVITE_REVOKED", actor.tenantId, actor.id, {
-      inviteId: invite.id, userId: invite.userId, result: "REVOKED",
-      ...(unlinked.lawyer ? { unlinkedLawyer: true } : {}),
-      ...(unlinked.staffMember ? { unlinkedStaffMember: true } : {}),
-    });
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        // Account first in all three invite mutations: one winner, no stale activation/unlink.
+        await tx.user.update({ where: this.pendingUserWhere(invite), data: { isActive: false } });
+        await tx.userInvite.update({
+          where: { id: invite.id, tenantId: actor.tenantId, tokenHash: invite.tokenHash, consumedAt: null, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+        const [lawyerUnlink, staffUnlink] = await Promise.all([
+          tx.lawyer.updateMany({ where: { userId: invite.userId, tenantId: actor.tenantId }, data: { userId: null } }),
+          tx.staffMember.updateMany({ where: { userId: invite.userId, tenantId: actor.tenantId }, data: { userId: null } }),
+        ]);
+        await this.writeAudit("USER_INVITE_REVOKED", actor.tenantId, actor.id, {
+          inviteId: invite.id, userId: invite.userId, result: "REVOKED",
+          ...(lawyerUnlink.count > 0 ? { unlinkedLawyer: true } : {}),
+          ...(staffUnlink.count > 0 ? { unlinkedStaffMember: true } : {}),
+        }, tx);
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+        throw new ConflictException("Davet veya kullanıcı durumu değişti; iptal edilmedi");
+      }
+      throw error;
+    }
     return { inviteId: invite.id, revoked: true };
   }
 
@@ -297,17 +322,28 @@ export class UserInviteService {
     if (invite.expiresAt.getTime() < Date.now()) return fail("EXPIRED");
     if (!invite.user) return fail("USER_MISSING");
     if (invite.user.isActive) return fail("ALREADY_ACTIVE");
+    if (invite.user.passwordHash !== null) return fail("NOT_PENDING");
     if (invite.email !== invite.user.email) return fail("EMAIL_MISMATCH");
     if (invite.tenantId !== invite.user.tenantId) return fail("TENANT_MISMATCH");
 
     const passwordHash = await bcrypt.hash(password, 10);
-    await this.prisma.$transaction(async (tx) => {
-      await tx.user.update({ where: { id: invite.userId }, data: { passwordHash, isActive: true } });
-      await tx.userInvite.update({ where: { id: invite.id }, data: { consumedAt: new Date() } });
-    });
-    await this.writeAudit("USER_INVITE_ACCEPTED", invite.tenantId, invite.userId, {
-      inviteId: invite.id, userId: invite.userId, result: "ACCEPTED",
-    });
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.user.update({ where: this.pendingUserWhere(invite, true), data: { passwordHash, isActive: true } });
+        await tx.userInvite.update({
+          where: { id: invite.id, tenantId: invite.tenantId, userId: invite.userId, tokenHash, consumedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
+          data: { consumedAt: new Date() },
+        });
+        await this.writeAudit("USER_INVITE_ACCEPTED", invite.tenantId, invite.userId, {
+          inviteId: invite.id, userId: invite.userId, result: "ACCEPTED",
+        }, tx);
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+        throw new BadRequestException("Geçersiz veya süresi dolmuş davet");
+      }
+      throw error;
+    }
     return { ok: true, userId: invite.userId };
   }
 
@@ -325,13 +361,29 @@ export class UserInviteService {
     if (!r.success) this.logger.warn(`Invite e-postası gönderilemedi: ${r.errorCode}`);
   }
 
-  private async writeAudit(action: string, tenantId: string, userId: string | null, metadata: Record<string, any>) {
+  /** Callers: accept/resend/revoke. Pending snapshots cannot reactivate a changed account/profile. */
+  private pendingUserWhere(invite: { userId: string; tenantId: string; email: string; user?: { updatedAt?: Date } | null }, activation = false): Prisma.UserWhereUniqueInput {
+    return {
+      id: invite.userId, tenantId: invite.tenantId, email: invite.email,
+      isActive: false, passwordHash: null, updatedAt: invite.user?.updatedAt,
+      // Revocation must remain possible for an inactive tenant/profile; only activation checks these states.
+      ...(activation ? { tenant: { lifecycle: ACTIVE_TENANT_LIFECYCLE } } : {}),
+      AND: activation ? [
+        { OR: [{ lawyer: null }, { lawyer: { tenantId: invite.tenantId, isActive: true } }] },
+        { OR: [{ staffMember: null }, { staffMember: { tenantId: invite.tenantId, isActive: true } }] },
+      ] : undefined,
+    };
+  }
+
+  private async writeAudit(action: string, tenantId: string, userId: string | null, metadata: Record<string, any>, tx?: Prisma.TransactionClient) {
     // Ham token / parola / passwordHash ASLA metadata'ya yazılmaz.
-    await this.audit.log({
+    const input = {
       tenantId, action, entityType: "USER_INVITE",
       entityId: typeof metadata.inviteId === "string" ? metadata.inviteId : undefined,
       userId: userId ?? undefined,
       metadata,
-    });
+    };
+    if (tx) await this.audit.logInTransaction(tx, input);
+    else await this.audit.log(input);
   }
 }
