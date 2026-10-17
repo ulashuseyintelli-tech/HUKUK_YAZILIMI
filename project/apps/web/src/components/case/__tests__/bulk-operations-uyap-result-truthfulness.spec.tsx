@@ -74,3 +74,86 @@ describe('BulkOperationsPanel — toplu UYAP sonucu doğru gösterilir (gerçek 
     expect(document.body.textContent).not.toContain("UYAP'a gönderildi");
   });
 });
+
+/**
+ * DV-198/e (owner Ek 94) — toplu panel aynı kurala uyar: Haciz Talebi / Takip Talebi genel evrak
+ * seçeneklerinde YOK; belirsiz yanıt başarı veya iletim SAYILMAZ.
+ */
+/** Ek 95 / E1: belirsiz yanıt satırı — doğrulanamadı + mükerrer riski açıkça yazılır. */
+const UNVERIFIED_ROW =
+  'Sunucu yanıtı doğrulanamadı; UYAP iletimi iddia edilmez. Kayıt oluşmuş olabilir: yeniden göndermek mükerrer işlem oluşturabilir — önce dosya geçmişini kontrol edin';
+
+describe('BulkOperationsPanel — DV-198/e belge türü seçenekleri ve belirsiz yanıt', () => {
+  beforeEach(() => {
+    mockedPost.mockReset();
+  });
+  afterEach(() => cleanup());
+
+  it('belge türü listesinde Haciz Talebi ve Takip Talebi YOK; varsayılan DILEKCE ve istek bu türü taşır', async () => {
+    mockedPost.mockResolvedValue({ data: { success: true, data: { simulated: true, dispatched: false } } });
+    render(<BulkOperationsPanel cases={CASES} />);
+    fireEvent.change(screen.getByDisplayValue('İşlem seçin'), { target: { value: 'uyap' } });
+
+    const select = screen.getByRole('combobox', { name: 'Belge Türü' }) as HTMLSelectElement;
+    const options = Array.from(select.options).map((o) => [o.value, o.textContent]);
+    expect(options).toEqual([['DILEKCE', 'Dilekçe']]);
+    expect(options.flat()).not.toContain('HACIZ_TALEBI');
+    expect(options.flat()).not.toContain('TAKIP_TALEBI');
+    expect(select.value).toBe('DILEKCE');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tümünü Seç' }));
+    fireEvent.click(screen.getByRole('button', { name: /3 Dosya İçin İşlemi Başlat/ }));
+    await screen.findByText('İşlem Sonuçları');
+
+    expect(mockedPost.mock.calls.map(([, body]) => body.documentType)).toEqual(['DILEKCE', 'DILEKCE', 'DILEKCE']);
+  });
+
+  it('belirsiz yanıt (dispatched yok / data yok / bozuk tip) → başarısız; iletim iddiası YOK', async () => {
+    mockedPost
+      .mockResolvedValueOnce({ data: { success: true, data: { simulated: true } } })
+      .mockResolvedValueOnce({ data: { success: true } })
+      .mockResolvedValueOnce({ data: { success: true, data: { dispatched: 'true' } } });
+
+    await runUyapBulk();
+
+    expect(screen.getByText('0 başarılı, 3 başarısız')).toBeTruthy();
+    for (const fileNumber of ['2026/1', '2026/2', '2026/3']) {
+      expect(within(row(fileNumber)).getByText(UNVERIFIED_ROW)).toBeTruthy();
+    }
+    expect(document.body.textContent).not.toContain("UYAP'a iletildi");
+    expect(document.body.textContent).not.toContain("UYAP'a gönderildi");
+    // Ek 95 / E1: otomatik tekrar YOK — her dosya için tam 1 istek.
+    expect(mockedPost).toHaveBeenCalledTimes(3);
+    expect(mockedPost.mock.calls.map(([, body]) => body.caseId)).toEqual(['case-1', 'case-2', 'case-3']);
+  });
+
+  it('Ek 95 / E1 — belirsiz yanıt satırında mükerrer uyarısı görünür; otomatik tekrar YOK (istek sayısı = 1)', async () => {
+    render(<BulkOperationsPanel cases={[CASES[0]]} />);
+    mockedPost.mockResolvedValue({ data: { success: true } });
+    fireEvent.change(screen.getByDisplayValue('İşlem seçin'), { target: { value: 'uyap' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Tümünü Seç' }));
+    fireEvent.click(screen.getByRole('button', { name: /1 Dosya İçin İşlemi Başlat/ }));
+    await screen.findByText('İşlem Sonuçları');
+    await new Promise((r) => setTimeout(r, 50));
+
+    const text = within(row('2026/1')).getByText(UNVERIFIED_ROW).textContent ?? '';
+    expect(text).toContain('Kayıt oluşmuş olabilir');
+    expect(text).toContain('mükerrer işlem oluşturabilir');
+    expect(screen.getByText('0 başarılı, 1 başarısız')).toBeTruthy();
+    expect(mockedPost).toHaveBeenCalledTimes(1);
+  });
+
+  it('yalnız sunucu dispatched:true beyan ederse "UYAP\'a iletildi" yazılır', async () => {
+    mockedPost
+      .mockResolvedValueOnce({ data: { success: true, data: { simulated: false, dispatched: true } } })
+      .mockResolvedValueOnce({ data: { success: true, data: { simulated: true, dispatched: false } } })
+      .mockResolvedValueOnce({ data: { success: true, data: { simulated: true, dispatched: true } } });
+
+    await runUyapBulk();
+
+    expect(within(row('2026/1')).getByText("UYAP'a iletildi")).toBeTruthy();
+    expect(within(row('2026/2')).getByText("Yerel simülasyon; UYAP'a iletilmedi")).toBeTruthy();
+    expect(within(row('2026/3')).getByText(UNVERIFIED_ROW)).toBeTruthy();
+    expect(screen.getByText('2 başarılı, 1 başarısız')).toBeTruthy();
+  });
+});

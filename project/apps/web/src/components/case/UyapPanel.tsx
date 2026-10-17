@@ -7,11 +7,17 @@ import { runMutation, runRefreshOnly } from '@/lib/mutation-outcome';
 import { useKeyedSubmitLock, useSubmitLock } from '@/lib/use-submit-lock';
 import { FileReadError, readFileAsBase64 } from '@/lib/read-file-base64';
 import {
+  classifyUyapSubmitResult,
+  UYAP_GENERAL_DOCUMENT_DEFAULT,
+  UYAP_GENERAL_DOCUMENT_TYPES,
+  type UyapGeneralDocumentType,
+  type UyapSubmitResultKind,
+} from '@/lib/uyap-submit-result';
+import {
   api,
   UyapStatus,
   UyapRequestLog,
   UyapCasePoaValidation,
-  UyapDocumentType,
   HacizTargetType,
   PreHacizRiskLevel,
   DebtorListItemDTO,
@@ -33,6 +39,29 @@ const RISK_LEVEL_BADGE: Record<PreHacizRiskLevel, string> = {
   YOK: "bg-gray-100 text-gray-600 border-gray-200",
 };
 
+// DV-198/e (owner Ek 94): gönderim sonucu metni YALNIZ sunucu yanıtına dayanır. Yerel simülasyona
+// "iletildi / gönderildi" DENMEZ; iletim yalnız `dispatched === true` beyanında söylenir; belirsiz
+// yanıtta iletim iddia EDİLMEZ. REJECTED (gövdede `success:false`) hata yoluna gider, burada yoktur.
+type SubmitNotice = { kind: Exclude<UyapSubmitResultKind, 'REJECTED'>; text: string };
+// Owner Ek 95 / E1: belirsiz 2xx yanıtta form KORUNUR, otomatik yeniden gönderme YAPILMAZ; kullanıcıya
+// sonucun doğrulanamadığı ve tekrarın mükerrer işlem oluşturabileceği açıkça söylenir. Yeni bir genel
+// idempotency sistemi EKLENMEDİ; çift tıklamaya karşı mevcut senkron gönderim kilidi aynen geçerlidir.
+const UNVERIFIED_RESULT_TEXT =
+  'Sunucu yanıtı doğrulanamadı; UYAP iletimi iddia EDİLMEZ. Kayıt oluşmuş olabilir: aynı içeriği yeniden ' +
+  'göndermek mükerrer işlem oluşturabilir. Yeniden göndermeden önce Geçmiş sekmesini kontrol edin.';
+const DOCUMENT_RESULT_TEXT: Record<SubmitNotice['kind'], string> = {
+  DISPATCHED: "Sunucu evrakın UYAP'a iletimini bildirdi.",
+  SIMULATED: 'Evrak için yalnız yerel simülasyon kaydı oluşturuldu; gerçek UYAP gönderimi YAPILMADI.',
+  UNVERIFIED: UNVERIFIED_RESULT_TEXT,
+};
+const HACIZ_RESULT_TEXT: Record<SubmitNotice['kind'], string> = {
+  DISPATCHED: "Sunucu haciz talebinin UYAP'a iletimini bildirdi.",
+  SIMULATED: 'Haciz talebi için yalnız yerel simülasyon kaydı oluşturuldu; gerçek UYAP gönderimi YAPILMADI.',
+  UNVERIFIED: UNVERIFIED_RESULT_TEXT,
+};
+// Tazeleme başarısızsa (SUCCESS_STALE) iletim İDDİA EDİLMEZ; sonuç ayrı bildirimde, yanıta göre yazılır.
+const SUBMIT_STALE_MESSAGE = 'Sunucu yanıt verdi, ancak panel yenilenemedi. Görünen bilgiler güncel olmayabilir.';
+
 interface UyapPanelProps {
   caseId: string;
   onDocumentSubmitted?: () => void;
@@ -46,7 +75,8 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
   const [activeTab, setActiveTab] = useState<"status" | "document" | "haciz" | "history">("status");
   
   // Document form state
-  const [documentType, setDocumentType] = useState<UyapDocumentType>("TAKIP_TALEBI");
+  // DV-198/e: Haciz Talebi ve Takip Talebi genel evrak ucunda sunucuda reddedilir → listede YOK.
+  const [documentType, setDocumentType] = useState<UyapGeneralDocumentType>(UYAP_GENERAL_DOCUMENT_DEFAULT);
   const [documentName, setDocumentName] = useState("");
   const [documentFile, setDocumentFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -72,6 +102,7 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [documentError, setDocumentError] = useState<string | null>(null);
   const [retryNotice, setRetryNotice] = useState<string | null>(null);
+  const [submitNotice, setSubmitNotice] = useState<SubmitNotice | null>(null);
   const [staleNotice, setStaleNotice] = useState<string | null>(null);
   const [refreshingStale, setRefreshingStale] = useState(false);
   const submitLock = useSubmitLock();
@@ -161,6 +192,7 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
       setSubmitting(true);
       setDocumentError(null);
       setStaleNotice(null);
+      setSubmitNotice(null);
 
       // `setSubmitting(false)` TEK bir `finally`'dedir; dallara dağıtılmaz. Beklenmeyen
       // bir exception veya ileride eklenecek erken dönüş loading'i kalıcı KİLİTLEYEMEZ.
@@ -191,7 +223,7 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
             }),
           refresh: () => loadData({ propagateError: true }),
           failureMessage: 'Evrak gönderilemedi. Evrak UYAP’a İLETİLMEDİ, lütfen tekrar deneyin.',
-          staleMessage: 'Evrak İLETİLDİ, ancak panel yenilenemedi.',
+          staleMessage: SUBMIT_STALE_MESSAGE,
         });
 
         if (!submitLock.isMounted()) return;
@@ -200,11 +232,23 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
           setDocumentError(outcome.error.message);
           return;
         }
-        // SUCCESS ve SUCCESS_STALE: gönderim KESİNLEŞTİ → aynı evrak yeniden gönderilemez.
+        if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+        // DV-198/e: sonuç metni sunucu yanıtından türer; 2xx tek başına "iletildi" DEMEK DEĞİLDİR.
+        const kind = classifyUyapSubmitResult(outcome.data);
+        if (kind === 'REJECTED') {
+          // Sunucu gövdede başarısızlık bildirdi: form KORUNUR, iletim iddia edilmez.
+          setDocumentError('Evrak gönderilemedi. Evrak UYAP’a İLETİLMEDİ, lütfen tekrar deneyin.');
+          return;
+        }
+        setSubmitNotice({ kind, text: DOCUMENT_RESULT_TEXT[kind] });
+        // Ek 95 / E1: belirsiz yanıtta form (tür / ad / dosya) KORUNUR; otomatik yeniden gönderme YOK.
+        // Kullanıcı Geçmiş'i kontrol edip bilerek yeniden gönderebilir (mükerrer riski iletide yazılı).
+        if (kind === 'UNVERIFIED') return;
+        // Sunucu kaydı doğrulandı (yerel simülasyon / iletim beyanı) → aynı evrak yeniden gönderilmez;
+        // simülasyon UYAP'a iletim KANITI DEĞİLDİR.
         setDocumentName('');
         setDocumentFile(null);
         onDocumentSubmitted?.();
-        if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
       } finally {
         if (submitLock.isMounted()) setSubmitting(false);
       }
@@ -225,6 +269,7 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
       setSubmitting(true);
       setHacizError(null);
       setStaleNotice(null);
+      setSubmitNotice(null);
 
       // Kilit ve loading TEK `finally` ile bırakılır; dallara dağıtılmaz.
       try {
@@ -240,20 +285,30 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
           refresh: () => loadData({ propagateError: true }),
           // Owner kural #8: ham hata/stack DEĞİL, güvenli mesaj.
           failureMessage: 'Haciz talebi gönderilemedi. Talep İLETİLMEDİ, lütfen tekrar deneyin.',
-          staleMessage: 'Haciz talebi İLETİLDİ, ancak panel yenilenemedi.',
+          staleMessage: SUBMIT_STALE_MESSAGE,
         });
 
         // Unmount sonrası state YAZILMAZ.
         if (!rowLock.isMounted()) return;
         if (outcome.status === 'FAILED') {
           // Form ve panel KORUNUR: tutar/detay silinmez, kullanıcı yeniden gönderebilir.
+          // Sunucunun ret iletisi (ör. aşama / yetki reddi) güvenliyse olduğu gibi gösterilir.
           setHacizError(outcome.error.message);
           return;
         }
-        // Reset YALNIZ doğrulanmış response sonrası.
+        if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+        // DV-198/e: sonuç metni sunucu yanıtından türer; iletim yalnız `dispatched === true` ise.
+        const kind = classifyUyapSubmitResult(outcome.data);
+        if (kind === 'REJECTED') {
+          setHacizError('Haciz talebi gönderilemedi. Talep İLETİLMEDİ, lütfen tekrar deneyin.');
+          return;
+        }
+        setSubmitNotice({ kind, text: HACIZ_RESULT_TEXT[kind] });
+        // Ek 95 / E1: belirsiz yanıtta tutar / ayrıntı KORUNUR; otomatik yeniden gönderme YOK.
+        if (kind === 'UNVERIFIED') return;
+        // Reset YALNIZ sunucunun kaydı doğruladığı yanıt sonrası (simülasyon iletim kanıtı DEĞİLDİR).
         setHacizAmount('');
         setHacizDetails('');
-        if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
       } finally {
         if (rowLock.isMounted()) setSubmitting(false);
       }
@@ -309,15 +364,6 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
     );
   }
 
-  const documentTypes: { value: UyapDocumentType; label: string }[] = [
-    { value: "TAKIP_TALEBI", label: "Takip Talebi" },
-    { value: "DILEKCE", label: "Dilekçe" },
-    { value: "BEYAN", label: "Beyan" },
-    { value: "ITIRAZ", label: "İtiraz" },
-    { value: "HACIZ_TALEBI", label: "Haciz Talebi" },
-    { value: "DIGER", label: "Diğer" },
-  ];
-
   const hacizTypes: { value: HacizTargetType; label: string }[] = [
     { value: "BANK", label: "Banka Hesabı" },
     { value: "VEHICLE", label: "Araç" },
@@ -348,6 +394,21 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
             className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800"
           >
             {retryNotice}
+          </div>
+        ) : null}
+        {/* DV-198/e: gönderim sonucu sunucu yanıtına göre; simülasyon / doğrulanamayan yanıt iletim DEĞİLDİR. */}
+        {submitNotice ? (
+          <div
+            role="status"
+            data-testid="submit-result-notice"
+            data-result-kind={submitNotice.kind}
+            className={`rounded-md border px-3 py-2 text-xs ${
+              submitNotice.kind === 'DISPATCHED'
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                : 'border-amber-200 bg-amber-50 text-amber-800'
+            }`}
+          >
+            {submitNotice.text}
           </div>
         ) : null}
         {/* Mutation başarılı ama panel tazelenemedi → gönderim durur, görünüm bayat. */}
@@ -501,14 +562,18 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
                 Evrak Türü
               </label>
               <select
+                aria-label="Evrak Türü"
                 value={documentType}
-                onChange={(e) => setDocumentType(e.target.value as UyapDocumentType)}
+                onChange={(e) => setDocumentType(e.target.value as UyapGeneralDocumentType)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               >
-                {documentTypes.map((dt) => (
+                {UYAP_GENERAL_DOCUMENT_TYPES.map((dt) => (
                   <option key={dt.value} value={dt.value}>{dt.label}</option>
                 ))}
               </select>
+              <p className="mt-1 text-xs text-gray-500">
+                Takip talebi ve haciz talebi bu genel evrak formundan gönderilmez.
+              </p>
             </div>
 
             <div>
@@ -519,7 +584,7 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
                 type="text"
                 value={documentName}
                 onChange={(e) => setDocumentName(e.target.value)}
-                placeholder="Örn: Takip Talebi - 2025/12345"
+                placeholder="Örn: Dilekçe - 2025/12345"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -549,6 +614,22 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
         {/* Haciz Tab */}
         {activeTab === "haciz" && (
           <div role="tabpanel" id="uyap-panel-haciz" aria-labelledby="uyap-tab-haciz" className="space-y-4">
+            {/* DV-198/e: haciz için çalışan bir gönderim yolu varmış gibi gösterilmez. Aşama kuralı
+                istemcide KODLANMAZ; karar sunucudadır, ret iletisi aşağıda olduğu gibi gösterilir. */}
+            <div
+              role="note"
+              data-testid="haciz-kisit-notice"
+              className="bg-red-50 border border-red-200 rounded-lg p-4"
+            >
+              <p className="text-sm font-medium text-red-800">
+                Haciz talebi şu anda gönderilemiyor.
+              </p>
+              <p className="text-sm text-red-700 mt-1">
+                Sunucu haciz talebini şu anda hiçbir dosya aşamasında kabul etmiyor; aşama kuralı
+                ayrı bir karar bekliyor. Gönderimi denerseniz sunucunun ret iletisi burada gösterilir.
+              </p>
+            </div>
+
             {!poaValidation?.canProceedToUyap && (
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
                 <p className="text-sm text-yellow-800">
