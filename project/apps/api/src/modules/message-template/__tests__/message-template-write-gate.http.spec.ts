@@ -35,6 +35,7 @@ import { ErrorLogModule } from '../../error-log/error-log.module';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { ClientNotificationAuthorityAdapter } from '../../client-notification/client-notification-authority.adapter';
 import { ClientNotificationController } from '../../client-notification/client-notification.controller';
+import { ClientNotificationHistoryAccessService } from '../../client-notification/client-notification-history-access.service';
 import { ClientNotificationService } from '../../client-notification/client-notification.service';
 import { OfficeApprovalService } from '../../office-approval/office-approval.service';
 import { OfficeF01AuthorizationGuard } from '../../office-approval/office-f01-authorization.guard';
@@ -200,6 +201,8 @@ describe('Şablon YAZMA kapısı — VIEWER reddedilir, düzenleme yetkisi büro
         { provide: MessageTemplateService, useValue: templateSvc.proxy },
         { provide: ClientNotificationService, useValue: notificationSvc.proxy },
         { provide: ClientNotificationAuthorityAdapter, useValue: authorityAdapter.proxy },
+        // This suite exercises template writes only. History uses its own PostgreSQL acceptance.
+        { provide: ClientNotificationHistoryAccessService, useValue: { read: () => { throw new Error('History is outside template-write acceptance'); } } },
         { provide: OfficeApprovalService, useValue: approval },
         OfficeF01AuthorizationGuard,
       ],

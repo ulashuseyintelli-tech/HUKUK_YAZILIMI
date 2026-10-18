@@ -487,3 +487,4 @@ src/modules/client-settlement/__tests__/client-accounting-cancelled-distribution
 src/modules/uyap/__tests__/uyap-submit-runtime-authz.http.db-gated.integration.spec.ts
 src/modules/portal/__tests__/portal-document-transitions.db-gated.integration.spec.ts
 src/modules/client-notification/__tests__/notification-history-permission.http.db-gated.integration.spec.ts
+src/modules/client-notification/__tests__/notification-history-access.http.db-gated.integration.spec.ts
