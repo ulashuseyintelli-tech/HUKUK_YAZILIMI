@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CollectionHistoryReport } from '../CollectionHistoryReport';
 
@@ -66,5 +66,32 @@ describe('Collection history currency boundary', () => {
     await screen.findByText('Son Tahsilatlar');
     expect(container.textContent).not.toContain('₺');
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('a response for another currency is rejected instead of being displayed under the requested selection', async () => {
+    get.mockRejectedValueOnce(mixed()).mockResolvedValueOnce(data('TRY'));
+    render(<CollectionHistoryReport />);
+    await screen.findByText(/Farklı para birimleri toplanamaz/);
+    fireEvent.change(screen.getByLabelText('Tahsilat raporu para birimi'), { target: { value: 'USD' } });
+    await screen.findByText('Rapor para birimi seçilen para birimiyle eşleşmiyor');
+    expect(screen.queryByText('Son Tahsilatlar')).not.toBeInTheDocument();
+    expect(screen.queryAllByText(money('TRY'))).toHaveLength(0);
+  });
+
+  it('a late earlier response cannot replace the latest selected currency', async () => {
+    let finishOld!: (value: ReturnType<typeof data>) => void;
+    get.mockRejectedValueOnce(mixed()).mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; })).mockResolvedValueOnce(data('TRY'));
+    const { container } = render(<CollectionHistoryReport />);
+    await screen.findByText(/Farklı para birimleri toplanamaz/);
+    const select = screen.getByLabelText('Tahsilat raporu para birimi');
+    fireEvent.change(select, { target: { value: 'USD' } });
+    // Programmatic rapid second event also exercises the stale-response guard;
+    // the native selector is disabled while loading for normal user input.
+    fireEvent.change(select, { target: { value: 'TRY' } });
+    await screen.findByText('Son Tahsilatlar');
+    await act(async () => { finishOld(data('USD')); });
+    await waitFor(() => expect(screen.getAllByText(money('TRY')).length).toBeGreaterThanOrEqual(3));
+    expect(container.textContent).not.toContain(money('USD'));
+    expect(select).toHaveValue('TRY');
   });
 });

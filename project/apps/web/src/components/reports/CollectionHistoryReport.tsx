@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { api } from "@/lib/api";
 import { DollarSign, Loader2, Search, Filter, BarChart3 } from "lucide-react";
 
@@ -64,6 +64,7 @@ export function CollectionHistoryReport() {
   const [showFilters, setShowFilters] = useState(false);
   const [currency, setCurrency] = useState('');
   const [currencies, setCurrencies] = useState<string[]>([]);
+  const requestVersion = useRef(0);
   const [filters, setFilters] = useState({
     caseId: "",
     startDate: "",
@@ -74,9 +75,11 @@ export function CollectionHistoryReport() {
 
   useEffect(() => {
     loadReport('');
+    return () => { requestVersion.current += 1; };
   }, []);
 
   const loadReport = async (selectedCurrency: string) => {
+    const version = ++requestVersion.current;
     setLoading(true);
     setError("");
     setReport(null);
@@ -89,16 +92,19 @@ export function CollectionHistoryReport() {
       if (filters.statuses.length) params.append("statuses", filters.statuses.join(","));
       if (selectedCurrency) params.append('currency', selectedCurrency);
       const res = await api.get(`/reports/collection-history?${params}`);
+      if (version !== requestVersion.current) return;
+      if (selectedCurrency && res.data?.data?.currency !== selectedCurrency) throw new Error('Rapor para birimi seçilen para birimiyle eşleşmiyor');
       setReport(res.data?.data);
       if (res.data?.data?.currency) setCurrencies(previous => [...new Set([...previous, res.data.data.currency])].sort());
     } catch (err: any) {
+      if (version !== requestVersion.current) return;
       const body = err.body ?? err.response?.data;
       if (body?.code === 'COLLECTION_CURRENCY_REQUIRED' && Array.isArray(body.currencies)) {
         setCurrencies(body.currencies.filter((value: unknown): value is string => typeof value === 'string' && /^[A-Z]{3}$/.test(value)));
       }
       setError(body?.message || err.message || "Rapor yüklenemedi");
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
   };
 
