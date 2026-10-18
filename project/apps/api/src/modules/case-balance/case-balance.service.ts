@@ -44,6 +44,13 @@ export interface CreditBalanceDto {
   description?: string;
 }
 
+/** Server-only context. HTTP credit callers cannot supply a transaction or posting identity. */
+export interface ExpensePaymentCreditContext {
+  tx: Prisma.TransactionClient;
+  currency: string;
+  postingKey: string;
+}
+
 export interface DebitBalanceDto {
   amount: number;
   source: string;        // "operation:haciz", "operation:tebligat"
@@ -121,7 +128,7 @@ export class CaseBalanceService {
   /// Güvenlik sözleşmesi (CLIENT-P0-T04-C1 — tenant fail-closed containment):
   /// - `tenantId` yalnız authenticated principal'dan gelir; body/query/path üzerinden tenant otoritesi kabul edilmez.
   /// - `caseId`'nin authenticated tenant'a ait olduğu, herhangi bir bakiye/ledger/journal yan etkisinden ÖNCE burada doğrulanır.
-  /// - Yazma yolları (credit/debit/postExpenseActual/adjust/setLowThreshold) bu tek noktadan geçer → service-level fail-closed.
+  /// - Yazma yolları sahipliği findExistingBalance üzerinden doğrular; ödeme tx kredisi yalnız MEVCUT satırı kullanır.
   /// - Cross-tenant veya bilinmeyen dava aynı tenant-scoped NotFound yanıtını alır (existence oracle yok).
   /// - Mevcut CaseBalance satırı authenticated tenant ile eşleşmezse fail-closed; historical mismatch auto-repair EDİLMEZ.
   /// - OKUMA yolları (getBalance/getLedger) bu işlevi KULLANMAZ: okuma isteği bakiye satırı oluşturmaz (owner GO 2026-10-05, karar 5).
@@ -164,10 +171,15 @@ export class CaseBalanceService {
   /// Çağrıldığı yerler:
   /// - CaseBalanceService.getOrCreateBalance() → mevcut satır araması (sahiplik + tenant kapısı tek yerde)
   /// - CaseBalanceService.getBalance() / getLedger() → GET /cases/:caseId/balance[/ledger] (satır oluşturmadan okuma)
+  /// - CaseBalanceService.credit(context) → ExpenseRequest ödeme tx'i, aynı tx ile mevcut avansı doğrular
   /// </remarks>
-  private async findExistingBalance(tenantId: string, caseId: string) {
+  private async findExistingBalance(
+    tenantId: string,
+    caseId: string,
+    db: Pick<Prisma.TransactionClient, 'case' | 'caseBalance'> = this.prisma,
+  ) {
     // 1) Dava sahipliği: caseId authenticated tenant'a ait mi? Değilse tenant-scoped NotFound (existence oracle yok).
-    const ownedCase = await this.prisma.case.findFirst({
+    const ownedCase = await db.case.findFirst({
       where: { id: caseId, tenantId },
       select: { id: true },
     });
@@ -176,7 +188,7 @@ export class CaseBalanceService {
     }
 
     // 2) Mevcut bakiye satırı varsa tenant eşleşmeli; eşleşmiyorsa fail-closed (mutasyon yok, auto-repair yok).
-    const existing = await this.prisma.caseBalance.findUnique({ where: { caseId } });
+    const existing = await db.caseBalance.findUnique({ where: { caseId } });
     if (existing && existing.tenantId !== tenantId) {
       throw new ForbiddenException('CaseBalance tenant uyuşmazlığı');
     }
@@ -245,14 +257,20 @@ export class CaseBalanceService {
   /// - CaseBalanceController.credit() → POST /cases/:caseId/balance/credit (manuel/direct avans kredi)
   /// - ExpenseRequestService.create() → paidByLawyer expense_request kredi yolu
   /// - ExpenseRequestService.createFromPackage() → paidByLawyer package expense_request kredi yolu
-  /// - ExpenseRequestService.markAsReceived() → expense_request ödeme alındı kredi yolu
-  /// - ExpenseRequestService.recordPayment() → expense_payment kredi yolu
+  /// - ExpenseRequestService.recordPayment() → expense_payment kredi yolu (receive aynı komuta delege eder)
   /// </remarks>
-  async credit(tenantId: string, caseId: string, dto: CreditBalanceDto, userId: string) {
-    const balance = await this.getOrCreateBalance(tenantId, caseId);
+  async credit(tenantId: string, caseId: string, dto: CreditBalanceDto, userId: string, context?: ExpensePaymentCreditContext) {
+    const balance = context
+      ? await this.findExistingBalance(tenantId, caseId, context.tx)
+      : await this.getOrCreateBalance(tenantId, caseId);
+    if (!balance) {
+      throw new ConflictException({ code: 'EXPENSE_PAYMENT_ADVANCE_MISSING', message: 'Ödeme için mevcut masraf avansı kaydı gereklidir' });
+    }
+    if (context && (!context.currency || !balance.currency || balance.currency !== context.currency)) {
+      throw new ConflictException({ code: 'EXPENSE_PAYMENT_CURRENCY_MISMATCH', message: 'Talep ve masraf avansı para birimi açıkça aynı olmalıdır' });
+    }
 
-    // Transaction ile güncelle
-    const result = await this.prisma.$transaction(async (tx) => {
+    const writeCredit = async (tx: Prisma.TransactionClient) => {
       // Ledger kaydı oluştur
       const ledger = await tx.balanceLedger.create({
         data: {
@@ -260,6 +278,7 @@ export class CaseBalanceService {
           caseBalanceId: balance.id,
           type: BalanceLedgerType.CREDIT,
           amount: dto.amount,
+          ...(context ? { currency: context.currency, postingKey: context.postingKey } : {}),
           source: dto.source,
           sourceId: dto.sourceId,
           description: dto.description || 'Masraf avansı alındı',
@@ -279,7 +298,8 @@ export class CaseBalanceService {
         await this.writeBalanceLedgerJournal(tx, journalDraft);
       }
       return { balance: updatedBalance, ledger };
-    });
+    };
+    const result = context ? await writeCredit(context.tx) : await this.prisma.$transaction(writeCredit);
 
     return {
       success: true,

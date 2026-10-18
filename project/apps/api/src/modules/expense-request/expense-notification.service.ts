@@ -1,4 +1,5 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@/prisma/prisma.service';
 import { EmailProviderService, EmailOptions } from '@/modules/notification/email-provider.service';
@@ -6,6 +7,7 @@ import { NotificationDispatcherService } from '@/modules/client-notification/not
 import { maskEmail } from '@/common/pii-mask.util';
 import { findExpenseCatalogEntry } from './expense-item-catalog';
 import type { ExpenseEmailDispatchFailureReason } from './opening-expense-email-outcome';
+import { lockExpenseRequest } from './expense-request-lock';
 
 export interface EmailContent {
   subject: string;
@@ -474,7 +476,8 @@ export class ExpenseNotificationService {
         // satırı SENT yapar (count=1), diğeri SENT'i görür (count=0) ve audit / görev ÜRETMEZ. Önceki "oku, sonra yaz"
         // biçimi iki işlemin de PENDING okumasına izin veriyordu (ölçüldü: çift EMAIL_SENT + çift görev).
         const moved = await tx.expenseRequest.updateMany({
-          where: { id: requestId, tenantId, status: { not: 'SENT' } },
+          // A provider response must never replace a payment/cancellation that committed meanwhile.
+          where: { id: requestId, tenantId, status: { notIn: ['SENT', 'PAID', 'PARTIAL', 'RECEIVED', 'CANCELLED'] } },
           data: {
             status: 'SENT',
             sentAt: now,
@@ -700,8 +703,8 @@ export class ExpenseNotificationService {
 
     if (result.success) {
       await this.prisma.$transaction(async (tx) => {
-        await tx.expenseRequest.update({
-          where: { id: requestId },
+        await tx.expenseRequest.updateMany({
+          where: { id: requestId, tenantId, status: { notIn: ['PAID', 'PARTIAL', 'RECEIVED', 'CANCELLED'] } },
           data: {
             status: 'REMINDED',
             reminderCount: { increment: 1 },
@@ -749,43 +752,36 @@ export class ExpenseNotificationService {
    * Vadesi geçmiş masraf talepleri için manuel görev oluştur
    */
   async createOverdueTask(tenantId: string, requestId: string, userId: string) {
-    const request = await this.prisma.expenseRequest.findFirst({
-      where: { id: requestId, tenantId },
-      include: {
-        case: { select: { id: true, fileNumber: true } },
-        client: { select: { displayName: true } },
-      },
-    });
-
-    if (!request) {
-      throw new NotFoundException('Masraf talebi bulunamadı');
-    }
-
-    const formattedTotal = request.totalAmount.toNumber().toLocaleString('tr-TR', { minimumFractionDigits: 2 });
-
-    // Task oluştur
-    const task = await this.prisma.task.create({
-      data: {
-        tenantId,
-        caseId: request.caseId,
-        // G4a (A5 reversal): otomatik görev ATANMAMIŞ doğar (Dosya Sorumlusu DOER değil; assignee=doer sonradan manuel atanır).
-        title: `Masraf takibi - ${request.client?.displayName || 'Müvekkil'}`,
-        description: `${request.case.fileNumber} dosyası için ${formattedTotal} TL masraf talebi vadesi geçti. Müvekkil ile iletişime geçilmeli.`,
-        status: 'PENDING',
-        priority: 'HIGH',
-        createdById: userId,
-      },
-    });
-
-    // Masraf talebini güncelle
-    await this.prisma.expenseRequest.update({
-      where: { id: requestId },
-      data: {
-        status: 'OVERDUE',
-        taskId: task.id,
-      },
-    });
-
+    // Callers: ExpenseRequestController.createOverdueTask and the existing reminder workflow.
+    const task = await this.prisma.$transaction(async tx => {
+      await lockExpenseRequest(tx, tenantId, requestId);
+      const request = await tx.expenseRequest.findFirst({
+        where: { id: requestId, tenantId },
+        include: {
+          case: { select: { id: true, fileNumber: true } },
+          client: { select: { displayName: true } },
+        },
+      });
+      if (!request) throw new NotFoundException('Masraf talebi bulunamadı');
+      if (['PAID', 'PARTIAL', 'RECEIVED', 'CANCELLED'].includes(request.status)
+        || new Prisma.Decimal(request.paidTotal).gt(0)) {
+        throw new BadRequestException('Ödeme alınmış veya iptal edilmiş talep gecikmiş durumuna taşınamaz');
+      }
+      const formattedTotal = request.totalAmount.toNumber().toLocaleString('tr-TR', { minimumFractionDigits: 2 });
+      const created = await tx.task.create({
+        data: {
+          tenantId, caseId: request.caseId,
+          // Existing G4a behavior: unassigned task; no responsible-lawyer attribution.
+          title: `Masraf takibi - ${request.client?.displayName || 'Müvekkil'}`,
+          description: `${request.case.fileNumber} dosyası için ${formattedTotal} TL masraf talebi vadesi geçti. Müvekkil ile iletişime geçilmeli.`,
+          status: 'PENDING', priority: 'HIGH', createdById: userId,
+        },
+      });
+      await tx.expenseRequest.update({
+        where: { id: requestId }, data: { status: 'OVERDUE', taskId: created.id },
+      });
+      return created;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
     this.logger.log(`Overdue task created for expense request ${requestId}: ${task.id}`);
     return task;
   }
