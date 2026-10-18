@@ -6,6 +6,13 @@ import { CreateTaskDto, UpdateTaskDto } from "./dto/task.dto";
 export class TaskService {
   constructor(private prisma: PrismaService) {}
 
+  /** Çağıranlar: create/update; dosyasız görev ve açık null ile bağı kaldırma korunur. */
+  private async assertCaseTenant(tenantId: string, caseId: string | null | undefined): Promise<void> {
+    if (caseId === undefined || caseId === null) return;
+    const record = await this.prisma.case.findFirst({ where: { id: caseId, tenantId }, select: { id: true } });
+    if (!record) throw new BadRequestException("Geçersiz dosya: aynı ofise ait bir dosya değil.");
+  }
+
   /**
    * <remarks>
    * Çağrıldığı yerler:
@@ -31,10 +38,11 @@ export class TaskService {
     }
   }
 
+  // Çağıran: TaskController.findAll → GET /tasks.
   async findAll(tenantId: string, params?: { status?: string; page?: number; limit?: number }) {
     const { status, page = 1, limit = 20 } = params || {};
 
-    const where: any = { tenantId };
+    const where: any = { tenantId, OR: [{ caseId: null }, { case: { tenantId } }] };
     if (status) where.status = status;
 
     const [tasks, total] = await Promise.all([
@@ -60,9 +68,10 @@ export class TaskService {
     };
   }
 
+  // Çağıranlar: TaskController.findOne; TaskService.update/delete.
   async findOne(tenantId: string, id: string) {
     const task = await this.prisma.task.findFirst({
-      where: { id, tenantId },
+      where: { id, tenantId, OR: [{ caseId: null }, { case: { tenantId } }] },
       include: {
         case: true,
         client: { select: { id: true, displayName: true, companyName: true, firstName: true, lastName: true } },
@@ -78,7 +87,9 @@ export class TaskService {
     return task;
   }
 
+  // Çağıran: TaskController.create → POST /tasks.
   async create(tenantId: string, userId: string, dto: CreateTaskDto) {
+    await this.assertCaseTenant(tenantId, dto.caseId);
     // CANDIDATE-J1: dolu assignee → aynı-tenant + aktif doğrulaması. Boş/null assignee dokunulmaz
     // (sahipsiz görev meşru; null assignee davranışı korunur).
     if (dto.assigneeId) {
@@ -104,6 +115,7 @@ export class TaskService {
    */
   async update(tenantId: string, id: string, userId: string, dto: UpdateTaskDto) {
     await this.findOne(tenantId, id);
+    await this.assertCaseTenant(tenantId, dto.caseId);
 
     // CANDIDATE-J1: dolu assignee güncellemesi → aynı-tenant + aktif doğrulaması. Assignee alanı
     // gönderilmeyen (veya boşaltılan) güncellemeler dokunulmaz (null assignee davranışı korunur).
