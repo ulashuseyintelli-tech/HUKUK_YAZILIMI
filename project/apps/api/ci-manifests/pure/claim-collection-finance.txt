@@ -89,6 +89,7 @@ src/modules/interest-engine/legal-application-plan/__tests__/legal-application-w
 src/modules/debtor/__tests__/third-party-collection-delegation.spec.ts
 
 src/modules/bank/__tests__/bank-match-delegation.spec.ts
+src/modules/bank/__tests__/bank-mock-containment.spec.ts
 src/modules/bank/__tests__/bank-lifecycle.controller.spec.ts
 src/modules/bank/__tests__/bank-settlement-evidence-writer.service.spec.ts
 src/modules/bank/__tests__/bank-candidate-settlement-transition.service.spec.ts
