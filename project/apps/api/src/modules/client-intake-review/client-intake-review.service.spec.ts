@@ -16,7 +16,8 @@ const mockPrisma: any = {
   asset: { create: jest.fn() },
   debtorAddress: { create: jest.fn() },
   debtorCommunication: { create: jest.fn() },
-  $transaction: jest.fn(async (arr: any[]) => arr),
+  $queryRaw: jest.fn().mockResolvedValue([{ id: 'sub-1' }]),
+  $transaction: jest.fn(async (callback: any) => callback(mockPrisma)),
 };
 
 describe('ClientIntakeReviewService', () => {
@@ -45,7 +46,7 @@ describe('ClientIntakeReviewService', () => {
       mockPrisma.clientIntakeSubmission.findFirst.mockResolvedValue({ id: 'sub-1', status: 'CLIENT_SUBMITTED' });
       await service.claim(TENANT, 'sub-1', USER);
       expect(mockPrisma.clientIntakeSubmission.update).toHaveBeenCalledWith({
-        where: { id: 'sub-1' },
+        where: { id: 'sub-1', tenantId: TENANT },
         data: expect.objectContaining({ status: 'IN_REVIEW', claimedById: USER, claimedAt: expect.any(Date) }),
       });
       assertNoCanonicalWrite();
@@ -62,7 +63,7 @@ describe('ClientIntakeReviewService', () => {
       mockPrisma.clientIntakeField.findFirst.mockResolvedValue({ id: 'f-1', promotedRefId: null, submission: { id: 'sub-1', status: 'IN_REVIEW' } });
       mockPrisma.clientIntakeSubmission.findFirst.mockResolvedValue({ id: 'sub-1', fields: [] }); // getOne
       await service.reviewField(TENANT, 'f-1', USER, 'APPROVE', 'uygun');
-      expect(mockPrisma.clientIntakeField.update).toHaveBeenCalledWith({ where: { id: 'f-1' }, data: { reviewStatus: 'APPROVED', reviewNote: 'uygun' } });
+      expect(mockPrisma.clientIntakeField.update).toHaveBeenCalledWith({ where: { id: 'f-1', submissionId: 'sub-1', promotedRefId: null }, data: { reviewStatus: 'APPROVED', reviewNote: 'uygun' } });
       assertNoCanonicalWrite();
     });
 
@@ -108,10 +109,10 @@ describe('ClientIntakeReviewService', () => {
         .mockResolvedValueOnce({ id: 'sub-1', status: 'IN_REVIEW' }) // findOwned
         .mockResolvedValue({ id: 'sub-1', fields: [] }); // getOne
       await service.rejectSubmission(TENANT, 'sub-1', USER, 'eksik');
-      expect(mockPrisma.clientIntakeSubmission.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'sub-1' }, data: expect.objectContaining({ status: 'REJECTED' }) }));
+      expect(mockPrisma.clientIntakeSubmission.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'sub-1', tenantId: TENANT }, data: expect.objectContaining({ status: 'REJECTED' }) }));
       // YALNIZ PENDING → REJECTED
       expect(mockPrisma.clientIntakeField.updateMany).toHaveBeenCalledWith({
-        where: { submissionId: 'sub-1', reviewStatus: 'PENDING' },
+        where: { submissionId: 'sub-1', reviewStatus: 'PENDING', promotedRefId: null },
         data: { reviewStatus: 'REJECTED' },
       });
       assertNoCanonicalWrite();
