@@ -808,17 +808,19 @@ export class ClientNotificationService {
    * bırakılır; provider ağ çağrısı bu tx'in DIŞINDA yapılır. İki concurrent çağrıdan yalnız biri
    * ACQUIRED alır; diğeri EXISTING_PENDING görür (Inv-1: SENT/PENDING/FAILED üçü de EXISTING —
    * normal dispatch FAILED'ı da retry etmez, retry yalnız resend yolundan force ile).
+   * Callers: NotificationDispatcherService.dispatch (default EMAIL), GreetingService.sendGreeting (EMAIL/SMS).
    */
   async claimNotificationSlot(
     tenantId: string,
     userId: string,
     dto: SendEmailDto,
+    channel: 'EMAIL' | 'SMS' = 'EMAIL',
   ): Promise<NotificationClaimResult> {
     if (!dto.dedupeKey) {
       throw new BadRequestException("claimNotificationSlot: dedupeKey zorunlu");
     }
     const lockKeyText = `client-notification-dispatch|${tenantId}|${dto.dedupeKey}`;
-    const safePersistedBody = sanitizeNotificationHtml(dto.persistedBody ?? dto.body);
+    const safePersistedBody = channel === 'EMAIL' ? sanitizeNotificationHtml(dto.persistedBody ?? dto.body) : (dto.persistedBody ?? dto.body);
     const metadata = dto.templateId ? { templateId: dto.templateId } : undefined;
 
     return this.prisma.$transaction(async (tx) => {
@@ -828,9 +830,12 @@ export class ClientNotificationService {
       const existing = await tx.clientNotification.findFirst({
         where: { tenantId, dedupeKey: dto.dedupeKey },
         orderBy: { createdAt: "desc" },
-        select: { id: true, status: true },
+        select: { id: true, status: true, clientId: true, channel: true },
       });
       if (existing) {
+        if (existing.clientId !== dto.clientId || existing.channel !== channel) {
+          throw new BadRequestException('Notification claim scope mismatch');
+        }
         if (existing.status === "SENT") return { kind: "EXISTING_SENT", notificationId: existing.id };
         if (existing.status === "PENDING") return { kind: "EXISTING_PENDING", notificationId: existing.id };
         // FAILED (veya diğer terminal): normal dispatch RETRY ETMEZ (Inv-1).
@@ -842,7 +847,7 @@ export class ClientNotificationService {
           tenantId,
           clientId: dto.clientId,
           caseId: dto.caseId,
-          channel: "EMAIL",
+          channel,
           type: dto.type,
           subject: dto.persistedSubject ?? dto.subject,
           body: safePersistedBody,
@@ -989,14 +994,31 @@ export class ClientNotificationService {
     });
   }
 
-  // SMS gönder (NetGSM API)
-  async sendSms(tenantId: string, userId: string, dto: SendSmsDto) {
+  /**
+   * Callers: ClientNotificationController.sendSms, testSend, GreetingService.sendGreeting.
+   * The fourth argument is server-only claim context, never read from an HTTP DTO.
+   */
+  async sendSms(tenantId: string, userId: string, dto: SendSmsDto, claim?: { notificationId: string; dedupeKey: string }) {
+    if (claim) {
+      const row = await this.prisma.clientNotification.findFirst({
+        where: { id: claim.notificationId, tenantId, clientId: dto.clientId, dedupeKey: claim.dedupeKey, channel: 'SMS', status: 'PENDING' },
+        select: { id: true },
+      });
+      if (!row) throw new BadRequestException('SMS claim doğrulaması başarısız; gönderim iptal edildi');
+    }
+    const markClaimFailed = async (reason: string) => {
+      if (claim) await this.prisma.clientNotification.updateMany({
+        where: { id: claim.notificationId, tenantId, status: 'PENDING' },
+        data: { status: 'FAILED', errorMessage: reason },
+      });
+    };
     const client = await this.prisma.client.findFirst({
       where: { id: dto.clientId, tenantId },
       include: { contacts: true },
     });
 
     if (!client) {
+      await markClaimFailed('client-not-found');
       throw new BadRequestException("Müvekkil bulunamadı");
     }
 
@@ -1008,6 +1030,7 @@ export class ClientNotificationService {
     let recipientPhone = phoneContact?.value || client.phone;
 
     if (!recipientPhone) {
+      await markClaimFailed('recipient-missing');
       throw new BadRequestException("Müvekkilin telefon numarası bulunamadı");
     }
 
@@ -1018,13 +1041,14 @@ export class ClientNotificationService {
     const smsSettings = await this.officeService.getFullSmsSettings(tenantId);
 
     if (!smsSettings.smsProvider || !smsSettings.smsApiKey) {
+      await markClaimFailed('sms-not-configured');
       throw new BadRequestException(
         "SMS ayarları yapılandırılmamış. Lütfen Büro Ayarları > SMS bölümünden ayarları yapın."
       );
     }
 
     // Bildirim kaydı oluştur
-    const notification = await this.prisma.clientNotification.create({
+    const notification = claim ? { id: claim.notificationId } : await this.prisma.clientNotification.create({
       data: {
         tenantId,
         clientId: dto.clientId,
@@ -1073,6 +1097,15 @@ export class ClientNotificationService {
       };
     } catch (error: any) {
       const safeError = this.sanitizeProviderError(error?.message);
+      if (claim) {
+        // The provider may have accepted before a timeout or failed SENT write. No blind retry.
+        await this.prisma.clientNotification.updateMany({
+          where: { id: notification.id, tenantId, status: 'PENDING' },
+          data: { errorMessage: safeError },
+        });
+        this.logger.error('SMS gönderim sonucu belirsiz; claim PENDING kalıyor (manuel reconciliation)');
+        throw new BadRequestException('SMS gönderim sonucu doğrulanamadı; otomatik yeniden gönderilmedi');
+      }
       // Hata - durumu güncelle
       await this.prisma.clientNotification.update({
         where: { id: notification.id },

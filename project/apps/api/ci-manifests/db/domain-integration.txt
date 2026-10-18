@@ -227,6 +227,7 @@ src/modules/collection/__tests__/receipt-object-scope-authorization.db-gated.int
 #     manifestine girer (ci.yml bu adimda TEST_DATABASE_URL saglar). Bu ise ait disposable DB'de
 #     migrate deploy (130/130) + kosum: 1/1 spec, 4 test PASS, atlama 0.
 src/modules/client-notification/__tests__/g4-claim-concurrency.db-gated.integration.spec.ts
+src/modules/greeting/__tests__/greeting-delivery-outcome.db-gated.integration.spec.ts
 #
 #   F04 (posting / cancellation / reversal race): gercek PostgreSQL uzerinde iki commit
 #   sirasini bariyerlerle dogrular; kilitli Collection okumasi ve pre-post CAS regresyonu.
