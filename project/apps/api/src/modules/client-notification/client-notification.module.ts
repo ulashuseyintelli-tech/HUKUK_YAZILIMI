@@ -11,6 +11,7 @@ import { OfficeApprovalModule } from "../office-approval/office-approval.module"
 import { ClientNotificationAuthorityAdapter } from "./client-notification-authority.adapter";
 import { NotificationHistoryPermissionController } from "./notification-history-permission.controller";
 import { NotificationHistoryPermissionService } from "./notification-history-permission.service";
+import { ClientNotificationHistoryAccessService } from "./client-notification-history-access.service";
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { NotificationHistoryPermissionService } from "./notification-history-per
     NotificationDispatcherService,
     ClientNotificationAuthorityAdapter,
     NotificationHistoryPermissionService,
+    ClientNotificationHistoryAccessService,
   ],
   exports: [ClientNotificationService, NotificationDispatcherService],
 })

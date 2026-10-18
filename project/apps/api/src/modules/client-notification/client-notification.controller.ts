@@ -9,7 +9,10 @@ import {
   UseGuards,
   ForbiddenException,
   BadRequestException,
+  Res,
 } from "@nestjs/common";
+import type { Response } from "express";
+import { ClientNotificationHistoryAccessService } from "./client-notification-history-access.service";
 import { ClientNotificationService } from "./client-notification.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
@@ -31,7 +34,8 @@ import { OfficeF01AuthorizationGuard } from "../office-approval/office-f01-autho
 export class ClientNotificationController {
   constructor(
     private service: ClientNotificationService,
-    private readonly authority: ClientNotificationAuthorityAdapter
+    private readonly authority: ClientNotificationAuthorityAdapter,
+    private readonly history: ClientNotificationHistoryAccessService
   ) {}
 
   // Bildirim Kontrol Merkezi — sağlık/özet/teşhis. ADMIN gate: teslimat istatistiği ve hata
@@ -86,20 +90,34 @@ export class ClientNotificationController {
 
   // Müvekkilin bildirim geçmişi
   @Get("client/:clientId")
-  getClientNotifications(
+  async getClientNotifications(
     @CurrentUser("tenantId") tenantId: string,
-    @Param("clientId") clientId: string
+    @Param("clientId") clientId: string,
+    @CurrentUser("id") userId: string,
+    @Query("limit") limit: unknown,
+    @Query("cursor") cursor: unknown,
+    @Res({ passthrough: true }) response: Response
   ) {
-    return this.service.getClientNotifications(tenantId, clientId);
+    const page = await this.history.read(tenantId, userId, { kind: "client", id: clientId }, { limit, cursor });
+    response.setHeader("Access-Control-Expose-Headers", "X-Next-Cursor");
+    if (page.nextCursor) response.setHeader("X-Next-Cursor", page.nextCursor);
+    return page.items;
   }
 
   // Dosya bazlı bildirimler
   @Get("case/:caseId")
-  getCaseNotifications(
+  async getCaseNotifications(
     @CurrentUser("tenantId") tenantId: string,
-    @Param("caseId") caseId: string
+    @Param("caseId") caseId: string,
+    @CurrentUser("id") userId: string,
+    @Query("limit") limit: unknown,
+    @Query("cursor") cursor: unknown,
+    @Res({ passthrough: true }) response: Response
   ) {
-    return this.service.getCaseNotifications(tenantId, caseId);
+    const page = await this.history.read(tenantId, userId, { kind: "case", id: caseId }, { limit, cursor });
+    response.setHeader("Access-Control-Expose-Headers", "X-Next-Cursor");
+    if (page.nextCursor) response.setHeader("X-Next-Cursor", page.nextCursor);
+    return page.items;
   }
 
   // E-posta şablonları
