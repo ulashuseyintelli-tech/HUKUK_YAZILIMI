@@ -729,10 +729,12 @@ describeWithDisposableDatabase('OFFICE E2E A-J - controlled Nest HTTP and dispos
     const failed = await request(app.getHttpServer())
       .delete(`/api/staff/${staff.id}`)
       .set(authorization(fixture.adminAToken))
-      .expect(200);
+      .expect(500);
     auditFailure.mockRestore();
 
-    expect(failed.body).toEqual({ error: 'F03_SYNTHETIC_AUDIT_FAILURE' });
+    expect(failed.body.message).toBe('Internal server error');
+    expect(JSON.stringify(failed.body)).not.toContain('F03_SYNTHETIC_AUDIT_FAILURE');
+    expect(failed.body.success).toBeUndefined();
     const [staffReadBack, userReadBack, auditCount] = await Promise.all([
       prisma.staffMember.findUniqueOrThrow({ where: { id: staff.id } }),
       prisma.user.findUniqueOrThrow({ where: { id: linkedUser.id } }),
