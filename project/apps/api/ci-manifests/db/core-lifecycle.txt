@@ -313,3 +313,4 @@ src/modules/expense-request/__tests__/stage-expense-idempotency.http.db-gated.in
 src/modules/group/__tests__/group-task-tenant-boundary.http.db-gated.integration.spec.ts
 src/modules/greeting/__tests__/configuration-write-boundary.http.db-gated.integration.spec.ts
 src/modules/expense-request/expense-payment-atomic.db-gated.integration.spec.ts
+src/modules/auth/invite/__tests__/user-invite-atomic.db-gated.integration.spec.ts
