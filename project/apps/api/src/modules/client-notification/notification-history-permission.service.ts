@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PermissionGrantEffect, PermissionGrantScope, Prisma } from '@prisma/client';
 import { isISO8601 } from 'class-validator';
+import { createHash } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 
@@ -53,7 +54,10 @@ export class NotificationHistoryPermissionService {
         tenantId, userId: actorUserId, action: 'UPDATE', entityType: 'PERMISSION_GRANT', entityId: subjectUserId,
         oldValues: { grants: before.map(row => ({ id: row.id, validUntil: row.validUntil?.toISOString() ?? null })) },
         newValues: { subjectUserId, permissionKey: NOTIFICATION_HISTORY_AUDIT_PERMISSION, scope: 'GLOBAL', effect: 'ALLOW', validUntil: now.toISOString(), expiredCount: result.count },
-        description: 'Notification history audit permission revoked', metadata: { reason },
+        description: 'Notification history audit permission revoked', metadata: {
+          reasonPresent: reason !== null, reasonLength: reason?.length ?? 0,
+          reasonHash: reason === null ? null : createHash('sha256').update(reason).digest('hex'),
+        },
       });
       return { subjectUserId, permissionKey: NOTIFICATION_HISTORY_AUDIT_PERMISSION, scope: PermissionGrantScope.GLOBAL, revoked: result.count };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
