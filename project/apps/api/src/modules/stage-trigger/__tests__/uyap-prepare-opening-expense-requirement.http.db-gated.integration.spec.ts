@@ -22,6 +22,7 @@ import { MetricsRegistryModule } from '../../metrics-registry/metrics-registry.m
 import { CasePolicyEngine } from '../../policy-engine/case-policy-engine.service';
 import { UyapModule } from '../../uyap/uyap.module';
 import { StageTriggerModule } from '../stage-trigger.module';
+import { ExpenseRequestService } from '../../expense-request/expense-request.service';
 
 /**
  * Açılış masrafı şartı — tutarı BELİRLENEMEMİŞ açılış masrafı "sağlandı" sayılmaz. GERÇEK HTTP + disposable PostgreSQL.
@@ -250,9 +251,18 @@ describeWithDisposableDb('Açılış masrafı şartı — belirlenemeyen masraf 
     { type: 'PESIN_HARC', description: 'Peşin harç — icra dairesi tahakkuku (elle girildi)', amount: 2150 },
   ];
 
-  const receive = async (requestId: string, paidAmount: number) => {
-    const res = await post(`/expense-requests/${requestId}/receive`, { paidAmount });
-    expect({ status: res.status, requestStatus: res.body?.status }).toEqual({ status: 201, requestStatus: 'RECEIVED' });
+  const payExpenseFixture = async (requestId: string, paidAmount: number) => {
+    // This suite tests the opening-expense requirement, not permission to record a payment.
+    // Use the real atomic service to establish a paid fixture; never weaken/mock the HTTP payment CPE gate.
+    const expense = await prisma.expenseRequest.findFirstOrThrow({ where: { id: requestId, tenantId } });
+    await prisma.caseBalance.upsert({ where: { caseId: expense.caseId },
+      create: { tenantId, caseId: expense.caseId, balance: 0, currency: expense.currency }, update: {} });
+    const row = await app.get(ExpenseRequestService, { strict: false }).recordPayment(tenantId, requestId, {
+      idempotencyKey: `opening-fixture:${requestId}`, amount: paidAmount,
+      paymentDate: new Date('2026-10-01T10:00:00Z'), method: 'BANK_TRANSFER',
+    }, adminId);
+    expect(row.status).toBe('PAID'); expect(Number(row.paidTotal)).toBe(paidAmount);
+    expect(row.idempotentReplay).toBe(false);
   };
 
   /** Dosyanın finansal ve dış yazma izi: masraf, muhasebe, bakiye, UYAP isteği ve müvekkil bildirimi kayıtları. */
@@ -333,7 +343,7 @@ describeWithDisposableDb('Açılış masrafı şartı — belirlenemeyen masraf 
     });
 
     it('açılış talebi karşılanınca: masraf kapısı açılır (mevcut yanıt aynen)', async () => {
-      await receive(openingRequestId, 1431.1);
+      await payExpenseFixture(openingRequestId, 1431.1);
 
       expect(await gateStatus(caseId)).toEqual(GATE_READY);
       expect(await gateSummary(caseId)).toEqual(SUMMARY_READY);
@@ -460,7 +470,7 @@ describeWithDisposableDb('Açılış masrafı şartı — belirlenemeyen masraf 
       expect(unpaid).toMatchObject({ isBlocked: true, totalPending: 50, openingExpense: { reasonCode: NOT_DETERMINED } });
       expect(unpaid.message).toBe(`${unpaid.openingExpense.message} ${COMPLETION_PATH} Ayrıca: 1 adet ödenmemiş masraf talebi var. Toplam: 50.00 TL`);
 
-      await receive(requestId, 50);
+      await payExpenseFixture(requestId, 50);
 
       expect(await gateStatus(caseId)).toMatchObject({ isBlocked: true, blockingExpenses: [], openingExpense: { reasonCode: NOT_DETERMINED } });
       expect(await canPerform(caseId, 'SUBMIT')).toEqual({ canPerform: false, actionType: 'SUBMIT' });
@@ -532,8 +542,8 @@ describeWithDisposableDb('Açılış masrafı şartı — belirlenemeyen masraf 
       });
 
       it('talep KARŞILANINCA: engel kalkar — masraf kapısı açılır; hazırlık yanıtı karşılanmış TL dosyayla aynı', async () => {
-        await receive(requestId, 2888.5);
-        await receive(tryCase.openingRequestId, 1431.1);
+        await payExpenseFixture(requestId, 2888.5);
+        await payExpenseFixture(tryCase.openingRequestId, 1431.1);
 
         expect(await gateStatus(caseId)).toEqual(GATE_READY);
         expect(await gateSummary(caseId)).toEqual(SUMMARY_READY);
@@ -704,7 +714,7 @@ describeWithDisposableDb('Açılış masrafı şartı — belirlenemeyen masraf 
         suggestion: { title: 'Masraf karşılanmadı', description: '1 adet ödenmemiş masraf talebi var. Toplam: 2888.50 TL' },
       });
 
-      await receive(requestId, 2888.5);
+      await payExpenseFixture(requestId, 2888.5);
 
       expect((await prepare(caseId)).body).toEqual({
         action: 'READY',

@@ -1,4 +1,7 @@
-import { Injectable, Logger, UnauthorizedException, BadRequestException, ForbiddenException, NotFoundException, ConflictException } from "@nestjs/common";
+import { Injectable, Logger, UnauthorizedException, BadRequestException, ForbiddenException, NotFoundException, ConflictException, InternalServerErrorException } from "@nestjs/common";
+import * as fs from "node:fs";
+import { randomBytes } from "node:crypto";
+import { runtimeStoragePaths } from "../../common/storage/runtime-storage-paths";
 import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
 import { Prisma } from "@prisma/client";
@@ -1039,6 +1042,7 @@ export class PortalService {
 
   /**
    * Portal bildirimi oluştur (internal - diğer servislerden çağrılır)
+   * @remarks Callers: reviewDocument (same transaction), sendMessageFromOffice (existing default client).
    */
   async createNotification(data: {
     clientId: string;
@@ -1047,8 +1051,9 @@ export class PortalService {
     title: string;
     message: string;
     linkUrl?: string;
-  }) {
-    return this.prisma.portalNotification.create({
+  }, db: Pick<Prisma.TransactionClient, "portalNotification"> = this.prisma) {
+    // Existing callers keep their own operation; reviewDocument supplies its transaction.
+    return db.portalNotification.create({
       data: {
         clientId: data.clientId,
         caseId: data.caseId,
@@ -1112,25 +1117,67 @@ export class PortalService {
   /**
    * Belge sil
    */
-  async deleteDocument(documentId: string, clientId: string) {
-    const doc = await this.prisma.portalDocument.findFirst({
-      where: { id: documentId, clientId },
-    });
-
-    if (!doc) {
-      throw new NotFoundException("Belge bulunamadı");
+  async deleteDocument(documentId: string, clientId: string, tenantId: string) {
+    // Caller: PortalController.deleteDocument. No browser-supplied path or tenant authority.
+    let staged: { doc: Prisma.PortalDocumentGetPayload<object>; target: string; temporary: string } | undefined;
+    let deleted: Prisma.PortalDocumentGetPayload<object>;
+    try {
+      deleted = await this.prisma.$transaction(async tx => {
+        await this.lockDocument(tx, tenantId, documentId);
+        const doc = await tx.portalDocument.findFirst({ where: { id: documentId, clientId, tenantId } });
+        if (!doc) throw new NotFoundException("Belge bulunamadı");
+        if (doc.status !== "PENDING") throw new ConflictException("Yalnız bekleyen belge silinebilir");
+        // Validate before either DB deletion or file rename. The existing reparse/tenant boundary remains authoritative.
+        const paths = runtimeStoragePaths();
+        const target = paths.assertContained("PORTAL_DOCUMENTS", doc.filePath, tenantId);
+        if (fs.existsSync(target)) {
+          if (!fs.lstatSync(target).isFile()) throw new BadRequestException("Belge yolu normal dosya olmalıdır");
+          const temporary = paths.assertContained("PORTAL_DOCUMENTS", `${target}.pending-delete-${randomBytes(12).toString("hex")}`, tenantId);
+          fs.renameSync(target, temporary);
+          staged = { doc, target, temporary };
+        }
+        return tx.portalDocument.delete({ where: { id: documentId } });
+      }, PORTAL_ACCESS_WRITE_TX);
+    } catch (error) {
+      if (staged) {
+        try { this.restoreStagedDocument(staged); }
+        catch { throw new InternalServerErrorException({ code: "PORTAL_DOCUMENT_RECOVERY_REQUIRED", message: "Belge silme işlemi tamamlanamadı" }); }
+      }
+      throw error;
     }
-
-    // Sadece PENDING durumundaki belgeler silinebilir
-    if (doc.status !== "PENDING") {
-      throw new BadRequestException("Onaylanmış veya reddedilmiş belgeler silinemez");
+    if (staged) {
+      try { fs.unlinkSync(staged.temporary); }
+      catch (error) {
+        // Normal final-unlink failure: restore the exact row and rename the original file (including its metadata).
+        // This is compensation, not a distributed transaction or durable recovery after a process crash.
+        try {
+          await this.prisma.$transaction(async tx => {
+            await this.lockDocument(tx, tenantId, documentId);
+            const existing = await tx.portalDocument.findUnique({ where: { id: documentId } });
+            if (existing) throw new ConflictException("Silme telafisinde belge kimliği değişti");
+            await tx.portalDocument.create({ data: staged!.doc });
+            this.restoreStagedDocument(staged!);
+          }, PORTAL_ACCESS_WRITE_TX);
+        } catch {
+          throw new InternalServerErrorException({ code: "PORTAL_DOCUMENT_RECOVERY_REQUIRED", message: "Belge silme işlemi tamamlanamadı" });
+        }
+        throw error;
+      }
     }
+    return { success: true, filePath: deleted.filePath };
+  }
 
-    await this.prisma.portalDocument.delete({
-      where: { id: documentId },
-    });
+  /** Callers: deleteDocument, its normal-error compensation, and reviewDocument. */
+  private async lockDocument(tx: Prisma.TransactionClient, tenantId: string, documentId: string) {
+    // A transaction-scoped identity lock also covers the short row-absent compensation window.
+    const key = `portal-document:${tenantId}:${documentId}`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
+  }
 
-    return { success: true, filePath: doc.filePath };
+  /** Caller: deleteDocument normal-error paths. Never overwrite a newly occupied original path. */
+  private restoreStagedDocument(staged: { target: string; temporary: string }) {
+    if (fs.existsSync(staged.target) || !fs.existsSync(staged.temporary)) throw new Error("Portal document restore precondition failed");
+    fs.renameSync(staged.temporary, staged.target);
   }
 
   /**
@@ -1164,35 +1211,24 @@ export class PortalService {
    * Belgeyi onayla/reddet (büro için)
    */
   async reviewDocument(documentId: string, tenantId: string, userId: string, approved: boolean, note?: string) {
-    const doc = await this.prisma.portalDocument.findFirst({
-      where: { id: documentId, tenantId },
-    });
-
-    if (!doc) {
-      throw new NotFoundException("Belge bulunamadı");
-    }
-
-    await this.prisma.portalDocument.update({
-      where: { id: documentId },
-      data: {
-        status: approved ? "APPROVED" : "REJECTED",
-        reviewedAt: new Date(),
-        reviewedBy: userId,
-        reviewNote: note,
-      },
-    });
-
-    // Müvekkile bildirim gönder
-    await this.createNotification({
-      clientId: doc.clientId,
-      type: "BELGE",
-      title: approved ? "Belgeniz Onaylandı" : "Belgeniz Reddedildi",
-      message: approved 
-        ? `"${doc.title}" başlıklı belgeniz onaylandı.`
-        : `"${doc.title}" başlıklı belgeniz reddedildi. ${note ? `Sebep: ${note}` : ""}`,
-    });
-
-    return { success: true };
+    // Callers: PortalController.approveDocument / rejectDocument; existing JWT access policy is unchanged.
+    if (typeof approved !== "boolean" || (note !== undefined && typeof note !== "string")) throw new BadRequestException("Belge inceleme girdisi geçersiz");
+    return this.prisma.$transaction(async tx => {
+      await this.lockDocument(tx, tenantId, documentId);
+      const doc = await tx.portalDocument.findFirst({ where: { id: documentId, tenantId } });
+      if (!doc) throw new NotFoundException("Belge bulunamadı");
+      if (doc.status !== "PENDING") throw new ConflictException("Bu belge daha önce incelenmiş");
+      const recipient = await tx.client.findFirst({ where: { id: doc.clientId, tenantId }, select: { id: true } });
+      if (!recipient) throw new NotFoundException("Belge bulunamadı");
+      await tx.portalDocument.update({ where: { id: documentId }, data: {
+        status: approved ? "APPROVED" : "REJECTED", reviewedAt: new Date(), reviewedBy: userId, reviewNote: note,
+      } });
+      await this.createNotification({
+        clientId: doc.clientId, type: "BELGE", title: approved ? "Belgeniz Onaylandı" : "Belgeniz Reddedildi",
+        message: approved ? `"${doc.title}" başlıklı belgeniz onaylandı.` : `"${doc.title}" başlıklı belgeniz reddedildi. ${note ? `Sebep: ${note}` : ""}`,
+      }, tx);
+      return { success: true };
+    }, PORTAL_ACCESS_WRITE_TX);
   }
 
   // ==================== MESAJLAŞMA ====================

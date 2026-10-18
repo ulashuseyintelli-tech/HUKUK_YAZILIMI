@@ -408,17 +408,17 @@ describeWithDisposableDb('UYAP hazırlığı — büro / kullanıcı bağlamı v
       expect(JSON.stringify(prepared.body)).not.toContain('Masraf karşılanmadı');
     });
 
-    it('BİLİNEN AÇIK: eksik tutarla "ödeme alındı" (RECEIVED) engel kaldırır; ödenen tutar avansa yazıldığı için hazırlık HAZIR döner (#2890 kabul edilmiş kural; eksik tutar doğrulaması markAsReceived açığıdır)', async () => {
+    it('K07: anahtarsız legacy receive CPE kapısını ve ödenmemiş açılış masrafını aşamaz', async () => {
       const caseId = await openCase('received-eksik');
       const opening = await prisma.expenseRequest.findFirstOrThrow({ where: { tenantId, caseId } });
+      const before = await sideEffectsOf(caseId);
       const received = await as(adminId).post(`/expense-requests/${opening.id}/receive`, { paidAmount: 1_000 });
-      expect(received.status).toBe(201);
+      expect(received.status).toBe(403); // Existing RECORD_COLLECTION CPE decision remains authoritative at this stage.
       const row = await prisma.expenseRequest.findUniqueOrThrow({ where: { id: opening.id } });
-      expect(row.status).toBe('RECEIVED');
-      expect(Number(row.totalAmount)).toBeGreaterThan(1_000); // talebin 431,10 TL'si açık
-
-      expect(await gateStatus(caseId)).toMatchObject({ isBlocked: false });
-      expect((await prepare(caseId)).body.action).toBe('READY'); // 1000 ≥ 957,90
+      expect(row.status).toBe(opening.status); expect(Number(row.paidTotal)).toBe(0);
+      expect(await sideEffectsOf(caseId)).toEqual(before);
+      expect(await gateStatus(caseId)).toMatchObject({ isBlocked: true });
+      expect((await prepare(caseId)).body.action).toBe('BLOCKED');
     });
 
     it('BİLİNEN AÇIK: ilk aşama dışındaki dosyada motor UYAP gönderim eylemini aşama sözlüğünden reddeder; hazırlık ham "Geçersiz aşama: <kod>" gösterir (satır 1 sözlük kusurunun bu eyleme yansıması; sözlük bu PR dışında)', async () => {

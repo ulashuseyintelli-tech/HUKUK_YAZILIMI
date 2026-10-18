@@ -463,6 +463,65 @@ describe('OfficeSettingsInner:lawyerOrder — surukle-birak siralama', () => {
   });
 });
 
+describe('saved feedback timer lifecycle', () => {
+  it('keeps the existing 2000ms saved indicator duration', async () => {
+    mocked.put.mockResolvedValue({ data: {} });
+    const d = await renderSection('lawyers', DEF_LAWYER);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      await act(async () => { fireEvent.click(d.getByRole('button', { name: DEF_LAWYER })); });
+      expect(mocked.put).toHaveBeenCalledTimes(1);
+      expect(screen.getByText('Kaydedildi')).toBeTruthy();
+      await act(async () => { vi.advanceTimersByTime(1999); });
+      expect(screen.getByText('Kaydedildi')).toBeTruthy();
+      await act(async () => { vi.advanceTimersByTime(1); });
+      expect(screen.queryByText('Kaydedildi')).toBeNull();
+    } finally {
+      cleanup();
+      vi.useRealTimers();
+    }
+  });
+
+  it('clears every overlapping saved timer when the page unmounts', async () => {
+    mocked.put.mockResolvedValue({ data: {} });
+    const d = await renderSection('lawyers', DEF_LAWYER);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      await act(async () => { fireEvent.click(d.getByRole('button', { name: DEF_LAWYER })); });
+      await act(async () => { vi.advanceTimersByTime(100); });
+      await act(async () => { fireEvent.click(d.getByRole('button', { name: DEF_LAWYER2 })); });
+      expect(mocked.put).toHaveBeenCalledTimes(2);
+      expect(vi.getTimerCount()).toBe(2);
+      cleanup();
+      expect(vi.getTimerCount()).toBe(0);
+      await act(async () => { vi.advanceTimersByTime(2000); });
+    } finally {
+      cleanup();
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not schedule saved feedback for a save completed after unmount', async () => {
+    let resolve!: (value: unknown) => void;
+    mocked.put.mockImplementationOnce(() => new Promise((res) => { resolve = res; }));
+    search = new URLSearchParams('section=smtp');
+    render(<OfficeSettingsPage />);
+    const save = await screen.findByRole('button', { name: 'Kaydet' });
+    await waitFor(() => expect((save as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(save);
+    expect(mocked.put).toHaveBeenCalledTimes(1);
+    expect(mocked.put.mock.calls[0][0]).toBe('/office/smtp-settings');
+    cleanup();
+    const schedule = vi.spyOn(globalThis, 'setTimeout');
+    try {
+      await act(async () => { resolve({ data: {} }); });
+      expect(schedule.mock.calls.filter((call) => call[1] === 2000)).toHaveLength(0);
+    } finally {
+      schedule.mockRestore();
+    }
+  });
+});
+
 describe('kaynak disiplini', () => {
   it('malformed /office yaniti bos liste gibi GOSTERILMEZ → gorunur load error', async () => {
     primeReads({ '/office': netFail() });

@@ -12,6 +12,9 @@
  */
 import { NotFoundException } from "@nestjs/common";
 import { PortalService } from "../portal.service";
+import { mkdtempSync, realpathSync, rmdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const CLIENT_ID = "client-1";
 const TENANT_ID = "tenant-1";
@@ -85,6 +88,7 @@ function buildService(over: any = {}) {
     },
   };
   const svc = new PortalService(prisma as any, {} as any, {} as any, {} as any, {} as any, {} as any);
+  Object.assign(prisma, { $transaction: jest.fn(async (fn: any) => fn(prisma)), $executeRaw: jest.fn().mockResolvedValue(1) });
   return { svc, prisma };
 }
 
@@ -224,12 +228,21 @@ describe("PortalService.getDocuments/uploadDocument — CLIENT-P2-U03-I02 explic
   });
 
   it("[16] deleteDocument() internal filePath dönüşü (controller'a) DEĞİŞMEDİ", async () => {
-    const { svc, prisma } = buildService();
-    const result = await svc.deleteDocument("doc-1", CLIENT_ID);
-    const findCall = prisma.portalDocument.findFirst.mock.calls[0][0];
-    expect(findCall).toEqual({ where: { id: "doc-1", clientId: CLIENT_ID } });
-    expect(findCall.select).toBeUndefined();
-    expect(result).toEqual({ success: true, filePath: RAW_DOCUMENT_ROW.filePath });
+    const before = process.env.HUKUK_DATA_ROOT;
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), "portal-projection-")));
+    const row = { ...RAW_DOCUMENT_ROW, filePath: join(root, "portal-documents", TENANT_ID, "missing.pdf") };
+    process.env.HUKUK_DATA_ROOT = root;
+    try {
+      const { svc, prisma } = buildService({ findFirstResult: row, deleteResult: row });
+      const result = await svc.deleteDocument("doc-1", CLIENT_ID, TENANT_ID);
+      const findCall = prisma.portalDocument.findFirst.mock.calls[0][0];
+      expect(findCall).toEqual({ where: { id: "doc-1", clientId: CLIENT_ID, tenantId: TENANT_ID } });
+      expect(findCall.select).toBeUndefined();
+      expect(result).toEqual({ success: true, filePath: row.filePath });
+    } finally {
+      if (before === undefined) delete process.env.HUKUK_DATA_ROOT; else process.env.HUKUK_DATA_ROOT = before;
+      rmdirSync(root);
+    }
   });
 
   it("[17] getPendingDocuments() (staff/admin) select'siz/raw davranışı DEĞİŞMEDİ", async () => {

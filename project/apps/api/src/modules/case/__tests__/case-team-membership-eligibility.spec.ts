@@ -17,7 +17,9 @@ import { CaseService } from "../case.service";
 
 const makeService = () => {
   const stub = {} as any;
-  return new CaseService(stub, stub, stub, stub, stub, stub, stub, stub, stub, stub);
+  const service = new CaseService(stub, stub, stub, stub, stub, stub, stub, stub, stub, stub);
+  (service as any).officeApproval = { isF01WriteActorAuthorized: async () => true, isF01WriteActorAuthorizedInTx: async () => true };
+  return service;
 };
 
 // In-memory lawyer/staff tabloları: addCaseLawyer/addCaseStaff'ın `findFirst({ id, tenantId })`
@@ -36,7 +38,7 @@ const STAFF = [
 const buildPrisma = () => {
   const lawyerCreate = jest.fn(async () => ({ id: "cl-new", lawyer: { id: "x" } }));
   const staffCreate = jest.fn(async () => ({ id: "cs-new" }));
-  return {
+  const result = {
     prisma: {
       case: { findFirst: jest.fn(async () => ({ id: "case-1", tenantId: "t1" })) },
       lawyer: {
@@ -59,6 +61,8 @@ const buildPrisma = () => {
     lawyerCreate,
     staffCreate,
   };
+  (result.prisma as any).$transaction = async (cb: any) => cb(result.prisma);
+  return result;
 };
 
 describe("CANDIDATE-K1 addCaseLawyer — ekip-üyesi aktiflik kapısı", () => {
@@ -66,7 +70,7 @@ describe("CANDIDATE-K1 addCaseLawyer — ekip-üyesi aktiflik kapısı", () => {
     const svc = makeService();
     const m = buildPrisma();
     (svc as any).prisma = m.prisma;
-    (svc as any).auditService = { log: jest.fn(async () => undefined) };
+    (svc as any).auditService = { log: jest.fn(async () => undefined), logInTransaction: jest.fn(async () => undefined) };
 
     await (svc as any).addCaseLawyer("t1", "case-1", { lawyerId: "law-active", role: "ASSIGNED" });
 
@@ -77,7 +81,7 @@ describe("CANDIDATE-K1 addCaseLawyer — ekip-üyesi aktiflik kapısı", () => {
     const svc = makeService();
     const m = buildPrisma();
     (svc as any).prisma = m.prisma;
-    (svc as any).auditService = { log: jest.fn(async () => undefined) };
+    (svc as any).auditService = { log: jest.fn(async () => undefined), logInTransaction: jest.fn(async () => undefined) };
 
     await expect(
       (svc as any).addCaseLawyer("t1", "case-1", { lawyerId: "law-inactive", role: "ASSIGNED" })
@@ -89,7 +93,7 @@ describe("CANDIDATE-K1 addCaseLawyer — ekip-üyesi aktiflik kapısı", () => {
     const svc = makeService();
     const m = buildPrisma();
     (svc as any).prisma = m.prisma;
-    (svc as any).auditService = { log: jest.fn(async () => undefined) };
+    (svc as any).auditService = { log: jest.fn(async () => undefined), logInTransaction: jest.fn(async () => undefined) };
 
     await expect(
       (svc as any).addCaseLawyer("t1", "case-1", { lawyerId: "law-other", role: "ASSIGNED" })
@@ -103,9 +107,9 @@ describe("CANDIDATE-K1 addCaseStaff — ekip-üyesi aktiflik kapısı", () => {
     const svc = makeService();
     const m = buildPrisma();
     (svc as any).prisma = m.prisma;
-    (svc as any).auditService = { log: jest.fn(async () => undefined) };
+    (svc as any).auditService = { log: jest.fn(async () => undefined), logInTransaction: jest.fn(async () => undefined) };
 
-    await (svc as any).addCaseStaff("t1", "case-1", { staffMemberId: "stf-active" });
+    await (svc as any).addCaseStaff("t1", "case-1", { staffMemberId: "stf-active" }, "actor");
 
     expect(m.staffCreate).toHaveBeenCalledTimes(1);
   });
@@ -114,10 +118,10 @@ describe("CANDIDATE-K1 addCaseStaff — ekip-üyesi aktiflik kapısı", () => {
     const svc = makeService();
     const m = buildPrisma();
     (svc as any).prisma = m.prisma;
-    (svc as any).auditService = { log: jest.fn(async () => undefined) };
+    (svc as any).auditService = { log: jest.fn(async () => undefined), logInTransaction: jest.fn(async () => undefined) };
 
     await expect(
-      (svc as any).addCaseStaff("t1", "case-1", { staffMemberId: "stf-inactive" })
+      (svc as any).addCaseStaff("t1", "case-1", { staffMemberId: "stf-inactive" }, "actor")
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(m.staffCreate).not.toHaveBeenCalled();
   });
@@ -126,10 +130,10 @@ describe("CANDIDATE-K1 addCaseStaff — ekip-üyesi aktiflik kapısı", () => {
     const svc = makeService();
     const m = buildPrisma();
     (svc as any).prisma = m.prisma;
-    (svc as any).auditService = { log: jest.fn(async () => undefined) };
+    (svc as any).auditService = { log: jest.fn(async () => undefined), logInTransaction: jest.fn(async () => undefined) };
 
     await expect(
-      (svc as any).addCaseStaff("t1", "case-1", { staffMemberId: "stf-other" })
+      (svc as any).addCaseStaff("t1", "case-1", { staffMemberId: "stf-other" }, "actor")
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(m.staffCreate).not.toHaveBeenCalled();
   });

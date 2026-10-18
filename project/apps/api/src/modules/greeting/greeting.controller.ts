@@ -2,6 +2,7 @@ import { Controller, Get, Post, Put, Body, Param, UseGuards } from "@nestjs/comm
 import { GreetingService } from "./greeting.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
+import { UpsertSpecialDayDto } from "./dto/upsert-special-day.dto";
 
 @Controller("greetings")
 @UseGuards(JwtAuthGuard)
@@ -18,19 +19,7 @@ export class GreetingController {
   @Post("special-days")
   upsertSpecialDay(
     @CurrentUser("tenantId") tenantId: string,
-    @Body() data: {
-      id?: string;
-      name: string;
-      type: string;
-      month: number;
-      day: number;
-      isVariable?: boolean;
-      year?: number;
-      greetingMessage?: string;
-      smsMessage?: string;
-      isActive?: boolean;
-      sendGreeting?: boolean;
-    }
+    @Body() data: UpsertSpecialDayDto
   ) {
     return this.service.upsertSpecialDay(tenantId, data);
   }
