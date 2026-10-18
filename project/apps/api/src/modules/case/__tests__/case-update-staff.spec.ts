@@ -53,7 +53,7 @@ describe('CaseService.updateCaseStaff (PR-ASSIGN-3a)', () => {
       },
     };
     (service as any).prisma = mockPrisma;
-    (service as any).auditService = { log: auditLog };
+    (service as any).auditService = { log: auditLog, logInTransaction: async (_tx: any, input: any) => auditLog(input) };
     return { mockPrisma, update, auditLog };
   }
 
