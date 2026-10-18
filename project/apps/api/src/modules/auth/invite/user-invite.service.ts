@@ -257,7 +257,10 @@ export class UserInviteService {
 
     try {
       await this.prisma.$transaction(async (tx) => {
-        // Account first in all three invite mutations: one winner, no stale activation/unlink.
+        // LawyerService.delete locks Lawyer then User. Lock the linked Lawyer before
+        // the account CAS so revoke cannot invert that order. Staff.remove already
+        // uses User then Staff, matching the remaining unlink order below.
+        await tx.$queryRaw`SELECT "id" FROM "Lawyer" WHERE "userId" = ${invite.userId} AND "tenantId" = ${actor.tenantId} FOR UPDATE`;
         await tx.user.update({ where: this.pendingUserWhere(invite), data: { isActive: false } });
         await tx.userInvite.update({
           where: { id: invite.id, tenantId: actor.tenantId, tokenHash: invite.tokenHash, consumedAt: null, revokedAt: null },

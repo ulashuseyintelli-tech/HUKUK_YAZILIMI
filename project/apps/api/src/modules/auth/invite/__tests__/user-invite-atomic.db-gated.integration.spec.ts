@@ -130,6 +130,56 @@ describeDb('UserInvite atomic consumption — independent pools and disposable P
     expect(await snapshot()).toEqual(before);
   });
 
+  it('lawyer deactivation and revoke use Lawyer before User, without a deadlock or partial unlink', async () => {
+    const lawyer = await db.lawyer.create({ data: { tenantId, userId, name: 'Pending', surname: 'Lawyer' } });
+    const profileHeld = deferred(), profileAttempted = deferred(), accountHeld = deferred(), proceed = deferred();
+    // Exact mutation order used by LawyerService.delete; no HTTP/role-policy acceptance claim.
+    const deactivation = db.$transaction(async tx => {
+      await tx.lawyer.update({ where: { id: lawyer.id }, data: { isActive: false } });
+      profileHeld.resolve(); await bounded(proceed.promise);
+      await tx.user.update({ where: { id: userId }, data: { isActive: false } });
+    }).then(() => ({ ok: true, error: undefined as unknown }), error => ({ ok: false, error }));
+    await bounded(profileHeld.promise);
+    const wrapped = new Proxy(other, { get(target, key) {
+      if (key === '$transaction') return (fn: any) => target.$transaction(async tx => {
+        const user = new Proxy(tx.user, { get(delegate, property) {
+          if (property === 'update') return async (args: any) => {
+            const result = await delegate.update(args);
+            accountHeld.resolve(); await bounded(proceed.promise); return result;
+          };
+          const value = Reflect.get(delegate, property); return typeof value === 'function' ? value.bind(delegate) : value;
+        } });
+        return fn(new Proxy(tx, { get(inner, property) {
+          if (property === 'user') return user;
+          if (property === '$queryRaw') return (...args: any[]) => {
+            if (Array.isArray(args[0]) && args[0].join('').includes('"Lawyer"')) profileAttempted.resolve();
+            return (inner.$queryRaw as any)(...args);
+          };
+          const value = Reflect.get(inner, property); return typeof value === 'function' ? value.bind(inner) : value;
+        } }));
+      });
+      const value = Reflect.get(target, key); return typeof value === 'function' ? value.bind(target) : value;
+    } });
+    const revoke = service(wrapped).revoke(actor, inviteId).then(value => ({ value, error: undefined as any }), error => ({ value: undefined, error }));
+    let first: string | undefined;
+    try {
+      await bounded(Promise.race([profileAttempted.promise.then(() => { first = 'profile'; }), accountHeld.promise.then(() => { first = 'account'; })]));
+    } finally { proceed.resolve(); }
+    const [deactivated, revoked] = await Promise.all([deactivation, revoke]);
+    const errorTag = (error: any) => /deadlock detected|40P01/i.test(String(error?.message ?? ''))
+      ? 'POSTGRES_DEADLOCK' : error?.code ?? error?.constructor?.name ?? 'UNKNOWN';
+    expect({
+      first,
+      deactivationStatus: deactivated.ok ? 'COMMITTED' : errorTag(deactivated.error),
+      revokePrismaCode: revoked.error ? errorTag(revoked.error) : undefined,
+      revokeHttpStatus: revoked.error?.status,
+    }).toMatchObject({ first: 'profile', deactivationStatus: 'COMMITTED', revokeHttpStatus: 409 });
+    expect((await db.lawyer.findUniqueOrThrow({ where: { id: lawyer.id } }))).toMatchObject({ isActive: false, userId });
+    expect((await db.user.findUniqueOrThrow({ where: { id: userId } })).isActive).toBe(false);
+    expect((await db.userInvite.findUniqueOrThrow({ where: { id: inviteId } })).revokedAt).toBeNull();
+    expect(await db.auditLog.count({ where: { tenantId } })).toBe(0);
+  });
+
   it('tenant suspension after accept read prevents account activation', async () => {
     await rejectAfter(() => db.tenant.update({ where: { id: tenantId }, data: { lifecycle: 'SUSPENDED' } }));
   });

@@ -32,7 +32,7 @@ function make(opts?: { enabled?: boolean }) {
     findFirst: jest.fn().mockResolvedValue(null),
     updateMany: jest.fn().mockResolvedValue({ count: 0 }),
   };
-  const tx = { user, userInvite, lawyer, staffMember };
+  const tx = { user, userInvite, lawyer, staffMember, $queryRaw: jest.fn().mockResolvedValue([]) };
   const prisma = { user, userInvite, lawyer, staffMember, $transaction: jest.fn(async (cb: any) => cb(tx)) } as any;
   const audit = { log: jest.fn().mockResolvedValue(undefined), logInTransaction: jest.fn() } as any;
   audit.logInTransaction.mockImplementation(async (_tx: unknown, input: unknown) => audit.log(input));
