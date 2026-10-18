@@ -86,10 +86,13 @@ const mockPrismaService: any = {
   },
   expensePayment: {
     create: jest.fn(),
+    findFirst: jest.fn(),
   },
   expenseAuditLog: {
     create: jest.fn(),
+    findFirst: jest.fn(),
   },
+  balanceLedger: { findUnique: jest.fn().mockResolvedValue(null) },
   case: {
     findFirst: jest.fn(),
   },
@@ -102,6 +105,7 @@ const mockPrismaService: any = {
   },
   $transaction: jest.fn((fn: any) => fn(mockPrismaService)),
   $executeRaw: jest.fn().mockResolvedValue(1), // pg_advisory_xact_lock (açılış seti eşzamanlılık kilidi)
+  $queryRaw: jest.fn().mockResolvedValue([{ id: 'exp-1' }]),
 };
 
 const mockCaseBalanceService = {
@@ -1007,6 +1011,7 @@ describe('ExpenseRequestService - Property Tests', () => {
       });
 
       const payment: PaymentInput = {
+        idempotencyKey: 'stable-payment-key',
         amount: 500,
         paymentDate: PAYMENT_DATE,
         method: 'BANK_TRANSFER',
@@ -1034,6 +1039,7 @@ describe('ExpenseRequestService - Property Tests', () => {
           sourceId: 'pay-partial',
         }),
         'user-1',
+        { tx: mockPrismaService, currency: 'TRY', postingKey: 'expense-payment:stable-payment-key' },
       );
     });
 
@@ -1059,6 +1065,7 @@ describe('ExpenseRequestService - Property Tests', () => {
       });
 
       const payment: PaymentInput = {
+        idempotencyKey: 'stable-payment-key',
         amount: 500,
         paymentDate: PAYMENT_DATE,
         method: 'BANK_TRANSFER',
@@ -1095,7 +1102,7 @@ describe('ExpenseRequestService - Property Tests', () => {
       });
 
       await expect(
-        service.recordPayment('tenant-1', 'exp-1', { amount: 400, paymentDate: PAYMENT_DATE, method: 'BANK_TRANSFER' }, 'user-1'),
+        service.recordPayment('tenant-1', 'exp-1', { idempotencyKey: 'stable-payment-key', amount: 400, paymentDate: PAYMENT_DATE, method: 'BANK_TRANSFER' }, 'user-1'),
       ).rejects.toThrow('ExpensePayment journal write failed: DB_WRITE_FAILED');
 
       expect(mockPrismaService.expenseRequest.update).not.toHaveBeenCalled();
@@ -1118,7 +1125,7 @@ describe('ExpenseRequestService - Property Tests', () => {
       mockPrismaService.expenseRequest.update.mockResolvedValue({ ...req, paidTotal: new Decimal(400), status: 'PARTIAL' });
       mockJournalWriter.write.mockResolvedValueOnce(replayedJournalWriteResult);
 
-      const result = await service.recordPayment('tenant-1', 'exp-1', { amount: 400, paymentDate: PAYMENT_DATE, method: 'BANK_TRANSFER' }, 'user-1');
+      const result = await service.recordPayment('tenant-1', 'exp-1', { idempotencyKey: 'stable-payment-key', amount: 400, paymentDate: PAYMENT_DATE, method: 'BANK_TRANSFER' }, 'user-1');
 
       expect(result).toBeDefined();
       expectLastRecordedPaymentJournalDraft('pay-replay', '400');
@@ -1133,7 +1140,7 @@ describe('ExpenseRequestService - Property Tests', () => {
       mockPrismaService.client.findFirst.mockResolvedValue({ name: 'Test Müvekkil' });
       mockPrismaService.case.findFirst.mockResolvedValue({ fileNumber: '2024/1', executionFileNumber: '2024/99' });
 
-      await service.recordPayment('tenant-1', 'exp-1', { amount: 400, paymentDate: new Date(), method: 'BANK_TRANSFER' }, 'user-1');
+      await service.recordPayment('tenant-1', 'exp-1', { idempotencyKey: 'stable-payment-key', amount: 400, paymentDate: new Date(), method: 'BANK_TRANSFER' }, 'user-1');
 
       expect(mockDispatcher.dispatch).toHaveBeenCalledWith('tenant-1', 'user-1',
         expect.objectContaining({
@@ -1151,7 +1158,7 @@ describe('ExpenseRequestService - Property Tests', () => {
       mockPrismaService.client.findFirst.mockResolvedValue({ name: 'Test' });
       mockPrismaService.case.findFirst.mockResolvedValue({ fileNumber: '2024/1' });
 
-      await service.recordPayment('tenant-1', 'exp-1', { amount: 500, paymentDate: new Date(), method: 'BANK_TRANSFER' }, 'user-1');
+      await service.recordPayment('tenant-1', 'exp-1', { idempotencyKey: 'stable-payment-key', amount: 500, paymentDate: new Date(), method: 'BANK_TRANSFER' }, 'user-1');
 
       expect(mockDispatcher.dispatch).toHaveBeenCalledWith('tenant-1', 'user-1',
         expect.objectContaining({ templateCode: 'PAYMENT_RECEIVED', refType: 'ExpensePayment', refId: 'pay-2' }),
@@ -1167,7 +1174,7 @@ describe('ExpenseRequestService - Property Tests', () => {
       mockPrismaService.case.findFirst.mockResolvedValue({ fileNumber: '2024/1' });
       mockDispatcher.dispatch.mockRejectedValueOnce(new Error('mail patladı'));
 
-      const result = await service.recordPayment('tenant-1', 'exp-1', { amount: 400, paymentDate: new Date(), method: 'BANK_TRANSFER' }, 'user-1');
+      const result = await service.recordPayment('tenant-1', 'exp-1', { idempotencyKey: 'stable-payment-key', amount: 400, paymentDate: new Date(), method: 'BANK_TRANSFER' }, 'user-1');
       expect(result).toBeDefined(); // throw yok — ödeme state'i sağlam döndü
     });
   });
@@ -1185,6 +1192,7 @@ describe('ExpenseRequestService - Property Tests', () => {
       mockPrismaService.expenseRequest.findFirst.mockResolvedValue(request);
 
       const payment: PaymentInput = {
+        idempotencyKey: 'stable-payment-key',
         amount: 300, // Would make total 1100 > 1000
         paymentDate: new Date(),
         method: 'BANK_TRANSFER',
@@ -1192,7 +1200,7 @@ describe('ExpenseRequestService - Property Tests', () => {
 
       await expect(
         service.recordPayment('tenant-1', 'exp-1', payment, 'user-1')
-      ).rejects.toThrow('Ödeme tutarı kalan borcu aşıyor');
+      ).rejects.toThrow('Ödeme tutarı kalan tutarı aşıyor');
     });
 
     it('should accept payment that equals remaining amount', async () => {
@@ -1209,6 +1217,7 @@ describe('ExpenseRequestService - Property Tests', () => {
       });
 
       const payment: PaymentInput = {
+        idempotencyKey: 'stable-payment-key',
         amount: 200, // Exactly remaining
         paymentDate: new Date(),
         method: 'BANK_TRANSFER',
@@ -2007,10 +2016,11 @@ describe('Property 6: Task Completion on Payment', () => {
       status: 'PAID',
     });
     mockPrismaService.task = {
-      update: jest.fn().mockResolvedValue({ id: 'task-123', status: 'COMPLETED' }),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     };
 
     const payment: PaymentInput = {
+        idempotencyKey: 'stable-payment-key',
       amount: 500,
       paymentDate: new Date(),
       method: 'BANK_TRANSFER',
@@ -2019,9 +2029,9 @@ describe('Property 6: Task Completion on Payment', () => {
     await service.recordPayment('tenant-1', 'exp-1', payment, 'user-1');
 
     // Task should be updated to COMPLETED
-    expect(mockPrismaService.task.update).toHaveBeenCalledWith(
+    expect(mockPrismaService.task.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'task-123' },
+        where: { id: 'task-123', tenantId: 'tenant-1', caseId: 'case-1' },
         data: expect.objectContaining({
           status: 'COMPLETED',
         }),
@@ -2044,10 +2054,11 @@ describe('Property 6: Task Completion on Payment', () => {
       status: 'PARTIAL',
     });
     mockPrismaService.task = {
-      update: jest.fn(),
+      updateMany: jest.fn(),
     };
 
     const payment: PaymentInput = {
+        idempotencyKey: 'stable-payment-key',
       amount: 300,
       paymentDate: new Date(),
       method: 'BANK_TRANSFER',
@@ -2056,7 +2067,7 @@ describe('Property 6: Task Completion on Payment', () => {
     await service.recordPayment('tenant-1', 'exp-1', payment, 'user-1');
 
     // Task should NOT be updated
-    expect(mockPrismaService.task.update).not.toHaveBeenCalled();
+    expect(mockPrismaService.task.updateMany).not.toHaveBeenCalled();
   });
 
   it('should handle expense without associated task gracefully', async () => {
@@ -2074,10 +2085,11 @@ describe('Property 6: Task Completion on Payment', () => {
       status: 'PAID',
     });
     mockPrismaService.task = {
-      update: jest.fn(),
+      updateMany: jest.fn(),
     };
 
     const payment: PaymentInput = {
+        idempotencyKey: 'stable-payment-key',
       amount: 500,
       paymentDate: new Date(),
       method: 'BANK_TRANSFER',
@@ -2089,7 +2101,7 @@ describe('Property 6: Task Completion on Payment', () => {
     ).resolves.toBeDefined();
 
     // Task update should not be called
-    expect(mockPrismaService.task.update).not.toHaveBeenCalled();
+    expect(mockPrismaService.task.updateMany).not.toHaveBeenCalled();
   });
 });
 

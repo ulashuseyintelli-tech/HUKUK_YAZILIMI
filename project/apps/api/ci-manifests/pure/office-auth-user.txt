@@ -231,6 +231,7 @@ src/modules/auth/__tests__/auth-me-credential-containment.spec.ts
 src/modules/auth/__tests__/auth-public-user-http.spec.ts
 src/modules/seed/__tests__/seed-staff-lawyer-canonical-service.spec.ts
 src/modules/staff/__tests__/staff-controller-guards.spec.ts
+src/modules/staff/__tests__/staff-http-error-propagation.spec.ts
 src/modules/staff/__tests__/staff-read-projection.spec.ts
 src/modules/staff/__tests__/staff-dto-validation.spec.ts
 src/modules/staff/__tests__/staff-update-masked-tckn.spec.ts

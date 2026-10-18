@@ -18,6 +18,8 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { ErrorLogModule } from '../../error-log/error-log.module';
 import { MetricsRegistryModule } from '../../metrics-registry/metrics-registry.module';
 import { CaseModule } from '../case.module';
+import { AuditService } from '../../audit/audit.service';
+import { OfficeApprovalService } from '../../office-approval/office-approval.service';
 
 /**
  * K2 (owner kararı 2026-09-28) — dosya avukatı / personel YETKİ verme-değiştirme uçları F01 yönetim kuralına bağlı.
@@ -387,13 +389,13 @@ describeWithDisposableDb('K2 — dosya yetkisi verme/değiştirme F01 yönetim k
       expect(claim.body).toEqual(expect.objectContaining({ code: 'FORMATION_CONTEXT_REQUIRED' }));
     });
 
-    it('yetki-dışı alanlar mevcut davranışta kalır: USER not/rol günceller', async () => {
+    it('yetki-dışı alanlar mevcut davranışta kalır: USER yalnız not günceller', async () => {
       const f = await fixture('staff-notes');
-      const res = await patchStaff(f.plain, f.a.caseId, f.staffCsId, { notes: 'K2 not', roleOnCase: 'ARSIV' });
+      const res = await patchStaff(f.plain, f.a.caseId, f.staffCsId, { notes: 'K2 not' });
 
       expect(res.status).toBe(200);
       expect(await snapshotCaseStaff(f.staffCsId)).toEqual(
-        expect.objectContaining({ notes: 'K2 not', roleOnCase: 'ARSIV', canEdit: false }),
+        expect.objectContaining({ notes: 'K2 not', roleOnCase: 'SEKRETER', canEdit: false }),
       );
     });
   });
@@ -429,4 +431,103 @@ describeWithDisposableDb('K2 — dosya yetkisi verme/değiştirme F01 yönetim k
       expect(row.canSign).toBe(false);
     });
   });
+  describe('DV207 G2 — CaseStaff membership/role F01 and atomic audit', () => {
+    const mutate = (kind: string, actor: string, f: Fixture, body: Record<string, unknown> = {}) => {
+      if (kind === 'create') return http().post(`/cases/${f.a.caseId}/staff`).set('x-test-user-id', actor).send(body);
+      if (kind === 'delete') return http().delete(`/cases/${f.a.caseId}/staff/${f.staffCsId}`).set('x-test-user-id', actor);
+      return patchStaff(actor, f.a.caseId, f.staffCsId, body);
+    };
+    async function staffBody(f: Fixture) {
+      const row = await prisma.caseStaff.findUniqueOrThrow({ where: { id: f.staffCsId } });
+      return { staffMemberId: row.staffMemberId, roleOnCase: 'MUHASEBE' };
+    }
+
+    it.each(['plain', 'staff', 'viewer'] as const)('%s cannot add, change or remove a role; every row and audit stays unchanged', async (who) => {
+      const f = await fixture('g2-deny-' + who);
+      const before = await prisma.caseStaff.findMany({ where: { caseId: f.a.caseId } });
+      const audits = await auditCount(f, f.staffCsId);
+      for (const kind of ['create', 'update', 'delete']) {
+        const res = await mutate(kind, f[who], f, await staffBody(f));
+        expect(res.status).toBe(403);
+        expect(await prisma.caseStaff.findMany({ where: { caseId: f.a.caseId } })).toEqual(before);
+        expect(await auditCount(f, f.staffCsId)).toBe(audits);
+      }
+    });
+
+    it.each(['admin', 'partner', 'manager', 'delegated'] as const)('%s uses the existing F01 policy for create/update/delete and records the actual actor', async (who) => {
+      const f = await fixture('g2-allow-' + who);
+      let actor = f.admin;
+      if (who !== 'admin') {
+        actor = f.partner;
+        if (who === 'manager') await prisma.lawyer.update({ where: { userId: actor }, data: { lawyerRank: 'MANAGER' } });
+        if (who === 'delegated') await prisma.lawyer.update({ where: { userId: actor }, data: { lawyerRank: 'LAWYER', canApproveOfficeActions: true } });
+      }
+      const body = await staffBody(f);
+      await prisma.caseStaff.delete({ where: { id: f.staffCsId } });
+      const add = await mutate('create', actor, f, body);
+      expect(add.status).toBe(201);
+      const id = add.body.id;
+      expect(add.body.roleOnCase).toBe('MUHASEBE');
+      const created = await prisma.auditLog.findFirstOrThrow({ where: { tenantId: f.a.tenantId, entityId: id, action: 'CREATE' } });
+      expect(created.userId).toBe(actor);
+      expect(created.newValues).toEqual(expect.objectContaining({ roleOnCase: 'MUHASEBE', caseId: f.a.caseId }));
+      const target = { ...f, staffCsId: id };
+      expect((await mutate('update', actor, target, { roleOnCase: 'ARSIV' })).status).toBe(200);
+      expect((await mutate('delete', actor, target)).status).toBe(200);
+      expect(await prisma.caseStaff.findUnique({ where: { id } })).toBeNull();
+      const audit = await prisma.auditLog.findMany({ where: { tenantId: f.a.tenantId, entityId: id } });
+      expect(audit).toHaveLength(3);
+      expect(audit.every((row) => row.userId === actor)).toBe(true);
+      expect(audit.map((row) => row.action).sort()).toEqual(['CREATE', 'DELETE', 'UPDATE']);
+    });
+
+    it.each(['create', 'update', 'delete'])('%s and its real audit insert roll back together after an audit failure', async (kind) => {
+      const f = await fixture('g2-atomic-' + kind);
+      const body = await staffBody(f);
+      if (kind === 'create') await prisma.caseStaff.delete({ where: { id: f.staffCsId } });
+      const before = await prisma.caseStaff.findMany({ where: { caseId: f.a.caseId } });
+      const audits = await prisma.auditLog.count({ where: { tenantId: f.a.tenantId } });
+      const service = app.get(AuditService), original = service.logInTransaction.bind(service);
+      let reached = false;
+      const fault = jest.spyOn(service, 'logInTransaction').mockImplementation(async (tx, input) => {
+        await original(tx, input);
+        reached = true;
+        throw new Error('G2 injected failure after actual audit insert');
+      });
+      try {
+        const res = await mutate(kind, f.admin, f, kind === 'update' ? { roleOnCase: 'MUHASEBE' } : body);
+        expect(res.status).toBe(500);
+        expect(reached).toBe(true);
+      } finally { fault.mockRestore(); }
+      expect(await prisma.caseStaff.findMany({ where: { caseId: f.a.caseId } })).toEqual(before);
+      expect(await prisma.auditLog.count({ where: { tenantId: f.a.tenantId } })).toBe(audits);
+    });
+
+    it('rechecks F01 inside the write transaction after the early authorization was revoked', async () => {
+      const f = await fixture('g2-revoked');
+      const before = await snapshotCaseStaff(f.staffCsId);
+      const office = app.get(OfficeApprovalService), original = office.isF01WriteActorAuthorized.bind(office);
+      const revoke = jest.spyOn(office, 'isF01WriteActorAuthorized').mockImplementationOnce(async (...args) => {
+        const allowed = await original(...args);
+        await prisma.user.update({ where: { id: f.partner }, data: { role: 'VIEWER' } });
+        return allowed;
+      });
+      try { expectGrantForbidden(await patchStaff(f.partner, f.a.caseId, f.staffCsId, { roleOnCase: 'MUHASEBE' })); }
+      finally { revoke.mockRestore(); }
+      expect(await snapshotCaseStaff(f.staffCsId)).toEqual(before);
+      expect(await auditCount(f, f.staffCsId)).toBe(0);
+    });
+
+    it('does not write another tenant or case through an authorized administrator', async () => {
+      const f = await fixture('g2-object');
+      const before = await prisma.caseStaff.findUniqueOrThrow({ where: { id: f.staffCsId } });
+      expect((await patchStaff(f.admin, f.b.caseId, f.staffCsId, { roleOnCase: 'MUHASEBE' })).status).toBe(404);
+      expect((await http().delete(`/cases/${f.b.caseId}/staff/${f.staffCsId}`).set('x-test-user-id', f.admin)).status).toBe(404);
+      const foreign = await prisma.staffMember.create({ data: { tenantId: f.b.tenantId, firstName: 'Foreign', lastName: 'G2', staffType: 'MUHASEBE' } });
+      expect((await mutate('create', f.admin, f, { staffMemberId: foreign.id, roleOnCase: 'MUHASEBE' })).status).toBe(404);
+      expect(await prisma.caseStaff.findUniqueOrThrow({ where: { id: f.staffCsId } })).toEqual(before);
+      expect(await auditCount(f, f.staffCsId)).toBe(0);
+    });
+  });
+
 });
