@@ -1302,28 +1302,6 @@ export class ClientNotificationService {
     }
   }
 
-  // Müvekkilin bildirim geçmişi
-  async getClientNotifications(tenantId: string, clientId: string) {
-    return this.prisma.clientNotification.findMany({
-      where: { tenantId, clientId },
-      orderBy: { createdAt: "desc" },
-      take: 50,
-    });
-  }
-
-  // Dosya bazlı bildirimler
-  async getCaseNotifications(tenantId: string, caseId: string) {
-    return this.prisma.clientNotification.findMany({
-      where: { tenantId, caseId },
-      orderBy: { createdAt: "desc" },
-      include: {
-        client: {
-          select: { id: true, displayName: true, firstName: true, lastName: true },
-        },
-      },
-    });
-  }
-
   // E-posta şablonlarını getir
   async getEmailTemplates(tenantId: string, category?: string) {
     return this.prisma.messageTemplate.findMany({

@@ -140,6 +140,7 @@ function completedReversal(overrides: Record<string, unknown> = {}) {
 function buildHarness(options: { payment?: any; originalJournal?: any; originalLedger?: any; existingReversal?: any } = {}) {
   let createdReversal: any = null;
   const tx: any = {
+    $queryRaw: jest.fn().mockResolvedValue([{ id: 'expense-request-1' }]),
     expensePaymentReversal: {
       findFirst: jest.fn().mockResolvedValue(options.existingReversal ?? null),
       create: jest.fn().mockImplementation(async ({ data }: any) => {
@@ -166,6 +167,7 @@ function buildHarness(options: { payment?: any; originalJournal?: any; originalL
       findFirst: jest.fn().mockResolvedValue(options.originalLedger === undefined ? originalBalanceLedger() : options.originalLedger),
     },
     expenseRequest: {
+      findFirst: jest.fn().mockResolvedValue((options.payment ?? payment()).expenseRequest),
       update: jest.fn().mockResolvedValue({ id: 'expense-request-1' }),
     },
     expenseAuditLog: {

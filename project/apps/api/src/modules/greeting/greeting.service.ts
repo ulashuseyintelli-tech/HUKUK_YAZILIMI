@@ -7,6 +7,7 @@ import { reportCronJobFailure } from "../../common/cron-failure-reporting";
 import { runWithOverlapGuard } from "../../common/scheduler-overlap-guard";
 import { IntegrationErrorReporter } from "../error-log/integration-error-reporter";
 import { ACTIVE_TENANT_WHERE } from "../tenant/tenant-lifecycle";
+import { UpsertSpecialDayDto, validateSpecialDayInput } from "./dto/upsert-special-day.dto";
 
 /**
  * Office.autoGreetingTime ("HH:mm") değerini saat/dakikaya ayrıştırır.
@@ -131,28 +132,26 @@ export class GreetingService {
   }
 
 
-  // Özel gün ekle/güncelle
-  async upsertSpecialDay(tenantId: string, data: {
-    id?: string;
-    name: string;
-    type: string;
-    month: number;
-    day: number;
-    isVariable?: boolean;
-    year?: number;
-    greetingMessage?: string;
-    smsMessage?: string;
-    isActive?: boolean;
-    sendGreeting?: boolean;
-  }) {
+  /** Caller: GreetingController.upsertSpecialDay. Global days remain read-only here. */
+  async upsertSpecialDay(tenantId: string, input: UpsertSpecialDayDto) {
+    const data = await validateSpecialDayInput(input);
+    const fields = {
+      name: data.name, type: data.type, month: data.month, day: data.day,
+      isVariable: data.isVariable, year: data.year,
+      greetingMessage: data.greetingMessage, smsMessage: data.smsMessage,
+      isActive: data.isActive, sendGreeting: data.sendGreeting,
+    };
     if (data.id) {
-      return (this.prisma as any).specialDay.update({
-        where: { id: data.id },
-        data,
+      return this.prisma.$transaction(async tx => {
+        const updated = await tx.specialDay.updateMany({
+          where: { id: data.id, tenantId }, data: fields,
+        });
+        if (updated.count !== 1) throw new NotFoundException("Özel gün bulunamadı");
+        return tx.specialDay.findUniqueOrThrow({ where: { id: data.id } });
       });
     }
-    return (this.prisma as any).specialDay.create({
-      data: { tenantId, ...data },
+    return this.prisma.specialDay.create({
+      data: { ...fields, tenantId },
     });
   }
 

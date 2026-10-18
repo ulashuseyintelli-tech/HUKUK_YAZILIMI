@@ -158,9 +158,14 @@ function OfficeSettingsInner() {
   const readStateRef = useRef<Record<ReadKey, ReadState>>(INITIAL_READ_STATE);
   const readTokenRef = useRef<Record<ReadKey, number>>({ office: 0, staff: 0, smtp: 0, sms: 0, greeting: 0, escalation: 0 });
   const pageMountedRef = useRef(true);
+  const savedTimersRef = useRef(new Set<ReturnType<typeof setTimeout>>());
   useEffect(() => {
     pageMountedRef.current = true;
-    return () => { pageMountedRef.current = false; };
+    return () => {
+      pageMountedRef.current = false;
+      for (const timer of savedTimersRef.current) clearTimeout(timer);
+      savedTimersRef.current.clear();
+    };
   }, []);
   const setRead = (key: ReadKey, next: ReadState) => {
     readStateRef.current = { ...readStateRef.current, [key]: next };
@@ -488,7 +493,15 @@ function OfficeSettingsInner() {
     }
   };
 
-  const showSaved = () => { setSaved(true); setTimeout(() => setSaved(false), 2000); };
+  const showSaved = () => {
+    if (!pageMountedRef.current) return;
+    setSaved(true);
+    const timer = setTimeout(() => {
+      savedTimersRef.current.delete(timer);
+      if (pageMountedRef.current) setSaved(false);
+    }, 2000);
+    savedTimersRef.current.add(timer);
+  };
 
   // Stale banttaki tekrar denemesi YALNIZ okuma yolunu calistirir; mutation ASLA tekrarlanmaz.
   const staleRefresh = async (kind: "lawyer" | "bank" | "staff") => {

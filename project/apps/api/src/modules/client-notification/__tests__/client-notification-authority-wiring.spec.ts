@@ -11,6 +11,7 @@ import {
 import { OfficeApprovalService } from '../../office-approval/office-approval.service';
 import { ClientNotificationAuthorityAdapter } from '../client-notification-authority.adapter';
 import { ClientNotificationController } from '../client-notification.controller';
+import { ClientNotificationHistoryAccessService } from '../client-notification-history-access.service';
 import { ClientNotificationModule } from '../client-notification.module';
 import { ClientNotificationService } from '../client-notification.service';
 import { NotificationDispatchController } from '../notification-dispatch.controller';
@@ -96,6 +97,7 @@ describe('CN-1 canonical notification authority wiring', () => {
     notificationController = new ClientNotificationController(
       notificationService as unknown as ClientNotificationService,
       adapter,
+      {} as ClientNotificationHistoryAccessService,
     );
     dispatchController = new NotificationDispatchController(
       dispatcher as unknown as NotificationDispatcherService,

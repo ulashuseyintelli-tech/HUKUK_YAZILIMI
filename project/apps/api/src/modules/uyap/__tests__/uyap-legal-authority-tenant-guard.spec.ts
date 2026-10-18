@@ -20,6 +20,7 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { UyapService } from '../uyap.service';
+import { submitAuthorityFactsDouble } from './submit-authority-facts.test-double';
 
 // ============================================================
 // Fixtures: 2 tenant, 2 dosya, her dosyada 1 client + 1 lawyer
@@ -126,6 +127,8 @@ function buildService(opts: {
     undefined, // evidenceOrchestrator — bu dosyanın kapsamı dışında
     undefined, // authoritySnapshots — bu dosyanın kapsamı dışında
     triggerHacizAuthorization,
+    // P5 (owner Ek 102 K2): işlem öncesi son yetki doğrulaması — bu dosyanın konusu değil; gerçek davranış HTTP + DB testinde.
+    submitAuthorityFactsDouble(),
   );
   return { service, prisma, poaService, cpe, triggerHacizAuthorization, sideEffects };
 }

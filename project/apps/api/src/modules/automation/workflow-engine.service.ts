@@ -153,8 +153,12 @@ export class WorkflowEngine {
     };
   }
 
-  // Dosyayı işle (OD-3: tenantId zorunlu, buildContext ile aynı guard'a tabi)
-  async processCase(caseId: string, tenantId: string): Promise<void> {
+  /**
+   * Callers: AutomationService.processPendingCases / notification-expiry cron (isolated per-case failures),
+   * and AutomationService.processCaseManually (propagates errors to the HTTP caller).
+   * Rule policy/no-op decisions and already committed side effects are unchanged; no automatic retry.
+   */
+  async processCase(caseId: string, tenantId: string, options?: { propagateErrors: boolean }): Promise<void> {
     try {
       const context = await this.buildContext(caseId, tenantId);
       const caseData = await this.prisma.case.findFirst({
@@ -211,6 +215,7 @@ export class WorkflowEngine {
       }
     } catch (error) {
       this.logger.error(`Error processing case ${caseId}:`, error);
+      if (options?.propagateErrors) throw error;
     }
   }
 

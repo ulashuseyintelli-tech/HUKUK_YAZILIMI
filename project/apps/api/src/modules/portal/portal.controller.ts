@@ -381,20 +381,7 @@ export class PortalController {
   @Delete("documents/:id")
   @UseGuards(PortalAuthGuard)
   async deleteDocument(@Param("id") id: string, @Request() req: any) {
-    const result = await this.portalService.deleteDocument(id, req.portalUser.clientId);
-
-    // Dosyayı diskten sil — yalnizca tenant kovasi ICINDE ise (fail-closed)
-    if (result.filePath) {
-      const target = runtimeStoragePaths().assertContained(
-        "PORTAL_DOCUMENTS",
-        result.filePath,
-        req.portalUser.tenantId,
-      );
-      if (existsSync(target)) {
-        unlinkSync(target);
-      }
-    }
-
+    await this.portalService.deleteDocument(id, req.portalUser.clientId, req.portalUser.tenantId);
     return { success: true };
   }
 

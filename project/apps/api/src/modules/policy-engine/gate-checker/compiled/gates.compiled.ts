@@ -232,6 +232,44 @@ export const COMPILED_GATES: CompiledGate[] = [
     priority: 25,
   },
 
+  // Güvenlik paketi 01 P5 — DOSYA ATAMASI KAPISI (owner Ek 94 karar a2; owner Ek 95 K1 ile onaylanan gönderim ailesine daraltıldı).
+  // Aktör, geçerli vekalete EK olarak dosyaya geçerli avukat ataması taşımalıdır (CaseLawyer; aynı kiracı; avukat kaydı etkin;
+  // rol RESPONSIBLE / ASSIGNED; stajyer kaydı değil — ActingLawyerResolverService.isAssignedToCase). Atama tek başına yetki
+  // vermez. Onaylanan gönderim ailesi: document/submit (UYAP_DOCUMENT_SUBMIT), lawsuit/{criminal,civil} (UYAP_LAWSUIT_FILE),
+  // xml/submit (UYAP_SEND — yalnız `context.uyapSubmitChannel === 'XML_SUBMIT'`). UYAP_SEND'in öteki çağıranları (hazırlık,
+  // ödeme emri test ucu, otomasyon …) bu bağlamı VERMEZ → kapı onlarda tetiklenmez (main 6c12f009 davranışı).
+  // Aynı kapı kodu İKİ satırla tanımlıdır: kapı koşulu eylem kodunu görmediği için ayrım satır düzeyindedir; kod / önem /
+  // öncelik / gerekçe iki satırda AYNIDIR (eşitlik testi: uyap-stage-independent-action-parity.spec.ts).
+  // TRIGGER_HACIZ hiçbir satırda YOK (haciz yetkisi ayrı zincirde; haciz aşama matrisi değişmedi).
+  {
+    gateCode: 'ACTING_LAWYER_NOT_ASSIGNED_TO_CASE',
+    name: 'Avukat Dosyaya Atanmamış',
+    description:
+      'Güvenlik paketi 01 P5 (owner Ek 94 a2 / Ek 95 K1): evrak ve dava gönderiminde aktör, geçerli vekalete EK olarak ' +
+      'dosyaya geçerli avukat ataması taşımalıdır. Atama tek başına yetki vermez. Avukatsız dosya, dosyaya atanmamış ' +
+      'aktör ve yalnız yardımcı / stajyer kaydı reddedilir.',
+    actionCodes: [ActionCode.UYAP_DOCUMENT_SUBMIT, ActionCode.UYAP_LAWSUIT_FILE],
+    // Koşulsuz: bu iki eylem kodu YALNIZ onaylanan gönderim uçlarına aittir. Olgu eksik / undefined ise de bloklar.
+    condition: (facts: FactMap) => facts.get('actor.is_assigned_to_case') !== true,
+    severity: 'HARD',
+    reason: 'UYAP işlemi için avukatın dosyaya atanmış olması gerekir.',
+    priority: 26,
+  },
+
+  {
+    gateCode: 'ACTING_LAWYER_NOT_ASSIGNED_TO_CASE',
+    name: 'Avukat Dosyaya Atanmamış',
+    description:
+      'Güvenlik paketi 01 P5 (owner Ek 95 K1): UYAP_SEND için dosya ataması YALNIZ xml/submit bağlamında aranır ' +
+      '(context.uyapSubmitChannel = XML_SUBMIT; sunucu yazar). Hazırlık ve ödeme emri test ucu önceki davranışında kalır.',
+    actionCodes: [ActionCode.UYAP_SEND],
+    condition: (facts: FactMap, context?: ActionContext) =>
+      context?.uyapSubmitChannel === 'XML_SUBMIT' && facts.get('actor.is_assigned_to_case') !== true,
+    severity: 'HARD',
+    reason: 'UYAP işlemi için avukatın dosyaya atanmış olması gerekir.',
+    priority: 26,
+  },
+
   // ==================== SOFT GATES (WARNINGS) ====================
 
   {

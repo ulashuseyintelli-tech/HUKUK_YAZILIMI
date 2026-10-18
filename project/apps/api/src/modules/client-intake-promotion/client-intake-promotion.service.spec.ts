@@ -23,6 +23,7 @@ const mockPrisma: any = {
   debtor: { findFirst: jest.fn() },
   caseDebtor: { findFirst: jest.fn() },
   $transaction: jest.fn(async (fn: any) => fn(mockPrisma)),
+  $queryRaw: jest.fn().mockResolvedValue([{ id: SUB }]),
 };
 
 // I1A: promote/promoteAddress/promoteSoft capability-gate — mevcut testler eligible aktör varsayar.
@@ -142,7 +143,7 @@ describe('ClientIntakePromotionService', () => {
       await expect(service.promote(TENANT, SUB, USER, DEBTOR)).rejects.toThrow(ForbiddenException);
       expect(mockPrisma.clientIntelStatement.create).not.toHaveBeenCalled();
       expect(mockPrisma.clientIntakeField.update).not.toHaveBeenCalled();
-      expect(mockAudit.log).not.toHaveBeenCalled();
+      expect(mockAudit.logInTransaction).not.toHaveBeenCalled();
     });
 
     it('actor YOK (undefined) → 403', async () => {
@@ -154,8 +155,8 @@ describe('ClientIntakePromotionService', () => {
       mockPrisma.clientIntakeField.findMany.mockResolvedValue([{ id: 'f-1', category: 'INCOME_SOURCE', label: 'L', value: 'Müteahhit' }]);
       mockPrisma.clientIntakeField.count.mockResolvedValueOnce(1).mockResolvedValueOnce(1);
       await service.promote(TENANT, SUB, USER, DEBTOR);
-      expect(mockAudit.log).toHaveBeenCalledTimes(1);
-      expect(mockAudit.log).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockAudit.logInTransaction).toHaveBeenCalledTimes(1);
+      expect(mockAudit.logInTransaction).toHaveBeenCalledWith(mockPrisma, expect.objectContaining({
         tenantId: TENANT,
         action: 'CLIENT_INTAKE_PROMOTE',
         entityType: 'CLIENT_INTAKE_SUBMISSION',
@@ -168,7 +169,7 @@ describe('ClientIntakePromotionService', () => {
       mockPrisma.clientIntakeField.findMany.mockResolvedValue([]); // idempotent no-op senaryosu
       mockPrisma.clientIntakeField.count.mockResolvedValueOnce(1).mockResolvedValueOnce(1);
       await service.promote(TENANT, SUB, USER, DEBTOR);
-      expect(mockAudit.log).not.toHaveBeenCalled();
+      expect(mockAudit.logInTransaction).not.toHaveBeenCalled();
     });
   });
 
@@ -376,10 +377,10 @@ describe('ClientIntakePromotionService', () => {
 
       await expect(service.promote(TENANT, SUB, USER, DEBTOR)).rejects.toBeInstanceOf(BadRequestException);
 
-      expect(mockCaseDebtorLifecycleGuard.assertActiveByCaseDebtorId).toHaveBeenCalledWith(TENANT, 'cd-1', { expectedCaseId: CASE });
+      expect(mockCaseDebtorLifecycleGuard.assertActiveByCaseDebtorId).toHaveBeenCalledWith(TENANT, 'cd-1', { expectedCaseId: CASE, prisma: mockPrisma });
       expect(mockPrisma.clientIntelStatement.create).not.toHaveBeenCalled();
       expect(mockPrisma.clientIntakeField.update).not.toHaveBeenCalled();
-      expect(mockAudit.log).not.toHaveBeenCalled();
+      expect(mockAudit.logInTransaction).not.toHaveBeenCalled();
     });
 
     it('promote(): ACTIVE CaseDebtor → mevcut davranış korunur (guard çağrılır, promote devam eder)', async () => {
@@ -388,7 +389,7 @@ describe('ClientIntakePromotionService', () => {
 
       const res = await service.promote(TENANT, SUB, USER, DEBTOR);
 
-      expect(mockCaseDebtorLifecycleGuard.assertActiveByCaseDebtorId).toHaveBeenCalledWith(TENANT, 'cd-1', { expectedCaseId: CASE });
+      expect(mockCaseDebtorLifecycleGuard.assertActiveByCaseDebtorId).toHaveBeenCalledWith(TENANT, 'cd-1', { expectedCaseId: CASE, prisma: mockPrisma });
       expect(res.promoted).toHaveLength(1);
     });
 
@@ -403,7 +404,7 @@ describe('ClientIntakePromotionService', () => {
         service.promoteAddress(TENANT, 'af-1', USER, { debtorId: DEBTOR, street: 'X Sok 1', city: 'İstanbul' }),
       ).rejects.toBeInstanceOf(BadRequestException);
 
-      expect(mockCaseDebtorLifecycleGuard.assertActiveByCaseDebtorId).toHaveBeenCalledWith(TENANT, 'cd-1', { expectedCaseId: CASE });
+      expect(mockCaseDebtorLifecycleGuard.assertActiveByCaseDebtorId).toHaveBeenCalledWith(TENANT, 'cd-1', { expectedCaseId: CASE, prisma: mockPrisma });
       expect(mockFindOrCreate).not.toHaveBeenCalled();
     });
 
@@ -416,7 +417,7 @@ describe('ClientIntakePromotionService', () => {
 
       await expect(service.promoteSoftField(TENANT, 'sf-1', USER, DEBTOR)).rejects.toBeInstanceOf(BadRequestException);
 
-      expect(mockCaseDebtorLifecycleGuard.assertActiveByCaseDebtorId).toHaveBeenCalledWith(TENANT, 'cd-1', { expectedCaseId: CASE });
+      expect(mockCaseDebtorLifecycleGuard.assertActiveByCaseDebtorId).toHaveBeenCalledWith(TENANT, 'cd-1', { expectedCaseId: CASE, prisma: mockPrisma });
       expect(mockPrisma.clientIntelStatement.create).not.toHaveBeenCalled();
     });
 

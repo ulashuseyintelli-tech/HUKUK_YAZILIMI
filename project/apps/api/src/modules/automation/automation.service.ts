@@ -411,9 +411,9 @@ export class AutomationService {
     };
   }
 
-  // Manuel olarak dosya işleme
+  /** Caller: AutomationController.processCase. HTTP success requires workflow completion without an exception. */
   async processCaseManually(caseId: string, tenantId: string): Promise<void> {
-    await this.workflowEngine.processCase(caseId, tenantId);
+    await this.workflowEngine.processCase(caseId, tenantId, { propagateErrors: true });
   }
 
   // Otomatik modu aç/kapat

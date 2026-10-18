@@ -106,6 +106,8 @@ describe('ClientIntakeReviewAuthorizationService — X3-B04 PermissionGrant mapp
     await expect(authorization.isAuthorized(USER, TENANT)).resolves.toBe(true);
 
     const promotionPrisma = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: SUBMISSION }]),
+      $transaction: jest.fn(),
       clientIntakeSubmission: {
         findFirst: jest.fn().mockResolvedValue({
           id: SUBMISSION,
@@ -116,6 +118,7 @@ describe('ClientIntakeReviewAuthorizationService — X3-B04 PermissionGrant mapp
       clientIntakeField: { findMany: jest.fn(), update: jest.fn() },
       clientIntelStatement: { create: jest.fn() },
     };
+    promotionPrisma.$transaction.mockImplementation(fn => fn(promotionPrisma));
     const officeApproval = { isApproverEligible: jest.fn().mockResolvedValue(false) };
     const promotion = new ClientIntakePromotionService(
       promotionPrisma as any,
@@ -127,7 +130,7 @@ describe('ClientIntakeReviewAuthorizationService — X3-B04 PermissionGrant mapp
     await expect(
       promotion.promote(TENANT, SUBMISSION, USER, 'debtor-1'),
     ).rejects.toBeInstanceOf(ForbiddenException);
-    expect(officeApproval.isApproverEligible).toHaveBeenCalledWith(USER, TENANT);
+    expect(officeApproval.isApproverEligible).toHaveBeenCalledWith(USER, TENANT, promotionPrisma);
     expect(promotionPrisma.clientIntelStatement.create).not.toHaveBeenCalled();
     expect(promotionPrisma.clientIntakeField.update).not.toHaveBeenCalled();
   });

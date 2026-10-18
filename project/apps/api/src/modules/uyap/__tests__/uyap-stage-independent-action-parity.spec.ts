@@ -30,6 +30,8 @@ const UYAP_SEND_HARD_GATES = [
   'UYAP_TEMPORARILY_UNAVAILABLE_SEND',
   'UYAP_SEND_PRECONDITIONS_UNPROVEN',
   'POWER_OF_ATTORNEY_MISSING',
+  // P5 (owner Ek 94, karar a2): vekalete EK dosya ataması kapısı — bilinçli güncelleme (7 → 8).
+  'ACTING_LAWYER_NOT_ASSIGNED_TO_CASE',
 ];
 
 const DB_STAGES = [
@@ -50,6 +52,7 @@ const READY_FACTS: Record<string, unknown> = {
   'poa.is_effective_at_evaluation_time': true,
   'poa.covers_requested_operation': true,
   'authority.is_unambiguous': true,
+  'actor.is_assigned_to_case': true, // P5 (owner Ek 94): vekalete EK olarak dosya ataması
 };
 
 function buildEngine(facts: Record<string, unknown>) {
@@ -78,16 +81,16 @@ function buildEngine(facts: Record<string, unknown>) {
   return { engine, decisionLog, setStage: (s: string) => { stage = s; } };
 }
 
-const decide = async (facts: Record<string, unknown>, stage: string, action: ActionCode) => {
+const decide = async (facts: Record<string, unknown>, stage: string, action: ActionCode, extra: Record<string, unknown> = {}) => {
   const { engine, setStage } = buildEngine(facts);
   setStage(stage);
-  const d = await engine.canPerformAction('tenant-a', 'case-1', action, { tenantId: 'tenant-a', authenticatedUserId: 'u-1', evaluatedAt: new Date() });
+  const d = await engine.canPerformAction('tenant-a', 'case-1', action, { tenantId: 'tenant-a', authenticatedUserId: 'u-1', evaluatedAt: new Date(), ...extra });
   return { allowed: d.allowed, decision: d.code, gate: d.blockedBy?.gateCode ?? null };
 };
 
 describe('P1 eşitlik kilidi — yeni UYAP kodları = UYAP_SEND kapı kümesi; TEK fark aşama reddi', () => {
   describe('statik: derlenmiş kapılar ve eylem matrisi', () => {
-    it('UYAP_SEND HARD kapı kümesi beklenen 7 kapıdır (0 = kör; kapı eksilirse / eklenirse bilinçli güncellenir)', () => {
+    it('UYAP_SEND HARD kapı kümesi beklenen 8 kapıdır (0 = kör; kapı eksilirse / eklenirse bilinçli güncellenir)', () => {
       const hard = getGatesForAction(ActionCode.UYAP_SEND).filter((g) => g.severity === 'HARD').map((g) => g.gateCode);
       expect(hard).toEqual(UYAP_SEND_HARD_GATES);
     });
@@ -173,6 +176,24 @@ describe('P1 eşitlik kilidi — yeni UYAP kodları = UYAP_SEND kapı kümesi; T
       ['yetki belirsiz', { 'authority.is_unambiguous': false }],
       ['vekalet olgusu hiç yok', { 'actor.is_canonical_lawyer': undefined }],
     ];
+
+    // P5 (owner Ek 94 a2 / Ek 95 K1): dosya ataması kapısı İKİNCİ bilinçli farktır — yeni kodlarda koşulsuz; UYAP_SEND'de
+    // YALNIZ xml/submit bağlamında (uyapSubmitChannel = XML_SUBMIT). Bağlamsız UYAP_SEND (hazırlık / ödeme emri) main gibi geçer.
+    it.each([
+      ['aktör dosyaya atanmamış', { 'actor.is_assigned_to_case': false }],
+      ['atama olgusu hiç yok', { 'actor.is_assigned_to_case': undefined }],
+    ] as Array<[string, Record<string, unknown>]>)('%s → yeni kodlar + xml/submit bağlamlı UYAP_SEND ACTING_LAWYER_NOT_ASSIGNED_TO_CASE; bağlamsız UYAP_SEND İZİNLİ (Ek 95 K1)', async (_label, patch) => {
+      const facts = { ...READY_FACTS, ...patch };
+      for (const k of Object.keys(patch)) if (patch[k] === undefined) delete facts[k];
+      const blocked = { allowed: false, decision: DecisionCode.GATE_BLOCKED, gate: 'ACTING_LAWYER_NOT_ASSIGNED_TO_CASE' };
+      for (const stage of ['INITIAL', 'SEIZURE']) {
+        for (const action of NEW_CODES) {
+          expect({ stage, action, ...(await decide(facts, stage, action)) }).toEqual({ stage, action, ...blocked });
+        }
+      }
+      expect(await decide(facts, 'INITIAL', ActionCode.UYAP_SEND, { uyapSubmitChannel: 'XML_SUBMIT' })).toEqual(blocked);
+      expect(await decide(facts, 'INITIAL', ActionCode.UYAP_SEND)).toEqual({ allowed: true, decision: DecisionCode.OK, gate: null });
+    });
 
     it.each(NEGATIVE)('%s → üç eylem de GATE_BLOCKED ve kapı kodu AYNI (INITIAL + SEIZURE)', async (_label, patch) => {
       const facts = { ...READY_FACTS, ...patch };

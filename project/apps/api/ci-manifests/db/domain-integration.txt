@@ -486,3 +486,6 @@ src/modules/client-settlement/__tests__/client-accounting-cancelled-distribution
 #   avukat / muvekkilsiz / vekaletsiz / kapali / arsiv / masraf engeli / UYAP kapali RED; VIEWER 403; HACIZ_TALEBI 400; xml/submit
 #   TEK UYAP_SEND karari (asama kisiti korundu); can-perform-action context 400. Mutantlar: servis kapisi kaldirilinca 26, stageIndependent kaldirilinca 14, VIEWER korumasi kaldirilinca 1 test duser.
 src/modules/uyap/__tests__/uyap-submit-runtime-authz.http.db-gated.integration.spec.ts
+src/modules/portal/__tests__/portal-document-transitions.db-gated.integration.spec.ts
+src/modules/client-notification/__tests__/notification-history-permission.http.db-gated.integration.spec.ts
+src/modules/client-notification/__tests__/notification-history-access.http.db-gated.integration.spec.ts
