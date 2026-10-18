@@ -21,6 +21,8 @@ src/modules/automation/__tests__/workflow-engine-build-context-tenant-guard.db-g
 src/modules/automation/__tests__/workflow-engine-legal-time-cutover.db-gated.integration.spec.ts
 src/modules/automation/__tests__/workflow-engine-remaining-tenant-boundaries.db-gated.integration.spec.ts
 src/modules/case/__tests__/case-calculation-summary.compatibility.db-gated.integration.spec.ts
+# Intake review/promote source-state races and rollback, independent disposable PostgreSQL pools.
+src/modules/client-intake-promotion/client-intake-transitions.db-gated.integration.spec.ts
 src/modules/claim-item/__tests__/claim-formation-persistence-foundation.db-gated.integration.spec.ts
 src/modules/claim-item/__tests__/claim-item-formation-finalizer.db-gated.integration.spec.ts
 src/modules/claim-item/__tests__/claim-item-formation-batch.db-gated.integration.spec.ts
