@@ -309,3 +309,4 @@ src/modules/expense-request/__tests__/stage-expense-fx-basis.http.db-gated.integ
 #   savunma. Duzeltmesiz servis / denetleyici koduyla 15 testin 9'u DUSER, 6 kontrol GECER (RED kanitlandi).
 src/modules/expense-request/__tests__/stage-expense-idempotency.http.db-gated.integration.spec.ts
 src/modules/group/__tests__/group-task-tenant-boundary.http.db-gated.integration.spec.ts
+src/modules/greeting/__tests__/configuration-write-boundary.http.db-gated.integration.spec.ts

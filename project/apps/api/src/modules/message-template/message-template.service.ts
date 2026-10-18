@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { MessageTemplateCategory, MessageTemplateChannel } from '@prisma/client';
+import { UpdateMessageTemplateDto, validateMessageTemplateUpdate } from './dto/update-message-template.dto';
+export { UpdateMessageTemplateDto } from './dto/update-message-template.dto';
 
 export interface CreateMessageTemplateDto {
   code: string;
@@ -11,15 +13,6 @@ export interface CreateMessageTemplateDto {
   subject?: string;
   body: string;
   availableTokens?: string[];
-}
-
-export interface UpdateMessageTemplateDto {
-  name?: string;
-  description?: string;
-  subject?: string;
-  body?: string;
-  isActive?: boolean;
-  sortOrder?: number;
 }
 
 // Token değerleri için tip
@@ -119,13 +112,15 @@ export class MessageTemplateService {
     });
   }
 
-  async update(tenantId: string, id: string, dto: UpdateMessageTemplateDto) {
+  /** Caller: MessageTemplateController.update. Existing F01 and system-template policies are unchanged. */
+  async update(tenantId: string, id: string, input: UpdateMessageTemplateDto) {
+    const dto = await validateMessageTemplateUpdate(input);
     const existing = await this.findOne(tenantId, id);
 
     // System templates can only update body and subject
     if (existing.isSystem) {
       return this.prisma.messageTemplate.update({
-        where: { id },
+        where: { id, tenantId },
         data: {
           subject: dto.subject,
           body: dto.body,
@@ -134,8 +129,11 @@ export class MessageTemplateService {
     }
 
     return this.prisma.messageTemplate.update({
-      where: { id },
-      data: dto,
+      where: { id, tenantId },
+      data: {
+        name: dto.name, description: dto.description, subject: dto.subject,
+        body: dto.body, isActive: dto.isActive, sortOrder: dto.sortOrder,
+      },
     });
   }
 
