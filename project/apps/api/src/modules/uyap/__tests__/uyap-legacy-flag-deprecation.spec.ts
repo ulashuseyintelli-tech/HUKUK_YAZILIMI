@@ -60,7 +60,13 @@ const NOW = new Date('2026-06-01T00:00:00.000Z');
 // Canonical authority zinciri — GERÇEK resolver'lar, mock Prisma
 // ============================================================================
 
-const buildAuthorityPrisma = (opts: { validPoa: boolean }) => ({
+const buildAuthorityPrisma = (opts: { validPoa: boolean; assigned?: boolean }) => ({
+  // P5 (owner Ek 94): vekalete EK dosya ataması (CaseLawyer) — varsayılan: aktör dosyaya atanmış.
+  caseLawyer: {
+    findMany: jest.fn(async () =>
+      opts.assigned === false ? [] : [{ id: 'cl-1', role: 'ASSIGNED', case: { tenantId: TENANT }, lawyer: { tenantId: TENANT, isActive: true, lawyerRank: 'LAWYER', role: 'EMPLOYEE' } }],
+    ),
+  },
   lawyer: {
     findMany: jest.fn(async () => [
       { id: LAWYER, tenantId: TENANT, userId: USER, isActive: true },
@@ -97,8 +103,8 @@ const buildAuthorityPrisma = (opts: { validPoa: boolean }) => ({
   },
 });
 
-const buildAuthorityProvider = (validPoa: boolean) => {
-  const prisma = buildAuthorityPrisma({ validPoa }) as any;
+const buildAuthorityProvider = (validPoa: boolean, assigned = true) => {
+  const prisma = buildAuthorityPrisma({ validPoa, assigned }) as any;
   const {
     ActingLawyerResolverService,
   } = require('../../lawyer/acting-lawyer-resolver.service');
@@ -125,8 +131,8 @@ const CONTEXT = {
 } as any;
 
 /** Gate'in UYAP_SEND için blokladığı gate kodunu döndürür (yoksa null). */
-const gateBlock = async (facts: FactMap): Promise<string | null> => {
-  const result = await new GateCheckerService().checkGates(CASE, ActionCode.UYAP_SEND, facts);
+const gateBlock = async (facts: FactMap, action: ActionCode = ActionCode.UYAP_SEND): Promise<string | null> => {
+  const result = await new GateCheckerService().checkGates(CASE, action, facts);
   return result.blocked ? (result.gateCode ?? 'BLOCKED') : null;
 };
 
@@ -200,6 +206,20 @@ describe('I06 — LG-01/02/03/06: legacy POA flag authority ÜRETEMEZ', () => {
 
     expect(facts.get('actor.has_matching_power_of_attorney')).toBe(false);
     expect(await gateBlock(facts)).toBe('POWER_OF_ATTORNEY_MISSING');
+  });
+
+  it('P5 (owner Ek 94 / Ek 95): manuel `actor.is_assigned_to_case = true` enjeksiyonu EZİLİR — geçerli vekalet + atama YOK → evrak gönderiminde ACTING_LAWYER_NOT_ASSIGNED_TO_CASE', async () => {
+    const facts: FactMap = new Map<string, FactValue>(
+      Object.entries({ ...baseGreenFacts(), 'case.has_unpaid_blocking_expense': false, 'actor.is_assigned_to_case': true }),
+    );
+    const provider = buildAuthorityProvider(true, false); // geçerli vekalet, dosyaya atanmamış
+    facts.set('case.has_power_of_attorney', await provider.compute(CASE, CONTEXT, facts));
+
+    expect(facts.get('actor.is_assigned_to_case')).toBe(false);
+    expect(facts.get('actor.has_matching_power_of_attorney')).toBe(true);
+    expect(await gateBlock(facts, ActionCode.UYAP_DOCUMENT_SUBMIT)).toBe('ACTING_LAWYER_NOT_ASSIGNED_TO_CASE');
+    // Ek 95 K1: bağlamsız UYAP_SEND (hazırlık / ödeme emri) atama kapısını taşımaz → main gibi geçer.
+    expect(await gateBlock(facts)).toBeNull();
   });
 });
 
@@ -326,11 +346,13 @@ describe('I06 — LG-08: manuel computed-fact yazımı REDDEDİLİR', () => {
         'poa.covers_requested_operation',
         'authority.is_unambiguous',
         'authority.failure_code',
+        'actor.is_assigned_to_case', // P5 (owner Ek 94)
         'case.has_unpaid_blocking_expense',
         'system.uyap_available',
         'system.uyap_availability_explicit',
       ]),
     );
+    expect(isManuallyWritableFactKey('actor.is_assigned_to_case')).toBe(false);
     expect(DEPRECATED_LEGACY_FACT_KEYS).toContain('case.expense_gate_blocked');
     expect(isManuallyWritableFactKey('case.status')).toBe(true);
     expect(isManuallyWritableFactKey('case.has_power_of_attorney')).toBe(false);

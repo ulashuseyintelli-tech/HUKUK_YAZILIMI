@@ -161,6 +161,8 @@ export class UyapController {
   /// <remarks>
   /// Güvenlik paketi 01 P1: politika kapısı UYAP_DOCUMENT_SUBMIT (aşamadan bağımsız; kapıları UYAP_SEND ile aynı); aktör
   /// req.user.id. HACIZ_TALEBI 400 UYAP_HACIZ_TALEBI_ENDPOINT_REQUIRED (yalnız /uyap/haciz). Gerçek iletim YOK (taslak).
+  /// P5 (owner Ek 94): TAKIP_TALEBI 400 UYAP_TAKIP_TALEBI_XML_SUBMIT_REQUIRED (yalnız xml/submit); aktör vekalete EK olarak
+  /// dosyaya atanmış olmalı (kapı ACTING_LAWYER_NOT_ASSIGNED_TO_CASE).
   /// </remarks>
   @Post('document/submit')
   async submitDocument(@Body() body: any, @CurrentUser('tenantId') tenantId: string, @Req() req?: any) {
