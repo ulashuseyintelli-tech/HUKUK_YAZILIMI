@@ -1,6 +1,7 @@
 jest.mock('pdf-poppler', () => ({ convert: async () => { throw new Error('PDF transport is not exercised by permission acceptance'); } }));
 
 import { randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { INestApplication, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import * as http from 'supertest';
@@ -119,6 +120,19 @@ dbDescribe('Notification history permission management — ADMIN-only, exact key
     await grant(); await a.user.update({ where: { id: subject }, data: { isActive: false } }); const before = await snapshot();
     await expect(grant()).rejects.toMatchObject({ status: 404 }); expect(await snapshot()).toEqual(before);
     expect((await revoke()).revoked).toBe(1);
+  });
+
+  it('ADR-011 keeps free-text reasons on the grant entity and only presence/length/hash in revoke audit', async () => {
+    const reason = 'synthetic-private-reason@example.test';
+    const created = await grant(service(), { reason });
+    expect((await a.permissionGrant.findUniqueOrThrow({ where: { id: created.id } })).reason).toBe(reason);
+    await service().revoke(tenantId, admin, subject, { reason });
+    const state = await snapshot();
+    expect(JSON.stringify(state.audits)).not.toContain(reason);
+    expect(state.audits.find(row => row.action === 'UPDATE')!.metadata).toEqual({
+      reasonPresent: true, reasonLength: reason.length,
+      reasonHash: createHash('sha256').update(reason).digest('hex'),
+    });
   });
 
   it.each(['grant', 'revoke'] as const)('%s rolls back every permission change when the real audit insert is followed by an error', async command => {
