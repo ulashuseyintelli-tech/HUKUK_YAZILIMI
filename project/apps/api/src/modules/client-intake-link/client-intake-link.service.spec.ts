@@ -263,6 +263,7 @@ describe('ClientIntakeLinkService', () => {
         status: 'SENT',
         notificationId: 'notification-existing',
         attemptCount: 1,
+        intakeLinkId: 'lnk-existing',
         intakeLink: makeLink({ id: 'lnk-existing' }),
       }));
 
