@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Query, HttpException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Query, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { getRequestId } from '../../common/request-id.middleware';
@@ -38,7 +38,7 @@ export class StaffController {
     const tenantId = req.user.tenantId;
     const staff = await this.staffService.findOne(id, tenantId);
     if (!staff) {
-      return { error: 'Personel bulunamadı' };
+      throw new NotFoundException('Personel bulunamadı');
     }
     const authorized = await this.officeApproval.isF01ActorAuthorized(req.user.id, tenantId);
     return { data: projectStaffRowForActor(staff, authorized) };
@@ -49,15 +49,8 @@ export class StaffController {
   @UseGuards(OfficeF01AuthorizationGuard)
   async create(@Request() req: any, @Body() body: CreateStaffDto) {
     const tenantId = req.user.tenantId;
-    try {
-      const staff = await this.staffService.create(tenantId, body);
-      return { data: staff };
-    } catch (error: any) {
-      // PR-S: yapısal HttpException'lar (örn. 409 SIMILAR_NAME_REVIEW) frontend'e olduğu gibi
-      // geçmeli — yutup 200 { error } döndürmek review-dialog'u kırardı.
-      if (error instanceof HttpException) throw error;
-      return { error: error.message };
-    }
+    const staff = await this.staffService.create(tenantId, body);
+    return { data: staff };
   }
 
   // Personel güncelle
@@ -65,15 +58,8 @@ export class StaffController {
   @UseGuards(OfficeF01AuthorizationGuard)
   async update(@Request() req: any, @Param('id') id: string, @Body() body: UpdateStaffDto) {
     const tenantId = req.user.tenantId;
-    try {
-      const staff = await this.staffService.update(id, tenantId, body);
-      return { data: staff };
-    } catch (error: any) {
-      // PR-U3: yapısal HttpException'lar (409 SIMILAR_NAME_REVIEW/DUPLICATE_IDENTITY) frontend'e
-      // olduğu gibi geçmeli — yutup 200 { error } döndürmek review-dialog'u kırardı.
-      if (error instanceof HttpException) throw error;
-      return { error: error.message };
-    }
+    const staff = await this.staffService.update(id, tenantId, body);
+    return { data: staff };
   }
 
   // Personel sil
@@ -81,18 +67,14 @@ export class StaffController {
   @UseGuards(OfficeF01AuthorizationGuard)
   async remove(@Request() req: any, @Param('id') id: string) {
     const tenantId = req.user.tenantId;
-    try {
-      await this.staffService.remove(id, tenantId, {
-        userId: req.user.id,
-        role: req.user.role,
-        // Normal runtime'da RequestIdMiddleware değeri taşınır. Doğrudan Nest HTTP
-        // fixture'ında middleware yoksa deactivation yine izlenebilir tekil id üretir.
-        requestId: getRequestId(req) ?? randomUUID(),
-      });
-      return { success: true };
-    } catch (error: any) {
-      return { error: error.message };
-    }
+    await this.staffService.remove(id, tenantId, {
+      userId: req.user.id,
+      role: req.user.role,
+      // Normal runtime'da RequestIdMiddleware değeri taşınır. Doğrudan Nest HTTP
+      // fixture'ında middleware yoksa deactivation yine izlenebilir tekil id üretir.
+      requestId: getRequestId(req) ?? randomUUID(),
+    });
+    return { success: true };
   }
 
   // Sıralama güncelle
@@ -100,11 +82,7 @@ export class StaffController {
   @UseGuards(OfficeF01AuthorizationGuard)
   async updateOrder(@Request() req: any, @Body() body: UpdateStaffOrderDto) {
     const tenantId = req.user.tenantId;
-    try {
-      await this.staffService.updateOrder(tenantId, body.staffIds);
-      return { success: true };
-    } catch (error: any) {
-      return { error: error.message };
-    }
+    await this.staffService.updateOrder(tenantId, body.staffIds);
+    return { success: true };
   }
 }

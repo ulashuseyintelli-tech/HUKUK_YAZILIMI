@@ -69,29 +69,31 @@ export class CaseGroupController {
 
   // Dosyanın gruplarını getir
   @Get()
-  async getCaseGroups(@Param('caseId') caseId: string) {
-    const data = await this.service.getCaseGroups(caseId);
+  async getCaseGroups(@CurrentUser('tenantId') tenantId: string, @Param('caseId') caseId: string) {
+    const data = await this.service.getCaseGroups(tenantId, caseId);
     return { success: true, data };
   }
 
   // Dosyaya grup ata
   @Post(':groupId')
   async assignGroup(
+    @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') userId: string,
     @Param('caseId') caseId: string,
     @Param('groupId') groupId: string,
   ) {
-    const data = await this.service.assignGroupToCase(caseId, groupId, userId);
+    const data = await this.service.assignGroupToCase(tenantId, caseId, groupId, userId);
     return { success: true, data };
   }
 
   // Dosyadan grup çıkar
   @Delete(':groupId')
   async removeGroup(
+    @CurrentUser('tenantId') tenantId: string,
     @Param('caseId') caseId: string,
     @Param('groupId') groupId: string,
   ) {
-    await this.service.removeGroupFromCase(caseId, groupId);
+    await this.service.removeGroupFromCase(tenantId, caseId, groupId);
     return { success: true, message: 'Grup çıkarıldı' };
   }
 }

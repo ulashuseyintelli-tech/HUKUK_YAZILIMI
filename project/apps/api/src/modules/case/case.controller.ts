@@ -524,13 +524,14 @@ export class CaseController {
   @Post(":id/staff")
   async addCaseStaff(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Param("id") id: string,
     @Body() body: {
       staffMemberId: string;
       roleOnCase?: string;
     }
   ) {
-    return this.caseService.addCaseStaff(tenantId, id, body);
+    return this.caseService.addCaseStaff(tenantId, id, body, userId);
   }
 
   /**
@@ -540,10 +541,11 @@ export class CaseController {
   @Delete(":id/staff/:caseStaffId")
   async removeCaseStaff(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Param("id") id: string,
     @Param("caseStaffId") caseStaffId: string
   ) {
-    return this.caseService.removeCaseStaff(tenantId, id, caseStaffId);
+    return this.caseService.removeCaseStaff(tenantId, id, caseStaffId, userId);
   }
 
   /**

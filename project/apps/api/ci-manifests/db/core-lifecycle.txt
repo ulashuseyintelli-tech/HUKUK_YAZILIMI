@@ -43,6 +43,8 @@ src/modules/interest-engine/__tests__/golden-fixture-matrix.db-gated.integration
 src/modules/interest-engine/__tests__/scenario-diagnostic.db-gated.integration.spec.ts
 src/modules/lawyer/__tests__/office-update-boundary.db-gated.integration.spec.ts
 src/modules/poa/__tests__/poa-tenant-safety.db-gated.integration.spec.ts
+# Intake delivery replay target/payload identity and real unique-key race recovery.
+src/modules/client-intake-link/client-intake-delivery-replay.db-gated.integration.spec.ts
 src/modules/reporting-line/__tests__/reporting-line-user-fk.db-gated.integration.spec.ts
 
 # OFFICE-P6B-CI-E2E-EXECUTION-OFFICE-R01 — register/seed lifecycle coverage.
@@ -308,3 +310,5 @@ src/modules/expense-request/__tests__/stage-expense-fx-basis.http.db-gated.integ
 #   (bugunku davranis sabitlenir); dovizli dosyada 409 davranisi degismez ve anahtar kaydi birakmaz; benzersiz indeks son
 #   savunma. Duzeltmesiz servis / denetleyici koduyla 15 testin 9'u DUSER, 6 kontrol GECER (RED kanitlandi).
 src/modules/expense-request/__tests__/stage-expense-idempotency.http.db-gated.integration.spec.ts
+src/modules/group/__tests__/group-task-tenant-boundary.http.db-gated.integration.spec.ts
+src/modules/greeting/__tests__/configuration-write-boundary.http.db-gated.integration.spec.ts

@@ -212,6 +212,7 @@ src/modules/audit/__tests__/audit-metadata-builder.spec.ts
 src/modules/audit/__tests__/audit.service.attribution.spec.ts
 src/modules/automation/__tests__/all-passive-case-automation-stop.spec.ts
 src/modules/automation/__tests__/automation-tenant-guard-propagation.spec.ts
+src/modules/automation/__tests__/automation-manual-http-errors.spec.ts
 src/modules/automation/__tests__/enforcement-action-guarded-write-path.spec.ts
 src/modules/automation/__tests__/enforcement-action-guarded-write-path.static-guard.spec.ts
 src/modules/automation/__tests__/enforcement-action-passivation-guard.spec.ts
