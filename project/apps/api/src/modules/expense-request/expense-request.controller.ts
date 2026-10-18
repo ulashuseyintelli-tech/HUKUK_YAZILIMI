@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Req, BadRequestException } from '@nestjs/common';
 import { ExpenseRequestService, CreateExpenseRequestDto, UpdateExpenseRequestDto, PaymentInput } from './expense-request.service';
 import { activeExpenseCatalogForClient } from './expense-item-catalog';
 import { ExpenseGateService } from './expense-gate.service';
@@ -112,12 +112,13 @@ export class ExpenseRequestController {
   }
 
   @Post(':id/receive')
+  @CpeRequired(ActionCode.RECORD_COLLECTION, { caseIdFromExpenseParam: true })
   async markAsReceived(
     @Req() req: AuthRequest,
     @Param('id') id: string,
-    @Body() body: { paidAmount: number; receiptDocId?: string },
+    @Body() body: unknown,
   ) {
-    return this.service.markAsReceived(req.user.tenantId, id, body.paidAmount, body.receiptDocId, req.user.id);
+    return this.service.markAsReceived(req.user.tenantId, id, this.paymentInput(body, 'paidAmount'), req.user.id);
   }
 
   @Post(':id/cancel')
@@ -218,16 +219,25 @@ export class ExpenseRequestController {
   async recordPayment(
     @Req() req: AuthRequest,
     @Param('id') id: string,
-    @Body() body: { amount: number; paymentDate: string; method: string; reference?: string; notes?: string },
+    @Body() body: unknown,
   ) {
-    const payment: PaymentInput = {
-      amount: body.amount,
-      paymentDate: new Date(body.paymentDate),
-      method: body.method,
-      reference: body.reference,
-      notes: body.notes,
+    return this.service.recordPayment(req.user.tenantId, id, this.paymentInput(body, 'amount'), req.user.id);
+  }
+
+  /** Callers: recordPayment and markAsReceived. Runtime validation completes in the shared service command. */
+  private paymentInput(body: unknown, amountField: 'amount' | 'paidAmount'): PaymentInput {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new BadRequestException('Ödeme girdisi geçersiz');
+    const input = body as Record<string, unknown>;
+    if (typeof input.paymentDate !== 'string' || input.paymentDate.length === 0) throw new BadRequestException('Ödeme tarihi metin olmalıdır');
+    return {
+      idempotencyKey: input.idempotencyKey as string,
+      amount: input[amountField] as number,
+      paymentDate: new Date(input.paymentDate),
+      method: input.method as string,
+      reference: input.reference as string | undefined,
+      notes: input.notes as string | undefined,
+      ...(amountField === 'paidAmount' ? { receiptDocId: input.receiptDocId as string | undefined } : {}),
     };
-    return this.service.recordPayment(req.user.tenantId, id, payment, req.user.id);
   }
 
   /**

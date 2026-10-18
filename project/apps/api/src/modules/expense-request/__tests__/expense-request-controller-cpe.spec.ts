@@ -22,6 +22,7 @@ jest.mock('@nestjs/passport', () => ({
       req.user = {
         id: req.headers['x-user-id'] ?? 'user-1',
         tenantId: req.headers['x-tenant-id'] ?? 'tenant-1',
+        role: req.headers['x-user-role'] ?? 'USER',
       };
       return true;
     }
@@ -35,6 +36,7 @@ describe('ExpenseRequestController CPE runtime enforcement (MVR-006)', () => {
     approveForDistribution: jest.Mock;
     rejectForDistribution: jest.Mock;
     recordPayment: jest.Mock;
+    markAsReceived: jest.Mock;
   };
   let cpe: { canPerformAction: jest.Mock };
   let prisma: { expenseRequest: { findFirst: jest.Mock } };
@@ -45,6 +47,7 @@ describe('ExpenseRequestController CPE runtime enforcement (MVR-006)', () => {
       approveForDistribution: jest.fn().mockResolvedValue({ id: 'exp-1', status: 'APPROVED' }),
       rejectForDistribution: jest.fn().mockResolvedValue({ id: 'exp-1', status: 'REJECTED' }),
       recordPayment: jest.fn().mockResolvedValue({ id: 'payment-1' }),
+      markAsReceived: jest.fn().mockResolvedValue({ id: 'payment-1' }),
     };
     cpe = { canPerformAction: jest.fn().mockResolvedValue({ allowed: true, code: 'OK' }) };
     prisma = { expenseRequest: { findFirst: jest.fn().mockResolvedValue({ caseId: 'case-1' }) } };
@@ -119,6 +122,7 @@ describe('ExpenseRequestController CPE runtime enforcement (MVR-006)', () => {
     ['approve', '/expense-requests/exp-1/approve', {}, ActionCode.APPROVE_EXPENSE, 'approveForDistribution'],
     ['reject', '/expense-requests/exp-1/reject', { note: 'no' }, ActionCode.APPROVE_EXPENSE, 'rejectForDistribution'],
     ['payment', '/expense-requests/exp-1/payment', { amount: 100, paymentDate: '2026-07-05', method: 'BANKA' }, ActionCode.RECORD_COLLECTION, 'recordPayment'],
+    ['receive', '/expense-requests/exp-1/receive', { idempotencyKey: 'stable-key', paidAmount: 100, paymentDate: '2026-07-05', method: 'BANKA' }, ActionCode.RECORD_COLLECTION, 'markAsReceived'],
   ] as const)('%s endpoint runs CPE before service method', async (_name, url, body, actionCode, serviceMethod) => {
     await request(app.getHttpServer())
       .post(url)
@@ -133,5 +137,19 @@ describe('ExpenseRequestController CPE runtime enforcement (MVR-006)', () => {
       expect.objectContaining({ expenseId: 'exp-1' }),
     );
     expect(service[serviceMethod]).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['payment', 'receive'])('%s rejects VIEWER before CPE or command execution', async endpoint => {
+    await request(app.getHttpServer()).post(`/expense-requests/exp-1/${endpoint}`)
+      .set('x-user-role', 'VIEWER').send({ idempotencyKey: 'key', amount: 1, paidAmount: 1, paymentDate: '2026-10-01', method: 'CASH' }).expect(403);
+    expect(cpe.canPerformAction).not.toHaveBeenCalled();
+    expect(service.recordPayment).not.toHaveBeenCalled(); expect(service.markAsReceived).not.toHaveBeenCalled();
+  });
+
+  it.each(['payment', 'receive'])('%s preserves a CPE rejection without invoking either payment alias', async endpoint => {
+    cpe.canPerformAction.mockResolvedValue({ allowed: false, code: 'GATE_BLOCKED' });
+    await request(app.getHttpServer()).post(`/expense-requests/exp-1/${endpoint}`)
+      .send({ idempotencyKey: 'key', amount: 1, paidAmount: 1, paymentDate: '2026-10-01', method: 'CASH' }).expect(403);
+    expect(service.recordPayment).not.toHaveBeenCalled(); expect(service.markAsReceived).not.toHaveBeenCalled();
   });
 });

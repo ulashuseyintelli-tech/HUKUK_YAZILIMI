@@ -47,8 +47,8 @@ function makeService(
   const taskCreate = jest.fn().mockResolvedValue({});
   // Talep SENT geçişi: atomik koşullu güncelleme (status != SENT). Durum bellekte tutulur → ikinci çağrı count=0 görür.
   const requestState = { status: opts.requestStatus ?? 'PENDING' };
-  const reqUpdate = jest.fn(async () => {
-    if (requestState.status === 'SENT') return { count: 0 };
+  const reqUpdate = jest.fn(async ({ where }: any) => {
+    if (where.status.notIn.includes(requestState.status)) return { count: 0 };
     requestState.status = 'SENT';
     return { count: 1 };
   });
@@ -149,6 +149,13 @@ describe('W4 içerik sözleşmesi — IBAN fail-closed + accountHolder/paymentRe
 });
 
 describe('C1-B05-A ExpenseNotificationService migration', () => {
+  it.each(['PAID', 'PARTIAL', 'RECEIVED', 'CANCELLED'])('a stale email result cannot overwrite %s or create a follow-up task', async status => {
+    const { svc, reqUpdate, auditCreate, taskCreate } = makeService({ status: 'sent', notificationId: 'n-1' }, { requestStatus: status });
+    await svc.sendExpenseRequest(TENANT, REQ, USER);
+    expect(reqUpdate).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: { notIn: ['SENT', 'PAID', 'PARTIAL', 'RECEIVED', 'CANCELLED'] } }) }));
+    expect(taskCreate).not.toHaveBeenCalled();
+    expect(auditCreate.mock.calls.filter((c: any[]) => c[0].data.action === 'EMAIL_SENT')).toHaveLength(0);
+  });
   it('EmailProviderService’e GİTMEZ; dispatcher EXPENSE_REQUEST + stable dedupeKey ile çağrılır', async () => {
     const { svc, dispatcher, emailProvider } = makeService({ status: 'sent', notificationId: 'n-1' });
     await svc.sendExpenseRequest(TENANT, REQ, USER);
@@ -191,7 +198,7 @@ describe('C1-B05-A ExpenseNotificationService migration', () => {
     expect(reqUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'SENT' }) }));
     expect(auditCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ action: 'EMAIL_SENT' }) }));
     // Geçiş TEK atomik koşullu güncelleme: kiracı + "zaten SENT değil" koşulu aynı sorguda
-    expect(reqUpdate).toHaveBeenCalledWith(expect.objectContaining({ where: { id: REQ, tenantId: TENANT, status: { not: 'SENT' } } }));
+    expect(reqUpdate).toHaveBeenCalledWith(expect.objectContaining({ where: { id: REQ, tenantId: TENANT, status: { notIn: ['SENT', 'PAID', 'PARTIAL', 'RECEIVED', 'CANCELLED'] } } }));
     expect(taskCreate).toHaveBeenCalledTimes(1);
   });
 

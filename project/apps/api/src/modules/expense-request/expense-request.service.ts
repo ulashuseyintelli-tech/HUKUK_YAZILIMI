@@ -7,6 +7,9 @@ import { OfficeService } from '@/modules/office/office.service';
 import { ExpenseCalculatorService, CaseData, EXPENSE_SET_TEMPLATES } from './expense-calculator.service';
 import { ExpenseNotificationService } from './expense-notification.service';
 import { ExpensePaymentReversalContractService, ExpensePaymentReversalRequestKind } from './expense-payment-reversal-contract.service';
+import { lockExpenseRequest } from './expense-request-lock';
+import { normalizeExpensePayment, type PaymentInput } from './expense-payment-command';
+export type { PaymentInput } from './expense-payment-command';
 import {
   AccountingJournalWriterService,
   buildAccountingJournal,
@@ -67,15 +70,6 @@ export interface UpdateExpenseRequestDto {
   dueDate?: string;
   notes?: string;
   status?: ExpenseRequestStatus;
-}
-
-export interface PaymentInput {
-  amount: number;
-  paymentDate: Date;
-  method: string; // BANK_TRANSFER, CASH, VIRTUAL_POS
-  reference?: string;
-  notes?: string;
-  matchedBy?: string; // AUTO, MANUAL
 }
 
 export interface ReversePaymentInput {
@@ -438,131 +432,93 @@ export class ExpenseRequestService {
     return expenseRequest;
   }
 
+  /** Callers: update/send/remind/cancel/delete/recordPayment/finalizeAndSend. */
+  private async findLockedRequest(tx: Prisma.TransactionClient, tenantId: string, id: string) {
+    await lockExpenseRequest(tx, tenantId, id);
+    const request = await tx.expenseRequest.findFirst({ where: { id, tenantId } });
+    if (!request) throw new NotFoundException('Masraf talebi bulunamadı');
+    return request;
+  }
+
   async update(tenantId: string, id: string, dto: UpdateExpenseRequestDto) {
-    const existing = await this.findOne(tenantId, id);
-
-    const data: any = {};
-    
-    if (dto.items) {
-      data.items = dto.items as any;
-      data.totalAmount = dto.items.reduce((sum, item) => sum + item.amount, 0);
-    }
-    if (dto.dueDate !== undefined) {
-      data.dueDate = dto.dueDate ? new Date(dto.dueDate) : null;
-    }
-    if (dto.notes !== undefined) {
-      data.notes = dto.notes;
-    }
-    if (dto.status) {
-      data.status = dto.status;
-    }
-
-    return this.prisma.expenseRequest.update({
-      where: { id },
-      data,
-      include: {
-        case: { select: { id: true, fileNumber: true, executionFileNumber: true } },
-        client: { select: { id: true, name: true, displayName: true } },
-      },
-    });
-  }
-
-  async markAsSent(tenantId: string, id: string, channel: string, notificationId?: string) {
-    const existing = await this.findOne(tenantId, id);
-
-    if (existing.status !== 'PENDING' && existing.status !== 'REMINDED') {
-      throw new BadRequestException('Bu talep zaten gönderilmiş veya tamamlanmış');
-    }
-
-    return this.prisma.expenseRequest.update({
-      where: { id },
-      data: {
-        status: 'SENT',
-        sentAt: new Date(),
-        sentVia: channel,
-        notificationId,
-      },
-    });
-  }
-
-  async markAsReminded(tenantId: string, id: string) {
-    const existing = await this.findOne(tenantId, id);
-
-    if (existing.status !== 'SENT' && existing.status !== 'REMINDED') {
-      throw new BadRequestException('Sadece gönderilmiş talepler için hatırlatma yapılabilir');
-    }
-
-    return this.prisma.expenseRequest.update({
-      where: { id },
-      data: {
-        status: 'REMINDED',
-        reminderCount: { increment: 1 },
-        lastReminderAt: new Date(),
-      },
-    });
-  }
-
-  async markAsReceived(tenantId: string, id: string, paidAmount: number, receiptDocId?: string, userId?: string) {
-    const existing = await this.findOne(tenantId, id);
-
-    // Transaction ile güncelle
-    const result = await this.prisma.$transaction(async (tx) => {
-      // Masraf talebini güncelle
-      const updated = await tx.expenseRequest.update({
-        where: { id },
-        data: {
-          status: 'RECEIVED',
-          paidAt: new Date(),
-          paidAmount,
-          receiptDocId,
-          respondedAt: new Date(),
-        },
+    // Caller: ExpenseRequestController.update (PUT); metadata only, financial echoes may be unchanged.
+    if (!dto || typeof dto !== 'object' || Array.isArray(dto)) throw new BadRequestException('Güncelleme girdisi geçersiz');
+    return this.prisma.$transaction(async tx => {
+      const existing = await this.findLockedRequest(tx, tenantId, id);
+      if (dto.status != null && dto.status !== existing.status) {
+        throw new ConflictException({ code: 'EXPENSE_REQUEST_LIFECYCLE_COMMAND_REQUIRED', message: 'Durum genel güncelleme ile değiştirilemez' });
+      }
+      if (dto.items != null) {
+        if (!Array.isArray(dto.items)) throw new BadRequestException('Kalemler dizi olmalıdır');
+        const options = { nonAuthoritativeMetadataKeys: [] };
+        if (createCanonicalSourceHash(dto.items, options) !== createCanonicalSourceHash(existing.items, options)) {
+          throw new ConflictException({ code: 'EXPENSE_REQUEST_FINANCIAL_EDIT_FORBIDDEN', message: 'Finansal kalemler genel güncelleme ile değiştirilemez' });
+        }
+      }
+      const data: Prisma.ExpenseRequestUpdateInput = {};
+      if (dto.dueDate !== undefined) {
+        if (dto.dueDate !== null && typeof dto.dueDate !== 'string') throw new BadRequestException('Vade tarihi geçersiz');
+        const dueDate = dto.dueDate ? new Date(dto.dueDate) : null;
+        if (dueDate && !Number.isFinite(dueDate.getTime())) throw new BadRequestException('Vade tarihi geçersiz');
+        data.dueDate = dueDate;
+      }
+      if (dto.notes !== undefined) {
+        if (dto.notes !== null && typeof dto.notes !== 'string') throw new BadRequestException('Not metin olmalıdır');
+        data.notes = dto.notes;
+      }
+      return tx.expenseRequest.update({
+        where: { id }, data,
         include: {
           case: { select: { id: true, fileNumber: true, executionFileNumber: true } },
           client: { select: { id: true, name: true, displayName: true } },
         },
       });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+  }
 
-      return updated;
-    });
-
-    // Bakiyeye kredi ekle
-    if (userId) {
-      try {
-        await this.caseBalanceService.credit(
-          tenantId,
-          existing.caseId,
-          {
-            amount: paidAmount,
-            source: `expense_request:${id}`,
-            sourceId: id,
-            description: `Masraf talebi �demesi (${(existing as any).packageCode || 'manuel'})`,
-          },
-          userId,
-        );
-      } catch (error) {
-        console.error('Bakiye kredisi eklenemedi:', error);
-        // Hata olsa bile masraf talebi g�ncellendi, devam et
+  async markAsSent(tenantId: string, id: string, channel: string, notificationId?: string) {
+    // Caller: ExpenseRequestController.markAsSent; preserve the existing eligible states.
+    if (typeof channel !== 'string' || !channel.trim()
+      || (notificationId !== undefined && typeof notificationId !== 'string')) throw new BadRequestException('Gönderim girdisi geçersiz');
+    return this.prisma.$transaction(async tx => {
+      const existing = await this.findLockedRequest(tx, tenantId, id);
+      if (existing.status !== 'PENDING' && existing.status !== 'REMINDED') {
+        throw new BadRequestException('Bu talep zaten gönderilmiş veya tamamlanmış');
       }
-    }
+      return tx.expenseRequest.update({
+        where: { id }, data: { status: 'SENT', sentAt: new Date(), sentVia: channel, notificationId },
+      });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+  }
 
-    return result;
+  async markAsReminded(tenantId: string, id: string) {
+    // Caller: ExpenseRequestController.markAsReminded.
+    return this.prisma.$transaction(async tx => {
+      const existing = await this.findLockedRequest(tx, tenantId, id);
+      if (existing.status !== 'SENT' && existing.status !== 'REMINDED') {
+        throw new BadRequestException('Sadece gönderilmiş talepler için hatırlatma yapılabilir');
+      }
+      return tx.expenseRequest.update({
+        where: { id }, data: { status: 'REMINDED', reminderCount: { increment: 1 }, lastReminderAt: new Date() },
+      });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+  }
+
+  async markAsReceived(tenantId: string, id: string, payment: PaymentInput, userId: string) {
+    // Caller: ExpenseRequestController.markAsReceived. Same atomic command, key and CPE gate as payment.
+    return this.recordPayment(tenantId, id, payment, userId);
   }
 
   async cancel(tenantId: string, id: string, reason?: string) {
-    const existing = await this.findOne(tenantId, id);
-
-    if (existing.status === 'RECEIVED') {
-      throw new BadRequestException('Ödeme alınmış talepler iptal edilemez');
-    }
-
-    return this.prisma.expenseRequest.update({
-      where: { id },
-      data: {
-        status: 'CANCELLED',
-        responseNotes: reason,
-      },
-    });
+    // Caller: ExpenseRequestController.cancel; cannot overwrite a payment that won the row lock.
+    if (reason !== undefined && typeof reason !== 'string') throw new BadRequestException('İptal gerekçesi metin olmalıdır');
+    return this.prisma.$transaction(async tx => {
+      const existing = await this.findLockedRequest(tx, tenantId, id);
+      if (['RECEIVED', 'PAID', 'PARTIAL'].includes(existing.status) || new Prisma.Decimal(existing.paidTotal).gt(0)) {
+        throw new BadRequestException('Ödeme alınmış talepler iptal edilemez');
+      }
+      return tx.expenseRequest.update({ where: { id }, data: { status: 'CANCELLED', responseNotes: reason } });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   }
 
   /**
@@ -610,14 +566,15 @@ export class ExpenseRequestService {
   }
 
   async delete(tenantId: string, id: string) {
-    const existing = await this.findOne(tenantId, id);
-
-    if (existing.status !== 'PENDING') {
-      throw new BadRequestException('Sadece bekleyen talepler silinebilir');
-    }
-
-    await this.prisma.expenseRequest.delete({ where: { id } });
-    return { success: true };
+    // Caller: ExpenseRequestController.delete. Parent delete and payment serialize on the same row.
+    return this.prisma.$transaction(async tx => {
+      const existing = await this.findLockedRequest(tx, tenantId, id);
+      if (existing.status !== 'PENDING' || new Prisma.Decimal(existing.paidTotal).gt(0)) {
+        throw new BadRequestException('Sadece bekleyen ve ödeme alınmamış talepler silinebilir');
+      }
+      await tx.expenseRequest.delete({ where: { id } });
+      return { success: true };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   }
 
   // İstatistikler
@@ -1402,137 +1359,127 @@ export class ExpenseRequestService {
    * Ödeme kaydet ve durum güncelle
    */
   async recordPayment(tenantId: string, requestId: string, payment: PaymentInput, userId: string) {
-    const request = await this.prisma.expenseRequest.findFirst({
-      where: { id: requestId, tenantId },
-    });
-
-    if (!request) {
-      throw new NotFoundException('Masraf talebi bulunamadı');
-    }
-
-    const totalAmount = request.totalAmount.toNumber();
-    const currentPaid = request.paidTotal.toNumber();
-    const newPaidTotal = currentPaid + payment.amount;
-
-    // Ödeme toplamı talep toplamını aşamaz
-    if (newPaidTotal > totalAmount) {
-      throw new BadRequestException(
-        `Ödeme tutarı kalan borcu aşıyor. Kalan: ${totalAmount - currentPaid} TL`
-      );
-    }
-
-    // Yeni durum belirle
-    let newStatus: ExpenseRequestStatus;
-    if (newPaidTotal >= totalAmount) {
-      newStatus = 'PAID';
-    } else if (newPaidTotal > 0) {
-      newStatus = 'PARTIAL';
-    } else {
-      newStatus = request.status;
-    }
-
-    let paymentId: string | null = null;
+    // Callers: ExpenseRequestController.recordPayment; markAsReceived legacy alias (same CPE command).
+    const command = normalizeExpensePayment(tenantId, requestId, userId, payment);
+    const responseInclude = {
+      case: { select: { id: true, fileNumber: true } },
+      client: { select: { id: true, name: true } },
+      payments: true,
+    } as const;
     const result = await this.prisma.$transaction(async (tx) => {
-      // Ödeme kaydı oluştur
+      const keyLock = `expense-payment-key:${tenantId}:${command.idempotencyKey}`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${keyLock}, 0))`;
+      const request = await this.findLockedRequest(tx, tenantId, requestId);
+      if (request.status === 'CANCELLED') {
+        throw new ConflictException({ code: 'EXPENSE_PAYMENT_PARENT_CANCELLED', message: 'İptal edilmiş talebe ödeme kaydedilemez' });
+      }
+
+      const existing = await tx.balanceLedger.findUnique({
+        where: { tenantId_postingKey: { tenantId, postingKey: command.postingKey } },
+        include: { caseBalance: { select: { tenantId: true, caseId: true } } },
+      });
+      if (existing) {
+        const previousPayment = existing.sourceId ? await tx.expensePayment.findFirst({
+          where: { id: existing.sourceId, expenseRequestId: requestId },
+        }) : null;
+        const previousAudit = previousPayment ? await tx.expenseAuditLog.findFirst({
+          where: {
+            expenseRequestId: requestId, action: 'PAYMENT_RECORDED',
+            details: { path: ['paymentId'], equals: previousPayment.id },
+          },
+        }) : null;
+        const details = previousAudit?.details as Record<string, unknown> | null;
+        if (!previousPayment || existing.type !== 'CREDIT'
+          || existing.source !== `expense_payment:${previousPayment.id}`
+          || existing.caseBalance.tenantId !== tenantId || existing.caseBalance.caseId !== request.caseId
+          || details?.commandFingerprint !== command.fingerprint) {
+          throw new ConflictException({ code: 'IDEMPOTENCY_KEY_CONFLICT', message: 'Aynı ödeme anahtarı farklı içerikle kullanılamaz' });
+        }
+        const updated = await tx.expenseRequest.findFirst({
+          where: { id: requestId, tenantId }, include: responseInclude,
+        });
+        return { updated: updated!, request, replayed: true, paymentId: previousPayment.id };
+      }
+
+      // Historical receive-only rows are not silently converted or credited a second time.
+      if (request.status === 'RECEIVED') {
+        throw new ConflictException({ code: 'EXPENSE_PAYMENT_LEGACY_RECEIPT_REQUIRES_RECONCILIATION', message: 'Eski alındı kaydı otomatik olarak yeni ödemeye dönüştürülemez' });
+      }
+      const total = new Prisma.Decimal(request.totalAmount);
+      const paid = new Prisma.Decimal(request.paidTotal);
+      if (total.isNegative() || paid.isNegative() || paid.gt(total)
+        || (request.status === 'PAID' && !paid.eq(total))
+        || (request.status === 'PARTIAL' && (paid.isZero() || paid.gte(total)))) {
+        throw new ConflictException({ code: 'EXPENSE_PAYMENT_STATE_INCONSISTENT', message: 'Talebin ödeme toplamı ve durumu tutarsız' });
+      }
+      if (typeof request.currency !== 'string' || request.currency.length === 0) {
+        throw new ConflictException({ code: 'EXPENSE_PAYMENT_CURRENCY_MISSING', message: 'Talep para birimi açıkça belirtilmelidir' });
+      }
+      const newPaid = paid.plus(command.amount);
+      if (newPaid.gt(total)) {
+        throw new BadRequestException(`Ödeme tutarı kalan tutarı aşıyor. Kalan: ${total.minus(paid).toFixed(2)} ${request.currency}`);
+      }
+      const newStatus: ExpenseRequestStatus = newPaid.eq(total) ? 'PAID' : 'PARTIAL';
       const createdPayment = await tx.expensePayment.create({
         data: {
-          expenseRequestId: requestId,
-          amount: payment.amount,
-          paymentDate: payment.paymentDate,
-          method: payment.method,
-          reference: payment.reference,
-          notes: payment.notes,
-          matchedBy: payment.matchedBy || 'MANUAL',
-          matchedById: userId,
+          expenseRequestId: requestId, amount: command.amount, paymentDate: command.paymentDate,
+          method: command.method, reference: command.reference, notes: command.notes,
+          matchedBy: command.matchedBy, matchedById: userId,
         },
       });
-      paymentId = createdPayment?.id ?? null;
       await this.writeExpensePaymentRecordedJournal(tx, tenantId, userId, request, {
-        id: createdPayment.id,
-        expenseRequestId: requestId,
-        amount: createdPayment.amount ?? payment.amount,
-        paymentDate: createdPayment.paymentDate ?? payment.paymentDate,
-        method: createdPayment.method ?? payment.method,
-        reference: createdPayment.reference ?? payment.reference ?? null,
-        createdAt: createdPayment.createdAt ?? payment.paymentDate,
+        id: createdPayment.id, expenseRequestId: requestId,
+        amount: createdPayment.amount ?? command.amount,
+        paymentDate: createdPayment.paymentDate ?? command.paymentDate,
+        method: createdPayment.method ?? command.method,
+        reference: createdPayment.reference ?? command.reference,
+        createdAt: createdPayment.createdAt ?? command.paymentDate,
       });
-
-      // ExpenseRequest güncelle
+      await this.caseBalanceService.credit(tenantId, request.caseId, {
+        amount: command.amount.toNumber(), source: `expense_payment:${createdPayment.id}`,
+        sourceId: createdPayment.id, description: `Masraf ödemesi - ${command.reference || 'Manuel'}`,
+      }, userId, { tx, currency: request.currency, postingKey: command.postingKey });
       const updated = await tx.expenseRequest.update({
         where: { id: requestId },
         data: {
-          paidTotal: newPaidTotal,
-          status: newStatus,
+          paidTotal: newPaid.toNumber(), status: newStatus,
           paidAt: newStatus === 'PAID' ? new Date() : undefined,
-          paidAmount: newStatus === 'PAID' ? totalAmount : undefined,
+          paidAmount: newStatus === 'PAID' ? total.toNumber() : undefined,
+          respondedAt: new Date(),
+          ...(command.receiptProvided ? { receiptDocId: command.receiptDocId } : {}),
         },
-        include: {
-          case: { select: { id: true, fileNumber: true } },
-          client: { select: { id: true, name: true } },
-          payments: true,
-        },
+        include: responseInclude,
       });
-
-      // Audit log
       await tx.expenseAuditLog.create({
         data: {
-          expenseRequestId: requestId,
-          action: 'PAYMENT_RECORDED',
+          expenseRequestId: requestId, action: 'PAYMENT_RECORDED', userId,
           details: {
-            amount: payment.amount,
-            method: payment.method,
-            reference: payment.reference,
-            newPaidTotal,
-            newStatus,
+            amount: command.amount.toNumber(), method: command.method, reference: command.reference,
+            newPaidTotal: newPaid.toNumber(), newStatus, paymentId: createdPayment.id,
+            idempotencyKey: command.idempotencyKey, commandFingerprint: command.fingerprint,
           },
-          userId,
         },
       });
-
-      // Task completion on payment - PAID olunca ilgili task'ı tamamla.
-      // PR-PERF-1: bu sistem tetikli bir kapanıştır (ödemenin yan etkisi, doğrudan görev işi değil) →
-      // AUTO_SYSTEM + completedByUserId null (ödemeyi kaydeden userId zaten expenseAuditLog'da; bu
-      // kapanış performans raporunda kişiye atfedilmemeli, aksi halde sayım şişer).
       if (newStatus === 'PAID' && updated.taskId) {
-        await tx.task.update({
-          where: { id: updated.taskId },
-          data: {
-            status: 'COMPLETED',
-            completedAt: new Date(),
-            resolutionType: 'AUTO_SYSTEM',
-            completedByUserId: null,
-          },
+        const moved = await tx.task.updateMany({
+          where: { id: updated.taskId, tenantId, caseId: request.caseId },
+          data: { status: 'COMPLETED', completedAt: new Date(), resolutionType: 'AUTO_SYSTEM', completedByUserId: null },
         });
-        this.logger.log(`Task ${updated.taskId} completed due to expense payment`);
+        if (moved.count !== 1) {
+          throw new ConflictException({ code: 'EXPENSE_PAYMENT_TASK_SCOPE_MISMATCH', message: 'Ödeme görevi aynı büro ve dosyada bulunamadı' });
+        }
       }
+      return { updated, request, replayed: false, paymentId: createdPayment.id };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
 
-      return updated;
-    });
-
-    // Bakiyeye kredi ekle
-    const balancePaymentSourceId = paymentId ?? requestId;
-    try {
-      await this.caseBalanceService.credit(
-        tenantId,
-        request.caseId,
-        {
-          amount: payment.amount,
-          source: `expense_payment:${balancePaymentSourceId}`,
-          sourceId: balancePaymentSourceId,
-          description: `Masraf ödemesi - ${payment.reference || 'Manuel'}`,
-        },
-        userId,
-      );
-    } catch (error) {
-      this.logger.error('Bakiye kredisi eklenemedi:', error);
+    // Provider delivery remains best-effort after commit; replay never dispatches again.
+    if (!result.replayed) {
+      await this.notifyPayment(tenantId, userId, result.request.clientId, result.request.caseId,
+        result.updated.status, command.amount.toNumber(), Number(result.updated.paidTotal),
+        Number(result.request.totalAmount), result.paymentId, result.request.currency);
+      this.logger.log(`Payment recorded for expense ${requestId}: ${command.amount.toFixed(2)} ${result.request.currency}`);
     }
-
-    // Ödeme maili — BEST-EFFORT (Faz 3.5). Ödeme = finansal olay (commit'li);
-    // mail yalnız bildirim. Mail başarısızlığı ödeme state'ini DEĞİŞTİRMEZ.
-    await this.notifyPayment(tenantId, userId, request.clientId, request.caseId, newStatus, payment.amount, newPaidTotal, totalAmount, paymentId);
-
-    this.logger.log(`Payment recorded for expense ${requestId}: ${payment.amount} TL, new status: ${newStatus}`);
-    return result;
+    return { ...result.updated, idempotentReplay: result.replayed };
   }
 
   async reversePayment(
@@ -1567,7 +1514,14 @@ export class ExpenseRequestService {
         });
       }
 
-      const parent = payment.expenseRequest;
+      // recordPayment and reversal both change paidTotal; use the fresh parent after the same row lock.
+      await lockExpenseRequest(tx, tenantId, payment.expenseRequestId);
+      const racedReversal = await tx.expensePaymentReversal.findFirst({
+        where: { tenantId, expensePaymentId, kind: 'REVERSAL' },
+      });
+      if (racedReversal) return toExpensePaymentReversalResult(racedReversal, 'REPLAYED');
+      const parent = await tx.expenseRequest.findFirst({ where: { id: payment.expenseRequestId, tenantId } });
+      if (!parent) throw new NotFoundException('Masraf talebi bulunamadı');
       if (parent.status === 'CANCELLED') {
         throw new ConflictException({
           code: 'EXPENSE_PAYMENT_PARENT_CANCELLED_BLOCKED',
@@ -1753,9 +1707,16 @@ export class ExpenseRequestService {
     newPaidTotal: number,
     totalAmount: number,
     paymentId: string | null,
+    currency: string,
   ): Promise<void> {
     if (newStatus !== 'PAID' && newStatus !== 'PARTIAL') return; // yalnız PAID/PARTIAL
     if (!paymentId) return;
+    // Existing PAYMENT_RECEIVED/PARTIAL_PAYMENT_BALANCE system templates label amounts as TL.
+    // A committed non-TRY payment must not trigger that incorrect financial statement.
+    if (currency !== 'TRY') {
+      this.logger.warn('EXPENSE_PAYMENT_EMAIL_CURRENCY_UNSUPPORTED: ödeme kaydı korundu; TRY dışı ödeme için mevcut TL şablonu kullanılmadı');
+      return;
+    }
 
     try {
       const [client, kase, office] = await Promise.all([
@@ -1775,13 +1736,14 @@ export class ExpenseRequestService {
         caseFileNumber: kase?.fileNumber ?? '',
         executionFileNumber: kase?.executionFileNumber ?? '',
         totalAmount: totalAmount.toFixed(2),
+        currency,
         officeName: office?.name ?? '',
       };
 
       const templateCode = newStatus === 'PAID' ? 'PAYMENT_RECEIVED' : 'PARTIAL_PAYMENT_BALANCE';
       if (newStatus === 'PARTIAL') {
         tokens.paidAmount = paymentAmount.toFixed(2); // bu ödeme (m35-2)
-        tokens.remainingAmount = (totalAmount - newPaidTotal).toFixed(2);
+        tokens.remainingAmount = new Prisma.Decimal(totalAmount).minus(newPaidTotal).toFixed(2);
       }
 
       await this.dispatcher.dispatch(tenantId, userId, {
@@ -1802,34 +1764,22 @@ export class ExpenseRequestService {
    * Masraf talebi kesinleştir ve gönder
    */
   async finalizeAndSend(tenantId: string, requestId: string, channel: string = 'EMAIL', userId: string) {
-    const request = await this.findOne(tenantId, requestId);
-
-    if (request.status !== 'PENDING') {
-      throw new BadRequestException('Sadece bekleyen talepler gönderilebilir');
-    }
-
-    const result = await this.prisma.$transaction(async (tx) => {
+    // Caller: ExpenseRequestController.finalizeAndSend. Existing dispatch semantics are unchanged.
+    if (typeof channel !== 'string' || !channel.trim()) throw new BadRequestException('Gönderim kanalı geçersiz');
+    const result = await this.prisma.$transaction(async tx => {
+      const request = await this.findLockedRequest(tx, tenantId, requestId);
+      if (request.status !== 'PENDING') throw new BadRequestException('Sadece bekleyen talepler gönderilebilir');
       const updated = await tx.expenseRequest.update({
-        where: { id: requestId },
-        data: {
-          status: 'SENT',
-          sentAt: new Date(),
-          sentVia: channel,
-        },
+        where: { id: requestId }, data: { status: 'SENT', sentAt: new Date(), sentVia: channel },
       });
-
       await tx.expenseAuditLog.create({
         data: {
-          expenseRequestId: requestId,
-          action: 'SENT',
-          details: { channel, sentAt: new Date().toISOString() },
-          userId,
+          expenseRequestId: requestId, action: 'SENT',
+          details: { channel, sentAt: new Date().toISOString() }, userId,
         },
       });
-
       return updated;
-    });
-
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
     this.logger.log(`Expense request ${requestId} finalized and sent via ${channel}`);
     return result;
   }

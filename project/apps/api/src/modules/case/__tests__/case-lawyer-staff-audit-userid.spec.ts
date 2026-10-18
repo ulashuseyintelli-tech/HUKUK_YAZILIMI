@@ -33,7 +33,7 @@ const makeService = () => {
     },
   });
   const auditLog = jest.fn(async () => undefined);
-  (service as any).auditService = { log: auditLog };
+  (service as any).auditService = { log: auditLog, logInTransaction: async (_tx: any, input: any) => auditLog(input) };
   return { service, auditLog };
 };
 
