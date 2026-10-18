@@ -250,6 +250,7 @@ export interface CoverCalculation {
 
 // Tahsilat Özeti
 export interface CollectionSummary {
+  currency: string | null;
   totalCollected: number;
   totalPending: number;
   totalCancelled: number;

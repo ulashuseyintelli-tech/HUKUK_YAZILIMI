@@ -223,6 +223,7 @@ export class ReportController {
     @Query('endDate') endDate?: string,
     @Query('channels') channels?: string,
     @Query('statuses') statuses?: string,
+    @Query('currency') currency?: string,
   ) {
     const data = await this.service.getCollectionHistoryReport(tenantId, {
       caseId,
@@ -230,6 +231,7 @@ export class ReportController {
       endDate,
       channels: channels ? channels.split(',') : undefined,
       statuses: statuses ? statuses.split(',') : undefined,
+      ...(currency !== undefined ? { currency } : {}),
     });
     return { success: true, data };
   }
@@ -239,8 +241,9 @@ export class ReportController {
   async getCollectionSummary(
     @CurrentUser('tenantId') tenantId: string,
     @Query('period') period?: 'week' | 'month' | 'year',
+    @Query('currency') currency?: string,
   ) {
-    const data = await this.service.getCollectionSummary(tenantId, period);
+    const data = await this.service.getCollectionSummary(tenantId, period, currency);
     return { success: true, data };
   }
 }

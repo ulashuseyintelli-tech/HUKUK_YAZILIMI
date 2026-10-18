@@ -151,9 +151,10 @@ export class CollectionController {
   @Get("summary")
   getSummary(
     @CurrentUser("tenantId") tenantId: string,
-    @Query("caseId") caseId?: string
+    @Query("caseId") caseId?: string,
+    @Query("currency") currency?: string
   ) {
-    return this.collectionService.getSummary(tenantId, caseId);
+    return this.collectionService.getSummary(tenantId, caseId, currency);
   }
 
   /**

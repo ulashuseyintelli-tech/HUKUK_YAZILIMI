@@ -152,6 +152,7 @@ describe("PR-RE2 report passive policy", () => {
   it("collection summary deterministic lifecycle semantics dondurur", async () => {
     const prisma: any = {
       collection: {
+        findMany: jest.fn().mockResolvedValue([{ currency: 'TRY' }]),
         aggregate: jest
           .fn()
           .mockResolvedValueOnce({ _sum: { amount: 10 }, _count: { id: 1 } })
