@@ -28,7 +28,7 @@ import {
   type ClientStatementDeliveryLedgerRecord,
 } from './client-statement-delivery-ledger.contract';
 import { reportCronJobFailure } from '../../common/cron-failure-reporting';
-import type { IntegrationErrorReporter } from '@/modules/error-log/integration-error-reporter';
+import { IntegrationErrorReporter } from '@/modules/error-log/integration-error-reporter';
 import {
   CLIENT_STATEMENT_MONTHLY_CRON,
   CLIENT_STATEMENT_MONTHLY_JOB_CLASS,
