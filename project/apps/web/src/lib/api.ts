@@ -3778,15 +3778,6 @@ export interface HacizAuditLog {
   description?: string | null;
   createdAt: string;
   hacizSafeProjection?: HacizAuditSafeProjection | null;
-  metadata?: {
-    targetType?: string;
-    amount?: number;
-    uyapRequestId?: string;
-    cpeTraceId?: string | null;
-    overallLevel?: PreHacizRiskLevel;
-    debtors?: { debtorId: string; name: string; level: PreHacizRiskLevel; reasonIds: string[] }[];
-    cpeWarnings?: any[];
-  } | null;
 }
 export interface ValidationError {
   code: string;

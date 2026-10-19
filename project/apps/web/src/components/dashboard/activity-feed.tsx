@@ -48,9 +48,9 @@ const validateActivities = (raw: unknown): Activity[] | undefined => {
       id: l.id,
       type:
         l.action === 'CREATE' ? 'case_created' : l.action === 'UPDATE' ? 'case_updated' : 'notification',
-      title: l.description || `${l.action} - ${l.entityType}`,
+      title: l.safeProjection?.description || `${l.action} - ${l.entityType}`,
       timestamp: l.createdAt,
-      user: l.userName,
+      user: l.safeProjection?.actor?.displayName || undefined,
     } as Activity);
   }
   return out;

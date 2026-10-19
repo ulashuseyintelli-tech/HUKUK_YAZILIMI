@@ -62,7 +62,8 @@ describe("HacizHistoryCard â€” CASEDETAILTABS-MIGRATION-C1 (#123 re-wire, c
   });
 
   it("aÃ§Ä±lÄ±nca panel mount â†’ fetch YAPILIR + safe projection render edilir", async () => {
-    getAudits.mockResolvedValue({ logs: [sampleLog], total: 1, page: 1, limit: 20, totalPages: 1 });
+    const { metadata, ...safeOnly } = sampleLog;
+    getAudits.mockResolvedValue({ logs: [safeOnly], total: 1, page: 1, limit: 20, totalPages: 1 });
     render(<HacizHistoryCard caseId="c1" />);
     fireEvent.click(screen.getByRole("button"));
     await waitFor(() => expect(getAudits).toHaveBeenCalledWith("c1")); // â† LAZY: aÃ§Ä±k â†’ fetch VAR
