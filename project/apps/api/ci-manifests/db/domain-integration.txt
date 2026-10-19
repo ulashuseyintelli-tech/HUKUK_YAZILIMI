@@ -481,6 +481,8 @@ src/modules/case-balance/__tests__/case-balance-write-safety.http.db-gated.integ
 # Genel Cari "Dağıtım Bekleyen" (owner GO 2026-10-05, karar 6): tahsilatı iptal edilen KESİNLEŞMİŞ dağıtım, diğer okuyucularla aynı iptal işaretiyle hesaptan çıkar (negatif kırpılmaz).
 #   Gerçek ClientSettlementReadService + disposable PostgreSQL; düzeltmesiz kodda 7 testin 4'ü düşer (tahsilat iptali, kısmi dağıtım, gerçek bekleyen, iki dosyalı müvekkil).
 src/modules/client-settlement/__tests__/client-accounting-cancelled-distribution.db-gated.integration.spec.ts
+# Three collection report reads: separate currency scopes, no FX/fallback, disposable PostgreSQL.
+src/modules/report/__tests__/collection-report-currency.db-gated.integration.spec.ts
 # Guvenlik paketi 01 P1 (owner Ek 90 / Ek 91; DV-198 / GR-8): UYAP gonderim uclari calisma zamani yetkisi. GERCEK HTTP + disposable PostgreSQL.
 #   Vekaletli avukat 13 / 13 asamada izinli (yerel simulasyon, dispatched:false, asama gecisi yok); personel / yonetici / vekaletsiz
 #   avukat / muvekkilsiz / vekaletsiz / kapali / arsiv / masraf engeli / UYAP kapali RED; VIEWER 403; HACIZ_TALEBI 400; xml/submit

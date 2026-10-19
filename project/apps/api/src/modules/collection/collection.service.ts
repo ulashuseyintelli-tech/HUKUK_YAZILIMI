@@ -8,6 +8,7 @@ import {
   Optional,
 } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
+import { resolveCollectionReportScope } from './collection-report-currency';
 import { allocationHoldReason, type PayerLiabilityScopeErrorCode } from "../claim-item/payer-liability-scope";
 import {
   PAYMENT_ALLOCATION_COMPLETED_EVENT,
@@ -2048,12 +2049,12 @@ export class CollectionService {
 
   /**
    * Tahsilat özeti getir
+   * Çağrıldığı yer: CollectionController.getSummary() → GET /collections/summary.
+   * Para birimi seçilmemiş karışık kümede miktar toplamı üretilmez.
    */
-  async getSummary(tenantId: string, caseId?: string): Promise<CollectionSummary> {
-    const where: any = { tenantId };
-    if (caseId) {
-      where.caseId = caseId;
-    }
+  async getSummary(tenantId: string, caseId?: string, currency?: string): Promise<CollectionSummary> {
+    const scope = await resolveCollectionReportScope(this.prisma, { tenantId, ...(caseId ? { caseId } : {}) }, currency);
+    const where = scope.where;
 
     // Toplam tahsilat
     const confirmed = await this.prisma.collection.aggregate({
@@ -2094,6 +2095,7 @@ export class CollectionService {
     });
 
     return {
+      currency: scope.currency,
       totalCollected: Number(confirmed._sum.amount) || 0,
       totalPending: Number(pending._sum.amount) || 0,
       totalCancelled: Number(cancelled._sum.amount) || 0,

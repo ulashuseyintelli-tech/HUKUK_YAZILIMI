@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CollectionService } from "../collection/collection.service";
 import { readActiveAllocationHoldSummary } from "../collection/collection-allocation-hold";
+import { collectionReportCurrency, resolveCollectionReportScope } from '../collection/collection-report-currency';
 import { turkeyTodayAsUtcMidnight } from '../../common/turkey-calendar';
 import { ValidationGateService } from "../validation-gate/validation-gate.service"; // D4e-8: pre-haciz risk teşhisi
 import { formatLawyer, formatStaff } from "../case/responsible-candidates.service"; // M2-G5b: tek-kaynak kişi display
@@ -853,9 +854,13 @@ export class ReportService {
       endDate?: string;
       channels?: string[];
       statuses?: string[];
+      currency?: string;
     },
   ): Promise<CollectionHistoryReportResult> {
     const where: any = { tenantId };
+
+    collectionReportCurrency([], filters?.currency);
+    if (filters?.currency) where.currency = filters.currency;
 
     if (filters?.caseId) where.caseId = filters.caseId;
     if (filters?.startDate || filters?.endDate) {
@@ -874,6 +879,8 @@ export class ReportService {
       },
       orderBy: { date: 'desc' },
     });
+
+    const currency = collectionReportCurrency(collections.map(c => c.currency), filters?.currency);
 
     const caseDebtorIds = Array.from(
       new Set(
@@ -958,6 +965,7 @@ export class ReportService {
       }));
 
     return {
+      currency,
       summary: {
         totalCollected: Math.round(totalCollected * 100) / 100,
         totalPending: Math.round(totalPending * 100) / 100,
@@ -974,7 +982,7 @@ export class ReportService {
         id: c.id,
         date: c.date.toISOString(),
         amount: Number(c.amount),
-        currency: c.currency || 'TRY',
+        currency: c.currency,
         channel: c.channel || 'DIGER',
         source: c.sourceType || undefined,
         status: c.status || 'CONFIRMED',
@@ -997,7 +1005,7 @@ export class ReportService {
   /// Çağrıldığı yerler:
   /// - ReportController.getCollectionSummary() → GET /reports/collection-summary (tahsilat özet raporu)
   /// </remarks>
-  async getCollectionSummary(tenantId: string, period?: 'week' | 'month' | 'year') {
+  async getCollectionSummary(tenantId: string, period?: 'week' | 'month' | 'year', currency?: string) {
     const now = new Date();
     let startDate: Date;
 
@@ -1013,10 +1021,11 @@ export class ReportService {
         startDate = new Date(now.getFullYear(), now.getMonth(), 1);
     }
 
+    const scope = await resolveCollectionReportScope(this.prisma, { tenantId, status: { in: ['CONFIRMED', 'PENDING'] } }, currency);
     const [periodCollections, totalCollections, pendingCollections] = await Promise.all([
       (this.prisma.collection as any).aggregate({
         where: {
-          tenantId,
+          ...scope.where,
           status: 'CONFIRMED',
           date: { gte: startDate },
         },
@@ -1024,11 +1033,11 @@ export class ReportService {
         _count: { id: true },
       }),
       (this.prisma.collection as any).aggregate({
-        where: { tenantId, status: 'CONFIRMED' },
+        where: { ...scope.where, status: 'CONFIRMED' },
         _sum: { amount: true },
       }),
       (this.prisma.collection as any).aggregate({
-        where: { tenantId, status: 'PENDING' },
+        where: { ...scope.where, status: 'PENDING' },
         _sum: { amount: true },
         _count: { id: true },
       }),
@@ -1040,6 +1049,7 @@ export class ReportService {
         debtorLifecycleScope: 'HISTORICAL_COLLECTIONS_INCLUDE_PASSIVE_WHEN_LINKED',
       },
       period: period || 'month',
+      currency: scope.currency,
       periodTotal: Number(periodCollections?._sum?.amount || 0),
       periodCount: periodCollections?._count?.id || 0,
       allTimeTotal: Number(totalCollections?._sum?.amount || 0),

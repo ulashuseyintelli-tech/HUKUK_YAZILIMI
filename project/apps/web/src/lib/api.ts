@@ -2038,6 +2038,7 @@ class ApiClient {
     endDate?: string;
     channels?: string[];
     statuses?: string[];
+    currency?: string;
   }) {
     const params = new URLSearchParams();
     if (filters?.caseId) params.set('caseId', filters.caseId);
@@ -2045,12 +2046,16 @@ class ApiClient {
     if (filters?.endDate) params.set('endDate', filters.endDate);
     if (filters?.channels?.length) params.set('channels', filters.channels.join(','));
     if (filters?.statuses?.length) params.set('statuses', filters.statuses.join(','));
+    if (filters?.currency) params.set('currency', filters.currency);
     const query = params.toString() ? `?${params}` : '';
     return this.request<CollectionHistoryReport>(`/reports/collection-history${query}`);
   }
 
-  async getCollectionSummary(period?: 'week' | 'month' | 'year') {
-    const query = period ? `?period=${period}` : '';
+  async getCollectionSummary(period?: 'week' | 'month' | 'year', currency?: string) {
+    const params = new URLSearchParams();
+    if (period) params.set('period', period);
+    if (currency) params.set('currency', currency);
+    const query = params.size ? `?${params}` : '';
     return this.request<CollectionSummary>(`/reports/collection-summary${query}`);
   }
 
@@ -4258,6 +4263,7 @@ export interface InterestReport {
 }
 
 export interface CollectionHistoryReport {
+  currency: string | null;
   summary: {
     totalCollected: number;
     totalPending: number;
@@ -4283,6 +4289,7 @@ export interface CollectionHistoryReport {
 }
 
 export interface CollectionSummary {
+  currency: string | null;
   period: string;
   periodTotal: number;
   periodCount: number;

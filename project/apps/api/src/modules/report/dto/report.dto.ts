@@ -190,6 +190,7 @@ export interface InterestReportResult {
 
 // Tahsilat Geçmişi Raporu Sonucu
 export interface CollectionHistoryReportResult {
+  currency: string | null;
   summary: {
     totalCollected: number;
     totalPending: number;

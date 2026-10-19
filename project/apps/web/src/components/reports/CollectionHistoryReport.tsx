@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { api } from "@/lib/api";
 import { DollarSign, Loader2, Search, Filter, BarChart3 } from "lucide-react";
 
 interface CollectionHistoryData {
+  currency: string | null;
   summary: {
     totalCollected: number;
     totalPending: number;
@@ -61,6 +62,9 @@ export function CollectionHistoryReport() {
   const [report, setReport] = useState<CollectionHistoryData | null>(null);
   const [error, setError] = useState("");
   const [showFilters, setShowFilters] = useState(false);
+  const [currency, setCurrency] = useState('');
+  const [currencies, setCurrencies] = useState<string[]>([]);
+  const requestVersion = useRef(0);
   const [filters, setFilters] = useState({
     caseId: "",
     startDate: "",
@@ -70,12 +74,15 @@ export function CollectionHistoryReport() {
   });
 
   useEffect(() => {
-    loadReport();
+    loadReport('');
+    return () => { requestVersion.current += 1; };
   }, []);
 
-  const loadReport = async () => {
+  const loadReport = async (selectedCurrency: string) => {
+    const version = ++requestVersion.current;
     setLoading(true);
     setError("");
+    setReport(null);
     try {
       const params = new URLSearchParams();
       if (filters.caseId) params.append("caseId", filters.caseId);
@@ -83,16 +90,26 @@ export function CollectionHistoryReport() {
       if (filters.endDate) params.append("endDate", filters.endDate);
       if (filters.channels.length) params.append("channels", filters.channels.join(","));
       if (filters.statuses.length) params.append("statuses", filters.statuses.join(","));
+      if (selectedCurrency) params.append('currency', selectedCurrency);
       const res = await api.get(`/reports/collection-history?${params}`);
+      if (version !== requestVersion.current) return;
+      if (selectedCurrency && res.data?.data?.currency !== selectedCurrency) throw new Error('Rapor para birimi seçilen para birimiyle eşleşmiyor');
       setReport(res.data?.data);
+      if (res.data?.data?.currency) setCurrencies(previous => [...new Set([...previous, res.data.data.currency])].sort());
     } catch (err: any) {
-      setError(err.response?.data?.message || "Rapor yüklenemedi");
+      if (version !== requestVersion.current) return;
+      const body = err.body ?? err.response?.data;
+      if (body?.code === 'COLLECTION_CURRENCY_REQUIRED' && Array.isArray(body.currencies)) {
+        setCurrencies(body.currencies.filter((value: unknown): value is string => typeof value === 'string' && /^[A-Z]{3}$/.test(value)));
+      }
+      setError(body?.message || err.message || "Rapor yüklenemedi");
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
   };
 
-  const formatCurrency = (amount: number, currency = "TRY") => {
+  const formatCurrency = (amount: number, currency?: string | null) => {
+    if (!currency) return '—';
     return new Intl.NumberFormat("tr-TR", { style: "currency", currency }).format(amount);
   };
 
@@ -148,7 +165,7 @@ export function CollectionHistoryReport() {
             </div>
             <div className="flex items-end">
               <button
-                onClick={loadReport}
+                onClick={() => loadReport(currency)}
                 disabled={loading}
                 className="w-full px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-2"
               >
@@ -159,6 +176,15 @@ export function CollectionHistoryReport() {
           </div>
         )}
         {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
+        <label className="mt-3 flex items-center gap-2 text-sm">
+          Para birimi
+          <select aria-label="Tahsilat raporu para birimi" value={currency} disabled={loading}
+            onChange={event => { const value = event.target.value; setCurrency(value); void loadReport(value); }}
+            className="rounded-lg border px-3 py-2">
+            <option value="">Tek para birimi varsa otomatik</option>
+            {currencies.map(value => <option key={value} value={value}>{value}</option>)}
+          </select>
+        </label>
       </div>
 
       {loading && (
@@ -174,20 +200,20 @@ export function CollectionHistoryReport() {
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div className="bg-green-50 rounded-xl border border-green-200 p-4">
               <p className="text-sm text-green-700">Toplam Tahsilat</p>
-              <p className="text-2xl font-bold text-green-600">{formatCurrency(report.summary.totalCollected)}</p>
+              <p className="text-2xl font-bold text-green-600">{formatCurrency(report.summary.totalCollected, report.currency)}</p>
               <p className="text-xs text-green-600">{report.summary.collectionCount} işlem</p>
             </div>
             <div className="bg-yellow-50 rounded-xl border border-yellow-200 p-4">
               <p className="text-sm text-yellow-700">Beklemede</p>
-              <p className="text-2xl font-bold text-yellow-600">{formatCurrency(report.summary.totalPending)}</p>
+              <p className="text-2xl font-bold text-yellow-600">{formatCurrency(report.summary.totalPending, report.currency)}</p>
             </div>
             <div className="bg-red-50 rounded-xl border border-red-200 p-4">
               <p className="text-sm text-red-700">İptal Edilen</p>
-              <p className="text-2xl font-bold text-red-600">{formatCurrency(report.summary.totalCancelled)}</p>
+              <p className="text-2xl font-bold text-red-600">{formatCurrency(report.summary.totalCancelled, report.currency)}</p>
             </div>
             <div className="bg-white rounded-xl border p-4">
               <p className="text-sm text-muted-foreground">Ortalama Tahsilat</p>
-              <p className="text-2xl font-bold">{formatCurrency(report.summary.averageAmount)}</p>
+              <p className="text-2xl font-bold">{formatCurrency(report.summary.averageAmount, report.currency)}</p>
             </div>
             <div className="bg-white rounded-xl border p-4">
               <p className="text-sm text-muted-foreground">İşlem Sayısı</p>
@@ -208,7 +234,7 @@ export function CollectionHistoryReport() {
                   <div key={i}>
                     <div className="flex justify-between text-sm mb-1">
                       <span>{channelLabels[item.channel] || item.channel}</span>
-                      <span className="font-medium">{formatCurrency(item.total)} ({item.percentage}%)</span>
+                      <span className="font-medium">{formatCurrency(item.total, report.currency)} ({item.percentage}%)</span>
                     </div>
                     <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
                       <div className="h-full bg-primary rounded-full" style={{ width: `${item.percentage}%` }} />
@@ -229,7 +255,7 @@ export function CollectionHistoryReport() {
                   <div key={i}>
                     <div className="flex justify-between text-sm mb-1">
                       <span>{sourceLabels[item.source] || item.source}</span>
-                      <span className="font-medium">{formatCurrency(item.total)} ({item.percentage}%)</span>
+                      <span className="font-medium">{formatCurrency(item.total, report.currency)} ({item.percentage}%)</span>
                     </div>
                     <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
                       <div className="h-full bg-green-500 rounded-full" style={{ width: `${item.percentage}%` }} />
