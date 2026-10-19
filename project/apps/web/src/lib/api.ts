@@ -13,6 +13,20 @@ import { reportClientError, shouldReportNetworkError } from "./error-reporter"; 
 
 const API_URL = API_BASE_URL;
 
+export interface ExpensePaymentCommand {
+  idempotencyKey: string;
+  amount: number;
+  paymentDate: string;
+  method: string;
+  reference?: string;
+  notes?: string;
+}
+
+export type ExpenseReceiptPaymentCommand = Omit<ExpensePaymentCommand, 'amount'> & {
+  paidAmount: number;
+  receiptDocId?: string;
+};
+
 function generateClientWorkspaceIdempotencyKey() {
   // WSMR-A4c: Math.random fallback KALDIRILDI — bu anahtar backend dedupe
   // sozlesmesine (`Idempotency-Key`) gider; guvenli entropy yoksa ATAR.
@@ -2364,10 +2378,11 @@ class ApiClient {
     });
   }
 
-  async receiveExpenseRequest(id: string, paidAmount: number, receiptDocId?: string) {
+  // The caller keeps the same key/date/payload for a retry; this helper never generates them.
+  async receiveExpenseRequest(id: string, payment: ExpenseReceiptPaymentCommand) {
     return this.request<any>(`/expense-requests/${id}/receive`, {
       method: 'POST',
-      body: JSON.stringify({ paidAmount, receiptDocId }),
+      body: JSON.stringify(payment),
     });
   }
 
@@ -2389,10 +2404,10 @@ class ApiClient {
     return this.request<{ pending: number; sent: number; received: number; totalReceived: number }>(`/expense-requests/stats${query}`);
   }
 
-  async markExpenseRequestAsReceived(id: string, paidAmount: number, receiptDocId?: string) {
+  async markExpenseRequestAsReceived(id: string, payment: ExpenseReceiptPaymentCommand) {
     return this.request<any>(`/expense-requests/${id}/receive`, {
       method: 'POST',
-      body: JSON.stringify({ paidAmount, receiptDocId }),
+      body: JSON.stringify(payment),
     });
   }
 
@@ -2437,7 +2452,7 @@ class ApiClient {
   /**
    * Ödeme kaydet
    */
-  async recordExpensePayment(id: string, payment: { amount: number; paymentDate: string; method: string; reference?: string; notes?: string }) {
+  async recordExpensePayment(id: string, payment: ExpensePaymentCommand) {
     return this.request<any>(`/expense-requests/${id}/payment`, {
       method: 'POST',
       body: JSON.stringify(payment),
@@ -5484,7 +5499,7 @@ declare module './api' {
     updateExpenseRequest(id: string, data: Partial<ExpenseRequest>): Promise<ExpenseRequest>;
     sendExpenseRequest(id: string, channel: string): Promise<ExpenseRequest>;
     remindExpenseRequest(id: string): Promise<ExpenseRequest>;
-    receiveExpenseRequest(id: string, paidAmount: number, receiptDocId?: string): Promise<ExpenseRequest>;
+    receiveExpenseRequest(id: string, payment: ExpenseReceiptPaymentCommand): Promise<ExpenseRequest>;
     cancelExpenseRequest(id: string, reason?: string): Promise<ExpenseRequest>;
     deleteExpenseRequest(id: string): Promise<{ success: boolean }>;
     getExpenseRequestStats(caseId?: string): Promise<{ pending: number; sent: number; received: number; totalReceived: number }>;

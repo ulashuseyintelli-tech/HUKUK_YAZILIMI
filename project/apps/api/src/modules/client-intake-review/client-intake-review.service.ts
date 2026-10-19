@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
-import { ClientIntakeSubmissionStatus, ClientIntakeFieldReviewStatus } from '@prisma/client';
+import { ClientIntakeSubmissionStatus, ClientIntakeFieldReviewStatus, Prisma } from '@prisma/client';
+import { CLIENT_INTAKE_WRITE_TX, lockClientIntakeFieldSubmission, lockClientIntakeSubmission } from '../../common/client-intake-submission-lock';
 
 export interface ClientIntakeReviewCommandTarget {
   submissionId: string;
@@ -54,8 +55,8 @@ export class ClientIntakeReviewService {
    * - ClientIntakeReviewController.getOne() → GET /client-intake-submissions/:id
    * </remarks>
    */
-  async getOne(tenantId: string, id: string) {
-    const sub = await this.prisma.clientIntakeSubmission.findFirst({
+  async getOne(tenantId: string, id: string, db: Prisma.TransactionClient = this.prisma) {
+    const sub = await db.clientIntakeSubmission.findFirst({
       where: { id, tenantId },
       include: { fields: { orderBy: { createdAt: 'asc' } } },
     });
@@ -106,14 +107,17 @@ export class ClientIntakeReviewService {
    * </remarks>
    */
   async claim(tenantId: string, id: string, userId: string) {
-    const sub = await this.findOwned(tenantId, id);
-    if (sub.status !== ClientIntakeSubmissionStatus.CLIENT_SUBMITTED) {
-      throw new BadRequestException(`Yalnız CLIENT_SUBMITTED üstlenilebilir (durum: ${sub.status})`);
-    }
-    return this.prisma.clientIntakeSubmission.update({
-      where: { id },
-      data: { status: ClientIntakeSubmissionStatus.IN_REVIEW, claimedById: userId, claimedAt: new Date() },
-    });
+    return this.prisma.$transaction(async tx => {
+      await lockClientIntakeSubmission(tx, tenantId, id);
+      const sub = await this.findOwned(tenantId, id, tx);
+      if (sub.status !== ClientIntakeSubmissionStatus.CLIENT_SUBMITTED) {
+        throw new BadRequestException(`Yalnız CLIENT_SUBMITTED üstlenilebilir (durum: ${sub.status})`);
+      }
+      return tx.clientIntakeSubmission.update({
+        where: { id, tenantId },
+        data: { status: ClientIntakeSubmissionStatus.IN_REVIEW, claimedById: userId, claimedAt: new Date() },
+      });
+    }, CLIENT_INTAKE_WRITE_TX);
   }
 
   /**
@@ -125,19 +129,19 @@ export class ClientIntakeReviewService {
    * </remarks>
    */
   async reviewField(tenantId: string, fieldId: string, userId: string, decision: 'APPROVE' | 'REJECT', note?: string) {
-    const field = await this.prisma.clientIntakeField.findFirst({
-      where: { id: fieldId, submission: { tenantId } },
-      select: { id: true, promotedRefId: true, submission: { select: { id: true, status: true } } },
-    });
-    if (!field) throw new NotFoundException('Alan bulunamadı');
-    this.assertReviewable(field.submission.status, field.promotedRefId);
-
-    const reviewStatus = decision === 'APPROVE' ? ClientIntakeFieldReviewStatus.APPROVED : ClientIntakeFieldReviewStatus.REJECTED;
-    await this.prisma.$transaction([
-      this.prisma.clientIntakeField.update({ where: { id: fieldId }, data: { reviewStatus, reviewNote: note ?? null } }),
-      this.prisma.clientIntakeSubmission.update({ where: { id: field.submission.id }, data: { reviewedById: userId, reviewedAt: new Date() } }),
-    ]);
-    return this.getOne(tenantId, field.submission.id);
+    return this.prisma.$transaction(async tx => {
+      const submissionId = await lockClientIntakeFieldSubmission(tx, tenantId, fieldId);
+      const field = await tx.clientIntakeField.findFirst({
+        where: { id: fieldId, submissionId, submission: { tenantId } },
+        select: { id: true, promotedRefId: true, submission: { select: { id: true, status: true } } },
+      });
+      if (!field) throw new NotFoundException('Alan bulunamadı');
+      this.assertReviewable(field.submission.status, field.promotedRefId);
+      const reviewStatus = decision === 'APPROVE' ? ClientIntakeFieldReviewStatus.APPROVED : ClientIntakeFieldReviewStatus.REJECTED;
+      await tx.clientIntakeField.update({ where: { id: fieldId, submissionId, promotedRefId: null }, data: { reviewStatus, reviewNote: note ?? null } });
+      await tx.clientIntakeSubmission.update({ where: { id: submissionId, tenantId }, data: { reviewedById: userId, reviewedAt: new Date() } });
+      return this.getOne(tenantId, submissionId, tx);
+    }, CLIENT_INTAKE_WRITE_TX);
   }
 
   /**
@@ -149,18 +153,20 @@ export class ClientIntakeReviewService {
    * </remarks>
    */
   async bulkReviewFields(tenantId: string, submissionId: string, userId: string, fieldIds: string[], decision: 'APPROVE' | 'REJECT', note?: string) {
-    const sub = await this.findOwned(tenantId, submissionId);
-    if (sub.status !== ClientIntakeSubmissionStatus.IN_REVIEW) {
-      throw new BadRequestException(`Toplu review için submission IN_REVIEW olmalı (durum: ${sub.status})`);
-    }
-    const reviewStatus = decision === 'APPROVE' ? ClientIntakeFieldReviewStatus.APPROVED : ClientIntakeFieldReviewStatus.REJECTED;
-    // YALNIZ bu submission'ın, promote EDİLMEMİŞ alanları. (submission'lar arası toplu YOK.)
-    await this.prisma.clientIntakeField.updateMany({
-      where: { id: { in: fieldIds }, submissionId, promotedRefId: null },
-      data: { reviewStatus, reviewNote: note ?? null },
-    });
-    await this.prisma.clientIntakeSubmission.update({ where: { id: submissionId }, data: { reviewedById: userId, reviewedAt: new Date() } });
-    return this.getOne(tenantId, submissionId);
+    return this.prisma.$transaction(async tx => {
+      await lockClientIntakeSubmission(tx, tenantId, submissionId);
+      const sub = await this.findOwned(tenantId, submissionId, tx);
+      if (sub.status !== ClientIntakeSubmissionStatus.IN_REVIEW) {
+        throw new BadRequestException(`Toplu review için submission IN_REVIEW olmalı (durum: ${sub.status})`);
+      }
+      const reviewStatus = decision === 'APPROVE' ? ClientIntakeFieldReviewStatus.APPROVED : ClientIntakeFieldReviewStatus.REJECTED;
+      await tx.clientIntakeField.updateMany({
+        where: { id: { in: fieldIds }, submissionId, promotedRefId: null },
+        data: { reviewStatus, reviewNote: note ?? null },
+      });
+      await tx.clientIntakeSubmission.update({ where: { id: submissionId, tenantId }, data: { reviewedById: userId, reviewedAt: new Date() } });
+      return this.getOne(tenantId, submissionId, tx);
+    }, CLIENT_INTAKE_WRITE_TX);
   }
 
   /**
@@ -172,22 +178,23 @@ export class ClientIntakeReviewService {
    * </remarks>
    */
   async rejectSubmission(tenantId: string, id: string, userId: string, _note?: string) {
-    const sub = await this.findOwned(tenantId, id);
-    if (sub.status !== ClientIntakeSubmissionStatus.CLIENT_SUBMITTED && sub.status !== ClientIntakeSubmissionStatus.IN_REVIEW) {
-      throw new BadRequestException(`Bu gönderim reddedilemez (durum: ${sub.status})`);
-    }
-    await this.prisma.$transaction([
-      this.prisma.clientIntakeSubmission.update({
-        where: { id },
+    return this.prisma.$transaction(async tx => {
+      await lockClientIntakeSubmission(tx, tenantId, id);
+      const sub = await this.findOwned(tenantId, id, tx);
+      if (sub.status !== ClientIntakeSubmissionStatus.CLIENT_SUBMITTED && sub.status !== ClientIntakeSubmissionStatus.IN_REVIEW) {
+        throw new BadRequestException(`Bu gönderim reddedilemez (durum: ${sub.status})`);
+      }
+      await tx.clientIntakeSubmission.update({
+        where: { id, tenantId },
         data: { status: ClientIntakeSubmissionStatus.REJECTED, reviewedById: userId, reviewedAt: new Date() },
-      }),
+      });
       // YALNIZ PENDING → REJECTED; APPROVED alanlara dokunma.
-      this.prisma.clientIntakeField.updateMany({
-        where: { submissionId: id, reviewStatus: ClientIntakeFieldReviewStatus.PENDING },
+      await tx.clientIntakeField.updateMany({
+        where: { submissionId: id, reviewStatus: ClientIntakeFieldReviewStatus.PENDING, promotedRefId: null },
         data: { reviewStatus: ClientIntakeFieldReviewStatus.REJECTED },
-      }),
-    ]);
-    return this.getOne(tenantId, id);
+      });
+      return this.getOne(tenantId, id, tx);
+    }, CLIENT_INTAKE_WRITE_TX);
   }
 
   // ==================== iç yardımcılar ====================
@@ -202,8 +209,8 @@ export class ClientIntakeReviewService {
     }
   }
 
-  private async findOwned(tenantId: string, id: string) {
-    const sub = await this.prisma.clientIntakeSubmission.findFirst({ where: { id, tenantId }, select: { id: true, status: true } });
+  private async findOwned(tenantId: string, id: string, db: Prisma.TransactionClient = this.prisma) {
+    const sub = await db.clientIntakeSubmission.findFirst({ where: { id, tenantId }, select: { id: true, status: true } });
     if (!sub) throw new NotFoundException('Gönderim bulunamadı');
     return sub;
   }

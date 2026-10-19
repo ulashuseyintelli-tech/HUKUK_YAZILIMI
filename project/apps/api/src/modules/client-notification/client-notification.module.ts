@@ -9,6 +9,9 @@ import { MessageTemplateModule } from "../message-template/message-template.modu
 import { AuditModule } from "../audit/audit.module";
 import { OfficeApprovalModule } from "../office-approval/office-approval.module";
 import { ClientNotificationAuthorityAdapter } from "./client-notification-authority.adapter";
+import { NotificationHistoryPermissionController } from "./notification-history-permission.controller";
+import { NotificationHistoryPermissionService } from "./notification-history-permission.service";
+import { ClientNotificationHistoryAccessService } from "./client-notification-history-access.service";
 
 @Module({
   imports: [
@@ -18,11 +21,13 @@ import { ClientNotificationAuthorityAdapter } from "./client-notification-author
     AuditModule,
     OfficeApprovalModule,
   ],
-  controllers: [ClientNotificationController, NotificationDispatchController],
+  controllers: [ClientNotificationController, NotificationDispatchController, NotificationHistoryPermissionController],
   providers: [
     ClientNotificationService,
     NotificationDispatcherService,
     ClientNotificationAuthorityAdapter,
+    NotificationHistoryPermissionService,
+    ClientNotificationHistoryAccessService,
   ],
   exports: [ClientNotificationService, NotificationDispatcherService],
 })

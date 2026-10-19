@@ -72,6 +72,8 @@ describe('UYAP-SEND-HARD-GATE-PREFLIGHT-R02', () => {
       // Yeni bir gate eklenirse bu envanter BILINCLI olarak guncellenmelidir.
       expect(codes).toEqual(
         [
+          // P5 (owner Ek 94 / Ek 95 K1): dosya ataması kapısı — UYAP_SEND satırı yalnız xml/submit bağlamında tetiklenir.
+          'ACTING_LAWYER_NOT_ASSIGNED_TO_CASE',
           'CASE_ARCHIVED',
           'CASE_CLOSED',
           'EXPENSE_BLOCKING',

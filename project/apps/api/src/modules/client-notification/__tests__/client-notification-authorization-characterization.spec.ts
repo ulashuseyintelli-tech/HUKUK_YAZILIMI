@@ -2,6 +2,7 @@ import { ForbiddenException } from "@nestjs/common";
 import { GUARDS_METADATA } from "@nestjs/common/constants";
 import { JwtAuthGuard } from "../../auth/guards/jwt-auth.guard";
 import { ClientNotificationController } from "../client-notification.controller";
+import { ClientNotificationHistoryAccessService } from "../client-notification-history-access.service";
 import { NotificationDispatchController } from "../notification-dispatch.controller";
 import {
   BulkEmailRecipientType,
@@ -37,7 +38,7 @@ describe("CN-1 notification authorization characterization", () => {
   });
 
   it("send-email/send-sms/bulk-email JWT guard taşır ve canonical command wiring'ini tüketir", async () => {
-    const controller = new ClientNotificationController(notificationService, authority);
+    const controller = new ClientNotificationController(notificationService, authority, {} as ClientNotificationHistoryAccessService);
     const guards = Reflect.getMetadata(GUARDS_METADATA, ClientNotificationController);
     expect(guards).toContain(JwtAuthGuard);
 
@@ -112,7 +113,7 @@ describe("CN-1 notification authorization characterization", () => {
   });
 
   it("overview ve test-send ADMIN olmayan rolü controller sınırında reddeder", async () => {
-    const controller = new ClientNotificationController(notificationService, authority);
+    const controller = new ClientNotificationController(notificationService, authority, {} as ClientNotificationHistoryAccessService);
 
     await expect(controller.getOverview("tenant-1", "USER")).rejects.toBeInstanceOf(
       ForbiddenException

@@ -632,7 +632,7 @@ export class CaseService {
    * /// <remarks>
    * /// Çağrıldığı yerler:
    * ///  - CaseService.updateCaseLawyer() → PATCH /cases/:id/lawyers/:caseLawyerId (casePermissions/canSign/hasSignatureAuthority)
-   * ///  - CaseService.updateCaseStaff() → PATCH /cases/:id/staff/:caseStaffId (canEdit/canApprove/canView)
+   * ///  - CaseService.updateCaseStaff() → POST/PATCH/DELETE /cases/:id/staff (membership, roleOnCase, canEdit/canApprove/canView)
    * ///  - CaseService.addCaseLawyer() → POST /cases/:id/lawyers (istemci canSign bildirirse)
    * /// </remarks>
    */
@@ -4248,87 +4248,52 @@ export class CaseService {
   /**
    * Dosyaya personel ekle
    */
+  /// <remarks>Called by CaseController.addCaseStaff → POST /cases/:id/staff.</remarks>
   async addCaseStaff(tenantId: string, caseId: string, data: {
     staffMemberId: string;
     roleOnCase?: string;
-  }) {
-    // Dosyanın bu tenant'a ait olduğunu kontrol et
-    const caseExists = await this.prisma.case.findFirst({
-      where: { id: caseId, tenantId },
+  }, userId: string) {
+    await this.assertCanGrantCasePermissions(tenantId, userId);
+    return this.withCasePermissionGrantAuthority(tenantId, userId, true, async (db) => {
+      const caseExists = await db.case.findFirst({ where: { id: caseId, tenantId } });
+      if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+      const staffMember = await db.staffMember.findFirst({ where: { id: data.staffMemberId, tenantId } });
+      if (!staffMember) throw new NotFoundException("Personel bulunamadı");
+      if (!staffMember.isActive) throw new BadRequestException("Pasif personel dosya ekibine eklenemez.");
+      const existing = await db.caseStaff.findFirst({ where: { caseId, staffMemberId: data.staffMemberId } });
+      if (existing) throw new BadRequestException("Bu personel zaten dosyaya ekli");
+      const caseStaff = await db.caseStaff.create({
+        data: { caseId, staffMemberId: data.staffMemberId, roleOnCase: data.roleOnCase || staffMember.staffType },
+        include: { staffMember: { select: { id: true, firstName: true, lastName: true, staffType: true } } },
+      });
+      await this.auditService.logInTransaction(db as Prisma.TransactionClient, {
+        tenantId, action: "CREATE", entityType: "CASE_STAFF", entityId: caseStaff.id, userId,
+        newValues: { caseId, staffMemberId: caseStaff.staffMemberId, roleOnCase: caseStaff.roleOnCase },
+        description: "Dosya personeli eklendi",
+      });
+      return caseStaff;
     });
-    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
-
-    // Personelin bu tenant'a ait olduğunu kontrol et
-    const staffMember = await this.prisma.staffMember.findFirst({
-      where: { id: data.staffMemberId, tenantId },
-    });
-    if (!staffMember) throw new NotFoundException("Personel bulunamadı");
-
-    // CANDIDATE-K1 (STF-PRD-BOLA-002 baseline, OFF-INV-04): dosya ekibine yalnız AKTİF bir personel
-    // eklenebilir. Uygunluk ekip üyeliği için tenant + aktiflik ile SINIRLIDIR. Yalnız ileriye-dönük
-    // (write-time): mevcut CaseStaff satırları taranmaz/değiştirilmez.
-    if (!staffMember.isActive) {
-      throw new BadRequestException("Pasif personel dosya ekibine eklenemez.");
-    }
-
-    // Zaten ekli mi kontrol et
-    const existing = await this.prisma.caseStaff.findFirst({
-      where: { caseId, staffMemberId: data.staffMemberId },
-    });
-    if (existing) throw new BadRequestException("Bu personel zaten dosyaya ekli");
-
-    const caseStaff = await this.prisma.caseStaff.create({
-      data: {
-        caseId,
-        staffMemberId: data.staffMemberId,
-        roleOnCase: data.roleOnCase || staffMember.staffType,
-      },
-      include: {
-        staffMember: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            staffType: true,
-          },
-        },
-      },
-    });
-
-    return caseStaff;
   }
 
-  /**
-   * Dosyadan personel çıkar
-   */
-  async removeCaseStaff(tenantId: string, caseId: string, caseStaffId: string) {
-    // Dosyanın bu tenant'a ait olduğunu kontrol et
-    const caseExists = await this.prisma.case.findFirst({
-      where: { id: caseId, tenantId },
+  /// <remarks>Called by CaseController.removeCaseStaff → DELETE /cases/:id/staff/:caseStaffId.</remarks>
+  async removeCaseStaff(tenantId: string, caseId: string, caseStaffId: string, userId: string) {
+    await this.assertCanGrantCasePermissions(tenantId, userId);
+    return this.withCasePermissionGrantAuthority(tenantId, userId, true, async (db) => {
+      const caseExists = await db.case.findFirst({ where: { id: caseId, tenantId } });
+      if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+      const caseStaff = await db.caseStaff.findFirst({ where: { id: caseStaffId, caseId } });
+      if (!caseStaff) throw new NotFoundException("Personel ataması bulunamadı");
+      const removed = await db.caseStaff.delete({ where: { id: caseStaffId } });
+      await this.auditService.logInTransaction(db as Prisma.TransactionClient, {
+        tenantId, action: "DELETE", entityType: "CASE_STAFF", entityId: caseStaffId, userId,
+        oldValues: { caseId, staffMemberId: removed.staffMemberId, roleOnCase: removed.roleOnCase },
+        description: "Dosya personeli çıkarıldı",
+      });
+      return { success: true };
     });
-    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
-
-    // CaseStaff'ın bu dosyaya ait olduğunu kontrol et
-    const caseStaff = await this.prisma.caseStaff.findFirst({
-      where: { id: caseStaffId, caseId },
-    });
-    if (!caseStaff) throw new NotFoundException("Personel ataması bulunamadı");
-
-    await this.prisma.caseStaff.delete({
-      where: { id: caseStaffId },
-    });
-
-    return { success: true };
   }
 
-  /**
-   * Dosyadaki personelin bu-dosyaya özel ayarlarını güncelle (ASSIGN-3a).
-   * Yalnız CaseStaff modeli alanları whitelist'lenir: roleOnCase, canEdit, canApprove, canView,
-   * receiveNotifications, notes. Bilinmeyen alanlar (canSign, permissions — lawyer drawer'ından
-   * sızmış kavramlar, PR-ASSIGN-3b'de frontend'den kaldırılacak) SESSİZCE yok sayılır.
-   * Tenant guard: case bu tenant'a + caseStaff bu dosyaya ait. Audit: UPDATE / CASE_STAFF.
-   * @remarks Çağrıldığı yer: CaseController.updateCaseStaff() → PATCH /cases/:id/staff/:caseStaffId.
-   */
+  /// <remarks>Called by CaseController.updateCaseStaff → PATCH /cases/:id/staff/:caseStaffId.</remarks>
   async updateCaseStaff(
     tenantId: string,
     caseId: string,
@@ -4343,24 +4308,10 @@ export class CaseService {
     },
     userId: string,
   ) {
-    // K2: personel dosya yetkileri (canEdit/canApprove/canView) F01 yönetim kuralı ister — yazmadan ÖNCE.
-    if (data.canEdit !== undefined || data.canApprove !== undefined || data.canView !== undefined) {
-      await this.assertCanGrantCasePermissions(tenantId, userId);
-    }
-
-    // Dosya bu tenant'a ait mi?
-    const caseExists = await this.prisma.case.findFirst({
-      where: { id: caseId, tenantId },
-    });
-    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
-
-    // CaseStaff bu dosyaya ait mi? (cross-tenant/yanlış-dosya → 404)
-    const caseStaff = await this.prisma.caseStaff.findFirst({
-      where: { id: caseStaffId, caseId },
-    });
-    if (!caseStaff) throw new NotFoundException("Personel ataması bulunamadı");
-
-    // Service-whitelist: yalnız CaseStaff alanları (verilenler). canSign/permissions vb. yok sayılır.
+    // DV207 G2: role membership can open history access, just like permission flags.
+    const grantsStaffPermission = data.roleOnCase !== undefined || data.canEdit !== undefined ||
+      data.canApprove !== undefined || data.canView !== undefined;
+    if (grantsStaffPermission) await this.assertCanGrantCasePermissions(tenantId, userId);
     const updateData: Prisma.CaseStaffUpdateInput = {};
     if (data.roleOnCase !== undefined) updateData.roleOnCase = data.roleOnCase;
     if (data.canEdit !== undefined) updateData.canEdit = data.canEdit;
@@ -4369,32 +4320,26 @@ export class CaseService {
     if (data.receiveNotifications !== undefined) updateData.receiveNotifications = data.receiveNotifications;
     if (data.notes !== undefined) updateData.notes = data.notes;
 
-    // K4-2: personel yetki alanı varsa yazı kilitli F01 değerlendirmesiyle aynı tx'te.
-    const grantsStaffPermission = data.canEdit !== undefined || data.canApprove !== undefined || data.canView !== undefined;
-    const updated = await this.withCasePermissionGrantAuthority(tenantId, userId, grantsStaffPermission, (db) =>
-      db.caseStaff.update({
-        where: { id: caseStaffId },
-        data: updateData,
-        include: {
-          staffMember: {
-            select: { id: true, firstName: true, lastName: true, staffType: true },
-          },
-        },
-      }),
-    );
-
-    // Audit (ASSIGN-3a): personel rol/yetki güncellemesi (add/remove audit AYRI iş).
-    await this.auditService.log({
-      tenantId,
-      action: "UPDATE",
-      entityType: "CASE_STAFF",
-      entityId: caseStaffId,
-      userId, // WP-1c-3
-      newValues: updateData,
-      description: `Dosya personeli güncellendi: ${updated.staffMember.firstName} ${updated.staffMember.lastName}`,
-    });
-
-    return updated;
+    const write = async (db: Prisma.TransactionClient | PrismaService) => {
+      const caseExists = await db.case.findFirst({ where: { id: caseId, tenantId } });
+      if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+      const caseStaff = await db.caseStaff.findFirst({ where: { id: caseStaffId, caseId } });
+      if (!caseStaff) throw new NotFoundException("Personel ataması bulunamadı");
+      const updated = await db.caseStaff.update({
+        where: { id: caseStaffId }, data: updateData,
+        include: { staffMember: { select: { id: true, firstName: true, lastName: true, staffType: true } } },
+      });
+      await this.auditService.logInTransaction(db as Prisma.TransactionClient, {
+        tenantId, action: "UPDATE", entityType: "CASE_STAFF", entityId: caseStaffId, userId,
+        newValues: updateData,
+        description: `Dosya personeli güncellendi: ${updated.staffMember.firstName} ${updated.staffMember.lastName}`,
+      });
+      return updated;
+    };
+    // Notes/notification updates retain their existing authority, with atomic audit too.
+    return grantsStaffPermission
+      ? this.withCasePermissionGrantAuthority(tenantId, userId, true, write)
+      : this.prisma.$transaction(write);
   }
 
   // ==================== ALACAK KALEMLERİ (DUES) ====================

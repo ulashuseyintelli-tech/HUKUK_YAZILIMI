@@ -89,6 +89,7 @@ src/modules/interest-engine/legal-application-plan/__tests__/legal-application-w
 src/modules/debtor/__tests__/third-party-collection-delegation.spec.ts
 
 src/modules/bank/__tests__/bank-match-delegation.spec.ts
+src/modules/bank/__tests__/bank-mock-containment.spec.ts
 src/modules/bank/__tests__/bank-lifecycle.controller.spec.ts
 src/modules/bank/__tests__/bank-settlement-evidence-writer.service.spec.ts
 src/modules/bank/__tests__/bank-candidate-settlement-transition.service.spec.ts
@@ -167,6 +168,8 @@ src/modules/client-statement/__tests__/client-statement-monthly-c3b04.spec.ts
 #     CAD C3-B05: kalici teslim defteri (outbox) sozlesmesi + retry/idempotency karar cekirdegi
 #     + terminal ariza gorunurlugu (W3-F04); tasima ve defter portlari test double.
 src/modules/client-statement/__tests__/client-statement-delivery-ledger-c3b05.spec.ts
+#     K18: uretim metadata + gercek Nest DI, merkezi terminal raporu ve opsiyonel reporter.
+src/modules/client-statement/__tests__/client-statement-reporter-production-di.spec.ts
 #     CAD C3: teslim portunun mevcut bildirim zincirine baglanmasi (dispatcher adaptoru; dogrudan
 #     provider cagrisi YOK), token sozlesmesi ve idempotency devri.
 src/modules/client-statement/__tests__/client-statement-notification-delivery-adapter.spec.ts

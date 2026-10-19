@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { ClientNotificationService } from "../client-notification/client-notification.service";
 import { Cron, CronExpression } from "@nestjs/schedule";
@@ -7,6 +7,7 @@ import { reportCronJobFailure } from "../../common/cron-failure-reporting";
 import { runWithOverlapGuard } from "../../common/scheduler-overlap-guard";
 import { IntegrationErrorReporter } from "../error-log/integration-error-reporter";
 import { ACTIVE_TENANT_WHERE } from "../tenant/tenant-lifecycle";
+import { UpsertSpecialDayDto, validateSpecialDayInput } from "./dto/upsert-special-day.dto";
 
 /**
  * Office.autoGreetingTime ("HH:mm") değerini saat/dakikaya ayrıştırır.
@@ -131,28 +132,26 @@ export class GreetingService {
   }
 
 
-  // Özel gün ekle/güncelle
-  async upsertSpecialDay(tenantId: string, data: {
-    id?: string;
-    name: string;
-    type: string;
-    month: number;
-    day: number;
-    isVariable?: boolean;
-    year?: number;
-    greetingMessage?: string;
-    smsMessage?: string;
-    isActive?: boolean;
-    sendGreeting?: boolean;
-  }) {
+  /** Caller: GreetingController.upsertSpecialDay. Global days remain read-only here. */
+  async upsertSpecialDay(tenantId: string, input: UpsertSpecialDayDto) {
+    const data = await validateSpecialDayInput(input);
+    const fields = {
+      name: data.name, type: data.type, month: data.month, day: data.day,
+      isVariable: data.isVariable, year: data.year,
+      greetingMessage: data.greetingMessage, smsMessage: data.smsMessage,
+      isActive: data.isActive, sendGreeting: data.sendGreeting,
+    };
     if (data.id) {
-      return (this.prisma as any).specialDay.update({
-        where: { id: data.id },
-        data,
+      return this.prisma.$transaction(async tx => {
+        const updated = await tx.specialDay.updateMany({
+          where: { id: data.id, tenantId }, data: fields,
+        });
+        if (updated.count !== 1) throw new NotFoundException("Özel gün bulunamadı");
+        return tx.specialDay.findUniqueOrThrow({ where: { id: data.id } });
       });
     }
-    return (this.prisma as any).specialDay.create({
-      data: { tenantId, ...data },
+    return this.prisma.specialDay.create({
+      data: { ...fields, tenantId },
     });
   }
 
@@ -284,8 +283,11 @@ export class GreetingService {
     }
   }
 
-  // Tebrik gönder
+  /** Callers: GreetingController.sendGreeting and greetingSchedulerTick. Reuses the existing durable notification claim. */
   async sendGreeting(tenantId: string, userId: string, clientId: string, type: string, channel: string, specialDayId?: string) {
+    if (!['EMAIL', 'SMS', 'BOTH'].includes(channel) || !['BIRTHDAY', 'FOUNDING_ANNIVERSARY', 'POA_ANNIVERSARY', 'HOLIDAY', 'MEMORIAL'].includes(type)) {
+      throw new BadRequestException('Geçersiz tebrik türü veya kanalı');
+    }
     const client = await (this.prisma as any).client.findFirst({
       where: { id: clientId, tenantId },
       include: { contacts: true },
@@ -295,39 +297,33 @@ export class GreetingService {
 
     let specialDay;
     if (specialDayId) {
-      specialDay = await (this.prisma as any).specialDay.findUnique({ where: { id: specialDayId } });
+      specialDay = await this.prisma.specialDay.findFirst({ where: { id: specialDayId, OR: [{ tenantId }, { tenantId: null }] } });
+      if (!specialDay) throw new NotFoundException('Özel gün bulunamadı');
     }
 
     const { subject, message, smsMessage } = this.createGreetingMessage(type, client, specialDay);
 
-    const results = [];
-
-    // E-posta gönder
-    if (channel === "EMAIL" || channel === "BOTH") {
+    const results: Array<{ channel: 'EMAIL' | 'SMS'; sent: boolean; success: boolean; status: string; notificationId?: string; alreadySent?: boolean; error?: string }> = [];
+    const day = new Date().toLocaleDateString('sv-SE', { timeZone: SCHEDULER_TIMEZONE });
+    const channels: Array<'EMAIL' | 'SMS'> = channel === 'BOTH' ? ['EMAIL', 'SMS'] : [channel as 'EMAIL' | 'SMS'];
+    for (const target of channels) {
+      // Stable tenant-scoped claim: same day/event/client/channel is never blindly resent.
+      const dedupeKey = `greeting:${JSON.stringify([day, clientId, type, specialDayId ?? null, target])}`;
+      const body = target === 'EMAIL' ? message.replace(/\n/g, '<br>') : smsMessage;
       try {
-        const emailResult = await this.notificationService.sendEmail(tenantId, userId, {
-          clientId,
-          type: "TEBRIK",
-          subject,
-          body: message.replace(/\n/g, "<br>"),
-        });
-        results.push({ channel: "EMAIL", sent: true, ...emailResult });
-      } catch (e: any) {
-        results.push({ channel: "EMAIL", sent: false, error: e.message });
-      }
-    }
-
-    // SMS gönder
-    if (channel === "SMS" || channel === "BOTH") {
-      try {
-        const smsResult = await this.notificationService.sendSms(tenantId, userId, {
-          clientId,
-          type: "TEBRIK",
-          body: smsMessage,
-        });
-        results.push({ channel: "SMS", sent: true, ...smsResult });
-      } catch (e: any) {
-        results.push({ channel: "SMS", sent: false, error: e.message });
+        const claim = await this.notificationService.claimNotificationSlot(tenantId, userId, { clientId, type: 'TEBRIK', subject, body, dedupeKey }, target);
+        if (claim.kind !== 'ACQUIRED') {
+          const sent = claim.kind === 'EXISTING_SENT';
+          results.push({ channel: target, sent, success: sent, status: sent ? 'SENT' : claim.kind === 'EXISTING_FAILED' ? 'FAILED' : 'PENDING', notificationId: claim.notificationId, ...(sent ? { alreadySent: true } : {}) });
+          continue;
+        }
+        const result = target === 'EMAIL'
+          ? await this.notificationService.sendEmail(tenantId, userId, { clientId, type: 'TEBRIK', subject, body, dedupeKey, reuseNotificationId: claim.notificationId })
+          : await this.notificationService.sendSms(tenantId, userId, { clientId, type: 'TEBRIK', body }, { notificationId: claim.notificationId, dedupeKey });
+        const sent = result.success === true;
+        results.push({ channel: target, sent, success: sent, status: sent ? 'SENT' : 'UNCONFIRMED', notificationId: claim.notificationId });
+      } catch {
+        results.push({ channel: target, sent: false, success: false, status: 'UNCONFIRMED', error: 'Gönderim doğrulanamadı; bildirim kayıtlarını kontrol edin. Otomatik yeniden gönderilmedi.' });
       }
     }
 
@@ -345,14 +341,14 @@ export class GreetingService {
    *  2. autoGreetingTime parse edilemezse 09:00 fallback + warn.
    *  3. shouldRunGreetingNow(...) === false ise atla (saat gelmedi / kapalı / bugün çalıştı).
    *  4. Tebrikleri gönder; SADECE baştan sona hatasız tamamlanırsa lastGreetingRunAt = now
-   *     damgalanır (aynı-gün guard). Hata fırlarsa damgalama YOK → sonraki dakika tekrar denenir,
-   *     böylece o gün tebrik atlanmaz.
+   *     damgalanır (aynı-gün guard). Başarısız/kısmi/belirsiz sonuçta damga YOK.
+   *     Sonraki tick kalıcı kanal claim'ini okur; SENT/PENDING/FAILED otomatik yeniden gönderilmez.
    *
    * <remarks>
    * Çağrıldığı yerler:
    * - Yalnızca @Cron(EVERY_MINUTE) scheduler tetikler (harici/manuel çağrı yok).
-   *   Manuel tebrik akışı ayrıdır ve DEĞİŞMEDİ: GreetingController.sendGreeting →
-   *   service.sendGreeting() / findTodayGreetings().
+   *   Manuel akış aynı kalıcı kanal claim'ini ve sonuç sözleşmesini kullanır:
+   *   GreetingController.sendGreeting → service.sendGreeting().
    * </remarks>
    */
   @Cron(CronExpression.EVERY_MINUTE, { name: 'GreetingService.greetingSchedulerTick', timeZone: SCHEDULER_TIMEZONE })
@@ -397,30 +393,38 @@ export class GreetingService {
             continue;
           }
 
+          let unconfirmed = 0;
+          const send = async (clientId: string, type: string, channel: string, specialDayId?: string) => {
+            const results = await this.sendGreeting(tenant.id, systemUser.id, clientId, type, channel, specialDayId);
+            if (!results.length || results.some(result => result.sent !== true)) unconfirmed++;
+          };
+
           // Doğum günü tebrikleri
           for (const client of greetings.birthdays) {
-            await this.sendGreeting(tenant.id, systemUser.id, client.id, "BIRTHDAY", client.greetingChannel || "EMAIL");
+            await send(client.id, "BIRTHDAY", client.greetingChannel || "EMAIL");
           }
 
           // Kuruluş yıldönümü tebrikleri
           for (const client of greetings.foundingAnniversaries) {
-            await this.sendGreeting(tenant.id, systemUser.id, client.id, "FOUNDING_ANNIVERSARY", client.greetingChannel || "EMAIL");
+            await send(client.id, "FOUNDING_ANNIVERSARY", client.greetingChannel || "EMAIL");
           }
 
           // Vekalet yıldönümü tebrikleri
           for (const client of greetings.poaAnniversaries) {
-            await this.sendGreeting(tenant.id, systemUser.id, client.id, "POA_ANNIVERSARY", client.greetingChannel || "EMAIL");
+            await send(client.id, "POA_ANNIVERSARY", client.greetingChannel || "EMAIL");
           }
 
           // Bayram/özel gün tebrikleri
           for (const specialDay of greetings.specialDays) {
             for (const client of greetings.holidayClients) {
               const type = specialDay.type === "MEMORIAL" ? "MEMORIAL" : "HOLIDAY";
-              await this.sendGreeting(tenant.id, systemUser.id, client.id, type, client.greetingChannel || "EMAIL", specialDay.id);
+              await send(client.id, type, client.greetingChannel || "EMAIL", specialDay.id);
             }
           }
 
-          // SADECE buraya HATASIZ ulaşıldıysa damgala → aynı-gün tekrar gönderim guard'ı
+          if (unconfirmed) throw new BadRequestException(`${unconfirmed} tebrik için tüm kanallar doğrulanamadı`);
+
+          // Only persisted success (including existing SENT) permits the daily stamp.
           await this.prisma.office.update({
             where: { id: office.id },
             data: { lastGreetingRunAt: new Date() },
@@ -430,8 +434,8 @@ export class GreetingService {
             `Tenant ${tenant.id}: ${greetings.birthdays.length} doğum günü, ${greetings.foundingAnniversaries.length} kuruluş, ${greetings.poaAnniversaries.length} vekalet yıldönümü, ${greetings.specialDays.length} özel gün gönderildi (damgalandı)`
           );
         } catch (e: any) {
-          // Hata → damgalama YOK → sonraki dakika tekrar denenir (o gün tebrik atlanmaz)
-          this.logger.error(`Tenant ${tenant.id} tebrik hatası (damgalanmadı, retry edilecek): ${e.message}`);
+          // No success stamp. Existing notification claims prevent blind resends on the next tick.
+          this.logger.error(`Tenant ${tenant.id} tebrik hatası (damgalanmadı; kalıcı kanal sonuçları korunur): ${e.message}`);
           reportCronJobFailure(this.errorReporter, "greeting.greetingSchedulerTick", e, { tenantId: tenant.id });
         }
       }

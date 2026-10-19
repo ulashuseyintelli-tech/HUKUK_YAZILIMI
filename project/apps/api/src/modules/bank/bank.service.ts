@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
   Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
@@ -26,7 +27,7 @@ import {
 /**
  * Banka Entegrasyon Servisi
  * 
- * Desteklenen bankalar:
+ * Yapilandirma provider adlari (gercek banka adapterleri henuz uygulanmadi):
  * - Garanti BBVA
  * - Akbank
  * - İş Bankası
@@ -34,11 +35,9 @@ import {
  * - Ziraat Bankası
  * - Mock (test)
  * 
- * Özellikler:
- * - Hesap bakiyesi sorgulama
- * - Hesap hareketleri çekme
- * - Otomatik tahsilat eşleştirme
- * - EFT/Havale gönderimi
+ * Provider adinin bulunmasi gercek baglanti/teslim kaniti degildir.
+ * Mock bakiye/hareket/transfer uretimi urun yolunda kapali yonle reddedilir.
+ * Mevcut kanitli banka hareketinin kanonik tahsilat eslestirmesi ayridir.
  */
 
 export type BankProvider = 'garanti' | 'akbank' | 'isbank' | 'yapikredi' | 'ziraat' | 'mock';
@@ -92,6 +91,8 @@ export interface SyncResult {
 }
 
 export const BANK_REFERENCE_ALREADY_EXISTS = 'BANK_REFERENCE_ALREADY_EXISTS';
+export const BANK_INTEGRATION_UNAVAILABLE = 'BANK_INTEGRATION_UNAVAILABLE';
+const BANK_INTEGRATION_UNAVAILABLE_MESSAGE = 'Gerçek banka entegrasyonu henüz kullanılamıyor; işlem gerçekleştirilmedi.';
 
 const BANK_CANDIDATE_PENDING = 'PENDING' as const;
 const BANK_CANDIDATE_SETTLED = 'SETTLED' as const;
@@ -162,7 +163,7 @@ export class BankService {
         ownerId: data.ownerId,
         ownerName: data.ownerName,
         integrationProvider: data.integrationProvider,
-        isIntegrated: !!data.integrationProvider,
+        isIntegrated: false, // A provider name is configuration, never proof of a working adapter.
         isPrimary: data.isPrimary || false,
         notes: data.notes,
       },
@@ -208,7 +209,7 @@ export class BankService {
     }
 
     if (!account.isIntegrated || !account.integrationProvider) {
-      throw new Error('Bu hesap için banka entegrasyonu aktif değil');
+      throw new ServiceUnavailableException({ code: BANK_INTEGRATION_UNAVAILABLE, message: BANK_INTEGRATION_UNAVAILABLE_MESSAGE });
     }
 
     const provider = account.integrationProvider as BankProvider;
@@ -303,8 +304,9 @@ export class BankService {
         matchedTransactions: matchedCount,
       };
     } catch (error: any) {
-      const errorCode = this.readDomainErrorCode(error);
-      const errorMessage = errorCode
+      const unavailable = error instanceof ServiceUnavailableException;
+      const errorCode = unavailable ? BANK_INTEGRATION_UNAVAILABLE : this.readDomainErrorCode(error);
+      const errorMessage = unavailable ? BANK_INTEGRATION_UNAVAILABLE_MESSAGE : errorCode
         ? 'Aynı banka referansı farklı işlem semantiğiyle zaten mevcut'
         : error.message;
 
@@ -1037,53 +1039,18 @@ export class BankService {
   // ==================== MOCK ====================
 
   private async queryBalanceMock(iban: string): Promise<BankBalance> {
-    await new Promise(resolve => setTimeout(resolve, 200));
-    
-    return {
-      iban,
-      balance: Math.random() * 100000,
-      availableBalance: Math.random() * 100000,
-      currency: 'TRY',
-      lastUpdated: new Date(),
-    };
+    throw new ServiceUnavailableException({ code: BANK_INTEGRATION_UNAVAILABLE, message: BANK_INTEGRATION_UNAVAILABLE_MESSAGE });
   }
 
   private async fetchTransactionsMock(iban: string, startDate: Date, endDate: Date): Promise<BankTransactionData[]> {
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    // Mock işlemler oluştur
-    const transactions: BankTransactionData[] = [];
-    const daysDiff = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-    const count = Math.min(daysDiff, 10);
-
-    for (let i = 0; i < count; i++) {
-      const date = new Date(startDate.getTime() + Math.random() * (endDate.getTime() - startDate.getTime()));
-      const isIncoming = Math.random() > 0.3;
-      
-      transactions.push({
-        transactionDate: date,
-        valueDate: date,
-        amount: Math.round(Math.random() * 10000 * 100) / 100,
-        currency: 'TRY',
-        transactionType: isIncoming ? 'INCOMING' : 'OUTGOING',
-        counterpartyName: isIncoming ? 'Mock Gönderici' : 'Mock Alıcı',
-        counterpartyIban: `TR${Math.random().toString().slice(2, 28)}`,
-        description: isIncoming ? `2024/${Math.floor(Math.random() * 10000)} dosya ödemesi` : 'Masraf ödemesi',
-        referenceNo: `REF-${Date.now()}-${i}`,
-        bankReferenceId: `BANK-${Date.now()}-${i}`,
-      });
-    }
-
-    return transactions.sort((a, b) => b.transactionDate.getTime() - a.transactionDate.getTime());
+    throw new ServiceUnavailableException({ code: BANK_INTEGRATION_UNAVAILABLE, message: BANK_INTEGRATION_UNAVAILABLE_MESSAGE });
   }
 
   private async transferMock(request: TransferRequest): Promise<TransferResult> {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
     return {
-      success: true,
-      transactionId: `TRX-${Date.now()}`,
-      referenceNo: request.referenceNo || `REF-${Date.now()}`,
+      success: false,
+      errorCode: BANK_INTEGRATION_UNAVAILABLE,
+      errorMessage: BANK_INTEGRATION_UNAVAILABLE_MESSAGE,
     };
   }
 

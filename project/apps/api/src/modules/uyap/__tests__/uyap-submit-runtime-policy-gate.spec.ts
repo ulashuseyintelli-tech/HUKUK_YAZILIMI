@@ -2,7 +2,8 @@ import 'reflect-metadata';
 import * as fs from 'fs';
 import * as path from 'path';
 import { BadRequestException } from '@nestjs/common';
-import { UyapService, UYAP_HACIZ_TALEBI_ENDPOINT_REQUIRED } from '../uyap.service';
+import { UyapService, UYAP_HACIZ_TALEBI_ENDPOINT_REQUIRED, UYAP_SUBMIT_AUTHORITY_REVALIDATION_FAILED, UYAP_TAKIP_TALEBI_XML_SUBMIT_REQUIRED } from '../uyap.service';
+import { submitAuthorityFactsDouble } from './submit-authority-facts.test-double';
 import { UyapController } from '../uyap.controller';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { ViewerWriteDenyGuard } from '../../auth/guards/viewer-write-deny.guard';
@@ -25,7 +26,7 @@ import { PolicyEngineController, CPE_CLIENT_CONTEXT_REJECTED } from '../../polic
 
 const T1 = 'tenant-1';
 
-function buildService(opts: { cpe?: any | null } = {}) {
+function buildService(opts: { cpe?: any | null; revalidation?: any | null } = {}) {
   const effects: string[] = [];
   const prisma: any = {
     case: {
@@ -46,8 +47,14 @@ function buildService(opts: { cpe?: any | null } = {}) {
     opts.cpe === null
       ? undefined
       : opts.cpe ?? { canPerformAction: jest.fn(async () => { effects.push('cpe'); return { allowed: true, code: 'OK', traceId: 't', decisionId: 'd' }; }) };
-  const service = new UyapService(prisma, poaService, {} as any, { report: jest.fn() } as any, cpe, undefined, undefined, undefined);
-  return { service, prisma, cpe, effects };
+  // P5 (owner Ek 102 K2): işlem öncesi son yetki doğrulaması (varsayılan: bütün olgular true; null = bağımlılık YOK).
+  const revalidation = opts.revalidation === null ? undefined : opts.revalidation ?? submitAuthorityFactsDouble();
+  if (revalidation) {
+    const inner = revalidation.compute;
+    revalidation.compute = jest.fn(async (...args: any[]) => { effects.push('revalidate'); return inner(...args); });
+  }
+  const service = new UyapService(prisma, poaService, {} as any, { report: jest.fn() } as any, cpe, undefined, undefined, undefined, revalidation);
+  return { service, prisma, cpe, effects, revalidation };
 }
 
 const doc = (over: Record<string, unknown> = {}) =>
@@ -126,6 +133,54 @@ describe.each(OPS)('P1 runtime politika kapısı — $name', ({ expected, run })
   });
 });
 
+describe.each(OPS)('P5 (owner Ek 102 K2) işlem öncesi son yetki doğrulaması — $name', ({ run }) => {
+  it('sıra: politika kararı → son doğrulama → istek kaydı; doğrulama sunucu aktörü + dosya + kiracı ile yapılır', async () => {
+    const ctx = buildService();
+    await run(ctx.service, 'user-1');
+    expect(ctx.effects.slice(0, 3)).toEqual(['cpe', 'revalidate', 'uyapRequestLog.create']);
+    const [caseId, context] = ctx.revalidation.compute.mock.calls[0];
+    expect(caseId).toBe('case-1');
+    expect(context).toMatchObject({ tenantId: T1, authenticatedUserId: 'user-1' });
+    expect(context.evaluatedAt).toBeInstanceOf(Date);
+  });
+
+  it.each([
+    ['dosya ataması kalkmış', { 'actor.is_assigned_to_case': false }],
+    ['vekalet kalkmış', { 'actor.has_matching_power_of_attorney': false }],
+    ['vekalet yürürlükte değil', { 'poa.is_effective_at_evaluation_time': false }],
+    ['avukat çözülemiyor', { 'actor.is_canonical_lawyer': false }],
+    ['olgu hiç üretilmedi', { 'actor.is_assigned_to_case': undefined }],
+  ])('%s → 400 UYAP_SUBMIT_AUTHORITY_REVALIDATION_FAILED; istek kaydı / yaşam döngüsü YOK', async (_label, patch) => {
+    const ctx = buildService({ revalidation: submitAuthorityFactsDouble(patch) });
+    expect(await errorCode(run(ctx.service, 'user-1'))).toEqual({ type: 'BadRequestException', code: 'UYAP_SUBMIT_AUTHORITY_REVALIDATION_FAILED' });
+    expect(UYAP_SUBMIT_AUTHORITY_REVALIDATION_FAILED).toBe('UYAP_SUBMIT_AUTHORITY_REVALIDATION_FAILED');
+    expect(ctx.effects).toEqual(['cpe', 'revalidate']);
+  });
+
+  it('doğrulayıcı YOK → fail-closed 400 UYAP_SUBMIT_AUTHORITY_REVALIDATION_FAILED; yan etki YOK', async () => {
+    const ctx = buildService({ revalidation: null });
+    expect(await errorCode(run(ctx.service, 'user-1'))).toEqual({ type: 'BadRequestException', code: 'UYAP_SUBMIT_AUTHORITY_REVALIDATION_FAILED' });
+    expect(ctx.effects).toEqual(['cpe']);
+  });
+
+  it('doğrulayıcı hata fırlatır → fail-closed 400; yan etki YOK', async () => {
+    const ctx = buildService({ revalidation: { compute: jest.fn(async () => { throw new Error('db down'); }) } });
+    expect(await errorCode(run(ctx.service, 'user-1'))).toEqual({ type: 'BadRequestException', code: 'UYAP_SUBMIT_AUTHORITY_REVALIDATION_FAILED' });
+    expect(ctx.effects.filter((e) => e.startsWith('uyapRequestLog') || e.startsWith('caseLifecycle'))).toEqual([]);
+  });
+});
+
+describe('P5 (owner Ek 102 K2) — ödeme emri test ucu son doğrulamayı ÇAĞIRMAZ (Ek 95 K1)', () => {
+  it('sendPaymentOrder: politika kararı var, son doğrulama yok', async () => {
+    const ctx = buildService();
+    await ctx.service
+      .sendPaymentOrder({ caseId: 'case-1', executionOfficeCode: 'X', creditor: { name: 'A' }, debtor: { name: 'B' }, amount: 1, currency: 'TRY' } as any, T1, 'user-1')
+      .catch(() => undefined);
+    expect(ctx.cpe.canPerformAction).toHaveBeenCalledTimes(1);
+    expect(ctx.revalidation.compute).not.toHaveBeenCalled();
+  });
+});
+
 describe('P1 — HACIZ_TALEBI evrak ucunda reddedilir (owner Ek 91 B3-iii)', () => {
   it('400 UYAP_HACIZ_TALEBI_ENDPOINT_REQUIRED + "yalnız /uyap/haciz" iletisi; veri erişimi / politika kararı / yan etki YOK', async () => {
     const ctx = buildService();
@@ -158,6 +213,78 @@ describe('P1 — HACIZ_TALEBI evrak ucunda reddedilir (owner Ek 91 B3-iii)', () 
     });
     expect(ctx.cpe.canPerformAction).not.toHaveBeenCalled();
     expect(ctx.effects).toEqual([]);
+  });
+});
+
+describe('P5 — TAKIP_TALEBI evrak ucunda reddedilir; xml/submit yolu etkilenmez (owner Ek 94, karar b2)', () => {
+  it.each([
+    ['varsayılan eylem (document/submit)', undefined],
+    ['açık UYAP_DOCUMENT_SUBMIT', ActionCode.UYAP_DOCUMENT_SUBMIT],
+  ])('%s → 400 UYAP_TAKIP_TALEBI_XML_SUBMIT_REQUIRED + açık ileti; veri erişimi / politika kararı / yan etki YOK', async (_label, action) => {
+    const ctx = buildService();
+    let caught: any;
+    try {
+      await ctx.service.submitDocument(doc({ documentType: 'TAKIP_TALEBI' }), T1, 'user-1', action as any);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(BadRequestException);
+    expect(caught.getStatus()).toBe(400);
+    expect(caught.getResponse()).toMatchObject({
+      code: 'UYAP_TAKIP_TALEBI_XML_SUBMIT_REQUIRED',
+      message: 'Takip talebi yalnız XML gönderim yolundan (xml/submit) gönderilebilir.',
+    });
+    expect(UYAP_TAKIP_TALEBI_XML_SUBMIT_REQUIRED).toBe('UYAP_TAKIP_TALEBI_XML_SUBMIT_REQUIRED');
+    expect(ctx.prisma.case.findFirst).not.toHaveBeenCalled();
+    expect(ctx.cpe.canPerformAction).not.toHaveBeenCalled();
+    expect(ctx.effects).toEqual([]);
+  });
+
+  it('xml/submit iç çağrısı (UYAP_SEND) TAKIP_TALEBI ile ETKİLENMEZ: TEK UYAP_SEND kararı, sonra yerel simülasyon', async () => {
+    const ctx = buildService();
+    const res = await ctx.service.submitDocument(doc({ documentType: 'TAKIP_TALEBI' }), T1, 'user-1', ActionCode.UYAP_SEND);
+    expect(ctx.cpe.canPerformAction).toHaveBeenCalledTimes(1);
+    expect(ctx.cpe.canPerformAction.mock.calls[0][2]).toBe(ActionCode.UYAP_SEND);
+    expect(res.success).toBe(true);
+    expect(res.data).toMatchObject({ simulated: true, dispatched: false });
+  });
+
+  it.each(['DILEKCE', 'BEYAN', 'ITIRAZ', 'DIGER'])('evrak ucunda %s reddedilmez (yalnız TAKIP_TALEBI daraltıldı) → politika kararı TEK kez', async (type) => {
+    const ctx = buildService();
+    const res = await ctx.service.submitDocument(doc({ documentType: type }), T1, 'user-1');
+    expect(ctx.cpe.canPerformAction).toHaveBeenCalledTimes(1);
+    expect(ctx.cpe.canPerformAction.mock.calls[0][2]).toBe(ActionCode.UYAP_DOCUMENT_SUBMIT);
+    expect(res.success).toBe(true);
+  });
+});
+
+describe('P5 (owner Ek 95 K1) — dosya ataması kapısı çağıran bağlamıyla daraltıldı', () => {
+  it('xml/submit iç çağrısı (UYAP_SEND) politika motoruna uyapSubmitChannel = XML_SUBMIT bildirir', async () => {
+    const ctx = buildService();
+    await ctx.service.submitDocument(doc({ documentType: 'TAKIP_TALEBI' }), T1, 'user-1', ActionCode.UYAP_SEND);
+    expect(ctx.cpe.canPerformAction.mock.calls[0][3]).toMatchObject({ uyapSubmitChannel: 'XML_SUBMIT' });
+  });
+
+  it.each([
+    ['document/submit', (svc: UyapService) => svc.submitDocument(doc(), T1, 'user-1')],
+    ['lawsuit/criminal', (svc: UyapService) => svc.submitCriminalComplaint(criminal(), T1, 'user-1')],
+    ['lawsuit/civil', (svc: UyapService) => svc.submitCivilLawsuit(civil(), T1, 'user-1')],
+  ] as Array<[string, (svc: UyapService) => Promise<unknown>]>)('%s bu bağlamı VERMEZ (kendi eylem kodunda kapı koşulsuzdur)', async (_n, run) => {
+    const ctx = buildService();
+    await run(ctx.service);
+    expect(ctx.cpe.canPerformAction.mock.calls[0][3]).not.toHaveProperty('uyapSubmitChannel');
+  });
+
+  it('ödeme emri test ucu (sendPaymentOrder, UYAP_SEND) bu bağlamı VERMEZ → atama kapısı uygulanmaz (main davranışı)', async () => {
+    const ctx = buildService();
+    await ctx.service.sendPaymentOrder(
+      { caseId: 'case-1', executionOfficeCode: 'X', creditor: { name: 'A' }, debtor: { name: 'B' }, amount: 1, currency: 'TRY' } as any,
+      T1,
+      'user-1',
+    ).catch(() => undefined); // yalnız politika çağrısının bağlamı ölçülür
+    expect(ctx.cpe.canPerformAction).toHaveBeenCalledTimes(1);
+    expect(ctx.cpe.canPerformAction.mock.calls[0][2]).toBe(ActionCode.UYAP_SEND);
+    expect(ctx.cpe.canPerformAction.mock.calls[0][3]).not.toHaveProperty('uyapSubmitChannel');
   });
 });
 

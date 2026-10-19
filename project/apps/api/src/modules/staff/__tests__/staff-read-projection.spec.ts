@@ -138,10 +138,10 @@ describe('P5-B04 (S3) — StaffController okuma yüzeyi davranışı', () => {
     expect(res.data.canSeeFinance).toBe(true);
   });
 
-  it('cross-tenant findOne: servis null döndürür → { error }, yetki sorgusu HİÇ yapılmaz', async () => {
+  it('cross-tenant findOne: servis null döndürür → 404, yetki sorgusu HİÇ yapılmaz', async () => {
     const { ctrl, officeApproval } = buildController({ authorized: true, one: null });
-    const res: any = await ctrl.findOne({ user: { id: 'u9', tenantId: 'BASKA-TENANT' } }, 's1');
-    expect(res).toEqual({ error: 'Personel bulunamadı' });
+    await expect(ctrl.findOne({ user: { id: 'u9', tenantId: 'BASKA-TENANT' } }, 's1'))
+      .rejects.toMatchObject({ status: 404, message: 'Personel bulunamadı' });
     expect(officeApproval.isF01ActorAuthorized).not.toHaveBeenCalled();
   });
 });

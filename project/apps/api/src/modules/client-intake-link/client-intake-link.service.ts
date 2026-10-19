@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { randomBytes, createHash } from 'crypto';
 import { PrismaService } from '@/prisma/prisma.service';
 import { ClientIntakeLinkDeliveryStatus, ClientIntakeLinkStatus, Prisma } from '@prisma/client';
@@ -132,6 +132,7 @@ export class ClientIntakeLinkService {
 
     const existing = await this.findDeliveryByIdempotencyKey(tenantId, normalizedIdempotencyKey);
     if (existing) {
+      this.assertDeliveryCommandMatches(existing, tenantId, clientId, caseId, dto);
       return { link: existing.intakeLink, delivery: this.toDeliveryResponse(existing) };
     }
 
@@ -160,7 +161,10 @@ export class ClientIntakeLinkService {
     } catch (error: any) {
       if (this.isUniqueConstraintError(error)) {
         const concurrent = await this.findDeliveryByIdempotencyKey(tenantId, normalizedIdempotencyKey);
-        if (concurrent) return { link: concurrent.intakeLink, delivery: this.toDeliveryResponse(concurrent) };
+        if (concurrent) {
+          this.assertDeliveryCommandMatches(concurrent, tenantId, clientId, caseId, dto);
+          return { link: concurrent.intakeLink, delivery: this.toDeliveryResponse(concurrent) };
+        }
       }
       throw error;
     }
@@ -266,6 +270,7 @@ export class ClientIntakeLinkService {
   }
 
   private normalizeIdempotencyKey(idempotencyKey?: string): string {
+    if (idempotencyKey !== undefined && typeof idempotencyKey !== 'string') throw new BadRequestException('Idempotency-Key metin olmalıdır');
     const normalized = (idempotencyKey || '').trim();
     if (!normalized) throw new BadRequestException('Idempotency-Key header zorunludur');
     if (normalized.length > 200) throw new BadRequestException('Idempotency-Key en fazla 200 karakter olabilir');
@@ -282,6 +287,28 @@ export class ClientIntakeLinkService {
       where: { tenantId_idempotencyKey: { tenantId, idempotencyKey } },
       select: DELIVERY_WITH_LINK_SELECT,
     });
+  }
+
+  /** Callers: createAndDeliverForClientWorkspace early replay and concurrent unique-key recovery. */
+  private assertDeliveryCommandMatches(
+    existing: Prisma.ClientIntakeLinkDeliveryGetPayload<{ select: typeof DELIVERY_WITH_LINK_SELECT }>,
+    tenantId: string,
+    clientId: string,
+    caseId: string,
+    dto: CreateClientWorkspaceIntakeLinkDto,
+  ): void {
+    const link = existing.intakeLink;
+    const expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : null;
+    if (expiresAt && !Number.isFinite(expiresAt.getTime())) throw new BadRequestException('expiresAt geçerli bir tarih olmalıdır');
+    if (
+      existing.tenantId !== tenantId || existing.clientId !== clientId || existing.caseId !== caseId || existing.channel !== 'EMAIL' ||
+      !link || existing.intakeLinkId !== link.id || link.tenantId !== tenantId || link.clientId !== clientId || link.caseId !== caseId ||
+      // Public getForm exposes the stored scope array; keep its content and order intact.
+      JSON.stringify(link.scope) !== JSON.stringify(dto.scope) || link.maxUses !== (dto.maxUses ?? 1) ||
+      (link.expiresAt?.getTime() ?? null) !== (expiresAt?.getTime() ?? null)
+    ) {
+      throw new ConflictException('Idempotency-Key farklı bir intake komutuna bağlıdır');
+    }
   }
 
   private toDeliveryResponse(delivery: any) {

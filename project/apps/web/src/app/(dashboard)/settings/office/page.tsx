@@ -158,9 +158,14 @@ function OfficeSettingsInner() {
   const readStateRef = useRef<Record<ReadKey, ReadState>>(INITIAL_READ_STATE);
   const readTokenRef = useRef<Record<ReadKey, number>>({ office: 0, staff: 0, smtp: 0, sms: 0, greeting: 0, escalation: 0 });
   const pageMountedRef = useRef(true);
+  const savedTimersRef = useRef(new Set<ReturnType<typeof setTimeout>>());
   useEffect(() => {
     pageMountedRef.current = true;
-    return () => { pageMountedRef.current = false; };
+    return () => {
+      pageMountedRef.current = false;
+      for (const timer of savedTimersRef.current) clearTimeout(timer);
+      savedTimersRef.current.clear();
+    };
   }, []);
   const setRead = (key: ReadKey, next: ReadState) => {
     readStateRef.current = { ...readStateRef.current, [key]: next };
@@ -488,7 +493,15 @@ function OfficeSettingsInner() {
     }
   };
 
-  const showSaved = () => { setSaved(true); setTimeout(() => setSaved(false), 2000); };
+  const showSaved = () => {
+    if (!pageMountedRef.current) return;
+    setSaved(true);
+    const timer = setTimeout(() => {
+      savedTimersRef.current.delete(timer);
+      if (pageMountedRef.current) setSaved(false);
+    }, 2000);
+    savedTimersRef.current.add(timer);
+  };
 
   // Stale banttaki tekrar denemesi YALNIZ okuma yolunu calistirir; mutation ASLA tekrarlanmaz.
   const staleRefresh = async (kind: "lawyer" | "bank" | "staff") => {
@@ -563,8 +576,12 @@ function OfficeSettingsInner() {
     const key = `${clientId}-${type}`;
     setSendingGreetingKey(key);
     try {
-      await api.post("/greetings/send", { clientId, type, channel: "EMAIL", specialDayId });
-      alert("Tebrik gönderildi.");
+      const response = await api.post("/greetings/send", { clientId, type, channel: "EMAIL", specialDayId });
+      const results = response.data;
+      const confirmed = Array.isArray(results) && results.length === 1 &&
+        results[0]?.channel === "EMAIL" && results[0]?.sent === true && results[0]?.success === true &&
+        (results[0]?.status === undefined || results[0]?.status === "SENT");
+      alert(confirmed ? "Tebrik gönderildi." : "Tebrik gönderimi doğrulanamadı. Bildirim durumunu kontrol edin; otomatik yeniden gönderim yapılmadı.");
     } catch (e: any) {
       alert(e.message || "Tebrik gönderilemedi.");
     } finally {
