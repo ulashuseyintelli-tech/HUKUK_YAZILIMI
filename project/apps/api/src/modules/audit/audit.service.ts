@@ -1,8 +1,13 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { projectAuditLogSafe } from './audit-safe-projection';
 import { AuditActorType, AuditDecisionResult } from './audit-types';
+
+export interface StandardAuditQuery {
+  action?: string; entityType?: string; entityId?: string; userId?: string;
+  startDate?: Date; endDate?: Date; page?: number; limit?: number; days?: number;
+}
 
 export interface AuditLogInput {
   tenantId: string;
@@ -103,6 +108,65 @@ export class AuditService {
   /// Ã‡aÄŸrÄ±ldÄ±ÄŸÄ± yerler:
   /// - AuditController.getLogs() â†’ GET /audit/logs (sayfalÄ± audit kayÄ±tlarÄ±nÄ± dÃ¶ndÃ¼rÃ¼r)
   /// </remarks>
+  /** Called only by AuditController's three standard HTTP readers. Internal audit consumers stay separate. */
+  async readStandard(tenantId: string, userId: string, kind: 'logs' | 'entity' | 'activity', query: StandardAuditQuery = {}) {
+    if (!tenantId || !userId) throw new ForbiddenException('Audit okuma yetkisi yok.');
+    return this.prisma.$transaction(async tx => {
+      // Recheck database identity, not request role/rank/title. One snapshot covers the access decision and rows/count.
+      const actor = await tx.user.findUnique({ where: { id: userId }, select: {
+        tenantId: true, isActive: true, role: true,
+        lawyer: { select: { id: true, tenantId: true, isActive: true } },
+        staffMember: { select: { id: true, tenantId: true, isActive: true } },
+      } });
+      const denied = () => new ForbiddenException('Audit okuma yetkisi yok.');
+      if (!actor?.isActive || actor.tenantId !== tenantId || actor.role === 'VIEWER') throw denied();
+      const admin = actor.role === 'ADMIN';
+      const caseHistory = query.entityType === 'CASE' && typeof query.entityId === 'string' && query.entityId.length > 0
+        && kind !== 'activity' && (kind === 'entity' || query.action === 'HACIZ_REQUEST_SUBMITTED');
+      if (!admin) {
+        if (!caseHistory) throw denied();
+        const lawyer = actor.lawyer?.isActive && actor.lawyer.tenantId === tenantId ? actor.lawyer : null;
+        const staff = actor.staffMember?.isActive && actor.staffMember.tenantId === tenantId ? actor.staffMember : null;
+        const assignment: Prisma.CaseWhereInput[] = [];
+        // Owner-approved read purpose includes actual ASSISTANT/INTERN assignments; no legal-action policy is reused.
+        if (lawyer) assignment.push({ lawyers: { some: { lawyerId: lawyer.id } } });
+        if (staff) assignment.push({ staff: { some: { staffMemberId: staff.id, canView: true } } });
+        if (!assignment.length || !await tx.case.findFirst({ where: {
+          id: query.entityId, tenantId, OR: assignment,
+        }, select: { id: true } })) throw denied();
+      }
+      for (const value of [query.action, query.entityType, query.entityId, query.userId]) {
+        if (value !== undefined && typeof value !== 'string') throw new BadRequestException('Geçersiz audit filtresi.');
+      }
+      if ((kind === 'entity' && (!query.entityType || !query.entityId)) || (kind === 'activity' && !query.userId)) {
+        throw new BadRequestException('Audit hedefi gerekli.');
+      }
+      const where: Prisma.AuditLogWhereInput = { tenantId };
+      if (query.action) where.action = query.action;
+      if (query.entityType) where.entityType = query.entityType;
+      if (query.entityId) where.entityId = query.entityId;
+      if (query.userId) where.userId = query.userId;
+      if (!admin) { where.entityType = 'CASE'; where.entityId = query.entityId; where.action = 'HACIZ_REQUEST_SUBMITTED'; }
+      if (query.startDate || query.endDate) where.createdAt = {
+        ...(query.startDate ? { gte: query.startDate } : {}), ...(query.endDate ? { lte: query.endDate } : {}),
+      };
+      if (kind === 'activity') {
+        const since = new Date(); since.setDate(since.getDate() - (query.days ?? 30));
+        where.createdAt = { gte: since };
+      }
+      const page = query.page ?? 1, limit = query.limit ?? 50;
+      if (kind === 'logs' && (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(limit) || limit < 1)) {
+        throw new BadRequestException('Geçersiz audit sayfası.');
+      }
+      const logs = await tx.auditLog.findMany({ where, orderBy: { createdAt: 'desc' },
+        ...(kind === 'logs' ? { skip: (page - 1) * limit, take: limit } : {}),
+      });
+      const total = kind === 'logs' ? await tx.auditLog.count({ where }) : logs.length;
+      const projected = await this.withReadProjections(tenantId, logs, tx);
+      return { logs: projected.map(log => this.projectStandardRead(log)), total, page, limit, totalPages: Math.ceil(total / limit) };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+  }
+
   async getLogs(
     tenantId: string,
     filters?: {
@@ -226,7 +290,7 @@ export class AuditService {
     }
   }
 
-  // Called by AuditController.getLogs/getEntityHistory/getUserActivity at the HTTP boundary.
+  // Called by readStandard for HTTP and projection regression tests; internal raw readers are separate.
   projectStandardRead(log: Parameters<typeof projectAuditLogSafe>[0] & {
     safeProjection: ReturnType<typeof projectAuditLogSafe>;
     hacizSafeProjection?: HacizAuditSafeProjection | null;
@@ -263,14 +327,16 @@ export class AuditService {
   /// - AuditService.getEntityHistory() → GET /audit/entity-history için safe read projection ekler.
   /// - AuditService.getUserActivity() → GET /audit/user-activity için safe read projection ekler.
   /// </remarks>
+  // Also called by readStandard with the authorized transaction snapshot.
   private async withReadProjections<T extends Parameters<typeof projectAuditLogSafe>[0]>(
     tenantId: string,
     logs: T[],
+    db: Pick<Prisma.TransactionClient, 'caseDebtor'> = this.prisma,
   ): Promise<Array<T & {
     safeProjection: ReturnType<typeof projectAuditLogSafe>;
     hacizSafeProjection?: HacizAuditSafeProjection | null;
   }>> {
-    const debtorLabels = await this.loadHacizDebtorLabels(tenantId, logs);
+    const debtorLabels = await this.loadHacizDebtorLabels(tenantId, logs, db);
     return logs.map((log) => ({
       ...this.withSafeProjection(log),
       hacizSafeProjection: this.projectHacizAuditSafe(log, debtorLabels),
@@ -284,6 +350,7 @@ export class AuditService {
   private async loadHacizDebtorLabels<T extends Parameters<typeof projectAuditLogSafe>[0]>(
     tenantId: string,
     logs: T[],
+    db: Pick<Prisma.TransactionClient, 'caseDebtor'> = this.prisma,
   ): Promise<Map<string, string>> {
     const pairs: Array<{ caseId: string; debtorId: string }> = [];
     for (const log of logs) {
@@ -300,7 +367,7 @@ export class AuditService {
 
     const caseIds = [...new Set(pairs.map((pair) => pair.caseId))];
     const debtorIds = [...new Set(pairs.map((pair) => pair.debtorId))];
-    const rows = await this.prisma.caseDebtor.findMany({
+    const rows = await db.caseDebtor.findMany({
       where: {
         caseId: { in: caseIds },
         debtorId: { in: debtorIds },

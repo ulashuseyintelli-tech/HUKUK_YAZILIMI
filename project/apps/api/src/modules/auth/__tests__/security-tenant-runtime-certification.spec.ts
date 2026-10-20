@@ -91,12 +91,19 @@ describe('R01 W1 security/tenant controlled runtime certification', () => {
     };
     return { ...row, safeProjection: projectAuditLogSafe(row) };
   };
-  const audit = {
-    getLogs: jest.fn().mockResolvedValue({ logs: [auditRow('audit-logs')], total: 1, page: 1, limit: 50, totalPages: 1 }),
-    getEntityHistory: jest.fn().mockResolvedValue([auditRow('audit-entity-history')]),
-    getUserActivity: jest.fn().mockResolvedValue([auditRow('audit-user-activity')]),
-    projectStandardRead: AuditService.prototype.projectStandardRead,
+  let auditActorRole = 'ADMIN';
+  const auditDb = {
+    user: { findUnique: jest.fn().mockImplementation(async () => ({ tenantId: 'tenant-w1', isActive: true, role: auditActorRole })) },
+    case: { findFirst: jest.fn() },
+    caseDebtor: { findMany: jest.fn().mockResolvedValue([]) },
+    auditLog: {
+      findMany: jest.fn().mockImplementation(async ({ where }) => [auditRow(where.userId ? 'audit-user-activity' : where.entityId ? 'audit-entity-history' : 'audit-logs')]),
+      count: jest.fn().mockResolvedValue(1),
+    },
+    $transaction: (callback: (tx: unknown) => unknown) => callback(auditDb),
   };
+  const audit = new AuditService(auditDb as any);
+  jest.spyOn(audit, 'readStandard');
   const permissionDiagnostics = {
     diagnose: jest.fn().mockReturnValue({ probe: 'permission-diagnostics-one' }),
     diagnoseAll: jest.fn().mockReturnValue({ probe: 'permission-diagnostics-all' }),
@@ -278,11 +285,8 @@ describe('R01 W1 security/tenant controlled runtime certification', () => {
       { id: adminUser.id, tenantId: adminUser.tenantId, role: 'ADMIN' },
       expect.objectContaining({ email: 'invite@example.test' }),
     );
-    expect(audit.getLogs).toHaveBeenCalledWith(
-      adminUser.tenantId,
-      expect.any(Object),
-      1,
-      50,
+    expect(audit.readStandard).toHaveBeenCalledWith(
+      adminUser.tenantId, adminUser.id, 'logs', expect.objectContaining({ page: 1, limit: 50 }),
     );
   });
 
@@ -298,6 +302,17 @@ describe('R01 W1 security/tenant controlled runtime certification', () => {
     expect(prisma.tenant.findUnique).toHaveBeenNthCalledWith(1, { where: { id: 'tenant-w1' } });
     expect(prisma.tenant.findUnique).toHaveBeenNthCalledWith(2, { where: { slug: 'w1' } });
   });
+  it('audit HTTP rejects non-ADMIN browsing and own user activity after JWT authentication', async () => {
+    auditActorRole = 'USER';
+    try {
+      for (const url of ['/api/audit/logs', '/api/audit/user-activity?userId=user-w1-admin', '/api/audit/entity-history?entityType=CLIENT&entityId=client-A']) {
+        auditDb.auditLog.findMany.mockClear(); auditDb.auditLog.count.mockClear();
+        await request(app.getHttpServer()).get(url).set('Authorization', bearer()).expect(403);
+        expect(auditDb.auditLog.findMany).not.toHaveBeenCalled(); expect(auditDb.auditLog.count).not.toHaveBeenCalled();
+      }
+    } finally { auditActorRole = 'ADMIN'; }
+  });
+
 });
 
 describe('R01 W1 certification artifact integrity', () => {
@@ -359,4 +374,5 @@ describe('R01 W1 certification artifact integrity', () => {
     expect(git('rev-parse', 'HEAD:project/docs/audit/runtime-binding-reconciliation-r01'))
       .toBe(model.metadata.sealedPr1795ArtifactTreeSha);
   });
+
 });

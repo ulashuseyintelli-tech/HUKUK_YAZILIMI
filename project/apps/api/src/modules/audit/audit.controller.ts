@@ -19,8 +19,8 @@ export class AuditController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
-    const result = await this.auditService.getLogs(
-      req.user.tenantId,
+    return this.auditService.readStandard(
+      req.user.tenantId, req.user.id, 'logs',
       {
         action,
         entityType,
@@ -28,11 +28,9 @@ export class AuditController {
         userId,
         startDate: startDate ? new Date(startDate) : undefined,
         endDate: endDate ? new Date(endDate) : undefined,
+        page: page ? Number(page) : 1, limit: limit ? Number(limit) : 50,
       },
-      page ? parseInt(page) : 1,
-      limit ? parseInt(limit) : 50,
     );
-    return { ...result, logs: result.logs.map((log) => this.auditService.projectStandardRead(log)) };
   }
 
   @Get('entity-history')
@@ -41,8 +39,8 @@ export class AuditController {
     @Query('entityType') entityType: string,
     @Query('entityId') entityId: string,
   ) {
-    const logs = await this.auditService.getEntityHistory(req.user.tenantId, entityType, entityId);
-    return logs.map((log) => this.auditService.projectStandardRead(log));
+    const result = await this.auditService.readStandard(req.user.tenantId, req.user.id, 'entity', { entityType, entityId });
+    return result.logs;
   }
 
   @Get('user-activity')
@@ -51,11 +49,7 @@ export class AuditController {
     @Query('userId') userId: string,
     @Query('days') days?: string,
   ) {
-    const logs = await this.auditService.getUserActivity(
-      req.user.tenantId,
-      userId,
-      days ? parseInt(days) : 30,
-    );
-    return logs.map((log) => this.auditService.projectStandardRead(log));
+    const result = await this.auditService.readStandard(req.user.tenantId, req.user.id, 'activity', { userId, days: days ? Number(days) : 30 });
+    return result.logs;
   }
 }
