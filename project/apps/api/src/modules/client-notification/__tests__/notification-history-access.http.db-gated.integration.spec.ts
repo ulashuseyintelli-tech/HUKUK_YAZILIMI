@@ -89,6 +89,60 @@ dbDescribe('K17 notification history — real HTTP, authorization, projection an
   const assignLawyer = (a: Awaited<ReturnType<typeof actor>>, role: any = 'ASSIGNED', cid = caseId) => db.caseLawyer.create({ data: { caseId: cid, lawyerId: a.lawyerId!, role } });
   const assignStaff = (a: Awaited<ReturnType<typeof actor>>, role = 'MUHASEBE') => db.caseStaff.create({ data: { caseId, staffMemberId: a.staffId!, roleOnCase: role } });
 
+  describe('O-4 response-only IBAN masking', () => {
+    const raw = 'TR120001000000000000001234';
+    const spaced = 'TR12 0001 0000 0000 0000 0012 34';
+    const masked = 'TR12****1234';
+    it.each(['client', 'case'])('%s endpoint masks every compact/spaced TR IBAN and token without changing persisted content', async kind => {
+      const body = 'Payment: ' + raw + '; second: ' + spaced + '; sum 250 TRY.';
+      const metadata = { tokens: { officeIban: spaced, amount: '250', note: 'keep' }, other: { keep: true } };
+      const id = tenant + ':expense';
+      await db.clientNotification.update({ where: { id }, data: { body, metadata, createdAt: new Date(stamp.getTime() + 1000) } });
+      const before = await db.clientNotification.findUniqueOrThrow({ where: { id } });
+      const result = await get(admin, kind, kind === 'case' ? caseId : client, '?limit=1').expect(200);
+      expect(Array.isArray(result.body)).toBe(true);
+      expect(result.body).toHaveLength(1);
+      expect(result.body[0]).toMatchObject({ id, body: 'Payment: ' + masked + '; second: ' + masked + '; sum 250 TRY.',
+        metadata: { ...metadata, tokens: { ...metadata.tokens, officeIban: masked } } });
+      expect(result.headers['x-next-cursor']).toBeTruthy();
+      expect(Object.keys(result.body[0]).sort()).toEqual([...Object.keys(before), ...(kind === 'case' ? ['client'] : [])].sort());
+      expect(JSON.stringify(result.body)).not.toContain(raw);
+      expect(JSON.stringify(result.body)).not.toContain(spaced);
+      expect(await db.clientNotification.findUniqueOrThrow({ where: { id } })).toEqual(before);
+    });
+    it.each(['lawyer', 'grant'] as const)('%s content reader receives the same masked projection', async mode => {
+      const a = await actor('lawyer');
+      if (mode === 'lawyer') await assignLawyer(a); else await grant(a.userId);
+      await db.clientNotification.update({ where: { id: tenant + ':expense' }, data: {
+        body: raw, metadata: { tokens: { officeIban: raw } },
+      } });
+      for (const kind of ['client', 'case']) {
+        const response = await get(a.userId, kind, kind === 'case' ? caseId : client).expect(200);
+        expect(response.body.find((row: any) => row.id === tenant + ':expense')).toMatchObject({
+          body: masked, metadata: { tokens: { officeIban: masked } },
+        });
+      }
+    });
+    it.each([
+      ['lowercase', 'tr120001000000000000001234', 'tr12****1234'],
+      ['non-breaking spaces', 'TR12\u00a00001\u00a00000\u00a00000\u00a00000\u00a00012\u00a034', masked],
+      ['line breaks', 'TR12\n0001\n0000\n0000\n0000\n0012\n34', masked],
+      ['no IBAN', 'ordinary text: 1234567890 / reference TR123', 'ordinary text: 1234567890 / reference TR123'],
+      ['already masked', masked, masked],
+    ])('%s body keeps the existing mask format and unrelated text', async (_name, body, expected) => {
+      await db.clientNotification.update({ where: { id: tenant + ':expense' }, data: { body } });
+      const response = await get(admin, 'case', caseId).expect(200);
+      expect(response.body.find((row: any) => row.id === tenant + ':expense').body).toBe(expected);
+    });
+    it.each([{}, { tokens: null }, { tokens: [] }, { tokens: { officeIban: null, amount: 50 } },
+      { tokens: { officeIban: 1234 } }, { tokens: { officeIban: '' } }])('preserves absent/non-string metadata shape %p', async metadata => {
+      await db.clientNotification.update({ where: { id: tenant + ':expense' }, data: { metadata: metadata as any } });
+      const response = await get(admin).expect(200);
+      const item = response.body.find((row: any) => row.id === tenant + ':expense');
+      expect(item.metadata).toEqual(metadata);
+    });
+  });
+
   it('production module wires the reader; ADMIN needs no personnel profile and retains full fields and case client include', async () => {
     expect(Reflect.getMetadata('providers', ClientNotificationModule)).toContain(ClientNotificationHistoryAccessService);
     const c = await get(admin).expect(200); expect(Array.isArray(c.body)).toBe(true);

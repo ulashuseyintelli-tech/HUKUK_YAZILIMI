@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { maskIban } from "../../common/pii-mask.util";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CASE_ASSIGNMENT_COUNTED_ROLES } from "../lawyer/acting-lawyer-resolver.service";
 import { NOTIFICATION_HISTORY_AUDIT_PERMISSION } from "./notification-history-permission.service";
@@ -89,7 +90,7 @@ export class ClientNotificationHistoryAccessService {
       const restrictedRows = restrictedIds.length ? await tx.clientNotification.findMany({
         where: { tenantId, id: { in: restrictedIds } }, select: STATUS_FIELDS,
       }) : [];
-      const rows = new Map([...fullRows, ...restrictedRows].map(row => [row.id, row]));
+      const rows = new Map([...fullRows.map(row => this.maskIbanForRead(row)), ...restrictedRows].map(row => [row.id, row]));
       const last = page[page.length - 1];
       return {
         items: page.map(key => rows.get(key.id)!),
@@ -98,6 +99,22 @@ export class ClientNotificationHistoryAccessService {
         })).toString("base64url") : null,
       };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+  }
+
+  /** Caller: read; response-only O-4 projection, never stored or sent content. */
+  private maskIbanForRead<T extends { body?: string | null; metadata?: Prisma.JsonValue }>(row: T): T {
+    const metadata = row.metadata;
+    const tokens = metadata && typeof metadata === "object" && !Array.isArray(metadata)
+      ? metadata.tokens : undefined;
+    return {
+      ...row,
+      ...(typeof row.body === "string" ? {
+        body: row.body.replace(/\bTR(?:[\s]*\d){24}(?!\d)/gi, iban => maskIban(iban)),
+      } : {}),
+      ...(tokens && typeof tokens === "object" && !Array.isArray(tokens) && typeof tokens.officeIban === "string" && tokens.officeIban.trim() ? {
+        metadata: { ...(metadata as Prisma.JsonObject), tokens: { ...tokens, officeIban: maskIban(tokens.officeIban) } },
+      } : {}),
+    };
   }
 
   private parseQuery(target: HistoryTarget, query: HistoryQuery) {
