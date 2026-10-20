@@ -148,3 +148,16 @@ describe('Settings Audit UI safeProjection migration', () => {
     );
   });
 });
+
+it('clears prior list and open detail after audit permission is revoked', async () => {
+  render(<AuditLogPage />);
+  await screen.findByText('Müvekkil güncellendi ad****@example.com');
+  fireEvent.click(screen.getByText('Görüntüle'));
+  expect(screen.getByText('Güvenli Metadata')).toBeInTheDocument();
+  vi.mocked(api.get).mockRejectedValueOnce({ status: 403 });
+  fireEvent.click(screen.getByText('Yenile'));
+  expect(await screen.findByText('Audit okuma yetkisi yok.')).toBeInTheDocument();
+  expect(screen.queryByText('Güvenli Metadata')).toBeNull();
+  expect(screen.queryByText('Müvekkil güncellendi ad****@example.com')).toBeNull();
+  expect(screen.queryByText('Kayıt bulunamadı')).toBeNull();
+});

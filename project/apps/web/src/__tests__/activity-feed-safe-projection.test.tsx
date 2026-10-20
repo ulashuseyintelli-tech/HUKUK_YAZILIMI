@@ -16,7 +16,7 @@ const log = {
   },
 };
 
-beforeEach(() => vi.mocked(api.get).mockReset());
+beforeEach(() => { vi.mocked(api.get).mockReset(); });
 afterEach(cleanup);
 
 describe('ActivityFeed standard audit response', () => {
@@ -50,4 +50,11 @@ describe('ActivityFeed standard audit response', () => {
     expect(await screen.findByText(/Henüz aktivite yok/)).toBeInTheDocument();
     expect(screen.queryByText('Güvenli müvekkil güncellemesi')).toBeNull();
   });
+});
+
+it('shows permission denied rather than empty activity on audit 403', async () => {
+  vi.mocked(api.get).mockRejectedValue({ status: 403, body: { message: 'Forbidden' } });
+  render(<ActivityFeed />);
+  expect(await screen.findByText('Audit okuma yetkisi yok.')).toBeInTheDocument();
+  expect(screen.queryByText(/Henüz aktivite yok|0 kayıt/)).toBeNull();
 });

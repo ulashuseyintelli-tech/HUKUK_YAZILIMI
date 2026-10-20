@@ -186,9 +186,12 @@ export default function AuditLogPage() {
         setTotalPages(res.data.totalPages || 1);
       }
     } catch (error) {
+      const forbidden = (error as { status?: number; response?: { status?: number } })?.status === 403
+        || (error as { response?: { status?: number } })?.response?.status === 403;
+      if (forbidden) { setLogs([]); setSelectedLog(null); setTotalPages(1); }
       // WSMR-A4t: eskiden yalniz console.error ile YUTULUYORDU — "Kayıt
       // bulunamadı" render'i okuma hatasiyla AYNI ekrana dusuyordu.
-      setLogsLoadError(toActionErrorMessage(error, 'Denetim kayıtları yüklenemedi.'));
+      setLogsLoadError(forbidden ? 'Audit okuma yetkisi yok.' : toActionErrorMessage(error, 'Denetim kayıtları yüklenemedi.'));
     } finally {
       setLoading(false);
     }

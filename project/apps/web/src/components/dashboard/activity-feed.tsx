@@ -70,7 +70,11 @@ export function ActivityFeed() {
       const res = await api.get('/audit/logs?limit=10');
       setState(fromResponse(res, validateActivities, (v) => v.length === 0, Date.now()));
     } catch (e) {
-      setState((prev) => fromError(e, prev, { endpoint: '/audit/logs', widget: 'Aktivite akışı' }));
+      const forbidden = (e as { status?: number; response?: { status?: number } })?.status === 403
+        || (e as { response?: { status?: number } })?.response?.status === 403;
+      setState((prev) => forbidden
+        ? { status: 'ERROR', error: { code: 'AUDIT_FORBIDDEN', message: 'Audit okuma yetkisi yok.', transient: false } }
+        : fromError(e, prev, { endpoint: '/audit/logs', widget: 'Aktivite akışı' }));
     }
   };
 
@@ -125,7 +129,7 @@ export function ActivityFeed() {
         )}
         {state.status === 'ERROR' && !isStale(state) ? (
           <div className="text-center py-8">
-            <p className="text-sm font-medium text-red-600">Aktiviteler alınamadı</p>
+            <p className="text-sm font-medium text-red-600">{state.error.code === 'AUDIT_FORBIDDEN' ? 'Audit okuma yetkisi yok.' : 'Aktiviteler alınamadı'}</p>
             <button
               type="button"
               onClick={loadActivities}

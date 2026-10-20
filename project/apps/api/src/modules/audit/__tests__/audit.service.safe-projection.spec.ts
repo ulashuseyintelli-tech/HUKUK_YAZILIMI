@@ -45,7 +45,7 @@ describe('AuditService safe projection reads', () => {
   };
   let service: AuditService;
   let controller: AuditController;
-  const req = { user: { tenantId: 'tenant-1' } };
+  const req = { user: { tenantId: 'tenant-1', id: 'user-1' } };
 
   beforeEach(() => {
     jest.useFakeTimers().setSystemTime(new Date('2026-06-30T12:00:00.000Z'));
@@ -58,6 +58,10 @@ describe('AuditService safe projection reads', () => {
         findMany: jest.fn(),
       },
     };
+    Object.assign(prisma, {
+      user: { findUnique: jest.fn().mockResolvedValue({ tenantId: 'tenant-1', isActive: true, role: 'ADMIN' }) },
+      $transaction: (callback: (tx: unknown) => unknown) => callback(prisma),
+    });
     service = new AuditService(prisma as any);
     controller = new AuditController(service);
   });
@@ -300,5 +304,88 @@ describe('AuditService safe projection reads', () => {
     const [standard] = await controller.getEntityHistory(req, 'Client', 'client-1');
     expect(standard).not.toHaveProperty('metadata');
     expect(standard.safeProjection).toEqual(internal.safeProjection);
+  });
+});
+
+describe('K16 purpose-bound standard audit access', () => {
+  let db: any, service: AuditService, controller: AuditController, actor: any;
+  const req = { user: { tenantId: 'tenant-A', id: 'actor', role: 'ADMIN' } };
+  const scope = { entityType: 'CASE', entityId: 'case-A', action: 'HACIZ_REQUEST_SUBMITTED' };
+  const profile = { id: 'profile-A', tenantId: 'tenant-A', isActive: true };
+  beforeEach(() => {
+    actor = { tenantId: 'tenant-A', isActive: true, role: 'USER', lawyer: profile };
+    db = {
+      user: { findUnique: jest.fn().mockImplementation(async () => actor) },
+      case: { findFirst: jest.fn().mockResolvedValue({ id: 'case-A' }) },
+      caseDebtor: { findMany: jest.fn().mockResolvedValue([]) },
+      auditLog: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
+      $transaction: jest.fn().mockImplementation(callback => callback(db)),
+    };
+    service = new AuditService(db); controller = new AuditController(service);
+  });
+  const noAudit = () => {
+    expect(db.auditLog.findMany).not.toHaveBeenCalled(); expect(db.auditLog.count).not.toHaveBeenCalled();
+  };
+  it.each(['logs', 'entity', 'activity'] as const)('ADMIN reads %s only in the database tenant', async kind => {
+    actor = { ...actor, role: 'ADMIN' };
+    await service.readStandard('tenant-A', 'actor', kind, { ...scope, userId: 'target-user' });
+    expect(db.auditLog.findMany.mock.calls[0][0].where.tenantId).toBe('tenant-A');
+    expect(db.user.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'actor' } }));
+    expect(db.case.findFirst).not.toHaveBeenCalled();
+  });
+  it.each([null, { isActive: false, role: 'ADMIN', tenantId: 'tenant-A' },
+    { isActive: true, role: 'ADMIN', tenantId: 'tenant-B' }, { isActive: true, role: 'VIEWER', tenantId: 'tenant-A', lawyer: profile },
+  ])('rejects missing/inactive/foreign/VIEWER database actor even with request ADMIN', async value => {
+    actor = value;
+    await expect(controller.getLogs(req, scope.action, scope.entityType, scope.entityId)).rejects.toThrow('yetkisi yok'); noAudit();
+  });
+  it.each(['PARTNER', 'MANAGER', 'USER', 'DELEGATE'])('does not derive general audit access from %s title/role', async role => {
+    actor.role = role;
+    await expect(controller.getLogs(req)).rejects.toThrow('yetkisi yok');
+    await expect(controller.getUserActivity(req, 'actor')).rejects.toThrow('yetkisi yok'); noAudit();
+  });
+  it.each(['ASSIGNED', 'RESPONSIBLE', 'ASSISTANT', 'INTERN'])('allows actual %s assignment for read only', async role => {
+    actor.lawyer = { ...profile, role, lawyerRank: role };
+    const result = await controller.getLogs(req, scope.action, 'CASE', 'case-A', undefined, undefined, undefined, '2', '5');
+    expect(result).toMatchObject({ logs: [], total: 0, page: 2, limit: 5 });
+    expect(db.case.findFirst).toHaveBeenCalledWith({ where: {
+      id: 'case-A', tenantId: 'tenant-A', OR: [{ lawyers: { some: { lawyerId: 'profile-A' } } }],
+    }, select: { id: true } });
+    const args = db.auditLog.findMany.mock.calls[0][0];
+    expect(args).toMatchObject({ where: { tenantId: 'tenant-A', ...scope }, skip: 5, take: 5 });
+    expect(db.auditLog.count).toHaveBeenCalledWith({ where: args.where });
+    expect(db.$transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: 'RepeatableRead' });
+  });
+  it('requires Staff case linkage with canView=true; approval/edit/roleOnCase confer none', async () => {
+    actor.lawyer = null; actor.staffMember = profile;
+    await controller.getEntityHistory(req, 'CASE', 'case-A');
+    expect(db.case.findFirst).toHaveBeenCalledWith({ where: {
+      id: 'case-A', tenantId: 'tenant-A', OR: [{ staff: { some: { staffMemberId: 'profile-A', canView: true } } }],
+    }, select: { id: true } });
+    expect(db.auditLog.findMany.mock.calls[0][0].where).toEqual({ tenantId: 'tenant-A', ...scope });
+  });
+  it.each([null, { ...profile, isActive: false }, { ...profile, tenantId: 'tenant-B' }])('rejects missing/inactive/foreign profile', async lawyer => {
+    actor.lawyer = lawyer;
+    await expect(controller.getEntityHistory(req, 'CASE', 'case-A')).rejects.toThrow('yetkisi yok'); noAudit();
+  });
+  it('rejects absent/foreign case or revoked assignment before rows, labels and count', async () => {
+    db.case.findFirst.mockResolvedValue(null);
+    await expect(controller.getLogs(req, scope.action, 'CASE', 'case-B')).rejects.toThrow('yetkisi yok'); noAudit();
+    expect(db.caseDebtor.findMany).not.toHaveBeenCalled();
+  });
+  it.each([
+    { ...scope, action: 'UPDATE' }, { ...scope, entityType: 'CLIENT' }, { ...scope, entityId: '' },
+    { ...scope, action: ['HACIZ_REQUEST_SUBMITTED', 'UPDATE'] }, { ...scope, entityId: { not: '' } },
+  ])('rejects broad, wrong-action, missing and injected query scopes', async query => {
+    await expect(service.readStandard('tenant-A', 'actor', 'logs', query as any)).rejects.toThrow(); noAudit();
+  });
+  it('entity history cannot expose other actions on an assigned case', async () => {
+    await controller.getEntityHistory(req, 'CASE', 'case-A');
+    expect(db.auditLog.findMany).toHaveBeenCalledWith({ where: { tenantId: 'tenant-A', ...scope }, orderBy: { createdAt: 'desc' } });
+  });
+  it('rejects a role change between separate calls instead of retaining ADMIN rights', async () => {
+    actor.role = 'ADMIN'; await controller.getLogs(req);
+    db.auditLog.findMany.mockClear(); db.auditLog.count.mockClear(); actor.role = 'USER';
+    await expect(controller.getLogs(req)).rejects.toThrow('yetkisi yok'); noAudit();
   });
 });
