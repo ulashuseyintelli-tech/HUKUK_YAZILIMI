@@ -38,9 +38,6 @@ interface AuditLog {
   userName?: string;
   userIp?: string;
   description?: string;
-  metadata?: Record<string, unknown>;
-  oldValues?: Record<string, unknown>;
-  newValues?: Record<string, unknown>;
   safeProjection?: AuditSafeProjection | null;
   createdAt: string;
 }

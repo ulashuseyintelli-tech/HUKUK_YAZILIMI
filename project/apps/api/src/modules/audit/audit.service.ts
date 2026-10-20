@@ -151,6 +151,7 @@ export class AuditService {
   /// Ã‡aÄŸrÄ±ldÄ±ÄŸÄ± yerler:
   /// - AuditController.getEntityHistory() â†’ GET /audit/entity-history (tek entity audit geÃ§miÅŸini dÃ¶ndÃ¼rÃ¼r)
   /// </remarks>
+  // Also called internally by ClientPayoutManualReversalReadService.detail().
   async getEntityHistory(tenantId: string, entityType: string, entityId: string) {
     const logs = await this.prisma.auditLog.findMany({
       where: { tenantId, entityType, entityId },
@@ -223,6 +224,27 @@ export class AuditService {
       );
       return false;
     }
+  }
+
+  // Called by AuditController.getLogs/getEntityHistory/getUserActivity at the HTTP boundary.
+  projectStandardRead(log: Parameters<typeof projectAuditLogSafe>[0] & {
+    safeProjection: ReturnType<typeof projectAuditLogSafe>;
+    hacizSafeProjection?: HacizAuditSafeProjection | null;
+  }) {
+    const { safeProjection } = log;
+    return {
+      id: safeProjection.id,
+      tenantId: log.tenantId,
+      action: safeProjection.action,
+      entityType: safeProjection.entityType,
+      entityId: safeProjection.entityId,
+      userId: safeProjection.actor.id,
+      userName: safeProjection.actor.displayName,
+      description: safeProjection.description,
+      createdAt: safeProjection.createdAt,
+      safeProjection,
+      hacizSafeProjection: log.hacizSafeProjection ?? null,
+    };
   }
 
   /// <remarks>

@@ -10,6 +10,7 @@ import * as request from 'supertest';
 
 import { AuditController } from '../../audit/audit.controller';
 import { AuditService } from '../../audit/audit.service';
+import { projectAuditLogSafe } from '../../audit/audit-safe-projection';
 import { PermissionDiagnosticsController } from '../../permission-diagnostics/permission-diagnostics.controller';
 import { PermissionDiagnosticsService } from '../../permission-diagnostics/permission-diagnostics.service';
 import { TenantService } from '../../tenant/tenant.service';
@@ -81,10 +82,20 @@ describe('R01 W1 security/tenant controlled runtime certification', () => {
     revoke: jest.fn().mockResolvedValue({ probe: 'invite-revoke' }),
     accept: jest.fn().mockResolvedValue({ probe: 'invite-accept' }),
   };
+  const auditRow = (id: string) => {
+    const row = {
+      id, tenantId: 'tenant-w1', action: 'READ', entityType: 'Case', entityId: 'case-1',
+      metadata: { rawNote: 'W1_RAW_METADATA_CANARY' },
+      oldValues: { note: 'W1_RAW_OLD_CANARY' }, newValues: { note: 'W1_RAW_NEW_CANARY' },
+      createdAt: new Date('2026-10-19T10:00:00.000Z'),
+    };
+    return { ...row, safeProjection: projectAuditLogSafe(row) };
+  };
   const audit = {
-    getLogs: jest.fn().mockResolvedValue({ probe: 'audit-logs' }),
-    getEntityHistory: jest.fn().mockResolvedValue({ probe: 'audit-entity-history' }),
-    getUserActivity: jest.fn().mockResolvedValue({ probe: 'audit-user-activity' }),
+    getLogs: jest.fn().mockResolvedValue({ logs: [auditRow('audit-logs')], total: 1, page: 1, limit: 50, totalPages: 1 }),
+    getEntityHistory: jest.fn().mockResolvedValue([auditRow('audit-entity-history')]),
+    getUserActivity: jest.fn().mockResolvedValue([auditRow('audit-user-activity')]),
+    projectStandardRead: AuditService.prototype.projectStandardRead,
   };
   const permissionDiagnostics = {
     diagnose: jest.fn().mockReturnValue({ probe: 'permission-diagnostics-one' }),
@@ -240,7 +251,14 @@ describe('R01 W1 security/tenant controlled runtime certification', () => {
     if ('auth' in route && route.auth) call = call.set('Authorization', bearer());
     if ('body' in route && route.body) call = call.send(route.body);
     const response = await call.expect(route.expectedStatus);
-    if (route.expectedProbe) expect(response.body.probe).toBe(route.expectedProbe);
+    if (route.name.startsWith('AuditController.')) {
+      const rows = route.name === 'AuditController.getLogs' ? response.body.logs : response.body;
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ id: route.expectedProbe, action: 'READ', entityId: 'case-1' });
+      expect(rows[0].safeProjection.id).toBe(route.expectedProbe);
+      for (const field of ['metadata', 'oldValues', 'newValues']) expect(rows[0]).not.toHaveProperty(field);
+      expect(JSON.stringify(response.body)).not.toContain('W1_RAW_');
+    } else if (route.expectedProbe) expect(response.body.probe).toBe(route.expectedProbe);
   });
 
   it('JwtAuthGuard rejects a protected route without a bearer token', async () => {

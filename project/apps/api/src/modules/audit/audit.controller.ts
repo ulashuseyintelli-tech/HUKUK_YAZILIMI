@@ -19,7 +19,7 @@ export class AuditController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
-    return this.auditService.getLogs(
+    const result = await this.auditService.getLogs(
       req.user.tenantId,
       {
         action,
@@ -32,6 +32,7 @@ export class AuditController {
       page ? parseInt(page) : 1,
       limit ? parseInt(limit) : 50,
     );
+    return { ...result, logs: result.logs.map((log) => this.auditService.projectStandardRead(log)) };
   }
 
   @Get('entity-history')
@@ -40,7 +41,8 @@ export class AuditController {
     @Query('entityType') entityType: string,
     @Query('entityId') entityId: string,
   ) {
-    return this.auditService.getEntityHistory(req.user.tenantId, entityType, entityId);
+    const logs = await this.auditService.getEntityHistory(req.user.tenantId, entityType, entityId);
+    return logs.map((log) => this.auditService.projectStandardRead(log));
   }
 
   @Get('user-activity')
@@ -49,10 +51,11 @@ export class AuditController {
     @Query('userId') userId: string,
     @Query('days') days?: string,
   ) {
-    return this.auditService.getUserActivity(
+    const logs = await this.auditService.getUserActivity(
       req.user.tenantId,
       userId,
       days ? parseInt(days) : 30,
     );
+    return logs.map((log) => this.auditService.projectStandardRead(log));
   }
 }

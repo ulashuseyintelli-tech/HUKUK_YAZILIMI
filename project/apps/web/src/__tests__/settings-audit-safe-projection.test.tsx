@@ -65,6 +65,18 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('Settings Audit UI safeProjection migration', () => {
+  it('renders the safe-only standard API response including detail view', async () => {
+    const { metadata, oldValues, newValues, userIp, ...safeOnly } = safeLog;
+    (api.get as any).mockResolvedValue({ data: { logs: [safeOnly], totalPages: 1 } });
+    render(<AuditLogPage />);
+    await screen.findByText('Müvekkil güncellendi ad****@example.com');
+    fireEvent.click(screen.getByText('Görüntüle'));
+    expect(screen.getByText('Güvenli Metadata')).toBeInTheDocument();
+    expect(screen.getByText('OPEN')).toBeInTheDocument();
+    expect(screen.getByText('CLOSED')).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('raw metadata secret');
+  });
+
   it('renders safeProjection summary and does not render raw metadata/oldValues/newValues dumps', async () => {
     render(<AuditLogPage />);
 
