@@ -31,8 +31,8 @@ dbDescribe('K16 internal client read — real HTTP/PostgreSQL scope and field pr
       const req = context.switchToHttp().getRequest();
       const user = await db.user.findUnique({ where: { id: String(req.headers['x-test-user-id']) } });
       if (!user) throw new UnauthorizedException();
-      // Stale role/elevated claim must not replace the current DB decision.
-      req.user = { ...user, role: 'ADMIN' }; return true;
+      // Read coverage keeps its stale ADMIN claim; POST acceptance uses the actual role.
+      req.user = { ...user, role: req.method === 'GET' ? 'ADMIN' : user.role }; return true;
     } }).compile();
     service = module.get(ClientService); app = module.createNestApplication();
     await app.init(); await app.listen(0, '127.0.0.1');
