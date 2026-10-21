@@ -1,9 +1,20 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ClientForm } from '@/components/client/client-form';
-import { emptyClientFormValues } from '@/lib/client-write';
+import { buildEditClientPayload, emptyClientFormValues } from '@/lib/client-write';
 
 describe('ClientForm', () => {
+  it('K16: edit with displayed mask submits ordinary changes without writing the mask', () => {
+    const baseline = { type: 'PERSON', firstName: 'Synthetic', lastName: 'Client', tckn: '100****46' };
+    const submit = vi.fn();
+    render(<ClientForm mode="edit" initialValues={{ ...emptyClientFormValues(), ...baseline } as any}
+      saving={false} onSubmit={values => submit(buildEditClientPayload(values, { readBaseline: baseline }))} onCancel={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText(/^Ad/), { target: { value: 'Changed' } });
+    fireEvent.click(screen.getByText('Kaydet'));
+    expect(submit).toHaveBeenCalledTimes(1); expect(submit.mock.calls[0][0].firstName).toBe('Changed');
+    expect(submit.mock.calls[0][0]).not.toHaveProperty('tckn');
+  });
+
   it('create mode: telefon/e-posta düzenlenebilir input olarak render edilir', () => {
     render(
       <ClientForm mode="create" saving={false} onSubmit={vi.fn()} onCancel={vi.fn()} />,

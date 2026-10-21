@@ -11,7 +11,7 @@ function build() {
   const service = {
     create: jest.fn(async (_t: string, d: any) => ({ id: "c1", ...d })),
     update: jest.fn(async (_id: string, _t: string, d: any) => ({ id: "c1", ...d })),
-    findOne: jest.fn(async () => ({ id: "c1" })),
+    readInternalClient: jest.fn(async () => ({ id: "c1" })),
     // OWN-13 I01: controller artik POST /clients + PUT /clients/:id icin merkezi mutation
     // policy kapisini cagirir. Bu suite YETKI degil GOVDE DOGRULAMASI test eder; kapi burada
     // izin-veren sahte olarak baglanir. Yetki davranisinin kaniti:
@@ -139,7 +139,7 @@ describe("ClientController - Task 2 lenient validation", () => {
 
   it("findOne not-found -> NotFoundException (Task 1 korunur)", async () => {
     const { ctrl, service, req } = build();
-    service.findOne.mockResolvedValueOnce(null);
+    service.readInternalClient.mockResolvedValueOnce(null);
     await expect(ctrl.findOne(req, "missing")).rejects.toBeInstanceOf(NotFoundException);
   });
 });

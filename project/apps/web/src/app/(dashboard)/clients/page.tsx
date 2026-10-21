@@ -7,7 +7,7 @@
  * Ekleme/düzenleme v1'de /settings/clients (compat host) üzerinden; "Yeni Müvekkil" → /clients/new
  * (settings create modaline redirect). Satır → /clients/:id detay shell.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -53,7 +53,7 @@ export default function ClientsListPage() {
       setLoading(true);
       setError(null);
       try {
-        const res = await api.getClients();
+        const res = await api.getClients(search.trim() || undefined);
         const list = (res?.data ?? []) as Client[];
         if (active) setClients(Array.isArray(list) ? list : []);
       } catch (e: any) {
@@ -65,17 +65,10 @@ export default function ClientsListPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [search]);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLocaleLowerCase('tr-TR');
-    if (!q) return clients;
-    return clients.filter((c) => {
-      const name = clientDisplayName(c).toLocaleLowerCase('tr-TR');
-      const id = (clientIdentity(c).value ?? '').toLocaleLowerCase('tr-TR');
-      return name.includes(q) || id.includes(q);
-    });
-  }, [clients, search]);
+  // Match the raw query only on the scoped server; browser rows contain masked identities.
+  const filtered = clients;
 
   return (
     <div className="space-y-6">

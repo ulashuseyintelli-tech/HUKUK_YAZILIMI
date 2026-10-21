@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import { toActionErrorMessage } from "@/lib/action-error";
 import { isPoaDuplicateSuppressed, POA_DUPLICATE_MESSAGE, stripPoaFields, isPoaAuthorizationDenied, poaCreateFailureMessage } from "@/lib/poa-ux";
 import { hasStructuredAddresses } from "@/lib/client-write";
+import { isUnchangedClientIdentityMask, preserveMaskedClientFields } from "@/lib/client-masked-edit";
 // OWN-12 ADIM C: uc muvekkil formunun ORTAK cekirdek alan modeli.
 import { buildClientCoreFields } from "@/lib/client-form-fields";
 import {
@@ -85,20 +86,25 @@ export default function ClientsSettingsPage() {
       });
   }, []);
 
-  useEffect(() => { loadClients(); }, []);
+  useEffect(() => { void loadClients(); }, [search]);
 
+  const clientLoadSequence = useRef(0);
   const loadClients = async () => {
+    const sequence = ++clientLoadSequence.current;
     try {
       setClientsLoadError(null);
-      const res = await api.get("/clients");
-      setClients(res.data?.data || []);
+      const res = await api.get(search.trim() ? `/clients?search=${encodeURIComponent(search.trim())}` : "/clients");
+      if (sequence === clientLoadSequence.current) setClients(res.data?.data || []);
     } catch (e) {
       // WSMR-A4p: eskiden yalniz console.error ile YUTULUYORDU. `clients`
       // baslangic degeri ([]) oldugu icin bu, asagidaki "Henüz müvekkil
       // eklenmedi" (gercekten bos) render'i ile AYNI ekrana dusuyordu.
-      setClientsLoadError(toActionErrorMessage(e, "Müvekkiller yüklenemedi."));
+      if (sequence === clientLoadSequence.current) {
+        setClients([]);
+        setClientsLoadError(toActionErrorMessage(e, "Müvekkiller yüklenemedi."));
+      }
     }
-    finally { setLoading(false); }
+    finally { if (sequence === clientLoadSequence.current) setLoading(false); }
   };
 
   // Görevdeki "Müvekkile git" linki: /settings/clients?edit={clientId} ile gelince o müvekkilin
@@ -166,7 +172,7 @@ export default function ClientsSettingsPage() {
       // Vekaletname alanları ClientPowerOfAttorney'e aittir; /clients gövdesine
       // gönderilmez (ClientService okumaz, lenient ValidationPipe düşürür). Vekalet
       // kaydı aşağıda kanonik POST /poa ile oluşturulur.
-      const clientPayload = stripPoaFields(data);
+      const clientPayload = preserveMaskedClientFields(stripPoaFields(data), editingClient);
       let clientExisting = false;
       if (editingClient) {
         // VER-02: yanıt ARTIK ATILMIYOR. Bu sayfa /clients LİSTESİNDEN beslenir ve liste
@@ -281,11 +287,8 @@ export default function ClientsSettingsPage() {
   };
 
   const filtered = clients.filter(c => {
-    const matchesSearch = c.name?.toLowerCase().includes(search.toLowerCase()) || 
-                          c.identityNo?.includes(search) ||
-                          c.email?.toLowerCase().includes(search.toLowerCase());
     const matchesType = typeFilter === "ALL" || c.type === typeFilter;
-    return matchesSearch && matchesType;
+    return matchesType;
   });
 
   // Sıralama fonksiyonu
@@ -953,10 +956,10 @@ function ClientModal({ client, scannedData, capabilities, onSave, onClose, savin
   const handleSubmit = () => {
     if (form.type === "PERSON" || form.type === "INDIVIDUAL") {
       if (!form.firstName || !form.lastName) { alert("Ad ve Soyad zorunludur"); return; }
-      if (!form.tckn || form.tckn.length !== 11) { alert("TCKN 11 haneli olmalıdır"); return; }
+      if ((!form.tckn || form.tckn.length !== 11) && !isUnchangedClientIdentityMask(form.tckn, client?.tckn || client?.identityNo)) { alert("TCKN 11 haneli olmalıdır"); return; }
     } else {
       if (!form.companyName) { alert("Kurum adı zorunludur"); return; }
-      if (!form.vkn || form.vkn.length !== 10) { alert("VKN 10 haneli olmalıdır"); return; }
+      if ((!form.vkn || form.vkn.length !== 10) && !isUnchangedClientIdentityMask(form.vkn, client?.vkn || client?.identityNo)) { alert("VKN 10 haneli olmalıdır"); return; }
     }
     // Telefon/e-posta eksikse SOR — ama yalnız İLK KEZ. Müvekkil zaten takipteyse (ACTIVE)
     // veya vazgeçilmişse (WAIVED) modal tekrar çıkmaz (başka alan düzenlerken bezdirmesin);

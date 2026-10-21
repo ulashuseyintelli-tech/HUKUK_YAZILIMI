@@ -93,7 +93,7 @@ export function ClientForm({
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    const nextErrors = validateClientForm(form);
+    const nextErrors = validateClientForm(form, mode === 'edit' ? initialValues : undefined);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
     onSubmit(form);

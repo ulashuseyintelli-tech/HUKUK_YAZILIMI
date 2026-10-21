@@ -25,6 +25,7 @@ import {
 } from './client-mutation-policy';
 // C3-B01 (§13/5 K5.5): rıza-kapılı tercih bayrakları için fail-closed kapı (DI'sız tüketim).
 import { assertClientConsentGateForWrite } from './client-consent.service';
+import { presentInternalClient } from './client-internal-read.presenter';
 
 /** C0-a: audit actor — YALNIZ auth context'ten (req.user.id); body/data'dan ASLA türetilmez. */
 export interface AuditActor {
@@ -575,12 +576,13 @@ export class ClientService {
   }
 
   // Tüm müvekkilleri listele
-  async findAll(tenantId: string, type?: string) {
+  async findAll(tenantId: string, type?: string, readScope?: Prisma.ClientWhereInput) {
     const clients = await this.prisma.client.findMany({
       where: { 
         tenantId, 
         isActive: true,
-        ...(type && { type: type as any })
+        ...(type && { type: type as any }),
+        ...(readScope && { AND: [readScope] }),
       },
       include: {
         contacts: true,
@@ -605,13 +607,13 @@ export class ClientService {
   async findOne(
     id: string,
     tenantId: string,
-    opts: { includeInactive?: boolean } = {},
+    opts: { includeInactive?: boolean; readScope?: Prisma.ClientWhereInput } = {},
     // DAR ATOMİKLİK: ortak transaction içinde çağrıldığında okuma AYNI client'tan yapılır — aksi hâlde
     // dış transaction'ın HENÜZ COMMIT EDİLMEMİŞ müvekkil satırı görülmez ve dönüş null olur.
     db: Prisma.TransactionClient = this.prisma,
   ) {
     return db.client.findFirst({
-      where: { id, tenantId, ...(opts.includeInactive ? {} : { isActive: true }) },
+      where: { id, tenantId, ...(opts.includeInactive ? {} : { isActive: true }), ...(opts.readScope && { AND: [opts.readScope] }) },
       include: {
         contacts: true,
         bankAccounts: true,
@@ -629,6 +631,51 @@ export class ClientService {
         },
       },
     });
+  }
+
+  /**
+   * Owner K16 choice 2: explicit client read derivation, not approval/mutation authority.
+   * Called by ClientController.findAll() for GET /clients (including search).
+   */
+  async readInternalClients(tenantId: string, actorUserId: string, type?: string, search?: string) {
+    const scope = await this.internalClientReadScope(tenantId, actorUserId);
+    const clients = search
+      ? await this.search(tenantId, search, scope)
+      : await this.findAll(tenantId, type, scope);
+    return clients.map(client => presentInternalClient(client, 'LIST'));
+  }
+
+  /** Called only by ClientController.findOne() -> GET /clients/:id, communication purpose. */
+  async readInternalClient(id: string, tenantId: string, actorUserId: string) {
+    const scope = await this.internalClientReadScope(tenantId, actorUserId);
+    const client = await this.findOne(id, tenantId, { readScope: scope });
+    if (!client) throw new NotFoundException('Müvekkil bulunamadı');
+    return presentInternalClient(client, 'CONTACT_DETAIL');
+  }
+
+  /** Consumed only by the two bounded internal HTTP readers above. No rank/Admin shortcut. */
+  private async internalClientReadScope(tenantId: string, actorUserId: string): Promise<Prisma.ClientWhereInput> {
+    if (!tenantId || !actorUserId) throw new ForbiddenException({ code: 'CLIENT_READ_DENIED' });
+    const actor = await this.prisma.user.findFirst({
+      where: { id: actorUserId, tenantId, isActive: true, role: { in: ['USER', 'ADMIN'] } },
+      select: { id: true },
+    });
+    if (!actor) throw new ForbiddenException({ code: 'CLIENT_READ_DENIED' });
+    // Canonical CaseClient only: Case.clientId, assignments in other cases/tenants,
+    // ReportingLine, role/title and observe-only permission decisions grant nothing here.
+    return {
+      caseClients: { some: { case: {
+        tenantId,
+        OR: [
+          { lawyers: { some: { lawyer: {
+            tenantId, isActive: true, user: { id: actorUserId, tenantId, isActive: true, role: { in: ['USER', 'ADMIN'] } },
+          } } } },
+          { staff: { some: { canView: true, staffMember: {
+            tenantId, isActive: true, user: { id: actorUserId, tenantId, isActive: true, role: { in: ['USER', 'ADMIN'] } },
+          } } } },
+        ],
+      } } },
+    };
   }
 
   /**
@@ -2274,17 +2321,25 @@ export class ClientService {
   }
 
   // Arama
-  async search(tenantId: string, query: string) {
+  async search(tenantId: string, query: string, readScope?: Prisma.ClientWhereInput) {
     return this.prisma.client.findMany({
       where: {
         tenantId,
         isActive: true,
+        ...(readScope && { AND: [readScope] }),
         OR: [
           { name: { contains: query, mode: 'insensitive' } },
+          { displayName: { contains: query, mode: 'insensitive' } },
+          { firstName: { contains: query, mode: 'insensitive' } },
+          { lastName: { contains: query, mode: 'insensitive' } },
+          { companyName: { contains: query, mode: 'insensitive' } },
+          { tckn: { contains: query } },
+          { vkn: { contains: query } },
           { identityNo: { contains: query } },
           { email: { contains: query, mode: 'insensitive' } },
         ],
       },
+      include: { contacts: true, powerOfAttorneys: { where: { isActive: true }, orderBy: { createdAt: 'desc' } }, _count: { select: { cases: true } } },
       orderBy: { name: 'asc' },
       take: 20,
     });
