@@ -6,6 +6,8 @@ import { resolveClientAddress, type ClientAddressResolverRow } from "../client/c
 import * as ExcelJS from "exceljs";
 import * as PDFDocument from "pdfkit";
 import { computeDebtorMissingFields } from "../debtor/debtor.service"; // PR-D5-e: eksik bilgi sayısı
+import { genericExportCaseScope, genericExportClientNames } from './generic-export-access';
+import { generalClientExportFilterSubtitle, presentGeneralClientExport } from './client-export.presenter';
 
 // PR-D5-e borçlu export etiketleri.
 const DEBTOR_TYPE_LABELS: Record<string, string> = {
@@ -114,8 +116,9 @@ export class ExportImportService {
     private clientService: ClientService,
   ) {}
 
-  async exportClientsToExcel(tenantId: string, filters?: { type?: string; search?: string }): Promise<Buffer> {
-    const clients = await this.getClients(tenantId, filters);
+  /** Called by ExportImportController.exportClientsExcel; actor comes from verified auth context. */
+  async exportClientsToExcel(tenantId: string, filters?: { type?: string; search?: string }, actorUserId?: string): Promise<Buffer> {
+    const clients = (await this.getClients(tenantId, filters, actorUserId)).map(presentGeneralClientExport);
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Muvekkilller");
     sheet.columns = [
@@ -140,8 +143,9 @@ export class ExportImportService {
     return Buffer.from(buffer);
   }
 
-  async exportClientsToPdf(tenantId: string, filters?: { type?: string; search?: string }): Promise<Buffer> {
-    const clients = await this.getClients(tenantId, filters);
+  /** Called by ExportImportController.exportClientsPdf; actor comes from verified auth context. */
+  async exportClientsToPdf(tenantId: string, filters?: { type?: string; search?: string }, actorUserId?: string): Promise<Buffer> {
+    const clients = (await this.getClients(tenantId, filters, actorUserId)).map(presentGeneralClientExport);
     return new Promise((resolve, reject) => {
       const chunks: Buffer[] = [];
       const doc = new PDFDocument({ size: "A4", margin: 40 });
@@ -154,7 +158,7 @@ export class ExportImportService {
       doc.moveDown(0.3);
 
       // Filtre + meta (oluşturulma tarihi, toplam)
-      const subtitle = buildPdfFilterSubtitle(filters);
+      const subtitle = generalClientExportFilterSubtitle(filters);
       doc.fontSize(9).fillColor("#666");
       if (subtitle) doc.text(subtitle, { align: "center" });
       doc.text(
@@ -191,8 +195,9 @@ export class ExportImportService {
     });
   }
 
-  async exportCasesToExcel(tenantId: string, filters?: { status?: string; clientId?: string; ids?: string[] }): Promise<Buffer> {
-    const cases = await this.getCases(tenantId, filters);
+  /** Called by ExportImportController.exportCasesExcel; actor comes from verified auth context. */
+  async exportCasesToExcel(tenantId: string, filters?: { status?: string; clientId?: string; ids?: string[] }, actorUserId?: string): Promise<Buffer> {
+    const cases = await this.getCases(tenantId, filters, actorUserId);
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Takipler");
     sheet.columns = [
@@ -212,8 +217,9 @@ export class ExportImportService {
     return Buffer.from(buffer);
   }
 
-  async exportCasesToPdf(tenantId: string, filters?: { status?: string; clientId?: string; ids?: string[] }): Promise<Buffer> {
-    const cases = await this.getCases(tenantId, filters);
+  /** Called by ExportImportController.exportCasesPdf; actor comes from verified auth context. */
+  async exportCasesToPdf(tenantId: string, filters?: { status?: string; clientId?: string; ids?: string[] }, actorUserId?: string): Promise<Buffer> {
+    const cases = await this.getCases(tenantId, filters, actorUserId);
     return new Promise((resolve, reject) => {
       const chunks: Buffer[] = [];
       const doc = new PDFDocument({ size: "A4", margin: 40 });
@@ -556,8 +562,10 @@ export class ExportImportService {
     });
   }
 
-  private async getClients(tenantId: string, filters?: { type?: string; search?: string }) {
-    const where: any = { tenantId, isActive: true };
+  /** Callers: generic client XLSX/PDF exports only, never legal document readers. */
+  private async getClients(tenantId: string, filters: { type?: string; search?: string } | undefined, actorUserId: string | undefined) {
+    const scope = await genericExportCaseScope(this.prisma, tenantId, actorUserId);
+    const where: any = { tenantId, isActive: true, caseClients: { some: { case: scope } } };
     if (filters?.type && filters.type !== "ALL") where.type = filters.type;
     // Arama: frontend export'ta search gönderiyordu ama uygulanmıyordu → çıktı arama kutusunu
     // yok sayıyordu. Artık hem Excel hem PDF export arama terimini dikkate alır.
@@ -577,22 +585,31 @@ export class ExportImportService {
     // C2-I08 E2: adres artık kanonik resolver'dan — I01/I03 sözleşmesiyle yüklenir.
     return this.prisma.client.findMany({
       where,
-      include: {
-        _count: { select: { cases: true } },
-        addresses: { where: { isCurrent: true }, orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }] },
+      select: {
+        type: true, name: true, displayName: true, companyName: true, firstName: true, lastName: true,
+        tckn: true, vkn: true, identityNo: true, phone: true, email: true,
+        city: true, district: true, createdAt: true,
+        addresses: { where: { isCurrent: true }, orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }], select: { city: true, district: true, isPrimary: true } },
       },
       orderBy: { createdAt: "desc" },
     });
   }
 
-  private async getCases(tenantId: string, filters?: { status?: string; clientId?: string; ids?: string[] }) {
-    const where: any = { tenantId };
+  /** Callers: generic case XLSX/PDF exports only. Canonical party names, no raw party records. */
+  private async getCases(tenantId: string, filters: { status?: string; clientId?: string; ids?: string[] } | undefined, actorUserId: string | undefined) {
+    const scope = await genericExportCaseScope(this.prisma, tenantId, actorUserId);
+    const where: any = { tenantId, AND: [scope] };
     if (filters?.status) where.caseStatus = filters.status;
-    if (filters?.clientId) where.clientId = filters.clientId;
-    // Seçili takipler: kullanıcı satırları işaretleyip export ettiğinde yalnız o ID'ler.
-    // tenantId where'da kaldığı için ID filtresi tenant izolasyonunu BOZMAZ (başka tenant'ın
-    // ID'si gönderilse bile tenantId eşleşmediğinden dönmez).
+    if (filters?.clientId) where.caseClients = { some: { clientId: filters.clientId, client: { tenantId, isActive: true } } };
     if (filters?.ids && filters.ids.length > 0) where.id = { in: filters.ids };
-    return this.prisma.case.findMany({ where, include: { client: true, debtors: { include: { debtor: true }, take: 1 } }, orderBy: { createdAt: "desc" } });
+    const cases = await this.prisma.case.findMany({
+      where,
+      select: {
+        fileNumber: true, caseStatus: true,
+        caseClients: { where: { client: { tenantId, isActive: true } }, select: { client: { select: { name: true } } }, orderBy: { id: 'asc' } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return cases.map(row => ({ ...row, client: { name: genericExportClientNames(row.caseClients) } }));
   }
 }
