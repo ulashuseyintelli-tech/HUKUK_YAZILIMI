@@ -18,16 +18,11 @@ donusemez. Duplicate normatif ifade `instruction-policy.cjs` tarafindan tespit e
 
 ## INSTRUCTION SIZE POLICY
 
-Bu iki dosyanin boyutu `project/scripts/instruction-policy.cjs` tarafindan olculur ve
-zorlanir (normalize: CRLF -> LF). `AGENTS.md` bakim hedefi WARN, birlesik hard ceiling
-ERROR uretir; hard ceiling yalniz acik owner amendment ile degistirilir. Okunabilirlik
-veya semantic kesinlik boyut hedefi icin bozulamaz. Her degisiklikte once/sonra olcum ve
-eklenen/tasinan/kaldirilan kural izi raporlanir.
-
-Asagidaki kurallar da metin degil testtir, ayni guard icinde tanimlidir:
-repository-local referans gecerliligi, `§N` bolum referansi, duplicate normatif ifade,
-branch prefix `<ajan>/<konu>`, instruction ile control-plane degisikliginin ayni PR'da
-karismasi.
+Boyut `project/scripts/instruction-policy.cjs` ile olculur (CRLF -> LF): `AGENTS.md`
+hedefi WARN, birlesik hard ceiling ERROR (yalniz owner amendment). Okunabilirlik boyut
+icin bozulamaz; her degisiklikte once/sonra olcum ve kural izi raporlanir. Ayni guard
+referans gecerliligini, `§N` referansini, duplicate ifadeyi, `<ajan>/<konu>` branch
+onekini ve instruction + control-plane karisimini test eder.
 
 ## 1. Otorite Zinciri
 
@@ -62,29 +57,26 @@ Her yeni gorevde `project/docs/governance/CANONICAL-FIVE-MODULE-WORKSPACE-MAP.md
 ve `WORKSPACE MODULE(S)` kanitla siniflandirilir. Canonical calisma modulleri `OFFICE`,
 `CLIENT`, `DEBTOR`, `RECEIVABLE` ve `COLLECTION`dir.
 
-- Kullanicinin her talimatta bes modulu yeniden yazmasi gerekmez; task/path/governance
-  kaniti tek eslesme uretiyorsa ajan modulu kendisi secer. Birden fazla ilgili modul
+- Kanit tek eslesme uretiyorsa ajan modulu kendisi secer; birden fazla ilgili modul
   varsa tumu okunur.
 - UYAP Connector, GitHub/CI/governance control-plane, shared evidence ve
-  cross-workstream migration isleri altinci hukuk modulu sayilmaz; haritadaki
-  `CROSS_MODULE / SHARED` routing'i uygulanir.
-- Kanitla siniflandirilamayan veya birden fazla makul ownership secenegi tasiyan gorev
-  `UNKNOWN / OWNER REVIEW` kalir ve mutation baslamaz.
-- Modul siniflandirmasi semantic veya execution authority degildir; aktif task, owner
-  mode, competing writer ve exact scope ayrica dogrulanir.
+  cross-workstream migration altinci modul degildir; `CROSS_MODULE / SHARED` uygulanir.
+- Siniflandirilamayan ya da birden fazla makul ownership secenegi olan gorev
+  `UNKNOWN / OWNER REVIEW` kalir; mutation baslamaz.
+- Modul siniflandirmasi authority degildir; aktif task, owner mode, competing writer ve
+  exact scope ayrica dogrulanir.
 
 ## 3. Temel Ilkeler
 
 - Ground Truth First: repository gercek durumunu dosya, komut ciktisi veya resmi kaynakla
   dogrula; repository state uydurma.
-- Sohbet gecmisi ve oturum hafizasi yalniz niyet ve karar tasir. Mevcut gercekler her
-  gorevde repository state, git state, dosya icerigi, governance kayitlari, PR/CI durumu
-  ve komut ciktilarindan yeniden dogrulanir.
-- Repository root sabit bir path'ten varsayilmaz; her oturumda guncel git state ile
-  dogrulanir. Bagimsiz ikinci clone veya root belirsizligi tespit edilirse durulur.
-- Buyuk veya uzun omurlu workstream'lerde ise baslamadan once Session Initialization
-  ozeti uretilir: Workspace Module(s), Repository State, Execution Context, Context
-  Drift, Concurrent Activity, Ready/Not Ready.
+- Sohbet ve oturum hafizasi yalniz niyet/karar tasir; gercekler her gorevde repo, git,
+  dosya, governance, PR/CI ve komut ciktisindan yeniden dogrulanir.
+- Repository root varsayilmaz, guncel git state ile dogrulanir; ikinci clone veya root
+  belirsizliginde durulur.
+- Buyuk/uzun omurlu workstream baslamadan Session Initialization ozeti: Workspace
+  Module(s), Repository State, Execution Context, Context Drift, Concurrent Activity,
+  Ready/Not Ready.
 - Mevcut mimariyi, kesinlesmis Architecture Decision'lari, geriye donuk uyumlulugu ve
   davranisi koru. Yeni gorev bir karari bozuyorsa dur, etkiyi raporla, owner karari iste.
 - Multitenant yapi varsa ona uy; degisiklikten once multitenant davranis gerekip
@@ -92,7 +84,8 @@ ve `WORKSPACE MODULE(S)` kanitla siniflandirilir. Canonical calisma modulleri `O
 - Spekulatif refactor yapma; en kucuk guvenli patch'i tercih et.
 - Hukuki/finansal semantiklerde domain dogrulugu implementasyon kolayligindan
   onceliklidir.
-- Commit, push, merge veya branch silme yalniz kullanici acikca yetki verdiginde yapilir.
+- Yetkili gorevde ajan inceleme, uygulama, test, derleme ve PR'i tamamlar; yetki merge'u
+  kapsiyorsa yeniden onay istemez; kapsam disi is icin yalniz ek karar sorar.
 - Dis bagimlilikla bloklanma davranisi (DX-005 / Waiting & Progress Policy) icin bkz.
   `project/docs/adr/ADR-012-WAITING-PROGRESS-POLICY.md`.
 
@@ -128,6 +121,7 @@ authority'sidir. Gecerli authority yalniz sunlardan biridir:
 - Belirli task veya PR'a bagli `GO-COMPLETE` / `IF GO-COMPLETE`.
 - Gate'ler gecince zincirin ikinci owner onayi beklenmeden tamamlanacagini acikca
   soyleyen esdeger owner beyani.
+- §5 Serit 1 isi.
 
 Authority task brief'inde ex-ante veya ayni task icinde sonradan verilebilir; verildikten
 sonra CI sonrasinda ikinci owner mesaji istenmez. Authority yalniz adi gecen task/PR
@@ -144,7 +138,9 @@ Scope expansion DEGILDIR: ayni root cause ve bounded context icindeki supporting
 focused test/fixture/mock, mevcut mimari icindeki minimum tercih, kendi patch'inin
 validation duzeltmesi, task'e dogrudan bagli documentation/reference alignment. Ilgisiz
 finding immediate security/data-loss/corruption riski tasimiyorsa evidence ile backlog
-adayi olarak ayrilir; mevcut task'e gizlice eklenmez ve mevcut task'i durdurmaz.
+adayi olarak ayrilir; mevcut task'e gizlice eklenmez ve mevcut task'i durdurmaz; kabulu dogrudan engelleyen
+bulgu dar duzeltmeye girer. Genel refactor/altyapi/gelecek modul hazirligi gorev devami
+degildir.
 
 Backlog akisi: `Yeni fikir → Triage → Product Backlog → READY → Active Roadmap →
 Implementation`. `BACKLOG → READY` ve roadmap tasimalari owner onayi olmadan uygulanmaz.
@@ -162,20 +158,25 @@ gorevde terminaldir; runtime-affecting gorev
 post-merge acceptance gate'leri olmadan CLOSED sayilmaz (bkz. `project/docs/runbooks/pr-closeout.md`).
 Orkestra execution coordinator'dır; `ELIGIBLE`/dispatch authority değildir. Mutation task-bound
 ayrı `SEMANTIC_AUTHORITY` + `EXECUTION_GRANT`, merge task/PR/head/scope/check pinli;
-reusable authority yoktur. Semantic checkpoint hukuk/business/security, migration,
+Serit 1 disinda reusable authority yoktur. Semantic checkpoint hukuk/business/security, migration,
 production/scope/unique-WIP; mechanical checkpoint grant'taki base/branch/PR/CI/merge/cleanup/
 eligibility'dir. Tuple değişmezse re-ratify yok. `GO-ANALYZE` read-only; `GO-COMPLETE`
 scope-içi. Successor exact grantli; Stage 1/2 ayrı grant. Same-file writer durdurur. Öncelik
 P0/P1 → product activation → runtime/prod certification → governance cleanup; lock/fence korunur.
 
+Seritler: Serit 1 (test, belge — governance/AGENTS/CLAUDE disi —, kum saati, yerel
+hazirlik) kontroller dogrulaninca basa bagli squash merge; onay beklenmez. Serit 2 (urun
+kodu, yurutucu, guvenlik kapisi, migration) gorev+merge birlikte yetkiliyse PR basina onay
+tekrarlanmaz. Serit 3 canli: faz basina GO. CI yoksa bos kontrol listesi basari sayilmaz;
+uygun yerel dogrulama esastir. Arac/yetki engeli dosya duzenlenerek asilmaz.
+
 ## 6. Worktree Izolasyonu (developer workstation policy)
 
 Bu bolum PR artifact'indan dogrulanamaz; makineye tasinamaz ve metin olarak baglayicidir.
 
-Canonical project root icinde implementasyon yapilmaz. Her `GO-IMPLEMENT`, `GO-HOTFIX`
-veya `GO-COMPLETE` dosya degisikliginden once current directory, branch ve worktree
-izolasyonu dogrulanir. Ajan canonical root icindeyse dosya editini, PR branch olusturmayi
-ve commit'i durdurur.
+Canonical project root icinde implementasyon yapilmaz. Her dosya degisikliginden once
+directory, branch ve worktree izolasyonu dogrulanir; canonical root icinde edit, PR branch
+ve commit durdurulur.
 
 ```text
 git fetch origin
@@ -209,12 +210,11 @@ cagrilir.
 - Kullanici ajanlar arasinda gorev tasiyan dispatcher DEGILDIR.
 
 `TASK REVISION ≠ TASK TERMINATION ≠ EXECUTOR HANDOFF.` Task identity, semantic outcome ve
-primary ownership degismediyse is durmaz; WIP korunur, mevcut diff yeniden degerlendirilir
-ve yurutme ayni task altinda yeni immutable revision ile devam eder. Revision authority
-genisletmez ve terminal disposition degildir; allowlist genislemesi revision degildir;
-semantic outcome degisikligi yeni task veya owner karari, primary executor degisikligi
-explicit handoff ister. Handoff istisnalari, revision tetikleyicileri, supersededLayer ve
-terminal disposition sinifları: `project/docs/governance/process-rules.md`.
+primary ownership degismediyse is durmaz; WIP korunur, yurutme ayni task altinda yeni
+immutable revision ile surer. Revision authority genisletmez, terminal disposition
+degildir; allowlist genislemesi revision degildir; semantic outcome degisikligi yeni
+task/owner karari, executor degisikligi explicit handoff ister. Ayrinti:
+`project/docs/governance/process-rules.md`.
 
 Yetkili kapsamdaki yerel komutlari ajan kosar, cikis kodu ve kanitla dogrular; owner'a
 yalniz yetki/UAC engelinde en kucuk mudahale verilir. Yeni authority uretmez. Bkz.
@@ -240,32 +240,30 @@ ozet yukumlulukler:
 
 ## 9. Uygulama Kurallari
 
-- Degisiklikten once ilgili dosyalari ve yakin cevre kodunu oku; degistirecegin dosya,
-  servis, controller veya metodu kimin nereden cagirdigini tespit et. Metot degisiyorsa
-  tum cagiranlari kontrol et.
-- On analiz ihtiyaca gore cagiran yerler, impact scope, multitenant etki, tablo
-  iliskileri, schema/migration ihtimali, runtime, guvenlik ve mimari uyumu kapsar.
-- Tablo uzerinde islem yapilacaksa iliskili tablolar ve yan etkiler incelenir.
+- Degisiklikten once ilgili dosyalar ve yakin cevre okunur; cagiranlar, iliskili
+  tablolar, tenant siniri, schema/migration, runtime ve guvenlik degisikligin etkiledigi
+  olcude incelenir. Her kucuk degisiklikte butun sistem yeniden analiz edilmez.
 - Yeni gelistirmeden once mevcut uygulama var mi bakilir; kod tekrarindan kacinilir.
 - Scope disi dosyalari degistirme; davranis degisikligini sessizce tanitma.
 - Yeni abstraction yalniz gercek karmasayi azaltiyorsa veya mevcut mimariyle acikca
   uyumluysa eklenir.
 - Owner/user WIP'i owner acikca yetki vermedikce revert, stash, tasima, clean, delete veya
   baska sekilde modify etme; ilgiliyse uyumlu calis, ilgisizse yok say.
-- Yeni servis metodu veya controller action yazarken cagrilma listesini yorumda tut;
-  mevcut metodu degistirirken listeyi kontrol edip guncelle. Bicim sablonu:
-  `project/docs/governance/process-rules.md`.
+- XML `/// <remarks>` cagrilma listesi kurali yalniz .NET/C# kapsamindadir;
+  TypeScript/Python/PHP'ye tasinmaz, kod yalniz yorum standardi icin toplu degistirilmez.
 
 ## 10. Validation
 
-- Validation seviyesi risk ve etki alanina gore secilir.
+- Validation riske gore secilir; baslangicta yeterli kanit belirlenir, kontroller gecip
+  somut kaygi kalmayinca biter. Kirmizi test hata duzeltmesinde, mutant degisen kritik
+  korumada, tam takim ortak etki/zorunlu kontrolde; gecerli sonuc gerekcesiz
+  tekrarlanmaz.
 - Kod veya davranis degisikliginde ilgili en kucuk anlamli test, type-check, lint veya
   smoke validation calistirilir.
 - Docs-only degisikliklerde diff, kapsam ve ilgili register/dokuman tutarliligi kontrolu
   yeterlidir; "schema yok / migration yok / runtime yok" boilerplate'i yazilmaz.
-- Test iddialari factual olmalidir: yalniz gercekten calistirilan komutlar ve gozlenen
-  sonuclar raporlanir. Calistirilmayan kontrol icin "calistirilmadi" denir; tahmini sonuc
-  test sonucu gibi sunulmaz.
+- Yalniz gercekten calistirilan komut ve gozlenen sonuc raporlanir; calistirilmayan
+  kontrol "calistirilmadi" diye yazilir, tahmin test sonucu gibi sunulmaz.
 - Riskli UI/API dogrulamasindan once localhost servisinin hangi worktree'den calistigi
   kontrol edilir.
 - DB-gated integration testlerde production veya local development veritabanina karsi test
@@ -329,12 +327,14 @@ belge statuleri icin tek canonical kaynak `project/docs/governance/GOVERNANCE-IN
 
 ## 13. Raporlama ve Kapanis
 
-- Raporlar kisa, karar odakli ve kapsama uygun olur.
-- Dogrulanmis gercekler, makul varsayimlar ve riskler ayri belirtilir; kanit yetersizse
-  acikca soylenir.
-- Kapanis raporu su alanlari icerir: degisen dosyalar; yapilan is; validation; kalan risk;
-  final disposition; canonical state.
+- Raporlar kisa ve karar odaklidir; dogrulanmis gercek, varsayim ve risk ayri yazilir,
+  kanit yetersizse soylenir.
+- Kapanis raporu: degisen dosyalar, yapilan is, validation, kalan risk, final
+  disposition, canonical state.
 - Kapanistan once Master Register dogrulamasi zorunludur.
+- Hazir, merge, calisan surumde dogrulandi ve kabul ayridir. Kanonik liste Baslangic |
+  Kapanan | Kalan | +Kapsam; kalan isin tek sorumlusu ve bitme kosulu olur. Kabul
+  gereken is calisan arayuzle sunulur; engelde tek mudahale yazilir, bagimsiz is surer.
 
 `Onay Bekleniyor` semantigi:
 
