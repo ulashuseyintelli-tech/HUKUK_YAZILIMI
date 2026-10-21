@@ -41,11 +41,12 @@ export class ExportImportController {
   @Get("clients/excel")
   async exportClientsExcel(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") actorUserId: string,
     @Query("type") type?: string,
     @Query("search") search?: string,
     @Res() res?: Response
   ) {
-    const buffer = await this.exportImportService.exportClientsToExcel(tenantId, { type, search });
+    const buffer = await this.exportImportService.exportClientsToExcel(tenantId, { type, search }, actorUserId);
     const filename = `muvekkilller_${new Date().toISOString().split("T")[0]}.xlsx`;
 
     res!.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -57,11 +58,12 @@ export class ExportImportController {
   @Get("clients/pdf")
   async exportClientsPdf(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") actorUserId: string,
     @Query("type") type?: string,
     @Query("search") search?: string,
     @Res() res?: Response
   ) {
-    const buffer = await this.exportImportService.exportClientsToPdf(tenantId, { type, search });
+    const buffer = await this.exportImportService.exportClientsToPdf(tenantId, { type, search }, actorUserId);
     const filename = `muvekkilller_${new Date().toISOString().split("T")[0]}.pdf`;
 
     res!.setHeader("Content-Type", "application/pdf");
@@ -113,13 +115,14 @@ export class ExportImportController {
   @Get("cases/excel")
   async exportCasesExcel(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") actorUserId: string,
     @Query("status") status?: string,
     @Query("clientId") clientId?: string,
     @Query("ids") ids?: string,
     @Res() res?: Response
   ) {
     const idList = parseIdsParam(ids);
-    const buffer = await this.exportImportService.exportCasesToExcel(tenantId, { status, clientId, ids: idList });
+    const buffer = await this.exportImportService.exportCasesToExcel(tenantId, { status, clientId, ids: idList }, actorUserId);
     const filename = `takipler_${new Date().toISOString().split("T")[0]}.xlsx`;
 
     res!.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -131,13 +134,14 @@ export class ExportImportController {
   @Get("cases/pdf")
   async exportCasesPdf(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") actorUserId: string,
     @Query("status") status?: string,
     @Query("clientId") clientId?: string,
     @Query("ids") ids?: string,
     @Res() res?: Response
   ) {
     const idList = parseIdsParam(ids);
-    const buffer = await this.exportImportService.exportCasesToPdf(tenantId, { status, clientId, ids: idList });
+    const buffer = await this.exportImportService.exportCasesToPdf(tenantId, { status, clientId, ids: idList }, actorUserId);
     const filename = `takipler_${new Date().toISOString().split("T")[0]}.pdf`;
 
     res!.setHeader("Content-Type", "application/pdf");

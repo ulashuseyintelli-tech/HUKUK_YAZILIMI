@@ -1,3 +1,5 @@
+import { Prisma } from '@prisma/client';
+import { genericExportCaseScope, genericExportClientNames } from '../export-import/generic-export-access';
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CollectionService } from "../collection/collection.service";
@@ -400,6 +402,7 @@ export class ReportService {
     }));
   }
 
+  /** Callers: ReportController.getCasesWithSummary and exportCasesAsCsv (export-only scope). */
   // 6. Dosya Listesi - Raporlama Özeti ile (Filtreleme destekli)
   async getCasesWithSummary(
     tenantId: string,
@@ -414,8 +417,9 @@ export class ReportService {
       caseStatus?: string;
       search?: string;
     },
+    exportScope?: Prisma.CaseWhereInput,
   ) {
-    const where: any = { tenantId };
+    const where: any = { tenantId, ...(exportScope ? { AND: [exportScope] } : {}) };
 
     // Filtreleri uygula
     if (filters?.takipTuruId) where.takipTuruId = filters.takipTuruId;
@@ -445,6 +449,7 @@ export class ReportService {
         principalAmount: true,
         caseStatus: true,
         client: { select: { name: true } },
+        caseClients: { where: { client: { tenantId, isActive: true } }, select: { client: { select: { name: true } } }, orderBy: { id: 'asc' } },
         takipTuru: { select: { name: true } },
         mahiyetTipi: { select: { name: true } },
         risk: { select: { name: true, color: true } },
@@ -468,7 +473,7 @@ export class ReportService {
       return {
         id: c.id,
         fileNumber: c.fileNumber,
-        clientName: c.client?.name,
+        clientName: exportScope ? genericExportClientNames(c.caseClients) : c.client?.name,
         principalAmount: c.principalAmount,
         caseStatus: c.caseStatus,
         takipTuru: c.takipTuru?.name,
@@ -582,6 +587,7 @@ export class ReportService {
     };
   }
 
+  /** Caller: ReportController.exportCases; generic CSV only, not financial action authority. */
   // 9. Excel Export için CSV formatında veri
   async exportCasesAsCsv(
     tenantId: string,
@@ -595,8 +601,10 @@ export class ReportService {
       responsibleStaffId?: string; // G5a: gerçek-kişi personel owner
       caseStatus?: string;
     },
+    actorUserId?: string,
   ): Promise<string> {
-    const cases = await this.getCasesWithSummary(tenantId, filters);
+    const scope = await genericExportCaseScope(this.prisma, tenantId, actorUserId);
+    const cases = await this.getCasesWithSummary(tenantId, filters, scope);
 
     // CSV başlık satırı
     const headers = [

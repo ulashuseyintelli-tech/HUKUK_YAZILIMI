@@ -179,7 +179,7 @@ export class ReportController {
       responsibleLawyerId,
       responsibleStaffId,
       caseStatus,
-    });
+    }, userId);
     // WP-4d-2: Phase 2 warn-only — response AYNEN döner; ek olarak diagnostic audit (best-effort, block YOK).
     await this.warnOnlyAudit.recordWouldDeny('reports.exportCases', {
       tenantId,
