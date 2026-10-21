@@ -67,7 +67,7 @@ export default function EditClientPage() {
     setSaving(true);
     setSubmitError(null);
     try {
-      const payload = buildEditClientPayload(values, { addressManagedExternally });
+      const payload = buildEditClientPayload(values, { addressManagedExternally, readBaseline: client ?? undefined });
       await api.put(`/clients/${clientId}`, payload);
       router.push(`/clients/${clientId}`);
     } catch (e: any) {

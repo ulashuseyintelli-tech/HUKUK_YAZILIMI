@@ -951,6 +951,9 @@ describeWithDisposableDb('R01 W2 core user journeys - controlled Nest runtime an
         casePermissions: { canEditFinance: true },
       },
     });
+    // K16: the read fixture requires the explicit canonical client relation;
+    // the legacy Case.clientId and ADMIN role do not authorize this read.
+    await prisma.caseClient.create({ data: { caseId: legalCase.id, clientId: seededClient.id } });
     const caseDebtor = await prisma.caseDebtor.create({
       data: { caseId: legalCase.id, debtorId: seededDebtor.id, role: 'ASIL_BORCLU' },
     });
@@ -1043,6 +1046,10 @@ describeWithDisposableDb('R01 W2 core user journeys - controlled Nest runtime an
       .send({ firstName: 'Controlled', lastName: 'Client', email: 'client@example.test', phone: '+900000000001' })
       .expect(201);
     const clientId = created.body.data.id as string;
+
+    // Creation authority does not implicitly grant object-read authority.
+    await request(app.getHttpServer()).get(`/api/clients/${clientId}`).set('Authorization', tokenA).expect(404);
+    await prisma.caseClient.create({ data: { caseId: fixture.caseId, clientId } });
 
     const read = await request(app.getHttpServer())
       .get(`/api/clients/${clientId}`)

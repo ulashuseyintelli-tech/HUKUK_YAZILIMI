@@ -178,6 +178,22 @@ describe('[1-2] settings/clients ClientModal — create mode (I01 guard uygulanm
 });
 
 describe('[3-4] settings/clients ClientModal — edit mode, structured adres YOK (compatibility korunur)', () => {
+  it('K16: unchanged masked identity and omitted notes never enter modal PUT', async () => {
+    const masked = { ...NO_STRUCTURED, tckn: '100****46', identityNo: '100****46' } as any;
+    delete masked.notes;
+    mockGetRouter({ 'client-1': masked }, [toListRow(masked)]);
+    apiMock.put.mockResolvedValue({ data: { data: masked } });
+    const { container } = render(<ClientsSettingsPage />);
+    await clickEditFor('Ada Müvekkil');
+    fireEvent.change(modalInputs(container)[0], { target: { value: 'Changed' } });
+    fireEvent.click(screen.getByText('Kaydet'));
+    await waitFor(() => expect(apiMock.put).toHaveBeenCalled());
+    const [, payload] = apiMock.put.mock.calls[0];
+    expect(payload.firstName).toBe('Changed');
+    expect(payload).not.toHaveProperty('tckn'); expect(payload).not.toHaveProperty('notes');
+    expect(JSON.stringify(payload)).not.toContain('100****46');
+  });
+
   it('[3] adres alanları editable görünür, yönetim-notice YOK', async () => {
     mockGetRouter({ 'client-1': NO_STRUCTURED }, [toListRow(NO_STRUCTURED)]);
     render(<ClientsSettingsPage />);

@@ -119,10 +119,7 @@ export class ClientController {
   @Get()
   async findAll(@Request() req: any, @Query('type') type?: string, @Query('search') search?: string) {
     const tenantId = req.user.tenantId;
-    if (search) {
-      return { data: await this.clientService.search(tenantId, search) };
-    }
-    return { data: await this.clientService.findAll(tenantId, type) };
+    return { data: await this.clientService.readInternalClients(tenantId, req.user.id, type, search) };
   }
 
   // Client Workspace timeline (read-only V1)
@@ -325,7 +322,7 @@ export class ClientController {
   @Get(':id')
   async findOne(@Request() req: any, @Param('id') id: string) {
     const tenantId = req.user.tenantId;
-    const client = await this.clientService.findOne(id, tenantId);
+    const client = await this.clientService.readInternalClient(id, tenantId, req.user.id);
     // P0.4: bulunamayan kayÄ±t 404 (eski: HTTP 200 + {error} â†’ FE !response.ok kontrolÃ¼ "baÅŸarÄ±" sanÄ±yordu).
     if (!client) throw new NotFoundException('Müvekkil bulunamadı');
     return { data: client };

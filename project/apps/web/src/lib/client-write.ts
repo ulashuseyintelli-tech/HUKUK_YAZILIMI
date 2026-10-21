@@ -19,6 +19,7 @@ import {
 } from './client-display';
 // OWN-12 ADIM C: uc muvekkil formunun ORTAK cekirdek alan modeli.
 import { buildClientCoreFields, emptyClientCoreFields } from './client-form-fields';
+import { isUnchangedClientIdentityMask, preserveMaskedClientFields } from './client-masked-edit';
 
 export type ClientFormType = 'PERSON' | 'COMPANY' | 'PUBLIC';
 
@@ -88,15 +89,15 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * Mod-10/11 checksum burada YOK — backend create()'te ayrıca zorunlu kılınır (Faz1, yalnız create);
  * checksum reddi 400 olarak zaten doğru şekilde yüzeye çıkar (submit sonrası hata gösterimi).
  */
-export function validateClientForm(form: ClientFormValues): Record<string, string> {
+export function validateClientForm(form: ClientFormValues, original?: ClientFormValues): Record<string, string> {
   const errors: Record<string, string> = {};
   if (form.type === 'PERSON') {
     if (!form.firstName.trim()) errors.firstName = 'Ad zorunludur';
     if (!form.lastName.trim()) errors.lastName = 'Soyad zorunludur';
-    if (!TCKN_RE.test(form.tckn.trim())) errors.tckn = 'TCKN 11 haneli rakam olmalı';
+    if (!TCKN_RE.test(form.tckn.trim()) && !isUnchangedClientIdentityMask(form.tckn, original?.tckn)) errors.tckn = 'TCKN 11 haneli rakam olmalı';
   } else {
     if (!form.companyName.trim()) errors.companyName = 'Kurum adı zorunludur';
-    if (!VKN_RE.test(form.vkn.trim())) errors.vkn = 'VKN 10 haneli rakam olmalı';
+    if (!VKN_RE.test(form.vkn.trim()) && !isUnchangedClientIdentityMask(form.vkn, original?.vkn)) errors.vkn = 'VKN 10 haneli rakam olmalı';
   }
   if (form.email.trim() && !EMAIL_RE.test(form.email.trim())) {
     errors.email = 'Geçerli e-posta giriniz';
@@ -150,9 +151,9 @@ export function buildCreateClientPayload(form: ClientFormValues): Record<string,
  */
 export function buildEditClientPayload(
   form: ClientFormValues,
-  opts: { addressManagedExternally?: boolean } = {},
+  opts: { addressManagedExternally?: boolean; readBaseline?: Record<string, any> } = {},
 ): Record<string, unknown> {
-  return {
+  return preserveMaskedClientFields({
     type: form.type,
     firstName: form.type === 'PERSON' ? form.firstName.trim() : undefined,
     lastName: form.type === 'PERSON' ? form.lastName.trim() : undefined,
@@ -169,7 +170,7 @@ export function buildEditClientPayload(
     canSettle: form.canSettle,
     canRelease: form.canRelease,
     notes: form.notes.trim() || undefined,
-  };
+  }, opts.readBaseline);
 }
 
 /**
