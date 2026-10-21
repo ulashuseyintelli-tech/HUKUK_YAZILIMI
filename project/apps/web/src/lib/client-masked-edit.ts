@@ -1,6 +1,6 @@
 /** A displayed identity mask is a read projection, never an update value. */
 export function isUnchangedClientIdentityMask(value: unknown, original: unknown): boolean {
-  return typeof value === 'string' && value === original && /^(?:\d{3}\*{4}\d{2}|\*{4})$/.test(value);
+  return typeof value === 'string' && value === original && /^(?:[\s\S]{3}\*{4}[\s\S]{2}|\*{4})$/.test(value);
 }
 
 /** Called by the native edit payload builder and settings ClientModal save path. */

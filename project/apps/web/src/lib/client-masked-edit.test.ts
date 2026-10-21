@@ -41,6 +41,8 @@ describe('K16 masked client edit roundtrip', () => {
   });
   it('recognizes only exact untouched masks, including short legacy identity masks', () => {
     expect(isUnchangedClientIdentityMask('****', '****')).toBe(true);
+    expect(isUnchangedClientIdentityMask('AB1****89', 'AB1****89')).toBe(true);
+    expect(preserveMaskedClientFields({ identityNo: 'AB1****89' }, { identityNo: 'AB1****89' })).not.toHaveProperty('identityNo');
     expect(isUnchangedClientIdentityMask('100****46', '101****46')).toBe(false);
     expect(isUnchangedClientIdentityMask('10000000146', '10000000146')).toBe(false);
   });
