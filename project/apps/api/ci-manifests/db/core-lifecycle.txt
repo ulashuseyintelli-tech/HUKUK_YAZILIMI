@@ -52,6 +52,8 @@ src/modules/reporting-line/__tests__/reporting-line-user-fk.db-gated.integration
 # OFFICE-P6B-CI-E2E-EXECUTION-OFFICE-R01 — register/seed lifecycle coverage.
 # Requires TEST_DATABASE_URL and must execute on the disposable PostgreSQL job.
 src/modules/auth/__tests__/auth-register-seed.integration.spec.ts
+# OK-02 (owner Ek 108): anonim kayit ucu varsayilan KAPALI — HTTP + disposable PG; kapaliyken satir olusmaz.
+src/modules/auth/__tests__/auth-register-closed.http.db-gated.integration.spec.ts
 
 # LOOKUP modulu — GERCEK-DB spec (owner GO 2026-09-18 "OFFICE / LOOKUP MODULU CI PAKETI"):
 #   lookup-seed.integration -> Test.createTestingModule({ providers: [PrismaService] }) —

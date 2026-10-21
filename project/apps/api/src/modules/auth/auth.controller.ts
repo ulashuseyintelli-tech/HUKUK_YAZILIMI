@@ -4,6 +4,7 @@ import { RegisterDto, LoginDto, FindTenantsForEmailDto } from "./dto/auth.dto";
 import { SmokeAllowed } from "./smoke/smoke-allowed.decorator";
 import { SmokeOrJwtAuthGuard } from "./smoke/smoke-or-jwt-auth.guard";
 import { LoginRateLimitGuard } from "./guards/login-rate-limit.guard";
+import { PublicRegistrationEnabledGuard } from "./guards/public-registration-enabled.guard";
 import { CurrentUser } from "./decorators/current-user.decorator";
 import { PasswordResetService } from "./password-reset/password-reset.service";
 import { AuthUserProjectionSource, toPublicAuthUser } from "./user-public-projection";
@@ -25,7 +26,13 @@ export class AuthController {
     return { passwordRecoveryEnabled: this.passwordReset.isPasswordRecoveryEnabled() };
   }
 
+  /**
+   * OK-02: anonim büro kaydı varsayılan KAPALI — `PublicRegistrationEnabledGuard`
+   * (`OFFICE_PUBLIC_REGISTRATION_ENABLED=true` değilse 403; gövde doğrulamasından ve veri
+   * erişiminden önce). Bayrak açıkken davranış değişmez.
+   */
   @Post("register")
+  @UseGuards(PublicRegistrationEnabledGuard)
   register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
   }

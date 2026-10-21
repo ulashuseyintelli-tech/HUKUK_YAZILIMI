@@ -145,8 +145,11 @@ describe('R01 W1 security/tenant controlled runtime certification', () => {
         {
           provide: ConfigService,
           useValue: {
+            // OK-02: register ucu varsayılan KAPALI; dispatch sertifikası bayrak AÇIK iken ölçülür.
             get: (key: string, defaultValue?: unknown) =>
-              key === 'JWT_SECRET' ? TEST_SECRET : defaultValue,
+              key === 'JWT_SECRET' ? TEST_SECRET
+                : key === 'OFFICE_PUBLIC_REGISTRATION_ENABLED' ? 'true'
+                  : defaultValue,
           },
         },
       ],
