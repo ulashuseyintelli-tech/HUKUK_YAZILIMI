@@ -84,9 +84,9 @@ dbDescribe('K16 generic export — real HTTP/PostgreSQL and decoded artifacts', 
     }
     expect(response.headers['content-type']).toContain('application/pdf');
     const reader = spawnSync(process.execPath, ['-e',
-      "require(process.argv[1])(require('fs').readFileSync(0),{version:'v2.0.550'}).then(r=>process.stdout.write(JSON.stringify({text:r.text}))).catch(e=>{console.error(e.message);process.exitCode=1;})",
+      "require(process.argv[1])(Uint8Array.from(require('fs').readFileSync(0)),{version:'v2.0.550'}).then(r=>process.stdout.write(JSON.stringify({text:r.text}))).catch(e=>{console.error(e.message);process.exitCode=1;})",
       require.resolve('pdf-parse/lib/pdf-parse.js')], { input: response.body, encoding: 'utf8', timeout: 10000, maxBuffer: 256 * 1024, env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=256' } });
-    expect(reader.error).toBeUndefined(); expect(reader.status).toBe(0); return JSON.parse(reader.stdout).text as string;
+    expect(reader.error).toBeUndefined(); expect({ status: reader.status, stderr: reader.stderr }).toMatchObject({ status: 0 }); return JSON.parse(reader.stdout).text as string;
   }
   async function noRows(a: Awaited<ReturnType<typeof actor>>, status = 200) {
     for (const route of routes) {

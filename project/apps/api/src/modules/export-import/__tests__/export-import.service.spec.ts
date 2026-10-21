@@ -207,15 +207,16 @@ describe('K16 general client export field boundary', () => {
     const source = raw();
     const service = new ExportImportService({ user: { findFirst: jest.fn().mockResolvedValue({ id: "actor" }) }, client: { findMany: jest.fn().mockResolvedValue([source]) } } as any, {} as any);
     const bytes = await service.exportClientsToPdf('test-tenant', { search: 'FILTER SECRET 12345678901' }, 'actor');
+    // Copy exact PDF bytes: the locked PDF.js reader misreads pooled Node 20 Buffers.
     // The same locked reader parses this buffer outside Jest; keep it outside
     // the Jest VM. A timeout, parser error or malformed output must still fail.
     const reader = require('child_process').spawnSync(process.execPath, [
       '-e',
-      "require(process.argv[1])(require('fs').readFileSync(0),{version:'v2.0.550'}).then(r=>process.stdout.write(JSON.stringify({text:r.text,numpages:r.numpages}))).catch(e=>{console.error(e.message);process.exitCode=1;})",
+      "require(process.argv[1])(Uint8Array.from(require('fs').readFileSync(0)),{version:'v2.0.550'}).then(r=>process.stdout.write(JSON.stringify({text:r.text,numpages:r.numpages}))).catch(e=>{console.error(e.message);process.exitCode=1;})",
       require.resolve('pdf-parse/lib/pdf-parse.js'),
     ], { input: bytes, encoding: 'utf8', timeout: 10000, maxBuffer: 256 * 1024, env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=256' } });
     expect(reader.error).toBeUndefined();
-    expect(reader.status).toBe(0);
+    expect({ status: reader.status, stderr: reader.stderr }).toMatchObject({ status: 0 });
     const document = JSON.parse(reader.stdout);
     expect(document.text).toContain('Allowed Client');
     expect(document.text).toContain('123****01');
