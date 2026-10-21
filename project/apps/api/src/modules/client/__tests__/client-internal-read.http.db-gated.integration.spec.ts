@@ -10,6 +10,7 @@ import { ClientController } from '../client.controller';
 import { ClientService } from '../client.service';
 import { ClientIntakeLinkService } from '../../client-intake-link/client-intake-link.service';
 import { presentInternalClient } from '../client-internal-read.presenter';
+import { seedClientWorkspaceLiveSmokeFixture, cleanupClientWorkspaceLiveSmokeFixture } from '../../../scripts/client-workspace-live-smoke-seed';
 
 const url = resolveTestDatabaseUrl(process.env);
 if (process.env.CI && !url) throw new Error('K16 internal read requires disposable TEST_DATABASE_URL');
@@ -160,5 +161,23 @@ dbDescribe('K16 internal client read — real HTTP/PostgreSQL scope and field pr
     const before = JSON.stringify(source); const result = presentInternalClient(source, 'LIST');
     expect(result.bankAccounts[0].iban).toBe('TR12****1234'); expect(result.addresses[0]).toEqual({ city: 'City' });
     expect(result.powerOfAttorneys[0]).toEqual({ id: 'p' }); expect(result.portalUser.email).toBe('sy****@example.test'); expect(JSON.stringify(source)).toBe(before);
+  });
+  it('CI smoke fixture supplies explicit read membership idempotently and cleans only its own profile', async () => {
+    await db.tenant.update({ where: { id: tenant }, data: { slug: 'demo-firma' } });
+    const user = await db.user.create({ data: { tenantId: tenant, email: 'admin@hukuk.com', role: 'ADMIN', name: 'Synthetic', surname: 'Smoke' } });
+    const key = 'k16-smoke-fixture-test';
+    const seeded = await seedClientWorkspaceLiveSmokeFixture(db, key);
+    await get(user.id, '/clients/' + seeded.clientId).expect(200);
+    await seedClientWorkspaceLiveSmokeFixture(db, key);
+    expect(await db.caseLawyer.count({ where: { caseId: seeded.caseId } })).toBe(1);
+    await cleanupClientWorkspaceLiveSmokeFixture(db, key);
+    expect(await db.lawyer.count({ where: { userId: user.id } })).toBe(0);
+    expect(await db.user.count({ where: { id: user.id } })).toBe(1);
+    const existing = await db.lawyer.create({ data: { tenantId: tenant, userId: user.id, name: 'Existing', surname: 'Actor' } });
+    const before = await db.lawyer.findUniqueOrThrow({ where: { id: existing.id } });
+    await seedClientWorkspaceLiveSmokeFixture(db, key);
+    await get(user.id, '/clients/' + seeded.clientId).expect(200);
+    await cleanupClientWorkspaceLiveSmokeFixture(db, key);
+    expect(await db.lawyer.findUniqueOrThrow({ where: { id: existing.id } })).toEqual(before);
   });
 });

@@ -12,6 +12,8 @@ interface ClientWorkspaceLiveSmokeSeedIds {
   clientContactId: string;
   caseId: string;
   caseClientId: string;
+  actorLawyerId: string;
+  caseLawyerId: string;
   poaId: string;
   intakeLinkId: string;
   intakeSubmissionId: string;
@@ -59,6 +61,8 @@ function fixtureIds(seedKey = DEFAULT_SEED_KEY, tenantId = 'tenant', actorUserId
     clientContactId: `${key}-client-email`,
     caseId: `${key}-case`,
     caseClientId: `${key}-case-client`,
+    actorLawyerId: `${key}-actor-lawyer`,
+    caseLawyerId: `${key}-case-lawyer`,
     poaId: `${key}-poa`,
     intakeLinkId: `${key}-intake-link`,
     intakeSubmissionId: `${key}-intake-submission`,
@@ -117,8 +121,12 @@ export async function cleanupClientWorkspaceLiveSmokeFixture(
   await prisma.clientPowerOfAttorney.deleteMany({ where: { id: ids.poaId } });
   await prisma.clientContact.deleteMany({ where: { id: ids.clientContactId } });
   await prisma.caseClient.deleteMany({ where: { id: ids.caseClientId } });
+  await prisma.caseLawyer.deleteMany({ where: { id: ids.caseLawyerId, caseId: ids.caseId } });
   await prisma.case.deleteMany({ where: { id: ids.caseId } });
   await prisma.client.deleteMany({ where: { id: ids.clientId } });
+  // Never remove an existing actor profile; only this seed's synthetic, unused profile.
+  await prisma.lawyer.deleteMany({ where: { id: ids.actorLawyerId, tenantId: ids.tenantId,
+    userId: ids.actorUserId, caseLawyers: { none: {} } } });
 
   return {
     ...ids,
@@ -139,6 +147,17 @@ export async function seedClientWorkspaceLiveSmokeFixture(
   const tokenHash = createHash('sha256').update(`${key}:intake-link-token`).digest('hex');
   const notificationAt = new Date('2026-06-15T09:00:00.000Z');
   const intakeSubmittedAt = new Date('2026-06-15T10:00:00.000Z');
+  // K16 read acceptance needs a real active profile and explicit case membership.
+  // Do not promote ADMIN into an authorization shortcut or reactivate existing profiles.
+  const existingActor = await prisma.lawyer.findFirst({ where: { userId: ids.actorUserId },
+    select: { id: true, tenantId: true, isActive: true } });
+  if (existingActor && (existingActor.tenantId !== ids.tenantId || !existingActor.isActive)) {
+    throw new Error('Client smoke actor profile is not active in the fixture tenant.');
+  }
+  const actorLawyer = existingActor ?? await prisma.lawyer.create({ data: {
+    id: ids.actorLawyerId, tenantId: ids.tenantId, userId: ids.actorUserId,
+    name: 'Synthetic', surname: 'Client Smoke Actor',
+  } });
 
   await prisma.client.upsert({
     where: { id: ids.clientId },
@@ -224,6 +243,12 @@ export async function seedClientWorkspaceLiveSmokeFixture(
       role: 'ALACAKLI',
       assignedById: ids.actorUserId,
     },
+  });
+
+  await prisma.caseLawyer.upsert({
+    where: { id: ids.caseLawyerId },
+    update: { caseId: ids.caseId, lawyerId: actorLawyer.id },
+    create: { id: ids.caseLawyerId, caseId: ids.caseId, lawyerId: actorLawyer.id },
   });
 
   await prisma.clientPowerOfAttorney.upsert({
