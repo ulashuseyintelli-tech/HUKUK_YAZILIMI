@@ -12,6 +12,7 @@
  * Tüm credential-benzeri değerler SENTETİKTİR.
  */
 import { CanActivate, ExecutionContext, INestApplication, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
@@ -118,6 +119,9 @@ describe('R02 — auth public-user gerçek HTTP serialization', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: JwtService, useValue: { sign: jest.fn().mockReturnValue('SENTETIK.JWT.DEGERI') } },
         { provide: PasswordResetService, useValue: { isPasswordRecoveryEnabled: () => false } },
+        // OK-02: register ucu varsayılan KAPALI; bu suite bayrak AÇIK iken mevcut sözleşmeyi ölçer
+        // (kapalı durum: auth-register-closed-http.spec.ts).
+        { provide: ConfigService, useValue: { get: (k: string) => (k === 'OFFICE_PUBLIC_REGISTRATION_ENABLED' ? 'true' : undefined) } },
       ],
     })
       .overrideGuard(JwtAuthGuard)

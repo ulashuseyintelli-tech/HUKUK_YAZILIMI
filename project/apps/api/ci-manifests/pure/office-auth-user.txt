@@ -229,6 +229,8 @@ src/scripts/__tests__/office-cap02-identity-binding-invite-issue.core.spec.ts
 # serialization olcer (mock tek basina yeterli degildir).
 src/modules/auth/__tests__/auth-me-credential-containment.spec.ts
 src/modules/auth/__tests__/auth-public-user-http.spec.ts
+# OK-02 (owner Ek 108): anonim kayit ucu varsayilan KAPALI — gercek HTTP, Prisma cagrisi sifir.
+src/modules/auth/__tests__/auth-register-closed-http.spec.ts
 src/modules/seed/__tests__/seed-staff-lawyer-canonical-service.spec.ts
 src/modules/staff/__tests__/staff-controller-guards.spec.ts
 src/modules/staff/__tests__/staff-http-error-propagation.spec.ts
