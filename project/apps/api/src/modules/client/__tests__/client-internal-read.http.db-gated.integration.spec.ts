@@ -8,6 +8,7 @@ import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { ClientController } from '../client.controller';
 import { ClientService } from '../client.service';
+import { AuditService } from '../../audit/audit.service';
 import { ClientIntakeLinkService } from '../../client-intake-link/client-intake-link.service';
 import { presentInternalClient } from '../client-internal-read.presenter';
 import { seedClientWorkspaceLiveSmokeFixture, cleanupClientWorkspaceLiveSmokeFixture } from '../../../scripts/client-workspace-live-smoke-seed';
@@ -24,14 +25,14 @@ dbDescribe('K16 internal client read — real HTTP/PostgreSQL scope and field pr
   beforeAll(async () => {
     db = new PrismaService({ datasources: { db: { url } } }); await db.$connect();
     const module = await Test.createTestingModule({ controllers: [ClientController], providers: [
-      { provide: ClientService, useFactory: () => new ClientService(db, {} as any, {} as any) },
+      { provide: ClientService, useFactory: () => new ClientService(db, new AuditService(db), {} as any) },
       { provide: ClientIntakeLinkService, useValue: {} },
     ] }).overrideGuard(JwtAuthGuard).useValue({ async canActivate(context: any) {
       const req = context.switchToHttp().getRequest();
       const user = await db.user.findUnique({ where: { id: String(req.headers['x-test-user-id']) } });
       if (!user) throw new UnauthorizedException();
-      // Stale role/elevated claim must not replace the current DB decision.
-      req.user = { ...user, role: 'ADMIN' }; return true;
+      // Read coverage keeps its stale ADMIN claim; POST acceptance uses the actual role.
+      req.user = { ...user, role: req.method === 'GET' ? 'ADMIN' : user.role }; return true;
     } }).compile();
     service = module.get(ClientService); app = module.createNestApplication();
     await app.init(); await app.listen(0, '127.0.0.1');
@@ -125,6 +126,24 @@ dbDescribe('K16 internal client read — real HTTP/PostgreSQL scope and field pr
   it('no-case client is excluded and detail denied', async () => {
     const a = await actor('lawyer'); await assign(a); await get(a.user.id, '/clients/' + unlinked).expect(404);
     expect((await get(a.user.id).expect(200)).body.data.map((r: any) => r.id)).toEqual([clientId]);
+  });
+  it.each(['USER', 'ADMIN'] as const)('14a: %s can create a client for selection from POST without granting list/detail access', async role => {
+    const a = await actor('none', role);
+    const payload = { type: 'PERSON', firstName: 'New', lastName: 'Synthetic', tckn: '10000000214',
+      phone: '+905551110000', email: 'new-client@example.test' };
+    expect((await get(a.user.id).expect(200)).body.data).toEqual([]);
+    const created = (await http(app.getHttpServer()).post('/clients')
+      .set('x-test-user-id', a.user.id).send(payload).expect(201)).body.data;
+    expect(created).toMatchObject({ id: expect.any(String), tenantId: tenant, displayName: 'New Synthetic' });
+    expect(created.id).not.toBe(clientId);
+    expect(await db.client.count({ where: { tenantId: tenant, tckn: payload.tckn } })).toBe(1);
+    expect(await db.caseClient.count({ where: { clientId: created.id } })).toBe(0);
+    expect(await db.auditLog.count({ where: { tenantId: tenant, entityId: created.id, action: 'CLIENT_CREATE', userId: a.user.id } })).toBe(1);
+    const persisted = await db.client.findUniqueOrThrow({ where: { id: created.id } });
+    expect((await get(a.user.id).expect(200)).body.data).toEqual([]);
+    expect((await get(a.user.id, '/clients?search=' + payload.tckn).expect(200)).body.data).toEqual([]);
+    await get(a.user.id, '/clients/' + created.id).expect(404);
+    expect(await db.client.findUniqueOrThrow({ where: { id: created.id } })).toEqual(persisted);
   });
   it('raw identity search is performed inside object scope but returns only masked values', async () => {
     const a = await actor('lawyer'); await assign(a);
