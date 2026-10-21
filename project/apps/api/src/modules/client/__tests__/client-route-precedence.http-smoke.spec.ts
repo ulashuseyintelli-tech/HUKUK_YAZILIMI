@@ -48,7 +48,8 @@ describe('client compliance route precedence (CAD-BACKEND-ROUTE-SHADOW-REMEDIATI
         { provide: ClientLegalHoldService, useValue: { listHolds: jest.fn().mockResolvedValue([]) } },
         {
           provide: ClientService,
-          useValue: { findOne: jest.fn(async (id: string) => (id === 'real-client' ? { id } : null)) },
+          // Routing-only fixture: K16's real object authorization is covered in the HTTP/DB suite.
+          useValue: { readInternalClient: jest.fn(async (id: string) => (id === 'real-client' ? { id } : null)) },
         },
         { provide: ClientIntakeLinkService, useValue: {} },
       ],
@@ -75,7 +76,7 @@ describe('client compliance route precedence (CAD-BACKEND-ROUTE-SHADOW-REMEDIATI
     expect(Array.isArray(res.body)).toBe(true);
   });
 
-  it('GET /clients/:id (bilinen) → findOne, 200 {data}', async () => {
+  it('GET /clients/:id (bilinen) → bounded read, 200 {data}', async () => {
     const res = await request(app.getHttpServer()).get('/clients/real-client');
     expect(res.status).toBe(200);
     expect(res.body?.data?.id).toBe('real-client');
