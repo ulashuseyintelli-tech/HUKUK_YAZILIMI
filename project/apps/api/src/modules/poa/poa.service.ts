@@ -76,7 +76,7 @@ export function sameIssueDay(a?: Date | string | null, b?: Date | string | null)
 
 /** Mevcut kayıttaki BOŞ alanları yeni taramadan gelen değerle doldurur; DOLU alanları EZMEZ. */
 export function buildPoaEnrichment(existing: any, dto: any): Record<string, any> {
-  const fields = ["notaryCity", "journalNo", "poaNumber", "validUntil", "scopeDescription", "filePath"];
+  const fields = ["notaryCity", "journalNo", "poaNumber", "validUntil", "scopeDescription"];
   const out: Record<string, any> = {};
   for (const f of fields) {
     const cur = existing?.[f];
@@ -103,9 +103,6 @@ export interface CreatePoaDto {
   canWaive?: boolean;
   canSettle?: boolean;
   canRelease?: boolean;
-  filePath?: string;
-  fileSize?: number;
-  mimeType?: string;
   lawyerIds?: string[];
 }
 
@@ -114,7 +111,7 @@ export interface CreatePoaDto {
  * (lifecycle — yalniz revoke yolu), `clientId` (sahiplik) ve dosya alanlari (yalniz upload/deleteFile)
  * bu tipte YOKTUR; runtime'da `projectPoaWritableInput` gonderilirse 400 ile REDDEDER.
  */
-export type UpdatePoaDto = Partial<Omit<CreatePoaDto, 'clientId' | 'filePath' | 'fileSize' | 'mimeType'>>;
+export type UpdatePoaDto = Partial<Omit<CreatePoaDto, 'clientId'>>;
 
 export interface PoaValidationResult {
   isValid: boolean;
@@ -124,11 +121,11 @@ export interface PoaValidationResult {
 }
 
 // ── D-4 (owner GO 2026-09-06): POA yazma yuzeyi — alan allowlist'leri (mass-assignment KAPALI) ──
-/** CREATE ile yazilabilir alanlar = CreatePoaDto'nun bildirilen anahtarlari. */
+/** OK-01: dosya alanlari yalniz yetkili upload/deleteFile yolundan degisir. */
 export const POA_CREATE_WRITABLE_FIELDS: readonly string[] = [
   'clientId', 'notaryName', 'notaryCity', 'journalNo', 'poaNumber', 'dateIssued', 'isLimited', 'validUntil',
   'scopeType', 'scopeDescription', 'canCollect', 'canWaive', 'canSettle', 'canRelease',
-  'filePath', 'fileSize', 'mimeType', 'lawyerIds',
+  'lawyerIds',
 ];
 /** UPDATE ile yazilabilir alanlar: lifecycle, sahiplik ve dosya alanlari HARIC. */
 export const POA_UPDATE_WRITABLE_FIELDS: readonly string[] = [
@@ -136,9 +133,9 @@ export const POA_UPDATE_WRITABLE_FIELDS: readonly string[] = [
   'scopeType', 'scopeDescription', 'canCollect', 'canWaive', 'canSettle', 'canRelease', 'lawyerIds',
 ];
 /** Her iki islemde de gonderilmesi REDDEDILEN alanlar (sessizce dusurulmez): lifecycle/sahiplik yan kapidan gecemez. */
-export const POA_REJECTED_FIELDS: readonly string[] = ['status', 'isActive', 'tenantId', 'id', 'createdAt', 'updatedAt'];
-/** UPDATE'te ayrica reddedilen alanlar: sahiplik degisimi ve dosya alanlari (yalniz upload/deleteFile yolu). */
-export const POA_UPDATE_REJECTED_FIELDS: readonly string[] = ['clientId', 'filePath', 'fileSize', 'mimeType'];
+export const POA_REJECTED_FIELDS: readonly string[] = ['status', 'isActive', 'tenantId', 'id', 'createdAt', 'updatedAt', 'filePath', 'fileSize', 'mimeType'];
+/** UPDATE'te ayrica reddedilen alan: sahiplik degisimi. */
+export const POA_UPDATE_REJECTED_FIELDS: readonly string[] = ['clientId'];
 
 /**
  * Ham govdeyi yazilabilir alanlara indirger. Reddedilen alanlar 400 + stabil `reasonCode` +
@@ -950,12 +947,22 @@ export class PoaService {
   async getFile(poaId: string, tenantId: string) {
     const poa = await this.findOne(poaId, tenantId);
 
-    if (!poa.filePath || !fs.existsSync(poa.filePath)) {
+    if (!poa.filePath) {
       throw new NotFoundException("Dosya bulunamadı");
     }
 
-    const buffer = fs.readFileSync(poa.filePath);
-    const ext = path.extname(poa.filePath);
+    let target: string;
+    try {
+      target = this.storage.assertContained("POA_UPLOADS", poa.filePath, tenantId);
+    } catch {
+      throw new NotFoundException("Dosya bulunamadı");
+    }
+    if (!fs.existsSync(target)) {
+      throw new NotFoundException("Dosya bulunamadı");
+    }
+
+    const buffer = fs.readFileSync(target);
+    const ext = path.extname(target);
     const filename = `vekalet_${poa.journalNo || poa.poaNumber || poaId}${ext}`;
 
     return {
