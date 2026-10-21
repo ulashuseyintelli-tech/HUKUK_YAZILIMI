@@ -138,9 +138,8 @@ Scope expansion DEGILDIR: ayni root cause ve bounded context icindeki supporting
 focused test/fixture/mock, mevcut mimari icindeki minimum tercih, kendi patch'inin
 validation duzeltmesi, task'e dogrudan bagli documentation/reference alignment. Ilgisiz
 finding immediate security/data-loss/corruption riski tasimiyorsa evidence ile backlog
-adayi olarak ayrilir; mevcut task'e gizlice eklenmez ve mevcut task'i durdurmaz; kabulu dogrudan engelleyen
-bulgu dar duzeltmeye girer. Genel refactor/altyapi/gelecek modul hazirligi gorev devami
-degildir.
+adayi olarak ayrilir; mevcut task'e gizlice eklenmez ve mevcut task'i durdurmaz; kabulu engelleyen bulgu dar
+duzeltmeye girer, genel refactor/altyapi/gelecek modul hazirligi gorev devami degildir.
 
 Backlog akisi: `Yeni fikir → Triage → Product Backlog → READY → Active Roadmap →
 Implementation`. `BACKLOG → READY` ve roadmap tasimalari owner onayi olmadan uygulanmaz.
@@ -164,11 +163,10 @@ eligibility'dir. Tuple değişmezse re-ratify yok. `GO-ANALYZE` read-only; `GO-C
 scope-içi. Successor exact grantli; Stage 1/2 ayrı grant. Same-file writer durdurur. Öncelik
 P0/P1 → product activation → runtime/prod certification → governance cleanup; lock/fence korunur.
 
-Seritler: Serit 1 (test, belge — governance/AGENTS/CLAUDE disi —, kum saati, yerel
-hazirlik) kontroller dogrulaninca basa bagli squash merge; onay beklenmez. Serit 2 (urun
-kodu, yurutucu, guvenlik kapisi, migration) gorev+merge birlikte yetkiliyse PR basina onay
-tekrarlanmaz. Serit 3 canli: faz basina GO. CI yoksa bos kontrol listesi basari sayilmaz;
-uygun yerel dogrulama esastir. Arac/yetki engeli dosya duzenlenerek asilmaz.
+Seritler: 1 (test, belge — governance/AGENTS/CLAUDE disi —, kum saati, yerel hazirlik)
+kontroller gecince basa bagli squash merge, onaysiz. 2 (urun kodu, yurutucu, guvenlik
+kapisi, migration) gorev+merge yetkiliyse PR basina onay yok. 3 canli: faz GO. CI yoksa bos
+kontrol listesi basari degil; yerel dogrulama esas. Arac/yetki engeli dosyayla asilmaz.
 
 ## 6. Worktree Izolasyonu (developer workstation policy)
 
@@ -210,11 +208,12 @@ cagrilir.
 - Kullanici ajanlar arasinda gorev tasiyan dispatcher DEGILDIR.
 
 `TASK REVISION ≠ TASK TERMINATION ≠ EXECUTOR HANDOFF.` Task identity, semantic outcome ve
-primary ownership degismediyse is durmaz; WIP korunur, yurutme ayni task altinda yeni
-immutable revision ile surer. Revision authority genisletmez, terminal disposition
-degildir; allowlist genislemesi revision degildir; semantic outcome degisikligi yeni
-task/owner karari, executor degisikligi explicit handoff ister. Ayrinti:
-`project/docs/governance/process-rules.md`.
+primary ownership degismediyse is durmaz; WIP korunur, mevcut diff yeniden degerlendirilir
+ve yurutme ayni task altinda yeni immutable revision ile devam eder. Revision authority
+genisletmez ve terminal disposition degildir; allowlist genislemesi revision degildir;
+semantic outcome degisikligi yeni task veya owner karari, primary executor degisikligi
+explicit handoff ister. Handoff istisnalari, revision tetikleyicileri, supersededLayer ve
+terminal disposition sinifları: `project/docs/governance/process-rules.md`.
 
 Yetkili kapsamdaki yerel komutlari ajan kosar, cikis kodu ve kanitla dogrular; owner'a
 yalniz yetki/UAC engelinde en kucuk mudahale verilir. Yeni authority uretmez. Bkz.
@@ -249,15 +248,14 @@ ozet yukumlulukler:
   uyumluysa eklenir.
 - Owner/user WIP'i owner acikca yetki vermedikce revert, stash, tasima, clean, delete veya
   baska sekilde modify etme; ilgiliyse uyumlu calis, ilgisizse yok say.
-- XML `/// <remarks>` cagrilma listesi kurali yalniz .NET/C# kapsamindadir;
-  TypeScript/Python/PHP'ye tasinmaz, kod yalniz yorum standardi icin toplu degistirilmez.
+- XML `/// <remarks>` cagrilma listesi yalniz .NET/C#; TypeScript/Python/PHP'ye
+  tasinmaz, kod yalniz yorum standardi icin toplu degistirilmez.
 
 ## 10. Validation
 
 - Validation riske gore secilir; baslangicta yeterli kanit belirlenir, kontroller gecip
-  somut kaygi kalmayinca biter. Kirmizi test hata duzeltmesinde, mutant degisen kritik
-  korumada, tam takim ortak etki/zorunlu kontrolde; gecerli sonuc gerekcesiz
-  tekrarlanmaz.
+  somut kaygi kalmayinca biter. Kirmizi test hata duzeltmesinde, mutant kritik korumada,
+  tam takim ortak etki/zorunlu kontrolde; gecerli sonuc gerekcesiz tekrarlanmaz.
 - Kod veya davranis degisikliginde ilgili en kucuk anlamli test, type-check, lint veya
   smoke validation calistirilir.
 - Docs-only degisikliklerde diff, kapsam ve ilgili register/dokuman tutarliligi kontrolu
@@ -332,9 +330,9 @@ belge statuleri icin tek canonical kaynak `project/docs/governance/GOVERNANCE-IN
 - Kapanis raporu: degisen dosyalar, yapilan is, validation, kalan risk, final
   disposition, canonical state.
 - Kapanistan once Master Register dogrulamasi zorunludur.
-- Hazir, merge, calisan surumde dogrulandi ve kabul ayridir. Kanonik liste Baslangic |
-  Kapanan | Kalan | +Kapsam; kalan isin tek sorumlusu ve bitme kosulu olur. Kabul
-  gereken is calisan arayuzle sunulur; engelde tek mudahale yazilir, bagimsiz is surer.
+- Hazir / merge / calisan surumde dogrulandi / kabul ayridir. Liste: Baslangic | Kapanan
+  | Kalan | +Kapsam; kalan isin tek sorumlusu ve bitme kosulu var. Kabul calisan arayuzle;
+  engelde tek mudahale yazilir, bagimsiz is surer.
 
 `Onay Bekleniyor` semantigi:
 
