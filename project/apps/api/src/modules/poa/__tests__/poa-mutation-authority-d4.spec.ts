@@ -25,6 +25,10 @@ import { BadRequestException, ForbiddenException, NotFoundException } from '@nes
 import { CLIENT_MUTATION_REASON } from '../../client/client-mutation-policy';
 import { CLIENT_WORKSPACE_COMMAND } from '../../client/client-workspace-command-authority';
 import { PoaController } from '../poa.controller';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { RuntimeStoragePaths } from '../../../common/storage/runtime-storage-paths';
 import {
   POA_UPDATE_WRITABLE_FIELDS,
   PoaService,
@@ -190,6 +194,137 @@ describe('D-4 — POA yazma yuzeyi rol matrisi (bes islem)', () => {
       });
     });
   }
+});
+
+describe('OK-01 — create dosya alanlari yalniz upload yoluna aittir', () => {
+  for (const duplicate of [false, true]) {
+    it.each([
+      ['filePath', '/untrusted/file.pdf'], ['filePath', null], ['filePath', ''],
+      ['fileSize', 42], ['fileSize', 0], ['fileSize', null],
+      ['mimeType', 'application/pdf'], ['mimeType', ''], ['mimeType', null],
+    ])(`${duplicate ? 'dedup' : 'create'}: %s = %p yazma veya audit olmadan reddedilir`, async (field, value) => {
+      const h = buildHarness();
+      const issued = new Date('2026-01-12');
+      if (duplicate) h.prisma.clientPowerOfAttorney.findMany.mockResolvedValue([
+        { id: POA_ID, notaryName: 'NOTER', dateIssued: issued, filePath: null },
+      ]);
+      await expect(h.service.create({
+        clientId: CLIENT_ID, notaryName: 'NOTER', dateIssued: issued,
+        lawyerIds: ['law-1'], [field]: value,
+      } as any, TENANT, actor('ADMIN'))).rejects.toMatchObject({
+        status: 400,
+        response: { reasonCode: 'POA_FIELD_NOT_WRITABLE', offendingFields: [field] },
+      });
+      expectNoWrite(h);
+      expect(h.prisma.clientPowerOfAttorney.findMany).not.toHaveBeenCalled();
+      expect(h.officeApproval.isApproverEligible).not.toHaveBeenCalled();
+    });
+  }
+
+  it('undefined dosya anahtarlari JSON isteginde bulunmaz; normal create etkilenmez', async () => {
+    const h = buildHarness();
+    await h.service.create({ clientId: CLIENT_ID, filePath: undefined, fileSize: undefined, mimeType: undefined } as any, TENANT, actor('ADMIN'));
+    const data = h.prisma.clientPowerOfAttorney.create.mock.calls[0][0].data;
+    for (const field of ['filePath', 'fileSize', 'mimeType']) expect(data).not.toHaveProperty(field);
+    expect(h.audit.log).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('OK-01 — indirme depolama siniri (gercek gecici dosyalar; DB mock)', () => {
+  let root: string;
+  let storage: RuntimeStoragePaths;
+  let inside: string;
+  let outside: string;
+  let foreign: string;
+  let sibling: string;
+  let traversal: string;
+  const files: string[] = [];
+  const dirs: string[] = [];
+
+  beforeAll(() => {
+    root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'poa-ok01-')));
+    dirs.push(root);
+    storage = new RuntimeStoragePaths({ env: { NODE_ENV: 'test', HUKUK_DATA_ROOT: root }, cwd: root });
+    for (const dir of [path.join(root, 'uploads'), path.join(root, 'uploads', 'poa'),
+      storage.resolveBucketDir('POA_UPLOADS', TENANT), storage.resolveBucketDir('POA_UPLOADS', 'tenant-2'),
+      storage.resolveBucketDir('POA_UPLOADS', TENANT) + '-other']) {
+      fs.mkdirSync(dir); dirs.push(dir);
+    }
+    inside = storage.filePath('POA_UPLOADS', 'allowed.pdf', TENANT);
+    outside = path.join(root, 'outside.pdf');
+    foreign = storage.filePath('POA_UPLOADS', 'foreign.pdf', 'tenant-2');
+    sibling = path.join(storage.resolveBucketDir('POA_UPLOADS', TENANT) + '-other', 'sibling.pdf');
+    traversal = storage.resolveBucketDir('POA_UPLOADS', TENANT) + path.sep + ['..', '..', '..', 'outside.pdf'].join(path.sep);
+    for (const [file, body] of [[inside, 'allowed-content'], [outside, 'outside-content'],
+      [foreign, 'foreign-content'], [sibling, 'sibling-content']]) {
+      fs.writeFileSync(file, body); files.push(file);
+    }
+    expect(fs.readFileSync(traversal, 'utf8')).toBe('outside-content');
+  });
+
+  afterAll(() => {
+    // Exact owned files and empty directories only; no recursive cleanup.
+    for (const file of files) fs.unlinkSync(file);
+    for (const dir of dirs.reverse()) fs.rmdirSync(dir);
+  });
+
+  const buildFile = (target: string, found = true) => {
+    const h = buildHarness({ poaFound: found });
+    h.poaRow.filePath = target;
+    return { ...h, service: new PoaService(h.prisma as any, h.audit as any, h.officeApproval as any, storage) };
+  };
+
+  it('ayni kiraci kovasindaki dosya mevcut yanit sozlesmesiyle indirilir', async () => {
+    const h = buildFile(inside);
+    const result = await h.service.getFile(POA_ID, TENANT);
+    expect(result).toEqual({ buffer: Buffer.from('allowed-content'), mimeType: 'application/octet-stream', filename: 'vekalet_poa-1.pdf' });
+    expect(h.prisma.clientPowerOfAttorney.findFirst.mock.calls[0][0].where).toEqual({ id: POA_ID, client: { tenantId: TENANT } });
+    expectNoWrite(h);
+  });
+
+  for (const [name, getPath] of [
+    ['kova disi mutlak yol', () => outside], ['nokta-nokta kacisi', () => traversal],
+    ['baska kiraci kovasi', () => foreign], ['komsu dizin oneki', () => sibling],
+  ] as const) {
+    it(`${name}: mevcut dosya olsa bile 404 ve icerik YOK`, async () => {
+      const target = getPath();
+      expect(fs.existsSync(target)).toBe(true);
+      const h = buildFile(target);
+      const response = { setHeader: jest.fn(), send: jest.fn() };
+      await expect(new PoaController(h.service).downloadFile(POA_ID, { user: { tenantId: TENANT } }, response as any))
+        .rejects.toMatchObject({ status: 404, response: { message: 'Dosya bulunamadı' } });
+      expect(response.setHeader).not.toHaveBeenCalled();
+      expect(response.send).not.toHaveBeenCalled();
+      expectNoWrite(h);
+    });
+  }
+
+  it('depolama denetiminin dondurdugu yol okunur; ham yol okunmaz', async () => {
+    const h = buildFile(outside);
+    const check = jest.spyOn(storage, 'assertContained').mockReturnValueOnce(inside);
+    try {
+      expect((await h.service.getFile(POA_ID, TENANT)).buffer).toEqual(Buffer.from('allowed-content'));
+      expect(check).toHaveBeenCalledWith('POA_UPLOADS', outside, TENANT);
+    } finally { check.mockRestore(); }
+  });
+
+  it('yolu olmayan veya kayip dosya 404 kalir', async () => {
+    for (const target of ['', storage.filePath('POA_UPLOADS', 'missing.pdf', TENANT)]) {
+      const h = buildFile(target);
+      await expect(h.service.getFile(POA_ID, TENANT)).rejects.toBeInstanceOf(NotFoundException);
+      expectNoWrite(h);
+    }
+  });
+
+  it('kiracida bulunmayan POA dosyaya erismeden reddedilir', async () => {
+    const h = buildFile(inside, false);
+    const check = jest.spyOn(storage, 'assertContained');
+    try {
+      await expect(h.service.getFile(POA_ID, 'tenant-2')).rejects.toBeInstanceOf(NotFoundException);
+      expect(check).not.toHaveBeenCalled();
+      expectNoWrite(h);
+    } finally { check.mockRestore(); }
+  });
 });
 
 describe('D-4 — K9 baglantisi: yetkisiz aktor ACTIVE vekalet URETEMEZ', () => {

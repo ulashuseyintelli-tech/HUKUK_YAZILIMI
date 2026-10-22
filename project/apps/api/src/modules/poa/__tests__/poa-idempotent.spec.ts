@@ -43,7 +43,7 @@ describe("buildPoaEnrichment", () => {
   it("yalnız BOŞ alanları doldurur, DOLU alanı ezmez", () => {
     const existing = { notaryCity: null, journalNo: "48", poaNumber: "48", validUntil: null, scopeDescription: "", filePath: null };
     const dto = { notaryCity: "İSTANBUL", journalNo: "00468", poaNumber: "00468", validUntil: null, scopeDescription: "Genel vekalet", filePath: "/x.pdf" };
-    expect(buildPoaEnrichment(existing, dto)).toEqual({ notaryCity: "İSTANBUL", scopeDescription: "Genel vekalet", filePath: "/x.pdf" });
+    expect(buildPoaEnrichment(existing, dto)).toEqual({ notaryCity: "İSTANBUL", scopeDescription: "Genel vekalet" });
     // journalNo/poaNumber DOLU → ezilmez (48 kalır)
   });
 });
