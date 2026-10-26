@@ -19,7 +19,7 @@ $LiveDist = Join-Path $Rel 'apps\api\dist\apps\api\src'
 $EvRoot   = 'C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-20260911'
 $Api      = 'http://127.0.0.1:8080/api'
 $ExpPackage  = '6D68848B8AD9ED6DEFD3D4DDD630931019A6F1F9A3E3517BC38457126F2AD4F0'
-$ExpLiveDist = 'E28A6863CF109A1A3AE1F53E096D5F5C2037E382EF2D8D3EC87FEE3B827E5134'   # R27 canli dist (D5-SEC; R26 A8B17A38 pin PR #2837 yayinindan SONRA guncellendi)
+$ExpLiveDist = '4E9472EB9E784F76E80C1585CFA1D1DBE44A39A71F3871EE53282944F53ACACC'   # B live dist; Office measurement 2026-10-26 / hourglass KI-116
 $PkgFiles = @('client-c4-live-403-r01\scripts\c4-live-403.js', 'client-live-acceptance-i13-r01\scripts\i13-lib.js',
               'client-acceptance-runners-i3-r01\scripts\i3-lib.js', 'client-acceptance-harness-r01\scripts\ah-lib.js',
               'client-live-acceptance-i12-r01\scripts\i12-live-identity.js')
