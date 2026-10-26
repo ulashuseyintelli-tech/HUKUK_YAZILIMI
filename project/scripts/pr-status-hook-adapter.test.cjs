@@ -196,3 +196,79 @@ test('§4 gate: present guard + invalid terminal message blocks, cites the guard
   assert.match(result.reason, /TASK_DISPOSITION_REJECTED/);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// ------------------------------------------- §5 first stop verifies content
+// Before this fix a turn with open PRs was ALWAYS blocked on its first stop,
+// whatever the final message said; it could only close on a forced second
+// stop. These cases drive run() end-to-end with stubbed `gh` (repo + open
+// list + per-PR view) and an isolated session/repo key in the real STATE_DIR.
+const SHA_A = 'a'.repeat(40);
+const SHA_B = 'b'.repeat(40);
+const OTHER = 'PR #1: OTHER_SESSION — baska bir oturumun isi (local_abc); bu turda dokunulmadi';
+
+function openRepo(t, headRefOid = SHA_A) {
+  const dir = freshGitRepo();
+  const repo = `test/ilk-stop-${process.pid}-${Math.random().toString(16).slice(2)}`;
+  const session = `ilk-stop-${Math.random().toString(16).slice(2)}`;
+  let head = headRefOid;
+  adapter.__setGhOpen(() => ({ repo, open: [{ number: 1, headRefName: 'b', title: 't', headRefOid: head }] }));
+  adapter.__setGhPr(() => GREEN);
+  const statePath = path.join(adapter.STATE_DIR, `${session}__${repo.replace(/[^\w.-]/g, '_')}.json`);
+  t.after(() => {
+    try { fs.unlinkSync(statePath); } catch { /* ignore */ }
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  const stop = (message) => adapter.run({ session_id: session, last_assistant_message: message, cwd: dir });
+  return { stop, statePath, moveHead: (oid) => { head = oid; } };
+}
+
+test('§5 ilk stop: gecerli disposition ilk denemede KABUL, state dosyasi kalmaz', (t) => {
+  const w = openRepo(t);
+  const r = w.stop(`Rapor.\n\n${OTHER}`);
+  assert.equal(r.decision, 'allow');
+  assert.equal(fs.existsSync(w.statePath), false);
+});
+
+test('§5 ilk stop: disposition yoksa eskisi gibi ENGELLENIR ve deneme 1 yazilir', (t) => {
+  const w = openRepo(t);
+  const r = w.stop('Rapor, PR satiri yok.');
+  assert.equal(r.decision, 'block');
+  assert.match(r.reason, /ACIK pull request var/);
+  assert.equal(JSON.parse(fs.readFileSync(w.statePath, 'utf8')).attempts, 1);
+});
+
+test('§5 ilk stop: GitHub ile celisen iddia (acik PR icin MERGED) ilk denemede de ENGELLENIR', (t) => {
+  const w = openRepo(t);
+  const r = w.stop('PR #1: MERGED — abcdef1 — merge edildi');
+  assert.equal(r.decision, 'block');
+  assert.equal(fs.existsSync(w.statePath), true);
+});
+
+test('§5 ikinci stop: engelden sonra gecerli disposition KABUL (eski davranis korunur)', (t) => {
+  const w = openRepo(t);
+  assert.equal(w.stop('PR satiri yok').decision, 'block');
+  const r = w.stop(OTHER);
+  assert.equal(r.decision, 'allow');
+  assert.equal(fs.existsSync(w.statePath), false);
+});
+
+test('§5 PR kumesi degisti: guncel kume icin gecerli disposition KABUL, gecersizse KUMESI DEGISTI ile ENGEL', (t) => {
+  const w = openRepo(t);
+  assert.equal(w.stop('PR satiri yok').decision, 'block');
+  w.moveHead(SHA_B);
+  const bad = w.stop('yine yok');
+  assert.equal(bad.decision, 'block');
+  assert.match(bad.reason, /ACIK PR KUMESI DEGISTI/);
+  w.moveHead(SHA_A);
+  assert.equal(w.stop(OTHER).decision, 'allow');
+});
+
+test('§5 deneme siniri korunur: gecersiz disposition MAX_ATTEMPTS sonrasi kapiyi kayitla acar', (t) => {
+  const w = openRepo(t);
+  let r;
+  for (let i = 0; i < adapter.MAX_ATTEMPTS; i++) r = w.stop('PR satiri yok');
+  assert.equal(r.decision, 'block');
+  assert.match(r.reason, /DISPOSITION DOGRULANAMADI \(deneme 4\/4\)/);
+  r = w.stop('PR satiri yok');
+  assert.match(r.reason, /kapi ACILIYOR/);
+});

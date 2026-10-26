@@ -88,6 +88,19 @@ function findDisposition(message, number) {
   return null;
 }
 
+// Repository name + open PR list for the stop's cwd; null when either `gh`
+// call fails (no remote, no auth, no network) — the caller then allows.
+let ghOpenImpl = (cwd) => {
+  try {
+    const repo = JSON.parse(sh('gh', ['repo', 'view', '--json', 'nameWithOwner'], cwd)).nameWithOwner;
+    const open = JSON.parse(sh('gh', [
+      'pr', 'list', '--state', 'open', '--limit', '30',
+      '--json', 'number,headRefName,title,headRefOid',
+    ], cwd));
+    return { repo, open };
+  } catch { return null; }
+};
+
 let ghPrImpl = (number) => {
   try {
     return JSON.parse(sh('gh', [
@@ -300,22 +313,11 @@ function run(payload) {
     return notices.length ? { decision: 'allow', notice: notices.join('\n') } : { decision: 'allow' };
   }
 
-  let repo;
-  try {
-    repo = JSON.parse(sh('gh', ['repo', 'view', '--json', 'nameWithOwner'], cwd)).nameWithOwner;
-  } catch {
+  const listed = ghOpenImpl(cwd);
+  if (!listed) {
     return notices.length ? { decision: 'allow', notice: notices.join('\n') } : { decision: 'allow' };
   }
-
-  let open;
-  try {
-    open = JSON.parse(sh('gh', [
-      'pr', 'list', '--state', 'open', '--limit', '30',
-      '--json', 'number,headRefName,title,headRefOid',
-    ], cwd));
-  } catch {
-    return notices.length ? { decision: 'allow', notice: notices.join('\n') } : { decision: 'allow' };
-  }
+  const { repo, open } = listed;
 
   sweepStaleState();
 
@@ -349,6 +351,23 @@ function run(payload) {
     } catch { /* ignore */ }
   };
 
+  // The final message is verified BEFORE any first-stop / snapshot-change
+  // block: a message that already carries a GitHub-cross-verified disposition
+  // for every currently open PR closes the turn on its first stop. Without
+  // this, every turn was blocked once regardless of content and could only
+  // close on a forced second stop.
+  const msg = (payload && payload.last_assistant_message) || '';
+  const problems = [];
+  for (const pr of open) {
+    const p = verify(pr.number, findDisposition(msg, pr.number));
+    if (p) problems.push('  ' + p);
+  }
+
+  if (!problems.length) {
+    try { fs.unlinkSync(statePath); } catch { /* ignore */ }
+    return finish('allow');
+  }
+
   if (!state || !Array.isArray(state.snapshot)) {
     writeState(1);
     return finish('block', `Bu depoda ACIK pull request var — turu bitirmeden once her birinin akibetini yaz.\n\n${grammarHelp(open)}`);
@@ -360,18 +379,6 @@ function run(payload) {
       'ACIK PR KUMESI DEGISTI (yeni PR acildi veya head SHA ilerledi).\n'
       + 'Onceki disposition\'lar artik gecerli degil; guncel liste icin yeniden yaz.\n\n'
       + grammarHelp(open));
-  }
-
-  const msg = (payload && payload.last_assistant_message) || '';
-  const problems = [];
-  for (const pr of open) {
-    const p = verify(pr.number, findDisposition(msg, pr.number));
-    if (p) problems.push('  ' + p);
-  }
-
-  if (!problems.length) {
-    try { fs.unlinkSync(statePath); } catch { /* ignore */ }
-    return finish('allow');
   }
 
   const attempts = (Number(state.attempts) || 1) + 1;
@@ -402,4 +409,5 @@ module.exports = {
   GUARD_CANDIDATES,
   resolveDispositionGuard,
   __setGhPr: (fn) => { ghPrImpl = fn; },
+  __setGhOpen: (fn) => { ghOpenImpl = fn; },
 };
