@@ -42,6 +42,12 @@ function effectiveParams(env) {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const isEmail = (s) => typeof s === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s) && s.length <= 254;
+// Owner'a gösterilen sınama parolası (R05, 052788e6 sonrası): yalnız büyük harf + rakam; karışan 0 O 1 I ve sözcük ayırıcı /
+// noktalama YOK (konsolda çift tık değerin tamamını seçer). 32 karakterlik alfabe × 20 = 100 bit (önceki 12 bayt = 96 bit);
+// 256, 32'ye tam bölündüğü için `bayt & 31` sapmasızdır. Ürün parola politikası (en az 8 karakter) DEĞİŞMEZ.
+const SHOWN_PW_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const SHOWN_PW_RANDOM_LEN = 20;
+const makeShownPassword = () => 'D5N' + Array.from(crypto.randomBytes(SHOWN_PW_RANDOM_LEN), (b) => SHOWN_PW_ALPHABET[b & 31]).join('');
 
 function commonGates(env) {
   if (env.NODE_TLS_REJECT_UNAUTHORIZED === '0') return { code: 1, why: 'NODE_TLS_REJECT_UNAUTHORIZED=0 — TLS doğrulaması kapalıyken koşulmaz' };
@@ -207,7 +213,7 @@ async function runMode() {
   // "telefon taklidi"nin okuduğu test dosyasına yazılır — bu dosya sırların kanıta yazılmadığını ölçen taramanın DIŞINDADIR.
   const showOwner = async (lines) => { if (con) return DISPLAY.show(con, lines); if (g.display === 'none' && process.env.D5_TEST_DISPLAY_SINK) fs.appendFileSync(process.env.D5_TEST_DISPLAY_SINK, lines.join('\n') + '\n'); };
   const initialPw = 'D5i!' + crypto.randomBytes(12).toString('base64url'); addSecret(initialPw); // hiç gösterilmez; sıfırlamayla değişecek
-  const newPw = 'D5n!' + crypto.randomBytes(12).toString('base64url'); addSecret(newPw);          // yalnız 2. konsolda
+  const newPw = makeShownPassword(); addSecret(newPw);                                             // yalnız 2. konsolda (girintisiz tek satır)
   const fileNumber = `I3-${runId}`;
   const out = { record: 'EXTACC-D5-PORTAL-RESET-LIVE-RUN', revision: 'R01', runId, apiBase: base, expectedOrigin: origin, params: P, calledEndpoints: [], recipient: '[GİZLİ — kanıta yazılmaz]',
     emailDeliveryMeasured: false, emailDeliveryNote: 'token üretimi ≠ SMTP kabulü ≠ posta kutusuna teslim; ürün gönderim dener, kabul/teslim koşucu tarafından ÖLÇÜLMEZ — yalnız owner beyanı (e-posta geldi mi)' };
@@ -271,7 +277,7 @@ async function runMode() {
     // ---- 2. KONSOL: yeni parola
     let phoneLogin = false;
     if (!stopped) {
-      await showOwner(['', '============ EXTACC D-5 (2/2) — YENİ PAROLA (yalnız bu ekran) ============', 'Telefonda gelen e-postadaki bağlantıyı açın ve YENİ parola olarak şunu girin:', `    ${newPw}`, '', `Sonra bu parolayla BİR KEZ giriş yapın; listede YALNIZ ${fileNumber} görünmeli.`, 'Ardından AYNI bağlantıyı ikinci kez açıp formu GÖNDERİN (hata/geçersiz beklenir) — koşucu bunu ölçemez; beyanda sorulur (H/A/S/Y).']);
+      await showOwner(['', '============ EXTACC D-5 (2/2) — YENİ PAROLA (yalnız bu ekran) ============', 'Telefonda gelen e-postadaki bağlantıyı açın ve YENİ parola olarak şunu girin:', `${newPw}`, '', `Sonra bu parolayla BİR KEZ giriş yapın; listede YALNIZ ${fileNumber} görünmeli.`, 'Ardından AYNI bağlantıyı ikinci kez açıp formu GÖNDERİN (hata/geçersiz beklenir) — koşucu bunu ölçemez; beyanda sorulur (H/A/S/Y).']);
       R.check('P5-DISP2', 'yeni parola yalnız yerel konsola gösterildi', true, 'CONOUT$/none');
       const t1 = Date.now(); let s = null;
       // Sıfırlamanın TAMAMLANMASI parola hash'inin değişmesiyle görülür; token/sürüm sonuçları AYRI yargılanır (kusur ölçülemeyen değil FAIL olur).
@@ -356,5 +362,5 @@ async function recoverMode() {
   out.exitCode = writeEvidenceOrDemote(evid, out); await prisma.$disconnect().catch(() => {}); process.exitCode = out.exitCode;
 }
 if (require.main === module) { const mode = String(process.env.D5_MODE || 'run').toLowerCase(); if (mode === 'run') runMode(); else if (mode === 'recover') recoverMode(); else { console.error(`REDDEDİLDİ: bilinmeyen D5_MODE '${mode}'`); process.exit(1); } }
-module.exports = { commonGates, runGates, LIVE_PARAMS, effectiveParams, FORBIDDEN, RECEIPT_RECORD, recipientGate, recoverExitCode, exitCodeOf };
+module.exports = { commonGates, runGates, LIVE_PARAMS, effectiveParams, FORBIDDEN, RECEIPT_RECORD, recipientGate, recoverExitCode, exitCodeOf, makeShownPassword, SHOWN_PW_ALPHABET, SHOWN_PW_RANDOM_LEN };
 void scrub;
