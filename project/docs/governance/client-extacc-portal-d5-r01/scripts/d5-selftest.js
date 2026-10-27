@@ -54,7 +54,7 @@ const H = { 'user-agent': PHONE_UA, 'content-type': 'application/json' };
 /** Telefon taklidi adımları (dış HTTPS). */
 async function phoneForgot(email) { const page = await httpsReq('GET', `${EXT}/portal/forgot-password`, H); const r = await httpsReq('POST', `${EXT}/api/portal/forgot-password`, H, JSON.stringify({ email })); return { page: page.status, forgot: r.status }; }
 async function waitMail(email, ms) { const t0 = Date.now(); for (;;) { const m = (await ctl('GET', '/__mail')).filter((x) => x.to === email); if (m.length) return m[m.length - 1]; if (Date.now() - t0 > ms) return null; await sleep(200); } }
-async function waitSinkPw(sink, ms) { const t0 = Date.now(); for (;;) { if (fs.existsSync(sink)) { const m = fs.readFileSync(sink, 'utf8').match(/^\s+(D5n![A-Za-z0-9_-]+)\s*$/m); if (m) return m[1]; } if (Date.now() - t0 > ms) return null; await sleep(200); } }
+async function waitSinkPw(sink, ms) { const t0 = Date.now(); for (;;) { if (fs.existsSync(sink)) { const m = fs.readFileSync(sink, 'utf8').match(/^(D5N[A-HJ-NP-Z2-9]{20})$/m); if (m) return m[1]; } if (Date.now() - t0 > ms) return null; await sleep(200); } }
 const tokenOf = (m) => decodeURIComponent((new URL(m.url).hash.match(/#token=(.+)$/) || [])[1] || '');
 async function phoneReset(token, password) { const page = await httpsReq('GET', `${EXT}/portal/reset-password`, H); const r = await httpsReq('POST', `${EXT}/api/portal/reset-password`, H, JSON.stringify({ token, password })); return { page: page.status, reset: r.status }; }
 async function phoneLogin(email, password) {
@@ -178,7 +178,7 @@ const closingLoginPw = (z) => { const lp = (z.secrets && z.secrets.loginPassword
     check('Z1-f', 'kapanıştan sonra TELEFONUN (sıfırlama sonrası) oturumu dış uçta 401; makbuzda alıcı adresi YOK; kanıtta alıcı GİZLİ', after.status === 401 && z1.rc.portalEmail === '[GİZLİ]' && /GİZLİ/.test(z1.ev.recipient), `HTTP ${after.status} · makbuz=${z1.rc.portalEmail}`);
     const cc1 = (z1.ev.portalClose || {}).closeCreds || {}; const lp1 = closingLoginPw(z1); const newPw1 = ((z1.secrets || {}).newPasswords || [])[0];
     check('Z1-g', 'kapanış girişi BİLİNEN GEÇERLİ parolayla: sıfırlama tamamlandı → yeni parola (hash ile doğrulandı); sahte API son 2 giriş denemesi = telefonun sıfırladığı parola; kanıtta parola YOK',
-      cc1.source === 'yeni parola' && cc1.verifiedAgainstHash === true && lp1.length === 2 && !!newPw1 && lp1.every((p) => p === newPw1) && /^D5n!/.test(newPw1) && !JSON.stringify(z1.ev).includes(newPw1), `kaynak=${cc1.source} · doğrulandı=${cc1.verifiedAgainstHash} · son2=${lp1.map((p) => (p === newPw1 ? 'yeni' : 'BAŞKA')).join(',')}`);
+      cc1.source === 'yeni parola' && cc1.verifiedAgainstHash === true && lp1.length === 2 && !!newPw1 && lp1.every((p) => p === newPw1) && /^D5N[A-HJ-NP-Z2-9]{20}$/.test(newPw1) && !JSON.stringify(z1.ev).includes(newPw1), `kaynak=${cc1.source} · doğrulandı=${cc1.verifiedAgainstHash} · son2=${lp1.map((p) => (p === newPw1 ? 'yeni' : 'BAŞKA')).join(',')}`);
     check('Z1-h', 'kanıt: emailDeliveryMeasured=false (token üretimi ≠ SMTP kabulü ≠ teslim); P5-TOKEN-ISSUED metni "göndermiştir" DEMEZ, "ölçülmez" der; P5-SINGLE-USE-OBS gözlem metni ikinci denemeyi kanıtlamaz',
       z1.ev.emailDeliveryMeasured === false && !/göndermiştir/.test(JSON.stringify(z1.ev)) && /ölçülmedi/.test(z1.o('P5-TOKEN-ISSUED')) && /gözlem/.test(z1.o('P5-SINGLE-USE-OBS')) && /ikinci deneme ölçülmedi/.test(z1.o('P5-SINGLE-USE-OBS')) && z1.v('P5-SINGLE-USE') == null,
       `teslim ölçüldü=${z1.ev.emailDeliveryMeasured} · OBS=${z1.o('P5-SINGLE-USE-OBS')}`);
@@ -275,7 +275,7 @@ const closingLoginPw = (z) => { const lp = (z.secrets && z.secrets.loginPassword
       for (const s of secretsSeen) if (s && t.includes(s)) leaks.push(`${path.basename(f)}:${String(s).slice(0, 4)}…`);
       if (/authorization|bearer /i.test(t)) leaks.push(`${path.basename(f)}:Authorization`);
     }
-    const nTok = [...secretsSeen].filter((s) => /^[0-9a-f]{64}$/.test(String(s))).length; const nNew = [...secretsSeen].filter((s) => /^D5n!/.test(String(s))).length; const nRcpt = [...secretsSeen].filter((s) => /@example\.com$/.test(String(s))).length;
+    const nTok = [...secretsSeen].filter((s) => /^[0-9a-f]{64}$/.test(String(s))).length; const nNew = [...secretsSeen].filter((s) => /^D5N[A-HJ-NP-Z2-9]{20}$/.test(String(s))).length; const nRcpt = [...secretsSeen].filter((s) => /@example\.com$/.test(String(s))).length;
     const nInit = [...secretsSeen].filter((s) => /^D5i!/.test(String(s))).length;
     check('S-1', 'alıcı adresi · ham sıfırlama token\'ları · yeni parola · ilk parola · Recover ölçüm parolası · personel parolası · JWT · DB URL · GO hiçbir log/makbuz/kanıtta YOK',
       scanned > 28 && leaks.length === 0 && nTok >= 6 && nNew >= 4 && nRcpt >= 11 && nInit >= 4, `taranan=${scanned} · aranan=${secretsSeen.size} (token ${nTok} · yeni parola ${nNew} · ilk parola ${nInit} · alıcı ${nRcpt}) · sızıntı=${leaks.length ? leaks.join(',') : 'yok'}`);

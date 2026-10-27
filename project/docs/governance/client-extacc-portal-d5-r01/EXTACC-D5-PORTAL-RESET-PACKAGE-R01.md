@@ -218,7 +218,7 @@ dosyasından (`D5_TEST_DISPLAY_SINK`) alır — bu yol kaynakta tek yerde, `if (
 
 | Dosya | sha256 |
 |---|---|
-| `d5-portal-reset-live-run.js` (R03'te ve R04'te DEĞİŞMEDİ) | `924617FFFBD613220A37322960A1E4CAC678D7BE1BB27121022928A4B9676094` |
+| `d5-portal-reset-live-run.js` (R03'te ve R04'te DEĞİŞMEDİ; **R05'te değişti — §9**) | `924617FFFBD613220A37322960A1E4CAC678D7BE1BB27121022928A4B9676094` |
 | `d5-qr-test.js` (R04'te değişmedi) | `248929D081290EDFEEBA41E7371EF3A3814163DBBEB7B24D2C921B74695AE0A5` |
 | `d5-owner-live-block.ps1` **R04** (paket digest bloğun içinde `E24FBDD3…C852`, değişmedi; `ExpLiveDist` = R27 `E28A6863…5134`) | `98200AF14ED6C53A608247BA995D2E3BF85199A9310CAF417661E824B0090733` |
 | `d5-owner-block-selftest.ps1` **R04** | `D6BE7AC7C7E5E4DB5ABAD189B9FE0E703D9D7811857DF601923062AD619AFB24` |
@@ -388,3 +388,49 @@ yazılmaz). Düzeltme canlıya alınana kadar canlı davranış değişmez.
 Bu koşum tekrarlanmaz ve otomatik ikinci Run yoktur. Yeni deneme için kesin işlem ve yetki listesi tek karar paketindedir:
 `client-release-r27-r01/CLIENT-KALAN-ISLER-R01.md` §3.3 (doğrulanmış aday → onaylı yayın → pin → yeni D-5 GO'su). Her yolda yeni GO, alıcı adresi (yalnız konsol), tek gönderim onayı ve
 ezme kararı gerekir.
+
+## 9. R05 — owner'a gösterilen sınama parolası (2026-10-27; `052788e6` sonrası)
+
+Neden: `052788e6` koşumunda (çıkış 6) S1 yeni parolayla 401 aldı; kayıtlı hash konsolda gösterilen değerle eşleşmedi. Ürün
+zinciri (web formu → global pipe + DTO → `resetPassword` → `login`) değeri dönüştürmüyor; bu, canlıya dokunmadan yalıtılmış
+ölçümle doğrulandı. Forma giden değerin konsol değerinden hangi yolla ayrıldığı (satır seçimiyle girintinin kopyalanması, çift
+tıkın `!` / `-` sınırında durması, elle yazım, tarayıcı önerisi) mevcut kanıtla AYRILAMADI. R05 bu yüzden yalnız parolanın
+üretimini ve gösterimini değiştirir; neden hakkında hüküm KURMAZ.
+
+Değişen (yalnız bunlar):
+
+| Dosya | Değişiklik |
+|---|---|
+| `d5-portal-reset-live-run.js` | yeni parola `makeShownPassword()`: `D5N` + 20 karakter, alfabe `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` (32 karakter; `0 O 1 I l`, boşluk, noktalama ve sözcük ayırıcı YOK; `bayt & 31` sapmasız) → 100 bit (önceki 12 bayt = 96 bit). 2. konsolda değer **girintisiz tek satır**. Üretici ve alfabe dışa açılır (öz-test için). |
+| `d5-selftest.js` | telefon taklidi yeni biçimi girintisiz satırdan okur; yeni parola tanıma deseni `^D5N[A-HJ-NP-Z2-9]{20}$` (3 satır). |
+| `d5-owner-live-block.ps1` | yalnız koşucu pini ve `$ExpPackage` (2 değer). |
+| `d5-shown-password-selftest.js` (yeni) | yalnız değişen davranış: alfabe, rastgelelik ≥ 96 bit, 20 000 üretimde biçim / ayırıcı / karışan karakter / ürün politikası (≥ 8) / tekrar, dağılım, kaynakta gösterim satırı, telefon taklidinin girintisiz satırı okuyup girintili satırı OKUMAMASI. |
+
+Değişmeyen: ürün parola politikası (API ve web), D-5 kabul ölçütleri ve PASS koşulları, ilk parola, kapanış aday listesi
+(yeni parola → ilk parola; varyant tahmini YOK), blok mantığı, `ExpLiveDist` / `ExpEnvSha`.
+
+Sınamalar (canlı DB / API / tünel / e-posta KULLANILMADI; parola değerleri hiçbir çıktıya yazılmadı):
+
+| Sınama | Sonuç |
+|---|---|
+| `d5-shown-password-selftest.js` | **6 / 6 PASS** (çıkış 0) |
+| Negatif kontrol — aynı öz-test main'deki R04 koşucusuna (`924617FF…6094`) | 6 / 6 FAIL (beklenen) |
+| Mutasyonlar — gösterime 4 boşluk girinti · alfabeye `I` / `O` · rastgele uzunluk 19 (95 bit) · bozulmamış kopya | sırasıyla SP-5 · SP-1 + SP-3 · SP-2 + SP-3 + SP-4 + SP-6 FAIL; bozulmamış 6 / 6 PASS |
+| `d5-selftest.js` (disposable DB 127.0.0.1:5447 + sahte API + sahte posta kutusu) | **40 / 41**; değişen yolu uçtan uca sınayan Z1-a / Z1-b / Z1-g PASS (telefon taklidi girintisiz değeri okudu, S1 201, kapanış yeni parolayla doğrulandı); T-3 (pinler = dosyalar) PASS. **T-7 FAIL — R05'ten ÖNCE de vardır:** öz-test `R27_CAND_DIST` bekler, blok #3024 (`c2c49b9b7`) ile B dağıtımına (`4E9472EB…`) pinlidir; R05 bu iki değere dokunmaz. Ayrı kalem. |
+| Paket kapısı — bloğun KENDİ `Sha` / `Digest` işlevleri ve pin tablosuyla | pwsh 7.6.7 ve WinPS 5.1: 9 / 9 pin eşit, paket özeti eşit |
+| Bağımsız yeniden hesap (Python) | eski pinlerle `E24FBDD3…C852` birebir üretildi (yöntem doğrulandı); yeni değer `C64E48D3…BCB4` |
+| Ayrıştırma | blok parse hatası 0; UTF-8 BOM korunur; satır sonu LF |
+
+Pinler (R05):
+
+| Dosya | sha256 |
+|---|---|
+| `d5-portal-reset-live-run.js` **R05** | `7FCB6002A2D8723D1EE7D1E051D5176DA2EA9D76C7E4C422B14AF55BBD1E64E5` |
+| Paket digest (9 dosya; yalnız koşucu değişti) | `C64E48D397E5D1A38D694D5C5253AA10A76280058BE4268DDCF4CF75EA12BCB4` |
+| `d5-owner-live-block.ps1` **R05** | `E374AAF7617A17181C2B31DEAD5D820ABCC7F83EE022CEAF35EECA5DC836EA5A` |
+| `d5-selftest.js` **R05** | `5FE3D2FBEC66E42DA3E128C34C4005E74AE0A802E285FDF475A615C9CAA6753C` |
+| `d5-shown-password-selftest.js` (yeni) | `2314B865364CA6089425A42F5F3FA9A740466F58653524563588247254B4791D` |
+| önceki (main `0dd284d42`): koşucu / paket / blok | `924617FF…6094` / `E24FBDD3…C852` / `A4D1817C…207C` |
+
+R05 baytlarından önce alınmış Preflight / QrTest sonuçları yeni baytları kapsamaz; Preflight merge sonrası main'de yeniden koşulur.
+Yeni tek Run ayrı owner GO'su ister (Ek 134 ikinci Run'a izin vermez); bu bölüm Run veya Recover yetkisi DEĞİLDİR.

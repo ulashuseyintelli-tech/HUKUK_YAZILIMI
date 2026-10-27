@@ -49,7 +49,7 @@ $ExpEnvSha   = '5C776BBEEE018EA5CC8192378D42D742FD4ABC1B6D0E9A3EA671CF463206908D
 $ExpBaseUrl  = $null   # R05 public portal adresi: canlı .env PUBLIC_PORTAL_BASE_URL'den okunur (Invoke-ReadOnlyGates, biçim kapısı) ve Run/QrTest'te owner'ın konsola yazdığı R05 adresiyle birebir doğrulanır (Confirm-PortalBaseUrlR05). Public repoya host literali YAZILMAZ.
 # Koşucunun YÜKLEDİĞİ tüm governance dosyaları + D-5 QR denemesi ve onun yüklediği dosyalar (iki require ağacı da ölçüldü; d5-selftest T-3).
 $PkgPins = [ordered]@{
-  'client-extacc-portal-d5-r01\scripts\d5-portal-reset-live-run.js'                   = '924617FFFBD613220A37322960A1E4CAC678D7BE1BB27121022928A4B9676094'
+  'client-extacc-portal-d5-r01\scripts\d5-portal-reset-live-run.js'                   = '7FCB6002A2D8723D1EE7D1E051D5176DA2EA9D76C7E4C422B14AF55BBD1E64E5'
   'client-extacc-portal-d5-r01\scripts\d5-qr-test.js'                                 = '248929D081290EDFEEBA41E7371EF3A3814163DBBEB7B24D2C921B74695AE0A5'
   'client-extacc-intake-chain-r01\scripts\extacc-display.js'                          = 'F257188DF66C429472C214D38D965C1E6F5A2EA490D348369AC68C5DC6F26867'
   'client-extacc-intake-chain-r01\scripts\vendor\qrcode-generator-1.4.4\qrcode.js'    = '18AE399F81182BC9DE916E9C77B195DF20CC58D6F2D55A62B085A299F1BF1780'
@@ -59,7 +59,7 @@ $PkgPins = [ordered]@{
   'client-acceptance-runners-i3-r01\scripts\i3-lib.js'                                = '56F3788E9F84746CFFEE384D8C18B9B9A28130CC8E2285F9570AB69CC6EE74A3'
   'client-acceptance-harness-r01\scripts\ah-lib.js'                                   = 'DF882DB7F33A667092F126F01E518C1A8292C8C0B3C4C039BF73D71F3ACCBFD7'
 }
-$ExpPackage = 'E24FBDD3A4A7E7D6E5BCE3AFCEAF8A1E3F72ED6ACC35CDAA23E56478C9C5C852'
+$ExpPackage = 'C64E48D397E5D1A38D694D5C5253AA10A76280058BE4268DDCF4CF75EA12BCB4'
 $SecretEnv  = @('AH_DATABASE_URL', 'AH_PRISMA_ROOT', 'AH_BCRYPT_PATH', 'D5_LIVE_CONFIRM', 'D5_RECOVER_CONFIRM', 'D5_LIVE_GO_REF',
                 'D5_RUNID', 'D5_MODE', 'D5_EXPECT_DB', 'D5_EXPECT_TENANT_SLUG', 'D5_API_BASE', 'D5_EXPECT_API',
                 'D5_EXPECT_BASE_URL', 'D5_LIVE_LOGIN_PW', 'D5_RECEIPT', 'D5_EVID_FILE', 'D5_DISPLAY', 'D5_QRTEST_URL', 'EXA_QRTEST_URL',
