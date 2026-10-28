@@ -26,6 +26,14 @@ interface TaskListMeta {
   totalPages: number;
 }
 
+/** GET /users satırı: "atanana göre" süzgecini besler (liste sayfasıyla aynı kaynak ve zarf). */
+interface UserOption {
+  id: string;
+  name: string;
+  surname: string;
+  isActive?: boolean;
+}
+
 /** Sunucunun üst sınırı (ListTasksQueryDto TASK_LIST_MAX_LIMIT). */
 const PAGE_SIZE = 100;
 
@@ -73,20 +81,24 @@ export default function KanbanPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
   const [draggedTask, setDraggedTask] = useState<Task | null>(null);
-  // "Bana atananlar" yalnız SÜZGEÇTİR; OWN/TEAM yetkisi değildir (OFP-09 bu ekranda yok).
-  const [mineOnly, setMineOnly] = useState(false);
+  // "" = tüm atananlar · "me" = bana atananlar · <userId> = atanana göre (liste sayfasıyla aynı sözleşme).
+  // Yalnız SÜZGEÇTİR; OWN/TEAM yetkisi değildir (OFP-09 bu ekranda yok).
+  const [assigneeFilter, setAssigneeFilter] = useState<string>('');
+  const [users, setUsers] = useState<UserOption[]>([]);
+  const [usersLoadError, setUsersLoadError] = useState<string | null>(null);
 
   const fetchPage = useCallback(
     async (page: number): Promise<{ rows: Task[]; meta: TaskListMeta | null }> => {
       const q = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) });
-      if (mineOnly && currentUserId) q.set('assigneeId', currentUserId);
+      const assigneeId = assigneeFilter === 'me' ? currentUserId : assigneeFilter;
+      if (assigneeId) q.set('assigneeId', assigneeId);
       const res = await api.get(`/tasks?${q.toString()}`);
       const raw = (res as { data?: unknown })?.data;
       const rows = Array.isArray(raw) ? raw : (raw as { data?: unknown } | undefined)?.data;
       if (!Array.isArray(rows)) throw new Error('MALFORMED_LIST_RESPONSE');
       return { rows: rows as Task[], meta: Array.isArray(raw) ? null : parseMeta((raw as { meta?: unknown }).meta) };
     },
-    [mineOnly, currentUserId]
+    [assigneeFilter, currentUserId]
   );
 
   /**
@@ -120,6 +132,26 @@ export default function KanbanPage() {
   useEffect(() => {
     void loadTasks();
   }, [loadTasks]);
+
+  // F01-B: "atanana göre" seçenekleri. Görev yüklemesinden BAĞIMSIZDIR: /users düşerse pano yine gelir,
+  // süzgeçte "Tüm / Bana atananlar" kalır ve hata görünür (A4-AC-05 ilkesi). Bu effect görev effect'inden
+  // SONRA tanımlıdır: ilk istek /tasks olur (a4f testleri ilk çağrıyı /tasks sayar).
+  // Sözleşme: başarılı yanıt HER ZAMAN {data: []} zarfıdır (user.controller) — dizi değilse malformed.
+  const loadUsers = useCallback(async () => {
+    setUsersLoadError(null);
+    try {
+      const res = await api.get('/users');
+      const data = (res as { data?: { data?: unknown } })?.data?.data;
+      if (!Array.isArray(data)) throw new Error('MALFORMED_USERS_RESPONSE');
+      setUsers(data as UserOption[]);
+    } catch (e) {
+      setUsersLoadError(toActionErrorMessage(e, 'Kullanıcılar yüklenemedi.'));
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadUsers();
+  }, [loadUsers]);
 
   const loadMore = async () => {
     if (!meta || loadedPages >= meta.totalPages || loadingMore) return;
@@ -251,9 +283,15 @@ export default function KanbanPage() {
     </div>
   );
 
-  const loadedLabel = meta
-    ? `${tasks.length} / ${meta.total} görev yüklendi${mineOnly ? ' (bana atananlar)' : ''}`
-    : null;
+  // Kapsam etiketi: pano hangi süzgeçle yüklendiğini söyler (liste sayfasındaki scopeLabel'ın karşılığı).
+  const selectedUser = users.find((u) => u.id === assigneeFilter);
+  const scopeSuffix =
+    assigneeFilter === 'me'
+      ? ' (bana atananlar)'
+      : assigneeFilter
+        ? ` (atanan: ${selectedUser ? `${selectedUser.name} ${selectedUser.surname}` : 'seçili kullanıcı'})`
+        : '';
+  const loadedLabel = meta ? `${tasks.length} / ${meta.total} görev yüklendi${scopeSuffix}` : null;
 
   return (
     <div className="h-full flex flex-col">
@@ -271,15 +309,33 @@ export default function KanbanPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {/* Atanana göre süzgeç (sunucu parametresi; liste sayfasıyla aynı). Pasif kullanıcı listede kalır:
+              geçmişte ona atanmış görevler süzülebilmeli; yeni atama J1 kapısında zaten reddedilir. */}
           <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={mineOnly}
-              disabled={!currentUserId}
-              onChange={(e) => setMineOnly(e.target.checked)}
-            />
-            Bana atananlar
+            <span className="text-muted-foreground">Atanana göre</span>
+            <select
+              value={assigneeFilter}
+              onChange={(e) => setAssigneeFilter(e.target.value)}
+              className="border rounded-lg px-2 py-1.5 text-sm"
+            >
+              <option value="">Tüm atananlar</option>
+              <option value="me" disabled={!currentUserId}>Bana atananlar</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name} {u.surname}{u.isActive === false ? ' (pasif)' : ''}
+                </option>
+              ))}
+            </select>
           </label>
+          {usersLoadError && (
+            /* role="alert" DEĞİL: görev yükleme hatasının tek uyarısıyla karışmasın; süzgeç yine çalışır. */
+            <span role="status" className="text-xs text-red-600">
+              {usersLoadError}{' '}
+              <button type="button" onClick={loadUsers} className="underline hover:text-red-800">
+                Kullanıcıları yeniden dene
+              </button>
+            </span>
+          )}
           {/* F01-C: eski /tasks/new route'u yoktu (404). Görev listesindeki mevcut modal #yeni ile açılır. */}
           <Link
             href="/tasks#yeni"

@@ -20,7 +20,7 @@ vi.mock('@/lib/api', () => ({
   api: { get: vi.fn(), put: vi.fn() },
 }));
 
-// F01-B: pano "bana atananlar" süzgeci için useAuth okur; bu spec'in konusu kimlikten bağımsızdır.
+// F01-B: pano "atanana göre" süzgeci için useAuth okur; bu spec'in konusu kimlikten bağımsızdır.
 vi.mock('@/lib/auth-context', () => ({
   useAuth: () => ({ user: { id: 'u1', tenantId: 't1' }, loading: false }),
 }));
@@ -35,6 +35,10 @@ const mocked = api as unknown as {
   get: ReturnType<typeof vi.fn>;
   put: ReturnType<typeof vi.fn>;
 };
+
+// F01-B: pano açılışta /users'ı da okur (atanana göre süzgeci); bu spec yalnız /tasks okumalarını sayar.
+// Görev isteği ÖNCE gönderilir (page.tsx effect sırası) → mockRejectedValueOnce ilk çağrıya (= /tasks) düşer.
+const taskGets = () => mocked.get.mock.calls.filter(([u]) => String(u).startsWith('/tasks')).length;
 
 const DEMO_TITLES = [
   'Haciz talebi hazırla',
@@ -83,7 +87,7 @@ describe('Kanban — yükleme hatası', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Tekrar dene' }));
 
     expect(await screen.findByText('Gerçek görev A')).toBeTruthy();
-    expect(mocked.get).toHaveBeenCalledTimes(2);
+    expect(taskGets()).toBe(2);
     expect(mocked.put).not.toHaveBeenCalled();
   });
 
@@ -129,7 +133,7 @@ describe('Kanban — sürükle-bırak mutasyon hatası', () => {
       expect(screen.queryByText(title)).toBeNull();
     }
     // Yalnizca ilk yukleme okumasi yapildi; basarisiz mutasyon yeni okuma tetiklemedi.
-    expect(mocked.get).toHaveBeenCalledTimes(1);
+    expect(taskGets()).toBe(1);
     // Kart hala gorunur (kaybolmadi) ve gercek veri korunuyor.
     expect(screen.getByText('Gerçek görev A')).toBeTruthy();
   });

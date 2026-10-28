@@ -4,13 +4,15 @@ import KanbanPage from '../page';
 import { api } from '@/lib/api';
 
 /**
- * F01-B (OFP-01 + OFP-02 dürüstlük) — KANBAN: SAYFALI YÜKLEME, SALT OKUNUR İPTAL SÜTUNU, BANA ATANANLAR.
+ * F01-B (OFP-01 + OFP-02 dürüstlük) — KANBAN: SAYFALI YÜKLEME, SALT OKUNUR İPTAL SÜTUNU, ATANANA GÖRE SÜZGEÇ.
  * stable key: app/(dashboard)/tasks/kanban/page.tsx#loadTasks
  *
- * Sahte /tasks sunucu gibi davranır (page/limit/assigneeId). 104 görev → ilk sayfa 100; pano "100 / 104 görev
- * yüklendi" der ve kalan sayfa "Daha fazla yükle" ile gelir. (100+ kartın jsdom'da çizimi CI koşucusunda 5 sn'yi
- * aşabildi → ağır iki teste açık zaman aşımı verildi; fixture ikinci sayfayı küçük tutar.) "İnceleme" sütunu yoktur (API REVIEW'u reddeder);
- * iptal edilen görevler etiketiyle salt okunur sütunda durur, sürüklenemez ve sütun bırakma hedefi değildir.
+ * Sahte /tasks sunucu gibi davranır (page/limit/assigneeId); /users iki kullanıcı döner (biri pasif). 104 görev →
+ * ilk sayfa 100; pano "100 / 104 görev yüklendi" der ve kalan sayfa "Daha fazla yükle" ile gelir. (100+ kartın
+ * jsdom'da çizimi CI koşucusunda 5 sn'yi aşabildi → ağır testlere açık zaman aşımı verildi; süzgeç testleri küçük
+ * fixture kullanır.) "İnceleme" sütunu yoktur (API REVIEW'u reddeder); iptal edilen görevler etiketiyle salt okunur
+ * sütunda durur, sürüklenemez ve sütun bırakma hedefi değildir. "Atanana göre" süzgeci liste sayfasıyla aynı
+ * sözleşmeyi kullanır: "" / "me" / <userId> → assigneeId; /users düşerse pano yine gelir.
  */
 
 vi.mock('@/lib/api', () => ({
@@ -32,6 +34,11 @@ const mocked = api as unknown as {
   put: ReturnType<typeof vi.fn>;
 };
 
+const USERS = [
+  { id: 'u-me', name: 'Ben', surname: 'Kendim', isActive: true },
+  { id: 'u-2', name: 'Ayşe', surname: 'Diğer', isActive: false },
+];
+
 const STATUSES = ['PENDING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'];
 const ALL = Array.from({ length: 104 }, (_, i) => ({
   id: `k${i}`,
@@ -40,13 +47,15 @@ const ALL = Array.from({ length: 104 }, (_, i) => ({
   priority: 'LOW',
   assignee: i % 2 === 0 ? { id: 'u-me', name: 'Ben', surname: 'Kendim' } : { id: 'u-2', name: 'Ayşe', surname: 'Diğer' },
 }));
+/** Süzgeç testleri için hafif fixture: 4 bana (çift), 4 Ayşe'ye (tek) atanmış. */
+const SMALL = ALL.slice(0, 8);
 
-function serveTasks(url: string) {
+function serveTasks(url: string, source: typeof ALL) {
   const qs = new URLSearchParams(url.split('?')[1] ?? '');
   const page = Number(qs.get('page') ?? '1');
   const limit = Number(qs.get('limit') ?? '20');
   const assignee = qs.get('assigneeId');
-  const rows = ALL.filter((t) => !assignee || t.assignee.id === assignee);
+  const rows = source.filter((t) => !assignee || t.assignee.id === assignee);
   return {
     data: {
       data: rows.slice((page - 1) * limit, page * limit),
@@ -61,13 +70,24 @@ function serveTasks(url: string) {
   };
 }
 
-const taskCalls = () => mocked.get.mock.calls.map(([u]) => String(u)).filter((u) => u.startsWith('/tasks'));
+/** Sahte sunucu: /users (ok | fail) + /tasks (verilen kaynaktan sayfalı). */
+function serve(url: string, opts: { users?: 'ok' | 'fail'; tasks?: typeof ALL } = {}) {
+  if (url.startsWith('/users')) {
+    if (opts.users === 'fail') return Promise.reject(new Error('users down'));
+    return Promise.resolve({ data: { data: USERS } });
+  }
+  return Promise.resolve(serveTasks(url, opts.tasks ?? ALL));
+}
+
+const calls = (prefix: string) => mocked.get.mock.calls.map(([u]) => String(u)).filter((u) => u.startsWith(prefix));
+const taskCalls = () => calls('/tasks');
 const lastTaskQuery = () => new URLSearchParams(taskCalls().at(-1)!.split('?')[1] ?? '');
 const cards = () => screen.getAllByText(/^Kart \d+$/);
+const assigneeSelect = () => screen.getByLabelText('Atanana göre') as HTMLSelectElement;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocked.get.mockImplementation((url: string) => Promise.resolve(serveTasks(String(url))));
+  mocked.get.mockImplementation((url: string) => serve(String(url)));
 });
 afterEach(() => cleanup());
 
@@ -131,17 +151,84 @@ describe('Kanban — dürüst durumlar', () => {
   });
 });
 
-describe('Kanban — bana atananlar süzgeci', () => {
-  it('işaretlenince assigneeId=u-me ile sayfa 1\'den yeniden yükler; yalnız benim kartlarım ve kapsam etiketi', { timeout: 20_000 }, async () => {
+describe('Kanban — atanana göre süzgeci', () => {
+  it("seçenekler /users kaynağından gelir: Tüm atananlar, Bana atananlar, kullanıcılar (pasif '(pasif)' ekiyle); açılışta süzgeç yok", async () => {
+    mocked.get.mockImplementation((url: string) => serve(String(url), { tasks: SMALL }));
     render(<KanbanPage />);
     await screen.findByText('Kart 0');
 
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Bana atananlar' }));
+    const select = assigneeSelect();
+    expect(select.value).toBe('');
+    expect(within(select).getByRole('option', { name: 'Tüm atananlar' })).toBeInTheDocument();
+    expect(within(select).getByRole('option', { name: 'Bana atananlar' })).toBeInTheDocument();
+    await within(select).findByRole('option', { name: 'Ayşe Diğer (pasif)' });
+    expect(within(select).getByRole('option', { name: 'Ben Kendim' })).toBeInTheDocument();
+    expect(calls('/users')).toHaveLength(1);
+    expect(lastTaskQuery().has('assigneeId')).toBe(false);
+    expect(screen.getByTestId('kanban-loaded').textContent).toBe(' · 8 / 8 görev yüklendi');
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('Bana atananlar seçilince assigneeId=u-me ile sayfa 1 olarak yeniden yükler; yalnız benim kartlarım ve kapsam etiketi', { timeout: 20_000 }, async () => {
+    render(<KanbanPage />);
+    await screen.findByText('Kart 0');
+
+    fireEvent.change(assigneeSelect(), { target: { value: 'me' } });
     await waitFor(() => expect(lastTaskQuery().get('assigneeId')).toBe('u-me'));
     expect(lastTaskQuery().get('page')).toBe('1');
     await waitFor(() => expect(cards()).toHaveLength(52));
     expect(screen.queryByText('Kart 1')).toBeNull();
     expect(screen.getByTestId('kanban-loaded').textContent).toContain('52 / 52 görev yüklendi (bana atananlar)');
     expect(screen.queryByRole('button', { name: /Daha fazla yükle/ })).toBeNull();
+  });
+
+  it('bir kullanıcı seçilince assigneeId=<id>, page=1 ve etiket "(atanan: Ad Soyad)"; "Tüm atananlar" süzgeci kaldırır', async () => {
+    mocked.get.mockImplementation((url: string) => serve(String(url), { tasks: SMALL }));
+    render(<KanbanPage />);
+    await screen.findByText('Kart 0');
+    await within(assigneeSelect()).findByRole('option', { name: 'Ayşe Diğer (pasif)' });
+
+    fireEvent.change(assigneeSelect(), { target: { value: 'u-2' } });
+    await waitFor(() => expect(lastTaskQuery().get('assigneeId')).toBe('u-2'));
+    expect(lastTaskQuery().get('page')).toBe('1');
+    await waitFor(() => expect(cards()).toHaveLength(4));
+    expect(screen.queryByText('Kart 0')).toBeNull();
+    expect(screen.getByText('Kart 1')).toBeInTheDocument();
+    expect(screen.getByTestId('kanban-loaded').textContent).toContain('4 / 4 görev yüklendi (atanan: Ayşe Diğer)');
+
+    fireEvent.change(assigneeSelect(), { target: { value: '' } });
+    await waitFor(() => expect(lastTaskQuery().has('assigneeId')).toBe(false));
+    await waitFor(() => expect(cards()).toHaveLength(8));
+    expect(screen.getByTestId('kanban-loaded').textContent).toBe(' · 8 / 8 görev yüklendi');
+    expect(mocked.put).not.toHaveBeenCalled();
+  });
+
+  it('/users düşerse: pano ve "Tüm / Bana atananlar" çalışır, durum iletisi alert DEĞİLDİR; "Kullanıcıları yeniden dene" yalnız /users isteğini yineler', async () => {
+    mocked.get.mockImplementation((url: string) => serve(String(url), { users: 'fail', tasks: SMALL }));
+    render(<KanbanPage />);
+    await screen.findByText('Kart 0');
+
+    const status = await screen.findByRole('status');
+    expect(status.textContent).toContain('Kullanıcılar yüklenemedi');
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(cards()).toHaveLength(8);
+    const select = assigneeSelect();
+    expect(within(select).getByRole('option', { name: 'Tüm atananlar' })).toBeInTheDocument();
+    expect(within(select).getByRole('option', { name: 'Bana atananlar' })).toBeInTheDocument();
+    expect(within(select).queryByRole('option', { name: 'Ayşe Diğer (pasif)' })).toBeNull();
+
+    // Bana atananlar süzgeci /users olmadan da çalışır.
+    fireEvent.change(select, { target: { value: 'me' } });
+    await waitFor(() => expect(lastTaskQuery().get('assigneeId')).toBe('u-me'));
+    await waitFor(() => expect(cards()).toHaveLength(4));
+
+    const taskCallsBefore = taskCalls().length;
+    mocked.get.mockImplementation((url: string) => serve(String(url), { tasks: SMALL }));
+    fireEvent.click(screen.getByRole('button', { name: 'Kullanıcıları yeniden dene' }));
+    await within(assigneeSelect()).findByRole('option', { name: 'Ayşe Diğer (pasif)' });
+    expect(calls('/users')).toHaveLength(2);
+    expect(taskCalls().length).toBe(taskCallsBefore);
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(assigneeSelect().value).toBe('me');
   });
 });
