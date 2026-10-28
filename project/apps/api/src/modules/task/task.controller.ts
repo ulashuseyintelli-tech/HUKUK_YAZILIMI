@@ -10,7 +10,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { TaskService } from "./task.service";
-import { CreateTaskDto, UpdateTaskDto } from "./dto/task.dto";
+import { CreateTaskDto, ListTasksQueryDto, UpdateTaskDto } from "./dto/task.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 
@@ -19,18 +19,14 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator";
 export class TaskController {
   constructor(private taskService: TaskService) {}
 
+  /**
+   * GET /tasks — sorgu sözleşmesi `ListTasksQueryDto` (F01-A). Geçersiz `status`/`page`/`limit` ve
+   * bilinmeyen parametre global ValidationPipe ile 400 döner (önceden doğrulanmıyordu). Yanıt zarfı
+   * `{ data, meta }` korunur; `meta.summary` eklendi (bkz. TaskService.findAll).
+   */
   @Get()
-  findAll(
-    @CurrentUser("tenantId") tenantId: string,
-    @Query("status") status?: string,
-    @Query("page") page?: string,
-    @Query("limit") limit?: string
-  ) {
-    return this.taskService.findAll(tenantId, {
-      status,
-      page: page ? parseInt(page) : undefined,
-      limit: limit ? parseInt(limit) : undefined,
-    });
+  findAll(@CurrentUser("tenantId") tenantId: string, @Query() query: ListTasksQueryDto) {
+    return this.taskService.findAll(tenantId, query);
   }
 
   @Get(":id")

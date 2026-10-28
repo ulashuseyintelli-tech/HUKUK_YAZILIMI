@@ -1,6 +1,42 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { Prisma, TaskCategory as PrismaTaskCategory, TaskStatus as PrismaTaskStatus } from "@prisma/client";
 import { PrismaService } from "@/prisma/prisma.service";
-import { CreateTaskDto, UpdateTaskDto } from "./dto/task.dto";
+import { CreateTaskDto, TASK_LIST_DEFAULT_LIMIT, UpdateTaskDto } from "./dto/task.dto";
+
+/** TaskController.findAll → TaskService.findAll sorgu parametreleri (ListTasksQueryDto ile uyumlu). */
+export interface TaskListParams {
+  status?: string;
+  assigneeId?: string;
+  taskCategory?: string;
+  page?: number;
+  limit?: number;
+}
+
+/**
+ * GET /tasks `meta.summary`: ekran sayaçları için sunucu toplamları. Kapsam = tenant sınırı
+ * (+ varsa `assigneeId`); `status` / `taskCategory` süzgeci bu sayılara UYGULANMAZ.
+ * `operationalOpen` = OPERATIONAL_COMPLETENESS ∧ (PENDING ∨ IN_PROGRESS); iptal ve tamamlanmış
+ * görev "açık iş" değildir.
+ */
+export interface TaskListSummary {
+  pending: number;
+  inProgress: number;
+  operationalOpen: number;
+}
+
+type TaskStatusGroup = { status: PrismaTaskStatus; taskCategory: PrismaTaskCategory; _count: { _all: number } };
+
+function summarizeTaskGroups(groups: TaskStatusGroup[]): TaskListSummary {
+  const summary: TaskListSummary = { pending: 0, inProgress: 0, operationalOpen: 0 };
+  for (const group of groups) {
+    const n = group._count._all;
+    const open = group.status === "PENDING" || group.status === "IN_PROGRESS";
+    if (group.status === "PENDING") summary.pending += n;
+    if (group.status === "IN_PROGRESS") summary.inProgress += n;
+    if (open && group.taskCategory === "OPERATIONAL_COMPLETENESS") summary.operationalOpen += n;
+  }
+  return summary;
+}
 
 @Injectable()
 export class TaskService {
@@ -38,14 +74,27 @@ export class TaskService {
     }
   }
 
-  // Çağıran: TaskController.findAll → GET /tasks.
-  async findAll(tenantId: string, params?: { status?: string; page?: number; limit?: number }) {
-    const { status, page = 1, limit = 20 } = params || {};
+  /**
+   * Çağıran: TaskController.findAll → GET /tasks.
+   *
+   * F01-A (OFP-01): sunucu taraflı süzgeç + üst sınırlı sayfalama + sayaçlar. `where` iki katmanlıdır:
+   *   scopeWhere = tenant sınırı (+ assigneeId)          → data, total VE summary bu kapsamdadır
+   *   where      = scopeWhere + status + taskCategory    → yalnız data ve total
+   * Ekran sayaçları böylece seçili sekmeden bağımsız ve ilk sayfadan değil sunucu toplamından gelir.
+   * Sıralama `id` ile kesinleştirilir: aynı öncelik/tarihli görevlerde sayfa sınırı kaymaz, kayıtlar
+   * sayfalar arasında tekil kalır. Tenant sınırı (caseId null ∨ case.tenantId) değişmez.
+   */
+  async findAll(tenantId: string, params?: TaskListParams) {
+    const { status, assigneeId, taskCategory, page = 1, limit = TASK_LIST_DEFAULT_LIMIT } = params || {};
 
-    const where: any = { tenantId, OR: [{ caseId: null }, { case: { tenantId } }] };
-    if (status) where.status = status;
+    const scopeWhere: Prisma.TaskWhereInput = { tenantId, OR: [{ caseId: null }, { case: { tenantId } }] };
+    if (assigneeId) scopeWhere.assigneeId = assigneeId;
 
-    const [tasks, total] = await Promise.all([
+    const where: Prisma.TaskWhereInput = { ...scopeWhere };
+    if (status) where.status = status as PrismaTaskStatus;
+    if (taskCategory) where.taskCategory = taskCategory as PrismaTaskCategory;
+
+    const [tasks, total, groups] = await Promise.all([
       this.prisma.task.findMany({
         where,
         include: {
@@ -55,16 +104,27 @@ export class TaskService {
           client: { select: { id: true, displayName: true, companyName: true, firstName: true, lastName: true } },
           assignee: { select: { id: true, name: true, surname: true } },
         },
-        orderBy: [{ priority: "desc" }, { dueDate: "asc" }],
+        orderBy: [{ priority: "desc" }, { dueDate: "asc" }, { id: "asc" }],
         skip: (page - 1) * limit,
         take: limit,
       }),
       this.prisma.task.count({ where }),
+      this.prisma.task.groupBy({
+        by: ["status", "taskCategory"],
+        where: scopeWhere,
+        _count: { _all: true },
+      }),
     ]);
 
     return {
       data: tasks,
-      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        summary: summarizeTaskGroups(groups as TaskStatusGroup[]),
+      },
     };
   }
 
