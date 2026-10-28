@@ -274,6 +274,44 @@ describeDb('GET /tasks — F01-A sayfalama, sunucu toplamları, süzgeçler (ger
     expect(ids(rows).some((id) => aIds.has(id))).toBe(false);
   });
 
+  // (8)–(10) F01 K-F7: POST/PUT dueDate sözleşmesi (tarih-only web biçimi 500 → 201/200; geçersiz → 400; null → temizle).
+  const post = (body: object) => request(app.getHttpServer()).post('/tasks').set('x-test-user-id', userA1).send(body);
+  const put = (id: string, body: object) => request(app.getHttpServer()).put('/tasks/' + id).set('x-test-user-id', userA1).send(body);
+
+  it("(8) POST tarih-only dueDate 'YYYY-MM-DD' (web modal biçimi) → 201 ve UTC gece yarısı olarak saklanır; tam ISO → aynı an", async () => {
+    const r1 = await post({ title: 'F01 K-F7 tarih-only', dueDate: '2026-11-05' });
+    expect(r1.status).toBe(201);
+    expect(r1.body.dueDate).toBe('2026-11-05T00:00:00.000Z');
+    const r2 = await post({ title: 'F01 K-F7 iso', dueDate: '2026-11-05T10:00:00+03:00' });
+    expect(r2.status).toBe(201);
+    expect(r2.body.dueDate).toBe('2026-11-05T07:00:00.000Z');
+    const r3 = await post({ title: 'F01 K-F7 tarihsiz' });
+    expect(r3.status).toBe(201);
+    expect(r3.body.dueDate).toBeNull();
+  });
+
+  it.each(['2026-02-30', 'abc', '', '2026-13-01T00:00:00Z'])("(9) POST geçersiz dueDate %p → 400 (500 DEĞİL), kayıt oluşmaz", async (bad) => {
+    const before = await db.task.count({ where: { tenantId: tenantA } });
+    const r = await post({ title: 'F01 K-F7 gecersiz', dueDate: bad });
+    expect(r.status).toBe(400);
+    expect(await db.task.count({ where: { tenantId: tenantA } })).toBe(before);
+  });
+
+  it('(10) PUT tarih-only → 200 ve saklanır; PUT null → tarihi temizler; PUT geçersiz → 400', async () => {
+    const created = await post({ title: 'F01 K-F7 put' });
+    expect(created.status).toBe(201);
+    const id = created.body.id as string;
+    const r1 = await put(id, { dueDate: '2026-11-06' });
+    expect(r1.status).toBe(200);
+    expect(r1.body.dueDate).toBe('2026-11-06T00:00:00.000Z');
+    const r2 = await put(id, { dueDate: null });
+    expect(r2.status).toBe(200);
+    expect(r2.body.dueDate).toBeNull();
+    const r3 = await put(id, { dueDate: '2026-02-30' });
+    expect(r3.status).toBe(400);
+    expect((await db.task.findUnique({ where: { id } }))?.dueDate).toBeNull();
+  });
+
   it('(7) aynı sorgu iki kez aynı sırayı verir (id ile kesinleştirilmiş sıralama)', async () => {
     const a = await http('/tasks?limit=100').expect(200);
     const b = await http('/tasks?limit=100').expect(200);
