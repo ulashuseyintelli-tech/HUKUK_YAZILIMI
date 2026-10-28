@@ -1,4 +1,22 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+
+/**
+ * `dueDate` normalizasyonu (F01 K-F7): tarih-only `YYYY-MM-DD` → UTC gece yarısı; tam ISO-8601 → aynı an (saat dilimi
+ * korunur); `null` → temizle; `undefined` → dokunma. Geçersiz değer Prisma'ya ULAŞMAZ: 400 (önceden
+ * `Expected ISO-8601 DateTime` ile 500 veriyordu). JS `Date` takvim dışı günü yuvarlar (`2026-02-30` → 2 Mart); tarih-only
+ * için geri okuma eşitliği, tam ISO için DTO `strict` doğrulaması bunu reddeder.
+ */
+export function normalizeDueDate(value: string | null | undefined): Date | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const s = String(value).trim();
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(s);
+  const d = dateOnly ? new Date(s + "T00:00:00.000Z") : new Date(s);
+  if (Number.isNaN(d.getTime()) || (dateOnly && !d.toISOString().startsWith(s))) {
+    throw new BadRequestException("dueDate geçersiz: ISO-8601 (YYYY-MM-DD ya da tam tarih-saat) bekleniyor");
+  }
+  return d;
+}
 import { Prisma, TaskCategory as PrismaTaskCategory, TaskStatus as PrismaTaskStatus } from "@prisma/client";
 import { PrismaService } from "@/prisma/prisma.service";
 import { CreateTaskDto, TASK_LIST_DEFAULT_LIMIT, UpdateTaskDto } from "./dto/task.dto";
@@ -161,6 +179,7 @@ export class TaskService {
         tenantId,
         createdById: userId,
         ...dto,
+        dueDate: normalizeDueDate(dto.dueDate),
       },
     });
   }
@@ -183,7 +202,7 @@ export class TaskService {
       await this.assertAssigneeEligible(tenantId, dto.assigneeId);
     }
 
-    const data: any = { ...dto };
+    const data: any = { ...dto, dueDate: normalizeDueDate(dto.dueDate) };
     if (dto.status === "COMPLETED") {
       data.completedAt = new Date();
       data.completedByUserId = userId; // insan kapanışı → kapatanı yakala

@@ -83,9 +83,15 @@ export class CreateTaskDto {
   @IsOptional()
   priority?: Priority;
 
-  @IsDateString()
+  /**
+   * Tarih sözleşmesi (F01 K-F7, 28.10.2026): tam ISO-8601 (`2026-11-05T00:00:00.000Z`, saat dilimi korunur) VEYA
+   * tarih-only `YYYY-MM-DD` (web `<input type="date">` biçimi; UTC gece yarısı olarak yorumlanır — case modülü ve
+   * envanter SQL'i `AT TIME ZONE 'UTC'` ile tutarlı). `strict`: takvimde olmayan gün (`2026-02-30`) 400 döner
+   * (önceden Prisma'ya ulaşıp 500 veriyordu). `null` = tarihi temizle; alan yoksa dokunulmaz.
+   */
+  @IsDateString({ strict: true })
   @IsOptional()
-  dueDate?: string;
+  dueDate?: string | null;
 
   @IsString()
   @IsOptional()
@@ -113,9 +119,15 @@ export class UpdateTaskDto {
   @IsOptional()
   priority?: Priority;
 
-  @IsDateString()
+  /**
+   * Tarih sözleşmesi (F01 K-F7, 28.10.2026): tam ISO-8601 (`2026-11-05T00:00:00.000Z`, saat dilimi korunur) VEYA
+   * tarih-only `YYYY-MM-DD` (web `<input type="date">` biçimi; UTC gece yarısı olarak yorumlanır — case modülü ve
+   * envanter SQL'i `AT TIME ZONE 'UTC'` ile tutarlı). `strict`: takvimde olmayan gün (`2026-02-30`) 400 döner
+   * (önceden Prisma'ya ulaşıp 500 veriyordu). `null` = tarihi temizle; alan yoksa dokunulmaz.
+   */
+  @IsDateString({ strict: true })
   @IsOptional()
-  dueDate?: string;
+  dueDate?: string | null;
 
   @IsString()
   @IsOptional()

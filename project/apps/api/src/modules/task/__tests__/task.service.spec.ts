@@ -167,3 +167,55 @@ describe("TaskService — CANDIDATE-J1 assignee uygunluk kapısı (tenant + akti
     expect(prisma.task.update).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("TaskService — dueDate normalizasyonu (F01 K-F7: tarih-only 500 düzeltmesi)", () => {
+  const TENANT = "tenant-1";
+  const build = () => ({
+    task: {
+      findFirst: jest.fn().mockResolvedValue({ id: "tk", status: "PENDING" }),
+      create: jest.fn().mockResolvedValue({ id: "tk-new" }),
+      update: jest.fn().mockResolvedValue({ id: "tk" }),
+    },
+    user: { findFirst: jest.fn().mockResolvedValue({ id: "u" }) },
+  });
+
+  it("create: tarih-only 'YYYY-MM-DD' → UTC gece yarısı Date (web modal biçimi; önceden Prisma 500)", async () => {
+    const prisma = build() as any;
+    await new TaskService(prisma).create(TENANT, "c", { title: "İş", dueDate: "2026-11-05" } as any);
+    const data = prisma.task.create.mock.calls[0][0].data;
+    expect(data.dueDate).toBeInstanceOf(Date);
+    expect(data.dueDate.toISOString()).toBe("2026-11-05T00:00:00.000Z");
+  });
+
+  it("create: tam ISO-8601 (saat dilimli) → aynı an korunur", async () => {
+    const prisma = build() as any;
+    await new TaskService(prisma).create(TENANT, "c", { title: "İş", dueDate: "2026-11-05T10:00:00+03:00" } as any);
+    expect(prisma.task.create.mock.calls[0][0].data.dueDate.toISOString()).toBe("2026-11-05T07:00:00.000Z");
+  });
+
+  it("create: dueDate verilmeyen görev → alan undefined (Prisma dokunmaz)", async () => {
+    const prisma = build() as any;
+    await new TaskService(prisma).create(TENANT, "c", { title: "İş" } as any);
+    expect(prisma.task.create.mock.calls[0][0].data.dueDate).toBeUndefined();
+  });
+
+  it.each(["abc", "2026-02-30", "2026-13-01", ""])("create: geçersiz dueDate %p → 400 BadRequest, task.create çağrılmaz", async (bad) => {
+    const prisma = build() as any;
+    await expect(new TaskService(prisma).create(TENANT, "c", { title: "İş", dueDate: bad } as any)).rejects.toBeInstanceOf(
+      BadRequestException
+    );
+    expect(prisma.task.create).not.toHaveBeenCalled();
+  });
+
+  it("update: tarih-only → Date; null → tarihi temizler (null); alan yoksa undefined", async () => {
+    const p1 = build() as any;
+    await new TaskService(p1).update(TENANT, "tk", "u", { dueDate: "2026-11-06" } as any);
+    expect(p1.task.update.mock.calls[0][0].data.dueDate.toISOString()).toBe("2026-11-06T00:00:00.000Z");
+    const p2 = build() as any;
+    await new TaskService(p2).update(TENANT, "tk", "u", { dueDate: null } as any);
+    expect(p2.task.update.mock.calls[0][0].data.dueDate).toBeNull();
+    const p3 = build() as any;
+    await new TaskService(p3).update(TENANT, "tk", "u", { title: "Başlık" } as any);
+    expect(p3.task.update.mock.calls[0][0].data.dueDate).toBeUndefined();
+  });
+});
