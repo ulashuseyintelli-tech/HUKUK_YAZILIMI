@@ -7,8 +7,9 @@ import { api } from '@/lib/api';
  * F01-B (OFP-01 + OFP-02 dürüstlük) — KANBAN: SAYFALI YÜKLEME, SALT OKUNUR İPTAL SÜTUNU, BANA ATANANLAR.
  * stable key: app/(dashboard)/tasks/kanban/page.tsx#loadTasks
  *
- * Sahte /tasks sunucu gibi davranır (page/limit/assigneeId). 120 görev → ilk sayfa 100; pano "100 / 120 görev
- * yüklendi" der ve kalan sayfa "Daha fazla yükle" ile gelir. "İnceleme" sütunu yoktur (API REVIEW'u reddeder);
+ * Sahte /tasks sunucu gibi davranır (page/limit/assigneeId). 104 görev → ilk sayfa 100; pano "100 / 104 görev
+ * yüklendi" der ve kalan sayfa "Daha fazla yükle" ile gelir. (100+ kartın jsdom'da çizimi CI koşucusunda 5 sn'yi
+ * aşabildi → ağır iki teste açık zaman aşımı verildi; fixture ikinci sayfayı küçük tutar.) "İnceleme" sütunu yoktur (API REVIEW'u reddeder);
  * iptal edilen görevler etiketiyle salt okunur sütunda durur, sürüklenemez ve sütun bırakma hedefi değildir.
  */
 
@@ -32,7 +33,7 @@ const mocked = api as unknown as {
 };
 
 const STATUSES = ['PENDING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'];
-const ALL = Array.from({ length: 120 }, (_, i) => ({
+const ALL = Array.from({ length: 104 }, (_, i) => ({
   id: `k${i}`,
   title: `Kart ${i}`,
   status: STATUSES[i % 4],
@@ -71,20 +72,20 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('Kanban — sayfalı yükleme ve sunucu toplamı', () => {
-  it('ilk yükleme page=1&limit=100: 100 kart, "100 / 120 görev yüklendi"; Daha fazla yükle → page=2 → 120 kart', async () => {
+  it('ilk yükleme page=1&limit=100: 100 kart, "100 / 104 görev yüklendi"; Daha fazla yükle → page=2 → 104 kart', { timeout: 20_000 }, async () => {
     render(<KanbanPage />);
     await screen.findByText('Kart 0');
 
     expect(lastTaskQuery().get('page')).toBe('1');
     expect(lastTaskQuery().get('limit')).toBe('100');
     expect(cards()).toHaveLength(100);
-    expect(screen.getByTestId('kanban-loaded').textContent).toContain('100 / 120 görev yüklendi');
+    expect(screen.getByTestId('kanban-loaded').textContent).toContain('100 / 104 görev yüklendi');
 
-    fireEvent.click(screen.getByRole('button', { name: /Daha fazla yükle \(100 \/ 120\)/ }));
-    await screen.findByText('Kart 119');
+    fireEvent.click(screen.getByRole('button', { name: /Daha fazla yükle \(100 \/ 104\)/ }));
+    await screen.findByText('Kart 103');
     expect(lastTaskQuery().get('page')).toBe('2');
-    expect(cards()).toHaveLength(120);
-    expect(screen.getByTestId('kanban-loaded').textContent).toContain('120 / 120 görev yüklendi');
+    expect(cards()).toHaveLength(104);
+    expect(screen.getByTestId('kanban-loaded').textContent).toContain('104 / 104 görev yüklendi');
     expect(screen.queryByRole('button', { name: /Daha fazla yükle/ })).toBeNull();
     expect(mocked.put).not.toHaveBeenCalled();
   });
@@ -131,16 +132,16 @@ describe('Kanban — dürüst durumlar', () => {
 });
 
 describe('Kanban — bana atananlar süzgeci', () => {
-  it('işaretlenince assigneeId=u-me ile sayfa 1\'den yeniden yükler; yalnız benim kartlarım ve kapsam etiketi', async () => {
+  it('işaretlenince assigneeId=u-me ile sayfa 1\'den yeniden yükler; yalnız benim kartlarım ve kapsam etiketi', { timeout: 20_000 }, async () => {
     render(<KanbanPage />);
     await screen.findByText('Kart 0');
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Bana atananlar' }));
     await waitFor(() => expect(lastTaskQuery().get('assigneeId')).toBe('u-me'));
     expect(lastTaskQuery().get('page')).toBe('1');
-    await waitFor(() => expect(cards()).toHaveLength(60));
+    await waitFor(() => expect(cards()).toHaveLength(52));
     expect(screen.queryByText('Kart 1')).toBeNull();
-    expect(screen.getByTestId('kanban-loaded').textContent).toContain('60 / 60 görev yüklendi (bana atananlar)');
+    expect(screen.getByTestId('kanban-loaded').textContent).toContain('52 / 52 görev yüklendi (bana atananlar)');
     expect(screen.queryByRole('button', { name: /Daha fazla yükle/ })).toBeNull();
   });
 });
