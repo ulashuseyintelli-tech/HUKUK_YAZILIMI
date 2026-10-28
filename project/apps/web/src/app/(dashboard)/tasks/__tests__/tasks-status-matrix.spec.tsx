@@ -12,6 +12,11 @@ vi.mock('@/lib/api', () => ({
   api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
 }));
 
+// F01-B: sayfa "bana atananlar" süzgeci için useAuth okur; bu matris kimlikten bağımsızdır.
+vi.mock('@/lib/auth-context', () => ({
+  useAuth: () => ({ user: { id: 'u1', tenantId: 't1' }, loading: false }),
+}));
+
 const mocked = api as unknown as Record<string, ReturnType<typeof vi.fn>>;
 
 const TASK = {

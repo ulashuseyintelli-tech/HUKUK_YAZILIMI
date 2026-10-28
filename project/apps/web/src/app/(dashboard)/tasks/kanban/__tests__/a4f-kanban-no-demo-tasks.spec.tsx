@@ -20,6 +20,11 @@ vi.mock('@/lib/api', () => ({
   api: { get: vi.fn(), put: vi.fn() },
 }));
 
+// F01-B: pano "bana atananlar" süzgeci için useAuth okur; bu spec'in konusu kimlikten bağımsızdır.
+vi.mock('@/lib/auth-context', () => ({
+  useAuth: () => ({ user: { id: 'u1', tenantId: 't1' }, loading: false }),
+}));
+
 vi.mock('next/link', () => ({
   default: ({ children, href }: { children: React.ReactNode; href: string }) => (
     <a href={href}>{children}</a>

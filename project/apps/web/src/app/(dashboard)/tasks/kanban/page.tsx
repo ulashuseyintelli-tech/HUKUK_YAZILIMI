@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 import { toActionErrorMessage } from '@/lib/action-error';
 import { Plus, MoreVertical, Clock, User, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
@@ -13,16 +14,32 @@ interface Task {
   status: string;
   priority: string;
   dueDate?: string;
-  assignee?: { name: string; surname: string };
+  assignee?: { id?: string; name: string; surname: string };
   case?: { fileNumber: string };
 }
 
+/** GET /tasks `meta` (F01-A): pano sayfa sayfa yükler; toplam ve kaç sayfa kaldığı buradan okunur. */
+interface TaskListMeta {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+/** Sunucunun üst sınırı (ListTasksQueryDto TASK_LIST_MAX_LIMIT). */
+const PAGE_SIZE = 100;
+
+// F01-B (OFP-02 dürüstlük): yalnız API'nin kabul ettiği durumlar. "REVIEW" API'de yok (sürükleme 400
+// veriyordu) → sütun kaldırıldı. Bırakma hedefi olan sütunlar bunlardır.
 const COLUMNS = [
   { id: 'PENDING', title: 'Bekliyor', color: 'bg-gray-100' },
   { id: 'IN_PROGRESS', title: 'Devam Ediyor', color: 'bg-blue-100' },
-  { id: 'REVIEW', title: 'İnceleme', color: 'bg-yellow-100' },
   { id: 'COMPLETED', title: 'Tamamlandı', color: 'bg-green-100' },
 ];
+
+// İptal edilen görevler etiketiyle görünür; sütun SALT OKUNURDUR (bırakma hedefi değil, kartlar
+// sürüklenemez): panodan sürükleyerek iptal etme / yeniden açma yolu bu dilimde AÇILMAZ.
+const CANCELLED_COLUMN = { id: 'CANCELLED', title: 'İptal Edilen', color: 'bg-gray-50' };
 
 const PRIORITY_COLORS: Record<string, string> = {
   LOW: 'bg-gray-200 text-gray-700',
@@ -31,16 +48,46 @@ const PRIORITY_COLORS: Record<string, string> = {
   URGENT: 'bg-red-200 text-red-700',
 };
 
+function parseMeta(raw: unknown): TaskListMeta | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const m = raw as Record<string, unknown>;
+  if (
+    typeof m.total !== 'number' ||
+    typeof m.page !== 'number' ||
+    typeof m.limit !== 'number' ||
+    typeof m.totalPages !== 'number'
+  ) {
+    return null;
+  }
+  return { total: m.total, page: m.page, limit: m.limit, totalPages: m.totalPages };
+}
+
 export default function KanbanPage() {
+  const { user: currentUser } = useAuth();
+  const currentUserId = currentUser?.id ?? null;
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [meta, setMeta] = useState<TaskListMeta | null>(null);
+  const [loadedPages, setLoadedPages] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
   const [draggedTask, setDraggedTask] = useState<Task | null>(null);
+  // "Bana atananlar" yalnız SÜZGEÇTİR; OWN/TEAM yetkisi değildir (OFP-09 bu ekranda yok).
+  const [mineOnly, setMineOnly] = useState(false);
 
-  useEffect(() => {
-    loadTasks();
-  }, []);
+  const fetchPage = useCallback(
+    async (page: number): Promise<{ rows: Task[]; meta: TaskListMeta | null }> => {
+      const q = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) });
+      if (mineOnly && currentUserId) q.set('assigneeId', currentUserId);
+      const res = await api.get(`/tasks?${q.toString()}`);
+      const raw = (res as { data?: unknown })?.data;
+      const rows = Array.isArray(raw) ? raw : (raw as { data?: unknown } | undefined)?.data;
+      if (!Array.isArray(rows)) throw new Error('MALFORMED_LIST_RESPONSE');
+      return { rows: rows as Task[], meta: Array.isArray(raw) ? null : parseMeta((raw as { meta?: unknown }).meta) };
+    },
+    [mineOnly, currentUserId]
+  );
 
   /**
    * WSMR-A4f · UYDURMA GOREV KAYITLARI KALDIRILDI.
@@ -49,20 +96,49 @@ export default function KanbanPage() {
    * hazirla", "Tebligat kontrolu", ...) panoya diziliyordu. Kullanici bunlari
    * gercek is listesi sanip planlama yapabilir, gercek gorevleri ise hic
    * gormedigi icin kacirabilirdi. Artik yuk hatasi GORUNUR ve pano bos kalir.
+   *
+   * F01-B: ilk sayfa (100) yüklenir; kalan sayfalar "Daha fazla yükle" ile eklenir. Sunucu toplamı
+   * başlıkta "x / N görev yüklendi" olarak görünür; pano hiçbir zaman "tamamı bu" diye yalan söylemez.
    */
-  const loadTasks = async () => {
+  const loadTasks = useCallback(async () => {
     setLoadError(null);
     try {
-      const res = await api.get('/tasks');
-      const raw = (res as { data?: unknown })?.data;
-      const rows = Array.isArray(raw) ? raw : (raw as { data?: unknown } | undefined)?.data;
-      if (!Array.isArray(rows)) throw new Error('MALFORMED_LIST_RESPONSE');
-      setTasks(rows as Task[]);
+      const { rows, meta: m } = await fetchPage(1);
+      setTasks(rows);
+      setMeta(m);
+      setLoadedPages(1);
     } catch (e) {
       setTasks([]);
+      setMeta(null);
+      setLoadedPages(0);
       setLoadError(toActionErrorMessage(e, 'Görevler yüklenemedi.'));
     } finally {
       setLoading(false);
+    }
+  }, [fetchPage]);
+
+  useEffect(() => {
+    void loadTasks();
+  }, [loadTasks]);
+
+  const loadMore = async () => {
+    if (!meta || loadedPages >= meta.totalPages || loadingMore) return;
+    setLoadingMore(true);
+    setLoadError(null);
+    const next = loadedPages + 1;
+    try {
+      const { rows, meta: m } = await fetchPage(next);
+      setTasks((prev) => {
+        const seen = new Set(prev.map((t) => t.id));
+        return [...prev, ...rows.filter((t) => !seen.has(t.id))];
+      });
+      if (m) setMeta(m);
+      setLoadedPages(next);
+    } catch (e) {
+      // Yüklenmiş kartlar korunur; eksik kalan sayfa görünür hata olur.
+      setLoadError(toActionErrorMessage(e, 'Sonraki görevler yüklenemedi.'));
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -114,12 +190,70 @@ export default function KanbanPage() {
     const now = new Date();
     const diff = d.getTime() - now.getTime();
     const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
-    
+
     if (days < 0) return { text: 'Gecikmiş', color: 'text-red-600' };
     if (days === 0) return { text: 'Bugün', color: 'text-orange-600' };
     if (days === 1) return { text: 'Yarın', color: 'text-yellow-600' };
     return { text: `${days} gün`, color: 'text-gray-500' };
   };
+
+  const renderCard = (task: Task, draggable: boolean) => (
+    <div
+      key={task.id}
+      draggable={draggable}
+      onDragStart={draggable ? () => handleDragStart(task) : undefined}
+      className={`bg-white rounded-lg p-3 shadow-sm transition-shadow ${
+        draggable ? 'cursor-move hover:shadow-md' : 'opacity-75'
+      } ${draggedTask?.id === task.id ? 'opacity-50' : ''}`}
+    >
+      <div className="flex items-start justify-between mb-2">
+        <h4 className={`font-medium text-sm ${draggable ? '' : 'line-through text-gray-500'}`}>{task.title}</h4>
+        <button className="text-gray-400 hover:text-gray-600">
+          <MoreVertical className="h-4 w-4" />
+        </button>
+      </div>
+
+      {task.description && (
+        <p className="text-xs text-gray-500 mb-2 line-clamp-2">{task.description}</p>
+      )}
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className={`text-xs px-2 py-0.5 rounded ${PRIORITY_COLORS[task.priority] || 'bg-gray-100'}`}>
+          {task.priority === 'LOW' ? 'Düşük' :
+           task.priority === 'MEDIUM' ? 'Orta' :
+           task.priority === 'HIGH' ? 'Yüksek' : 'Acil'}
+        </span>
+        {!draggable && (
+          <span className="text-xs px-2 py-0.5 rounded bg-gray-200 text-gray-700">İptal edildi</span>
+        )}
+
+        {task.dueDate && draggable && (
+          <span className={`text-xs flex items-center gap-1 ${formatDate(task.dueDate)?.color}`}>
+            <Clock className="h-3 w-3" />
+            {formatDate(task.dueDate)?.text}
+          </span>
+        )}
+      </div>
+
+      {(task.assignee || task.case) && (
+        <div className="flex items-center gap-2 mt-2 pt-2 border-t text-xs text-gray-500">
+          {task.assignee && (
+            <span className="flex items-center gap-1">
+              <User className="h-3 w-3" />
+              {task.assignee.name}
+            </span>
+          )}
+          {task.case && (
+            <span className="truncate">{task.case.fileNumber}</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  const loadedLabel = meta
+    ? `${tasks.length} / ${meta.total} görev yüklendi${mineOnly ? ' (bana atananlar)' : ''}`
+    : null;
 
   return (
     <div className="h-full flex flex-col">
@@ -130,15 +264,30 @@ export default function KanbanPage() {
           </Link>
           <div>
             <h1 className="text-lg font-bold">Kanban Board</h1>
-            <p className="text-xs text-muted-foreground">Görevleri sürükle-bırak ile yönetin</p>
+            <p className="text-xs text-muted-foreground">
+              Görevleri sürükle-bırak ile yönetin
+              {loadedLabel ? <span data-testid="kanban-loaded"> · {loadedLabel}</span> : null}
+            </p>
           </div>
         </div>
-        <Link
-          href="/tasks/new"
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-        >
-          <Plus className="h-4 w-4" /> Yeni Görev
-        </Link>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={mineOnly}
+              disabled={!currentUserId}
+              onChange={(e) => setMineOnly(e.target.checked)}
+            />
+            Bana atananlar
+          </label>
+          {/* F01-C: eski /tasks/new route'u yoktu (404). Görev listesindeki mevcut modal #yeni ile açılır. */}
+          <Link
+            href="/tasks#yeni"
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            <Plus className="h-4 w-4" /> Yeni Görev
+          </Link>
+        </div>
       </div>
 
       {moveError && (
@@ -149,7 +298,7 @@ export default function KanbanPage() {
 
       {loading ? (
         <div className="flex-1 flex items-center justify-center">Yükleniyor...</div>
-      ) : loadError ? (
+      ) : loadError && loadedPages === 0 ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center" role="alert">
             <p className="text-sm font-medium text-red-600">{loadError}</p>
@@ -163,82 +312,76 @@ export default function KanbanPage() {
           </div>
         </div>
       ) : (
-        <div className="flex-1 flex gap-4 overflow-x-auto pb-4">
-          {COLUMNS.map(column => (
+        <>
+          {loadError && (
+            <div role="alert" className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {loadError}
+            </div>
+          )}
+          {meta && loadedPages < meta.totalPages && (
+            <div className="mb-3 flex items-center gap-3 text-sm text-muted-foreground">
+              <span>Panoda görevlerin tamamı yok.</span>
+              <button
+                type="button"
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="rounded-lg border px-3 py-1 hover:bg-gray-50 disabled:opacity-50"
+              >
+                {loadingMore ? 'Yükleniyor…' : `Daha fazla yükle (${tasks.length} / ${meta.total})`}
+              </button>
+            </div>
+          )}
+          <div className="flex-1 flex gap-4 overflow-x-auto pb-4">
+            {COLUMNS.map(column => (
+              <div
+                key={column.id}
+                className={`flex-shrink-0 w-72 ${column.color} rounded-lg p-3`}
+                onDragOver={handleDragOver}
+                onDrop={() => handleDrop(column.id)}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-sm">{column.title}</h3>
+                  <span className="text-xs bg-white/50 px-2 py-0.5 rounded-full">
+                    {getTasksByStatus(column.id).length}
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  {getTasksByStatus(column.id).map(task => renderCard(task, true))}
+
+                  {getTasksByStatus(column.id).length === 0 && (
+                    <div className="text-center py-8 text-gray-400 text-sm">
+                      Görev yok
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {/* Salt okunur iptal sütunu: bırakma hedefi değil, kartlar sürüklenemez. */}
             <div
-              key={column.id}
-              className={`flex-shrink-0 w-72 ${column.color} rounded-lg p-3`}
-              onDragOver={handleDragOver}
-              onDrop={() => handleDrop(column.id)}
+              key={CANCELLED_COLUMN.id}
+              data-testid="kanban-cancelled-column"
+              className={`flex-shrink-0 w-72 ${CANCELLED_COLUMN.color} rounded-lg p-3 border border-dashed`}
             >
               <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold text-sm">{column.title}</h3>
+                <h3 className="font-semibold text-sm">{CANCELLED_COLUMN.title}</h3>
                 <span className="text-xs bg-white/50 px-2 py-0.5 rounded-full">
-                  {getTasksByStatus(column.id).length}
+                  {getTasksByStatus(CANCELLED_COLUMN.id).length}
                 </span>
               </div>
-
+              <p className="text-[11px] text-gray-500 mb-2">Salt okunur; buraya sürüklenemez.</p>
               <div className="space-y-2">
-                {getTasksByStatus(column.id).map(task => (
-                  <div
-                    key={task.id}
-                    draggable
-                    onDragStart={() => handleDragStart(task)}
-                    className={`bg-white rounded-lg p-3 shadow-sm cursor-move hover:shadow-md transition-shadow ${
-                      draggedTask?.id === task.id ? 'opacity-50' : ''
-                    }`}
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <h4 className="font-medium text-sm">{task.title}</h4>
-                      <button className="text-gray-400 hover:text-gray-600">
-                        <MoreVertical className="h-4 w-4" />
-                      </button>
-                    </div>
-                    
-                    {task.description && (
-                      <p className="text-xs text-gray-500 mb-2 line-clamp-2">{task.description}</p>
-                    )}
-
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`text-xs px-2 py-0.5 rounded ${PRIORITY_COLORS[task.priority] || 'bg-gray-100'}`}>
-                        {task.priority === 'LOW' ? 'Düşük' : 
-                         task.priority === 'MEDIUM' ? 'Orta' :
-                         task.priority === 'HIGH' ? 'Yüksek' : 'Acil'}
-                      </span>
-                      
-                      {task.dueDate && (
-                        <span className={`text-xs flex items-center gap-1 ${formatDate(task.dueDate)?.color}`}>
-                          <Clock className="h-3 w-3" />
-                          {formatDate(task.dueDate)?.text}
-                        </span>
-                      )}
-                    </div>
-
-                    {(task.assignee || task.case) && (
-                      <div className="flex items-center gap-2 mt-2 pt-2 border-t text-xs text-gray-500">
-                        {task.assignee && (
-                          <span className="flex items-center gap-1">
-                            <User className="h-3 w-3" />
-                            {task.assignee.name}
-                          </span>
-                        )}
-                        {task.case && (
-                          <span className="truncate">{task.case.fileNumber}</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
-
-                {getTasksByStatus(column.id).length === 0 && (
+                {getTasksByStatus(CANCELLED_COLUMN.id).map(task => renderCard(task, false))}
+                {getTasksByStatus(CANCELLED_COLUMN.id).length === 0 && (
                   <div className="text-center py-8 text-gray-400 text-sm">
                     Görev yok
                   </div>
                 )}
               </div>
             </div>
-          ))}
-        </div>
+          </div>
+        </>
       )}
     </div>
   );
