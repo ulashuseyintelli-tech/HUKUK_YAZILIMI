@@ -30,6 +30,11 @@ vi.mock('@/lib/api', () => ({
   api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
 }));
 
+// F01-B: sayfa "bana atananlar" süzgeci için useAuth okur; lookup davranışı kimlikten bağımsızdır.
+vi.mock('@/lib/auth-context', () => ({
+  useAuth: () => ({ user: { id: 'u1', tenantId: 't1' }, loading: false }),
+}));
+
 const mocked = api as unknown as Record<string, ReturnType<typeof vi.fn>>;
 
 function caseItem(fileNumber: string, overrides: Record<string, unknown> = {}) {
@@ -68,12 +73,14 @@ async function openModal() {
 }
 
 /**
- * Modalda 4 <select> var: Durum, Öncelik, İlgili Dosya, Atanan Kişi (bu
- * sırayla). Lookup'ları besleyen ikisi son iki indeks (2, 3).
+ * Modaldaki lookup <select>'leri etiketle bulunur (F01-B: sayfaya "Atanana göre" süzgeç
+ * <select>'i eklendi; indeks tabanlı seçim kırılgandı).
  */
 function lookupSelects() {
-  const all = screen.getAllByRole('combobox');
-  return { caseSel: all[2], userSel: all[3] };
+  return {
+    caseSel: screen.getByLabelText('İlgili Dosya'),
+    userSel: screen.getByLabelText('Atanan Kişi'),
+  };
 }
 
 beforeEach(() => {
