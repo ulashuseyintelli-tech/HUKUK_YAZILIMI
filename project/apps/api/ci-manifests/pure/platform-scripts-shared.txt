@@ -190,6 +190,8 @@ src/modules/address-task/address-task-scheduler.service.spec.ts
 src/modules/scheduler/__tests__/scheduler-passive-case-debtor-guard.spec.ts
 # F02 (manuel scheduler yetki/tenant siniri): saf politika tablosu + mock-servis kapsam sozlesmesi.
 src/modules/scheduler/__tests__/scheduler-manual-run-policy.spec.ts
+# KI-049 / F02-D: GET /scheduler/status sayimlarinin kiraci kapsami (7 sayim where.tenantId) + controller 403.
+src/modules/scheduler/__tests__/scheduler-status-tenant-scope.spec.ts
 # DEBTOR-SCHEDULER-REQUIRED-CI-COVERAGE-P1-I14 (I13-SCHEDULER-CI-GAP, independent of LEGACY TASK 08):
 # fresh repo-wide sweep found these 5 pre-existing SchedulerService contract spec files (own business
 # logic — nafaka period generation, tebligat-sync cron paths, disabled due-reminders dead-path guard,
@@ -372,6 +374,8 @@ src/modules/escalation/__tests__/case-task-escalation-logic.spec.ts
 src/modules/escalation/__tests__/case-task-escalation.service.spec.ts
 src/modules/escalation/__tests__/escalation-logic.spec.ts
 src/modules/escalation/__tests__/operational-escalation.service.spec.ts
+# KI-019 / F02-D: processEscalations kiraci kapsami (cron GLOBAL, manuel tek kiraci) + controller guard/403.
+src/modules/escalation/__tests__/operational-escalation-tenant-scope.spec.ts
 src/modules/escalation/__tests__/tenant-notifier.service.spec.ts
 src/modules/interest-engine/__tests__/payment-boundary.characterization.spec.ts
 src/modules/interest-engine/legal-application-plan/__tests__/i05-unit-property-security.spec.ts

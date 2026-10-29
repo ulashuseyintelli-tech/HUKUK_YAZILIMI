@@ -40,8 +40,8 @@ interface DispatchOutcome {
  *
  * <remarks>
  * Çağrıldığı yerler:
- * - @Cron(EVERY_HOUR) processEscalations() (otomatik)
- * - EscalationController.run() → POST /escalation/run (manuel tetik / test)
+ * - @Cron(EVERY_HOUR) scheduledRun() → processEscalations() (otomatik; GLOBAL = tüm ACTIVE kiracılar)
+ * - EscalationController.run() → POST /escalation/run (manuel tetik; KI-019: YALNIZ aktörün kiracısı)
  * </remarks>
  */
 @Injectable()
@@ -71,9 +71,15 @@ export class OperationalEscalationService {
     }
   }
 
-  /** Tüm tenant'ların açık operasyonel görevlerini işler. Manuel tetikten de çağrılır. */
+  /**
+   * Açık operasyonel görevleri işler. Kapsam (KI-019 / F02-D):
+   *  - `scope` yok → GLOBAL: tüm ACTIVE kiracılar (yalnız cron giriş noktası `scheduledRun` böyle çağırır).
+   *  - `scope.tenantId` → yalnız o kiracı (manuel tetik). ACTIVE kiracı yüklemi her iki kapsamda korunur;
+   *    HTTP isteği global kapsamı SEÇEMEZ (bkz. EscalationController).
+   */
   async processEscalations(
-    now: Date = new Date()
+    now: Date = new Date(),
+    scope?: { readonly tenantId: string },
   ): Promise<{ processed: number; notified: number; skipped: number; failed: number }> {
     let processed = 0;
     let notified = 0;
@@ -82,8 +88,10 @@ export class OperationalEscalationService {
 
     // C15-S1-MODIFIED PR-2: eleme QUERY-LEVEL. Yüklem enumeration sorgusunun KENDİSİNDE;
     // "önce hepsini çek sonra ele" YAPILMAZ (aradaki pencerede ACTIVE olmayan tenant seçilirdi).
+    // KI-019: manuel kapsamda yalnız `id` daraltması eklenir; ACTIVE_TENANT_WHERE call-site'ta LİTERAL kalır
+    // (C15 PR-4A statik AST kapısı tanımlayıcıyı sorgu çağrısının alt ağacında arar).
     const tenants = await this.prisma.tenant.findMany({
-      where: ACTIVE_TENANT_WHERE,
+      where: scope ? { ...ACTIVE_TENANT_WHERE, id: scope.tenantId } : ACTIVE_TENANT_WHERE,
       include: { office: true },
     });
 

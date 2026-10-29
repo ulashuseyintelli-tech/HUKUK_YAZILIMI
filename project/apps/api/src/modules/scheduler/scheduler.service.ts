@@ -777,9 +777,11 @@ export class SchedulerService {
   }
 
   /**
-   * Scheduler durumunu getir
+   * Scheduler durumunu getir — KI-049 / F02-D: her sayım `scope.tenantId` ile sınırlıdır (kiracılar-arası
+   * toplam yok). `UyapRequestLog.tenantId` null olan eski satırlar hiçbir kiracıya atfedilemez → sayılmaz.
    */
-  async getStatus() {
+  async getStatus(scope: { readonly tenantId: string }) {
+    const tenantId = scope.tenantId;
     const [
       pendingPaymentOrders,
       activeMtsCases,
@@ -791,18 +793,20 @@ export class SchedulerService {
     ] = await Promise.all([
       this.db.case.count({
         where: {
+          tenantId,
           workflowStage: 'WAITING_RESPONSE',
           nextActionAt: { lte: new Date() },
         },
       }),
       this.db.case.count({
-        where: { isMtsCase: true, caseStatus: { in: ['DERDEST', 'ISLEMDE'] } },
+        where: { tenantId, isMtsCase: true, caseStatus: { in: ['DERDEST', 'ISLEMDE'] } },
       }),
       this.db.uyapRequestLog.count({
-        where: { status: 'FAILED', retryCount: { lt: 3 } },
+        where: { tenantId, status: 'FAILED', retryCount: { lt: 3 } },
       }),
       this.db.task.count({
         where: {
+          tenantId,
           status: 'PENDING',
           dueDate: { lte: new Date(Date.now() + 24 * 60 * 60 * 1000) },
         },
@@ -810,6 +814,7 @@ export class SchedulerService {
       // 89 ihbarname süresi dolanlar
       this.db.thirdParty.count({
         where: {
+          tenantId,
           OR: [
             { ihbarname89_1_date: { lte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }, ihbarname89_2_date: null, responseDate: null },
             { ihbarname89_2_date: { lte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }, ihbarname89_3_date: null, responseDate: null },
@@ -819,6 +824,7 @@ export class SchedulerService {
       // Bekleyen dış dosyalar
       this.db.externalCase.count({
         where: {
+          tenantId,
           attachmentStatus: { in: ['HACIZ_KONDU', 'CEVAP_BEKLENIYOR'] },
           attachedAt: { lte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
         },
@@ -826,6 +832,7 @@ export class SchedulerService {
       // Gönderilmiş tebligatlar
       this.db.tebligat.count({
         where: {
+          tenantId,
           status: 'GONDERILDI',
           barcodeNo: { not: null },
         },
