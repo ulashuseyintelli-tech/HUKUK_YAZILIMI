@@ -1,9 +1,12 @@
 import { Body, Controller, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { NotificationHistoryPermissionService } from './notification-history-permission.service';
 
+// F02-D / J-27 (29.10.2026): VIEWER izin kaydı yazamaz — servis zaten tx içinde GÜNCEL DB rolünü (ADMIN) arar; rota katmanı
+// tek tip 403 `VIEWER_WRITE_DENIED` verir ve servise HİÇ inmez (B4/B6 `ViewerWriteDenyGuard`, JwtAuthGuard'dan SONRA).
 @Controller('client-notifications/history-audit-permissions')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class NotificationHistoryPermissionController {
   constructor(private readonly permissions: NotificationHistoryPermissionService) {}
 

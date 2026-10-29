@@ -3,6 +3,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { IsBoolean, IsInt, IsObject, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
 import { Request } from 'express';
 import { AdminGuard } from '@/modules/auth/guards/admin.guard';
+import { ViewerWriteDenyGuard } from '@/modules/auth/guards/viewer-write-deny.guard';
 import { NotificationDispatcherService } from './notification-dispatcher.service';
 import { CLIENT_WORKSPACE_COMMAND } from '../client/client-workspace-command-authority';
 import { ClientNotificationAuthorityAdapter } from './client-notification-authority.adapter';
@@ -55,7 +56,11 @@ export class NotificationDispatchController {
     return this.dispatcher.drainQueuedNotifications(req.user.tenantId, req.user.id, dto.limit ?? 10);
   }
 
+  // F02-D / J-27 (29.10.2026): VIEWER yeniden gönderim tetikleyemez — METOT düzeyi `ViewerWriteDenyGuard` (process-queued
+  // zaten AdminGuard). Sınıf düzeyi guard sayısı karakterizasyon sözleşmesinde sabittir (tek JWT guard) — o sözleşme DEĞİŞMEZ.
+  // Servis katmanı zaten VIEWER_DENIED idi; rota katmanı tek tip 403 verir, adaptör HİÇ çağrılmaz.
   @Post('resend')
+  @UseGuards(ViewerWriteDenyGuard)
   async resend(@Req() req: AuthRequest, @Body() dto: ResendNotificationDto) {
     return this.authority.run(
       {

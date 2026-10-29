@@ -15,6 +15,7 @@ import type { Response } from "express";
 import { ClientNotificationHistoryAccessService } from "./client-notification-history-access.service";
 import { ClientNotificationService } from "./client-notification.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import {
   CreateClientNotificationTemplateDto,
@@ -54,8 +55,16 @@ export class ClientNotificationController {
     return { success: true, data };
   }
 
+  // F02-D / J-27 (owner F02 devam talimatı 29.10.2026): VIEWER gönderim / bağlantı testi / gerçek test gönderimi / toplu
+  // e-posta uçlarını çağıramaz (OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`). Kapı METOT düzeyindedir: şablon YAZMA
+  // uçları ölçülmüş kodlu F01 kapısını (`OFFICE_WRITE_DENIED_VIEWER`) zaten taşır; sınıf düzeyi ikinci kapı o ölçülen kodu
+  // değiştirirdi. Ölçülen boşluk: test-smtp / test-sms rol SORMUYORDU (VIEWER kayıtlı kimlik bilgisiyle dış sağlayıcıya
+  // bağlanabiliyordu); gönderim uçları servis katmanında zaten VIEWER_DENIED idi — rota katmanı tek tip 403 verir,
+  // adaptör / servis HİÇ çağrılmaz (dış gönderim 0). Okuma uçları DEĞİŞMEZ.
+
   // E-posta gönder
   @Post("send-email")
+  @UseGuards(ViewerWriteDenyGuard)
   sendEmail(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") userId: string,
@@ -73,6 +82,7 @@ export class ClientNotificationController {
 
   // SMS gönder
   @Post("send-sms")
+  @UseGuards(ViewerWriteDenyGuard)
   sendSms(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") userId: string,
@@ -165,12 +175,14 @@ export class ClientNotificationController {
 
   // SMTP bağlantı testi
   @Post("test-smtp")
+  @UseGuards(ViewerWriteDenyGuard)
   testSmtpConnection(@CurrentUser("tenantId") tenantId: string) {
     return this.service.testSmtpConnection(tenantId);
   }
 
   // SMS bağlantı testi
   @Post("test-sms")
+  @UseGuards(ViewerWriteDenyGuard)
   testSmsConnection(@CurrentUser("tenantId") tenantId: string) {
     return this.service.testSmsConnection(tenantId);
   }
@@ -179,6 +191,7 @@ export class ClientNotificationController {
   // ADMIN gate + confirm zorunlu (yanlışlıkla gerçek gönderimi engeller). Mevcut send yolu kullanılır;
   // sonuç ClientNotification'a loglanır ve "Son Gönderimler"de Test etiketiyle görünür.
   @Post("test-send")
+  @UseGuards(ViewerWriteDenyGuard)
   async testSend(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") userId: string,
@@ -210,6 +223,7 @@ export class ClientNotificationController {
 
   // Toplu e-posta gönder
   @Post("bulk-email")
+  @UseGuards(ViewerWriteDenyGuard)
   sendBulkEmail(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") userId: string,

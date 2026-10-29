@@ -16,13 +16,20 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { PoaService, CreatePoaDto, UpdatePoaDto, validatePoaUploadFile } from "./poa.service";
 import type { ClientWorkspaceCommandActor } from "../client/client-workspace-command-authority";
 import * as fs from "fs";
 import * as path from "path";
 
+// F02-D / J-27 (owner F02 devam talimatı 29.10.2026): VIEWER bu denetleyicide yazma / yürütme fiili çağıramaz — kapalı
+// kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard` (JwtAuthGuard'dan SONRA). Ölçülen boşluk: iptal (DELETE /poa/:id)
+// rol SORMUYORDU — yalnız kart uygunluğu (`isApproverEligible`: PARTNER / canApproveOfficeActions); bağlı avukatı PARTNER
+// olan VIEWER iptal edebiliyordu. Öteki yazma yolları servis katmanında `runAuthorizedClientWorkspaceCommand` ile zaten
+// VIEWER_DENIED idi; rota katmanı tek tip 403 `VIEWER_WRITE_DENIED` verir ve servise HİÇ inmez. Okuma fiilleri ve saf
+// kontrol POST'u (check/valid-for-lawyers) DEĞİŞMEZ. Yeni rol / izin / politika YOKTUR.
 @Controller("poa")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class PoaController {
   constructor(private readonly poaService: PoaService) {}
 
@@ -53,6 +60,7 @@ export class PoaController {
    * Body: { clientId: string, lawyerIds: string[] }
    */
   @Post("check/valid-for-lawyers")
+  @AllowViewerReadOnlyPost() // okuma: yalnız findFirst sorgusu, yazma YAPMAZ (poa.service.ts checkValidPoaForLawyers — kaynaktan doğrulandı)
   async checkValidPoaForLawyers(
     @Body() body: { clientId: string; lawyerIds: string[] },
     @Request() req: any

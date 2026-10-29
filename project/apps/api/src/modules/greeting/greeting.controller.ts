@@ -1,11 +1,15 @@
 import { Controller, Get, Post, Put, Body, Param, UseGuards } from "@nestjs/common";
 import { GreetingService } from "./greeting.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { UpsertSpecialDayDto } from "./dto/upsert-special-day.dto";
 
+// F02-D / J-27 (owner F02 devam talimatı 29.10.2026): VIEWER özel gün yazamaz, varsayılan oluşturamaz, tebrik GÖNDEREMEZ
+// (dış e-posta / SMS). Ölçülen boşluk: bu denetleyici yalnız JWT taşıyordu; servis katmanında rol kontrolü YOK. Kapalı kural
+// OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard` (JwtAuthGuard'dan SONRA). Okuma uçları DEĞİŞMEZ; yeni rol / izin YOKTUR.
 @Controller("greetings")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class GreetingController {
   constructor(private service: GreetingService) {}
 
