@@ -1,9 +1,11 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, Request } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CaseLeaseService, CreateLeaseDto, UpdateLeaseDto } from './case-lease.service';
 
 @Controller('case-leases')
-@UseGuards(JwtAuthGuard)
+// F02-D / J-27: VIEWER yazma reddi (kapalı kural; B4/B6 yüklemi). Okuma değişmez.
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class CaseLeaseController {
   constructor(private readonly service: CaseLeaseService) {}
 

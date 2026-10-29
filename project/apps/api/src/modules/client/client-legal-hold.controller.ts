@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { IsIn, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { buildClientMutationActor } from './client.service';
 import { ClientLegalHoldService } from './client-legal-hold.service';
 import type { ClientLifecycleAssessment } from './client-data-lifecycle-gate';
@@ -74,7 +75,8 @@ class EvaluateDeletionDto {
 }
 
 @Controller('clients')
-@UseGuards(JwtAuthGuard)
+// F02-D / J-27: VIEWER yazma reddi — bağlı avukatı PARTNER olsa bile (servis eşiği "ADMIN veya isApproverEligible" rolü okumaz).
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class ClientLegalHoldController {
   constructor(private readonly holds: ClientLegalHoldService) {}
 

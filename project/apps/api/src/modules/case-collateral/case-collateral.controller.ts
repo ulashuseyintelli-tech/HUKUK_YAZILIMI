@@ -1,9 +1,11 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, Request } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CaseCollateralService, CreateCollateralDto, UpdateCollateralDto } from './case-collateral.service';
 
 @Controller('case-collaterals')
-@UseGuards(JwtAuthGuard)
+// F02-D / J-27: VIEWER yazma reddi (kapalı kural; B4/B6 yüklemi). Okuma değişmez.
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class CaseCollateralController {
   constructor(private readonly service: CaseCollateralService) {}
 

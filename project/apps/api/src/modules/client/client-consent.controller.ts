@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, Request, UseGuards, ValidationPipe } from '@nestjs/common';
 import { IsOptional, IsString, MaxLength } from 'class-validator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { buildClientMutationActor } from './client.service';
 import { ClientConsentService } from './client-consent.service';
 
@@ -25,7 +26,8 @@ class ClientConsentMutationDto {
 }
 
 @Controller('clients')
-@UseGuards(JwtAuthGuard)
+// F02-D / J-27: VIEWER yazma reddi rota katmanında da (servis D02 semantiği korunur; B4/B6 yüklemi).
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class ClientConsentController {
   constructor(private readonly consent: ClientConsentService) {}
 

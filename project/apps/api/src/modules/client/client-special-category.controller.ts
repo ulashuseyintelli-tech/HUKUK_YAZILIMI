@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { IsIn, IsString, MaxLength } from 'class-validator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { buildClientMutationActor } from './client.service';
 import {
   CLIENT_SPECIAL_DATA_CATEGORIES,
@@ -41,7 +42,8 @@ class CreateSpecialRecordDto {
 }
 
 @Controller('clients')
-@UseGuards(JwtAuthGuard)
+// F02-D / J-27: VIEWER yazma reddi — bağlı avukatı PARTNER olsa bile (servis eşiği "ADMIN veya isApproverEligible" rolü okumaz).
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class ClientSpecialCategoryController {
   constructor(private readonly special: ClientSpecialCategoryService) {}
 

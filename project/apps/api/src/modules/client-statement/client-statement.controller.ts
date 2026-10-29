@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Param, Query, UseGuards, Req, ForbiddenExc
 import { AuthGuard } from '@nestjs/passport';
 import { Request } from 'express';
 import { ClientStatementStatus } from '@prisma/client';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { ClientStatementService } from './client-statement.service';
 import { ClientStatementMonthlyDeliveryService } from './client-statement-monthly-delivery.service';
 import { OfficeApprovalService } from '../office-approval/office-approval.service';
@@ -30,7 +31,8 @@ interface AuthRequest extends Request {
  * (global, aylık) değişmez; bu yalnız hedef-scoped manuel bir giriştir.
  */
 @Controller('client-statements')
-@UseGuards(AuthGuard('jwt'))
+// F02-D / J-27: VIEWER yazma reddi (create/supersede/void; kapalı kural OWN-13 §51 / AK-1a; B4/B6 yüklemi). Okuma değişmez.
+@UseGuards(AuthGuard('jwt'), ViewerWriteDenyGuard)
 export class ClientStatementController {
   constructor(
     private readonly service: ClientStatementService,

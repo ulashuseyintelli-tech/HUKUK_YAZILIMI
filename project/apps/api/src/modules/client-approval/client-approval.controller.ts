@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Param, Query, UseGuards, Req } from '@nest
 import { AuthGuard } from '@nestjs/passport';
 import { Request } from 'express';
 import { ClientApprovalStatus } from '@prisma/client';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { ClientApprovalService } from './client-approval.service';
 import {
   CreateClientApprovalRequestDto,
@@ -19,7 +20,8 @@ interface AuthRequest extends Request {
  * İçerik PATCH/PUT/DELETE YOK (immutability). tenantId/userId daima CurrentUser'dan.
  */
 @Controller('client-approvals')
-@UseGuards(AuthGuard('jwt'))
+// F02-D / J-27: VIEWER yazma reddi (kapalı kural OWN-13 §51 / AK-1a; B4/B6 yüklemi). Okuma rotaları değişmez.
+@UseGuards(AuthGuard('jwt'), ViewerWriteDenyGuard)
 export class ClientApprovalController {
   constructor(private readonly service: ClientApprovalService) {}
 
