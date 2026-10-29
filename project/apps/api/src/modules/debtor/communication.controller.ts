@@ -10,10 +10,14 @@ import {
 import { DebtorCommunicationService } from "./communication.service";
 import { SendSmsDto, SendEmailDto, LogPhoneCallDto } from "./dto/communication.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 
+// F02-D-2 dilim 1 (owner devam talimatı 30.10.2026): VIEWER borçluya SMS / e-posta GÖNDEREMEZ, çağrı kaydı yazamaz. Ölçülen
+// boşluk: yalnız JWT; servis (DebtorCommunicationService) rol sormuyor — debtorCommunication.create + gönderim. Kapalı kural
+// OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`. Okuma uçları (geçmiş, şablonlar) DEĞİŞMEZ.
 @Controller()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class CommunicationController {
   constructor(private communicationService: DebtorCommunicationService) {}
 

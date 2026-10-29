@@ -7,6 +7,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { PaymentInstructionService } from './payment-instruction.service';
 import {
@@ -19,8 +20,11 @@ import {
   TargetAccountType,
 } from './payment-instruction.types';
 
+// F02-D-2 dilim 1 (owner devam talimatı 30.10.2026): VIEWER ödeme talimatı oluşturamaz (mali yazma). Ölçülen boşluk: yalnız
+// JWT; servis (PaymentInstructionService) rol sormuyor. Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`.
+// Okuma uçları (purposes*) DEĞİŞMEZ.
 @Controller('payment-instructions')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class PaymentInstructionController {
   constructor(private readonly paymentInstructionService: PaymentInstructionService) {}
 

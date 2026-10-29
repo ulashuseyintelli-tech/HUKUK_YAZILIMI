@@ -1,6 +1,7 @@
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CpeRequired } from '../policy-engine/decorators/cpe-required.decorator';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
 import {
@@ -9,8 +10,11 @@ import {
 } from './accounting-journal-manual-adjustment.service';
 import { CreateManualAdjustmentJournalEntryDto } from './dto/create-manual-adjustment-journal-entry.dto';
 
+// F02-D-2 dilim 1 (owner devam talimatı 30.10.2026): rol kapısı RÜTBEDEN ÖNCE gelir (AK-1a). Servis kapısı (assertOfficeAdmin:
+// PARTNER / MANAGER kapasitesi) yalnız kartı sorar — bağlı avukatı PARTNER olan VIEWER manuel düzeltme yazabiliyordu (ölçüldü).
+// `ViewerWriteDenyGuard` JwtAuthGuard'dan SONRA; servis kapısı AYNEN korunur (daha dar). Yeni rol / izin YOK.
 @Controller('accounting-journal')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class AccountingJournalManualAdjustmentController {
   constructor(private readonly manualAdjustmentService: AccountingJournalManualAdjustmentService) {}
 

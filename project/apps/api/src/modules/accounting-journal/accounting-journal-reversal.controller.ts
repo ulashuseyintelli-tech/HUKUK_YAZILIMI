@@ -1,13 +1,17 @@
 import { Body, Controller, Param, Post, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CpeRequired } from '../policy-engine/decorators/cpe-required.decorator';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { AccountingJournalReversalService, AccountingJournalReversalResult } from './accounting-journal-reversal.service';
 import { ReverseAccountingJournalEntryDto } from './dto/reverse-accounting-journal-entry.dto';
 
+// F02-D-2 dilim 1 (owner devam talimatı 30.10.2026): rol kapısı RÜTBEDEN ÖNCE gelir (AK-1a). Servis kapısı (assertOfficeAdmin)
+// yalnız kartı sorar — bağlı avukatı PARTNER olan VIEWER ters kayıt yazabiliyordu (ölçüldü). `ViewerWriteDenyGuard`
+// JwtAuthGuard'dan SONRA; servis kapısı AYNEN korunur. Yeni rol / izin YOK.
 @Controller('accounting-journal')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class AccountingJournalReversalController {
   constructor(private readonly reversalService: AccountingJournalReversalService) {}
 
