@@ -35,12 +35,12 @@ export class ExpenseRequestController {
     @Query('clientId') clientId?: string,
     @Query('status') status?: ExpenseRequestStatus,
   ) {
-    return this.service.findAll(req.user.tenantId, { caseId, clientId, status });
+    return this.service.findAll(req.user.tenantId, { caseId, clientId, status }, req.user.id);
   }
 
   @Get('stats')
   async getStats(@Req() req: AuthRequest, @Query('caseId') caseId?: string) {
-    return this.service.getStats(req.user.tenantId, caseId);
+    return this.service.getStats(req.user.tenantId, caseId, req.user.id);
   }
 
   /**

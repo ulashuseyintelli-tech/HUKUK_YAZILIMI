@@ -1,9 +1,11 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException, Inject, forwardRef, Logger, Optional } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, ForbiddenException, Inject, forwardRef, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { ExpenseRequestStatus, ExpenseGateType, Prisma, BalanceLedgerType } from '@prisma/client';
 import { CaseBalanceService } from '@/modules/case-balance/case-balance.service';
 import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
 import { OfficeService } from '@/modules/office/office.service';
+import { WorkScopePermissionService } from '@/modules/work-scope-permission/work-scope-permission.service';
+import { EXPENSE_VIEW_ALL_KEY, expenseViewWhereFor, isExpenseViewScopeEnabled } from './expense-view-scope';
 import { ExpenseCalculatorService, CaseData, EXPENSE_SET_TEMPLATES } from './expense-calculator.service';
 import { ExpenseNotificationService } from './expense-notification.service';
 import { ExpensePaymentReversalContractService, ExpensePaymentReversalRequestKind } from './expense-payment-reversal-contract.service';
@@ -136,13 +138,18 @@ export class ExpenseRequestService {
     private readonly journalWriter: AccountingJournalWriterService = new AccountingJournalWriterService(prisma),
     @Optional()
     private readonly paymentReversalContract: ExpensePaymentReversalContractService = new ExpensePaymentReversalContractService(),
+    // F02-B dilim 2: masraf liste/istatistik görünüm kapsamı (bayrak açıkken zorunlu; bkz. viewScopeWhere)
+    @Optional()
+    private readonly workScope?: WorkScopePermissionService,
   ) {}
 
-  async findAll(tenantId: string, params?: { caseId?: string; clientId?: string; status?: ExpenseRequestStatus }) {
+  async findAll(tenantId: string, params?: { caseId?: string; clientId?: string; status?: ExpenseRequestStatus }, actorUserId?: string) {
     const where: any = { tenantId };
     if (params?.caseId) where.caseId = params.caseId;
     if (params?.clientId) where.clientId = params.clientId;
     if (params?.status) where.status = params.status;
+    const scope = await this.viewScopeWhere(tenantId, actorUserId);
+    if (scope) where.AND = [scope];
 
     return this.prisma.expenseRequest.findMany({
       where,
@@ -152,6 +159,23 @@ export class ExpenseRequestService {
       },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  /**
+   * F02-B dilim 2 (owner 29–30.10.2026, G3) — liste/istatistik görünüm kapsamı.
+   * Bayrak (OFFICE_EXPENSE_VIEW_SCOPE_ENABLED) KAPALI → null = bugünkü davranış (büro geneli).
+   * AÇIK → `office.expenses.view_all` çözümü: ALLOW (DENY yoksa) → büro geneli; DENY / NONE → varsayılan kapsam
+   * (dosya bağı ∪ oluşturan ∪ onaylayan; expenseViewScopeWhere). Aktör kimliği ya da izin servisi yoksa FAIL-CLOSED.
+   *
+   * @remarks Çağrıldığı yerler: findAll() → GET /expense-requests; getStats() → GET /expense-requests/stats.
+   */
+  private async viewScopeWhere(tenantId: string, actorUserId?: string): Promise<Prisma.ExpenseRequestWhereInput | null> {
+    if (!isExpenseViewScopeEnabled()) return null;
+    if (!actorUserId || !this.workScope) {
+      throw new ForbiddenException({ code: 'EXPENSE_VIEW_SCOPE_UNRESOLVED', message: 'Masraf görünüm kapsamı çözümlenemedi' });
+    }
+    const resolution = await this.workScope.resolve(this.prisma, tenantId, actorUserId, EXPENSE_VIEW_ALL_KEY);
+    return expenseViewWhereFor(resolution, tenantId, actorUserId);
   }
 
   async findOne(tenantId: string, id: string) {
@@ -578,9 +602,11 @@ export class ExpenseRequestService {
   }
 
   // İstatistikler
-  async getStats(tenantId: string, caseId?: string) {
+  async getStats(tenantId: string, caseId?: string, actorUserId?: string) {
     const where: any = { tenantId };
     if (caseId) where.caseId = caseId;
+    const scope = await this.viewScopeWhere(tenantId, actorUserId);
+    if (scope) where.AND = [scope];
 
     const [pending, sent, received, total] = await Promise.all([
       this.prisma.expenseRequest.count({ where: { ...where, status: 'PENDING' } }),
