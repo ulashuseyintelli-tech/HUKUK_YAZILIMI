@@ -9,12 +9,14 @@
  *
  * Bugünkü mekanizma (kod): kişi kimliği = bağlı Lawyer/StaffMember kartındaki GEÇERLİ TCKN
  * (OfficeApprovalService.resolveSelfApprovalIdentityCandidates). Kartsız hesabın aday kümesi BOŞTUR.
- * Kayıt yolu (AuthService.register) ilk ADMIN'i KARTSIZ yaratır. FD'nin üç ayrılık kontrolü yalnız userId okur.
+ * Kayıt yolu (AuthService.register) K-A1 a′ (#3046) ÖNCESİ ilk ADMIN'i KARTSIZ yaratırdı; SONRASI personType'a göre
+ * Lawyer/StaffMember kartı aynı transaction'da açılır (R1–R4). FD'nin üç ayrılık kontrolü yalnız userId okurdu.
  *
  * Bu dosya DOĞRULAMA kanıtıdır: her vaka KURALIN beklediğini ister. İlk koşum (değişmemiş kod, main 48cd614f):
  * A1/A2/F1/F2 KIRMIZI → bulgu DOĞRULANDI. Dar düzeltme (common/approval-identity; FD üç kontrolü kişi düzeyine
- * çıkarıldı) F2/F5/F6'yı kapatır. `it.failing` ile işaretli A1/A2/F1 BİLİNEN AÇIKTIR: kartsız hesabın kimlik
- * kanıtı yoktur; kapanışı ürün tercihi ister (F02 karar listesi K-A1). Düzeltme gelince bu testler
+ * çıkarıldı) F2/F5/F6'yı kapatır. `it.failing` ile işaretli A1/A2/F1 BİLİNEN AÇIKTIR: GEÇİŞ ÖNCESİ kartsız hesabın kimlik
+ * kanıtı yoktur; owner kararı K-A1 a′+sınır (29–30.10): yeni hesaplar için kayıt yolu kapandı (#3046, R1–R4); mevcut kartsız
+ * hesaplar için sınır dilimi (APPROVAL_IDENTITY_UNPROVEN) ayrı PR. Düzeltme gelince bu testler
  * "beklenmedik geçti" ile KIRMIZI olur ve güncellenmeleri zorunlu olur. Gerçek olanlar: AuthService.register, JwtStrategy/JwtAuthGuard, OfficeApprovalController/Service
  * (genel motor), ClientFinancialDisclosureApprovalService + Writer, PostgreSQL. Stub: OfficeApprovalDomainSync
  * (verilmedi → karar sonrası domain senkronu YOK; kimlik kapısı karardan ÖNCE çalışır). Dış sisteme çağrı yok;
@@ -69,6 +71,8 @@ const COLLECTION_TARGET = 'COLLECTION';
 /** Sentetik TCKN'ler — gerçek kişi değil. P1 kanonik sentetik (identity-validation.util.spec), P2 türetilmiş. */
 const TCKN_P1 = '10000000146';
 const TCKN_P2 = '20000000046';
+/** Kişi P3 — kayıt yolundan (K-A1 a′) doğan kurucu; sentetik, P1/P2 ile kesişmez. */
+const TCKN_P3 = '30000000014';
 
 describeWithDatabase('F02-A: öz-onay kimlik düzeyi — aynı kişinin iki hesabı (gerçek HTTP + JWT + PostgreSQL)', () => {
   jest.setTimeout(180_000);
@@ -85,7 +89,9 @@ describeWithDatabase('F02-A: öz-onay kimlik düzeyi — aynı kişinin iki hesa
   interface Acct { id: string; email: string }
   interface Fixture {
     tenantId: string;
-    /** Kişi P1 — GERÇEK kayıt yolundan doğan KARTSIZ ADMIN. */
+    /** Kişi P3 — GERÇEK kayıt yolundan (K-A1 a′) doğan AVUKAT KARTLI kurucu ADMIN. */
+    F: Acct;
+    /** Kişi P1 — KARTSIZ ADMIN (K-A1 geçiş öncesi popülasyon; doğrudan DB). */
     X: Acct;
     /** Kişi P1 — avukat kartlı (PARTNER, TCKN_P1) ikinci hesap. */
     Y: Acct;
@@ -100,6 +106,8 @@ describeWithDatabase('F02-A: öz-onay kimlik düzeyi — aynı kişinin iki hesa
   beforeAll(async () => {
     expect(isValidTckn(TCKN_P1)).toBe(true);
     expect(isValidTckn(TCKN_P2)).toBe(true);
+    expect(isValidTckn(TCKN_P3)).toBe(true);
+    expect(new Set([TCKN_P1, TCKN_P2, TCKN_P3]).size).toBe(3);
     expect(TCKN_P1).not.toBe(TCKN_P2);
 
     prisma = new PrismaClient({ datasources: { db: { url: TEST_DATABASE_URL as string } } });
@@ -151,6 +159,7 @@ describeWithDatabase('F02-A: öz-onay kimlik düzeyi — aynı kişinin iki hesa
       await sql('DELETE FROM "Case" WHERE "tenantId" = $1', tenantId);
       await sql('DELETE FROM "Client" WHERE "tenantId" = $1', tenantId);
       await sql('DELETE FROM "Lawyer" WHERE "tenantId" = $1', tenantId);
+    await sql('DELETE FROM "StaffMember" WHERE "tenantId" = $1', tenantId);
       await sql('DELETE FROM "User" WHERE "tenantId" = $1', tenantId);
       await sql('DELETE FROM "Tenant" WHERE "id" = $1', tenantId);
     }
@@ -160,17 +169,20 @@ describeWithDatabase('F02-A: öz-onay kimlik düzeyi — aynı kişinin iki hesa
   // ── Fixture ────────────────────────────────────────────────────────────────────────────────────
   async function seed(): Promise<Fixture> {
     const sfx = randomUUID().slice(0, 8);
-    // X: GERÇEK kayıt yolu (AuthService.register) → yeni kiracı + ilk ADMIN.
+    // Kiracı: GERÇEK kayıt yolu (AuthService.register). K-A1 a′ (#3046) sonrası ilk ADMIN (kurucu F, kişi P3) KARTLI doğar (R1).
     const reg = await auth.register({
-      firmName: `F02A Buro ${sfx}`,
-      name: 'Ayse',
-      surname: 'Kaya',
-      email: `x-${sfx}@example.test`,
-      password: 'F02a-Sifre-12345678',
+      firmName: `F02A Buro ${sfx}`, name: 'Kurucu', surname: 'Kaya', email: `kurucu-${sfx}@example.test`,
+      password: 'F02a-Sifre-12345678', personType: 'LAWYER', tckn: TCKN_P3,
     });
     const tenantId = reg.tenant.id as string;
     createdTenants.push(tenantId);
-    const X: Acct = { id: reg.user.id as string, email: reg.user.email as string };
+    const F: Acct = { id: reg.user.id as string, email: reg.user.email as string };
+    // X: KARTSIZ ADMIN (kişi P1) — kayıt yolu artık kartsız hesap üretmediği için doğrudan DB'de yaratılır; K-A1 GEÇİŞ ÖNCESİ
+    // mevcut hesap popülasyonunu temsil eder (sayım/eşleme ayrı canlı paket; sınır dilimi ayrı PR). A1/A2/F1 bu popülasyon içindir.
+    const X: Acct = await prisma.user.create({
+      data: { tenantId, email: `x-${sfx}@example.test`, name: 'Ayse', surname: 'Kaya', role: 'ADMIN', passwordHash: 'x'.repeat(20) },
+      select: { id: true, email: true },
+    });
 
     const mk = async (name: string, role: UserRole = 'USER'): Promise<Acct> => prisma.user.create({
       data: { tenantId, email: `${name}-${sfx}@example.test`, name, surname: 'Kaya', role, passwordHash: 'x'.repeat(20) },
@@ -184,7 +196,7 @@ describeWithDatabase('F02-A: öz-onay kimlik düzeyi — aynı kişinin iki hesa
     const Y2 = await mk('y2-partner-p1'); await card(Y2.id, TCKN_P1);
     const Z = await mk('z-partner-p2'); await card(Z.id, TCKN_P2);
     const W = await mk('w-kartsiz-user');
-    return { tenantId, X, Y, Y2, Z, W };
+    return { tenantId, F, X, Y, Y2, Z, W };
   }
 
   function bearer(user: Acct, tenantId: string, role: string): string {
@@ -225,28 +237,77 @@ describeWithDatabase('F02-A: öz-onay kimlik düzeyi — aynı kişinin iki hesa
     expect(await approvedAuditCount(tenantId, requestId)).toBe(0);
   }
 
-  // ── R: Kayıt yolu ──────────────────────────────────────────────────────────────────────────────
-  it('R1: kayıt yolu (AuthService.register) ilk ADMIN hesabını KARTSIZ yaratır (Lawyer YOK, StaffMember YOK)', async () => {
+  // ── R: Kayıt yolu (K-A1 a′, #3046) ─────────────────────────────────────────────────────────────
+  it('R1 (K-A1): kayıt yolu (AuthService.register, personType=LAWYER) ilk ADMIN hesabını AVUKAT KARTLI yaratır — Lawyer.userId = hesap, TCKN kayıtlı, StaffMember YOK', async () => {
     const f = await seed();
-    const x = await prisma.user.findUniqueOrThrow({
-      where: { id: f.X.id },
-      select: { role: true, tenantId: true, lawyer: { select: { id: true } }, staffMember: { select: { id: true } } },
+    const founder = await prisma.user.findUniqueOrThrow({
+      where: { id: f.F.id },
+      select: { role: true, tenantId: true, lawyer: { select: { tenantId: true, tckn: true } }, staffMember: { select: { id: true } } },
     });
-    expect(x.role).toBe('ADMIN');
-    expect(x.tenantId).toBe(f.tenantId);
-    expect(x.lawyer).toBeNull();
-    expect(x.staffMember).toBeNull();
+    expect(founder.role).toBe('ADMIN');
+    expect(founder.tenantId).toBe(f.tenantId);
+    expect(founder.lawyer).toEqual({ tenantId: f.tenantId, tckn: TCKN_P3 });
+    expect(founder.staffMember).toBeNull();
+  });
+
+  it('R2 (K-A1): kayıt yolu personType=STAFF → StaffMember kartı (TCKN + staffType), Lawyer YOK — avukat olmayana avukat kartı dayatılmaz', async () => {
+    const sfx = randomUUID().slice(0, 8);
+    const reg = await auth.register({
+      firmName: `F02A Sekreter ${sfx}`, name: 'Sekreter', surname: 'Kaya', email: `sek-${sfx}@example.test`,
+      password: 'F02a-Sifre-12345678', personType: 'STAFF', staffType: 'SEKRETER', tckn: TCKN_P3,
+    });
+    const tenantId = reg.tenant.id as string;
+    createdTenants.push(tenantId);
+    const u = await prisma.user.findUniqueOrThrow({
+      where: { id: reg.user.id as string },
+      select: { role: true, lawyer: { select: { id: true } }, staffMember: { select: { tenantId: true, tckn: true, staffType: true } } },
+    });
+    expect(u.role).toBe('ADMIN');
+    expect(u.lawyer).toBeNull();
+    expect(u.staffMember).toEqual({ tenantId, tckn: TCKN_P3, staffType: 'SEKRETER' });
+  });
+
+  it('R3 (K-A1 KAPANIŞ KANITI, yeni hesap): kayıt yolundan doğan avukat kartlı ADMIN (P3) talep eder, aynı kişinin ikinci avukat kartlı hesabı (P3) onaylar → 400 SELF_APPROVAL_FORBIDDEN; farklı kişi (P2) → 201', async () => {
+    const f = await seed();
+    const second = await prisma.user.create({
+      data: { tenantId: f.tenantId, email: `p3-ikinci-${randomUUID().slice(0, 8)}@example.test`, name: 'Kurucu', surname: 'Kaya', role: 'USER', passwordHash: 'x'.repeat(20) },
+      select: { id: true, email: true },
+    });
+    await prisma.lawyer.create({ data: { tenantId: f.tenantId, userId: second.id, name: 'Av', surname: 'Kaya', lawyerRank: 'PARTNER', tckn: TCKN_P3 } });
+    const req = await pendingRequest(f.tenantId, COLLECTION_VOID, COLLECTION_TARGET, f.F.id);
+    await expectSelfApprovalDenied(await approveHttp(req.id, second, f.tenantId), f.tenantId, req.id);
+    const res = await approveHttp(req.id, f.Z, f.tenantId);
+    expect(res.status).toBe(201);
+    expect((await requestRow(req.id)).status).toBe('APPROVED');
+  });
+
+  it('R4 (K-A1 KAPANIŞ KANITI, personel kartı): kayıt yolundan doğan personel kartlı ADMIN (P3) talep eder, aynı kişinin avukat kartlı hesabı (P3) onaylar → 400 SELF_APPROVAL_FORBIDDEN (personel TCKN de kimlik adayı)', async () => {
+    const sfx = randomUUID().slice(0, 8);
+    const reg = await auth.register({
+      firmName: `F02A Personel ${sfx}`, name: 'Personel', surname: 'Kaya', email: `per-${sfx}@example.test`,
+      password: 'F02a-Sifre-12345678', personType: 'STAFF', staffType: 'MUHASEBE', tckn: TCKN_P3,
+    });
+    const tenantId = reg.tenant.id as string;
+    createdTenants.push(tenantId);
+    const founder: Acct = { id: reg.user.id as string, email: reg.user.email as string };
+    const lawyerAcct = await prisma.user.create({
+      data: { tenantId, email: `p3-avukat-${sfx}@example.test`, name: 'Personel', surname: 'Kaya', role: 'USER', passwordHash: 'x'.repeat(20) },
+      select: { id: true, email: true },
+    });
+    await prisma.lawyer.create({ data: { tenantId, userId: lawyerAcct.id, name: 'Av', surname: 'Kaya', lawyerRank: 'PARTNER', tckn: TCKN_P3 } });
+    const req = await pendingRequest(tenantId, ActionCode.FINANCIAL_CASE_CLOSE, FINANCIAL_CASE_CLOSE_TARGET_TYPE, founder.id);
+    await expectSelfApprovalDenied(await approveHttp(req.id, lawyerAcct, tenantId), tenantId, req.id);
   });
 
   // ── A: Genel motor (COLLECTION_VOID / FINANCIAL_CASE_CLOSE) ─────────────────────────────────────
-  it.failing('A1 — BİLİNEN AÇIK (K-A1): COLLECTION_VOID — kartsız ADMIN (P1) talep eder, aynı kişinin avukat kartlı PARTNER hesabı (P1) onaylar → KURAL: 400 SELF_APPROVAL_FORBIDDEN (bugün: 201)', async () => {
+  it.failing('A1 — BİLİNEN AÇIK (K-A1 geçiş öncesi KARTSIZ hesap; sınır dilimi ayrı PR): COLLECTION_VOID — kartsız ADMIN (P1) talep eder, aynı kişinin avukat kartlı PARTNER hesabı (P1) onaylar → KURAL: 400 SELF_APPROVAL_FORBIDDEN (bugün: 201)', async () => {
     const f = await seed();
     const req = await pendingRequest(f.tenantId, COLLECTION_VOID, COLLECTION_TARGET, f.X.id);
     const res = await approveHttp(req.id, f.Y, f.tenantId);
     await expectSelfApprovalDenied(res, f.tenantId, req.id);
   });
 
-  it.failing('A2 — BİLİNEN AÇIK (K-A1): FINANCIAL_CASE_CLOSE — kartsız ADMIN (P1) talep eder, aynı kişinin PARTNER hesabı (P1) onaylar → KURAL: 400 SELF_APPROVAL_FORBIDDEN (bugün: 201)', async () => {
+  it.failing('A2 — BİLİNEN AÇIK (K-A1 geçiş öncesi KARTSIZ hesap; sınır dilimi ayrı PR): FINANCIAL_CASE_CLOSE — kartsız ADMIN (P1) talep eder, aynı kişinin PARTNER hesabı (P1) onaylar → KURAL: 400 SELF_APPROVAL_FORBIDDEN (bugün: 201)', async () => {
     const f = await seed();
     const req = await pendingRequest(f.tenantId, ActionCode.FINANCIAL_CASE_CLOSE, FINANCIAL_CASE_CLOSE_TARGET_TYPE, f.X.id);
     const res = await approveHttp(req.id, f.Y, f.tenantId);
@@ -321,7 +382,7 @@ describeWithDatabase('F02-A: öz-onay kimlik düzeyi — aynı kişinin iki hesa
   const fdStatus = async (versionId: string) =>
     (await prisma.clientFinancialDisclosureVersion.findUniqueOrThrow({ where: { id: versionId }, select: { status: true } })).status;
 
-  it.failing('F1 — BİLİNEN AÇIK (K-A1): FD ofis onayı — kartsız ADMIN (P1) talep eder, aynı kişinin PARTNER hesabı (P1) onaylar → KURAL: DISCLOSURE_APPROVAL_SELF_APPROVAL_FORBIDDEN (bugün: onaylanır)', async () => {
+  it.failing('F1 — BİLİNEN AÇIK (K-A1 geçiş öncesi KARTSIZ hesap; sınır dilimi ayrı PR): FD ofis onayı — kartsız ADMIN (P1) talep eder, aynı kişinin PARTNER hesabı (P1) onaylar → KURAL: DISCLOSURE_APPROVAL_SELF_APPROVAL_FORBIDDEN (bugün: onaylanır)', async () => {
     const f = await seed();
     const versionId = await fdDraft(f.tenantId);
     const r = await fdSvc.requestOfficeApproval({ tenantId: f.tenantId, disclosureVersionId: versionId, requesterUserId: f.X.id });

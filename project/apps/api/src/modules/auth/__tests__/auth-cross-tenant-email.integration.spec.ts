@@ -52,6 +52,8 @@ describeDb("AUTH-01 — aynı email, farklı tenant (integration)", () => {
       password: "password-A-123",
       name: "Kullanici",
       surname: "A",
+      personType: "LAWYER", // K-A1 a′: kişi kartı zorunlu (sentetik geçerli TCKN)
+      tckn: "10000000146",
     } as any);
     createdTenantIds.push(resA.tenant.id);
 
@@ -61,6 +63,9 @@ describeDb("AUTH-01 — aynı email, farklı tenant (integration)", () => {
       password: "password-B-123",
       name: "Kullanici",
       surname: "B",
+      personType: "STAFF", // K-A1 a′: avukat olmayan → personel kartı (avukat kartı AÇILMAZ)
+      staffType: "SEKRETER",
+      tckn: "20000000046",
     } as any);
     createdTenantIds.push(resB.tenant.id);
 

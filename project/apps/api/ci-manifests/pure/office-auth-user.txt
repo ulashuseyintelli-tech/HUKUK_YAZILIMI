@@ -236,6 +236,8 @@ src/modules/auth/__tests__/auth-me-credential-containment.spec.ts
 src/modules/auth/__tests__/auth-public-user-http.spec.ts
 # OK-02 (owner Ek 108): anonim kayit ucu varsayilan KAPALI — gercek HTTP, Prisma cagrisi sifir.
 src/modules/auth/__tests__/auth-register-closed-http.spec.ts
+# K-A1 a' (owner 2026-10-29/30): kayit yolu ilk hesabi kisi kartiyla (Lawyer / StaffMember + gecerli TCKN) yaratir — gercek HTTP.
+src/modules/auth/__tests__/k-a1-register-person-card.http.spec.ts
 src/modules/seed/__tests__/seed-staff-lawyer-canonical-service.spec.ts
 src/modules/staff/__tests__/staff-controller-guards.spec.ts
 src/modules/staff/__tests__/staff-http-error-propagation.spec.ts

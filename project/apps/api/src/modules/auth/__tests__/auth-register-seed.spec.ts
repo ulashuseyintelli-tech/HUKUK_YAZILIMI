@@ -18,6 +18,8 @@ const mockedSeed = seedLookupCatalog as jest.MockedFunction<typeof seedLookupCat
 function buildTx() {
   return {
     tenant: { create: jest.fn().mockResolvedValue({ id: 't1', name: 'Yeni Firma', slug: 'yeni-firma' }) },
+    lawyer: { create: jest.fn().mockResolvedValue({ id: 'l1' }) }, // K-A1 a′: kişi kartı aynı tx'te
+    staffMember: { create: jest.fn().mockResolvedValue({ id: 's1' }) },
     user: {
       create: jest.fn().mockResolvedValue({
         id: 'u1', tenantId: 't1', email: 'a@b.com', role: 'ADMIN', name: 'A', surname: 'B', passwordHash: 'x', isActive: true,
@@ -37,7 +39,7 @@ function buildService(tx: any) {
   return new AuthService(prisma, jwt);
 }
 
-const dto: any = { firmName: 'Yeni Firma', email: 'a@b.com', password: 'secret123', name: 'A', surname: 'B' };
+const dto: any = { firmName: 'Yeni Firma', email: 'a@b.com', password: 'secret123', name: 'A', surname: 'B', personType: 'LAWYER', tckn: '10000000146' };
 
 describe('PR-B AuthService.register tenant-create auto-seed', () => {
   beforeEach(() => jest.clearAllMocks());

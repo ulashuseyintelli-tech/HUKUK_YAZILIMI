@@ -40,6 +40,9 @@ import {
 import { OfficeController } from '../office.controller';
 import { OfficeService } from '../office.service';
 
+/** K-A1 (#3046): kayıt yolu kişi kartı ister — sentetik TCKN (gerçek kişi değil; identity-validation.util.spec kanonik). */
+const REGISTER_TCKN = '10000000146';
+
 const TEST_DATABASE_URL = resolveTestDatabaseUrl(process.env);
 if (process.env.CI && !TEST_DATABASE_URL) {
   throw new Error('OFFICE_E2E_DATABASE_REQUIRED: CI requires TEST_DATABASE_URL');
@@ -195,14 +198,14 @@ describeWithDisposableDatabase('OFFICE E2E A-J - controlled Nest HTTP and dispos
       name: 'Office',
       surname: 'Admin A',
       email: sharedEmail,
-      password: PASSWORD,
+      password: PASSWORD, personType: 'LAWYER', tckn: REGISTER_TCKN,
     });
     const registeredB = await authService.register({
       firmName: `Office E2E B ${suffix}`,
       name: 'Office',
       surname: 'Admin B',
       email: sharedEmail,
-      password: PASSWORD,
+      password: PASSWORD, personType: 'LAWYER', tckn: REGISTER_TCKN,
     });
     const officeA = await prisma.office.create({
       data: { tenantId: registeredA.tenant.id, name: 'Synthetic Office A' },
@@ -898,11 +901,16 @@ describeWithDisposableDatabase('OFFICE E2E A-J - controlled Nest HTTP and dispos
   });
 
   it('J - corrupt cross-tenant linkage rolls back deactivation and enforce request creation is idempotent', async () => {
+    // K-A1 (#3046): kayıt yolundan doğan adminB artık kendi Lawyer kartını taşır (Lawyer.userId @unique) → bozuk çapraz bağ için
+    // B kiracısında KARTSIZ ayrı bir hesap kullanılır; test niyeti (A kiracısı kartı → B kiracısı hesabı) değişmez.
+    const crossTenantUser = await prisma.user.create({
+      data: { tenantId: fixture.tenantBId, email: `corrupt-link-${randomUUID()}@example.test`, passwordHash: 'x'.repeat(20), name: 'Cross', surname: 'Tenant', role: 'USER' },
+    });
     const corrupt = await prisma.lawyer.create({
       data: {
         tenantId: fixture.tenantAId,
         officeId: fixture.officeAId,
-        userId: fixture.adminBId,
+        userId: crossTenantUser.id,
         name: 'Rollback',
         surname: 'Probe',
       },
@@ -912,7 +920,7 @@ describeWithDisposableDatabase('OFFICE E2E A-J - controlled Nest HTTP and dispos
       .set(authorization(fixture.partnerToken))
       .expect(409);
     expect(await prisma.lawyer.findUniqueOrThrow({ where: { id: corrupt.id } })).toMatchObject({ isActive: true });
-    expect(await prisma.user.findUniqueOrThrow({ where: { id: fixture.adminBId } })).toMatchObject({ isActive: true });
+    expect(await prisma.user.findUniqueOrThrow({ where: { id: crossTenantUser.id } })).toMatchObject({ isActive: true });
 
     approvalGate = 'enforce';
     const existing = await prisma.officeApprovalRequest.findUniqueOrThrow({ where: { id: enforcedRequestId } });

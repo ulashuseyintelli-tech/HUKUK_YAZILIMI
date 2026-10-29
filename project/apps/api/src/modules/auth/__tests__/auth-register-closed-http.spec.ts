@@ -38,6 +38,9 @@ const VALID_BODY = {
   surname: 'SOYAD',
   email: 'ok02@invalid.example',
   password: 'sentetik-parola-1',
+  // K-A1 a′: kişi kartı zorunlu (avukat / değil + geçerli TCKN — sentetik)
+  personType: 'LAWYER',
+  tckn: '10000000146',
 };
 
 describe('OK-02 — POST /api/auth/register varsayılan KAPALI (gerçek HTTP)', () => {
@@ -47,6 +50,8 @@ describe('OK-02 — POST /api/auth/register varsayılan KAPALI (gerçek HTTP)', 
   const tx = {
     tenant: { create: jest.fn() },
     user: { create: jest.fn() },
+    lawyer: { create: jest.fn().mockResolvedValue({ id: 'l-ok02' }) },
+    staffMember: { create: jest.fn().mockResolvedValue({ id: 's-ok02' }) },
   };
 
   // Her model / yöntem erişimini kaydeden sahte Prisma: kapalı durumda hiçbir erişim olmamalı.
@@ -146,6 +151,9 @@ describe('OK-02 — POST /api/auth/register varsayılan KAPALI (gerçek HTTP)', 
     expect(prismaCalls).toEqual(['tenant.findUnique', '$transaction']);
     expect(tx.tenant.create).toHaveBeenCalledTimes(1);
     expect(tx.user.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ role: 'ADMIN' }) }));
+    // K-A1 a′: ilk hesap kişi kartıyla doğar (LAWYER → Lawyer kartı, userId + geçerli TCKN; personel kartı AÇILMAZ)
+    expect(tx.lawyer.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ tenantId: 't-ok02', userId: 'u-ok02', tckn: '10000000146' }) }));
+    expect(tx.staffMember.create).not.toHaveBeenCalled();
     expect(seedLookupCatalog).toHaveBeenCalledWith(tx, 't-ok02');
   });
 

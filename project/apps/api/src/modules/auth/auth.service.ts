@@ -2,10 +2,12 @@ import {
   Injectable,
   UnauthorizedException,
   ConflictException,
+  BadRequestException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcrypt";
 import { PrismaService } from "@/prisma/prisma.service";
+import { isValidTckn } from "@/common/identity-validation.util";
 import { RegisterDto, LoginDto } from "./dto/auth.dto";
 import { toPublicAuthTenant, toPublicAuthUser } from "./user-public-projection";
 import { isLoginableLifecycle } from "../tenant/tenant-lifecycle";
@@ -24,6 +26,18 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto) {
+    // K-A1 a′ (owner kararı 2026-10-29/30; OFP-07 / J-37): kayıt yolu ilk ADMIN'i KARTSIZ yaratıyordu → kişi kimliği kanıtı
+    // yoktu ve aynı kişinin ikinci (kartlı) hesabı öz-onay yasağını aşabiliyordu (ÖLÇÜLDÜ, F02A). Artık ilk hesap bir KİŞİ
+    // KARTINA bağlı doğar: avukat ise Lawyer, değilse StaffMember (avukat olmayana avukat kartı AÇILMAZ) — `approval-identity`
+    // ile AYNI kimlik kaynağı (kartın geçerli TCKN'si). Hiçbir sorgu/yazma yapılmadan ÖNCE doğrulanır; yeni rol / rütbe YOK
+    // (Lawyer rütbesi şema varsayılanı LAWYER; PARTNER ataması mevcut büro ayarları yolunda kalır).
+    if (!isValidTckn(dto.tckn)) {
+      throw new BadRequestException({ reasonCode: "REGISTER_PERSON_TCKN_INVALID", message: "Geçerli bir TC Kimlik No gerekir" });
+    }
+    if (dto.personType === "STAFF" && !dto.staffType) {
+      throw new BadRequestException({ reasonCode: "REGISTER_STAFF_TYPE_REQUIRED", message: "Personel türü gerekir" });
+    }
+
     // Check if tenant slug exists
     const existingTenant = await this.prisma.tenant.findUnique({
       where: { slug: this.generateSlug(dto.firmName) },
@@ -59,6 +73,33 @@ export class AuthService {
           role: "ADMIN",
         },
       });
+
+      // K-A1 a′: kişi kartı AYNI transaction'da, kullanıcıya bağlı (userId) ve geçerli TCKN ile açılır → kartsız hesap doğmaz.
+      // Kart açılamazsa tenant + user da ROLLBACK olur (yarı-kurulu, kimliksiz ADMIN kalmaz).
+      if (dto.personType === "LAWYER") {
+        await tx.lawyer.create({
+          data: {
+            tenantId: tenant.id,
+            userId: user.id,
+            name: dto.name,
+            surname: dto.surname || "",
+            tckn: dto.tckn,
+            email: dto.email,
+          },
+        });
+      } else {
+        await tx.staffMember.create({
+          data: {
+            tenantId: tenant.id,
+            userId: user.id,
+            firstName: dto.name,
+            lastName: dto.surname || "",
+            tckn: dto.tckn,
+            email: dto.email,
+            staffType: dto.staffType!,
+          },
+        });
+      }
 
       // PR-B: Yeni tenant kanonik lookup kataloğu ile DOLU doğsun (takip türü/mahiyet vb.).
       // AYNI transaction'daki tx client ile çağrılır (this.prisma DEĞİL): seed başarısız olursa

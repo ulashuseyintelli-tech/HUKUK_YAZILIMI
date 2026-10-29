@@ -154,7 +154,8 @@ describe('R02 — auth public-user gerçek HTTP serialization', () => {
 
     const res = await request(app.getHttpServer())
       .post('/auth/register')
-      .send({ firmName: 'C15 CANARY', name: 'AD', surname: 'SOYAD', email: 'canary@invalid.example', password: 'sentetik-parola' })
+      // K-A1 a′: kişi kartı zorunlu (personType + geçerli sentetik TCKN); txProxy lawyer.create'i no-op karşılar
+      .send({ firmName: 'C15 CANARY', name: 'AD', surname: 'SOYAD', email: 'canary@invalid.example', password: 'sentetik-parola', personType: 'LAWYER', tckn: '10000000146' })
       .expect(201);
 
     expect(Object.keys(res.body).sort()).toEqual(['tenant', 'token', 'user'].sort()); // envelope korunur
