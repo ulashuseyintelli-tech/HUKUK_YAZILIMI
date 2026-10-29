@@ -272,20 +272,29 @@ export class SeedService {
       { name: 'Beta Enerji A.Ş.', displayName: 'Beta Enerji A.Ş.', type: 'COMPANY', companyName: 'Beta Enerji A.Ş.', vkn: '1234567945', identityNo: '1234567945', email: 'info@betaenerji.com', phone: '02121234572', city: 'Ankara' },
     ];
     let created = 0;
+    let existing = 0;
     let failed = 0;
     for (const c of clients) {
       try {
         const result = await this.clientService.create(tenantId, c, actor);
-        // ClientService.create() KENDİ dedup'ını yapar (tckn/vkn/identityNo) — eşleşme varsa
-        // `_existingReturned` ile mevcut kaydı döner (yeni satır YAZMAZ); yalnız GERÇEKTEN
-        // yeni oluşan satır `created` sayılır (eski `if (!exists) created++` ile AYNI anlam).
-        if (!(result as any)?._existingReturned) created++;
+        // ClientService.create() KENDİ dedup'ını yapar (tckn/vkn/identityNo) — kapsam içi aktif eşleşme
+        // `_existingReturned` ile (maskeli) döner (yeni satır YAZMAZ); yalnız GERÇEKTEN yeni oluşan satır
+        // `created` sayılır (eski `if (!exists) created++` ile AYNI anlam).
+        if ((result as any)?._existingReturned) existing++;
+        else created++;
       } catch (e: any) {
+        // CL-R04 (owner 2026-10-29/30): kapsam dışı ya da pasif mükerrer kimlik 409 DUPLICATE_IDENTITY(_INACTIVE) →
+        // seed için "mevcut" (idempotent yeniden koşum); yazılmaz, profil okunmaz. Öteki hatalar YUTULMAZ (failed).
+        const code = e instanceof ConflictException ? (e.getResponse() as any)?.code : undefined;
+        if (code === 'DUPLICATE_IDENTITY' || code === 'DUPLICATE_IDENTITY_INACTIVE') {
+          existing++;
+          continue;
+        }
         failed++;
         this.logger.warn(`Müvekkil seed edilemedi: ${c.name} - ${e?.message}`);
       }
     }
-    return { created, failed, message: `${created} müvekkil oluşturuldu` };
+    return { created, existing, failed, message: `${created} müvekkil oluşturuldu (${existing} mevcut)` };
   }
 
   async seedDebtors(tenantId: string) {

@@ -30,9 +30,11 @@ const build = (opts: { probeResult?: any; txError?: any } = {}) => {
     },
   };
   const prisma: any = {
+    // CL-R04: dedup dalı K16 kapsam probu yapar (user.findFirst + client.findFirst where.AND) — kapsam İÇİ varsayılır.
+    user: { findFirst: jest.fn().mockResolvedValue({ id: "u1" }) },
     client: {
       findFirst: jest.fn().mockImplementation(({ where }: any) =>
-        Promise.resolve(where?.OR ? opts.probeResult ?? null : {
+        Promise.resolve(where?.OR ? opts.probeResult ?? null : where?.AND ? { id: "self" } : {
           id: "self", type: "PERSON", firstName: "Ali", lastName: "Veli",
           tckn: "11111111111", vkn: null, identityNo: "11111111111",
           name: "Ali Veli", displayName: "Ali Veli", isActive: true,
@@ -70,18 +72,19 @@ describe("C1-B05 — P2002 → DUPLICATE_IDENTITY sözleşme çevirisi", () => {
     ).rejects.toBe(boom);
   });
 
-  it("reactivate tx: P2002 → DUPLICATE_IDENTITY (başka aktif satır aynı kimliği taşıyor)", async () => {
-    const { svc } = build({
+  it("CL-R04: pasif duplicate → create REAKTİVE ETMEZ; 409 DUPLICATE_IDENTITY_INACTIVE ve reactivate tx HİÇ AÇILMAZ (P2002 yolu kalmadı)", async () => {
+    const { svc, prisma } = build({
       probeResult: { id: "dup-1", isActive: false, displayName: "Pasif" },
-      txError: p2002(),
+      txError: p2002(), // açılsaydı patlardı — açılmadığının kanıtı
     });
-    expect.assertions(2);
+    expect.assertions(3);
     try {
       await svc.create("t1", { type: "PERSON", firstName: "A", lastName: "B", tckn: "12345678028" }, actor);
     } catch (e: any) {
       expect(e).toBeInstanceOf(ConflictException);
-      expect(e.getResponse().code).toBe("DUPLICATE_IDENTITY");
+      expect(e.getResponse().code).toBe("DUPLICATE_IDENTITY_INACTIVE");
     }
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it("update tx: P2002 → DUPLICATE_IDENTITY (PR-U4 probe'unu geçen yarış)", async () => {

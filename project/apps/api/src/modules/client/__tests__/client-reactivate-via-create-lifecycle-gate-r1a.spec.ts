@@ -1,19 +1,22 @@
 /**
- * CLIENT-OWN-13-I02-R1A-REACTIVATE-VIA-CREATE-LIFECYCLE-GATE-I01 — owner test matrisi.
+ * CLIENT-OWN-13-I02-R1A-REACTIVATE-VIA-CREATE-LIFECYCLE-GATE-I01 — owner test matrisi (R1A) →
+ * **CL-R04 ile GÜNCELLENDİ (owner kararı 2026-10-29/30).**
  *
- * OWNER CLARIFICATION (RATIFIED): her `Client.isActive:false → true` geçişi, hangi entrypoint
- * üzerinden oluşursa oluşsun **lifecycle mutation**'dır. Create yetkisi lifecycle yetkisini
- * İÇERMEZ: USER yeni müvekkil oluşturabilir, fakat pasif mevcut kaydı create üzerinden
- * reaktive EDEMEZ. `UserRole.ADMIN` tek başına lifecycle yetkisi SAĞLAMAZ — eşik mevcut
- * `officeApproval.isApproverEligible` predicate'idir (PARTNER veya `canApproveOfficeActions`).
+ * R1A (RATIFIED, korunur): her `Client.isActive:false → true` geçişi lifecycle mutation'dır; create yetkisi lifecycle
+ * yetkisini İÇERMEZ; `UserRole.ADMIN` tek başına lifecycle yetkisi SAĞLAMAZ (eşik `officeApproval.isApproverEligible`).
  *
- * Bu, `client.service.ts`'teki tarihsel "Reactivate-via-create BU KAPSAM DIŞI" (Task 8A)
- * ifadesini SUPERSEDED_BY_OWNER_CLARIFICATION yapar.
+ * CL-R04 (owner): create/dedup yolu ARTIK HİÇBİR KOŞULDA REAKTİVE ETMEZ — yetkili aktör dahil. Pasif mükerrer kayıt:
+ *  - aktörün K16 okuma kapsamında ise 409 `DUPLICATE_IDENTITY_INACTIVE` (profil/id yok),
+ *  - kapsam DIŞI ise (aktif ya da pasif) genel 409 `DUPLICATE_IDENTITY` (profil, id, aktiflik bilgisi yok).
+ * Aktif ve kapsam İÇİ mükerrer kayıt K16 CONTACT_DETAIL maskeli presenter + `_existingReturned` ile döner.
+ * Reaktivasyon yalnız mevcut yetkili lifecycle ucu (PUT /clients/:id isActive → assertCanManageLifecycle).
+ * Bütün create entrypoint'leri (direct / CASE satır içi / import) AYNI servis kapısından geçer; ret → yazma YOK
+ * (CASE satır içi: dava transaction'ı geri alınır).
  *
  * PII: TCKN/VKN değerleri sentetiktir.
  */
 
-import { ForbiddenException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { ClientService, buildClientMutationActor, type ClientMutationActorContext } from '../client.service';
 import { CLIENT_MUTATION_REASON } from '../client-mutation-policy';
 import { CaseService } from '../../case/case.service';
@@ -29,14 +32,14 @@ const actor = (role: string, tenantId = 't1', userId = 'u1'): ClientMutationActo
 
 /**
  * `duplicate`: dedup taramasının (OR) döndüreceği kayıt — null ise "gerçekten yeni".
- * `onUpdateMany`: koşullu reaktivasyon yazımının sonucunu (count) sürmek için — race testi.
+ * `inScope`: K16 kapsam probunun (where.AND) sonucu — varsayılan kapsam İÇİ.
  */
-const buildPrisma = (opts: { duplicate?: any; onUpdateMany?: () => { count: number } } = {}) => {
+const buildPrisma = (opts: { duplicate?: any; inScope?: boolean } = {}) => {
   const tx = {
     client: {
       create: jest.fn().mockResolvedValue({ id: 'new' }),
       update: jest.fn().mockResolvedValue({ id: 'c1' }),
-      updateMany: jest.fn().mockImplementation(async () => (opts.onUpdateMany ? opts.onUpdateMany() : { count: 1 })),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       findFirst: jest.fn().mockResolvedValue({ id: 'c1' }),
     },
     clientContact: {
@@ -54,12 +57,16 @@ const buildPrisma = (opts: { duplicate?: any; onUpdateMany?: () => { count: numb
     },
   };
   const prisma: any = {
+    // K16 kapsam türetimi aktörü okur (USER/ADMIN, aktif)
+    user: { findFirst: jest.fn().mockResolvedValue({ id: 'u1' }) },
     client: {
       findFirst: jest.fn().mockImplementation(({ where }: any) =>
-        // OR → dedup taraması; diğer → findOne (mutasyon sonrası dönüş)
+        // OR → dedup taraması; AND → K16 kapsam probu; diğer → findOne (dönüş)
         where?.OR
           ? Promise.resolve(opts.duplicate ?? null)
-          : Promise.resolve({ id: 'c1', tenantId: 't1', isActive: true, contacts: [] }),
+          : where?.AND
+            ? Promise.resolve(opts.inScope === false ? null : { id: where.id })
+            : Promise.resolve({ id: where?.id ?? 'c1', tenantId: 't1', isActive: true, tckn: SYNTHETIC_TCKN, notes: 'gizli', contacts: [] }),
       ),
       findUnique: jest.fn().mockResolvedValue(null),
       findMany: jest.fn().mockResolvedValue([]),
@@ -73,8 +80,8 @@ const buildPrisma = (opts: { duplicate?: any; onUpdateMany?: () => { count: numb
   return { prisma, tx };
 };
 
-const buildSvc = (opts: { eligible?: boolean; duplicate?: any; onUpdateMany?: () => { count: number } } = {}) => {
-  const { prisma, tx } = buildPrisma({ duplicate: opts.duplicate, onUpdateMany: opts.onUpdateMany });
+const buildSvc = (opts: { eligible?: boolean; duplicate?: any; inScope?: boolean } = {}) => {
+  const { prisma, tx } = buildPrisma({ duplicate: opts.duplicate, inScope: opts.inScope });
   const audit = { log: jest.fn().mockResolvedValue(undefined), logInTransaction: jest.fn().mockResolvedValue(undefined) };
   const office = { isApproverEligible: jest.fn().mockResolvedValue(opts.eligible ?? false) };
   const svc = new ClientService(prisma as any, audit as any, office as any);
@@ -96,6 +103,16 @@ const forbiddenBody = async (fn: () => Promise<unknown>) => {
   throw new Error('ForbiddenException bekleniyordu, atılmadı');
 };
 
+const conflictBody = async (fn: () => Promise<unknown>) => {
+  try {
+    await fn();
+  } catch (e) {
+    expect(e).toBeInstanceOf(ConflictException);
+    return (e as ConflictException).getResponse() as any;
+  }
+  throw new Error('ConflictException bekleniyordu, atılmadı');
+};
+
 const newClientPayload = (tckn = OTHER_TCKN) => ({
   type: 'PERSON',
   firstName: 'Yeni',
@@ -113,7 +130,6 @@ describe('R1A — gerçekten yeni kayıt (create politikası korunur)', () => {
     await svc.create('t1', newClientPayload(), actor('USER'));
 
     expect(prisma.$transaction).toHaveBeenCalled();
-    // Yeni kayıt lifecycle mutasyonu DEĞİLDİR → eligibility sorgusuna gerek yok.
     expect(office.isApproverEligible).not.toHaveBeenCalled();
   });
 
@@ -136,81 +152,98 @@ describe('R1A — gerçekten yeni kayıt (create politikası korunur)', () => {
 });
 
 // =========================================================================================
-// 3-6. Pasif duplicate → lifecycle yetkisi
+// 3-6. Pasif duplicate → CL-R04: create REAKTİVE ETMEZ (yetkiden bağımsız)
 // =========================================================================================
-describe('R1A — pasif duplicate reaktivasyonu lifecycle yetkisine tabidir', () => {
-  it('3. USER + inactive duplicate → 403 LIFECYCLE_DENIED, hiçbir yazma yok', async () => {
-    const { svc, prisma, tx, audit } = buildSvc({ duplicate: INACTIVE_DUP, eligible: false });
+describe('CL-R04 — pasif duplicate: create hiçbir koşulda reaktive etmez', () => {
+  it('3. USER + inactive duplicate (kapsam içi) → 409 DUPLICATE_IDENTITY_INACTIVE; hiçbir yazma yok; lifecycle sorgusu YAPILMAZ', async () => {
+    const { svc, prisma, tx, audit, office } = buildSvc({ duplicate: INACTIVE_DUP, eligible: false });
 
-    const body = await forbiddenBody(() =>
-      svc.create('t1', { ...newClientPayload(SYNTHETIC_TCKN) }, actor('USER')),
-    );
+    const body = await conflictBody(() => svc.create('t1', newClientPayload(SYNTHETIC_TCKN), actor('USER')));
 
-    expect(body.code).toBe(CLIENT_MUTATION_REASON.LIFECYCLE_DENIED);
+    expect(body.code).toBe('DUPLICATE_IDENTITY_INACTIVE');
+    expect(body).not.toHaveProperty('id');
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(tx.client.updateMany).not.toHaveBeenCalled();
     expect(tx.client.update).not.toHaveBeenCalled();
     expect(audit.logInTransaction).not.toHaveBeenCalled();
+    expect(office.isApproverEligible).not.toHaveBeenCalled();
   });
 
-  it('4. ADMIN fakat lifecycle-ineligible + inactive duplicate → 403 (ADMIN tek başına YETMEZ)', async () => {
+  it('4. ADMIN (lifecycle-ineligible) + inactive duplicate → 409 INACTIVE (eski 403 LIFECYCLE_DENIED yolu kalktı; yetki sorulmaz)', async () => {
     const { svc, prisma, office } = buildSvc({ duplicate: INACTIVE_DUP, eligible: false });
 
-    const body = await forbiddenBody(() =>
-      svc.create('t1', newClientPayload(SYNTHETIC_TCKN), actor('ADMIN')),
-    );
+    const body = await conflictBody(() => svc.create('t1', newClientPayload(SYNTHETIC_TCKN), actor('ADMIN')));
 
-    expect(body.code).toBe(CLIENT_MUTATION_REASON.LIFECYCLE_DENIED);
-    expect(office.isApproverEligible).toHaveBeenCalledWith('u1', 't1');
+    expect(body.code).toBe('DUPLICATE_IDENTITY_INACTIVE');
+    expect(office.isApproverEligible).not.toHaveBeenCalled();
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it('5. eligible avukat/partner + inactive duplicate → reaktivasyon başarılı', async () => {
+  it('5. eligible avukat/partner + inactive duplicate → YİNE 409 INACTIVE; updateMany ve CLIENT_REACTIVATE audit YOK', async () => {
     const { svc, prisma, tx, audit } = buildSvc({ duplicate: INACTIVE_DUP, eligible: true });
 
-    const res: any = await svc.create('t1', newClientPayload(SYNTHETIC_TCKN), actor('USER', 't1', 'lawyer-1'));
+    const body = await conflictBody(() => svc.create('t1', newClientPayload(SYNTHETIC_TCKN), actor('USER', 't1', 'lawyer-1')));
 
-    expect(prisma.$transaction).toHaveBeenCalled();
-    expect(tx.client.updateMany).toHaveBeenCalledWith({
-      where: { id: 'dup-1', tenantId: 't1', isActive: false },
-      data: { isActive: true },
-    });
-    expect(audit.logInTransaction).toHaveBeenCalledWith(
-      tx,
-      expect.objectContaining({ action: 'CLIENT_REACTIVATE', entityType: 'CLIENT', entityId: 'dup-1' }),
-    );
-    expect(res._reactivated).toBe(true);
-    expect(res._existingReturned).toBe(true);
+    expect(body.code).toBe('DUPLICATE_IDENTITY_INACTIVE');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(tx.client.updateMany).not.toHaveBeenCalled();
+    expect(audit.logInTransaction).not.toHaveBeenCalled();
   });
 
-  it('6. canApproveOfficeActions=true aktör + inactive duplicate → başarılı (aynı predicate)', async () => {
-    // `isApproverEligible` TRUE dönen her aktör yeterlidir; CLIENT bu hesabı KOPYALAMAZ.
-    const { svc, prisma, office } = buildSvc({ duplicate: INACTIVE_DUP, eligible: true });
+  it('6. kapsam DIŞI pasif duplicate (eligible aktör bile) → GENEL 409 DUPLICATE_IDENTITY; aktiflik/id/profil bilgisi YOK', async () => {
+    const { svc, prisma, tx } = buildSvc({ duplicate: INACTIVE_DUP, eligible: true, inScope: false });
 
-    await svc.create('t1', newClientPayload(SYNTHETIC_TCKN), actor('USER', 't1', 'delege-avukat'));
+    const body = await conflictBody(() => svc.create('t1', newClientPayload(SYNTHETIC_TCKN), actor('USER', 't1', 'delege-avukat')));
 
-    expect(office.isApproverEligible).toHaveBeenCalledWith('delege-avukat', 't1');
-    expect(prisma.$transaction).toHaveBeenCalled();
+    expect(body.code).toBe('DUPLICATE_IDENTITY');
+    expect(body).not.toHaveProperty('id');
+    expect(body).not.toHaveProperty('isActive');
+    expect(JSON.stringify(body)).not.toContain('dup-1');
+    expect(JSON.stringify(body)).not.toContain('Pasif');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(tx.client.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('6b. kapsam DIŞI AKTİF duplicate → aynı GENEL 409 gövdesi (aktif/pasif ayrımı sızmaz)', async () => {
+    const inactive = buildSvc({ duplicate: INACTIVE_DUP, inScope: false });
+    const active = buildSvc({ duplicate: ACTIVE_DUP, inScope: false });
+
+    const a = await conflictBody(() => inactive.svc.create('t1', newClientPayload(SYNTHETIC_TCKN), actor('USER')));
+    const b = await conflictBody(() => active.svc.create('t1', newClientPayload(SYNTHETIC_TCKN), actor('USER')));
+
+    expect(a).toEqual(b);
+    expect(a.code).toBe('DUPLICATE_IDENTITY');
+  });
+
+  it('6c. kapsam İÇİ AKTİF duplicate → K16 maskeli dönüş + _existingReturned; _reactivated daima false; notlar yok', async () => {
+    const { svc, prisma } = buildSvc({ duplicate: ACTIVE_DUP });
+
+    const res: any = await svc.create('t1', newClientPayload(SYNTHETIC_TCKN), actor('USER'));
+
+    expect(res._existingReturned).toBe(true);
+    expect(res._reactivated).toBe(false);
+    expect(res.id).toBe('dup-2');
+    expect(res.tckn).toBe('402****52');
+    expect(res).not.toHaveProperty('notes');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });
 
 // =========================================================================================
 // 7-9. Üç entrypoint de AYNI servis kapısından geçer
 // =========================================================================================
-describe('R1A — bütün create entrypoint-leri aynı kapıdan geçer', () => {
-  it('7. direct POST /clients USER reactivation attempt → 403', async () => {
+describe('CL-R04 — bütün create entrypoint-leri aynı kapıdan geçer', () => {
+  it('7. direct POST /clients USER + pasif duplicate → 409 (yazma yok)', async () => {
     const { svc, prisma } = buildSvc({ duplicate: INACTIVE_DUP, eligible: false });
 
-    const body = await forbiddenBody(() =>
-      svc.create('t1', newClientPayload(SYNTHETIC_TCKN), actor('USER')),
-    );
+    const body = await conflictBody(() => svc.create('t1', newClientPayload(SYNTHETIC_TCKN), actor('USER')));
 
-    expect(body.code).toBe(CLIENT_MUTATION_REASON.LIFECYCLE_DENIED);
+    expect(body.code).toBe('DUPLICATE_IDENTITY_INACTIVE');
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it('8. CASE inline creditor USER reactivation attempt → 403, taraf id ATANMAZ', async () => {
-    const { svc, prisma } = buildSvc({ duplicate: INACTIVE_DUP, eligible: false });
+  it('8. CASE satır içi alacaklı: kapsam DIŞI mevcut müvekkil → 409 fırlar (dava transaction\'ı geri alınır), taraf id ATANMAZ', async () => {
+    const { svc, prisma } = buildSvc({ duplicate: ACTIVE_DUP, eligible: true, inScope: false });
     const caseSvc: any = Object.create(CaseService.prototype);
     caseSvc.clientService = svc;
     caseSvc.lawyerService = { create: jest.fn() };
@@ -220,23 +253,35 @@ describe('R1A — bütün create entrypoint-leri aynı kapıdan geçer', () => {
     };
     const ctx = buildClientMutationActor({ userId: 'u1', tenantId: 't1', role: 'USER' });
 
-    const body = await forbiddenBody(() => caseSvc.resolveInlinePartiesInTx('t1', dto, ctx));
+    const body = await conflictBody(() => caseSvc.resolveInlinePartiesInTx('t1', dto, ctx));
 
-    expect(body.code).toBe(CLIENT_MUTATION_REASON.LIFECYCLE_DENIED);
+    expect(body.code).toBe('DUPLICATE_IDENTITY');
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(dto.creditors[0].id).toBeUndefined();
   });
 
-  it('9. import yolundaki USER reactivation attempt → 403 (servis sınırı, controller-özel kontrol YOK)', async () => {
-    // Import satır döngüsü `ClientService.create`'i doğrudan çağırır; kapı ORADADIR.
-    // (Excel katmanı ayrı dosyada; burada servis sözleşmesi sabitlenir.)
+  it('8b. CASE satır içi alacaklı: kapsam İÇİ aktif mevcut müvekkil bağlanır (yalnız id kullanılır)', async () => {
+    const { svc } = buildSvc({ duplicate: ACTIVE_DUP });
+    const caseSvc: any = Object.create(CaseService.prototype);
+    caseSvc.clientService = svc;
+    caseSvc.lawyerService = { create: jest.fn() };
+    const dto: any = {
+      creditors: [{ name: 'Ahmet Yilmaz', type: 'PERSON', identityNo: SYNTHETIC_TCKN }],
+      lawyers: [],
+    };
+    const ctx = buildClientMutationActor({ userId: 'u1', tenantId: 't1', role: 'USER' });
+
+    await caseSvc.resolveInlinePartiesInTx('t1', dto, ctx);
+
+    expect(dto.creditors[0].id).toBe('dup-2');
+  });
+
+  it('9. import yolundaki USER + pasif duplicate → 409 (servis sınırı, controller-özel kontrol YOK)', async () => {
     const { svc, prisma } = buildSvc({ duplicate: INACTIVE_DUP, eligible: false });
 
-    const body = await forbiddenBody(() =>
-      svc.create('t1', newClientPayload(SYNTHETIC_TCKN), actor('USER', 't1', 'import-actor')),
-    );
+    const body = await conflictBody(() => svc.create('t1', newClientPayload(SYNTHETIC_TCKN), actor('USER', 't1', 'import-actor')));
 
-    expect(body.code).toBe(CLIENT_MUTATION_REASON.LIFECYCLE_DENIED);
+    expect(body.code).toBe('DUPLICATE_IDENTITY_INACTIVE');
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });
@@ -244,12 +289,12 @@ describe('R1A — bütün create entrypoint-leri aynı kapıdan geçer', () => {
 // =========================================================================================
 // 10-13. Reddedilen istek: kalıcılık yok, tenant, fail-closed
 // =========================================================================================
-describe('R1A — reddedilen istek kalıcılık üretmez', () => {
-  it('10. denied sonrası isActive HÂLÂ false (hiçbir bayrak çevrilmedi)', async () => {
+describe('R1A/CL-R04 — reddedilen istek kalıcılık üretmez', () => {
+  it('10. ret sonrası isActive HÂLÂ false (hiçbir bayrak çevrilmedi)', async () => {
     const dup = { ...INACTIVE_DUP };
-    const { svc, prisma, tx } = buildSvc({ duplicate: dup, eligible: false });
+    const { svc, prisma, tx } = buildSvc({ duplicate: dup, eligible: true });
 
-    await forbiddenBody(() => svc.create('t1', newClientPayload(SYNTHETIC_TCKN), actor('USER')));
+    await conflictBody(() => svc.create('t1', newClientPayload(SYNTHETIC_TCKN), actor('USER')));
 
     expect(dup.isActive).toBe(false);
     expect(tx.client.updateMany).not.toHaveBeenCalled();
@@ -257,10 +302,10 @@ describe('R1A — reddedilen istek kalıcılık üretmez', () => {
     expect(prisma.client.update).not.toHaveBeenCalled();
   });
 
-  it('11. denied istek partial field update ÜRETMEZ (contact/adres yüzeyleri de sessiz)', async () => {
-    const { svc, tx } = buildSvc({ duplicate: INACTIVE_DUP, eligible: false });
+  it('11. ret partial field update ÜRETMEZ (contact/adres yüzeyleri de sessiz)', async () => {
+    const { svc, tx } = buildSvc({ duplicate: INACTIVE_DUP, eligible: true });
 
-    await forbiddenBody(() =>
+    await conflictBody(() =>
       svc.create('t1', { ...newClientPayload(SYNTHETIC_TCKN), phone: '05551112233', notes: 'x' }, actor('USER')),
     );
 
@@ -270,7 +315,7 @@ describe('R1A — reddedilen istek kalıcılık üretmez', () => {
     expect(tx.clientAddress.create).not.toHaveBeenCalled();
   });
 
-  it('12. tenant mismatch → deny (lifecycle sorgusuna bile gidilmez)', async () => {
+  it('12. tenant mismatch → deny (dedup ve kapsam sorgusuna bile gidilmez)', async () => {
     const { svc, prisma, office } = buildSvc({ duplicate: INACTIVE_DUP, eligible: true });
 
     const body = await forbiddenBody(() =>
@@ -296,88 +341,5 @@ describe('R1A — reddedilen istek kalıcılık üretmez', () => {
     expect(noActor.code).toBe(CLIENT_MUTATION_REASON.NO_ACTOR);
 
     expect(prisma.$transaction).not.toHaveBeenCalled();
-  });
-});
-
-// =========================================================================================
-// 14. Aktif duplicate davranışı DEĞİŞMEDİ
-// =========================================================================================
-describe('R1A — aktif duplicate davranışı korunur', () => {
-  it('14. USER + aktif duplicate → mutasyon YOK, lifecycle sorgusu YOK, mevcut kayıt döner', async () => {
-    const { svc, prisma, office } = buildSvc({ duplicate: ACTIVE_DUP, eligible: false });
-
-    const res: any = await svc.create('t1', newClientPayload(SYNTHETIC_TCKN), actor('USER'));
-
-    expect(prisma.$transaction).not.toHaveBeenCalled();
-    // Aktif duplicate lifecycle geçişi DEĞİLDİR → eligibility sorgulanmaz (davranış aynen).
-    expect(office.isApproverEligible).not.toHaveBeenCalled();
-    expect(res._existingReturned).toBe(true);
-    expect(res._reactivated).toBe(false);
-  });
-});
-
-// =========================================================================================
-// 15. Audit / PII
-// =========================================================================================
-describe('R1A — audit ve PII', () => {
-  it('15. lifecycle reddi gövdesinde ham TCKN/VKN veya alan DEĞERİ bulunmaz', async () => {
-    const { svc } = buildSvc({ duplicate: INACTIVE_DUP, eligible: false });
-
-    const body = await forbiddenBody(() =>
-      svc.create(
-        't1',
-        { type: 'PERSON', firstName: 'GIZLIAD', lastName: 'GIZLISOYAD', tckn: SYNTHETIC_TCKN },
-        actor('USER'),
-      ),
-    );
-
-    const serialized = JSON.stringify(body);
-    expect(serialized).not.toContain(SYNTHETIC_TCKN);
-    expect(serialized).not.toContain('GIZLIAD');
-    expect(serialized).not.toContain('GIZLISOYAD');
-    expect(body.code).toBe(CLIENT_MUTATION_REASON.LIFECYCLE_DENIED);
-  });
-
-  it('15b. başarılı reaktivasyon audit metadata-sında ham kimlik bulunmaz', async () => {
-    const { svc, audit } = buildSvc({ duplicate: INACTIVE_DUP, eligible: true });
-
-    await svc.create('t1', newClientPayload(SYNTHETIC_TCKN), actor('ADMIN'));
-
-    const entry = audit.logInTransaction.mock.calls[0][1];
-    expect(JSON.stringify(entry)).not.toContain(SYNTHETIC_TCKN);
-    expect(entry.metadata).toEqual({ reactivatedFromDedupe: true });
-  });
-});
-
-// =========================================================================================
-// 16. Concurrency — stale inactive gözlem yetkisiz/hayalet yazma doğurmaz
-// =========================================================================================
-describe('R1A — TOCTOU / concurrency', () => {
-  it('16. yazma yetkilendirilen DURUMA koşulludur: kayıt bu arada aktifleşirse audit YAZILMAZ', async () => {
-    // Eşzamanlı başka bir işlem kaydı zaten aktif yapmış → koşullu updateMany count=0.
-    const { svc, tx, audit } = buildSvc({
-      duplicate: INACTIVE_DUP,
-      eligible: true,
-      onUpdateMany: () => ({ count: 0 }),
-    });
-
-    await svc.create('t1', newClientPayload(SYNTHETIC_TCKN), actor('ADMIN'));
-
-    expect(tx.client.updateMany).toHaveBeenCalledWith({
-      where: { id: 'dup-1', tenantId: 't1', isActive: false },
-      data: { isActive: true },
-    });
-    // Olay GERÇEKLEŞMEDİ → CLIENT_REACTIVATE audit'i de yazılmaz (hayalet kayıt üretilmez).
-    expect(audit.logInTransaction).not.toHaveBeenCalled();
-  });
-
-  it('16b. koşullu yazma tenant predicate TAŞIR (cross-tenant reaktivasyon imkânsız)', async () => {
-    const { svc, tx } = buildSvc({ duplicate: INACTIVE_DUP, eligible: true });
-
-    await svc.create('t1', newClientPayload(SYNTHETIC_TCKN), actor('ADMIN'));
-
-    const where = tx.client.updateMany.mock.calls[0][0].where;
-    expect(where.tenantId).toBe('t1');
-    expect(where.isActive).toBe(false);
   });
 });

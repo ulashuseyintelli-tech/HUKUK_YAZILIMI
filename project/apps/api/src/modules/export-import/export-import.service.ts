@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { ConflictException, Injectable } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
 // RFA-017: Excel client import guard'lı ClientService.create'e devredilir (duplicate bypass kapatma).
 import { ClientService, type ClientMutationActorContext } from "../client/client.service";
@@ -351,14 +351,16 @@ export class ExportImportService {
     tenantId: string,
     fileBuffer: Buffer,
     actor: ClientMutationActorContext,
-  ): Promise<{ success: number; errors: { row: number; message: string }[] }> {
+  ): Promise<{ success: number; errors: { row: number; message: string }[]; skipped: { row: number; message: string }[] }> {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(fileBuffer as unknown as ArrayBuffer);
     const sheet = workbook.worksheets[0];
     if (!sheet) throw new Error("Sayfa bulunamadi");
     const errors: { row: number; message: string }[] = [];
     let success = 0;
-    
+    // CL-R04: mükerrer kimlik satırları (yazılmadı; hata değil) — yeniden içe aktarma başarı sayısını şişirmez.
+    const skipped: { row: number; message: string }[] = [];
+
     // Yardımcı fonksiyonlar
     const getCellValue = (row: ExcelJS.Row, col: number): string | null => {
       const val = row.getCell(col).value;
@@ -440,20 +442,28 @@ export class ExportImportService {
         }
         
         // RFA-017: düz prisma.client.create YERİNE guard'lı ClientService.create.
-        // tckn/vkn eşleşmesi → mevcut kullan (soft-deleted ise reactivate) → re-import duplicate üretmez.
+        // tckn/vkn eşleşmesi → re-import duplicate üretmez. CL-R04 (owner 2026-10-29/30): kapsam dışı ya da pasif
+        // mükerrer kayıt 409 döner → satır "atlandı" (skipped) sayılır, hata DEĞİL; kapsam içi aktif eşleşme
+        // `_existingReturned` ile döner (maskeli). Create üzerinden reaktivasyon YOK.
         // displayName/name/identityNo'yu ClientService kendi hesaplar; tenant izolasyonu korunur.
         // P0.6: import actor — audit attribution (AuditLog.userId null kalmasın).
         // OWN-13 I02-R1: toplu içe aktarım da bir CLIENT mutasyonudur ve kullanıcı tarafından
         // tetiklenir → D01 yetkisi zorunlu. Eskiden `actorUserId` yoksa `undefined` geçilip
         // kapı atlanıyordu; artık actor bağlamı ZORUNLU ve eksik/rolsüz aktör fail-closed
         // reddedilir (satır bazında hata olarak raporlanır, sessizce yazılmaz).
-        await this.clientService.create(tenantId, data, actor);
-        success++;
+        const created: any = await this.clientService.create(tenantId, data, actor);
+        if (created?._existingReturned) skipped.push({ row: i, message: "Zaten kayıtlı (kapsam içi mevcut kart) — yazılmadı" });
+        else success++;
       } catch (e: any) {
+        const code = e instanceof ConflictException ? (e.getResponse() as any)?.code : undefined;
+        if (code === "DUPLICATE_IDENTITY" || code === "DUPLICATE_IDENTITY_INACTIVE") {
+          skipped.push({ row: i, message: "Zaten kayıtlı — yazılmadı" });
+          continue;
+        }
         errors.push({ row: i, message: e.message || "Hata" });
       }
     }
-    return { success, errors };
+    return { success, errors, skipped };
   }
 
   // ==================== BORÇLU EXPORT (PR-D5-e) ====================

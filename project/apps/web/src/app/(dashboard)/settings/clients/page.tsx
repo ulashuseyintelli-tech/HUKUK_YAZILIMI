@@ -192,15 +192,14 @@ export default function ClientsSettingsPage() {
       } else {
         const res = await api.post("/clients", clientPayload);
         clientId = res.data?.id || res.data?.data?.id;
-        // PR-AUDIT-1: mevcut TCKN/VKN ile manuel ekleme → backend yeni açmaz, mevcut kartı döndürür.
-        // Sessiz kalmasın, kullanıcıya bildir (silinmişse "geri getirildi", aktifse "zaten kayıtlı").
+        // PR-AUDIT-1 / CL-R04: mevcut TCKN/VKN ile manuel ekleme → backend yeni açmaz; kapsam İÇİ aktif kart maskeli
+        // döner (`_existingReturned`), kapsam dışı ya da pasif kayıt 409 fırlatır (catch'te API mesajı gösterilir).
+        // Create üzerinden "geri getirme" artık YOK (yaşam döngüsü yalnız yetkili pasif/aktif işlemiyle).
         const body = res.data?.data ?? res.data;
         if (body?._existingReturned) {
           clientExisting = true;
           alert(
-            body._reactivated
-              ? "Bu müvekkil daha önce silinmişti; kaydı geri getirildi (mevcut kart kullanıldı)."
-              : "Bu müvekkil zaten kayıtlı; yeni kayıt açılmadı, mevcut kart kullanıldı."
+            "Bu müvekkil zaten kayıtlı; yeni kayıt açılmadı, mevcut kart kullanıldı."
           );
         }
       }
@@ -1710,7 +1709,8 @@ function SendSmsModal({ client, onClose }: { client: any; onClose: () => void })
 function ImportClientsModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
-  const [result, setResult] = useState<{ success: number; errors: { row: number; message: string }[] } | null>(null);
+  // CL-R04: `skipped` = mükerrer kimlik satırları (yazılmadı; hata değil) — API ek alanı, eski yanıtlarda yok olabilir.
+  const [result, setResult] = useState<{ success: number; errors: { row: number; message: string }[]; skipped?: { row: number; message: string }[] } | null>(null);
 
   const handleDownloadTemplate = async () => {
     try {
@@ -1782,6 +1782,9 @@ function ImportClientsModal({ onClose, onSuccess }: { onClose: () => void; onSuc
             <div className={`p-3 rounded text-sm ${result.success > 0 ? "bg-green-50" : "bg-red-50"}`}>
               {result.success > 0 && (
                 <p className="text-green-700 font-medium">✓ {result.success} müvekkil başarıyla eklendi</p>
+              )}
+              {(result.skipped?.length ?? 0) > 0 && (
+                <p className="text-amber-700 text-xs mt-1">{result.skipped!.length} satır zaten kayıtlı olduğu için yazılmadı (atlandı).</p>
               )}
               {result.errors.length > 0 && (
                 <div className="mt-2">

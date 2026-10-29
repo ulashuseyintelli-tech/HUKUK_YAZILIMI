@@ -14,6 +14,7 @@
  * doğrular. Gerçek DB-count (re-import→tek client, reactivate, alan persist) ayrıca canlı e2e ile.
  */
 
+import { ConflictException } from '@nestjs/common';
 import * as ExcelJS from 'exceljs';
 import { ExportImportService } from '../export-import.service';
 
@@ -111,5 +112,34 @@ describe('RFA-017 importClientsFromExcel — guard delegasyonu', () => {
     const forwarded = clientService.create.mock.calls[0][2];
     expect(forwarded).not.toBeUndefined();
     expect(forwarded).toEqual({ userId: '', tenantId: 'tenant-1', role: '' });
+  });
+
+  // CL-R04 (owner 2026-10-29/30): mükerrer kimlik artık servis sınırında 409 döner (kapsam dışı / pasif) ya da kapsam içi
+  // aktif kayıt `_existingReturned` ile gelir. Her iki durumda satır YAZILMAZ ve "atlandı" sayılır — hata DEĞİL, başarı DEĞİL.
+  it('CL-R04: 409 DUPLICATE_IDENTITY / _existingReturned satırları skipped sayılır; success ve errors şişmez; öteki hatalar errors kalır', async () => {
+    let call = 0;
+    const clientService = { create: jest.fn(async () => {
+      call++;
+      if (call === 1) throw new ConflictException({ code: 'DUPLICATE_IDENTITY', message: 'mevcut' });
+      if (call === 2) return { id: 'existing', _existingReturned: true };
+      if (call === 3) throw new ConflictException({ code: 'DUPLICATE_IDENTITY_INACTIVE', message: 'pasif' });
+      if (call === 4) throw new Error('başka hata');
+      return { id: 'c-new' };
+    }) } as any;
+    const svc = new ExportImportService({} as any, clientService);
+    const buf = await buildExcelBuffer([
+      ['PERSON', 'Bir', 'Kişi', '11111111111'],
+      ['PERSON', 'İki', 'Kişi', '22222222222'],
+      ['PERSON', 'Üç', 'Kişi', '33333333333'],
+      ['PERSON', 'Dört', 'Kişi', '44444444444'],
+      ['PERSON', 'Beş', 'Kişi', '55555555555'],
+    ]);
+
+    const result = await svc.importClientsFromExcel('tenant-1', buf, { userId: 'u1', tenantId: 'tenant-1', role: 'ADMIN' });
+
+    expect(result.success).toBe(1);
+    expect(result.skipped.map((s) => s.row)).toEqual([2, 3, 4]);
+    expect(result.errors).toEqual([{ row: 5, message: 'başka hata' }]);
+    expect(JSON.stringify(result)).not.toContain('existing'); // atlanan satırda id/profil taşınmaz
   });
 });

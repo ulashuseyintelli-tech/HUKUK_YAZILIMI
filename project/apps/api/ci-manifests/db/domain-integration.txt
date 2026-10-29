@@ -499,4 +499,5 @@ src/modules/portal/__tests__/portal-document-transitions.db-gated.integration.sp
 src/modules/client-notification/__tests__/notification-history-permission.http.db-gated.integration.spec.ts
 src/modules/client-notification/__tests__/notification-history-access.http.db-gated.integration.spec.ts
 src/modules/client/__tests__/client-internal-read.http.db-gated.integration.spec.ts
+src/modules/client/__tests__/cl-r04-dedup-return-scope.http.db-gated.integration.spec.ts
 src/modules/export-import/__tests__/generic-export-privacy.http.db-gated.integration.spec.ts
