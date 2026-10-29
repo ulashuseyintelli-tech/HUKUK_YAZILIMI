@@ -366,11 +366,9 @@ export class ClientService {
    * case-fee-agreement.service.ts:assertCanManage ile BİREBİR desen (reuse, yeni altyapı YOK):
    * PARTNER veya canApproveOfficeActions=true delege avukat. Staff/normal kullanıcı 403.
    *
-   * ~~Reactivate-via-create (dedup yan-etkisi) BU KAPSAM DIŞI~~ →
-   * **SUPERSEDED_BY_OWNER_CLARIFICATION (OWN-13 I02-R1A):** owner, `isActive:false → true`
-   * geçişinin **hangi entrypoint üzerinden oluşursa oluşsun** lifecycle mutation olduğunu
-   * tasdik etti. Create yetkisi lifecycle yetkisini İÇERMEZ; dedup/reactivate yolu artık
-   * `assertCanReactivateViaCreate()` ile AYNI predicate'e (isApproverEligible) bağlıdır.
+   * ~~Reactivate-via-create (dedup yan-etkisi) BU KAPSAM DIŞI~~ → ~~OWN-13 I02-R1A: create yolunda lifecycle kapısı~~ →
+   * **CL-R04 (owner kararı 2026-10-29/30):** create yolu ARTIK REAKTİVE ETMEZ; pasif mükerrer kayıt 409 döner ve
+   * `isActive:false → true` geçişi YALNIZ bu kapıdan (update) geçer. Create yetkisi lifecycle yetkisini İÇERMEZ.
    *
    * @remarks Çağrıldığı yerler:
    * - ClientService.remove() → DELETE /clients/:id (soft-delete, isActive:false)
@@ -386,38 +384,12 @@ export class ClientService {
   }
 
   /**
-   * OWN-13 I02-R1A (owner clarification, RATIFIED) — create/dedup yolundaki
-   * `isActive:false → true` geçişi için lifecycle yetki kapısı.
-   *
-   * **Create yetkisi lifecycle yetkisini İÇERMEZ.** USER yeni müvekkil oluşturabilir ama
-   * pasif mevcut kaydı create üzerinden reaktive EDEMEZ. `UserRole.ADMIN` tek başına da
-   * yetmez — eşik `assertCanManageLifecycle()` ile AYNI predicate'tir
-   * (`officeApproval.isApproverEligible`, yani PARTNER veya `canApproveOfficeActions`).
-   * Buradaki tek fark stabil `reasonCode`dur; lifecycle SEMANTİĞİ DEĞİŞMEZ ve OFFICE
-   * eligibility hesabı KOPYALANMAZ — mevcut boolean varyant (`canManageLifecycle`) çağrılır.
-   *
-   * SERVİS SINIRINDADIR: direct CLIENT route, CASE inline creditor ve Excel import
-   * yollarının ÜÇÜ de aynı kapıdan geçer (controller'a özel kontrol YOK).
-   */
-  private async assertCanReactivateViaCreate(
-    actor: ClientMutationActorContext,
-    tenantId: string,
-  ): Promise<void> {
-    if (!(await this.canManageLifecycle(actor?.userId, tenantId))) {
-      this.denyMutation({
-        allowed: false,
-        reasonCode: CLIENT_MUTATION_REASON.LIFECYCLE_DENIED,
-      });
-    }
-  }
-
-  /**
    * OWN-13 I02-R3 (owner D04/D06/D09, RATIFIED) — toplu/backfill CLIENT mutasyon yetki kapısı.
    *
    * Seed (`/seed/clients`, `/seed/all`, `/seed/fix-clients`) ve contact-followup backfill
    * TEK bir gerçek okuma/yazmadan önce ÇAĞIRDIĞI ortak kapı. Tenant eşitliği (owner req. 7
    * ile AYNI desen) ÖNCE, sonra elevated eşiği kontrol edilir. `UserRole.ADMIN` TEK BAŞINA
-   * yetmez — eşik `assertCanReactivateViaCreate` ile AYNI predicate'tir (`isApproverEligible`,
+   * yetmez — eşik `assertCanManageLifecycle` ile AYNI predicate'tir (`isApproverEligible`,
    * ikinci bir hesap YOK, D03). Rol yalnız VIEWER coarse gate'ini belirler (owner D07 deseni).
    */
   async assertCanRunElevatedClientBulkOperation(
@@ -601,9 +573,9 @@ export class ClientService {
 
   // Tek müvekkil getir
   // Task 4A (owner-locked karar #2): findOne VARSAYILAN olarak soft-deleted (isActive:false)
-  // DÖNDÜRMEZ → GET /clients/:id arşivlenmiş müvekkili göstermez (findAll ile tutarlı). İç çağıranlar
-  // (create reactivate dönüşü, update dönüşü) mutasyon sonrası kaydı her durumda almak için
-  // includeInactive:true geçer → mevcut davranış korunur. Tek dış çağıran = ClientController GET (default).
+  // DÖNDÜRMEZ → GET /clients/:id arşivlenmiş müvekkili göstermez (findAll ile tutarlı). İç çağıran (update dönüşü)
+  // mutasyon sonrası kaydı her durumda almak için includeInactive:true geçer. CL-R04: create dedup dönüşü artık
+  // VARSAYILAN (aktif) + K16 presenter ile okur. Tek dış çağıran = ClientController GET (default).
   async findOne(
     id: string,
     tenantId: string,
@@ -676,6 +648,32 @@ export class ClientService {
         ],
       } } },
     };
+  }
+
+  /**
+   * CL-R04 (owner kararı 2026-10-29/30) — dedup hedefi aktörün K16 okuma kapsamında mı?
+   * `internalClientReadScope` ile AYNI türetim (CaseClient ∧ aktörün CaseLawyer / CaseStaff(canView) olduğu dosya; rütbe,
+   * ADMIN, ReportingLine ve görev/masraf view_all izinleri kapsam ÜRETMEZ). Kapsam türetilemezse (CLIENT_READ_DENIED)
+   * FALSE — fail-closed. Yalnız `id` seçer; profil okunmaz.
+   *
+   * @remarks Çağrıldığı yer: ClientService.create() dedup dalı (mevcut kaydı bağlama = işlem yetkisi ∧ kapsam).
+   */
+  private async isClientWithinInternalReadScope(
+    db: Prisma.TransactionClient,
+    tenantId: string,
+    actorUserId: string | undefined,
+    clientId: string,
+  ): Promise<boolean> {
+    if (!actorUserId) return false;
+    let scope: Prisma.ClientWhereInput;
+    try {
+      scope = await this.internalClientReadScope(tenantId, actorUserId);
+    } catch (e) {
+      if (e instanceof ForbiddenException) return false;
+      throw e;
+    }
+    const hit = await db.client.findFirst({ where: { id: clientId, tenantId, AND: [scope] }, select: { id: true } });
+    return hit !== null;
   }
 
   /**
@@ -1542,8 +1540,8 @@ export class ClientService {
     // kimlik alanı KENDİ kolonu + identityNo (mixed-legacy kolon) üzerinden BAĞIMSIZ
     // problanır (PR-U4 update-guard deseniyle simetrik). İki alan birlikte geldiğinde vkn
     // duplicate'i artık atlanmaz; bir alanın değeri diğer alanın kolonunda aranmaz.
-    // Dedup yalnız GENİŞLER; reactivate yolu DEĞİŞMEZ. Yarış penceresi (eşzamanlı iki
-    // create) servis katmanında KAPANMAZ — DB-seviyesi tekillik B05 design gate çıktısıdır.
+    // Dedup yalnız GENİŞLER. Yarış penceresi (eşzamanlı iki create) servis katmanında KAPANMAZ —
+    // DB-seviyesi tekillik (B05, partial unique index) aynı DUPLICATE_IDENTITY sözleşmesine çevrilir.
     const dedupConds: any[] = [];
     if (data.tckn) dedupConds.push({ tckn: data.tckn }, { identityNo: data.tckn });
     if (data.vkn) dedupConds.push({ vkn: data.vkn }, { identityNo: data.vkn });
@@ -1556,64 +1554,36 @@ export class ClientService {
       });
       
       if (existing) {
-        // FIX A (PR-1): duplicate eşleşme SOFT-DELETED ise GERİ GETİR (reactivate).
-        // Silme = soft-delete (isActive=false). Silinmiş müvekkili yeniden ekleme/yeniden tarama
-        // eskiden kaydı isActive=false bırakıyordu → findAll (isActive=true) gizliyordu (vekaletleri olsa da).
-        const wasReactivated = existing.isActive === false;
-        if (wasReactivated) {
-          // OWN-13 I02-R1A (owner clarification): `isActive:false → true` LIFECYCLE mutasyonudur.
-          // Kapı HERHANGİ BİR DB mutation'dan ÖNCE çalışır — yetkisiz aktör hiçbir yazma yapmaz.
-          await this.assertCanReactivateViaCreate(actor, tenantId);
-          // D-1b: create/dedup üzerinden aktifleştirmede de YAZILACAK SON kimlik (bu dalda
-          // mevcut kaydın kimliği — reaktivasyon başka alan yazmaz) geçerli olmalıdır.
-          assertReactivationIdentityChecksum(resolveEffectiveIdentity({}, existing));
-          // C0-a: reaktivasyon mutation + audit AYNI transaction; CLIENT_CREATE'ten ayrı action.
-          try {
-          // DAR ATOMİKLİK: ortak transaction verildiyse İKİNCİ $transaction AÇILMAZ → dosya oluşturma
-          // düşerse reaktivasyon da geri alınır (kayıt yeniden isActive:false olur).
-          await runPartyWrite(this.prisma, txCtx, async (tx) => {
-            // TOCTOU: `existing` transaction DIŞINDA okundu. Yazma, yetkilendirdiğimiz DURUMA
-            // (`isActive:false`) KOŞULLU yapılır + tenant predicate taşır. Kayıt bu arada
-            // değiştiyse `count===0` olur ve HİÇBİR bayrak çevrilmez; yetkisiz bir aktörün
-            // ürettiği stale gözlem yetkili bir yazmaya dönüşemez.
-            // D-1b: yazma, doğruladığımız kimlik DEĞERLERİNE de koşullu — eşzamanlı bir
-            // kimlik değişikliği doğrulamayı geçersiz kılamaz (count===0 → hiçbir yazma/audit).
-            const { count } = await tx.client.updateMany({
-              where: {
-                id: existing.id,
-                tenantId,
-                isActive: false,
-                tckn: existing.tckn,
-                vkn: existing.vkn,
-              },
-              data: { isActive: true },
-            });
-            if (count === 0) return; // eşzamanlı değişim — audit de yazılmaz (olay gerçekleşmedi)
-            await this.audit.logInTransaction(tx, {
-              tenantId,
-              action: 'CLIENT_REACTIVATE',
-              entityType: 'CLIENT',
-              entityId: existing.id,
-              userId: actor?.userId,
-              metadata: { reactivatedFromDedupe: true },
-            });
+        // CL-R04 (owner kararı 2026-10-29/30; K16 Seçim 2 ile tutarlı): dedup dönüşü aktörün K16 OKUMA KAPSAMINA tabidir ve
+        // create ÜZERİNDEN REAKTİVASYON YOKTUR — lifecycle yalnız mevcut yetkili uç (PUT /clients/:id isActive →
+        // assertCanManageLifecycle). ~~FIX A (PR-1) reactivate-via-create~~ ve ~~OWN-13 I02-R1A create-yolu lifecycle kapısı~~
+        // bu kararla SUPERSEDED: create yolu hiçbir bayrak çevirmez, audit yazmaz.
+        //  - Kapsam DIŞI (aktif YA DA pasif): genel 409 DUPLICATE_IDENTITY — DB tekillik yolunun (P2002) MEVCUT sözleşmesi;
+        //    profil, id ve aktiflik bilgisi DÖNMEZ (varlık bilgisi dedup'ın doğasında; daha fazlası yok).
+        //  - Kapsam İÇİ pasif: 409 DUPLICATE_IDENTITY_INACTIVE (profil/id yok).
+        //  - Kapsam İÇİ aktif: GET /clients/:id ile AYNI alan sözleşmesi (K16 CONTACT_DETAIL maskeli presenter) +
+        //    `_existingReturned:true` (UX sinyali "zaten kayıtlı"); `_reactivated` şekil uyumu için daima false.
+        // SERVİS SINIRINDADIR: direct POST /clients, POST /cases satır içi taraf (ret → dava transaction'ı geri alınır,
+        // hiçbir dava/bağ/iş kaydı yazılmaz), import ve seed AYNI kapıdan geçer. Mevcut müvekkili bağlama yetkisi =
+        // işlem yetkisi (D01 create) ∧ K16 müvekkil kapsamı; görev/masraf view_all izinleri (F02-B) müvekkil kapsamı ÜRETMEZ.
+        const inScope = await this.isClientWithinInternalReadScope(db, tenantId, actor?.userId, existing.id);
+        if (!inScope) {
+          throw new ConflictException({
+            code: 'DUPLICATE_IDENTITY',
+            message: 'Bu kimlik numarasına sahip başka bir müvekkil mevcut',
           });
-          } catch (e) {
-            // C1-B05: reaktivasyon partial unique index'e takılırsa (başka AKTİF satır aynı
-            // kimliği taşıyor) aynı DUPLICATE_IDENTITY sözleşmesiyle reddedilir.
-            this.throwDuplicateIdentityOnUniqueViolation(e);
-            throw e;
-          }
-          console.log(`[ClientService] Soft-deleted müvekkil reaktive edildi: ${existing.id} (${existing.displayName})`);
-        } else {
-          console.log(`[ClientService] Duplicate müvekkil bulundu: ${existing.id} (${existing.displayName})`);
         }
-        // PR-AUDIT-1: duplicate'te SESSİZ döndürme yerine UX sinyali (POA deseni). Transient alanlar
-        // (persist EDİLMEZ, kontrat bozulmaz) → frontend "zaten kayıtlı / geri getirildi" bildirir.
-        // includeInactive: dedup hedefi (reactivate edilmemiş duplicate) soft-deleted olabilir;
-        // mutasyon-sonrası dönüş davranışı korunur (Task 4A findOne default-exclude'dan etkilenmez).
-        const result = await this.findOne(existing.id, tenantId, { includeInactive: true }, db);
-        return { ...(result as any), _existingReturned: true, _reactivated: wasReactivated };
+        // Kapsam içi pasif: aktiflik bilgisi yalnız kapsamı olan aktöre; yine profil/id YOK.
+        // `findOne` varsayılan olarak pasifi dışlar → eşzamanlı pasifleştirmede de (null) aynı sözleşme.
+        const result = existing.isActive === false ? null : await this.findOne(existing.id, tenantId, {}, db);
+        if (!result) {
+          throw new ConflictException({
+            code: 'DUPLICATE_IDENTITY_INACTIVE',
+            message: 'Bu kimlik numarasına sahip pasif bir müvekkil mevcut; yeniden etkinleştirme yalnız yetkili yaşam döngüsü işlemiyle yapılır',
+          });
+        }
+        console.log(`[ClientService] Duplicate müvekkil (kapsam içi, aktif) döndürüldü: ${existing.id}`);
+        return { ...presentInternalClient(result as any, 'CONTACT_DETAIL'), _existingReturned: true, _reactivated: false };
       }
     }
 

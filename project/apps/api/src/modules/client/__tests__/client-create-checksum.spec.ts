@@ -6,12 +6,13 @@
  * Doğrulama YALNIZ GERÇEKTEN YENİ kayıt için: AKTİF duplicate eşleşmesi (legacy, geçersiz-checksum
  * dahil) ETKİLENMEZ — eski veri kilitlenmez.
  *
- * D-1b (owner GO 2026-09-06) — BİLİNÇLİ DAVRANIŞ SIKILAŞTIRMASI: `isActive:false → true` geçişi
- * (create/dedup üzerinden REACTIVATE) artık YAZILACAK SON kimliğin geçerli olmasını ister. Aktif
- * duplicate yolu (mutasyon YOK) DEĞİŞMEDİ. Ayrıntı: Charter §58.3 ve
- * client-identity-checksum-tightening-d1b.spec.ts.
+ * D-1b (owner GO 2026-09-06) — `isActive:false → true` geçişi YAZILACAK SON kimliğin geçerli olmasını ister
+ * (update/lifecycle yolu; Charter §58.3, client-identity-checksum-tightening-d1b.spec.ts).
+ * CL-R04 (owner 2026-10-29/30): create/dedup yolu ARTIK REAKTİVE ETMEZ — pasif mükerrer kayıt 409
+ * DUPLICATE_IDENTITY_INACTIVE döner; checksum'a bu dalda HİÇ gelinmez (yazma yok). Aktif duplicate yolu
+ * (mutasyon YOK; maskeli dönüş) DEĞİŞMEDİ.
  */
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, ConflictException } from "@nestjs/common";
 import { ClientService } from "../client.service";
 
 const buildTx = () => ({
@@ -26,6 +27,8 @@ const buildTx = () => ({
 
 // existing: dedup findFirst (OR query) sonucu; null → "yeni kayıt" yolu (checksum'a gelinir).
 const buildPrisma = (existing: any, tx: any) => ({
+  // CL-R04: dedup dalı K16 kapsam probu yapar (user.findFirst + client.findFirst where.AND) — kapsam İÇİ varsayılır.
+  user: { findFirst: jest.fn().mockResolvedValue({ id: "fixture-actor" }) },
   client: {
     findFirst: jest.fn().mockImplementation(({ where }: any) =>
       where.id ? Promise.resolve({ id: where.id, isActive: true }) : Promise.resolve(existing),
@@ -95,10 +98,9 @@ describe("ClientService.create — TCKN/VKN checksum (Task A/Faz 1)", () => {
     expect(tx.client.updateMany).not.toHaveBeenCalled();
   });
 
-  it("D-1b — DEDUP/REACTIVATE: legacy geçersiz-checksum TCKN ile aktifleştirme REDDEDİLİR (bilinçli sıkılaştırma)", async () => {
-    // Soft-deleted legacy kaydın tckn'i geçersiz-checksum. isActive:false → true bir LIFECYCLE
-    // geçişidir; D-1b YAZILACAK SON kimliğin geçerli olmasını ister → 400, hiçbir yazma YOK.
-    // Kayıt "düzeltilmez": veri DOKUNULMADAN pasif kalır.
+  it("CL-R04 — DEDUP (PASİF eşleşme, legacy geçersiz-checksum): create reaktive ETMEZ → 409 DUPLICATE_IDENTITY_INACTIVE; checksum'a gelinmez, yazma YOK", async () => {
+    // Soft-deleted legacy kaydın tckn'i geçersiz-checksum. Create yolu artık bu kayda dokunmaz: ne 400 (checksum) ne
+    // reaktivasyon — pasif kayıt yalnız yetkili lifecycle ucundan (update) aktifleştirilir (orada D-1b uygulanır).
     const { svc, tx } = svcFor({ id: "legacy1", isActive: false, displayName: "LEGACY", tckn: "11111111111" });
     let caught: any;
     try {
@@ -106,17 +108,23 @@ describe("ClientService.create — TCKN/VKN checksum (Task A/Faz 1)", () => {
     } catch (e) {
       caught = e;
     }
-    expect(caught).toBeInstanceOf(BadRequestException);
-    expect(caught.response.reasonCode).toBe("CLIENT_IDENTITY_CHECKSUM_INVALID");
+    expect(caught).toBeInstanceOf(ConflictException);
+    expect(caught.getResponse().code).toBe("DUPLICATE_IDENTITY_INACTIVE");
     expect(tx.client.updateMany).not.toHaveBeenCalled();
     expect(tx.client.create).not.toHaveBeenCalled();
   });
 
-  it("D-1b — DEDUP/REACTIVATE: GEÇERLİ checksum'lı pasif kayıt aktifleştirilebilir", async () => {
+  it("CL-R04 — DEDUP (PASİF eşleşme, GEÇERLİ checksum): yine 409 DUPLICATE_IDENTITY_INACTIVE; updateMany YOK (yetkili aktör olsa bile)", async () => {
     const { svc, tx } = svcFor({ id: "ok1", isActive: false, displayName: "OK", tckn: "10000000146" });
-    const res = await svc.create("t1", { type: "PERSON", firstName: "A", tckn: "10000000146" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' });
-    expect((res as any)._reactivated).toBe(true);
-    expect(tx.client.updateMany).toHaveBeenCalledTimes(1);
+    let caught: any;
+    try {
+      await svc.create("t1", { type: "PERSON", firstName: "A", tckn: "10000000146" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ConflictException);
+    expect(caught.getResponse().code).toBe("DUPLICATE_IDENTITY_INACTIVE");
+    expect(tx.client.updateMany).not.toHaveBeenCalled();
     expect(tx.client.create).not.toHaveBeenCalled();
   });
 });

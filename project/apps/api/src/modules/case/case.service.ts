@@ -841,8 +841,11 @@ export class CaseService {
       }
     }
 
-    // 2) Müvekkil (creditor) — ClientService.create: identity (tckn/vkn) eşleşmesi → mevcut döndür
-    //    (reactivate dahil). Kimliksizde fuzzy YOK (Müvekkil=TCKN kontratı). Throw etmez.
+    // 2) Müvekkil (creditor) — ClientService.create: identity (tckn/vkn) eşleşmesi → CL-R04 (owner 2026-10-29/30):
+    //    aktörün K16 okuma kapsamındaki AKTİF mevcut kayıt bağlanır (maskeli dönüş; yalnız id kullanılır); kapsam DIŞI
+    //    (aktif/pasif) ya da kapsam içi PASİF kayıt 409 fırlatır → bu transaction GERİ ALINIR: dava, taraf bağı ve hiçbir iş
+    //    kaydı yazılmaz (bağlama = işlem yetkisi ∧ müvekkil kapsamı; dava açarak kapsam GENİŞLETİLEMEZ). Create üzerinden
+    //    reaktivasyon YOK. Kimliksizde fuzzy YOK (Müvekkil=TCKN kontratı).
     if (dto.creditors?.length) {
       for (const c of dto.creditors) {
         if (c.id || !c.name) continue;

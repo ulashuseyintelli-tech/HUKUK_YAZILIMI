@@ -24,10 +24,12 @@ describe("ClientService.create — FIND-C5 bağımsız kimlik probe (C1-B04)", (
       clientContact: { createMany: jest.fn().mockResolvedValue({}) },
     };
     const prisma: any = {
+      // CL-R04: dedup dalı K16 kapsam probu yapar (user.findFirst + client.findFirst where.AND) — kapsam İÇİ varsayılır.
+      user: { findFirst: jest.fn().mockResolvedValue({ id: "u1" }) },
       client: {
-        // OR'lu çağrı = dedup probe; OR'suz çağrı = findOne (mutasyon-sonrası dönüş).
+        // OR'lu çağrı = dedup probe; AND'li = kapsam probu; diğeri = findOne (mutasyon-sonrası dönüş).
         findFirst: jest.fn().mockImplementation(({ where }: any) => {
-          if (!where?.OR) return Promise.resolve({ id: "whatever" });
+          if (!where?.OR) return Promise.resolve({ id: "whatever", isActive: true });
           return Promise.resolve(
             typeof probeResult === "function" ? probeResult(where) : probeResult,
           );
@@ -110,23 +112,20 @@ describe("ClientService.create — FIND-C5 bağımsız kimlik probe (C1-B04)", (
     expect(probeCalls).toHaveLength(0);
   });
 
-  it("soft-deleted eşleşmede reactivate yolu KORUNUR (isActive:false → updateMany + _reactivated)", async () => {
+  it("soft-deleted eşleşmede create REAKTİVE ETMEZ (CL-R04): 409 DUPLICATE_IDENTITY_INACTIVE, updateMany YOK, tx AÇILMAZ", async () => {
     const existing = { id: "dup-2", isActive: false, displayName: "Pasif A.Ş." };
     const updateMany = jest.fn().mockResolvedValue({ count: 1 });
     const { svc, prisma } = build(existing);
     prisma.$transaction = jest
       .fn()
       .mockImplementation(async (cb: any) => cb({ client: { updateMany } }));
-    const res: any = await svc.create(
-      "t1",
-      { type: "COMPANY", companyName: "Pasif A.Ş.", vkn: "1234567890" },
-      actor,
-    );
-    expect(res._existingReturned).toBe(true);
-    expect(res._reactivated).toBe(true);
-    expect(updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "dup-2", tenantId: "t1", isActive: false } }),
-    );
+    let caught: any;
+    try {
+      await svc.create("t1", { type: "COMPANY", companyName: "Pasif A.Ş.", vkn: "1234567890" }, actor);
+    } catch (e) { caught = e; }
+    expect(caught?.getResponse?.().code).toBe("DUPLICATE_IDENTITY_INACTIVE");
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });
 

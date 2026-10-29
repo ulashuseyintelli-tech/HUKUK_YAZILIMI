@@ -397,13 +397,18 @@ describe('R2 — tenant / race / PII', () => {
 describe('R2 — sözleşme sabitleri', () => {
   const read = (rel: string) => readFileSync(join(__dirname, '..', rel), 'utf8');
 
-  it('18. R1/R1A davranışı gerilemez: client create/update actor ZORUNLU + reactivate kapısı yerinde', () => {
+  it('18. R1/R1A davranışı gerilemez: client create/update actor ZORUNLU; CL-R04 — create yolunda reaktivasyon YOK, dedup K16 kapsam probu yerinde', () => {
     const src = read('client.service.ts');
     // DAR ATOMİKLİK (owner GO 2026-09-12): `create`'e sondan opsiyonel `txCtx` eklendi; `actor`
     // ZORUNLU kalmaya devam eder (aşağıdaki `actor?:` yasağı bunu sabitler).
     expect(src).toMatch(/async create\([^)]*actor:\s*ClientMutationActorContext\s*[,)]/s);
     expect(src).toMatch(/async update\([^)]*actor:\s*ClientMutationActorContext\s*\)/s);
-    expect(src).toContain('assertCanReactivateViaCreate');
+    // CL-R04 (owner 2026-10-29/30): create üzerinden reaktivasyon kapısı KALDIRILDI (yolun kendisi yok); dedup dönüşü
+    // K16 kapsam probuna ve genel 409 / INACTIVE 409 sözleşmesine bağlı. Lifecycle kapısı (update/remove) yerinde.
+    expect(src).not.toContain('assertCanReactivateViaCreate');
+    expect(src).toContain('isClientWithinInternalReadScope');
+    expect(src).toContain("code: 'DUPLICATE_IDENTITY_INACTIVE'");
+    expect(src).toContain('assertCanManageLifecycle(');
     expect(src).not.toMatch(/async create\([^)]*actor\?:/s);
   });
 
