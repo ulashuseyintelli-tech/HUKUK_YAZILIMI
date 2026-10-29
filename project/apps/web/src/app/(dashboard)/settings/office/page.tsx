@@ -13,6 +13,7 @@ import { runMutation, runRefreshOnly } from "@/lib/mutation-outcome";
 import { useKeyedSubmitLock } from "@/lib/use-submit-lock";
 import { SettingsSection, WorkbenchHeader, SettingsDrawer, CollectionHeader } from "@/components/settings/settings-shell";
 import { PersonAccessInviteCard } from "@/components/settings/person-access-invite-card";
+import { WorkScopePermissionCard } from "@/components/settings/work-scope-permission-card"; // F02-B-1: büro geneli görünüm izinleri (ADMIN)
 import { PasswordInput } from "@/components/ui/PasswordInput";
 import { LawyerDefaultPermissionsBadge, LawyerDefaultPermissionsStatusBlock } from "@/components/settings/lawyer-default-permissions-status";
 import {
@@ -2125,6 +2126,7 @@ function LawyerModal({ lawyer, permissionStatus = null, onSave, onClose, saving 
               formDirty={isLawyerDirty}
             />
           )}
+          {lawyer?.id && <WorkScopePermissionCard personType="lawyer" personId={lawyer.id} formDirty={isLawyerDirty} />}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="px-3 py-1 border rounded">İptal</button>
             <button type="submit" disabled={saving} className="px-3 py-1 bg-primary text-white rounded disabled:opacity-50">{saving ? "..." : "Kaydet"}</button>
@@ -2289,6 +2291,7 @@ function StaffModal({ staff, onSave, onClose, saving }: { staff: any; onSave: (d
               formDirty={isStaffDirty}
             />
           )}
+          {staff?.id && <WorkScopePermissionCard personType="staff" personId={staff.id} formDirty={isStaffDirty} />}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="px-3 py-1 border rounded">İptal</button>
             <button type="submit" disabled={saving} className="px-3 py-1 bg-primary text-white rounded disabled:opacity-50">{saving ? "..." : "Kaydet"}</button>
