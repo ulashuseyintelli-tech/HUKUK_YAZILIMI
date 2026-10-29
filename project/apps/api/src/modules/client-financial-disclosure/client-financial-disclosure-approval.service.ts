@@ -6,6 +6,7 @@ import {
   type PrismaClient,
 } from '@prisma/client';
 import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-json';
+import { isSameApprovalIdentity } from '../../common/approval-identity';
 import { canonicalMoney, domainSeparatedHash } from './client-financial-disclosure-canonical';
 import {
   DISCLOSURE_APPROVER_CANDIDATE_SELECT,
@@ -309,8 +310,9 @@ export class ClientFinancialDisclosureApprovalService {
           throw new ClientFinancialDisclosureApprovalError('DISCLOSURE_APPROVAL_STALE_SNAPSHOT');
         }
 
-        // §41.2 KARAR 2 — requester kendi talebini ONAYLAYAMAZ (fail-closed).
-        if (request.requesterUserId === input.approverUserId) {
+        // §41.2 KARAR 2 — requester kendi talebini ONAYLAYAMAZ (fail-closed). F02-A: karşılaştırma KİŞİ
+        // düzeyindedir (OFF/OD-11: aynı hesap VEYA aynı tenant'ta geçerli TCKN kesişimi), yalnız userId değil.
+        if (await isSameApprovalIdentity(tx, request.requesterUserId, input.approverUserId, version.tenantId)) {
           throw new ClientFinancialDisclosureApprovalAuthorizationError(
             'DISCLOSURE_APPROVAL_SELF_APPROVAL_FORBIDDEN',
           );
@@ -662,14 +664,15 @@ export class ClientFinancialDisclosureApprovalService {
           throw new ClientFinancialDisclosureApprovalError('DISCLOSURE_APPROVAL_STALE_SNAPSHOT');
         }
 
-        // §41.2 KARAR 2/4 — requester hiçbir aşamayı onaylayamaz.
-        if (request.requesterUserId === input.contentApproverUserId) {
+        // §41.2 KARAR 2/4 — requester hiçbir aşamayı onaylayamaz. F02-A: KİŞİ düzeyinde (OFF/OD-11).
+        if (await isSameApprovalIdentity(tx, request.requesterUserId, input.contentApproverUserId, version.tenantId)) {
           throw new ClientFinancialDisclosureApprovalAuthorizationError(
             'DISCLOSURE_APPROVAL_SELF_APPROVAL_FORBIDDEN',
           );
         }
-        // §41.2 KARAR 4 — ZORUNLU four-eyes: ofis onaylayıcısı içerik onaylayıcısı OLAMAZ.
-        if (version.officeApprovedById === input.contentApproverUserId) {
+        // §41.2 KARAR 4 — ZORUNLU four-eyes: ofis onaylayıcısı içerik onaylayıcısı OLAMAZ. F02-A: KİŞİ düzeyinde —
+        // aynı kişinin ikinci hesabı four-eyes'ı sağlamaz.
+        if (await isSameApprovalIdentity(tx, version.officeApprovedById, input.contentApproverUserId, version.tenantId)) {
           throw new ClientFinancialDisclosureApprovalAuthorizationError(
             'DISCLOSURE_APPROVAL_FOUR_EYES_VIOLATION',
           );
