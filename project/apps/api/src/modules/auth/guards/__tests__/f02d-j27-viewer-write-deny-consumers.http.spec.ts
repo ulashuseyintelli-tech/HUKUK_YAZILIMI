@@ -10,14 +10,22 @@
  * guard zinciri; servisler stub (yalnız "çağrıldı mı" kaydeder). DB YOK; dış sisteme çağrı YOK.
  *
  * Kanıtlanan sözleşme:
- *  1. VIEWER → her yazma rotasında 403 `VIEWER_WRITE_DENIED`; servis HİÇ çağrılmaz (yazma 0).
- *  2. USER → guard geçer (403 değil). GET rotaları VIEWER için 403 değil (okuma değişmez).
- *  3. `@AllowViewerReadOnlyPost` ile işaretli SAF POST'lar (şablon önizleme, kambiyo zinciri analizi) VIEWER'a açık.
- *  4. Portal yönetici belge kararı (approve/reject) metot düzeyinde JwtAuthGuard + ViewerWriteDenyGuard taşır (statik).
+ *  1. VIEWER → her yazma rotasında 403; ret kodu rotanın TAŞIDIĞI kapıdan türetilir: `VIEWER_WRITE_DENIED`
+ *     (ViewerWriteDenyGuard), `OFFICE_WRITE_DENIED_VIEWER` (şablon yazma uçlarındaki F01 kapısı — ölçülmüş kod korunur)
+ *     ya da AdminGuard reddi. Servis / adaptör HİÇ çağrılmaz (yazma 0, dış gönderim 0).
+ *  2. Kapısız yazma rotası YOKTUR: keşif fail-closed'dur — yeni bir yazma rotası VIEWER'ı reddeden kapı taşımazsa test KIRMIZI.
+ *  3. USER → guard geçer (403 değil). GET rotaları VIEWER için 403 değil (okuma değişmez).
+ *  4. `@AllowViewerReadOnlyPost` ile işaretli SAF POST'lar (şablon önizleme, kambiyo zinciri analizi, vekalet geçerlilik
+ *     kontrolü) VIEWER'a açık.
+ *  5. Portal yönetici belge kararı (approve/reject) metot düzeyinde JwtAuthGuard + ViewerWriteDenyGuard taşır (statik).
  *
- * Kapsam dışı (bu PR'da DEĞİŞMEZ): poa / client-notification (Codex şeridi), user `me/password` (öz-servis),
- * auth ve portal KULLANICI rotaları, office/lawyer/staff (zaten OfficeF01AuthorizationGuard), client.controller ve
- * client-address (zaten servis düzeyi VIEWER DENY).
+ * R02 (owner devam talimatı 29.10.2026): poa, client-notification (3 denetleyici) ve greeting (tebrik) Codex şeridinden
+ * Claude şeridine alındı ve kapsandı. client-notification'da kapı METOT düzeyindedir (şablon uçları ölçülmüş kodlu F01
+ * kapısını taşır; NotificationDispatchController sınıf guard sayısı karakterizasyon sözleşmesinde sabittir).
+ *
+ * Kapsam dışı (DEĞİŞMEZ): user `me/password` (öz-servis), auth ve portal KULLANICI rotaları, office/lawyer/staff (zaten
+ * OfficeF01AuthorizationGuard), client.controller ve client-address (zaten servis düzeyi VIEWER DENY). Envanterdeki öteki
+ * yalnız-JWT yazıcılar (ör. notification/tebligat) F02-D KALAN yüzeydir; raporda listelenir, bu spec'e alınmadı.
  */
 jest.mock('pdf-poppler', () => ({ convert: async () => { throw new Error('pdf-poppler is stubbed in unit tests'); } }));
 
@@ -73,6 +81,21 @@ import { ClientKvkkRightsController } from '../../../client/client-kvkk-rights.c
 import { ClientDisclosureService } from '../../../client/client-disclosure.service';
 import { ClientDataSubjectRequestService } from '../../../client/client-data-subject-request.service';
 import { PortalController } from '../../../portal/portal.controller';
+// R02: Codex şeridinden alınan consumer'lar
+import { PoaController } from '../../../poa/poa.controller';
+import { PoaService } from '../../../poa/poa.service';
+import { ClientNotificationController } from '../../../client-notification/client-notification.controller';
+import { ClientNotificationService } from '../../../client-notification/client-notification.service';
+import { ClientNotificationAuthorityAdapter } from '../../../client-notification/client-notification-authority.adapter';
+import { ClientNotificationHistoryAccessService } from '../../../client-notification/client-notification-history-access.service';
+import { NotificationDispatchController } from '../../../client-notification/notification-dispatch.controller';
+import { NotificationDispatcherService } from '../../../client-notification/notification-dispatcher.service';
+import { NotificationHistoryPermissionController } from '../../../client-notification/notification-history-permission.controller';
+import { NotificationHistoryPermissionService } from '../../../client-notification/notification-history-permission.service';
+import { GreetingController } from '../../../greeting/greeting.controller';
+import { GreetingService } from '../../../greeting/greeting.service';
+import { AdminGuard } from '../admin.guard';
+import { OfficeF01AuthorizationGuard } from '../../../office-approval/office-f01-authorization.guard';
 
 const SECRET = 'f02d-j27-viewer-write-deny-local-test-secret-at-least-32-bytes';
 const TENANT = 'tenant-j27';
@@ -103,30 +126,57 @@ const fakePrisma = {
 /** Stub servis: her metod çağrısını kaydeder, hiçbir şey yapmaz. */
 const serviceCalls: string[] = [];
 const NEST_LIFECYCLE = new Set(['onModuleInit', 'onApplicationBootstrap', 'onModuleDestroy', 'beforeApplicationShutdown', 'onApplicationShutdown']);
-function stubService(name: string): object {
+function stubService(name: string, results: Record<string, unknown> = {}): object {
   return new Proxy({}, {
     get: (_t, prop) => {
       if (prop === 'then' || typeof prop === 'symbol') return undefined;
       if (NEST_LIFECYCLE.has(String(prop))) return undefined;
-      return (..._args: unknown[]) => { serviceCalls.push(`${name}.${String(prop)}`); return Promise.resolve({ stubbed: true }); };
+      return (..._args: unknown[]) => {
+        serviceCalls.push(`${name}.${String(prop)}`);
+        return Promise.resolve(String(prop) in results ? results[String(prop)] : { stubbed: true });
+      };
     },
   });
 }
 
-/** J-27 kapsamındaki consumer controller'lar (sınıf düzeyi guard beklenir; CaseStatus: metot düzeyi). */
+/** J-27 kapsamındaki consumer controller'lar (sınıf düzeyi guard beklenir; CaseStatus ve METHOD_GUARDED: metot düzeyi). */
 const CLASS_GUARDED = [
   ClientApprovalController, ClientStatementController, ClientIntelStatementController,
   DocumentController, TaskController,
   CaseInstrumentController, CaseLeaseController, CaseJudgmentController, CaseCollateralController,
   ClientLegalHoldController, ClientConsentController, ClientSpecialCategoryController, ClientKvkkRightsController,
+  // R02: Codex şeridinden alınan consumer'lar
+  PoaController, NotificationHistoryPermissionController, GreetingController,
 ];
-const MOUNTED = [...CLASS_GUARDED, CaseStatusController];
+/** R02: METOT düzeyi ViewerWriteDenyGuard beklenen handler'lar (sınıf düzeyi kapı ölçülmüş sözleşmeleri değiştirirdi). */
+const METHOD_GUARDED: ReadonlyArray<readonly [Function, string]> = [
+  [ClientNotificationController, 'sendEmail'], [ClientNotificationController, 'sendSms'],
+  [ClientNotificationController, 'testSmtpConnection'], [ClientNotificationController, 'testSmsConnection'],
+  [ClientNotificationController, 'testSend'], [ClientNotificationController, 'sendBulkEmail'],
+  [NotificationDispatchController, 'resend'],
+];
+/** Şablon YAZMA uçları: ölçülmüş F01 kapısı (OFFICE_WRITE_DENIED_VIEWER) korunur; ikinci VIEWER kapısı TAKILMAZ. */
+const F01_TEMPLATE_WRITE = ['createEmailTemplate', 'updateEmailTemplate', 'createDefaultTemplates'];
+const MOUNTED = [...CLASS_GUARDED, CaseStatusController, ClientNotificationController, NotificationDispatchController];
 
-interface Route { ctrl: string; handler: string; method: RequestMethod; url: string; readOnlyPost: boolean }
+type DenyGuard = 'viewer' | 'f01' | 'admin' | 'none';
+interface Route { ctrl: string; handler: string; method: RequestMethod; url: string; readOnlyPost: boolean; denyGuard: DenyGuard }
 const WRITE_METHODS = new Set([RequestMethod.POST, RequestMethod.PUT, RequestMethod.PATCH, RequestMethod.DELETE]);
 const VERB: Record<number, 'get' | 'post' | 'put' | 'delete' | 'patch'> = {
   [RequestMethod.GET]: 'get', [RequestMethod.POST]: 'post', [RequestMethod.PUT]: 'put', [RequestMethod.DELETE]: 'delete', [RequestMethod.PATCH]: 'patch',
 };
+
+/** Rotanın VIEWER'ı reddeden kapısı: sınıf + metot guard meta verisinden (fail-closed: hiçbiri yoksa 'none'). */
+function denyGuardOf(ctrl: Function, handler: Function): DenyGuard {
+  const guards: unknown[] = [
+    ...((Reflect.getMetadata(GUARDS_METADATA, ctrl) as unknown[] | undefined) ?? []),
+    ...((Reflect.getMetadata(GUARDS_METADATA, handler) as unknown[] | undefined) ?? []),
+  ];
+  if (guards.includes(ViewerWriteDenyGuard)) return 'viewer';
+  if (guards.includes(OfficeF01AuthorizationGuard)) return 'f01';
+  if (guards.includes(AdminGuard)) return 'admin';
+  return 'none';
+}
 
 function discoverRoutes(ctrl: Function): Route[] {
   const base = String(Reflect.getMetadata(PATH_METADATA, ctrl) ?? '');
@@ -139,7 +189,7 @@ function discoverRoutes(ctrl: Function): Route[] {
       if (method === undefined || path === undefined || !(method in VERB)) return [];
       const url = ('/api/' + [base, path].join('/')).replace(/\/+/g, '/').replace(/\/$/, '').replace(/:[A-Za-z_]+/g, 'x');
       const readOnlyPost = Reflect.getMetadata(ALLOW_VIEWER_READ_ONLY_POST, proto[handler]) === true;
-      return [{ ctrl: ctrl.name, handler, method, url, readOnlyPost }];
+      return [{ ctrl: ctrl.name, handler, method, url, readOnlyPost, denyGuard: denyGuardOf(ctrl, proto[handler]) }];
     });
 }
 
@@ -185,6 +235,14 @@ describe('F02-D / J-27: VIEWER yazma reddi — consumer uygulaması (gerçek JWT
         { provide: ClientSpecialCategoryService, useValue: stubService('ClientSpecialCategoryService') },
         { provide: ClientDisclosureService, useValue: stubService('ClientDisclosureService') },
         { provide: ClientDataSubjectRequestService, useValue: stubService('ClientDataSubjectRequestService') },
+        // R02: Codex şeridinden alınan consumer'ların servisleri (stub; dış sisteme çağrı YOK)
+        { provide: PoaService, useValue: stubService('PoaService', { getFile: { mimeType: 'application/octet-stream', filename: 'stub.bin', buffer: Buffer.from('') } }) },
+        { provide: ClientNotificationService, useValue: stubService('ClientNotificationService') },
+        { provide: ClientNotificationAuthorityAdapter, useValue: stubService('ClientNotificationAuthorityAdapter') },
+        { provide: ClientNotificationHistoryAccessService, useValue: stubService('ClientNotificationHistoryAccessService') },
+        { provide: NotificationDispatcherService, useValue: stubService('NotificationDispatcherService') },
+        { provide: NotificationHistoryPermissionService, useValue: stubService('NotificationHistoryPermissionService') },
+        { provide: GreetingService, useValue: stubService('GreetingService') },
       ],
     }).compile();
     app = module.createNestApplication();
@@ -205,12 +263,16 @@ describe('F02-D / J-27: VIEWER yazma reddi — consumer uygulaması (gerçek JWT
   const call = (r: Route, key: ActorKey) =>
     request(app.getHttpServer())[VERB[r.method]](r.url).set('Authorization', bearer(key)).send({});
 
-  it('keşif kör değil: yazma rotası ≥ 40, GET ≥ 10, saf POST = 2 (şablon önizleme + zincir analizi)', () => {
-    expect(WRITE_ROUTES.length).toBeGreaterThanOrEqual(40);
-    expect(GET_ROUTES.length).toBeGreaterThanOrEqual(10);
+  it('keşif kör değil: yazma rotası ≥ 70, GET ≥ 20, saf POST = 3 (şablon önizleme + zincir analizi + vekalet geçerlilik kontrolü)', () => {
+    expect(WRITE_ROUTES.length).toBeGreaterThanOrEqual(70);
+    expect(GET_ROUTES.length).toBeGreaterThanOrEqual(20);
     expect(READ_ONLY_POSTS.map((r) => `${r.ctrl}.${r.handler}`).sort()).toEqual(
-      ['CaseInstrumentController.analyzeChain', 'DocumentController.previewTemplate'],
+      ['CaseInstrumentController.analyzeChain', 'DocumentController.previewTemplate', 'PoaController.checkValidPoaForLawyers'],
     );
+  });
+
+  it("kapısız yazma rotası YOK (fail-closed keşif): her yazma rotası VIEWER'ı reddeden bir kapı taşır", () => {
+    expect(WRITE_ROUTES.filter((r) => r.denyGuard === 'none').map((r) => `${r.ctrl}.${r.handler}`)).toEqual([]);
   });
 
   describe('statik: guard zinciri', () => {
@@ -222,6 +284,22 @@ describe('F02-D / J-27: VIEWER yazma reddi — consumer uygulaması (gerçek JWT
       const guards: unknown[] = Reflect.getMetadata(GUARDS_METADATA, CaseStatusController.prototype.changeStatus) ?? [];
       expect(guards).toEqual(expect.arrayContaining([JwtAuthGuard, ViewerWriteDenyGuard]));
     });
+    it.each(METHOD_GUARDED.map(([c, h]) => [`${c.name}.${h}`, c, h] as const))('%s metot düzeyinde ViewerWriteDenyGuard taşır (R02)', (_n, ctrl, h) => {
+      const handler = (ctrl.prototype as Record<string, unknown>)[h];
+      expect(typeof handler).toBe('function');
+      const guards: unknown[] = Reflect.getMetadata(GUARDS_METADATA, handler as object) ?? [];
+      expect(guards).toContain(ViewerWriteDenyGuard);
+    });
+    it.each(F01_TEMPLATE_WRITE)('ClientNotificationController.%s ölçülmüş F01 kapısını taşır; ikinci VIEWER kapısı TAKILMAZ (kod sözleşmesi korunur)', (h) => {
+      const handler = (ClientNotificationController.prototype as unknown as Record<string, unknown>)[h];
+      expect(typeof handler).toBe('function');
+      const guards: unknown[] = Reflect.getMetadata(GUARDS_METADATA, handler as object) ?? [];
+      expect(guards).toContain(OfficeF01AuthorizationGuard);
+      expect(guards).not.toContain(ViewerWriteDenyGuard);
+    });
+    it('NotificationDispatchController sınıf düzeyinde TEK guard taşır (karakterizasyon sözleşmesi DEĞİŞMEZ)', () => {
+      expect(((Reflect.getMetadata(GUARDS_METADATA, NotificationDispatchController) as unknown[] | undefined) ?? [])).toHaveLength(1);
+    });
     it.each(['approveDocument', 'rejectDocument'])('PortalController.%s (yönetici belge kararı) JwtAuthGuard + ViewerWriteDenyGuard taşır', (h) => {
       const handler = (PortalController.prototype as unknown as Record<string, unknown>)[h];
       expect(typeof handler).toBe('function');
@@ -230,11 +308,13 @@ describe('F02-D / J-27: VIEWER yazma reddi — consumer uygulaması (gerçek JWT
     });
   });
 
-  describe('VIEWER → 403 VIEWER_WRITE_DENIED, servis çağrısı 0', () => {
-    it.each(WRITE_ROUTES.map((r) => [`${RequestMethod[r.method]} ${r.url} (${r.ctrl}.${r.handler})`, r] as const))('%s', async (_n, r) => {
+  describe('VIEWER → 403 (ret kodu taşıdığı kapıdan), servis / adaptör çağrısı 0', () => {
+    const EXPECTED_CODE: Record<'viewer' | 'f01', string> = { viewer: VIEWER_WRITE_DENIED, f01: 'OFFICE_WRITE_DENIED_VIEWER' };
+    it.each(WRITE_ROUTES.map((r) => [`${RequestMethod[r.method]} ${r.url} (${r.ctrl}.${r.handler}) [${r.denyGuard}]`, r] as const))('%s', async (_n, r) => {
       const res = await call(r, 'viewer');
       expect(res.status).toBe(403);
-      expect(res.body?.code).toBe(VIEWER_WRITE_DENIED);
+      if (r.denyGuard === 'admin') expect(String(res.body?.message ?? '')).toContain('ADMIN');
+      else expect(res.body?.code).toBe(EXPECTED_CODE[r.denyGuard as 'viewer' | 'f01']);
       expect(serviceCalls).toEqual([]);
     });
   });
