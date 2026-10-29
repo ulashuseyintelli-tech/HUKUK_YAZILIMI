@@ -7,6 +7,9 @@ import { AuthService } from "../../auth/auth.service";
 import { UserService } from "../user.service";
 import { AuditService } from "../../audit/audit.service";
 
+/** K-A1 (#3046): kayıt yolu kişi kartı ister — sentetik TCKN (gerçek kişi değil; identity-validation.util.spec kanonik). */
+const REGISTER_TCKN = "10000000146";
+
 /**
  * OFFICE-AUTH-P01 — self-service parola değiştirme + tokenVersion session revocation
  * (GERÇEK Postgres, izole test verisi). GATE: describeDb → DATABASE_URL yoksa SKIP.
@@ -49,7 +52,7 @@ describeDb("OFFICE-AUTH-P01 — changeOwnPassword (integration)", () => {
       email: `p01-migration+${ts}@test.local`,
       password: "initial-password-123",
       name: "Test",
-      surname: "User",
+      surname: "User", personType: "LAWYER", tckn: REGISTER_TCKN,
     } as any);
     createdTenantIds.push(res.tenant.id);
 
@@ -68,7 +71,7 @@ describeDb("OFFICE-AUTH-P01 — changeOwnPassword (integration)", () => {
       email: emailA,
       password: "old-password-123456",
       name: "Kullanici",
-      surname: "A",
+      surname: "A", personType: "LAWYER", tckn: REGISTER_TCKN,
     } as any);
     createdTenantIds.push(resA.tenant.id);
 
@@ -77,7 +80,7 @@ describeDb("OFFICE-AUTH-P01 — changeOwnPassword (integration)", () => {
       email: emailB,
       password: "tenant-b-password-1",
       name: "Kullanici",
-      surname: "B",
+      surname: "B", personType: "LAWYER", tckn: REGISTER_TCKN,
     } as any);
     createdTenantIds.push(resB.tenant.id);
 
@@ -134,7 +137,7 @@ describeDb("OFFICE-AUTH-P01 — changeOwnPassword (integration)", () => {
       email: `p01-samepass+${ts}@test.local`,
       password: "identical-password-1",
       name: "Test",
-      surname: "SamePass",
+      surname: "SamePass", personType: "LAWYER", tckn: REGISTER_TCKN,
     } as any);
     createdTenantIds.push(res.tenant.id);
 

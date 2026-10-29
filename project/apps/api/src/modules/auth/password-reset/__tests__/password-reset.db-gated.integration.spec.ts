@@ -10,6 +10,9 @@ import { AuditService } from "../../../audit/audit.service";
 import { EmailProviderService } from "../../../notification/email-provider.service";
 import { hashInviteToken } from "../../invite/user-invite-token.util";
 
+/** K-A1 (#3046): kayıt yolu kişi kartı ister — sentetik TCKN (gerçek kişi değil; identity-validation.util.spec kanonik). */
+const REGISTER_TCKN = "10000000146";
+
 /**
  * OFFICE-AUTH-P02 — credential-recovery (GERÇEK Postgres, izole test verisi).
  * GATE: describeDb → DATABASE_URL yoksa SKIP. EMAIL_PROVIDER ayarlanmadığı için
@@ -65,7 +68,7 @@ describeDb("OFFICE-AUTH-P02 — password reset (integration)", () => {
       email,
       password: "original-password-123456",
       name: "Test",
-      surname: label,
+      surname: label, personType: "LAWYER", tckn: REGISTER_TCKN,
     } as any);
     createdTenantIds.push(res.tenant.id);
     return { tenantSlug: res.tenant.slug, email, userId: res.user.id, tenantId: res.tenant.id };
@@ -84,9 +87,9 @@ describeDb("OFFICE-AUTH-P02 — password reset (integration)", () => {
   it("cross-tenant izolasyon: aynı e-posta iki farklı tenant'ta ayrı hesaplara ait — yalnız doğru tenant'ın token'ı üretilir", async () => {
     const ts = Date.now();
     const email = `p02-shared+${ts}@test.local`;
-    const resA: any = await auth.register({ firmName: `P02 Shared A ${ts}`, email, password: "password-tenant-a-1", name: "A", surname: "User" } as any);
+    const resA: any = await auth.register({ firmName: `P02 Shared A ${ts}`, email, password: "password-tenant-a-1", name: "A", surname: "User", personType: "LAWYER", tckn: REGISTER_TCKN, } as any);
     createdTenantIds.push(resA.tenant.id);
-    const resB: any = await auth.register({ firmName: `P02 Shared B ${ts}`, email, password: "password-tenant-b-1", name: "B", surname: "User" } as any);
+    const resB: any = await auth.register({ firmName: `P02 Shared B ${ts}`, email, password: "password-tenant-b-1", name: "B", surname: "User", personType: "LAWYER", tckn: REGISTER_TCKN, } as any);
     createdTenantIds.push(resB.tenant.id);
 
     const rawA = await issueAndFetchRawToken(email, resA.tenant.slug);
