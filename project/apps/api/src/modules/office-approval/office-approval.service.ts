@@ -44,7 +44,7 @@ import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { OfficeApprovalDomainSyncService } from './office-approval-domain-sync.service';
 import { PayoutApprovalPolicy } from './client-payout-approval.policy';
 import { ClientFinancialDisclosureApprovalPolicy } from './client-financial-disclosure-approval.policy';
-import { isValidTckn } from '../../common/identity-validation.util';
+import { isSameApprovalIdentity, resolveApprovalIdentityCandidates } from '../../common/approval-identity';
 import { assertGenericDecisionAllowed } from './office-approval-domain-ownership';
 import { assertApprovalDecisionRole, isOfficeWriteDeniedForRole } from './office-write-role.policy';
 import { lockAndAssertExecutionRole, lockExecutionActorRows } from './office-approval-execution-authority';
@@ -415,21 +415,8 @@ export class OfficeApprovalService {
     tenantId: string,
     db: Prisma.TransactionClient = this.prisma,
   ): Promise<Set<string>> {
-    const user = await db.user.findUnique({
-      where: { id: userId },
-      select: {
-        lawyer: { select: { tenantId: true, tckn: true } },
-        staffMember: { select: { tenantId: true, tckn: true } },
-      },
-    });
-    const candidates = new Set<string>();
-    if (user?.lawyer && user.lawyer.tenantId === tenantId && isValidTckn(user.lawyer.tckn)) {
-      candidates.add(String(user.lawyer.tckn).replace(/\D/g, ''));
-    }
-    if (user?.staffMember && user.staffMember.tenantId === tenantId && isValidTckn(user.staffMember.tckn)) {
-      candidates.add(String(user.staffMember.tckn).replace(/\D/g, ''));
-    }
-    return candidates;
+    // F02-A: tek kaynak `common/approval-identity` — domain'e ait onay akışları (FD) aynı yüklemi tüketir.
+    return resolveApprovalIdentityCandidates(db, userId, tenantId);
   }
 
   /**
@@ -444,14 +431,7 @@ export class OfficeApprovalService {
     tenantId: string,
     db: Prisma.TransactionClient = this.prisma,
   ): Promise<boolean> {
-    if (userIdA === userIdB) return true;
-    // Sıralı: interaktif transaction istemcisi eşzamanlı sorgu çalıştırmaz.
-    const candidatesA = await this.resolveSelfApprovalIdentityCandidates(userIdA, tenantId, db);
-    const candidatesB = await this.resolveSelfApprovalIdentityCandidates(userIdB, tenantId, db);
-    for (const candidate of candidatesA) {
-      if (candidatesB.has(candidate)) return true;
-    }
-    return false;
+    return isSameApprovalIdentity(db, userIdA, userIdB, tenantId);
   }
 
   private async assertNotSelfApproval(

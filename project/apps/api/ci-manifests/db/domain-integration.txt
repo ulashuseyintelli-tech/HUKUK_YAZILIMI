@@ -239,6 +239,10 @@ src/modules/office-approval/__tests__/execution-authority-revocation-race.db-gat
 #     requestRevision/approveWithChanges) tx icinde Lawyer->User FOR SHARE + yol-ozel kural; gercek LawyerService
 #     update/delete iptalleriyle serilesme, domain senkronu hatasinda tam geri alma. Tx ici yetki kapatilinca 6 test kirilir.
 src/modules/office-approval/__tests__/approval-decision-revocation-race.db-gated.integration.spec.ts
+#   F02-A / J-37 (owner F02 uygulama talimati 2026-10-29): oz-onay KISI kimligi (OFF/OD-11) — ayni kisinin iki hesabi.
+#     Gercek kayit yolu + HTTP/JWT + PostgreSQL: COLLECTION_VOID / FINANCIAL_CASE_CLOSE genel motor + FD uc ayrilik
+#     kontrolu (common/approval-identity). it.failing = kartsiz hesap BILINEN ACIK (F02 karar K-A1); duzeltme gelince kirilir.
+src/modules/office-approval/__tests__/f02a-self-approval-identity-two-accounts.db-gated.integration.spec.ts
 #
 #   CLIENT-SETTLEMENT kalan 2 DB-gated spec (owner GO 2026-09-17 "KALAN 2 DB-GATED SPEC / TM47D onarimi + 32/32"):
 #     describeDb + gercek PrismaClient + tm47d-happy-path-seed. tm47d test-kurulum onarimi:
