@@ -2,6 +2,7 @@ import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Req,
 import { BankService } from './bank.service';
 import { normalizeOptionalCaseDebtorId } from '../collection/collection-source-identity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { GuidedOpenObserveService } from '../permission-diagnostics/guided-open-observe.service';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
@@ -11,8 +12,12 @@ import {
   ReceiptObjectScopeAuthorizationService,
 } from '../collection/receipt-object-scope-authorization.service';
 
+// F02-D-2 dilim 1 (owner devam talimatı 30.10.2026): VIEWER banka hesabı ekleyemez, senkron tetikleyemez, hareket eşleştiremez,
+// EFT/havale GÖNDEREMEZ (para hareketi). Ölçülen boşluk: yalnız JWT; BankService rol sormuyor; eşleştirmedeki nesne-kapsam
+// yetkisi (receiptAuthorization) rol kapısı DEĞİL. Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`
+// (JwtAuthGuard'dan SONRA). Okuma uçları (hesaplar, bakiye, hareketler, eşleşmemiş, istatistik) DEĞİŞMEZ.
 @Controller('bank')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class BankController {
   constructor(
     private bankService: BankService,

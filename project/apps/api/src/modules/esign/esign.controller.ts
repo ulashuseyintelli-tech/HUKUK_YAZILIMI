@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Param, Query, UseGuards, ServiceUnavailableException } from '@nestjs/common';
 import { ESignService, ESignRequest } from './esign.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 // CLIENT-SEC-H2A: EsignLog modelinde tenantId kolonu yok — /history ve /stats tenant-scope
@@ -11,8 +12,11 @@ const H2A_CONTAINMENT_ERROR = {
   message: 'Bu uç nokta güvenlik incelemesi nedeniyle geçici olarak kullanılamıyor.',
 };
 
+// F02-D-2 dilim 1 (owner devam talimatı 30.10.2026): VIEWER e-imza isteği başlatamaz (tekil/toplu: dış sağlayıcıya istek +
+// esignLog yazımı). `verify` de kapalı: saf hesaplama DEĞİL — imzalı belge dış sağlayıcıya aktarılır (fail-closed). Ölçülen
+// boşluk: yalnız JWT; servis yalnız tenant bağlamı soruyor. Kapalı kural OWN-13 §51 / AK-1a / B4-B6. GET uçları DEĞİŞMEZ.
 @Controller('esign')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class ESignController {
   constructor(private esignService: ESignService) {}
 
