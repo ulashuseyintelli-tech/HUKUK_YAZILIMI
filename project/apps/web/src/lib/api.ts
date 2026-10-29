@@ -109,6 +109,17 @@ export interface ClientOperatingSnapshot {
   signals: ClientOperatingSignal[];
 }
 
+/** F02-B-1: görev / masraf "büro geneli görünüm" izin anahtarları (API: PermissionGrant GLOBAL). */
+export type WorkScopeViewAllKey = "office.tasks.view_all" | "office.expenses.view_all";
+export type WorkScopeResolution = "ALLOW" | "DENY" | "NONE";
+export interface WorkScopePermissionState {
+  personType: "lawyer" | "staff";
+  personId: string;
+  /** Kişi kartına bağlı giriş hesabı var mı (yoksa izin verilemez: önce davet). */
+  linked: boolean;
+  permissions: Array<{ key: WorkScopeViewAllKey; effect: WorkScopeResolution; validUntil: string | null }>;
+}
+
 export interface ClientOperatingSnapshotResponse {
   data: ClientOperatingSnapshot;
 }
@@ -388,6 +399,29 @@ class ApiClient {
     return this.request<{ inviteId: string; revoked: boolean }>(
       `/auth/invites/${inviteId}/revoke`,
       { method: "POST" }
+    );
+  }
+
+  // F02-B-1 (owner kararı 29–30.10.2026): görev / masraf "büro geneli görünüm" izinleri (PermissionGrant GLOBAL;
+  // office.tasks.view_all / office.expenses.view_all). Yalnız ADMIN (backend tx içinde güncel DB rolü). DENY > ALLOW > varsayılan.
+  // Bu izinler MÜVEKKİL okuma ya da dosyaya bağlama yetkisi VERMEZ; liste kapsamını da henüz genişletmez (ayrı dilim/yayın).
+  async getWorkScopePermissions(personType: "lawyer" | "staff", personId: string) {
+    return this.request<WorkScopePermissionState>(
+      `/office/view-all-permissions?personType=${personType}&personId=${encodeURIComponent(personId)}`
+    );
+  }
+
+  async setWorkScopePermission(data: { personType: "lawyer" | "staff"; personId: string; key: WorkScopeViewAllKey; effect: "ALLOW" | "DENY"; validUntil?: string; reason?: string }) {
+    return this.request<{ key: WorkScopeViewAllKey; effect: "ALLOW" | "DENY"; validUntil: string | null; supersededCount: number }>(
+      "/office/view-all-permissions",
+      { method: "POST", body: JSON.stringify(data) }
+    );
+  }
+
+  async revokeWorkScopePermission(data: { personType: "lawyer" | "staff"; personId: string; key: WorkScopeViewAllKey; reason?: string }) {
+    return this.request<{ key: WorkScopeViewAllKey; revoked: number }>(
+      "/office/view-all-permissions/revoke",
+      { method: "POST", body: JSON.stringify(data) }
     );
   }
 

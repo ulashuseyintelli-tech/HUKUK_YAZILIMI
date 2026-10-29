@@ -9,13 +9,18 @@ import {
 } from "@nestjs/common";
 import { NotificationService } from "./notification.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { GuidedOpenObserveService } from "../permission-diagnostics/guided-open-observe.service";
 import { ActionCode } from "../policy-engine/types/action-code.enum";
 import { NotificationStatus } from "@prisma/client";
 
+// F02-D-2 dilim 1 (owner devam talimatı 30.10.2026): VIEWER tebligat oluşturamaz, durum yazamaz, durum sorgusu tetikleyemez,
+// SMS / e-posta GÖNDEREMEZ. Ölçülen boşluk: bu denetleyici yalnız JWT taşıyordu; servis katmanında rol kontrolü YOK
+// (NotificationService). Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard` (JwtAuthGuard'dan SONRA).
+// Okuma uçları ve saf şablon üretimi (collection-templates: DB okumaz/yazmaz, kaynaktan doğrulandı) DEĞİŞMEZ.
 @Controller("notifications")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class NotificationController {
   constructor(
     private notificationService: NotificationService,
@@ -133,6 +138,7 @@ export class NotificationController {
    * POST /notifications/collection-templates
    */
   @Post("collection-templates")
+  @AllowViewerReadOnlyPost() // saf şablon üretimi: DB okumaz/yazmaz, dış çağrı yok (notification.service.ts getCollectionTemplates — kaynaktan doğrulandı)
   async getCollectionTemplates(
     @Body() body: {
       debtorName: string;

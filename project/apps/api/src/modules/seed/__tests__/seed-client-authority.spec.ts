@@ -9,7 +9,7 @@
  *  - Satır-bazlı devam KORUNUR: bir satırın hatası önceki başarıları geri almaz, `failed`
  *    açıkça sayılır (hata sessizce başarı sayılmaz).
  */
-import { ForbiddenException, BadRequestException } from '@nestjs/common';
+import { ForbiddenException, BadRequestException, ConflictException } from '@nestjs/common';
 import { SeedService } from '../seed.service';
 
 const actorViewer = { userId: 'u1', tenantId: 't1', role: 'VIEWER' };
@@ -82,14 +82,34 @@ describe('SeedService.seedClients (D04/D05/D07)', () => {
     expect(res.failed).toBe(1);
   });
 
-  it('ClientService.create dedup/reactivate ile mevcut kaydı dönerse (_existingReturned) created ARTMAZ', async () => {
+  it('ClientService.create kapsam içi mevcut kaydı dönerse (_existingReturned) created ARTMAZ, existing sayılır', async () => {
     const clientService = buildAllowedClientService(async () => ({ id: 'existing', _existingReturned: true }));
     const svc = new SeedService({} as any, noopAudit(), clientService);
 
     const res = await svc.seedClients('t1', actorElevated);
 
     expect(res.created).toBe(0);
+    expect(res.existing).toBe(10);
     expect(res.failed).toBe(0);
+  });
+
+  it('CL-R04: kapsam dışı / pasif mükerrer kimlik 409 DUPLICATE_IDENTITY(_INACTIVE) → "mevcut" (idempotent), failed DEĞİL; öteki hatalar failed kalır', async () => {
+    let call = 0;
+    const clientService = buildAllowedClientService(async () => {
+      call++;
+      if (call <= 3) throw new ConflictException({ code: 'DUPLICATE_IDENTITY', message: 'Bu kimlik numarasına sahip başka bir müvekkil mevcut' });
+      if (call === 4) throw new ConflictException({ code: 'DUPLICATE_IDENTITY_INACTIVE', message: 'pasif' });
+      if (call === 5) throw new ConflictException({ code: 'SOMETHING_ELSE', message: 'başka çatışma' });
+      return { id: `new-${call}`, _existingReturned: false };
+    });
+    const svc = new SeedService({} as any, noopAudit(), clientService);
+
+    const res = await svc.seedClients('t1', actorElevated);
+
+    expect(clientService.create).toHaveBeenCalledTimes(10);
+    expect(res.existing).toBe(4);
+    expect(res.failed).toBe(1);
+    expect(res.created).toBe(5);
   });
 });
 

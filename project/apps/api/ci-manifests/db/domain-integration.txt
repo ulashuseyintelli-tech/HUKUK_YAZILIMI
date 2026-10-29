@@ -497,6 +497,8 @@ src/modules/report/__tests__/collection-report-currency.db-gated.integration.spe
 src/modules/uyap/__tests__/uyap-submit-runtime-authz.http.db-gated.integration.spec.ts
 src/modules/portal/__tests__/portal-document-transitions.db-gated.integration.spec.ts
 src/modules/client-notification/__tests__/notification-history-permission.http.db-gated.integration.spec.ts
+src/modules/work-scope-permission/__tests__/work-scope-permission.http.db-gated.integration.spec.ts
 src/modules/client-notification/__tests__/notification-history-access.http.db-gated.integration.spec.ts
 src/modules/client/__tests__/client-internal-read.http.db-gated.integration.spec.ts
+src/modules/client/__tests__/cl-r04-dedup-return-scope.http.db-gated.integration.spec.ts
 src/modules/export-import/__tests__/generic-export-privacy.http.db-gated.integration.spec.ts

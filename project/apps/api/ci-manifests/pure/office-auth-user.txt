@@ -59,6 +59,8 @@ src/modules/user/__tests__/change-password.service.spec.ts
 # 3 ardisik lokal kosu ile deterministik dogrulandi (425/425), tracked dosya
 # yazmadiklari ve askida kalmadiklari teyit edildi.
 src/modules/office/__tests__/office-settings-security.spec.ts
+# F02-B-1 (owner 2026-10-29/30): gorev/masraf buro geneli gorunum izinleri — PermissionGrant GLOBAL, ADMIN tx, DENY > ALLOW (saf, mock).
+src/modules/work-scope-permission/__tests__/work-scope-permission.service.spec.ts
 src/scripts/__tests__/office-cap02-identity-binding-dry-run.core.spec.ts
 src/scripts/__tests__/office-cap02-reportingline-population.core.spec.ts
 src/scripts/__tests__/office-cap02-identity-binding-operate.core.spec.ts

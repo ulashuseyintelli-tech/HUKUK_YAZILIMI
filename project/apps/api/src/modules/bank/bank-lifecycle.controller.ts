@@ -2,6 +2,7 @@ import { Body, Controller, Param, Post, UseGuards } from '@nestjs/common';
 import { BankSettlementEvidenceSource } from '@prisma/client';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { BankCandidateSettlementTransitionService } from './bank-candidate-settlement-transition.service';
 import { BankSettlementEvidenceWriterService } from './bank-settlement-evidence-writer.service';
 import {
@@ -14,9 +15,13 @@ import {
  *
  * Tenant and actor authority always come from JwtAuthGuard's trusted principal.
  * Evidence append and candidate finality remain separate canonical mutations.
+ *
+ * F02-D-2 dilim 1 (owner devam talimatı 30.10.2026): rol kapısı GRANT'ten ÖNCE gelir — settlement-verifier yetkisi
+ * (PermissionGrant bank.settlement.verify) rol sormuyor; grant verilmiş VIEWER yazabiliyordu (ölçüldü). `ViewerWriteDenyGuard`
+ * JwtAuthGuard'dan SONRA; grant kapısı AYNEN korunur (daha dar). Yeni rol / izin YOK.
  */
 @Controller('bank')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class BankLifecycleController {
   constructor(
     private readonly evidenceWriter: BankSettlementEvidenceWriterService,

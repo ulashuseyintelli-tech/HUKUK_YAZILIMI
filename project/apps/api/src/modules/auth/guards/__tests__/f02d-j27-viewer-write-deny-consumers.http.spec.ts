@@ -23,9 +23,16 @@
  * Claude şeridine alındı ve kapsandı. client-notification'da kapı METOT düzeyindedir (şablon uçları ölçülmüş kodlu F01
  * kapısını taşır; NotificationDispatchController sınıf guard sayısı karakterizasyon sözleşmesinde sabittir).
  *
+ * R03 (F02-D-2 dilim 1, owner devam talimatı 30.10.2026 — "önce dış gönderim ve mali yazma yolları; servis koruması ve principal
+ * modeli doğrula; yalnız gerçekten ihlal edilen yüzeyleri düzelt"): tebligat (SMS/e-posta/ödeme emri), borçlu iletişimi
+ * (SMS/e-posta/çağrı kaydı), e-imza (istek/toplu/doğrulama), ödeme talimatı, muhasebe manuel düzeltme + ters kayıt (servis
+ * yalnız RÜTBE soruyordu — PARTNER kartlı VIEWER geçiyordu), banka (hesap ekleme, senkron, eşleştirme, EFT/havale) ve banka
+ * yaşam döngüsü (servis yalnız GRANT soruyordu). Ölçüm: değişiklik öncesi bu rotalarda VIEWER servise iniyordu.
+ * BİLİNÇLİ DIŞARIDA: uyap-export (yazmasız XML dışa aktarım = okuma; saf hesaplama/okuma yollarına körlemesine guard yok).
+ *
  * Kapsam dışı (DEĞİŞMEZ): user `me/password` (öz-servis), auth ve portal KULLANICI rotaları, office/lawyer/staff (zaten
  * OfficeF01AuthorizationGuard), client.controller ve client-address (zaten servis düzeyi VIEWER DENY). Envanterdeki öteki
- * yalnız-JWT yazıcılar (ör. notification/tebligat) F02-D KALAN yüzeydir; raporda listelenir, bu spec'e alınmadı.
+ * yalnız-JWT yazıcılar F02-D KALAN yüzeydir; dilimler hâlinde ele alınır, raporda listelenir.
  */
 jest.mock('pdf-poppler', () => ({ convert: async () => { throw new Error('pdf-poppler is stubbed in unit tests'); } }));
 
@@ -96,6 +103,25 @@ import { GreetingController } from '../../../greeting/greeting.controller';
 import { GreetingService } from '../../../greeting/greeting.service';
 import { AdminGuard } from '../admin.guard';
 import { OfficeF01AuthorizationGuard } from '../../../office-approval/office-f01-authorization.guard';
+// R03 (F02-D-2 dilim 1, owner devam talimatı 30.10.2026): dış gönderim + mali yazma yolları
+import { NotificationController } from '../../../notification/notification.controller';
+import { NotificationService } from '../../../notification/notification.service';
+import { CommunicationController } from '../../../debtor/communication.controller';
+import { DebtorCommunicationService } from '../../../debtor/communication.service';
+import { ESignController } from '../../../esign/esign.controller';
+import { ESignService } from '../../../esign/esign.service';
+import { PaymentInstructionController } from '../../../payment-instruction/payment-instruction.controller';
+import { PaymentInstructionService } from '../../../payment-instruction/payment-instruction.service';
+import { AccountingJournalManualAdjustmentController } from '../../../accounting-journal/accounting-journal-manual-adjustment.controller';
+import { AccountingJournalManualAdjustmentService } from '../../../accounting-journal/accounting-journal-manual-adjustment.service';
+import { AccountingJournalReversalController } from '../../../accounting-journal/accounting-journal-reversal.controller';
+import { AccountingJournalReversalService } from '../../../accounting-journal/accounting-journal-reversal.service';
+import { BankController } from '../../../bank/bank.controller';
+import { BankService } from '../../../bank/bank.service';
+import { ReceiptObjectScopeAuthorizationService } from '../../../collection/receipt-object-scope-authorization.service';
+import { BankLifecycleController } from '../../../bank/bank-lifecycle.controller';
+import { BankSettlementEvidenceWriterService } from '../../../bank/bank-settlement-evidence-writer.service';
+import { BankCandidateSettlementTransitionService } from '../../../bank/bank-candidate-settlement-transition.service';
 
 const SECRET = 'f02d-j27-viewer-write-deny-local-test-secret-at-least-32-bytes';
 const TENANT = 'tenant-j27';
@@ -147,6 +173,10 @@ const CLASS_GUARDED = [
   ClientLegalHoldController, ClientConsentController, ClientSpecialCategoryController, ClientKvkkRightsController,
   // R02: Codex şeridinden alınan consumer'lar
   PoaController, NotificationHistoryPermissionController, GreetingController,
+  // R03 (F02-D-2 dilim 1): dış gönderim + mali yazma yolları — servis katmanı rol sormuyordu ya da yalnız rütbe/grant soruyordu
+  // (rol kapısı rütbeden ÖNCE gelir: AK-1a). uyap-export BİLİNÇLİ DIŞARIDA (yazmasız dışa aktarım = okuma).
+  NotificationController, CommunicationController, ESignController, PaymentInstructionController,
+  AccountingJournalManualAdjustmentController, AccountingJournalReversalController, BankController, BankLifecycleController,
 ];
 /** R02: METOT düzeyi ViewerWriteDenyGuard beklenen handler'lar (sınıf düzeyi kapı ölçülmüş sözleşmeleri değiştirirdi). */
 const METHOD_GUARDED: ReadonlyArray<readonly [Function, string]> = [
@@ -243,6 +273,17 @@ describe('F02-D / J-27: VIEWER yazma reddi — consumer uygulaması (gerçek JWT
         { provide: NotificationDispatcherService, useValue: stubService('NotificationDispatcherService') },
         { provide: NotificationHistoryPermissionService, useValue: stubService('NotificationHistoryPermissionService') },
         { provide: GreetingService, useValue: stubService('GreetingService') },
+        // R03 (F02-D-2 dilim 1) servisleri (stub; dış sisteme çağrı YOK, para hareketi YOK)
+        { provide: NotificationService, useValue: stubService('NotificationService') },
+        { provide: DebtorCommunicationService, useValue: stubService('DebtorCommunicationService') },
+        { provide: ESignService, useValue: stubService('ESignService') },
+        { provide: PaymentInstructionService, useValue: stubService('PaymentInstructionService') },
+        { provide: AccountingJournalManualAdjustmentService, useValue: stubService('AccountingJournalManualAdjustmentService') },
+        { provide: AccountingJournalReversalService, useValue: stubService('AccountingJournalReversalService') },
+        { provide: BankService, useValue: stubService('BankService') },
+        { provide: ReceiptObjectScopeAuthorizationService, useValue: stubService('ReceiptObjectScopeAuthorizationService') },
+        { provide: BankSettlementEvidenceWriterService, useValue: stubService('BankSettlementEvidenceWriterService') },
+        { provide: BankCandidateSettlementTransitionService, useValue: stubService('BankCandidateSettlementTransitionService') },
       ],
     }).compile();
     app = module.createNestApplication();
@@ -263,11 +304,11 @@ describe('F02-D / J-27: VIEWER yazma reddi — consumer uygulaması (gerçek JWT
   const call = (r: Route, key: ActorKey) =>
     request(app.getHttpServer())[VERB[r.method]](r.url).set('Authorization', bearer(key)).send({});
 
-  it('keşif kör değil: yazma rotası ≥ 70, GET ≥ 20, saf POST = 3 (şablon önizleme + zincir analizi + vekalet geçerlilik kontrolü)', () => {
-    expect(WRITE_ROUTES.length).toBeGreaterThanOrEqual(70);
-    expect(GET_ROUTES.length).toBeGreaterThanOrEqual(20);
+  it('keşif kör değil: yazma rotası ≥ 90, GET ≥ 60, saf POST = 4 (şablon önizleme + zincir analizi + vekalet geçerlilik kontrolü + tahsilat şablonu üretimi)', () => {
+    expect(WRITE_ROUTES.length).toBeGreaterThanOrEqual(90);
+    expect(GET_ROUTES.length).toBeGreaterThanOrEqual(60);
     expect(READ_ONLY_POSTS.map((r) => `${r.ctrl}.${r.handler}`).sort()).toEqual(
-      ['CaseInstrumentController.analyzeChain', 'DocumentController.previewTemplate', 'PoaController.checkValidPoaForLawyers'],
+      ['CaseInstrumentController.analyzeChain', 'DocumentController.previewTemplate', 'NotificationController.getCollectionTemplates', 'PoaController.checkValidPoaForLawyers'],
     );
   });
 
