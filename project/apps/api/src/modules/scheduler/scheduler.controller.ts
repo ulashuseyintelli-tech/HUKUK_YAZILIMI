@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Request, UseGuards } from '@nestjs/common';
+import { Controller, ForbiddenException, Get, Post, Request, UseGuards } from '@nestjs/common';
 import { SchedulerService } from './scheduler.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { SchedulerActor } from './scheduler-manual-run-policy';
@@ -23,11 +23,16 @@ export class SchedulerController {
   constructor(private schedulerService: SchedulerService) {}
 
   /**
-   * Scheduler durumu
+   * Scheduler durumu — KI-049 / F02-D (owner F02 uygulama talimatı 2026-10-29; OFP-18): sayımlar YALNIZ
+   * aktörün kiracısına aittir; HTTP isteği kiracılar-arası toplam SEÇEMEZ. Okuma ucudur; rol eşiği değişmez.
    */
   @Get('status')
-  async getStatus() {
-    return this.schedulerService.getStatus();
+  async getStatus(@Request() req: any) {
+    const actor = actorFromRequest(req);
+    if (!actor.tenantId) {
+      throw new ForbiddenException({ reasonCode: 'SCHEDULER_STATUS_DENIED_NO_TENANT' });
+    }
+    return this.schedulerService.getStatus({ tenantId: actor.tenantId });
   }
 
   /**

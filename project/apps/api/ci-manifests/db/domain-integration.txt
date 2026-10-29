@@ -328,6 +328,9 @@ src/common/__tests__/w3-f03-scheduler-timezone-runtime.db-gated.integration.spec
 #   giris noktasinin GLOBAL kapsaminin korunmasi.
 src/modules/scheduler/__tests__/scheduler-manual-run-boundary.db-gated.integration.spec.ts
 src/modules/scheduler/__tests__/scheduler-cron-overlap-manual-global.db-gated.integration.spec.ts
+#   KI-019 / KI-049 — F02-D (owner F02 uygulama talimati 2026-10-29; OFP-18): POST /escalation/run yalniz aktorun
+#     kiracisini isler (VIEWER 403, yazma 0), GET /scheduler/status yalniz kendi kiracisini sayar; cron GLOBAL kalir.
+src/modules/escalation/__tests__/ki019-ki049-tenant-scope-boundary.db-gated.integration.spec.ts
 #
 #   W3-F04-CRON-TERMINAL-FAILURE-VISIBILITY-R01: GERCEK AppModule bootstrap + GERCEK
 #   ErrorLog tablosu ile temsilci cron failure-injection matrisi (A-F): success/no-work/

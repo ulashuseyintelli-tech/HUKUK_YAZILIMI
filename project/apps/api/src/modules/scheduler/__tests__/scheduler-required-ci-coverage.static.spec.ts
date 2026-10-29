@@ -67,6 +67,11 @@ const I14_SCHEDULER_MAPPED_SPECS = [
     spec: 'src/modules/scheduler/__tests__/scheduler-cron-overlap-manual-global.db-gated.integration.spec.ts',
     manifest: 'db/domain-integration.txt',
   },
+  // KI-049 / F02-D: GET /scheduler/status sayimlarinin kiraci kapsami (saf; 7 sayim where.tenantId + controller 403).
+  {
+    spec: 'src/modules/scheduler/__tests__/scheduler-status-tenant-scope.spec.ts',
+    manifest: 'pure/platform-scripts-shared.txt',
+  },
 ];
 
 function normalize(relativePath: string): string {
@@ -116,7 +121,7 @@ describe('DEBTOR-SCHEDULER-REQUIRED-CI-COVERAGE-P1-I14 required CI coverage', ()
   });
 
   it('maps every known scheduler contract spec to exactly its intended manifest (semantic/wrong-domain drift guard)', () => {
-    expect(I14_SCHEDULER_MAPPED_SPECS.length).toBe(10); // F02: + cron-overlap db-gated spec
+    expect(I14_SCHEDULER_MAPPED_SPECS.length).toBe(11); // F02: + cron-overlap db-gated spec; F02-D (KI-049): + status tenant-scope spec
 
     const membership = I14_SCHEDULER_MAPPED_SPECS.map(({ spec, manifest }) => {
       const targetManifest = manifestContents.get(manifest) ?? [];
