@@ -3,7 +3,7 @@
  * Gerçek HTTP + JWT + yetki zinciri + PostgreSQL; sentetik İKİ kiracı.
  *
  * Kabul (OFP-18): bir kiracının kullanıcısı diğerinin eskalasyonunu TETİKLEYEMEZ ve sayımını GÖREMEZ.
- *  1) POST /escalation/run (A aktörü) → yalnız A'nın görevi işlenir; B'nin görevi DOKUNULMAZ (yazma 0).
+ *  1) POST /escalation/run (A'nın ELEVATED aktörü: PARTNER kartlı USER) → yalnız A'nın görevi işlenir; B DOKUNULMAZ (yazma 0).
  *  2) VIEWER → 403 VIEWER_WRITE_DENIED; hiçbir kiracıda yazma yok. JWT yok → 401.
  *  3) GET /scheduler/status (A) → yalnız A'nın sayımı; (B) → yalnız B'nin sayımı; VIEWER okuyabilir.
  *  4) Cron giriş noktası (parametresiz processEscalations) GLOBAL kapsamı KORUR: tüm aktif kiracılar işlenir.
@@ -12,7 +12,8 @@
  * Gerçek olanlar: JwtStrategy/JwtAuthGuard/AuthService, ViewerWriteDenyGuard, EscalationController,
  * OperationalEscalationService, SchedulerController, SchedulerService, PostgreSQL. Stub: TenantNotifier (gönderim
  * kaydedici), IntegrationErrorReporter, SchedulerMetricsService, TebligatService. Dış sisteme çağrı yok.
- * Eşik (ADMIN/USER/ELEVATED) F02 karar listesi J-26'da AÇIK; bu spec eşiği pinlemez.
+ *  6) J-26 (owner kararı 2026-10-29, ELEVATED): kartsız USER ve kartsız ADMIN → 403 ESCALATION_MANUAL_RUN_DENIED_NOT_ELEVATED,
+ *     hiçbir kiracıda yazma yok (KABUL-5). Eşik bu spec'te PİNLENİR.
  */
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -75,6 +76,8 @@ describeWithDatabase('KI-019 / KI-049: eskalasyon tetiği ve scheduler durumu �
     user: { id: string; email: string };
     admin: { id: string; email: string };
     viewer: { id: string; email: string };
+    /** J-26: ELEVATED aktör — USER rolü + PARTNER avukat kartı (isApproverEligible=true). */
+    partner: { id: string; email: string };
   }
   let A: Side;
   let B: Side;
@@ -88,7 +91,7 @@ describeWithDatabase('KI-019 / KI-049: eskalasyon tetiği ve scheduler durumu �
     const officeApproval = new OfficeApprovalService(prismaService, audit);
     const notifier = { sendEmail, sendSms } as unknown as TenantNotifier;
     const reporter = { report: async () => undefined } as unknown as IntegrationErrorReporter;
-    escalation = new OperationalEscalationService(prismaService, notifier, reporter);
+    escalation = new OperationalEscalationService(prismaService, notifier, reporter, officeApproval); // J-26: gerçek eşik
     const scheduler = new SchedulerService(
       prismaService,
       { record: () => undefined } as unknown as SchedulerMetricsService,
@@ -146,6 +149,9 @@ describeWithDatabase('KI-019 / KI-049: eskalasyon tetiği ve scheduler durumu �
     const user = await mk('user');
     const admin = await mk('admin', 'ADMIN');
     const viewer = await mk('viewer', 'VIEWER');
+    // J-26 (ELEVATED): manuel tetik için PARTNER kartlı USER; kartsız USER/ADMIN artık tetikleyemez (KABUL-5).
+    const partner = await mk('partner');
+    await prisma.lawyer.create({ data: { tenantId: tenant.id, userId: partner.id, name: 'Partner', surname: label, lawyerRank: 'PARTNER' } });
     const escalationTask = await prisma.task.create({
       data: {
         tenantId: tenant.id,
@@ -167,7 +173,7 @@ describeWithDatabase('KI-019 / KI-049: eskalasyon tetiği ve scheduler durumu �
       },
       select: { id: true },
     });
-    return { tenantId: tenant.id, escalationTaskId: escalationTask.id, upcomingTaskId: upcomingTask.id, user, admin, viewer };
+    return { tenantId: tenant.id, escalationTaskId: escalationTask.id, upcomingTaskId: upcomingTask.id, user, admin, viewer, partner };
   }
 
   function bearer(user: { id: string; email: string }, tenantId: string, role: string): string {
@@ -180,12 +186,12 @@ describeWithDatabase('KI-019 / KI-049: eskalasyon tetiği ve scheduler durumu �
 
   async function fresh(): Promise<void> { A = await seedSide('a'); B = await seedSide('b'); }
 
-  it('KABUL-1: A kullanıcısının POST /escalation/run çağrısı YALNIZ A görevini işler; B DOKUNULMAZ; gönderim 0', async () => {
+  it('KABUL-1: A\'nın ELEVATED aktörünün (PARTNER kartlı USER) POST /escalation/run çağrısı YALNIZ A görevini işler; B DOKUNULMAZ; gönderim 0', async () => {
     await fresh();
     const bBefore = await taskState(B.escalationTaskId);
     const res = await request(app.getHttpServer())
       .post('/api/escalation/run')
-      .set('Authorization', bearer(A.user, A.tenantId, 'USER'));
+      .set('Authorization', bearer(A.partner, A.tenantId, 'USER'));
     expect(res.status).toBe(201);
     expect(res.body).toEqual({ processed: 1, notified: 0, skipped: 1, failed: 0 }); // B sayılmadı
     // A: STAFF → MANAGER ilerledi, append-only iz yazıldı
@@ -201,16 +207,32 @@ describeWithDatabase('KI-019 / KI-049: eskalasyon tetiği ve scheduler durumu �
     expect(sendSms).not.toHaveBeenCalled();
   });
 
-  it('KABUL-1 (simetri): B ADMIN çağrısı yalnız B\'yi işler; A DOKUNULMAZ', async () => {
+  it('KABUL-1 (simetri): B\'nin ELEVATED aktörü yalnız B\'yi işler; A DOKUNULMAZ', async () => {
     await fresh();
     const res = await request(app.getHttpServer())
       .post('/api/escalation/run')
-      .set('Authorization', bearer(B.admin, B.tenantId, 'ADMIN'));
+      .set('Authorization', bearer(B.partner, B.tenantId, 'USER'));
     expect(res.status).toBe(201);
     expect(res.body.processed).toBe(1);
     expect((await taskState(B.escalationTaskId)).escalationLevel).toBe('MANAGER');
     expect((await taskState(A.escalationTaskId)).escalationLevel).toBe('STAFF');
     expect(await eventCount(A.tenantId, A.escalationTaskId)).toBe(0);
+  });
+
+  it('KABUL-5 (J-26 ELEVATED): kartsız USER ve kartsız ADMIN → 403 ESCALATION_MANUAL_RUN_DENIED_NOT_ELEVATED; hiçbir kiracıda yazma yok, gönderim 0', async () => {
+    await fresh();
+    for (const [actor, role] of [[A.user, 'USER'], [A.admin, 'ADMIN']] as const) {
+      const res = await request(app.getHttpServer())
+        .post('/api/escalation/run')
+        .set('Authorization', bearer(actor, A.tenantId, role));
+      expect(res.status).toBe(403);
+      expect(res.body?.reasonCode ?? res.body?.message?.reasonCode).toBe('ESCALATION_MANUAL_RUN_DENIED_NOT_ELEVATED');
+    }
+    expect((await taskState(A.escalationTaskId)).escalationLevel).toBe('STAFF');
+    expect((await taskState(B.escalationTaskId)).escalationLevel).toBe('STAFF');
+    expect(await eventCount(A.tenantId, A.escalationTaskId)).toBe(0);
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(sendSms).not.toHaveBeenCalled();
   });
 
   it('KABUL-2: VIEWER → 403 VIEWER_WRITE_DENIED; hiçbir kiracıda yazma yok. JWT yok → 401', async () => {

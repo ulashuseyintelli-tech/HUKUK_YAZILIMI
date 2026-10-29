@@ -44,7 +44,7 @@ const WORKERS: ReadonlyArray<{
   },
   {
     ad: "operational-escalation.service.ts",
-    calistir: (p) => new OperationalEscalationService(p, noopNotifier, noopReporter).processEscalations(),
+    calistir: (p) => new OperationalEscalationService(p, noopNotifier, noopReporter, {} as any /* J-26: eşik yalnız runManual'da */).processEscalations(),
     spyOf: (h) => h.spy,
   },
   {

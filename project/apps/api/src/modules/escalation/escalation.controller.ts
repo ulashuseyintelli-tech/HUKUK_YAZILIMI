@@ -9,8 +9,11 @@ import { OperationalEscalationService } from "./operational-escalation.service";
  *  - Kapsam: tenantId JWT'den türetilir (req.user her istekte DB'den yüklenir); HTTP isteği GLOBAL kapsamı SEÇEMEZ.
  *    Cron giriş noktası (`scheduledRun` → parametresiz `processEscalations`) TÜM aktif kiracıları işlemeye devam eder.
  *  - VIEWER: kapalı salt-okuyucu kuralı (ACT-11 / OWN-13; B4/B6 `ViewerWriteDenyGuard` yüklemi) → 403, yazma ve
- *    gönderim 0. ADMIN/USER bugünkü gibi tetikleyebilir.
- *  - Eşik (ADMIN tek başına / ELEVATED) F02 karar listesi J-26'da AÇIKTIR; bu değişiklik eşiği DEĞİŞTİRMEZ.
+ *    gönderim 0.
+ *  - Eşik (J-26, owner kararı 2026-10-29): ELEVATED — scheduler manuel tetiğiyle AYNI yüklem (PARTNER ya da
+ *    canApproveOfficeActions avukat kartı; ADMIN tek başına YETMEZ; operasyon personeli USER tetikleyemez). Karar SERVİS
+ *    girişinde (`OperationalEscalationService.runManual`); controller yalnız JWT aktörünü iletir — rol politikası burada
+ *    ÜRETİLMEZ (OWN-13 I02-R6 deseni). Cron etkilenmez.
  */
 @Controller("escalation")
 @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
@@ -18,14 +21,14 @@ export class EscalationController {
   constructor(private service: OperationalEscalationService) {}
 
   /**
-   * Manuel tetik (test/operasyon): saat başı cron'u beklemeden eskalasyon turunu AKTÖRÜN KİRACISI için çalıştırır.
+   * Manuel tetik (operasyon): saat başı cron'u beklemeden eskalasyon turunu AKTÖRÜN KİRACISI için çalıştırır.
    * Sonuç: { processed, notified, skipped, failed } (PR-3b.2: failed = sağlayıcı hatası → retry edilir).
    */
   @Post("run")
-  run(@CurrentUser("tenantId") tenantId: string | undefined) {
-    if (!tenantId) {
+  run(@CurrentUser() user: { id?: string; tenantId?: string; role?: string } | undefined) {
+    if (!user?.tenantId) {
       throw new ForbiddenException({ reasonCode: "ESCALATION_MANUAL_RUN_DENIED_NO_TENANT" });
     }
-    return this.service.processEscalations(new Date(), { tenantId });
+    return this.service.runManual({ userId: user.id ?? "", tenantId: user.tenantId, role: user.role ?? "" });
   }
 }

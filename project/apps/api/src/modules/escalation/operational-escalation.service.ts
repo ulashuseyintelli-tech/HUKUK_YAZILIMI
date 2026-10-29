@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { ForbiddenException, Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { PrismaService } from "../../prisma/prisma.service";
 import { EscalationTier } from "@prisma/client";
@@ -13,6 +13,8 @@ import { reportCronJobFailure } from "../../common/cron-failure-reporting";
 import { runWithOverlapGuard } from "../../common/scheduler-overlap-guard";
 import { IntegrationErrorReporter } from "../error-log/integration-error-reporter";
 import { ACTIVE_TENANT_WHERE } from "../tenant/tenant-lifecycle";
+import { OfficeApprovalService } from "../office-approval/office-approval.service";
+import { decideManualSchedulerRun, type SchedulerActor } from "../scheduler/scheduler-manual-run-policy";
 
 interface Recipients {
   emails: { name: string; email: string }[]; // ad-soyad ile hitap için isim taşınır
@@ -41,7 +43,8 @@ interface DispatchOutcome {
  * <remarks>
  * Çağrıldığı yerler:
  * - @Cron(EVERY_HOUR) scheduledRun() → processEscalations() (otomatik; GLOBAL = tüm ACTIVE kiracılar)
- * - EscalationController.run() → POST /escalation/run (manuel tetik; KI-019: YALNIZ aktörün kiracısı)
+ * - EscalationController.run() → runManual() → processEscalations(now, { tenantId }) (manuel tetik; KI-019: YALNIZ
+ *   aktörün kiracısı; J-26: ELEVATED eşiği)
  * </remarks>
  */
 @Injectable()
@@ -51,8 +54,40 @@ export class OperationalEscalationService {
   constructor(
     private prisma: PrismaService,
     private tenantNotifier: TenantNotifier,
-    private errorReporter: IntegrationErrorReporter
+    private errorReporter: IntegrationErrorReporter,
+    // J-26 (owner kararı 2026-10-29): manuel tetik eşiği = scheduler ile AYNI elevated yüklem (isApproverEligible).
+    private officeApproval: OfficeApprovalService
   ) {}
+
+  /**
+   * J-26 / F02 (owner kararı 2026-10-29: ELEVATED) — manuel tetiklemenin TEK giriş kapısı. Çağrıldığı yer:
+   *  - EscalationController.run() → POST /escalation/run
+   *
+   * Sözleşme (SchedulerService.runManual ile AYNI):
+   *  1) Yetki HERHANGİ bir DB yazımından ÖNCE doğrulanır: VIEWER deny; elevated = OfficeApprovalService.isApproverEligible
+   *     (PARTNER veya canApproveOfficeActions); UserRole.ADMIN TEK BAŞINA YETMEZ. Ret = 403 + stabil reasonCode
+   *     (`ESCALATION_MANUAL_RUN_DENIED_*`), yan etki YOK.
+   *  2) Kapsam HER ZAMAN aktörün kiracısıdır (KI-019); HTTP isteği global kapsam SEÇEMEZ.
+   *  3) Politika yeniden kullanılır (`decideManualSchedulerRun`, saf) — yeni politika YOK; yalnız kod ön eki ESCALATION_.
+   * Cron girişi (`scheduledRun` → parametresiz `processEscalations`) bu kapıdan GEÇMEZ ve değişmez.
+   */
+  async runManual(actor: SchedulerActor) {
+    await this.assertCanRunManual(actor);
+    return this.processEscalations(new Date(), { tenantId: actor.tenantId });
+  }
+
+  private async assertCanRunManual(actor: SchedulerActor): Promise<void> {
+    if (!actor?.tenantId) {
+      throw new ForbiddenException({ reasonCode: "ESCALATION_MANUAL_RUN_DENIED_NO_TENANT" });
+    }
+    const elevatedAuthority = actor.userId
+      ? await this.officeApproval.isApproverEligible(actor.userId, actor.tenantId)
+      : false;
+    const decision = decideManualSchedulerRun({ userId: actor.userId, role: actor.role, elevatedAuthority });
+    if (!decision.allowed) {
+      throw new ForbiddenException({ reasonCode: decision.reasonCode.replace(/^SCHEDULER_/, "ESCALATION_") });
+    }
+  }
 
   // W3-F07: overlap guard yalniz bu cron-entrypoint'i sarar — processEscalations()
   // manuel/test cagrisi icin bagimsiz cagrilabilir kalir.
