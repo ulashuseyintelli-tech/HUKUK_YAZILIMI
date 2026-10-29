@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { IsDateString, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { buildClientMutationActor } from './client.service';
 import {
   CLIENT_DISCLOSURE_DELIVERY_METHODS,
@@ -102,7 +103,8 @@ class DsarRespondDto {
 }
 
 @Controller('clients')
-@UseGuards(JwtAuthGuard)
+// F02-D / J-27: VIEWER yazma reddi rota katmanında (aydınlatma teslimi, başvuru, inceleme, atama, yanıt); B4/B6 yüklemi.
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class ClientKvkkRightsController {
   constructor(
     private readonly disclosure: ClientDisclosureService,

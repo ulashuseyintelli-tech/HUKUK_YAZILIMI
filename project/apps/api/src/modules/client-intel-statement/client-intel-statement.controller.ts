@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Param, Query, UseGuards, Req } from '@nest
 import { AuthGuard } from '@nestjs/passport';
 import { Request } from 'express';
 import { ClientIntelStatus } from '@prisma/client';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { ClientIntelStatementService } from './client-intel-statement.service';
 import {
   CreateClientIntelStatementDto,
@@ -19,7 +20,8 @@ interface AuthRequest extends Request {
  * İçerik PATCH/PUT/DELETE YOK (append-only). tenantId/userId daima CurrentUser'dan.
  */
 @Controller('client-intel-statements')
-@UseGuards(AuthGuard('jwt'))
+// F02-D / J-27: VIEWER yazma reddi (create dahil; kapalı kural OWN-13 §51 / AK-1a; B4/B6 yüklemi). Okuma değişmez.
+@UseGuards(AuthGuard('jwt'), ViewerWriteDenyGuard)
 export class ClientIntelStatementController {
   constructor(private readonly service: ClientIntelStatementService) {}
 

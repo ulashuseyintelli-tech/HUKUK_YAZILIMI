@@ -1,10 +1,12 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, Request } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CaseInstrumentService, CreateInstrumentDto, UpdateInstrumentDto } from './case-instrument.service';
 import { AnalyzeChainDto } from './dto/analyze-chain.dto';
 
 @Controller('case-instruments')
-@UseGuards(JwtAuthGuard)
+// F02-D / J-27: VIEWER yazma reddi (kapalı kural; B4/B6 yüklemi). Saf zincir analizi POST'u açık kalır.
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class CaseInstrumentController {
   constructor(private readonly service: CaseInstrumentService) {}
 
@@ -26,6 +28,7 @@ export class CaseInstrumentController {
    * JwtAuthGuard (sınıf düzeyi) ile korunur; per-tenant veri kullanmaz (saf hesap).
    */
   @Post('chain/analyze')
+  @AllowViewerReadOnlyPost() // DB okumaz/yazmaz (saf hesap) → VIEWER'a açık
   analyzeChain(@Body() dto: AnalyzeChainDto) {
     return this.service.analyzeChain(dto);
   }

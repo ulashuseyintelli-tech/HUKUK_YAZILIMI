@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/co
 import { CaseStatusService } from './case-status.service';
 import { ChangeCaseStatusDto } from './dto/change-case-status.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { GuidedOpenObserveService } from '../permission-diagnostics/guided-open-observe.service';
 import { GuidedEdgeGateService } from '../permission-diagnostics/guided-edge/guided-edge-gate.service';
@@ -45,7 +46,8 @@ export class CaseStatusController {
   /// </remarks>
   // Dosya statüsünü değiştir
   @Post(':caseId/change')
-  @UseGuards(JwtAuthGuard)
+  // F02-D / J-27: VIEWER dosya statüsü değiştiremez (finansal kapanış talebi dahil); kapalı kural, B4/B6 yüklemi.
+  @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
   async changeStatus(
     @CurrentUser('id') actorUserId: string,
     @CurrentUser('tenantId') tenantId: string,

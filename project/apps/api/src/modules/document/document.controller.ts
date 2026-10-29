@@ -13,10 +13,12 @@ import { Response } from "express";
 import { DocumentService } from "./document.service";
 import { DocumentTemplateService } from "./document-template.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 
 @Controller("documents")
-@UseGuards(JwtAuthGuard)
+// F02-D / J-27: VIEWER belge ÜRETEMEZ (haciz ihbarnamesi, satış talebi, 89/1-2-3, alacak haczi); şablon önizleme saf POST olarak açık.
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class DocumentController {
   constructor(
     private documentService: DocumentService,
@@ -205,8 +207,9 @@ export class DocumentController {
     };
   }
 
-  // Şablon önizleme (değişkenlerle)
+  // Şablon önizleme (değişkenlerle) — yalnız render (findByCode + renderTemplate), yazma yok → VIEWER'a açık.
   @Post("templates/:code/preview")
+  @AllowViewerReadOnlyPost()
   async previewTemplate(
     @Param("code") code: string,
     @Body() variables: Record<string, any>,

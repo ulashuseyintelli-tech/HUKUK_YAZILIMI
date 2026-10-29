@@ -12,10 +12,12 @@ import {
 import { TaskService } from "./task.service";
 import { CreateTaskDto, ListTasksQueryDto, UpdateTaskDto } from "./dto/task.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 
 @Controller("tasks")
-@UseGuards(JwtAuthGuard)
+// F02-D / J-27: VIEWER görev oluşturamaz/düzenleyemez/silemez (kapalı kural; B4/B6 yüklemi). Liste/kanban okuması değişmez.
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class TaskController {
   constructor(private taskService: TaskService) {}
 

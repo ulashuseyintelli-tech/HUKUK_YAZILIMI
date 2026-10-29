@@ -26,6 +26,7 @@ import { PortalService } from "./portal.service";
 import { ClientFinancialDisclosurePortalService } from "./client-financial-disclosure-portal.service";
 import { PortalAuthGuard } from "./portal-auth.guard";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { PortalLoginRateLimitGuard } from "../auth/guards/login-rate-limit.guard";
 import { CredentialRecoveryRateLimitGuard } from "../auth/guards/credential-recovery-rate-limit.guard";
 import { PortalChangePasswordDto, PortalResetPasswordDto } from "./dto/portal-password.dto";
@@ -402,7 +403,7 @@ export class PortalController {
    * POST /api/portal/admin/documents/:id/approve
    */
   @Post("admin/documents/:id/approve")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard) // F02-D / J-27: salt okuyucu portal belge kararı veremez
   async approveDocument(
     @Param("id") id: string,
     @Request() req: any,
@@ -416,7 +417,7 @@ export class PortalController {
    * POST /api/portal/admin/documents/:id/reject
    */
   @Post("admin/documents/:id/reject")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard) // F02-D / J-27: salt okuyucu portal belge kararı veremez
   async rejectDocument(
     @Param("id") id: string,
     @Request() req: any,
