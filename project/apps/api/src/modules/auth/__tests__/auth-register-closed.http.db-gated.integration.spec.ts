@@ -43,6 +43,10 @@ describeWithDisposableDb('OK-02 — POST /api/auth/register varsayılan KAPALI (
     surname: 'Yonetici',
     email: `ok02-${tag}-${suffix}@example.test`,
     password: 'sentetik-parola-1',
+    // K-A1 a′: kişi kartı zorunlu — avukat olmayan yönetici → personel kartı (sentetik geçerli TCKN)
+    personType: 'STAFF',
+    staffType: 'SEKRETER',
+    tckn: '20000000046',
   });
 
   async function totals() {
@@ -130,6 +134,11 @@ describeWithDisposableDb('OK-02 — POST /api/auth/register varsayılan KAPALI (
     const users = await prisma.user.findMany({ where: { tenantId } });
     expect(users).toHaveLength(1);
     expect(users[0]).toMatchObject({ email: dto.email, role: 'ADMIN' });
+    // K-A1 a′: ilk hesap kişi kartıyla doğar — STAFF → StaffMember (userId bağlı, geçerli TCKN); Lawyer kartı AÇILMAZ
+    const staff = await prisma.staffMember.findMany({ where: { tenantId } });
+    expect(staff).toHaveLength(1);
+    expect(staff[0]).toMatchObject({ userId: users[0].id, tckn: dto.tckn, staffType: 'SEKRETER' });
+    expect(await prisma.lawyer.count({ where: { tenantId } })).toBe(0);
     expect(await prisma.lookupTakipTuru.count({ where: { tenantId, isActive: true } })).toBe(11);
   });
 });

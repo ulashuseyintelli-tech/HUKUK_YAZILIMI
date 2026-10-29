@@ -44,6 +44,8 @@ describeDb("AuthService.register → yeni tenant kanonik lookup (integration)", 
     const ts = Date.now();
     const res: any = await auth.register({
       firmName: `PR-E1 Test ${ts}`,
+      personType: "LAWYER", // K-A1 a′: kişi kartı zorunlu (sentetik geçerli TCKN)
+      tckn: "10000000146",
       email: `pre1+${ts}@test.local`,
       password: "secret123",
       name: "Test",

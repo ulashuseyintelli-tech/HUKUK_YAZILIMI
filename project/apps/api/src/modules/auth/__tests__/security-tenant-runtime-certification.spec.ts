@@ -186,7 +186,7 @@ describe('R01 W1 security/tenant controlled runtime certification', () => {
     },
     {
       name: 'AuthController.register', method: 'post', url: '/api/auth/register',
-      body: { firmName: 'W1 Firm', name: 'W1', email: 'w1@example.test', password: 'password-123' },
+      body: { firmName: 'W1 Firm', name: 'W1', email: 'w1@example.test', password: 'password-123', personType: 'LAWYER', tckn: '10000000146' }, // K-A1 a′: DTO kişi kartı alanları
       expectedStatus: 201, expectedProbe: 'auth-register',
     },
     {
