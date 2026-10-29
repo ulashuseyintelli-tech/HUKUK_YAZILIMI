@@ -40,6 +40,8 @@ export const CLIENT_FINANCIAL_DISCLOSURE_APPROVAL_AUTHORIZATION_ERROR_CODES = [
   'DISCLOSURE_APPROVAL_SELF_APPROVAL_FORBIDDEN',
   'DISCLOSURE_APPROVAL_FOUR_EYES_VIOLATION',
   'DISCLOSURE_APPROVAL_TENANT_MISMATCH',
+  // K-A1 SINIR (bayrak OFFICE_APPROVAL_IDENTITY_PROOF_REQUIRED): taraflardan birinin kişi kimliği kanıtı yok.
+  'DISCLOSURE_APPROVAL_IDENTITY_UNPROVEN',
 ] as const;
 
 /** 409 — yaşam döngüsü / bütünlük ihlali (§41.4/§41.5). */
@@ -178,6 +180,8 @@ function approvalMessage(code: ClientFinancialDisclosureApprovalErrorCode): stri
       'Actor is not eligible to approve a client financial disclosure.',
     DISCLOSURE_APPROVAL_SELF_APPROVAL_FORBIDDEN:
       'The requester of a disclosure may not approve any of its approval stages.',
+    DISCLOSURE_APPROVAL_IDENTITY_UNPROVEN:
+      'A party of this approval has no proven person identity (no linked person card with a valid TCKN); link the card first.',
     DISCLOSURE_APPROVAL_FOUR_EYES_VIOLATION:
       'Office approver and content approver must be two distinct actors.',
     DISCLOSURE_APPROVAL_TENANT_MISMATCH: 'Approval actor is outside the disclosure tenant scope.',

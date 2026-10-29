@@ -55,3 +55,68 @@ export async function isSameApprovalIdentity(
   }
   return false;
 }
+
+// ───────────────────────── K-A1 SINIR DİLİMİ ─────────────────────────
+/**
+ * K-A1 SINIR (owner kararı 29–30.10.2026: "a′ + sınır, sıralı") — kişi kimliği KANITI zorunluluğu.
+ *
+ * Bayrak depodaki env-bayrak konvansiyonudur (bkz. EXPENSE_REMAINING_GATE_ENABLED); varsayılan KAPALI → davranış
+ * DEĞİŞMEZ. Canlıda açılması, kartsız hesap SAYIMI + kart EŞLEMESİ tamamlandıktan sonra AYRI yayın onayıyla yapılır
+ * (owner: "Canlı etkinleştirme, sayım ve eşleme sonrasında ayrı yayın onayıyla"). Yeni altyapı değildir.
+ */
+export const APPROVAL_IDENTITY_PROOF_FLAG = 'OFFICE_APPROVAL_IDENTITY_PROOF_REQUIRED';
+
+/** 403 kodu — talep eden YA DA karar veren hesabın kişi kimliği kanıtı yok (kart yok / kartta geçerli TCKN yok). */
+export const APPROVAL_IDENTITY_UNPROVEN = 'APPROVAL_IDENTITY_UNPROVEN';
+
+/**
+ * Öz-onaya DUYARLI türler (owner karar listesi K-A1-sınır): COLLECTION_VOID, FINANCIAL_CASE_CLOSE,
+ * CLAIM_ITEM_HIGH_IMPACT_CHANGE ve FD onayı. Değerler enum/sabitlerle BİREBİR aynıdır (saf spec drift'i yakalar);
+ * policy-engine ya da collection modülüne import bağımlılığı bilinçli olarak kurulmaz.
+ */
+export const APPROVAL_IDENTITY_PROOF_SENSITIVE_ACTION_CODES: ReadonlySet<string> = new Set([
+  'COLLECTION_VOID',
+  'FINANCIAL_CASE_CLOSE',
+  'CLAIM_ITEM_HIGH_IMPACT_CHANGE',
+  'CLIENT_FINANCIAL_DISCLOSURE_APPROVE',
+]);
+
+export type ApprovalIdentityParty = 'REQUESTER' | 'APPROVER' | 'OFFICE_APPROVER' | 'CONTENT_APPROVER';
+
+export function isApprovalIdentityProofRequired(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env[APPROVAL_IDENTITY_PROOF_FLAG]?.toLowerCase() === 'true';
+}
+
+/**
+ * Verilen taraflardan kişi kimliği KANITSIZ olanlar: hesap yok ya da aday kümesi BOŞ (kart yok / geçerli TCKN yok).
+ * Bayrak KAPALI → her zaman [] (hiçbir sorgu çalışmaz). Çağıran boş olmayan sonucu 403'e çevirir (fail-closed).
+ * Sorgular SIRALIDIR (interaktif transaction istemcisi).
+ */
+export async function findUnprovenApprovalIdentities(
+  db: ApprovalIdentityDb,
+  tenantId: string,
+  parties: ReadonlyArray<{ party: ApprovalIdentityParty; userId: string | null | undefined }>,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<ApprovalIdentityParty[]> {
+  if (!isApprovalIdentityProofRequired(env)) return [];
+  const unproven: ApprovalIdentityParty[] = [];
+  for (const { party, userId } of parties) {
+    if (!userId) { unproven.push(party); continue; }
+    const candidates = await resolveApprovalIdentityCandidates(db, userId, tenantId);
+    if (candidates.size === 0) unproven.push(party);
+  }
+  return unproven;
+}
+
+const PARTY_LABEL: Record<ApprovalIdentityParty, string> = {
+  REQUESTER: 'talep edenin',
+  APPROVER: 'karar verenin',
+  OFFICE_APPROVER: 'ofis onaylayıcısının',
+  CONTENT_APPROVER: 'içerik onaylayıcısının',
+};
+
+/** Onaylayanın gördüğü uyarı (owner: "talep edenin kişi kartı yok — kart bağlayın"). Kişisel veri içermez. */
+export function approvalIdentityUnprovenMessage(unproven: ReadonlyArray<ApprovalIdentityParty>): string {
+  const who = unproven.map((p) => PARTY_LABEL[p]).join(' ve ');
+  return `Kişi kimliği kanıtlanamadı: ${who} kişi kartı (geçerli TCKN) yok — kart bağlayın.`;
+}
