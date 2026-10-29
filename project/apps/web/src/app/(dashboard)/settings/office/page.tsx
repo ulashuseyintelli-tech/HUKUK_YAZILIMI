@@ -2228,17 +2228,32 @@ function StaffModal({ staff, onSave, onClose, saving }: { staff: any; onSave: (d
           </div>
           <div className="pt-2 border-t">
             <p className="font-medium mb-2">Yetkiler</p>
+            {/* F02-C / OFP-10 (owner F02 uygulama talimatı 2026-10-29; STF-PRD-RBAC-001, OFF-INV-03): personel kartındaki
+                izin kutularından YALNIZ ikisi API'de karar noktasında okunur — `canSeeFinance` (claim-item yazma kapısı) ve
+                `canPrepareCollectionDisposition` (FD hazırlık yeterliliği). Diğer beşi (`canCreateCase`, `canEditCase`,
+                `canGenerateDocuments`, `canApproveDocuments`, `canApproveFinance`) yalnız kaydedilip projeksiyonla geri okunur;
+                hiçbir yetki kararını değiştirmez (ölçüm: apps/api/src tarama, 2026-10-29). Ekran yalnız ETKİLİ yetkiyi
+                işaretlenebilir gösterir: etkisiz kutular pasif (disabled) ve "şu an uygulanmıyor" etiketlidir; kayıtlı değer
+                korunur ve aynen gönderilir (veri kaybı yok). Tüketimleri T-5/T-12 (rütbe → işlem) kararından sonra açılır. */}
             <div className="grid grid-cols-2 gap-2">
-              <label className="flex items-center gap-1"><input type="checkbox" checked={form.canCreateCase} onChange={e => setForm({...form, canCreateCase: e.target.checked})} />Dosya oluşturabilir</label>
-              <label className="flex items-center gap-1"><input type="checkbox" checked={form.canEditCase} onChange={e => setForm({...form, canEditCase: e.target.checked})} />Dosya düzenleyebilir</label>
-              <label className="flex items-center gap-1"><input type="checkbox" checked={form.canGenerateDocuments} onChange={e => setForm({...form, canGenerateDocuments: e.target.checked})} />Belge hazırlayabilir</label>
-              <label className="flex items-center gap-1"><input type="checkbox" checked={form.canApproveDocuments} onChange={e => setForm({...form, canApproveDocuments: e.target.checked})} />Belge onaylayabilir</label>
-              <label className="flex items-center gap-1"><input type="checkbox" checked={form.canSeeFinance} onChange={e => setForm({...form, canSeeFinance: e.target.checked})} />Muhasebe görebilir</label>
+              <label className="flex items-center gap-1 text-gray-500" title="Şu an hiçbir yetki kararında okunmuyor (ayrılmış alan) — T-5/T-12 kararından sonra etkinleşir">
+                <input type="checkbox" checked={form.canCreateCase} disabled readOnly />Dosya oluşturabilir <span className="text-gray-400">(şu an uygulanmıyor)</span>
+              </label>
+              <label className="flex items-center gap-1 text-gray-500" title="Şu an hiçbir yetki kararında okunmuyor (ayrılmış alan) — T-5/T-12 kararından sonra etkinleşir">
+                <input type="checkbox" checked={form.canEditCase} disabled readOnly />Dosya düzenleyebilir <span className="text-gray-400">(şu an uygulanmıyor)</span>
+              </label>
+              <label className="flex items-center gap-1 text-gray-500" title="Şu an hiçbir yetki kararında okunmuyor (ayrılmış alan) — T-5/T-12 kararından sonra etkinleşir">
+                <input type="checkbox" checked={form.canGenerateDocuments} disabled readOnly />Belge hazırlayabilir <span className="text-gray-400">(şu an uygulanmıyor)</span>
+              </label>
+              <label className="flex items-center gap-1 text-gray-500" title="Şu an hiçbir yetki kararında okunmuyor (ayrılmış alan) — T-5/T-12 kararından sonra etkinleşir">
+                <input type="checkbox" checked={form.canApproveDocuments} disabled readOnly />Belge onaylayabilir <span className="text-gray-400">(şu an uygulanmıyor)</span>
+              </label>
+              <label className="flex items-center gap-1" title="Gerçek yetki kapısı: alacak kalemi yazma (claim-item-write-gate)"><input type="checkbox" checked={form.canSeeFinance} onChange={e => setForm({...form, canSeeFinance: e.target.checked})} />Muhasebe görebilir</label>
               {/* ACT-21 (2026-07-05): canApproveFinance backend'de hiçbir yerde enforce edilmiyor (yalnız
                   persist ediliyor, staff.service.ts) — Staff hiçbir zaman final approver olamaz (kilitli
-                  politika). Etiket bunu netleştiriyor, davranış DEĞİŞMEDİ. */}
-              <label className="flex items-center gap-1" title="Şu an backend'de kontrol edilmiyor (ayrılmış alan) — Staff nihai onaylayıcı olamaz">
-                <input type="checkbox" checked={form.canApproveFinance} onChange={e => setForm({...form, canApproveFinance: e.target.checked})} />
+                  politika). F02-C: etiketin yanında kutu da pasifleştirildi; değer korunur. */}
+              <label className="flex items-center gap-1 text-gray-500" title="Şu an backend'de kontrol edilmiyor (ayrılmış alan) — Staff nihai onaylayıcı olamaz">
+                <input type="checkbox" checked={form.canApproveFinance} disabled readOnly />
                 Muhasebe onaylayabilir <span className="text-gray-400">(şu an uygulanmıyor)</span>
               </label>
               {/* ACT-21: canPrepareCollectionDisposition gerçek bir yetki kapısıdır (disposition-posting.service.ts)
