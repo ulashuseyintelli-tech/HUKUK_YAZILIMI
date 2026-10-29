@@ -262,6 +262,7 @@ src/modules/expense-request/expense-request.spec.ts
 #     cagiranin burosuyla aranir. Gercek HTTP + PostgreSQL kaniti db/core-lifecycle'da (expense-tenant-boundary). Duzeltmesiz
 #     servis koduyla 51 testin 49'u DUSER (RED kanitlandi); gecen 2 test mevcut davranisi sabitler.
 src/modules/expense-request/__tests__/expense-gate-tenant-scope.spec.ts
+src/modules/expense-request/__tests__/expense-view-scope.spec.ts
 src/modules/cost-package/__tests__/cost-package-compute-tenant-scope.spec.ts
 
 # ── TOPLU CI KAPATMA (owner EK TALIMAT 2026-09-18 "TOPLU CI KAPATMA"; olculen main 1736a4e6) ──
