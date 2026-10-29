@@ -36,6 +36,7 @@ import { OfficeApprovalModule } from "./modules/office-approval/office-approval.
 import { OfficeApprovalExecutorModule } from "./modules/office-approval/office-approval-executor.module";
 import { StaffModule } from "./modules/staff/staff.module";
 import { ClientNotificationModule } from "./modules/client-notification/client-notification.module";
+import { WorkScopePermissionModule } from "./modules/work-scope-permission/work-scope-permission.module"; // F02-B-1: görev/masraf büro geneli görünüm izinleri (PermissionGrant)
 import { GreetingModule } from "./modules/greeting/greeting.module";
 import { EscalationModule } from "./modules/escalation/escalation.module";
 import { ExportImportModule } from "./modules/export-import/export-import.module";
@@ -200,6 +201,7 @@ function getConditionalImports(): Type<unknown>[] {
     OfficeApprovalExecutorModule, // P4-5A: CHANGE_STATUS deferred executor (internal callable; route YOK; config-gated @Cron sweep VAR — default-OFF no-op; bkz. office-approval-executor-cron.service.ts)
     StaffModule,
     ClientNotificationModule,
+    WorkScopePermissionModule, // F02-B-1 (owner 29–30.10.2026): grant/revoke ürün yolu; liste kapsamını genişletmez (ayrı dilim)
     GreetingModule,
     EscalationModule,
     ExportImportModule,
