@@ -56,6 +56,18 @@
  * 0 = yazmasız dışa aktarım), v28-engine (yüzeyler ICRABOT_V28_* containment bayraklarıyla kapalı; `v28-surface-containment.spec`).
  * OWNER KALEMİ (F02-C): enterprise audit / backpressure / plan sınıfları guard'sız ve tenantId'yi gövde/yoldan okur (I01A bilinçli).
  *
+ * R07 (F02-D-2 dilim 5, owner ek talimatı 30.10.2026 — kalan operasyonel yollar; servis yan etki haritası + principal incelemesi):
+ * address-discovery (17) · address-task (8) · ai (OpenAI dış çağrısı, 4) · asset-query (4) · automation (2) · calendar (3) · debtor adres (11)
+ * · debtor (13; `check-duplicate` saf) · üçüncü şahıs (12) · execution-office (3) · expense-block-reason (3) · group + case-group (5)
+ * · legal-time-shadow (compute YAZAR) · lookup (3) · risk (RiskReport yazar) · scheduler (cron tetikleri, 5) · summary-engine (2)
+ * · policy-engine (`action-executed`; `can-perform-action` saf) · client-intake-promotion (rütbe eligibility, rol sormaz) ·
+ * client-intake-review (PermissionGrant capability, rol sormaz) → sınıf düzeyi guard. METOT düzeyi: seed (14 yazma; D03/B02R1
+ * kilitleri korunur, ViewerWriteDenyGuard AdminGuard'dan ÖNCE), validation-gate (6 rota validateGate → ValidationResult yazar;
+ * `bank-claim-validation` kimliksiz saf hesap — işaretli, owner kalemi). KANITLA KAPATILAN (kod değişmez): client / client-address
+ * (OWN-13 D01 servis düzeyi VIEWER DENY — client-*-authorization spec'leri), client-intake-link (`runAuthorizedClientWorkspaceCommand`
+ * B03), office-approval (karar sınırı spec'leri), related-lawsuits ve stage-trigger (servis yan etki 0), error-log (AdminGuard),
+ * calc-preview/* (kendi guard modeli), user me/password (öz-servis), auth / portal (kendi kapıları).
+ *
  * Kapsam dışı (DEĞİŞMEZ): user `me/password` (öz-servis), auth ve portal KULLANICI rotaları, office/lawyer/staff (zaten
  * OfficeF01AuthorizationGuard), client.controller ve client-address (zaten servis düzeyi VIEWER DENY). Envanterdeki öteki
  * yalnız-JWT yazıcılar F02-D KALAN yüzeydir; dilimler hâlinde ele alınır, raporda listelenir.
@@ -197,6 +209,65 @@ import { UiMapRecorderService } from '../../../icrabot/recorder/uimap-recorder.s
 import { SelectorHealthService } from '../../../icrabot/recorder/selector-health.service';
 import { ApprovalWorkflowController } from '../../../icrabot/enterprise/enterprise.controller';
 import { ApprovalWorkflowService } from '../../../icrabot/enterprise/approval-workflow.service';
+// R07 (F02-D-2 dilim 5): kalan operasyonel yollar
+import { AddressDiscoveryController } from '../../../address-discovery/address-discovery.controller';
+import { AddressDiscoveryService } from '../../../address-discovery/address-discovery.service';
+import { ClientInfoRequestService } from '../../../address-discovery/client-info-request.service';
+import { ConfidenceScoreService } from '../../../address-discovery/confidence-score.service';
+import { CrossFileService } from '../../../address-discovery/cross-file.service';
+import { InstitutionLetterService } from '../../../address-discovery/institution-letter.service';
+import { UyapQueryService } from '../../../address-discovery/uyap-query.service';
+import { AddressTaskController } from '../../../address-task/address-task.controller';
+import { AddressTaskService } from '../../../address-task/address-task.service';
+import { AiDocumentService } from '../../../ai/ai-document.service';
+import { AiController } from '../../../ai/ai.controller';
+import { AiService } from '../../../ai/ai.service';
+import { AssetQueryController } from '../../../asset-query/asset-query.controller';
+import { AssetQueryService } from '../../../asset-query/asset-query.service';
+import { AutomationController } from '../../../automation/automation.controller';
+import { AutomationService } from '../../../automation/automation.service';
+import { WorkflowEngine } from '../../../automation/workflow-engine.service';
+import { CalendarController } from '../../../calendar/calendar.controller';
+import { CalendarService } from '../../../calendar/calendar.service';
+import { ClientIntakePromotionController } from '../../../client-intake-promotion/client-intake-promotion.controller';
+import { ClientIntakePromotionService } from '../../../client-intake-promotion/client-intake-promotion.service';
+import { ClientIntakeReviewAuthorizationService } from '../../../client-intake-review/client-intake-review-authorization.service';
+import { ClientIntakeReviewController } from '../../../client-intake-review/client-intake-review.controller';
+import { ClientIntakeReviewService } from '../../../client-intake-review/client-intake-review.service';
+import { AddressController } from '../../../debtor/address.controller';
+import { AddressService } from '../../../debtor/address.service';
+import { CaseDebtorService } from '../../../debtor/case-debtor.service';
+import { DebtorCrossCaseNotificationTaskLinkService } from '../../../debtor/debtor-cross-case-notification-task-link.service';
+import { DebtorCrossCaseNotificationService } from '../../../debtor/debtor-cross-case-notification.service';
+import { DebtorController } from '../../../debtor/debtor.controller';
+import { DebtorService } from '../../../debtor/debtor.service';
+import { ExternalCaseStatusTransitionService } from '../../../debtor/external-case-status-transition.service';
+import { ThirdPartyController } from '../../../debtor/third-party.controller';
+import { ThirdPartyService } from '../../../debtor/third-party.service';
+import { ExecutionOfficeController } from '../../../execution-office/execution-office.controller';
+import { ExecutionOfficeService } from '../../../execution-office/execution-office.service';
+import { ExpenseBlockReasonController } from '../../../expense-block-reason/expense-block-reason.controller';
+import { ExpenseBlockReasonService } from '../../../expense-block-reason/expense-block-reason.service';
+import { CaseGroupController, GroupController } from '../../../group/group.controller';
+import { GroupService } from '../../../group/group.service';
+import { LegalTimeShadowController } from '../../../legal-time-shadow/legal-time-shadow.controller';
+import { LegalTimeShadowService } from '../../../legal-time-shadow/legal-time-shadow.service';
+import { LookupController } from '../../../lookup/lookup.controller';
+import { LookupService } from '../../../lookup/lookup.service';
+import { CasePolicyEngine } from '../../../policy-engine/case-policy-engine.service';
+import { DecisionLoggerService } from '../../../policy-engine/decision-logger';
+import { PolicyEngineController } from '../../../policy-engine/policy-engine.controller';
+import { RiskController } from '../../../risk/risk.controller';
+import { RiskService } from '../../../risk/risk.service';
+import { SchedulerController } from '../../../scheduler/scheduler.controller';
+import { SchedulerService as CronSchedulerService } from '../../../scheduler/scheduler.service';
+import { SeedController } from '../../../seed/seed.controller';
+import { SeedService } from '../../../seed/seed.service';
+import { SummaryEngineController } from '../../../summary-engine/summary-engine.controller';
+import { SummaryEngineService } from '../../../summary-engine/summary-engine.service';
+import { ValidationGateController } from '../../../validation-gate/validation-gate.controller';
+import { ValidationGateService } from '../../../validation-gate/validation-gate.service';
+import { AuditService } from '../../../audit/audit.service'; // R07: ClientIntakeReviewController bağımlılığı
 
 const SECRET = 'f02d-j27-viewer-write-deny-local-test-secret-at-least-32-bytes';
 const TENANT = 'tenant-j27';
@@ -259,6 +330,11 @@ const CLASS_GUARDED = [
   PrecautionaryOrderController, OcrController, LimitationEngineController,
   // R06 (F02-D-2 dilim 4): UYAP / icrabot yolları (servis katmanı rol sormuyor; UYAP gönderim yetkisi genişletilmez)
   BundleController, IcrabotController, OpsController, RecorderController, HealthController, RecorderTestController, ApprovalWorkflowController,
+  // R07 (F02-D-2 dilim 5): kalan operasyonel yollar (servis katmanı rol sormuyor ya da yalnız rütbe / capability soruyor)
+  AddressDiscoveryController, AddressTaskController, AiController, AssetQueryController, AutomationController, CalendarController,
+  AddressController, DebtorController, ThirdPartyController, ExecutionOfficeController, ExpenseBlockReasonController, GroupController, CaseGroupController,
+  LegalTimeShadowController, LookupController, RiskController, SchedulerController, SummaryEngineController, PolicyEngineController,
+  ClientIntakePromotionController, ClientIntakeReviewController,
 ];
 /** R02: METOT düzeyi ViewerWriteDenyGuard beklenen handler'lar (sınıf düzeyi kapı ölçülmüş sözleşmeleri değiştirirdi). */
 const METHOD_GUARDED: ReadonlyArray<readonly [Function, string]> = [
@@ -268,10 +344,15 @@ const METHOD_GUARDED: ReadonlyArray<readonly [Function, string]> = [
   [NotificationDispatchController, 'resend'],
   // R05: interest-engine sınıf düzeyinde guard taşımaz (`health` açık); yalnız `calculate` denetim kaydı yazar → metot düzeyi.
   [InterestEngineController, 'calculate'],
+  // R07: seed (sınıf guard yok; D03 metot düzeyi JwtAuthGuard korunur) ve validation-gate (metot düzeyi; validateGate ValidationResult yazar)
+  ...(['seedAll', 'seedLookups', 'seedLawyers', 'seedClients', 'seedDebtors', 'seedCases', 'seedExecutionOffices', 'seedStaff', 'fixClients', 'fixLawyers',
+    'seedOffice', 'seedBankAccounts', 'seedPublicInstitutions', 'seedPublicInstitutionDebtors'] as const).map((h) => [SeedController, h] as const),
+  ...(['validateGate', 'validateAllGates', 'validateCaseCreation', 'validateOrnek1Generation', 'validateServiceOfProcess', 'validateUyapIntegration'] as const)
+    .map((h) => [ValidationGateController, h] as const),
 ];
 /** Şablon YAZMA uçları: ölçülmüş F01 kapısı (OFFICE_WRITE_DENIED_VIEWER) korunur; ikinci VIEWER kapısı TAKILMAZ. */
 const F01_TEMPLATE_WRITE = ['createEmailTemplate', 'updateEmailTemplate', 'createDefaultTemplates'];
-const MOUNTED = [...CLASS_GUARDED, CaseStatusController, ClientNotificationController, NotificationDispatchController, InterestEngineController];
+const MOUNTED = [...CLASS_GUARDED, CaseStatusController, ClientNotificationController, NotificationDispatchController, InterestEngineController, SeedController, ValidationGateController];
 
 type DenyGuard = 'viewer' | 'f01' | 'admin' | 'none';
 interface Route { ctrl: string; handler: string; method: RequestMethod; url: string; readOnlyPost: boolean; denyGuard: DenyGuard }
@@ -401,6 +482,43 @@ describe('F02-D / J-27: VIEWER yazma reddi — consumer uygulaması (gerçek JWT
         { provide: UiMapRecorderService, useValue: stubService('UiMapRecorderService') },
         { provide: SelectorHealthService, useValue: stubService('SelectorHealthService') },
         { provide: ApprovalWorkflowService, useValue: stubService('ApprovalWorkflowService') },
+        // R07 (F02-D-2 dilim 5) servisleri (stub; DB yazma / dış çağrı / cron tetiği YOK)
+        { provide: AddressDiscoveryService, useValue: stubService('AddressDiscoveryService') },
+        { provide: ClientInfoRequestService, useValue: stubService('ClientInfoRequestService') },
+        { provide: ConfidenceScoreService, useValue: stubService('ConfidenceScoreService') },
+        { provide: CrossFileService, useValue: stubService('CrossFileService') },
+        { provide: UyapQueryService, useValue: stubService('UyapQueryService') },
+        { provide: InstitutionLetterService, useValue: stubService('InstitutionLetterService') },
+        { provide: AddressTaskService, useValue: stubService('AddressTaskService') },
+        { provide: AiService, useValue: stubService('AiService') },
+        { provide: AiDocumentService, useValue: stubService('AiDocumentService') },
+        { provide: AssetQueryService, useValue: stubService('AssetQueryService') },
+        { provide: AutomationService, useValue: stubService('AutomationService') },
+        { provide: WorkflowEngine, useValue: stubService('WorkflowEngine') },
+        { provide: CalendarService, useValue: stubService('CalendarService') },
+        { provide: AddressService, useValue: stubService('AddressService') },
+        { provide: DebtorService, useValue: stubService('DebtorService') },
+        { provide: DebtorCrossCaseNotificationService, useValue: stubService('DebtorCrossCaseNotificationService') },
+        { provide: CaseDebtorService, useValue: stubService('CaseDebtorService') },
+        { provide: DebtorCrossCaseNotificationTaskLinkService, useValue: stubService('DebtorCrossCaseNotificationTaskLinkService') },
+        { provide: ThirdPartyService, useValue: stubService('ThirdPartyService') },
+        { provide: ExternalCaseStatusTransitionService, useValue: stubService('ExternalCaseStatusTransitionService') },
+        { provide: ExecutionOfficeService, useValue: stubService('ExecutionOfficeService') },
+        { provide: ExpenseBlockReasonService, useValue: stubService('ExpenseBlockReasonService') },
+        { provide: GroupService, useValue: stubService('GroupService') },
+        { provide: LegalTimeShadowService, useValue: stubService('LegalTimeShadowService') },
+        { provide: LookupService, useValue: stubService('LookupService') },
+        { provide: RiskService, useValue: stubService('RiskService') },
+        { provide: CronSchedulerService, useValue: stubService('CronSchedulerService') },
+        { provide: SummaryEngineService, useValue: stubService('SummaryEngineService') },
+        { provide: CasePolicyEngine, useValue: stubService('CasePolicyEngine') },
+        { provide: DecisionLoggerService, useValue: stubService('DecisionLoggerService') },
+        { provide: ClientIntakePromotionService, useValue: stubService('ClientIntakePromotionService') },
+        { provide: ClientIntakeReviewService, useValue: stubService('ClientIntakeReviewService') },
+        { provide: ClientIntakeReviewAuthorizationService, useValue: stubService('ClientIntakeReviewAuthorizationService') },
+        { provide: SeedService, useValue: stubService('SeedService') },
+        { provide: ValidationGateService, useValue: stubService('ValidationGateService') },
+        { provide: AuditService, useValue: stubService('AuditService') },
       ],
     }).compile();
     app = module.createNestApplication();
@@ -421,23 +539,26 @@ describe('F02-D / J-27: VIEWER yazma reddi — consumer uygulaması (gerçek JWT
   const call = (r: Route, key: ActorKey) =>
     request(app.getHttpServer())[VERB[r.method]](r.url).set('Authorization', bearer(key)).send({});
 
-  it('keşif kör değil: yazma rotası ≥ 155, GET ≥ 158, saf POST = 27 (R01 4 + template-engine 10 + R05 hesap/önizleme 11 + R06 icrabot 2)', () => {
-    expect(WRITE_ROUTES.length).toBeGreaterThanOrEqual(155);
-    expect(GET_ROUTES.length).toBeGreaterThanOrEqual(158);
+  it('keşif kör değil: yazma rotası ≥ 270, GET ≥ 225, saf POST = 30 (R01 4 + template-engine 10 + R05 11 + R06 2 + R07 3)', () => {
+    expect(WRITE_ROUTES.length).toBeGreaterThanOrEqual(270);
+    expect(GET_ROUTES.length).toBeGreaterThanOrEqual(225);
     expect(READ_ONLY_POSTS.map((r) => `${r.ctrl}.${r.handler}`).sort()).toEqual([
       'BundleController.validateBundle', // R06: paket içerik doğrulaması (saf)
       'CaseInstrumentController.analyzeChain',
       // R05: saf hesap / önizleme POST'ları (servis yan etki haritası: ilgili metotlarda yazma / denetim / dış çağrı yok)
       'ClaimEngineController.calculatePenalty', 'ClaimEngineController.classifyDocument', 'ClaimEngineController.generateClaimItems',
       'ClaimEngineController.routeCase', 'ClaimEngineController.validateCase', 'CostPackageController.computeExpenseRequest',
+      'DebtorController.checkDuplicate', // R07: mükerrer borçlu araması (saf)
       'DocumentController.previewTemplate', 'IcrabotController.determineChannel', 'InterestEngineController.preview',
       'LimitationEngineController.checkLimitation', 'LimitationEngineController.recommendEnforcement',
       'NotificationController.getCollectionTemplates', 'OcrController.classifyText', 'OcrController.getSupportedFormats', 'PoaController.checkValidPoaForLawyers',
+      'PolicyEngineController.canPerformAction', // R07: politika değerlendirmesi (saf)
       // R04: JSON gövdesinden üretim — DB / denetim izi / dış çağrı yok (kaynaktan doğrulandı; statik bekçi template-engine-viewer-read-only-posts)
       'TemplateEngineController.downloadTakipTalebi', 'TemplateEngineController.downloadTakipTalebiPdf', 'TemplateEngineController.downloadTakipTalebiWord',
       'TemplateEngineController.downloadTakipTalebiXml', 'TemplateEngineController.generateHacizTutanagi', 'TemplateEngineController.generateIcraEmri',
       'TemplateEngineController.generateOdemeEmri', 'TemplateEngineController.generateTakipTalebi', 'TemplateEngineController.generateTakipTalebiUdf',
       'TemplateEngineController.previewTakipTalebi',
+      'ValidationGateController.validateBankClaimEndpoint', // R07: kimliksiz saf hesap (owner kalemi)
     ]);
   });
 

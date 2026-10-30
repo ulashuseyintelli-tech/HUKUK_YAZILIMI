@@ -2,10 +2,12 @@ import { Controller, Get, Post, Param, Body, UseGuards } from "@nestjs/common";
 import { AutomationService } from "./automation.service";
 import { WorkflowEngine } from "./workflow-engine.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 
+// F02-D-2 dilim 5 (owner ek talimatı 30.10.2026): VIEWER otomatik modu açamaz / dosya işleyemez (2 yazma). Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`; okuma uçları DEĞİŞMEZ.
 @Controller("automation")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class AutomationController {
   constructor(
     private automationService: AutomationService,

@@ -1,6 +1,7 @@
 import { Controller, ForbiddenException, Get, Post, Request, UseGuards } from '@nestjs/common';
 import { SchedulerService } from './scheduler.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import type { SchedulerActor } from './scheduler-manual-run-policy';
 
 /**
@@ -17,8 +18,9 @@ function actorFromRequest(req: { user?: { id?: string; tenantId?: string; role?:
   };
 }
 
+// F02-D-2 dilim 5 (owner ek talimatı 30.10.2026): VIEWER zamanlanmış işleri (run-all, ödeme emri / nafaka / MTS / UYAP retry kontrolleri) TETİKLEYEMEZ (5 yazma). Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`; okuma uçları DEĞİŞMEZ.
 @Controller('scheduler')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class SchedulerController {
   constructor(private schedulerService: SchedulerService) {}
 

@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { AddressTaskService, CompleteTaskParams } from './address-task.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import {
   AddressTaskStatus,
@@ -37,8 +38,9 @@ import {
  * - Not: createTask/status/fail uçlarının frontend karşılığı yoktur (manuel/tetikleyici);
  *   scheduler ise controller'ı DEĞİL servisi doğrudan çağırır (guard'dan etkilenmez).
  */
+// F02-D-2 dilim 5 (owner ek talimatı 30.10.2026): VIEWER adres görevi oluşturamaz / durum değiştiremez / iş akışı tetikleyemez (8 yazma). Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`; okuma uçları DEĞİŞMEZ.
 @Controller('address-tasks')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class AddressTaskController {
   constructor(private readonly addressTaskService: AddressTaskService) {}
 

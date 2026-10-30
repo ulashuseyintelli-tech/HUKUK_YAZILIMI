@@ -35,6 +35,7 @@ import { ActionCode } from './types/action-code.enum';
 import { Scope } from './types/scope.enum';
 import { ActionContext, ActionResult } from './types/policy-decision.interface';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -69,8 +70,9 @@ class NextActionsQueryDto {
 // Controller
 // ============================================
 
+// F02-D-2 dilim 5 (owner ek talimatı 30.10.2026): VIEWER "eylem yürütüldü" kancasını tetikleyemez (`action-executed`); `can-perform-action` saf değerlendirme → açık. Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`; okuma uçları DEĞİŞMEZ.
 @Controller('policy-engine')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class PolicyEngineController {
   private readonly logger = new Logger(PolicyEngineController.name);
 
@@ -110,6 +112,7 @@ export class PolicyEngineController {
    *
    * Bir aksiyonun yapılıp yapılamayacağını kontrol eder.
    */
+  @AllowViewerReadOnlyPost() // saf: politika değerlendirmesi (CasePolicyEngine.canPerformAction yalnız hesaplar) — DB yazma / denetim izi / dış çağrı yok (servis yan etki haritası)
   @Post('cases/:caseId/can-perform-action')
   @HttpCode(HttpStatus.OK)
   async canPerformAction(

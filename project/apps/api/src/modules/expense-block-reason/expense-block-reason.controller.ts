@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { Request } from 'express';
 import { ExpenseBlockStatus } from '@prisma/client';
 import { ExpenseBlockReasonService } from './expense-block-reason.service';
@@ -17,8 +18,9 @@ interface AuthRequest extends Request {
  * Yalnız create + transition (resolve/cancel) + list. İçerik PATCH/PUT/DELETE YOK (immutability).
  * tenantId/userId daima CurrentUser'dan (req.user), body'den ASLA.
  */
+// F02-D-2 dilim 5 (owner ek talimatı 30.10.2026): VIEWER masraf blokaj nedeni açamaz / çözemez / iptal edemez (3 yazma). Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`; okuma uçları DEĞİŞMEZ.
 @Controller('expense-block-reasons')
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(AuthGuard('jwt'), ViewerWriteDenyGuard)
 export class ExpenseBlockReasonController {
   constructor(private readonly service: ExpenseBlockReasonService) {}
 

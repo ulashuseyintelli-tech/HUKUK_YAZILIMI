@@ -10,10 +10,12 @@ import {
   Request,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "@/modules/auth/guards/jwt-auth.guard";
+import { ViewerWriteDenyGuard } from "@/modules/auth/guards/viewer-write-deny.guard";
 import { AddressService, CreateAddressDto, UpdateAddressDto, TK21_2RecordDto, AddressRiskFlagType } from "./address.service";
 
+// F02-D-2 dilim 5 (owner ek talimatı 30.10.2026): VIEWER borçlu adresi / risk bayrağı / doğrulama (MERNİS-MERSİS) / aktif adres YAZAMAZ (11 yazma). Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`; okuma uçları DEĞİŞMEZ.
 @Controller()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class AddressController {
   constructor(private readonly addressService: AddressService) {}
 

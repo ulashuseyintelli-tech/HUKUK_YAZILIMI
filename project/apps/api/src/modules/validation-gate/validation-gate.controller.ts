@@ -2,6 +2,7 @@ import { Controller, Get, Post, Param, Body, Query, UseGuards } from '@nestjs/co
 import { ValidationGateService, GateId, GateValidationResult } from './validation-gate.service';
 import { validateBankClaim, isBankClaim, getBankClaimInterestRules, BankClaimValidation } from './rules/bank-claim.rules';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 // MasterValidations tipini export et
@@ -23,7 +24,7 @@ export class ValidationGateController {
    */
   // CLIENT-SEC-H1 (S3): 6 POST endpoint fail-closed — JwtAuthGuard + authenticated principal'dan tenantId.
   @Post(':caseId/validate/:gateId')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard) // F02-D-2 dilim 5: validateGate ValidationResult YAZAR
   async validateGate(
     @Param('caseId') caseId: string,
     @Param('gateId') gateId: GateId,
@@ -38,7 +39,7 @@ export class ValidationGateController {
    * POST /api/validation-gate/:caseId/validate-all
    */
   @Post(':caseId/validate-all')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard) // F02-D-2 dilim 5: validateGate ValidationResult YAZAR
   async validateAllGates(
     @Param('caseId') caseId: string,
     @CurrentUser('tenantId') tenantId: string,
@@ -52,7 +53,7 @@ export class ValidationGateController {
    * POST /api/validation-gate/:caseId/case-creation
    */
   @Post(':caseId/case-creation')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard) // F02-D-2 dilim 5: validateGate ValidationResult YAZAR
   async validateCaseCreation(
     @Param('caseId') caseId: string,
     @CurrentUser('tenantId') tenantId: string,
@@ -66,7 +67,7 @@ export class ValidationGateController {
    * POST /api/validation-gate/:caseId/ornek1-generation
    */
   @Post(':caseId/ornek1-generation')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard) // F02-D-2 dilim 5: validateGate ValidationResult YAZAR
   async validateOrnek1Generation(
     @Param('caseId') caseId: string,
     @CurrentUser('tenantId') tenantId: string,
@@ -80,7 +81,7 @@ export class ValidationGateController {
    * POST /api/validation-gate/:caseId/service-of-process
    */
   @Post(':caseId/service-of-process')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard) // F02-D-2 dilim 5: validateGate ValidationResult YAZAR
   async validateServiceOfProcess(
     @Param('caseId') caseId: string,
     @CurrentUser('tenantId') tenantId: string,
@@ -94,7 +95,7 @@ export class ValidationGateController {
    * POST /api/validation-gate/:caseId/uyap-integration
    */
   @Post(':caseId/uyap-integration')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard) // F02-D-2 dilim 5: validateGate ValidationResult YAZAR
   async validateUyapIntegration(
     @Param('caseId') caseId: string,
     @CurrentUser('tenantId') tenantId: string,
@@ -187,6 +188,8 @@ export class ValidationGateController {
    * Banka alacağı validasyonu
    * POST /api/validation-gate/bank-claim-validation
    */
+  // F02-D-2 dilim 5: kimliksiz saf hesap ucu (guard yok — F02 karar listesinde owner kalemi); yazma yok.
+  @AllowViewerReadOnlyPost() // saf: banka alacağı doğrulaması (yalnız hesap) — DB yazma / denetim izi / dış çağrı yok (servis yan etki haritası)
   @Post('bank-claim-validation')
   validateBankClaimEndpoint(@Body() params: {
     mahiyetCode: string;

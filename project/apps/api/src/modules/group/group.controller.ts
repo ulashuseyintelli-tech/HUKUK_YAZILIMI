@@ -1,10 +1,12 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { GroupService } from './group.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
+// F02-D-2 dilim 5 (owner ek talimatı 30.10.2026): VIEWER grup oluşturamaz / güncelleyemez / silemez (3 yazma). Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`; okuma uçları DEĞİŞMEZ.
 @Controller('groups')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class GroupController {
   constructor(private readonly service: GroupService) {}
 
@@ -62,8 +64,9 @@ export class GroupController {
 }
 
 // Case-Group ilişkileri için ayrı controller
+// F02-D-2 dilim 5 (owner ek talimatı 30.10.2026): VIEWER dosyaya grup atayamaz / kaldıramaz (2 yazma). Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`; okuma uçları DEĞİŞMEZ.
 @Controller('cases/:caseId/groups')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class CaseGroupController {
   constructor(private readonly service: GroupService) {}
 

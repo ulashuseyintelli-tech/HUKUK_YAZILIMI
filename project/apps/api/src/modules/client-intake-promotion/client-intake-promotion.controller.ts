@@ -1,5 +1,6 @@
 import { Controller, Post, Body, Param, UseGuards, Req } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { Request } from 'express';
 import { ClientIntakePromotionService } from './client-intake-promotion.service';
 import { PromoteSubmissionDto } from './dto/promote-submission.dto';
@@ -14,8 +15,9 @@ interface AuthRequest extends Request {
  * Client Intake PROMOTE controller (Faz 4.6) — personel/JWT.
  * Onaylı soft-intel alanları ClientIntelStatement'a yazar. Public uç promote ETMEZ.
  */
+// F02-D-2 dilim 5 (owner ek talimatı 30.10.2026): VIEWER intake alanını kanonik kayda promote edemez (servis yalnız rütbe/eligibility sorar; AK-1a rol önce; 3 yazma). Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`; okuma uçları DEĞİŞMEZ.
 @Controller()
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(AuthGuard('jwt'), ViewerWriteDenyGuard)
 export class ClientIntakePromotionController {
   constructor(private readonly service: ClientIntakePromotionService) {}
 

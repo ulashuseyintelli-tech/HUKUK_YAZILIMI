@@ -22,6 +22,7 @@ import {
   CloseExternalCaseDto,
 } from "./dto/third-party.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { getRequestId } from "../../common/request-id.middleware";
 import {
@@ -30,8 +31,9 @@ import {
 } from "../collection/receipt-object-scope-authorization.service";
 import { ExternalCaseStatusTransitionService } from "./external-case-status-transition.service";
 
+// F02-D-2 dilim 5 (owner ek talimatı 30.10.2026): VIEWER üçüncü şahıs / ihbarname / dış dosya / tahsilat kaydı YAZAMAZ (12 yazma). Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`; okuma uçları DEĞİŞMEZ.
 @Controller()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class ThirdPartyController {
   constructor(
     private thirdPartyService: ThirdPartyService,
