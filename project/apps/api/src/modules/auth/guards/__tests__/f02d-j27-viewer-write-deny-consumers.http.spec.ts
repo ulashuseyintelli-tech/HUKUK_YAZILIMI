@@ -59,13 +59,15 @@
  * R07 (F02-D-2 dilim 5, owner ek talimatı 30.10.2026 — kalan operasyonel yollar; servis yan etki haritası + principal incelemesi):
  * address-discovery (17) · address-task (8) · ai (OpenAI dış çağrısı, 4) · asset-query (4) · automation (2) · calendar (3) · debtor adres (11)
  * · debtor (13; `check-duplicate` saf) · üçüncü şahıs (12) · execution-office (3) · expense-block-reason (3) · group + case-group (5)
- * · legal-time-shadow (compute YAZAR) · lookup (3) · risk (RiskReport yazar) · scheduler (cron tetikleri, 5) · summary-engine (2)
+ * · legal-time-shadow (compute YAZAR) · lookup (3) · risk (RiskReport yazar) · summary-engine (2)
  * · policy-engine (`action-executed`; `can-perform-action` saf) · client-intake-promotion (rütbe eligibility, rol sormaz) ·
  * client-intake-review (PermissionGrant capability, rol sormaz) → sınıf düzeyi guard. METOT düzeyi: seed (14 yazma; D03/B02R1
  * kilitleri korunur, ViewerWriteDenyGuard AdminGuard'dan ÖNCE), validation-gate (6 rota validateGate → ValidationResult yazar;
  * `bank-claim-validation` kimliksiz saf hesap — işaretli, owner kalemi). KANITLA KAPATILAN (kod değişmez): client / client-address
  * (OWN-13 D01 servis düzeyi VIEWER DENY — client-*-authorization spec'leri), client-intake-link (`runAuthorizedClientWorkspaceCommand`
- * B03), office-approval (karar sınırı spec'leri), related-lawsuits ve stage-trigger (servis yan etki 0), error-log (AdminGuard),
+ * B03), office-approval (karar sınırı spec'leri), scheduler (5 POST'un hepsi J-26 `runManual` → `decideManualSchedulerRun` kapısından;
+ * VIEWER 403 VIEWER_DENIED — `scheduler-manual-run-boundary` KABUL-1c; sınıf guard'ı o sözleşmeyi gölgeleyeceği için EKLENMEDİ),
+ * related-lawsuits ve stage-trigger (servis yan etki 0), error-log (AdminGuard),
  * calc-preview/* (kendi guard modeli), user me/password (öz-servis), auth / portal (kendi kapıları).
  *
  * Kapsam dışı (DEĞİŞMEZ): user `me/password` (öz-servis), auth ve portal KULLANICI rotaları, office/lawyer/staff (zaten
@@ -259,8 +261,6 @@ import { DecisionLoggerService } from '../../../policy-engine/decision-logger';
 import { PolicyEngineController } from '../../../policy-engine/policy-engine.controller';
 import { RiskController } from '../../../risk/risk.controller';
 import { RiskService } from '../../../risk/risk.service';
-import { SchedulerController } from '../../../scheduler/scheduler.controller';
-import { SchedulerService as CronSchedulerService } from '../../../scheduler/scheduler.service';
 import { SeedController } from '../../../seed/seed.controller';
 import { SeedService } from '../../../seed/seed.service';
 import { SummaryEngineController } from '../../../summary-engine/summary-engine.controller';
@@ -333,7 +333,7 @@ const CLASS_GUARDED = [
   // R07 (F02-D-2 dilim 5): kalan operasyonel yollar (servis katmanı rol sormuyor ya da yalnız rütbe / capability soruyor)
   AddressDiscoveryController, AddressTaskController, AiController, AssetQueryController, AutomationController, CalendarController,
   AddressController, DebtorController, ThirdPartyController, ExecutionOfficeController, ExpenseBlockReasonController, GroupController, CaseGroupController,
-  LegalTimeShadowController, LookupController, RiskController, SchedulerController, SummaryEngineController, PolicyEngineController,
+  LegalTimeShadowController, LookupController, RiskController, SummaryEngineController, PolicyEngineController,
   ClientIntakePromotionController, ClientIntakeReviewController,
 ];
 /** R02: METOT düzeyi ViewerWriteDenyGuard beklenen handler'lar (sınıf düzeyi kapı ölçülmüş sözleşmeleri değiştirirdi). */
@@ -509,7 +509,6 @@ describe('F02-D / J-27: VIEWER yazma reddi — consumer uygulaması (gerçek JWT
         { provide: LegalTimeShadowService, useValue: stubService('LegalTimeShadowService') },
         { provide: LookupService, useValue: stubService('LookupService') },
         { provide: RiskService, useValue: stubService('RiskService') },
-        { provide: CronSchedulerService, useValue: stubService('CronSchedulerService') },
         { provide: SummaryEngineService, useValue: stubService('SummaryEngineService') },
         { provide: CasePolicyEngine, useValue: stubService('CasePolicyEngine') },
         { provide: DecisionLoggerService, useValue: stubService('DecisionLoggerService') },
