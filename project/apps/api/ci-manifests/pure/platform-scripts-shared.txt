@@ -339,6 +339,8 @@ src/modules/template-engine/__tests__/template-engine-passive-policy.spec.ts
 # rol/unvan, DocumentArtifact + denetim, istemci önizlemesi TASLAK; controller PII-log statik guard'ı.
 src/modules/template-engine/__tests__/template-engine-proceeding-selection.spec.ts
 src/modules/template-engine/__tests__/template-engine-controller-no-pii-log.static.spec.ts
+# F02-D-2 dilim 2 (30.10.2026): template-engine VIEWER saf uretim POST bekcisi (controller + servis kaynagi; DB/HTTP yok)
+src/modules/template-engine/__tests__/template-engine-viewer-read-only-posts.static.spec.ts
 # Belge PDF'i Turkce harfler (ı İ ş Ş ğ Ğ): standart Courier yerine gomulu Roboto (owner karari 2026-10-04, karar 2). Uc PDF yolu
 # (taslak / dosya / merkezi uretim) PDF'in ICINDEKI metni okuyup pdfmake'e verilen belge tanimiyla esitler; metin cikarici
 # yalniz test yardimcisi. Izgara yerlesimi (odeme / icra emri) birim testi. Saf (DB yok). Duzeltmesiz servis koduyla

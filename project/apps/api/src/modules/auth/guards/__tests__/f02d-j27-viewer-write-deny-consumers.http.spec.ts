@@ -30,6 +30,14 @@
  * yaşam döngüsü (servis yalnız GRANT soruyordu). Ölçüm: değişiklik öncesi bu rotalarda VIEWER servise iniyordu.
  * BİLİNÇLİ DIŞARIDA: uyap-export (yazmasız XML dışa aktarım = okuma; saf hesaplama/okuma yollarına körlemesine guard yok).
  *
+ * R04 (F02-D-2 dilim 2, owner "Burada başla" 30.10.2026; sıra önerisi karar listesi R03 §B-3): tarife (yıl oluştur / güncelle / sil /
+ * içe aktar = dosya yazma; Resmî Gazete bildirim durumu + manuel kontrol = durum yazma + dış RSS çekimi; TariffService rol sormuyor) ve
+ * template-engine (tek gerçek yazma `cases/:caseId/documents/:format`: belge artifact kaydı + denetim izi). template-engine'in JSON
+ * gövdesinden üreten 10 POST'u (takip talebi / ödeme emri / icra emri / haciz tutanağı metin, önizleme, indirme, PDF, Word, UDF, XML)
+ * DB okumaz / yazmaz, denetim izi yazmaz, dış çağrı yapmaz — kaynaktan doğrulandı: servis dosyasının tek yazma zinciri
+ * `generateDocumentFromCase` → `recordDocumentArtifact` → `auditService.log` (statik bekçi `template-engine-viewer-read-only-posts.static.spec.ts`)
+ * → `@AllowViewerReadOnlyPost`. BİLİNÇLİ DIŞARIDA: pdf (iki POST saf PDF üretimi; yazma rotası yok = ihlal yok).
+ *
  * Kapsam dışı (DEĞİŞMEZ): user `me/password` (öz-servis), auth ve portal KULLANICI rotaları, office/lawyer/staff (zaten
  * OfficeF01AuthorizationGuard), client.controller ve client-address (zaten servis düzeyi VIEWER DENY). Envanterdeki öteki
  * yalnız-JWT yazıcılar F02-D KALAN yüzeydir; dilimler hâlinde ele alınır, raporda listelenir.
@@ -122,6 +130,12 @@ import { ReceiptObjectScopeAuthorizationService } from '../../../collection/rece
 import { BankLifecycleController } from '../../../bank/bank-lifecycle.controller';
 import { BankSettlementEvidenceWriterService } from '../../../bank/bank-settlement-evidence-writer.service';
 import { BankCandidateSettlementTransitionService } from '../../../bank/bank-candidate-settlement-transition.service';
+// R04 (F02-D-2 dilim 2): tarife yazma + belge artifact üretimi
+import { TariffController } from '../../../tariff/tariff.controller';
+import { TariffService } from '../../../tariff/tariff.service';
+import { GazetteWatcherService } from '../../../tariff/gazette-watcher.service';
+import { TemplateEngineController } from '../../../template-engine/template-engine.controller';
+import { TemplateEngineService } from '../../../template-engine/template-engine.service';
 
 const SECRET = 'f02d-j27-viewer-write-deny-local-test-secret-at-least-32-bytes';
 const TENANT = 'tenant-j27';
@@ -177,6 +191,8 @@ const CLASS_GUARDED = [
   // (rol kapısı rütbeden ÖNCE gelir: AK-1a). uyap-export BİLİNÇLİ DIŞARIDA (yazmasız dışa aktarım = okuma).
   NotificationController, CommunicationController, ESignController, PaymentInstructionController,
   AccountingJournalManualAdjustmentController, AccountingJournalReversalController, BankController, BankLifecycleController,
+  // R04 (F02-D-2 dilim 2): tarife yazma (dosya + gazete durumu + dış çekim) ve dosyadan belge artifact üretimi; 10 saf üretim POST'u işaretli.
+  TariffController, TemplateEngineController,
 ];
 /** R02: METOT düzeyi ViewerWriteDenyGuard beklenen handler'lar (sınıf düzeyi kapı ölçülmüş sözleşmeleri değiştirirdi). */
 const METHOD_GUARDED: ReadonlyArray<readonly [Function, string]> = [
@@ -284,6 +300,10 @@ describe('F02-D / J-27: VIEWER yazma reddi — consumer uygulaması (gerçek JWT
         { provide: ReceiptObjectScopeAuthorizationService, useValue: stubService('ReceiptObjectScopeAuthorizationService') },
         { provide: BankSettlementEvidenceWriterService, useValue: stubService('BankSettlementEvidenceWriterService') },
         { provide: BankCandidateSettlementTransitionService, useValue: stubService('BankCandidateSettlementTransitionService') },
+        // R04 (F02-D-2 dilim 2) servisleri (stub; dosya yazma YOK, dış RSS çekimi YOK, artifact kaydı YOK)
+        { provide: TariffService, useValue: stubService('TariffService') },
+        { provide: GazetteWatcherService, useValue: stubService('GazetteWatcherService') },
+        { provide: TemplateEngineService, useValue: stubService('TemplateEngineService') },
       ],
     }).compile();
     app = module.createNestApplication();
@@ -304,12 +324,17 @@ describe('F02-D / J-27: VIEWER yazma reddi — consumer uygulaması (gerçek JWT
   const call = (r: Route, key: ActorKey) =>
     request(app.getHttpServer())[VERB[r.method]](r.url).set('Authorization', bearer(key)).send({});
 
-  it('keşif kör değil: yazma rotası ≥ 90, GET ≥ 60, saf POST = 4 (şablon önizleme + zincir analizi + vekalet geçerlilik kontrolü + tahsilat şablonu üretimi)', () => {
-    expect(WRITE_ROUTES.length).toBeGreaterThanOrEqual(90);
-    expect(GET_ROUTES.length).toBeGreaterThanOrEqual(60);
-    expect(READ_ONLY_POSTS.map((r) => `${r.ctrl}.${r.handler}`).sort()).toEqual(
-      ['CaseInstrumentController.analyzeChain', 'DocumentController.previewTemplate', 'NotificationController.getCollectionTemplates', 'PoaController.checkValidPoaForLawyers'],
-    );
+  it('keşif kör değil: yazma rotası ≥ 98, GET ≥ 91, saf POST = 14 (şablon önizleme + zincir analizi + vekalet geçerlilik kontrolü + tahsilat şablonu üretimi + template-engine JSON üretimi 10)', () => {
+    expect(WRITE_ROUTES.length).toBeGreaterThanOrEqual(98);
+    expect(GET_ROUTES.length).toBeGreaterThanOrEqual(91);
+    expect(READ_ONLY_POSTS.map((r) => `${r.ctrl}.${r.handler}`).sort()).toEqual([
+      'CaseInstrumentController.analyzeChain', 'DocumentController.previewTemplate', 'NotificationController.getCollectionTemplates', 'PoaController.checkValidPoaForLawyers',
+      // R04: JSON gövdesinden üretim — DB / denetim izi / dış çağrı yok (kaynaktan doğrulandı; statik bekçi template-engine-viewer-read-only-posts)
+      'TemplateEngineController.downloadTakipTalebi', 'TemplateEngineController.downloadTakipTalebiPdf', 'TemplateEngineController.downloadTakipTalebiWord',
+      'TemplateEngineController.downloadTakipTalebiXml', 'TemplateEngineController.generateHacizTutanagi', 'TemplateEngineController.generateIcraEmri',
+      'TemplateEngineController.generateOdemeEmri', 'TemplateEngineController.generateTakipTalebi', 'TemplateEngineController.generateTakipTalebiUdf',
+      'TemplateEngineController.previewTakipTalebi',
+    ]);
   });
 
   it("kapısız yazma rotası YOK (fail-closed keşif): her yazma rotası VIEWER'ı reddeden bir kapı taşır", () => {

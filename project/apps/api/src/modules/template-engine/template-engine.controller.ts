@@ -3,6 +3,7 @@ import { Response } from 'express';
 import { IsString, IsOptional, IsArray, IsObject, ValidateNested, IsNumber, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { TemplateEngineService, TemplateData, GeneratedDocument, UdfDocument } from './template-engine.service';
 import { CekFormationPreviewDto } from '../claim-item/dto/claim-item.dto';
@@ -260,14 +261,20 @@ export class GenerateTakipTalebiDto {
   cekFormationPreview?: CekFormationPreviewDto;
 }
 
+// F02-D-2 dilim 2 (owner "Burada başla" 30.10.2026): VIEWER dosyadan belge artifact ÜRETEMEZ (`cases/:caseId/documents/:format` —
+// artifact kaydı + denetim izi = yazma). Ölçülen boşluk: yalnız JWT; TemplateEngineService rol sormuyor. JSON gövdesinden üreten 10 POST
+// (metin / önizleme / indirme / PDF / Word / UDF / XML) DB okumaz-yazmaz, denetim izi yazmaz, dış çağrı yapmaz → `@AllowViewerReadOnlyPost`
+// (kaynaktan doğrulandı; statik bekçi template-engine-viewer-read-only-posts.static.spec.ts). Kapalı kural OWN-13 §51 / AK-1a / B4-B6
+// `ViewerWriteDenyGuard` (JwtAuthGuard'dan SONRA). Okuma uçları (GET; dosyadan üretim/indirme dahil) DEĞİŞMEZ.
 @Controller('template-engine')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class TemplateEngineController {
   constructor(private readonly templateEngineService: TemplateEngineService) {}
 
   /**
    * Takip Talebi (Örnek 1) belgesi oluştur - JSON data ile
    */
+  @AllowViewerReadOnlyPost() // saf üretim: JSON gövdesinden belge; DB/denetim izi/dış çağrı yok (template-engine.service.ts — kaynaktan doğrulandı, statik bekçi)
   @Post('takip-talebi')
   generateTakipTalebi(@Body() dto: GenerateTakipTalebiDto): GeneratedDocument {
     return this.templateEngineService.generateTakipTalebi(dto as TemplateData);
@@ -291,6 +298,7 @@ export class TemplateEngineController {
   /**
    * Takip Talebi önizleme - HTML formatında
    */
+  @AllowViewerReadOnlyPost() // saf üretim: JSON gövdesinden belge; DB/denetim izi/dış çağrı yok (template-engine.service.ts — kaynaktan doğrulandı, statik bekçi)
   @Post('takip-talebi/preview')
   previewTakipTalebi(@Body() dto: GenerateTakipTalebiDto): { html: string } {
     const doc = this.templateEngineService.generateTakipTalebi(dto as TemplateData);
@@ -306,6 +314,7 @@ export class TemplateEngineController {
   /**
    * Takip Talebi indir - Text dosyası olarak
    */
+  @AllowViewerReadOnlyPost() // saf üretim: JSON gövdesinden belge; DB/denetim izi/dış çağrı yok (template-engine.service.ts — kaynaktan doğrulandı, statik bekçi)
   @Post('takip-talebi/download')
   downloadTakipTalebi(@Body() dto: GenerateTakipTalebiDto, @Res() res: Response): void {
     const doc = this.templateEngineService.generateTakipTalebi(dto as TemplateData);
@@ -326,6 +335,7 @@ export class TemplateEngineController {
   /**
    * Ödeme Emri (Örnek 7) belgesi oluştur - JSON data ile
    */
+  @AllowViewerReadOnlyPost() // saf üretim: JSON gövdesinden belge; DB/denetim izi/dış çağrı yok (template-engine.service.ts — kaynaktan doğrulandı, statik bekçi)
   @Post('odeme-emri')
   generateOdemeEmri(@Body() dto: GenerateTakipTalebiDto): GeneratedDocument {
     return this.templateEngineService.generateOdemeEmri(dto as TemplateData);
@@ -349,6 +359,7 @@ export class TemplateEngineController {
   /**
    * İcra Emri (Örnek 4-5) belgesi oluştur - JSON data ile
    */
+  @AllowViewerReadOnlyPost() // saf üretim: JSON gövdesinden belge; DB/denetim izi/dış çağrı yok (template-engine.service.ts — kaynaktan doğrulandı, statik bekçi)
   @Post('icra-emri')
   generateIcraEmri(@Body() dto: GenerateTakipTalebiDto): GeneratedDocument {
     return this.templateEngineService.generateIcraEmri(dto as TemplateData);
@@ -372,6 +383,7 @@ export class TemplateEngineController {
   /**
    * Haciz Tutanağı belgesi oluştur - JSON data ile
    */
+  @AllowViewerReadOnlyPost() // saf üretim: JSON gövdesinden belge; DB/denetim izi/dış çağrı yok (template-engine.service.ts — kaynaktan doğrulandı, statik bekçi)
   @Post('haciz-tutanagi')
   generateHacizTutanagi(@Body() dto: GenerateTakipTalebiDto): GeneratedDocument {
     return this.templateEngineService.generateHacizTutanagi(dto as TemplateData);
@@ -384,6 +396,7 @@ export class TemplateEngineController {
   /**
    * Takip Talebi PDF indir - JSON data ile
    */
+  @AllowViewerReadOnlyPost() // saf üretim: JSON gövdesinden belge; DB/denetim izi/dış çağrı yok (template-engine.service.ts — kaynaktan doğrulandı, statik bekçi)
   @Post('takip-talebi/pdf')
   async downloadTakipTalebiPdf(@Body() dto: GenerateTakipTalebiDto, @Res() res: Response): Promise<void> {
     try {
@@ -427,6 +440,7 @@ export class TemplateEngineController {
   /**
    * Takip Talebi Word indir - JSON data ile
    */
+  @AllowViewerReadOnlyPost() // saf üretim: JSON gövdesinden belge; DB/denetim izi/dış çağrı yok (template-engine.service.ts — kaynaktan doğrulandı, statik bekçi)
   @Post('takip-talebi/word')
   async downloadTakipTalebiWord(@Body() dto: GenerateTakipTalebiDto, @Res() res: Response): Promise<void> {
     try {
@@ -470,6 +484,7 @@ export class TemplateEngineController {
   /**
    * Takip Talebi UDF oluştur - JSON data ile (UYAP'a gönderim için)
    */
+  @AllowViewerReadOnlyPost() // saf üretim: JSON gövdesinden belge; DB/denetim izi/dış çağrı yok (template-engine.service.ts — kaynaktan doğrulandı, statik bekçi)
   @Post('takip-talebi/udf')
   generateTakipTalebiUdf(@Body() dto: GenerateTakipTalebiDto): UdfDocument {
     return this.templateEngineService.generateTakipTalebiUdf(dto as TemplateData);
@@ -519,6 +534,7 @@ export class TemplateEngineController {
   /**
    * Takip Talebi XML indir - JSON data ile
    */
+  @AllowViewerReadOnlyPost() // saf üretim: JSON gövdesinden belge; DB/denetim izi/dış çağrı yok (template-engine.service.ts — kaynaktan doğrulandı, statik bekçi)
   @Post('takip-talebi/xml')
   async downloadTakipTalebiXml(@Body() dto: GenerateTakipTalebiDto, @Res() res: Response): Promise<void> {
     try {

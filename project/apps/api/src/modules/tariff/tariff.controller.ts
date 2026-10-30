@@ -1,11 +1,16 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { TariffService, TariffData, TariffSummary } from './tariff.service';
 import { GazetteWatcherService, GazetteNotification } from './gazette-watcher.service';
 import type { Tariff as SharedTariff } from '@shared/types';
 
+// F02-D-2 dilim 2 (owner "Burada başla" 30.10.2026): VIEWER tarife oluşturamaz / güncelleyemez / silemez / içe aktaramaz (dosya yazma),
+// Resmî Gazete bildirimini okundu işaretleyemez, manuel kontrol tetikleyemez (durum yazma + dış RSS çekimi). Ölçülen boşluk: yalnız JWT;
+// TariffService ve GazetteWatcherService rol sormuyor. Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard` (JwtAuthGuard'dan
+// SONRA). Okuma uçları (liste, aktif, yıl, dışa aktarım, gazete bildirimleri/durum) DEĞİŞMEZ.
 @Controller('tariffs')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class TariffController {
   constructor(
     private readonly tariffService: TariffService,
