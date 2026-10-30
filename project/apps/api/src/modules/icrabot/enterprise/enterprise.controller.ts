@@ -24,6 +24,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../../auth/guards/viewer-write-deny.guard';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import {
   CreateApprovalRequestDto,
@@ -111,7 +112,10 @@ export class AuditChainController {
  * ayni dosyadaki PII (F09D), audit (F09B) ve leasing (F09C) controller'lari AYRI
  * siniflardir ve davranislari bu gorevde DEGISTIRILMEMISTIR.
  */
-@UseGuards(JwtAuthGuard)
+// F02-D-2 dilim 4 (owner ek talimatı 30.10.2026): VIEWER onay talebi açamaz / karar veremez (ApprovalWorkflowService rütbe/eligibility soruyor, ROL sormuyor —
+// AK-1a: rol kapısı rütbeden ÖNCE). Yalnız bu sınıf (I01A containment korunur: audit / backpressure / plan sınıfları DEĞİŞMEZ —
+// guard'sız ve gövdeden/yoldan tenantId okuyan o yüzeyler F02 karar listesinde AYRI owner kalemi).
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class ApprovalWorkflowController {
   constructor(private readonly approvalService: ApprovalWorkflowService) {}
 

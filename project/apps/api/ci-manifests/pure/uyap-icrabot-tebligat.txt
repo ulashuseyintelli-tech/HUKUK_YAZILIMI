@@ -142,6 +142,9 @@
 #     determinizmi ve ISO-8859-9 sınırı korunur. Runtime bundle okuma / ağ çağrısı YOK; strict DTD
 #     uyum hükmü ÜRETİLMEZ (D1 bloklu). Saf/deterministik → pure manifest.
 #
+# F02-D-2 dilim 4 (30.10.2026): icrabot/admin VIEWER yazma KAPALI kaniti — 12 yazma handler'i girişte checkPermission; VIEWER izin
+#   haritasinda yok (statik + birim; DB/HTTP yok).
+src/modules/icrabot/admin/__tests__/admin-write-permission-closed.static.spec.ts
 src/modules/icrabot/__tests__/icrabot-digital-twin-tenant-guard.spec.ts
 src/modules/icrabot/__tests__/icrabot-governance-guard.spec.ts
 # DEBTOR-ENTERPRISE-APPROVAL-AUTHORIZATION-P0-I01 (R02-F09A): enterprise approval HTTP

@@ -46,6 +46,16 @@
  * `recommend` saf), interest-engine METOT düzeyi (`calculate` denetim kaydı yazar; `preview` saf; `health` açık). KANITLA KAPATILAN
  * (kod değişmez, yazma rotası yok): fee-engine (5 hesap POST'u; servis yan etki 0), case-payment-preview (servis yan etki 0), pdf (dilim 2).
  *
+ * R06 (F02-D-2 dilim 4, owner ek talimatı 30.10.2026 — UYAP / icrabot yolları; servis yan etki haritası + principal incelemesi):
+ * bundle (paket CRUD / onay / terfi / arşiv / klon / denetim dışa aktarım / zamanlayıcı tetiği / kuyruk / iş koşturma; `validate` saf),
+ * icrabot (otomasyon başlat / durdur / reçete koştur / bot görevi onay-iptal / e-tebligat / kesinleşme / mal varlığı / safahat /
+ * durum geçişi; `determine-channel` saf), ops (reçete duraklat / sürdür, iş iptal, SLA boost), recorder + health + recorder-test
+ * (UI harita kaydı, eski günlük silme, tıklama testi), enterprise/approval (talep / karar; servis yalnız rütbe sorar). UYAP gönderim
+ * yetkisi GENİŞLETİLMEZ (yalnız VIEWER reddi). KANITLA KAPATILAN (kod değişmez): icrabot/admin (12/12 yazma handler'ı girişte
+ * `checkPermission` → VIEWER'a izin yok; statik bekçi `admin-write-permission-closed.static.spec.ts`), uyap-export (4 servis yan etki
+ * 0 = yazmasız dışa aktarım), v28-engine (yüzeyler ICRABOT_V28_* containment bayraklarıyla kapalı; `v28-surface-containment.spec`).
+ * OWNER KALEMİ (F02-C): enterprise audit / backpressure / plan sınıfları guard'sız ve tenantId'yi gövde/yoldan okur (I01A bilinçli).
+ *
  * Kapsam dışı (DEĞİŞMEZ): user `me/password` (öz-servis), auth ve portal KULLANICI rotaları, office/lawyer/staff (zaten
  * OfficeF01AuthorizationGuard), client.controller ve client-address (zaten servis düzeyi VIEWER DENY). Envanterdeki öteki
  * yalnız-JWT yazıcılar F02-D KALAN yüzeydir; dilimler hâlinde ele alınır, raporda listelenir.
@@ -170,6 +180,23 @@ import { AuditWriterService } from '../../../interest-engine/audit/audit-writer.
 import { TraceExporterService } from '../../../interest-engine/trace/trace-exporter.service';
 import { InterestEngineMetricsService } from '../../../interest-engine/metrics/interest-engine-metrics.service';
 import { CaseBalanceService } from '../../../interest-engine/orchestration/case-balance.service';
+// R06 (F02-D-2 dilim 4): UYAP / icrabot yolları
+import { BundleController } from '../../../icrabot/bundle/bundle.controller';
+import { BundleService } from '../../../icrabot/bundle/bundle.service';
+import { AuditExportService } from '../../../icrabot/export/audit-export.service';
+import { SchedulerService } from '../../../icrabot/scheduler/scheduler.service';
+import { RecipeRunnerService } from '../../../icrabot/runner/recipe-runner.service';
+import { IcrabotController } from '../../../icrabot/icrabot.controller';
+import { IcrabotService } from '../../../icrabot/icrabot.service';
+import { OpsController } from '../../../icrabot/ops/ops.controller';
+import { RecipePauseService } from '../../../icrabot/ops/recipe-pause.service';
+import { SlaBoostService } from '../../../icrabot/ops/sla-boost.service';
+import { QueuePolicyLoaderService } from '../../../icrabot/scheduler/queue-policy-loader.service';
+import { HealthController, RecorderController, RecorderTestController } from '../../../icrabot/recorder/recorder.controller';
+import { UiMapRecorderService } from '../../../icrabot/recorder/uimap-recorder.service';
+import { SelectorHealthService } from '../../../icrabot/recorder/selector-health.service';
+import { ApprovalWorkflowController } from '../../../icrabot/enterprise/enterprise.controller';
+import { ApprovalWorkflowService } from '../../../icrabot/enterprise/approval-workflow.service';
 
 const SECRET = 'f02d-j27-viewer-write-deny-local-test-secret-at-least-32-bytes';
 const TENANT = 'tenant-j27';
@@ -230,6 +257,8 @@ const CLASS_GUARDED = [
   // R05 (F02-D-2 dilim 3): kalan belge/para etkili yollar (servis katmanı rol sormuyor); saf hesap POST'ları işaretli.
   TebligatController, ExportImportController, ExchangeRateController, CostPackageController, ClaimEngineController,
   PrecautionaryOrderController, OcrController, LimitationEngineController,
+  // R06 (F02-D-2 dilim 4): UYAP / icrabot yolları (servis katmanı rol sormuyor; UYAP gönderim yetkisi genişletilmez)
+  BundleController, IcrabotController, OpsController, RecorderController, HealthController, RecorderTestController, ApprovalWorkflowController,
 ];
 /** R02: METOT düzeyi ViewerWriteDenyGuard beklenen handler'lar (sınıf düzeyi kapı ölçülmüş sözleşmeleri değiştirirdi). */
 const METHOD_GUARDED: ReadonlyArray<readonly [Function, string]> = [
@@ -360,6 +389,18 @@ describe('F02-D / J-27: VIEWER yazma reddi — consumer uygulaması (gerçek JWT
         { provide: TraceExporterService, useValue: stubService('TraceExporterService') },
         { provide: InterestEngineMetricsService, useValue: stubService('InterestEngineMetricsService') },
         { provide: CaseBalanceService, useValue: stubService('CaseBalanceService') },
+        // R06 (F02-D-2 dilim 4) servisleri (stub; UYAP'a / tarayıcıya / zamanlayıcıya çağrı YOK, DB yazma YOK)
+        { provide: BundleService, useValue: stubService('BundleService') },
+        { provide: AuditExportService, useValue: stubService('AuditExportService') },
+        { provide: SchedulerService, useValue: stubService('SchedulerService') },
+        { provide: RecipeRunnerService, useValue: stubService('RecipeRunnerService') },
+        { provide: IcrabotService, useValue: stubService('IcrabotService') },
+        { provide: RecipePauseService, useValue: stubService('RecipePauseService') },
+        { provide: SlaBoostService, useValue: stubService('SlaBoostService') },
+        { provide: QueuePolicyLoaderService, useValue: stubService('QueuePolicyLoaderService') },
+        { provide: UiMapRecorderService, useValue: stubService('UiMapRecorderService') },
+        { provide: SelectorHealthService, useValue: stubService('SelectorHealthService') },
+        { provide: ApprovalWorkflowService, useValue: stubService('ApprovalWorkflowService') },
       ],
     }).compile();
     app = module.createNestApplication();
@@ -380,15 +421,16 @@ describe('F02-D / J-27: VIEWER yazma reddi — consumer uygulaması (gerçek JWT
   const call = (r: Route, key: ActorKey) =>
     request(app.getHttpServer())[VERB[r.method]](r.url).set('Authorization', bearer(key)).send({});
 
-  it('keşif kör değil: yazma rotası ≥ 126, GET ≥ 135, saf POST = 25 (R01 4 + template-engine 10 + R05 hesap/önizleme 11)', () => {
-    expect(WRITE_ROUTES.length).toBeGreaterThanOrEqual(126);
-    expect(GET_ROUTES.length).toBeGreaterThanOrEqual(135);
+  it('keşif kör değil: yazma rotası ≥ 155, GET ≥ 158, saf POST = 27 (R01 4 + template-engine 10 + R05 hesap/önizleme 11 + R06 icrabot 2)', () => {
+    expect(WRITE_ROUTES.length).toBeGreaterThanOrEqual(155);
+    expect(GET_ROUTES.length).toBeGreaterThanOrEqual(158);
     expect(READ_ONLY_POSTS.map((r) => `${r.ctrl}.${r.handler}`).sort()).toEqual([
+      'BundleController.validateBundle', // R06: paket içerik doğrulaması (saf)
       'CaseInstrumentController.analyzeChain',
       // R05: saf hesap / önizleme POST'ları (servis yan etki haritası: ilgili metotlarda yazma / denetim / dış çağrı yok)
       'ClaimEngineController.calculatePenalty', 'ClaimEngineController.classifyDocument', 'ClaimEngineController.generateClaimItems',
       'ClaimEngineController.routeCase', 'ClaimEngineController.validateCase', 'CostPackageController.computeExpenseRequest',
-      'DocumentController.previewTemplate', 'InterestEngineController.preview',
+      'DocumentController.previewTemplate', 'IcrabotController.determineChannel', 'InterestEngineController.preview',
       'LimitationEngineController.checkLimitation', 'LimitationEngineController.recommendEnforcement',
       'NotificationController.getCollectionTemplates', 'OcrController.classifyText', 'OcrController.getSupportedFormats', 'PoaController.checkValidPoaForLawyers',
       // R04: JSON gövdesinden üretim — DB / denetim izi / dış çağrı yok (kaynaktan doğrulandı; statik bekçi template-engine-viewer-read-only-posts)

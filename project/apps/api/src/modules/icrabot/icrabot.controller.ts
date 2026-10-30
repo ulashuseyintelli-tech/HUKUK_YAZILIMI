@@ -9,6 +9,7 @@ import {
   Request,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { IcrabotService } from './icrabot.service';
 
 /**
@@ -16,8 +17,12 @@ import { IcrabotService } from './icrabot.service';
  * 
  * API endpoints for icrabot automation system.
  */
+// F02-D-2 dilim 4 (owner ek talimatı 30.10.2026): VIEWER otomasyon başlatamaz / durduramaz, reçete koşturamaz, bot görevini onaylayamaz / iptal edemez,
+// e-tebligat / kesinleşme / mal varlığı sorgusu / safahat senkronu / durum geçişi TETİKLEYEMEZ (UYAP otomasyon yolları).
+// `determine-channel` saf hesap → açık. Ölçülen boşluk: yalnız JWT; IcrabotService yalnız tenant bağlamı soruyor, rol sormuyor.
+// Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard` (JwtAuthGuard'dan SONRA). UYAP gönderim yetkisi GENİŞLETİLMEZ.
 @Controller('icrabot')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class IcrabotController {
   constructor(private icrabotService: IcrabotService) {}
 
@@ -282,6 +287,7 @@ export class IcrabotController {
    * Borçlu için tebligat kanalını belirle
    * POST /api/icrabot/determine-channel
    */
+  @AllowViewerReadOnlyPost() // saf: tebligat kanalı seçimi hesabı (IcrabotService.determineDebtorChannel) — DB yazma / denetim izi / dış çağrı yok (servis yan etki haritası)
   @Post('determine-channel')
   determineChannel(
     @Body() body: {
