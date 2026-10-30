@@ -44,7 +44,14 @@ import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { OfficeApprovalDomainSyncService } from './office-approval-domain-sync.service';
 import { PayoutApprovalPolicy } from './client-payout-approval.policy';
 import { ClientFinancialDisclosureApprovalPolicy } from './client-financial-disclosure-approval.policy';
-import { isSameApprovalIdentity, resolveApprovalIdentityCandidates } from '../../common/approval-identity';
+import {
+  APPROVAL_IDENTITY_PROOF_SENSITIVE_ACTION_CODES,
+  APPROVAL_IDENTITY_UNPROVEN,
+  approvalIdentityUnprovenMessage,
+  findUnprovenApprovalIdentities,
+  isSameApprovalIdentity,
+  resolveApprovalIdentityCandidates,
+} from '../../common/approval-identity';
 import { assertGenericDecisionAllowed } from './office-approval-domain-ownership';
 import { assertApprovalDecisionRole, isOfficeWriteDeniedForRole } from './office-write-role.policy';
 import { lockAndAssertExecutionRole, lockExecutionActorRows } from './office-approval-execution-authority';
@@ -700,12 +707,36 @@ export class OfficeApprovalService {
     selfApprovalRule: 'APPROVE' | 'NON_APPROVE',
   ): Promise<void> {
     await lockExecutionActorRows(tx, approverUserId);
+    // K-A1 SINIR: kişi kimliği kanıtı (bayrak açıkken) — öz-onay ve uygunluk kurallarından ÖNCE, ilk yazmadan ÖNCE.
+    await this.assertApprovalIdentityProven(req, approverUserId, tx);
     if (selfApprovalRule === 'APPROVE') {
       await this.assertApproveSelfApprovalPolicy(req, approverUserId, tx);
     } else {
       await this.assertNotSelfApproval(req, approverUserId, tx);
     }
     await this.assertApproverEligibleForRequest(req, approverUserId, tx);
+  }
+
+  /**
+   * K-A1 SINIR (owner 29–30.10.2026; bayrak OFFICE_APPROVAL_IDENTITY_PROOF_REQUIRED, varsayılan KAPALI) — öz-onaya DUYARLI
+   * türlerde (COLLECTION_VOID, FINANCIAL_CASE_CLOSE, CLAIM_ITEM_HIGH_IMPACT_CHANGE, FD) talep eden VE karar veren hesabın
+   * kişi kimliği KANITLI olmalı; kanıtsız (kart yok / geçerli TCKN yok) → 403 APPROVAL_IDENTITY_UNPROVEN; karar, domain
+   * senkronu ve denetim kaydı YOK (fail-closed). Aynı hesap öz-onay kuralına (400) bırakılır. Öteki türler DEĞİŞMEZ.
+   */
+  private async assertApprovalIdentityProven(
+    req: OfficeApprovalRequest,
+    approverUserId: string,
+    db: Prisma.TransactionClient,
+  ): Promise<void> {
+    if (!APPROVAL_IDENTITY_PROOF_SENSITIVE_ACTION_CODES.has(req.actionCode)) return;
+    if (approverUserId === req.requesterUserId) return;
+    const unproven = await findUnprovenApprovalIdentities(db, req.tenantId, [
+      { party: 'REQUESTER', userId: req.requesterUserId },
+      { party: 'APPROVER', userId: approverUserId },
+    ]);
+    if (unproven.length > 0) {
+      throw new ForbiddenException({ code: APPROVAL_IDENTITY_UNPROVEN, unproven, message: approvalIdentityUnprovenMessage(unproven) });
+    }
   }
 
   private async commitDecision(

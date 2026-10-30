@@ -523,6 +523,7 @@ src/scripts/__tests__/ops-runtime-launcher-db-ready-retry.spec.ts
 src/common/__tests__/address-hash.util.spec.ts
 src/common/__tests__/collection-confirmed.util.spec.ts
 src/common/__tests__/identity-validation.util.spec.ts
+src/common/__tests__/approval-identity-proof.spec.ts
 src/common/__tests__/request-id.middleware.spec.ts
 src/common/__tests__/test-db-env.spec.ts
 src/modules/address-task/utils/address-normalizer.spec.ts

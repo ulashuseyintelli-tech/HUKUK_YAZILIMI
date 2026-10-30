@@ -6,7 +6,7 @@ import {
   type PrismaClient,
 } from '@prisma/client';
 import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-json';
-import { isSameApprovalIdentity } from '../../common/approval-identity';
+import { findUnprovenApprovalIdentities, isSameApprovalIdentity, type ApprovalIdentityParty } from '../../common/approval-identity';
 import { canonicalMoney, domainSeparatedHash } from './client-financial-disclosure-canonical';
 import {
   DISCLOSURE_APPROVER_CANDIDATE_SELECT,
@@ -243,6 +243,22 @@ export class ClientFinancialDisclosureApprovalService {
    * versiyona ait · talebin `snapshotHash`i persist edilen hash ile aynı ·
    * `verifyPersistedSnapshot() === MATCH` · statü TAM OLARAK `OFFICE_APPROVAL_PENDING`.
    */
+  /**
+   * K-A1 SINIR (owner 29–30.10.2026; bayrak OFFICE_APPROVAL_IDENTITY_PROOF_REQUIRED, varsayılan KAPALI) — FD ofis/içerik
+   * onayında tarafların kişi kimliği KANITLI olmalı (kart + geçerli TCKN); kanıtsız → DISCLOSURE_APPROVAL_IDENTITY_UNPROVEN
+   * (403), sürüm yazması YOK. Genel motordaki yüklemle AYNI kaynak (common/approval-identity).
+   */
+  private async assertDisclosureIdentitiesProven(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    parties: ReadonlyArray<{ party: ApprovalIdentityParty; userId: string | null | undefined }>,
+  ): Promise<void> {
+    const unproven = await findUnprovenApprovalIdentities(tx, tenantId, parties);
+    if (unproven.length > 0) {
+      throw new ClientFinancialDisclosureApprovalAuthorizationError('DISCLOSURE_APPROVAL_IDENTITY_UNPROVEN');
+    }
+  }
+
   async completeOfficeApproval(
     input: CompleteOfficeApprovalInput,
   ): Promise<DisclosureApprovalTransitionResult> {
@@ -310,6 +326,11 @@ export class ClientFinancialDisclosureApprovalService {
           throw new ClientFinancialDisclosureApprovalError('DISCLOSURE_APPROVAL_STALE_SNAPSHOT');
         }
 
+        // K-A1 SINIR (bayrak açıkken): talep eden ve ofis onaylayıcısının kişi kimliği KANITLI olmalı (fail-closed 403).
+        await this.assertDisclosureIdentitiesProven(tx, version.tenantId, [
+          { party: 'REQUESTER', userId: request.requesterUserId },
+          { party: 'OFFICE_APPROVER', userId: input.approverUserId },
+        ]);
         // §41.2 KARAR 2 — requester kendi talebini ONAYLAYAMAZ (fail-closed). F02-A: karşılaştırma KİŞİ
         // düzeyindedir (OFF/OD-11: aynı hesap VEYA aynı tenant'ta geçerli TCKN kesişimi), yalnız userId değil.
         if (await isSameApprovalIdentity(tx, request.requesterUserId, input.approverUserId, version.tenantId)) {
@@ -664,6 +685,12 @@ export class ClientFinancialDisclosureApprovalService {
           throw new ClientFinancialDisclosureApprovalError('DISCLOSURE_APPROVAL_STALE_SNAPSHOT');
         }
 
+        // K-A1 SINIR (bayrak açıkken): talep eden, ofis onaylayıcısı ve içerik onaylayıcısı KANITLI olmalı (fail-closed 403).
+        await this.assertDisclosureIdentitiesProven(tx, version.tenantId, [
+          { party: 'REQUESTER', userId: request.requesterUserId },
+          { party: 'OFFICE_APPROVER', userId: version.officeApprovedById },
+          { party: 'CONTENT_APPROVER', userId: input.contentApproverUserId },
+        ]);
         // §41.2 KARAR 2/4 — requester hiçbir aşamayı onaylayamaz. F02-A: KİŞİ düzeyinde (OFF/OD-11).
         if (await isSameApprovalIdentity(tx, request.requesterUserId, input.contentApproverUserId, version.tenantId)) {
           throw new ClientFinancialDisclosureApprovalAuthorizationError(

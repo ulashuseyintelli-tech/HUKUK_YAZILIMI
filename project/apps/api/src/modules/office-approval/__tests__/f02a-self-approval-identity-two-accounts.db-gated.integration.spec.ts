@@ -32,6 +32,7 @@ import { randomUUID } from 'node:crypto';
 import * as request from 'supertest';
 
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
+import { APPROVAL_IDENTITY_PROOF_FLAG } from '../../../common/approval-identity';
 import { isValidTckn } from '../../../common/identity-validation.util';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
@@ -471,5 +472,97 @@ describeWithDatabase('F02-A: öz-onay kimlik düzeyi — aynı kişinin iki hesa
     }));
     expect(code).toBe('DISCLOSURE_APPROVAL_SELF_APPROVAL_FORBIDDEN');
     expect(await fdStatus(versionId)).toBe('CONTENT_APPROVAL_PENDING');
+  });
+  // ── G: K-A1 SINIR DİLİMİ — kimlik kanıtı zorunlu (bayrak OFFICE_APPROVAL_IDENTITY_PROOF_REQUIRED=true; yalıtılmış) ──
+  // Owner (29–30.10.2026): "Sınır kodunu şimdi geliştirip yalıtılmış ortamda doğrulayın … canlı etkinleştirme, sayım ve
+  // eşleme sonrasında ayrı yayın onayıyla." Bayrak KAPALI iken (yukarıdaki A/F blokları) davranış DEĞİŞMEZ.
+  describe('G: K-A1 sınır — kişi kimliği kanıtı zorunlu (bayrak AÇIK)', () => {
+    const original = process.env[APPROVAL_IDENTITY_PROOF_FLAG];
+    beforeAll(() => { process.env[APPROVAL_IDENTITY_PROOF_FLAG] = 'true'; });
+    afterAll(() => {
+      if (original === undefined) delete process.env[APPROVAL_IDENTITY_PROOF_FLAG];
+      else process.env[APPROVAL_IDENTITY_PROOF_FLAG] = original;
+    });
+
+    /** Sınırın beklediği RET: 403 APPROVAL_IDENTITY_UNPROVEN + kanıtsız taraf(lar); durum PENDING, onay audit'i 0. */
+    async function expectIdentityUnproven(res: request.Response, tenantId: string, requestId: string, unproven: string[]) {
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: 'APPROVAL_IDENTITY_UNPROVEN', unproven });
+      expect(String(res.body?.message ?? '')).toContain('kart bağlayın');
+      const row = await requestRow(requestId);
+      expect(row.status).toBe('PENDING_APPROVAL');
+      expect(row.approverUserId).toBeNull();
+      expect(await approvedAuditCount(tenantId, requestId)).toBe(0);
+    }
+
+    it('G1 (A1 senaryosu): COLLECTION_VOID — kartsız ADMIN (P1) talep eder, aynı kişinin PARTNER hesabı (P1) onaylar → 403 APPROVAL_IDENTITY_UNPROVEN [REQUESTER]; PENDING, audit 0', async () => {
+      const f = await seed();
+      const req = await pendingRequest(f.tenantId, COLLECTION_VOID, COLLECTION_TARGET, f.X.id);
+      await expectIdentityUnproven(await approveHttp(req.id, f.Y, f.tenantId), f.tenantId, req.id, ['REQUESTER']);
+    });
+
+    it('G2 (A3 senaryosunun sınır altı sonucu): FINANCIAL_CASE_CLOSE — kartsız ADMIN talep eder, FARKLI kişinin PARTNER hesabı onaylar → 403 [REQUESTER] (kartsız sekreter akışı: talep açılır, kart bağlanana dek onaylanamaz — owner kararı)', async () => {
+      const f = await seed();
+      const req = await pendingRequest(f.tenantId, ActionCode.FINANCIAL_CASE_CLOSE, FINANCIAL_CASE_CLOSE_TARGET_TYPE, f.X.id);
+      await expectIdentityUnproven(await approveHttp(req.id, f.Z, f.tenantId), f.tenantId, req.id, ['REQUESTER']);
+      const reject = await request(app.getHttpServer()).post(`/api/office-approvals/${req.id}/reject`).set('Authorization', bearer(f.Z, f.tenantId, 'USER')).send({ note: 'G2' });
+      await expectIdentityUnproven(reject, f.tenantId, req.id, ['REQUESTER']);
+    });
+
+    it('G3 (değişmez): kartlı talep eden (P1) + kartlı farklı kişi (P2) → 201 APPROVED; kartlı aynı kişi (P1/P1) → 400 SELF_APPROVAL_FORBIDDEN; aynı hesap → 400', async () => {
+      const f = await seed();
+      const ok = await pendingRequest(f.tenantId, COLLECTION_VOID, COLLECTION_TARGET, f.Y.id);
+      expect((await approveHttp(ok.id, f.Z, f.tenantId)).status).toBe(201);
+      expect((await requestRow(ok.id)).status).toBe('APPROVED');
+      const same = await pendingRequest(f.tenantId, COLLECTION_VOID, COLLECTION_TARGET, f.Y.id);
+      await expectSelfApprovalDenied(await approveHttp(same.id, f.Y2, f.tenantId), f.tenantId, same.id);
+      const own = await pendingRequest(f.tenantId, COLLECTION_VOID, COLLECTION_TARGET, f.Y.id);
+      await expectSelfApprovalDenied(await approveHttp(own.id, f.Y, f.tenantId), f.tenantId, own.id);
+    });
+
+    it('G4 (kapsam): duyarlı OLMAYAN tür (CHANGE_STATUS) — kartsız talep eden + kartlı farklı kişi → 201 (sınır yalnız duyarlı türlerde)', async () => {
+      const f = await seed();
+      const req = await pendingRequest(f.tenantId, ActionCode.CHANGE_STATUS, 'CASE', f.X.id);
+      const res = await approveHttp(req.id, f.Z, f.tenantId);
+      expect(res.status).toBe(201);
+      expect((await requestRow(req.id)).status).toBe('APPROVED');
+    });
+
+    it('G5 (F1 senaryosu): FD ofis onayı — kartsız ADMIN (P1) talep eder, PARTNER (P1) onaylar → DISCLOSURE_APPROVAL_IDENTITY_UNPROVEN; sürüm OFFICE_APPROVAL_PENDING; talep PENDING', async () => {
+      const f = await seed();
+      const versionId = await fdDraft(f.tenantId);
+      const r = await fdSvc.requestOfficeApproval({ tenantId: f.tenantId, disclosureVersionId: versionId, requesterUserId: f.X.id });
+      const code = await fdCode(fdSvc.completeOfficeApproval({
+        tenantId: f.tenantId, disclosureVersionId: versionId, approvalRequestId: r.approvalRequestId as string, approverUserId: f.Y.id,
+      }));
+      expect(code).toBe('DISCLOSURE_APPROVAL_IDENTITY_UNPROVEN');
+      expect(await fdStatus(versionId)).toBe('OFFICE_APPROVAL_PENDING');
+      expect((await requestRow(r.approvalRequestId as string)).status).toBe('PENDING_APPROVAL');
+    });
+
+    it('G6: FD — kartsız USER (sekreter) talep eder, farklı kişi onaylar → ofis aşamasında DISCLOSURE_APPROVAL_IDENTITY_UNPROVEN; kartlı akış (P1 talep, P2 ofis, P1 ikinci hesap içerik) → SELF_APPROVAL_FORBIDDEN (değişmez)', async () => {
+      const f = await seed();
+      const v1 = await fdDraft(f.tenantId);
+      const r1 = await fdSvc.requestOfficeApproval({ tenantId: f.tenantId, disclosureVersionId: v1, requesterUserId: f.W.id });
+      expect(await fdCode(fdSvc.completeOfficeApproval({
+        tenantId: f.tenantId, disclosureVersionId: v1, approvalRequestId: r1.approvalRequestId as string, approverUserId: f.Z.id,
+      }))).toBe('DISCLOSURE_APPROVAL_IDENTITY_UNPROVEN');
+      const v2 = await fdDraft(f.tenantId);
+      const r2 = await fdSvc.requestOfficeApproval({ tenantId: f.tenantId, disclosureVersionId: v2, requesterUserId: f.Y.id });
+      await fdSvc.completeOfficeApproval({ tenantId: f.tenantId, disclosureVersionId: v2, approvalRequestId: r2.approvalRequestId as string, approverUserId: f.Z.id });
+      await fdSvc.requestContentApproval({ tenantId: f.tenantId, disclosureVersionId: v2, requesterUserId: f.Y.id, approvedRecipientEmail: `client-${randomUUID().slice(0, 6)}@example.test` });
+      expect(await fdCode(fdSvc.completeContentApproval({ tenantId: f.tenantId, disclosureVersionId: v2, contentApproverUserId: f.Y2.id }))).toBe('DISCLOSURE_APPROVAL_SELF_APPROVAL_FORBIDDEN');
+    });
+
+    it('G7 (bayrak KAPALI → sınır devre dışı): kartsız talep eden + farklı kişi onay → 201 (A3 davranışı korunur; etkinleştirme ayrı yayın kararı)', async () => {
+      delete process.env[APPROVAL_IDENTITY_PROOF_FLAG];
+      try {
+        const f = await seed();
+        const req = await pendingRequest(f.tenantId, COLLECTION_VOID, COLLECTION_TARGET, f.X.id);
+        expect((await approveHttp(req.id, f.Z, f.tenantId)).status).toBe(201);
+      } finally {
+        process.env[APPROVAL_IDENTITY_PROOF_FLAG] = 'true';
+      }
+    });
   });
 });
