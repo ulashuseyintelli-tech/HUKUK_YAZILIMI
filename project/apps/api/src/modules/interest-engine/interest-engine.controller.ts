@@ -22,6 +22,7 @@ import {
 } from '@nestjs/common';
 // G4c-2: read-only bakiye endpoint (auth-context tenantId)
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { CaseBalanceService, CaseBalanceResult } from './orchestration/case-balance.service';
 import { CaseBalanceDisplay, toCaseBalanceDisplay } from './orchestration/case-balance-display';
@@ -168,9 +169,11 @@ export class InterestEngineController {
    * H6: tenantId/userId YALNIZ auth context'ten (@CurrentUser); dto.tenantId/dto.userId ARTIK OKUNMAZ
    * (geriye uyumluluk için body'de bulunmaları reddedilmez, sessizce yok sayılır).
    */
+  // F02-D-2 dilim 3 (owner "Burada başla" + ek talimat 30.10.2026): `calculate` denetim kaydı YAZAR (InterestEngineService.calculate → writeAuditRecord) → VIEWER'a kapalı;
+  // metot düzeyi kapı (sınıf düzeyinde guard yok; `health` açık kalır). `preview` denetim yazmaz → saf.
   @Post('calculate')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
   async calculate(
     @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') userId: string,
@@ -256,6 +259,7 @@ export class InterestEngineController {
    *
    * @see docs/single-source-of-truth-architecture.md
    */
+  @AllowViewerReadOnlyPost() // saf: faiz önizleme (previewCalculation — denetim kaydı yok) — DB yazma / denetim izi / dış çağrı yok (servis kaynağı yan etki haritası)
   @Post('preview')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)

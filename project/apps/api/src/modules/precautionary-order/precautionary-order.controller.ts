@@ -1,9 +1,13 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { PrecautionaryOrderService, CreatePrecautionaryOrderDto, CreatePrecautionaryCostDto } from './precautionary-order.service';
 
+// F02-D-2 dilim 3 (owner "Burada başla" + ek talimat 30.10.2026): VIEWER ihtiyati tedbir oluşturamaz / güncelleyemez / uygulayamaz / kaldıramaz / silemez, tedbir masrafı
+// ekleyemez / değiştiremez / silemez (hepsi DB yazma; dava kaydını da günceller). Ölçülen boşluk: yalnız JWT; PrecautionaryOrderService
+// rol sormuyor. Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard` (JwtAuthGuard'dan SONRA). Okuma uçları DEĞİŞMEZ.
 @Controller('precautionary-orders')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class PrecautionaryOrderController {
   constructor(private readonly service: PrecautionaryOrderService) {}
 

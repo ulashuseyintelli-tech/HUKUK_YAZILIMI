@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ClaimEngineService, ClassificationResult, RoutingResult, GeneratedClaimItem, ValidationResult } from './claim-engine.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 
 // DTO'lar
 export class ClassifyDocumentDto {
@@ -32,8 +33,11 @@ export class CalculatePenaltyDto {
   customRate?: number;
 }
 
+// F02-D-2 dilim 3 (owner "Burada başla" + ek talimat 30.10.2026): VIEWER kural kümesini yeniden YÜKLEYEMEZ (`reload` = sunucu geneli kural durumu). Sınıflandırma / yönlendirme /
+// kalem üretimi / doğrulama / ceza hesabı saf hesap → açık. Ölçülen boşluk: yalnız JWT; ClaimEngineService rol sormuyor.
+// Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard` (JwtAuthGuard'dan SONRA).
 @Controller('claim-engine')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class ClaimEngineController {
   constructor(private readonly claimEngineService: ClaimEngineService) {}
 
@@ -57,12 +61,14 @@ export class ClaimEngineController {
   }
 
   // Belge sınıflandır
+  @AllowViewerReadOnlyPost() // saf: belge sınıflandırma hesabı — DB yazma / denetim izi / dış çağrı yok (servis kaynağı yan etki haritası)
   @Post('classify')
   classifyDocument(@Body() dto: ClassifyDocumentDto): ClassificationResult {
     return this.claimEngineService.classifyDocument(dto.ocrText);
   }
 
   // Takip türü belirle
+  @AllowViewerReadOnlyPost() // saf: dava yönlendirme hesabı — DB yazma / denetim izi / dış çağrı yok (servis kaynağı yan etki haritası)
   @Post('route')
   routeCase(@Body() dto: RouteCaseDto): RoutingResult | null {
     return this.claimEngineService.routeCase(dto.docType, dto.documentContent);
@@ -75,6 +81,7 @@ export class ClaimEngineController {
   }
 
   // Alacak kalemleri oluştur
+  @AllowViewerReadOnlyPost() // saf: alacak kalemi üretimi (yalnız yanıt gövdesi) — DB yazma / denetim izi / dış çağrı yok (servis kaynağı yan etki haritası)
   @Post('generate-items')
   generateClaimItems(@Body() dto: GenerateClaimItemsDto): GeneratedClaimItem[] {
     return this.claimEngineService.generateClaimItems(
@@ -97,6 +104,7 @@ export class ClaimEngineController {
   }
 
   // Dosya doğrula
+  @AllowViewerReadOnlyPost() // saf: dava doğrulama hesabı — DB yazma / denetim izi / dış çağrı yok (servis kaynağı yan etki haritası)
   @Post('validate')
   validateCase(@Body() dto: ValidateCaseDto): ValidationResult {
     return this.claimEngineService.validateCase(
@@ -125,6 +133,7 @@ export class ClaimEngineController {
   }
 
   // Ceza/tazminat hesapla
+  @AllowViewerReadOnlyPost() // saf: ceza hesabı — DB yazma / denetim izi / dış çağrı yok (servis kaynağı yan etki haritası)
   @Post('calculate-penalty')
   calculatePenalty(@Body() dto: CalculatePenaltyDto): { amount: number } {
     const amount = this.claimEngineService.calculatePenalty(

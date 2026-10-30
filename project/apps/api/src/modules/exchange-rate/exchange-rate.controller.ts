@@ -1,9 +1,12 @@
 import { Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { ExchangeRateService, ExchangeRate } from './exchange-rate.service';
 
+// F02-D-2 dilim 3 (owner "Burada başla" + ek talimat 30.10.2026): VIEWER kur yenilemesi tetikleyemez (TCMB'ye dış çağrı + sunucu kur durumu). Ölçülen boşluk: yalnız JWT;
+// ExchangeRateService rol sormuyor. Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`. Kur okuma uçları DEĞİŞMEZ.
 @Controller('exchange-rate')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class ExchangeRateController {
   constructor(private readonly exchangeRateService: ExchangeRateService) {}
 

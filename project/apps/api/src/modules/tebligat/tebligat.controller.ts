@@ -18,10 +18,15 @@ import {
   TebligatAddressType,
 } from "./dto/tebligat.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 
+// F02-D-2 dilim 3 (owner "Burada başla" + ek talimat 30.10.2026): VIEWER tebligat oluşturamaz / güncelleyemez / gönderildi işaretleyemez, PTT ve elektronik sonuç yazamaz,
+// MERNİS tebligatı açamaz, UETS/KEP ile GÖNDEREMEZ, toplu PTT sorgusu tetikleyemez (dış sistem). Ölçülen boşluk: yalnız JWT;
+// TebligatService / UetsService / PttTrackingService rol sormuyor. Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`
+// (JwtAuthGuard'dan SONRA). Okuma uçları (liste, detay, takip, UETS kayıt kontrolü) DEĞİŞMEZ.
 @Controller("tebligat")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class TebligatController {
   constructor(
     private tebligatService: TebligatService,

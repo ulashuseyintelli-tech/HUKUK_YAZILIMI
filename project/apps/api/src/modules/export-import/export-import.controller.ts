@@ -15,6 +15,7 @@ import { buildClientMutationActor } from "../client/client.service";
 import { Response } from "express";
 import { ExportImportService } from "./export-import.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 
 /**
@@ -30,8 +31,10 @@ export function parseIdsParam(ids?: string): string[] | undefined {
   return list.length > 0 ? list : undefined;
 }
 
+// F02-D-2 dilim 3 (owner "Burada başla" + ek talimat 30.10.2026): VIEWER müvekkil İÇE AKTARAMAZ (ClientService.create ile toplu yazma). Ölçülen boşluk: yalnız JWT;
+// ExportImportService rol sormuyor. Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`. Dışa aktarım (GET) uçları DEĞİŞMEZ.
 @Controller("export-import")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class ExportImportController {
   constructor(private exportImportService: ExportImportService) {}
 

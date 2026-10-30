@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Query, UseGuards, Request } from '@nestjs/
 import { IsString, IsOptional, IsIn } from 'class-validator';
 import { LimitationEngineService, LimitationCheckResult, EnforcementRecommendation } from './limitation-engine.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 
 // ============================================
 // DTO'LAR
@@ -88,8 +89,10 @@ export class LogLimitationRiskDto {
 // CONTROLLER
 // ============================================
 
+// F02-D-2 dilim 3 (owner "Burada başla" + ek talimat 30.10.2026): VIEWER zamanaşımı risk kaydı YAZAMAZ (`log-risk` → LimitationRiskLog). Kontrol ve öneri saf hesap → açık.
+// Ölçülen boşluk: yalnız JWT; LimitationEngineService rol sormuyor. Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`.
 @Controller('limitation-engine')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class LimitationEngineController {
   constructor(private readonly limitationEngine: LimitationEngineService) {}
 
@@ -121,6 +124,7 @@ export class LimitationEngineController {
    * Zamanaşımı kontrolü yap
    * POST /limitation-engine/check
    */
+  @AllowViewerReadOnlyPost() // saf: zamanaşımı kontrol hesabı — DB yazma / denetim izi / dış çağrı yok (servis kaynağı yan etki haritası)
   @Post('check')
   async checkLimitation(@Body() dto: CheckLimitationDto): Promise<LimitationCheckResult> {
     return this.limitationEngine.checkBeforeEnforcement({
@@ -137,6 +141,7 @@ export class LimitationEngineController {
    * Takip türü önerisi al
    * POST /limitation-engine/recommend
    */
+  @AllowViewerReadOnlyPost() // saf: takip yolu önerisi hesabı — DB yazma / denetim izi / dış çağrı yok (servis kaynağı yan etki haritası)
   @Post('recommend')
   async recommendEnforcement(@Body() dto: RecommendEnforcementDto): Promise<{ recommendations: EnforcementRecommendation[] }> {
     const recommendations = await this.limitationEngine.recommendEnforcementType({
