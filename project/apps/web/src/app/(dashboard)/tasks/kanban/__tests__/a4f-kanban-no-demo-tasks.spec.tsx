@@ -81,7 +81,13 @@ describe('Kanban — yükleme hatası', () => {
   });
 
   it('retry: yalnız okuma tekrarlanır, hiçbir mutasyon üretilmez', async () => {
-    mocked.get.mockRejectedValueOnce(new Error('geçici')).mockResolvedValue({ data: REAL_TASKS });
+    // F02-B görünürlük: başlıktaki kapsam rozeti de api.get çağırır (çocuk efekti ÖNCE çalışır) → ret çağrı SIRASINA değil
+    // /tasks URL'sine bağlanır; niyet aynı: yalnız okuma yinelenir, mutasyon yok.
+    let tasksFailuresLeft = 1;
+    mocked.get.mockImplementation(async (u: unknown) => {
+      if (String(u).startsWith('/tasks') && tasksFailuresLeft-- > 0) throw new Error('geçici');
+      return { data: REAL_TASKS };
+    });
     render(<KanbanPage />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Tekrar dene' }));

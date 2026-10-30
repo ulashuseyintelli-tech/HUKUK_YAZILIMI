@@ -4,6 +4,9 @@ import { isISO8601 } from 'class-validator';
 import { createHash } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+// F02-B görünürlük: liste servisleriyle AYNI bayrak okuyucuları (saf fonksiyonlar; Nest modülü bağımlılığı değil)
+import { EXPENSE_VIEW_ALL_KEY, isExpenseViewScopeEnabled } from '../expense-request/expense-view-scope';
+import { TASK_VIEW_ALL_KEY, isTaskViewScopeEnabled } from '../task/task-view-scope';
 import {
   WORK_SCOPE_EFFECTS,
   WORK_SCOPE_PERSON_TYPES,
@@ -29,6 +32,11 @@ export interface WorkScopePermissionState {
 }
 
 type Db = Prisma.TransactionClient | PrismaService;
+
+/** F02-B görünürlük (owner ek talimatı 30.10.2026): bir alanda aktöre ŞU AN uygulanan liste kapsamı. */
+export type WorkScopeViewMode = 'OFF' | 'TENANT' | 'BOUND';
+export interface WorkScopeAreaView { flagEnabled: boolean; resolution: WorkScopeResolution; mode: WorkScopeViewMode }
+export interface WorkScopeViewState { expenses: WorkScopeAreaView; tasks: WorkScopeAreaView }
 
 /**
  * F02-B-1 — görev / masraf "büro geneli görünüm" izinleri (PermissionGrant GLOBAL). Bildirim geçmişi izni servisiyle AYNI
@@ -60,6 +68,27 @@ export class WorkScopePermissionService {
     if (rows.some((r) => r.effect === PermissionGrantEffect.DENY)) return 'DENY';
     if (rows.some((r) => r.effect === PermissionGrantEffect.ALLOW)) return 'ALLOW';
     return 'NONE';
+  }
+
+  /**
+   * F02-B görünürlük (owner ek talimatı 30.10.2026, madde 4): aktörün masraf ve görev listelerinde ŞU AN uygulanan kapsam —
+   * liste servislerinin kullandığı AYNI bayrak okuyucuları (`isExpenseViewScopeEnabled` / `isTaskViewScopeEnabled`) ve AYNI
+   * `resolve()` ile türetilir; ayrı kaynak yoktur (ekran ↔ liste tutarlılığı yapısal). mode: OFF = kapsam sınırı etkin değil
+   * (bayrak kapalı → liste büro geneli) · TENANT = bayrak açık + view_all ALLOW (büro geneli) · BOUND = bayrak açık, ALLOW yok
+   * ya da DENY (dosya bağı ∪ oluşturan ∪ atanan/onaylayan). `resolution` bayrak kapalıyken de döner (grant hazırlığı
+   * doğrulanabilsin; G3). Saf okuma; grant yazmaz, listeyi değiştirmez; müvekkil kapsamı (K16) ile ilgisi yoktur.
+   */
+  async viewScopeFor(tenantId: string, actorUserId: string, env: NodeJS.ProcessEnv = process.env): Promise<WorkScopeViewState> {
+    const area = async (flagEnabled: boolean, key: WorkScopeViewAllKey): Promise<WorkScopeAreaView> => {
+      const resolution = await this.resolve(this.prisma, tenantId, actorUserId, key);
+      const mode: WorkScopeViewMode = !flagEnabled ? 'OFF' : resolution === 'ALLOW' ? 'TENANT' : 'BOUND';
+      return { flagEnabled, resolution, mode };
+    };
+    const [expenses, tasks] = await Promise.all([
+      area(isExpenseViewScopeEnabled(env), EXPENSE_VIEW_ALL_KEY),
+      area(isTaskViewScopeEnabled(env), TASK_VIEW_ALL_KEY),
+    ]);
+    return { expenses, tasks };
   }
 
   /** Caller: controller GET — ADMIN (güncel DB rolü); kişi kartı → bağlı hesap → anahtar başına etkin durum. */

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Plus, CheckCircle2, Circle, Clock, AlertCircle, LayoutGrid, Loader2, Trash2, Edit2, X, User, Ban } from "lucide-react";
 import { Badge } from "@hukuk/ui";
+import { ViewScopeBadge } from "@/components/scope/ViewScopeBadge";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -449,6 +450,8 @@ export default function TasksPage() {
               : "Toplamlar alınamadı"}
             <span className="ml-2 text-xs">({scopeLabel})</span>
           </p>
+          {/* F02-B görünürlük: sunucunun bu listeye UYGULADIĞI kapsam (GET /office/view-scope; liste ile aynı kaynak) */}
+          <ViewScopeBadge area="tasks" className="mt-1" />
         </div>
         <div className="flex items-center gap-2">
           <Link
