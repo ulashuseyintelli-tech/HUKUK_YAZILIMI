@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException, ForbiddenException, Optional } from "@nestjs/common";
 
 /**
  * `dueDate` normalizasyonu (F01 K-F7): tarih-only `YYYY-MM-DD` → UTC gece yarısı; tam ISO-8601 → aynı an (saat dilimi
@@ -20,6 +20,8 @@ export function normalizeDueDate(value: string | null | undefined): Date | null 
 import { Prisma, TaskCategory as PrismaTaskCategory, TaskStatus as PrismaTaskStatus } from "@prisma/client";
 import { PrismaService } from "@/prisma/prisma.service";
 import { CreateTaskDto, TASK_LIST_DEFAULT_LIMIT, UpdateTaskDto } from "./dto/task.dto";
+import { WorkScopePermissionService } from "@/modules/work-scope-permission/work-scope-permission.service";
+import { TASK_VIEW_ALL_KEY, isTaskViewScopeEnabled, taskViewWhereFor } from "./task-view-scope";
 
 /** TaskController.findAll → TaskService.findAll sorgu parametreleri (ListTasksQueryDto ile uyumlu). */
 export interface TaskListParams {
@@ -58,7 +60,29 @@ function summarizeTaskGroups(groups: TaskStatusGroup[]): TaskListSummary {
 
 @Injectable()
 export class TaskService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    // F02-B dilim 3: görev liste görünüm kapsamı (bayrak açıkken zorunlu; bkz. viewScopeWhere)
+    @Optional() private readonly workScope?: WorkScopePermissionService,
+  ) {}
+
+  /**
+   * F02-B dilim 3 (owner 29–30.10.2026, G3) — liste görünüm kapsamı (data + total + meta.summary birlikte).
+   * Bayrak (OFFICE_TASK_VIEW_SCOPE_ENABLED) KAPALI → null = bugünkü davranış (büro geneli).
+   * AÇIK → `office.tasks.view_all` çözümü: ALLOW (DENY yoksa) → büro geneli; DENY / NONE → varsayılan kapsam
+   * (atanan ∪ oluşturan ∪ dosya bağı; dosyasız yalnız atanan/oluşturan — taskViewScopeWhere). Aktör kimliği ya da
+   * izin servisi yoksa FAIL-CLOSED.
+   *
+   * @remarks Çağrıldığı yer: findAll() → GET /tasks.
+   */
+  private async viewScopeWhere(tenantId: string, actorUserId?: string): Promise<Prisma.TaskWhereInput | null> {
+    if (!isTaskViewScopeEnabled()) return null;
+    if (!actorUserId || !this.workScope) {
+      throw new ForbiddenException({ code: "TASK_VIEW_SCOPE_UNRESOLVED", message: "Görev görünüm kapsamı çözümlenemedi" });
+    }
+    const resolution = await this.workScope.resolve(this.prisma, tenantId, actorUserId, TASK_VIEW_ALL_KEY);
+    return taskViewWhereFor(resolution, tenantId, actorUserId);
+  }
 
   /** Çağıranlar: create/update; dosyasız görev ve açık null ile bağı kaldırma korunur. */
   private async assertCaseTenant(tenantId: string, caseId: string | null | undefined): Promise<void> {
@@ -102,11 +126,14 @@ export class TaskService {
    * Sıralama `id` ile kesinleştirilir: aynı öncelik/tarihli görevlerde sayfa sınırı kaymaz, kayıtlar
    * sayfalar arasında tekil kalır. Tenant sınırı (caseId null ∨ case.tenantId) değişmez.
    */
-  async findAll(tenantId: string, params?: TaskListParams) {
+  async findAll(tenantId: string, params?: TaskListParams, actorUserId?: string) {
     const { status, assigneeId, taskCategory, page = 1, limit = TASK_LIST_DEFAULT_LIMIT } = params || {};
 
     const scopeWhere: Prisma.TaskWhereInput = { tenantId, OR: [{ caseId: null }, { case: { tenantId } }] };
     if (assigneeId) scopeWhere.assigneeId = assigneeId;
+    // F02-B dilim 3: görünüm kapsamı scopeWhere katmanına → data, total VE summary birlikte daralır.
+    const viewScope = await this.viewScopeWhere(tenantId, actorUserId);
+    if (viewScope) scopeWhere.AND = [viewScope];
 
     const where: Prisma.TaskWhereInput = { ...scopeWhere };
     if (status) where.status = status as PrismaTaskStatus;

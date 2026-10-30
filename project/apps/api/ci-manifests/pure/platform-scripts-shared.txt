@@ -804,6 +804,7 @@ src/modules/summary-engine/__tests__/summary-engine.allocation-divergence.spec.t
 src/modules/summary-engine/__tests__/tax-parent-category.spec.ts
 src/modules/task/__tests__/task-include.spec.ts
 src/modules/task/__tests__/task.service.spec.ts
+src/modules/task/__tests__/task-view-scope.spec.ts
 src/modules/validation-gate/__tests__/pre-haciz-intelligence.spec.ts
 src/modules/validation-gate/__tests__/pre-haciz-risk.spec.ts
 src/modules/validation-gate/__tests__/pre-haciz-scenarios.spec.ts

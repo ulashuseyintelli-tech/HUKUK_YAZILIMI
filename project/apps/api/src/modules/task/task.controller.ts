@@ -27,8 +27,8 @@ export class TaskController {
    * `{ data, meta }` korunur; `meta.summary` eklendi (bkz. TaskService.findAll).
    */
   @Get()
-  findAll(@CurrentUser("tenantId") tenantId: string, @Query() query: ListTasksQueryDto) {
-    return this.taskService.findAll(tenantId, query);
+  findAll(@CurrentUser("tenantId") tenantId: string, @CurrentUser("id") userId: string, @Query() query: ListTasksQueryDto) {
+    return this.taskService.findAll(tenantId, query, userId);
   }
 
   @Get(":id")
