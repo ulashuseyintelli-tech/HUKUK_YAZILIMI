@@ -5,8 +5,10 @@ export class CreateInviteDto {
   @IsEmail()
   email: string;
 
+  // K-A1 (30.10.2026): ad / soyad artık KARTTAN türetilir; istemci beyanı yalnız geriye uyumluluk için kabul edilir ve YOK SAYILIR.
   @IsString()
-  name: string;
+  @IsOptional()
+  name?: string;
 
   @IsString()
   @IsOptional()
@@ -19,8 +21,8 @@ export class CreateInviteDto {
   role?: "ADMIN" | "USER" | "VIEWER";
 
   // OWN-01: davet belirli bir Lawyer/StaffMember kaydından açıldıysa, oluşan User bu profile
-  // deterministik olarak bağlanır (Lawyer.userId/StaffMember.userId). Karşılıklı dışlayıcı;
-  // ikisi de verilmezse davranış eskisi gibi (bağımsız/profilsiz davet).
+  // deterministik olarak bağlanır (Lawyer.userId/StaffMember.userId). Karşılıklı dışlayıcı.
+  // K-A1 (owner ek talimatı 30.10.2026): TAM BİRİ ZORUNLU — kartsız davet 400 (servis katmanı; yan etki yok).
   @IsString()
   @IsOptional()
   lawyerId?: string;

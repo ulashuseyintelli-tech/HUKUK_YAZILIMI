@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import * as bcrypt from 'bcrypt';
@@ -235,5 +235,76 @@ describeDb('UserInvite atomic consumption — independent pools and disposable P
 
   it('new unlinked pending invite remains accepted without a profile requirement', async () => {
     await expect(service().accept(raw, 'isolated-password')).resolves.toEqual({ ok: true, userId });
+  });
+
+  // ---- K-A1 davet yolu (owner ek talimatı 30.10.2026): "davet kişi kartından" — gerçek DB ile yan etki ölçümü ----
+  const issueAttempt = async (dto: any) => {
+    const before = await snapshot();
+    const sends = email.send.mock.calls.length;
+    const result = await service().issue(actor, dto).then(value => ({ value, error: undefined as unknown }), error => ({ value: undefined, error }));
+    return { result, unchanged: JSON.stringify(await snapshot()) === JSON.stringify(before), sent: email.send.mock.calls.length - sends };
+  };
+
+  it('K-A1: kartsız davet 400 — hesap, davet, bağ, audit ve e-posta yan etkisi YOK', async () => {
+    const r = await issueAttempt({ email: 'kartsiz@example.test', name: 'Kart', surname: 'Siz' });
+    expect(r.result.error).toBeInstanceOf(BadRequestException);
+    expect(r.unchanged).toBe(true);
+    expect(r.sent).toBe(0);
+  });
+
+  it('K-A1: çift kart (lawyerId + staffMemberId) 400 — yan etki YOK', async () => {
+    const lawyer = await db.lawyer.create({ data: { tenantId, name: 'Çift', surname: 'Kart' } });
+    const staff = await db.staffMember.create({ data: { tenantId, firstName: 'Çift', lastName: 'Kart', staffType: 'SEKRETER' } });
+    const r = await issueAttempt({ email: 'cift@example.test', lawyerId: lawyer.id, staffMemberId: staff.id });
+    expect(r.result.error).toBeInstanceOf(BadRequestException);
+    expect(r.unchanged).toBe(true);
+    expect(r.sent).toBe(0);
+  });
+
+  it('K-A1: başka kiracının kartı 400 — bu kiracıda ve diğer kiracıda yan etki YOK', async () => {
+    const otherTenant = 'test-invite-other-' + randomUUID();
+    await db.tenant.create({ data: { id: otherTenant, name: otherTenant, slug: otherTenant, lifecycle: 'ACTIVE' } });
+    try {
+      const foreign = await db.lawyer.create({ data: { tenantId: otherTenant, name: 'Yabancı', surname: 'Kart' } });
+      const r = await issueAttempt({ email: 'yabanci@example.test', lawyerId: foreign.id });
+      expect(r.result.error).toBeInstanceOf(BadRequestException);
+      expect(r.unchanged).toBe(true);
+      expect(r.sent).toBe(0);
+      expect((await db.lawyer.findUniqueOrThrow({ where: { id: foreign.id } })).userId).toBeNull();
+      expect(await db.user.count({ where: { tenantId: otherTenant } })).toBe(0);
+    } finally {
+      await db.lawyer.deleteMany({ where: { tenantId: otherTenant } });
+      await db.tenant.deleteMany({ where: { id: otherTenant } });
+    }
+  });
+
+  it('K-A1: zaten bağlı kart 409 — yan etki YOK; mevcut bağ değişmez', async () => {
+    const linked = await db.lawyer.create({ data: { tenantId, userId, name: 'Bağlı', surname: 'Kart' } });
+    const r = await issueAttempt({ email: 'bagli@example.test', lawyerId: linked.id });
+    expect(r.result.error).toBeInstanceOf(ConflictException);
+    expect(r.unchanged).toBe(true);
+    expect(r.sent).toBe(0);
+    expect((await db.lawyer.findUniqueOrThrow({ where: { id: linked.id } })).userId).toBe(userId);
+  });
+
+  it('K-A1: pasif kart 400 — yan etki YOK', async () => {
+    const passive = await db.lawyer.create({ data: { tenantId, name: 'Pasif', surname: 'Kart', isActive: false } });
+    const r = await issueAttempt({ email: 'pasif@example.test', lawyerId: passive.id });
+    expect(r.result.error).toBeInstanceOf(BadRequestException);
+    expect(r.unchanged).toBe(true);
+    expect(r.sent).toBe(0);
+  });
+
+  it('K-A1: geçerli avukat kartı → tek pending hesap (ad / soyad KARTTAN), kart bağlandı, tek davet, tek e-posta', async () => {
+    const card = await db.lawyer.create({ data: { tenantId, name: 'Kartlı', surname: 'Avukat' } });
+    const before = await snapshot();
+    const res = await service().issue(actor, { email: 'kartli@example.test', name: 'Sahte', surname: 'Beyan', lawyerId: card.id });
+    const created = await db.user.findUniqueOrThrow({ where: { id: res.userId } });
+    expect(created).toMatchObject({ tenantId, name: 'Kartlı', surname: 'Avukat', isActive: false, passwordHash: null });
+    expect((await db.lawyer.findUniqueOrThrow({ where: { id: card.id } })).userId).toBe(res.userId);
+    const after = await snapshot();
+    expect(after.users.length).toBe(before.users.length + 1);
+    expect(after.invites.length).toBe(before.invites.length + 1);
+    expect(email.send).toHaveBeenCalledTimes(1);
   });
 });
