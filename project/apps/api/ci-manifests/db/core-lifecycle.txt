@@ -158,6 +158,12 @@ src/modules/claim-item/__tests__/claim-item-removed-endpoints.db-gated.integrati
 #   basarili acilista K3 sonucu tekil. Guncel main servis koduyla 11 testin 7'si DUSER (RED kanitlandi).
 src/modules/case/__tests__/case-create-instrument-admission.http.db-gated.integration.spec.ts
 
+# CL-R04 KABUL-9 (owner ek talimati 30.10.2026) — POST /cases SATIR ICI muvekkil: kapsam DISI mevcut aktif/pasif kimlik AYNI genel
+#   409 DUPLICATE_IDENTITY; dava / CaseClient / CaseLawyer / borclu / kalem / Due / onay talebi / bildirim kuyrugu 0; reaktivasyon 0;
+#   audit 0 (ayri olcum); F02-B view_all izinleri kapsam uretmez; kapsam ICI aktif BAGLANIR (mukerrer yok), kapsam ICI pasif 409
+#   INACTIVE; yeni kimlik 201. Gercek HTTP + CaseModule + disposable PostgreSQL.
+src/modules/case/__tests__/cl-r04-kabul9-case-inline-client.http.db-gated.integration.spec.ts
+
 # Dosya acilisinda takip siniflandirmasi (#2847 bulgusu) — GERCEK HTTP + disposable PostgreSQL. POST /cases
 #   takipTuruId/asamaId/riskId/durumEtiketiId/mahiyetTipiId/mahiyetKodu satira yazilir; kayitli takip turu + evrak
 #   turu GET belge uclarinda dogru sablona ulasir (Ornek 1 kambiyo cek / Ornek 10; yazma yok); cek kaydi tek basina
