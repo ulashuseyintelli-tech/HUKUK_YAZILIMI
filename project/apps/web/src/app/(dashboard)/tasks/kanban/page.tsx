@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { ViewScopeBadge } from '@/components/scope/ViewScopeBadge';
 import { useAuth } from '@/lib/auth-context';
 import { toActionErrorMessage } from '@/lib/action-error';
 import { Plus, MoreVertical, Clock, User, ArrowLeft } from 'lucide-react';
@@ -306,6 +307,8 @@ export default function KanbanPage() {
               Görevleri sürükle-bırak ile yönetin
               {loadedLabel ? <span data-testid="kanban-loaded"> · {loadedLabel}</span> : null}
             </p>
+            {/* F02-B görünürlük: pano liste sayfasıyla AYNI /tasks ucunu okur → aynı kapsam rozeti */}
+            <ViewScopeBadge area="tasks" className="mt-1" />
           </div>
         </div>
         <div className="flex items-center gap-3">

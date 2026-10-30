@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ViewScopeBadge } from "@/components/scope/ViewScopeBadge";
 import { collectionFinanceTotalCurrencies, splitCollectionFinanceTotals } from "@/lib/collection-allocation-hold";
 import { resolveFinanceSourceView, type FinanceSourceStatus } from "@/lib/operation-deck-finance-sources";
 import { recordCurrencySuffix } from "@/lib/record-currency-display";
@@ -1307,6 +1308,8 @@ export function OperationDeck({
               {(expenseRequestItems.length > 0 || expenseRequestsView.status !== "READY") && (
                 <div>
                   <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Masraf Talepleri</p>
+                  {/* F02-B görünürlük: masraf listesine UYGULANAN kapsam (GET /office/view-scope); başlığın KARDEŞİ — bölüm DOM yapısı değişmez */}
+                  <ViewScopeBadge area="expenses" className="mb-2" />
                   {expenseRequestItems.length > 0 && (
                   <div className="space-y-2 max-h-[150px] overflow-y-auto">
                     {expenseRequestItems.map(item => (

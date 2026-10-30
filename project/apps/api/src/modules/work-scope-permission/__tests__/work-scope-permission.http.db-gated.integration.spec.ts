@@ -20,6 +20,7 @@ import { AuditService } from '../../audit/audit.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { WorkScopePermissionController } from '../work-scope-permission.controller';
 import { WorkScopePermissionService } from '../work-scope-permission.service';
+import { WorkScopeViewController } from '../work-scope-view.controller';
 
 const url = resolveTestDatabaseUrl(process.env);
 if (process.env.CI && !url) throw new Error('F02-B-1 work-scope permission acceptance requires disposable TEST_DATABASE_URL');
@@ -38,7 +39,7 @@ dbDescribe('F02-B-1 — /office/view-all-permissions (gerçek HTTP + PostgreSQL)
     db = new PrismaService({ datasources: { db: { url } } });
     await db.$connect();
     const module = await Test.createTestingModule({
-      controllers: [WorkScopePermissionController],
+      controllers: [WorkScopePermissionController, WorkScopeViewController],
       providers: [
         { provide: PrismaService, useValue: db },
         { provide: AuditService, useFactory: () => new AuditService(db) },
@@ -73,6 +74,10 @@ dbDescribe('F02-B-1 — /office/view-all-permissions (gerçek HTTP + PostgreSQL)
   });
   afterEach(async () => { for (const id of [tenant, foreign]) await db.tenant.delete({ where: { id } }); });
   afterAll(async () => { await app?.close(); await db?.$disconnect(); });
+  // F02-B görünürlük: bayraklar yalnız bu izole süreçte, test içinde açılır; her testten sonra geri alınır.
+  const FLAGS = ['OFFICE_EXPENSE_VIEW_SCOPE_ENABLED', 'OFFICE_TASK_VIEW_SCOPE_ENABLED'] as const;
+  const savedFlags: Record<string, string | undefined> = Object.fromEntries(FLAGS.map((k) => [k, process.env[k]]));
+  afterEach(() => { for (const k of FLAGS) { if (savedFlags[k] === undefined) delete process.env[k]; else process.env[k] = savedFlags[k]; } });
 
   const get = (uid: string, personType: string, personId: string) =>
     http(app.getHttpServer()).get(`/office/view-all-permissions?personType=${personType}&personId=${personId}`).set('x-test-user-id', uid);
@@ -168,5 +173,34 @@ dbDescribe('F02-B-1 — /office/view-all-permissions (gerçek HTTP + PostgreSQL)
       { staff: { some: { canView: true, staffMember: { tenantId: tenant, isActive: true, user: { id: subjectUser, tenantId: tenant, isActive: true, role: { in: ['USER', 'ADMIN'] } } } } } },
     ] } } } }, select: { id: true } });
     expect(inScope).toBeNull();
+  });
+
+  it('F02-B görünürlük (madde 4): GET /office/view-scope — bayrak kapalı → OFF (izin olsa da; resolution görünür); açık → NONE/DENY → BOUND, ALLOW → TENANT; anahtarlar bağımsız; USER ve VIEWER kendi kapsamını okur', async () => {
+    const scopeOf = (uid: string) => http(app.getHttpServer()).get('/office/view-scope').set('x-test-user-id', uid);
+    delete process.env.OFFICE_EXPENSE_VIEW_SCOPE_ENABLED; delete process.env.OFFICE_TASK_VIEW_SCOPE_ENABLED;
+    let r = await scopeOf(subjectUser);
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ expenses: { flagEnabled: false, resolution: 'NONE', mode: 'OFF' }, tasks: { flagEnabled: false, resolution: 'NONE', mode: 'OFF' } });
+    // Grant hazırlığı (G3 adım 1): bayrak KAPALIYKEN ALLOW verilir → mode OFF kalır, resolution ALLOW görünür (hazırlık doğrulanabilir)
+    expect([200, 201]).toContain((await post(admin, '', { personType: 'lawyer', personId: linkedLawyer, key: 'office.expenses.view_all', effect: 'ALLOW' })).status);
+    r = await scopeOf(subjectUser);
+    expect(r.body.expenses).toEqual({ flagEnabled: false, resolution: 'ALLOW', mode: 'OFF' });
+    expect(r.body.tasks).toEqual({ flagEnabled: false, resolution: 'NONE', mode: 'OFF' });
+    // Bayraklar açılır (yalnız bu süreçte): masraf ALLOW → TENANT; görev izinsiz → BOUND (anahtarlar bağımsız)
+    process.env.OFFICE_EXPENSE_VIEW_SCOPE_ENABLED = 'true'; process.env.OFFICE_TASK_VIEW_SCOPE_ENABLED = 'true';
+    r = await scopeOf(subjectUser);
+    expect(r.body.expenses).toEqual({ flagEnabled: true, resolution: 'ALLOW', mode: 'TENANT' });
+    expect(r.body.tasks).toEqual({ flagEnabled: true, resolution: 'NONE', mode: 'BOUND' });
+    // DENY > ALLOW → BOUND
+    expect([200, 201]).toContain((await post(admin, '', { personType: 'lawyer', personId: linkedLawyer, key: 'office.expenses.view_all', effect: 'DENY' })).status);
+    r = await scopeOf(subjectUser);
+    expect(r.body.expenses).toEqual({ flagEnabled: true, resolution: 'DENY', mode: 'BOUND' });
+    // revoke → NONE → BOUND
+    expect([200, 201]).toContain((await post(admin, '/revoke', { personType: 'lawyer', personId: linkedLawyer, key: 'office.expenses.view_all' })).status);
+    r = await scopeOf(subjectUser);
+    expect(r.body.expenses).toEqual({ flagEnabled: true, resolution: 'NONE', mode: 'BOUND' });
+    // Her rol KENDİ kapsamını okur (salt okuma; 403 yok); yanıt kişisel veri / grant kimliği taşımaz
+    const v = await scopeOf(viewer); expect(v.status).toBe(200); expect(v.body.tasks.mode).toBe('BOUND');
+    const m = await scopeOf(member); expect(m.status).toBe(200); expect(Object.keys(m.body).sort()).toEqual(['expenses', 'tasks']);
   });
 });
