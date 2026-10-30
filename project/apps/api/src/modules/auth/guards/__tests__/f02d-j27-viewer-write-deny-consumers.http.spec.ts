@@ -38,6 +38,14 @@
  * `generateDocumentFromCase` → `recordDocumentArtifact` → `auditService.log` (statik bekçi `template-engine-viewer-read-only-posts.static.spec.ts`)
  * → `@AllowViewerReadOnlyPost`. BİLİNÇLİ DIŞARIDA: pdf (iki POST saf PDF üretimi; yazma rotası yok = ihlal yok).
  *
+ * R05 (F02-D-2 dilim 3, owner ek talimatı 30.10.2026 — kalan belge/para etkili yollar; controller + servis + principal birlikte incelendi,
+ * servis yan etki haritası kanıt): tebligat (oluştur / güncelle / gönderildi / PTT + elektronik sonuç / MERNİS / toplu PTT sorgusu /
+ * UETS ve KEP gönderimi), export-import (müvekkil içe aktarım), exchange-rate (TCMB kur yenileme), cost-package (paket oluşturma;
+ * `compute` saf), claim-engine (`reload` kural durumu; 5 hesap saf), precautionary-order (8 yazma), ocr (geri bildirim denetim izi +
+ * OpenAI/dosya taramaları; `classify-text` ve `supported-formats` saf), limitation-engine (`log-risk` → LimitationRiskLog; `check` /
+ * `recommend` saf), interest-engine METOT düzeyi (`calculate` denetim kaydı yazar; `preview` saf; `health` açık). KANITLA KAPATILAN
+ * (kod değişmez, yazma rotası yok): fee-engine (5 hesap POST'u; servis yan etki 0), case-payment-preview (servis yan etki 0), pdf (dilim 2).
+ *
  * Kapsam dışı (DEĞİŞMEZ): user `me/password` (öz-servis), auth ve portal KULLANICI rotaları, office/lawyer/staff (zaten
  * OfficeF01AuthorizationGuard), client.controller ve client-address (zaten servis düzeyi VIEWER DENY). Envanterdeki öteki
  * yalnız-JWT yazıcılar F02-D KALAN yüzeydir; dilimler hâlinde ele alınır, raporda listelenir.
@@ -136,6 +144,32 @@ import { TariffService } from '../../../tariff/tariff.service';
 import { GazetteWatcherService } from '../../../tariff/gazette-watcher.service';
 import { TemplateEngineController } from '../../../template-engine/template-engine.controller';
 import { TemplateEngineService } from '../../../template-engine/template-engine.service';
+// R05 (F02-D-2 dilim 3): kalan belge/para etkili yollar
+import { TebligatController } from '../../../tebligat/tebligat.controller';
+import { TebligatService } from '../../../tebligat/tebligat.service';
+import { PttTrackingService } from '../../../tebligat/ptt-tracking.service';
+import { UetsService } from '../../../tebligat/uets.service';
+import { ExportImportController } from '../../../export-import/export-import.controller';
+import { ExportImportService } from '../../../export-import/export-import.service';
+import { ExchangeRateController } from '../../../exchange-rate/exchange-rate.controller';
+import { ExchangeRateService } from '../../../exchange-rate/exchange-rate.service';
+import { CostPackageController } from '../../../cost-package/cost-package.controller';
+import { CostPackageService } from '../../../cost-package/cost-package.service';
+import { ClaimEngineController } from '../../../claim-engine/claim-engine.controller';
+import { ClaimEngineService } from '../../../claim-engine/claim-engine.service';
+import { PrecautionaryOrderController } from '../../../precautionary-order/precautionary-order.controller';
+import { PrecautionaryOrderService } from '../../../precautionary-order/precautionary-order.service';
+import { OcrController } from '../../../ocr/ocr.controller';
+import { OcrService } from '../../../ocr/ocr.service';
+import { OcrFeedbackService } from '../../../ocr/ocr-feedback.service';
+import { LimitationEngineController } from '../../../limitation-engine/limitation-engine.controller';
+import { LimitationEngineService } from '../../../limitation-engine/limitation-engine.service';
+import { InterestEngineController } from '../../../interest-engine/interest-engine.controller';
+import { InterestEngineService } from '../../../interest-engine/interest-engine.service';
+import { AuditWriterService } from '../../../interest-engine/audit/audit-writer.service';
+import { TraceExporterService } from '../../../interest-engine/trace/trace-exporter.service';
+import { InterestEngineMetricsService } from '../../../interest-engine/metrics/interest-engine-metrics.service';
+import { CaseBalanceService } from '../../../interest-engine/orchestration/case-balance.service';
 
 const SECRET = 'f02d-j27-viewer-write-deny-local-test-secret-at-least-32-bytes';
 const TENANT = 'tenant-j27';
@@ -193,6 +227,9 @@ const CLASS_GUARDED = [
   AccountingJournalManualAdjustmentController, AccountingJournalReversalController, BankController, BankLifecycleController,
   // R04 (F02-D-2 dilim 2): tarife yazma (dosya + gazete durumu + dış çekim) ve dosyadan belge artifact üretimi; 10 saf üretim POST'u işaretli.
   TariffController, TemplateEngineController,
+  // R05 (F02-D-2 dilim 3): kalan belge/para etkili yollar (servis katmanı rol sormuyor); saf hesap POST'ları işaretli.
+  TebligatController, ExportImportController, ExchangeRateController, CostPackageController, ClaimEngineController,
+  PrecautionaryOrderController, OcrController, LimitationEngineController,
 ];
 /** R02: METOT düzeyi ViewerWriteDenyGuard beklenen handler'lar (sınıf düzeyi kapı ölçülmüş sözleşmeleri değiştirirdi). */
 const METHOD_GUARDED: ReadonlyArray<readonly [Function, string]> = [
@@ -200,10 +237,12 @@ const METHOD_GUARDED: ReadonlyArray<readonly [Function, string]> = [
   [ClientNotificationController, 'testSmtpConnection'], [ClientNotificationController, 'testSmsConnection'],
   [ClientNotificationController, 'testSend'], [ClientNotificationController, 'sendBulkEmail'],
   [NotificationDispatchController, 'resend'],
+  // R05: interest-engine sınıf düzeyinde guard taşımaz (`health` açık); yalnız `calculate` denetim kaydı yazar → metot düzeyi.
+  [InterestEngineController, 'calculate'],
 ];
 /** Şablon YAZMA uçları: ölçülmüş F01 kapısı (OFFICE_WRITE_DENIED_VIEWER) korunur; ikinci VIEWER kapısı TAKILMAZ. */
 const F01_TEMPLATE_WRITE = ['createEmailTemplate', 'updateEmailTemplate', 'createDefaultTemplates'];
-const MOUNTED = [...CLASS_GUARDED, CaseStatusController, ClientNotificationController, NotificationDispatchController];
+const MOUNTED = [...CLASS_GUARDED, CaseStatusController, ClientNotificationController, NotificationDispatchController, InterestEngineController];
 
 type DenyGuard = 'viewer' | 'f01' | 'admin' | 'none';
 interface Route { ctrl: string; handler: string; method: RequestMethod; url: string; readOnlyPost: boolean; denyGuard: DenyGuard }
@@ -304,6 +343,23 @@ describe('F02-D / J-27: VIEWER yazma reddi — consumer uygulaması (gerçek JWT
         { provide: TariffService, useValue: stubService('TariffService') },
         { provide: GazetteWatcherService, useValue: stubService('GazetteWatcherService') },
         { provide: TemplateEngineService, useValue: stubService('TemplateEngineService') },
+        // R05 (F02-D-2 dilim 3) servisleri (stub; dış gönderim YOK, OpenAI/TCMB/PTT çağrısı YOK, DB yazma YOK)
+        { provide: TebligatService, useValue: stubService('TebligatService') },
+        { provide: PttTrackingService, useValue: stubService('PttTrackingService', { trackMultipleBarcodes: new Map() }) },
+        { provide: UetsService, useValue: stubService('UetsService') },
+        { provide: ExportImportService, useValue: stubService('ExportImportService') },
+        { provide: ExchangeRateService, useValue: stubService('ExchangeRateService') },
+        { provide: CostPackageService, useValue: stubService('CostPackageService') },
+        { provide: ClaimEngineService, useValue: stubService('ClaimEngineService') },
+        { provide: PrecautionaryOrderService, useValue: stubService('PrecautionaryOrderService') },
+        { provide: OcrService, useValue: stubService('OcrService') },
+        { provide: OcrFeedbackService, useValue: stubService('OcrFeedbackService') },
+        { provide: LimitationEngineService, useValue: stubService('LimitationEngineService') },
+        { provide: InterestEngineService, useValue: stubService('InterestEngineService') },
+        { provide: AuditWriterService, useValue: stubService('AuditWriterService') },
+        { provide: TraceExporterService, useValue: stubService('TraceExporterService') },
+        { provide: InterestEngineMetricsService, useValue: stubService('InterestEngineMetricsService') },
+        { provide: CaseBalanceService, useValue: stubService('CaseBalanceService') },
       ],
     }).compile();
     app = module.createNestApplication();
@@ -324,11 +380,17 @@ describe('F02-D / J-27: VIEWER yazma reddi — consumer uygulaması (gerçek JWT
   const call = (r: Route, key: ActorKey) =>
     request(app.getHttpServer())[VERB[r.method]](r.url).set('Authorization', bearer(key)).send({});
 
-  it('keşif kör değil: yazma rotası ≥ 98, GET ≥ 91, saf POST = 14 (şablon önizleme + zincir analizi + vekalet geçerlilik kontrolü + tahsilat şablonu üretimi + template-engine JSON üretimi 10)', () => {
-    expect(WRITE_ROUTES.length).toBeGreaterThanOrEqual(98);
-    expect(GET_ROUTES.length).toBeGreaterThanOrEqual(91);
+  it('keşif kör değil: yazma rotası ≥ 126, GET ≥ 135, saf POST = 25 (R01 4 + template-engine 10 + R05 hesap/önizleme 11)', () => {
+    expect(WRITE_ROUTES.length).toBeGreaterThanOrEqual(126);
+    expect(GET_ROUTES.length).toBeGreaterThanOrEqual(135);
     expect(READ_ONLY_POSTS.map((r) => `${r.ctrl}.${r.handler}`).sort()).toEqual([
-      'CaseInstrumentController.analyzeChain', 'DocumentController.previewTemplate', 'NotificationController.getCollectionTemplates', 'PoaController.checkValidPoaForLawyers',
+      'CaseInstrumentController.analyzeChain',
+      // R05: saf hesap / önizleme POST'ları (servis yan etki haritası: ilgili metotlarda yazma / denetim / dış çağrı yok)
+      'ClaimEngineController.calculatePenalty', 'ClaimEngineController.classifyDocument', 'ClaimEngineController.generateClaimItems',
+      'ClaimEngineController.routeCase', 'ClaimEngineController.validateCase', 'CostPackageController.computeExpenseRequest',
+      'DocumentController.previewTemplate', 'InterestEngineController.preview',
+      'LimitationEngineController.checkLimitation', 'LimitationEngineController.recommendEnforcement',
+      'NotificationController.getCollectionTemplates', 'OcrController.classifyText', 'OcrController.getSupportedFormats', 'PoaController.checkValidPoaForLawyers',
       // R04: JSON gövdesinden üretim — DB / denetim izi / dış çağrı yok (kaynaktan doğrulandı; statik bekçi template-engine-viewer-read-only-posts)
       'TemplateEngineController.downloadTakipTalebi', 'TemplateEngineController.downloadTakipTalebiPdf', 'TemplateEngineController.downloadTakipTalebiWord',
       'TemplateEngineController.downloadTakipTalebiXml', 'TemplateEngineController.generateHacizTutanagi', 'TemplateEngineController.generateIcraEmri',

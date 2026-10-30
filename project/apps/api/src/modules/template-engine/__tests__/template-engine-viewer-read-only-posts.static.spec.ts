@@ -33,10 +33,11 @@ const READ_ONLY_SERVICE_METHODS = [
 /** Servis dosyasında yazma zinciri taşımasına İZİN VERİLEN metotlar. */
 const WRITE_METHODS = new Set(['generateDocumentFromCase', 'recordDocumentArtifact']);
 /**
- * Yazma / denetim izi / dış çağrı imzaları: Prisma yazma fiili (`<tanımlayıcı>.create(` …; `createHash(...).update(` gibi zincir
- * çağrıları `)` ile biter ve eşleşmez), transaction, denetim izi, dosya sistemi yazma, ağ çağrısı.
+ * Yazma / denetim izi / dış çağrı imzaları: Prisma yazma fiili (`<tanımlayıcı>.create(` ve isteğe bağlı zincir `?.create(` — dilim 3'te
+ * `limitationRiskLog?.create(` ile ölçülen kör nokta kapatıldı; `createHash(...).update(` gibi zincir çağrıları `)` ile biter ve eşleşmez),
+ * transaction, denetim izi, dosya sistemi yazma, ağ çağrısı.
  */
-const SIDE_EFFECT = /[A-Za-z0-9_\]]\.(create|createMany|update|updateMany|upsert|delete|deleteMany)\(|\$transaction\(|auditService\.|writeFile|appendFile|mkdir|fetch\(|axios\./;
+const SIDE_EFFECT = /[A-Za-z0-9_\]]\??\.(create|createMany|update|updateMany|upsert|delete|deleteMany)\(|\$transaction\(|auditService\.|writeFile|appendFile|mkdir|fetch\(|axios\./;
 const METHOD_START = /^  (?:public |private |protected )?(?:async )?([A-Za-z_][A-Za-z0-9_]*)\s*\(/;
 const NOT_A_METHOD = new Set(['if', 'for', 'while', 'switch', 'return', 'catch', 'constructor']);
 

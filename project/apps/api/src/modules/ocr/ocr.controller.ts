@@ -10,6 +10,7 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { OcrService, ClassificationResult } from "./ocr.service";
 import { OcrFeedbackService } from "./ocr-feedback.service";
 import { OcrExtractionFeedbackDto } from "./dto/extraction-feedback.dto";
@@ -35,8 +36,11 @@ interface ClassifyResponse {
 const MAX_OCR_UPLOAD_BYTES = 50 * 1024 * 1024; // 50MB
 const MAX_OCR_UPLOAD_LABEL = `${MAX_OCR_UPLOAD_BYTES / (1024 * 1024)}MB`; // "50MB"
 
+// F02-D-2 dilim 3 (owner "Burada başla" + ek talimat 30.10.2026): VIEWER çıkarım geri bildirimi YAZAMAZ (denetim izi) ve dosya tarama / AI sınıflandırma TETİKLEYEMEZ
+// (OpenAI dış çağrısı + geçici dosya yazma = yan etki). Metin sınıflandırma (kural tabanlı) ve desteklenen biçim listesi saf → açık.
+// Ölçülen boşluk: yalnız JWT; OcrService / OcrFeedbackService rol sormuyor. Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`.
 @Controller("ocr")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class OcrController {
   constructor(
     private readonly ocrService: OcrService,
@@ -62,6 +66,7 @@ export class OcrController {
    * Metin içeriğini sınıflandır
    * POST /ocr/classify-text
    */
+  @AllowViewerReadOnlyPost() // saf: kural tabanlı metin sınıflandırma (OcrService.classifyDocument) — DB yazma / denetim izi / dış çağrı yok (servis kaynağı yan etki haritası)
   @Post("classify-text")
   classifyText(@Body() dto: ClassifyTextDto): ClassifyResponse {
     if (!dto.text || dto.text.trim().length === 0) {
@@ -242,6 +247,7 @@ export class OcrController {
    * Desteklenen dosya formatlarını listele
    * POST /ocr/supported-formats
    */
+  @AllowViewerReadOnlyPost() // saf: sabit biçim listesi — DB yazma / denetim izi / dış çağrı yok (servis kaynağı yan etki haritası)
   @Post("supported-formats")
   getSupportedFormats() {
     return {
