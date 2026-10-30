@@ -18,6 +18,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../../auth/guards/viewer-write-deny.guard';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { RecipePauseService } from './recipe-pause.service';
@@ -45,8 +46,11 @@ interface QueueDashboardResponse {
   pausedRecipes: Array<{ recipeId: string; reason: string | null }>;
 }
 
+// F02-D-2 dilim 4 (owner ek talimatı 30.10.2026): VIEWER reçete duraklatamaz / sürdüremez, iş iptal edemez, SLA hızlandırması uygulayamaz (operasyon
+// yazmaları). Ölçülen boşluk: yalnız JWT; RecipePause / SlaBoost servisleri rol sormuyor. Kapalı kural OWN-13 §51 / AK-1a / B4-B6
+// `ViewerWriteDenyGuard` (JwtAuthGuard'dan SONRA). Okuma uçları DEĞİŞMEZ.
 @Controller('icrabot/ops')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class OpsController {
   constructor(
     private prisma: PrismaService,

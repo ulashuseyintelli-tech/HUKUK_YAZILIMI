@@ -28,6 +28,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../../auth/guards/viewer-write-deny.guard';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { UiMapRecorderService, SelectorKind } from './uimap-recorder.service';
 import { SelectorHealthService } from './selector-health.service';
@@ -59,8 +60,10 @@ interface ClickTestDto {
   baseUrl?: string;
 }
 
+// F02-D-2 dilim 4 (owner ek talimatı 30.10.2026): VIEWER UI harita kaydı üretemez (suggest-* kayıt YAZAR), onaylayamaz, silemez. Ölçülen boşluk: yalnız JWT;
+// UiMapRecorderService rol sormuyor. Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard` (JwtAuthGuard'dan SONRA).
 @Controller('icrabot/recorder')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class RecorderController {
   constructor(
     private recorderService: UiMapRecorderService,
@@ -186,8 +189,9 @@ export class RecorderController {
   }
 }
 
+// F02-D-2 dilim 4 (owner ek talimatı 30.10.2026): VIEWER eski seçici günlüklerini SİLEMEZ (`clear-old-logs`); okuma uçları DEĞİŞMEZ.
 @Controller('icrabot/health')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class HealthController {
   constructor(private selectorHealthService: SelectorHealthService) {}
 
@@ -279,8 +283,9 @@ export class HealthController {
   }
 }
 
+// F02-D-2 dilim 4 (owner ek talimatı 30.10.2026): VIEWER tıklama testi TETİKLEYEMEZ (dış tarayıcı eylemi = yan etki).
 @Controller('icrabot/recorder-test')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class RecorderTestController {
   constructor(private healthService: SelectorHealthService) {}
 

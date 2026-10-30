@@ -19,13 +19,18 @@ import {
 } from '@nestjs/common';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from '../../auth/guards/viewer-write-deny.guard';
 import { BundleService, BundleType, BundleStatus } from './bundle.service';
 import { AuditExportService } from '../export/audit-export.service';
 import { SchedulerService } from '../scheduler/scheduler.service';
 import { RecipeRunnerService } from '../runner/recipe-runner.service';
 
+// F02-D-2 dilim 4 (owner ek talimatı 30.10.2026): VIEWER paket oluşturamaz / güncelleyemez / onaylayamaz / terfi ettiremez / arşivleyemez / klonlayamaz,
+// denetim dışa aktarımı, zamanlayıcı tetiği, kuyruk işleme ve iş koşturma TETİKLEYEMEZ (otomasyon = UYAP botu yolu). `validate` saf
+// içerik doğrulaması → açık. Ölçülen boşluk: yalnız JWT; BundleService / Scheduler / Runner rol sormuyor. Kapalı kural OWN-13 §51 /
+// AK-1a / B4-B6 `ViewerWriteDenyGuard` (JwtAuthGuard'dan SONRA). UYAP gönderim yetkisi GENİŞLETİLMEZ (yalnız VIEWER reddi).
 @Controller('icrabot/bundles')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class BundleController {
   constructor(
     private bundleService: BundleService,
@@ -112,6 +117,7 @@ export class BundleController {
 
   // ==================== VALIDATION ====================
 
+  @AllowViewerReadOnlyPost() // saf: paket içerik doğrulaması (BundleService.validateBundle yalnız hesaplar) — DB yazma / denetim izi / dış çağrı yok (servis yan etki haritası)
   @Post(':id/validate')
   async validateBundle(@Param('id') id: string, @Req() req: any) {
     const bundle = await this.bundleService.getBundle(id, req.user.tenantId);
