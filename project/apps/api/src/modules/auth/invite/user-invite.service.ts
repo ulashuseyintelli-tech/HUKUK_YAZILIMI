@@ -62,6 +62,9 @@ export class UserInviteService {
    * OWN-01: `dto.lawyerId` veya `dto.staffMemberId` verilirse (karşılıklı dışlayıcı), yeni User
    * AYNI transaction içinde o profile deterministik bağlanır (Lawyer.userId/StaffMember.userId).
    * Fuzzy/email-eşleştirme YOK — bağlam admin'in hangi kişi kartından davet açtığından gelir.
+   * K-A1 (owner ek talimatı 30.10.2026): kart ZORUNLU (tam biri); kart aynı kiracıda, AKTİF ve bağsız olmalı; kişi kimliği
+   * (ad / soyad) karttan türetilir — istemci beyanı yok sayılır. Kartsız / çift kartlı / yabancı / pasif / bağlı kart denemeleri
+   * hesap, davet, bağ, audit ya da e-posta yan etkisi üretmez (kart kontrolü transaction içinde, ilk yazmadan önce).
    */
   async issue(actor: InviteActor, dto: CreateInviteDto) {
     if (!this.enabled()) throw new ForbiddenException("Login invite provisioning devre dışı");
@@ -70,6 +73,10 @@ export class UserInviteService {
 
     if (dto.lawyerId && dto.staffMemberId) {
       throw new BadRequestException("lawyerId ve staffMemberId aynı anda verilemez");
+    }
+    // K-A1: kartsız davet YOK — hiçbir DB sorgusu / yazma / e-posta bu kontrolden önce yapılmaz (yan etki 0).
+    if (!dto.lawyerId && !dto.staffMemberId) {
+      throw new BadRequestException("Davet kişi kartından açılır: lawyerId ya da staffMemberId zorunludur");
     }
 
     // AUTH-01: tenant-scoped email-uniqueness kontrolü. Önceden global (H3) idi; artık
@@ -108,22 +115,27 @@ export class UserInviteService {
     const created = await this.prisma.$transaction(async (tx) => {
       // Deterministik ön-kontrol: hedef profil var mı, aynı tenant'ta mı, zaten bağlı mı.
       // Gerçek race-guard aşağıdaki updateMany(...userId:null) koşuludur (bu yalnız erken/dost hata).
+      // K-A1: kart aynı kiracıda, AKTİF (davete uygun) ve henüz bir hesaba bağlı değil; ad / soyad KARTTAN.
+      let person: { name: string; surname: string; source: "LAWYER_CARD" | "STAFF_CARD" } | null = null;
       if (dto.lawyerId) {
         const lawyer = await tx.lawyer.findFirst({
-          where: { id: dto.lawyerId, tenantId: actor.tenantId },
-          select: { id: true, userId: true },
+          where: { id: dto.lawyerId, tenantId: actor.tenantId, isActive: true },
+          select: { id: true, userId: true, name: true, surname: true },
         });
-        if (!lawyer) throw new BadRequestException("Avukat bulunamadı veya tenant dışı");
+        if (!lawyer) throw new BadRequestException("Avukat bulunamadı, tenant dışı ya da pasif");
         if (lawyer.userId) throw new ConflictException("Bu avukat zaten bir kullanıcıya bağlı");
+        person = { name: lawyer.name, surname: lawyer.surname, source: "LAWYER_CARD" };
       }
       if (dto.staffMemberId) {
         const staff = await tx.staffMember.findFirst({
-          where: { id: dto.staffMemberId, tenantId: actor.tenantId },
-          select: { id: true, userId: true },
+          where: { id: dto.staffMemberId, tenantId: actor.tenantId, isActive: true },
+          select: { id: true, userId: true, firstName: true, lastName: true },
         });
-        if (!staff) throw new BadRequestException("Personel bulunamadı veya tenant dışı");
+        if (!staff) throw new BadRequestException("Personel bulunamadı, tenant dışı ya da pasif");
         if (staff.userId) throw new ConflictException("Bu personel zaten bir kullanıcıya bağlı");
+        person = { name: staff.firstName, surname: staff.lastName, source: "STAFF_CARD" };
       }
+      if (!person) throw new BadRequestException("Davet kişi kartından açılır: lawyerId ya da staffMemberId zorunludur");
 
       // W5-INVITE-LIFECYCLE-I01: adoptable orphan pending User varsa YENİ user AÇILMAZ —
       // aynı kayıt devralınır (tenant/e-posta DEĞİŞMEZ; pending durum korunur). Aksi hâlde
@@ -133,7 +145,7 @@ export class UserInviteService {
       if (adoptable && existing) {
         const claimed = await tx.user.updateMany({
           where: { id: existing.id, tenantId: actor.tenantId, isActive: false, passwordHash: null },
-          data: { name: dto.name, surname: dto.surname ?? "", role },
+          data: { name: person.name, surname: person.surname, role }, // K-A1: karttan
         });
         if (claimed.count === 0) {
           throw new ConflictException("Bu e-posta adresi zaten kullanılıyor");
@@ -145,8 +157,8 @@ export class UserInviteService {
             tenantId: actor.tenantId,
             email,
             passwordHash: null, // pending: parola kullanıcı tarafından accept'te belirlenir
-            name: dto.name,
-            surname: dto.surname ?? "",
+            name: person.name, // K-A1: karttan (istemci beyanı yok sayılır)
+            surname: person.surname,
             role,
             isActive: false, // pending: login() + validate() bunu reddeder
           },
@@ -173,7 +185,7 @@ export class UserInviteService {
       const invite = await tx.userInvite.create({
         data: { tenantId: actor.tenantId, userId: user.id, email, tokenHash, expiresAt, invitedById: actor.id },
       });
-      return { user, invite };
+      return { user, invite, person };
     });
 
     await this.sendInviteEmail(email, raw);
@@ -182,6 +194,7 @@ export class UserInviteService {
       emailRedacted: redactEmail(email), expiresAt: expiresAt.toISOString(), result: "ISSUED",
       // W5-INVITE-LIFECYCLE-I01: orphan pending User devralındıysa iz bırak (yeni User AÇILMADI).
       ...(adoptable ? { adoptedPendingUser: true } : {}),
+      identitySource: created.person.source, // K-A1: kimlik kaynağı kart
       ...(dto.lawyerId ? { linkedLawyerId: dto.lawyerId } : {}),
       ...(dto.staffMemberId ? { linkedStaffMemberId: dto.staffMemberId } : {}),
     });

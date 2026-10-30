@@ -24,13 +24,15 @@ function make(opts?: { enabled?: boolean }) {
   };
   // OWN-01: varsayılan olarak hiçbir profil bulunamaz/bağlanmaz (updateMany count:0) — lawyerId/
   // staffMemberId vermeyen mevcut testler davranışsal olarak etkilenmez (regression-safe default).
+  // K-A1 (30.10.2026): davet kişi kartından ZORUNLU → varsayılan sahte kartlar "L1" (avukat) ve "S1" (personel): aynı tenant,
+  // aktif, bağsız. Başka kimlik → bulunamaz (null) / bağlanamaz (count 0). mockResolvedValueOnce ile tek çağrılık geçersiz kılma sürer.
   const lawyer = {
-    findFirst: jest.fn().mockResolvedValue(null),
-    updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    findFirst: jest.fn(async (args: any): Promise<any> => (args?.where?.id === "L1" ? { id: "L1", userId: null, name: "Kart", surname: "Avukat" } : null)),
+    updateMany: jest.fn(async (args: any): Promise<any> => ({ count: args?.where?.id === "L1" ? 1 : 0 })),
   };
   const staffMember = {
-    findFirst: jest.fn().mockResolvedValue(null),
-    updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    findFirst: jest.fn(async (args: any): Promise<any> => (args?.where?.id === "S1" ? { id: "S1", userId: null, firstName: "Kart", lastName: "Personel" } : null)),
+    updateMany: jest.fn(async (args: any): Promise<any> => ({ count: args?.where?.id === "S1" ? 1 : 0 })),
   };
   const tx = { user, userInvite, lawyer, staffMember, $queryRaw: jest.fn().mockResolvedValue([]) };
   const prisma = { user, userInvite, lawyer, staffMember, $transaction: jest.fn(async (cb: any) => cb(tx)) } as any;
@@ -56,7 +58,7 @@ const rawFromEmail = (email: any): string => {
 describe("UserInviteService", () => {
   it("[5][6] issue pending User oluşturur (isActive=false, passwordHash=null, tenant-bound)", async () => {
     const { svc, user } = make();
-    await svc.issue(ACTOR, { email: "A@x.com", name: "Ad" });
+    await svc.issue(ACTOR, { lawyerId: "L1", email: "A@x.com", name: "Ad" });
     const data = user.create.mock.calls[0][0].data;
     expect(data.isActive).toBe(false);
     expect(data.passwordHash).toBeNull();
@@ -66,7 +68,7 @@ describe("UserInviteService", () => {
 
   it("[7] token DB'de HASH saklanır (raw değil)", async () => {
     const { svc, userInvite, email } = make();
-    await svc.issue(ACTOR, { email: "a@x.com", name: "Ad" });
+    await svc.issue(ACTOR, { lawyerId: "L1", email: "a@x.com", name: "Ad" });
     const raw = rawFromEmail(email);
     const data = userInvite.create.mock.calls[0][0].data;
     expect(data.tokenHash).toMatch(/^[0-9a-f]{64}$/);
@@ -77,7 +79,7 @@ describe("UserInviteService", () => {
 
   it("[8] issue audit ham token İÇERMEZ + e-posta maskeli", async () => {
     const { svc, audit, email } = make();
-    await svc.issue(ACTOR, { email: "ali@x.com", name: "Ad" });
+    await svc.issue(ACTOR, { lawyerId: "L1", email: "ali@x.com", name: "Ad" });
     const raw = rawFromEmail(email);
     const call = audit.log.mock.calls.find((c: any) => c[0].action === "USER_INVITE_ISSUED")![0];
     expect(call.userId).toBe("admin1"); // truthful admin
@@ -89,14 +91,14 @@ describe("UserInviteService", () => {
   // ---- AUTH-01: tenant-scoped email-uniqueness (önceki global "H3" davranışı SUPERSEDED) ----
   it("[AUTH-01] issue email'i TENANT-SCOPED kontrol eder: findFirst({email, tenantId}) — actor.tenantId FİLTRESİ VAR", async () => {
     const { svc, user } = make();
-    await svc.issue(ACTOR, { email: "a@x.com", name: "Ad" });
+    await svc.issue(ACTOR, { lawyerId: "L1", email: "a@x.com", name: "Ad" });
     expect(user.findFirst).toHaveBeenCalledWith({ where: { email: "a@x.com", tenantId: ACTOR.tenantId } });
   });
 
   it("[AUTH-01] email BAŞKA tenant'ta zaten var → ARTIK ENGELLENMEZ (tenant-scoped sorgu bulmaz, invite devam eder)", async () => {
     const { svc, user, userInvite } = make();
     // findFirst({email, tenantId: ACTOR.tenantId}) başka tenant'taki kullanıcıyı hiç görmez → null döner (mock varsayılanı).
-    await svc.issue(ACTOR, { email: "a@x.com", name: "Ad" });
+    await svc.issue(ACTOR, { lawyerId: "L1", email: "a@x.com", name: "Ad" });
     expect(user.create).toHaveBeenCalled();
     expect(userInvite.create).toHaveBeenCalled();
   });
@@ -104,19 +106,19 @@ describe("UserInviteService", () => {
   it("[AUTH-01] email AYNI tenant'ta zaten var → 409 (davranış korunur — tenant-scoped kontrol bunu hâlâ yakalar)", async () => {
     const { svc, user } = make();
     user.findFirst.mockResolvedValueOnce({ id: "u-self", email: "a@x.com", tenantId: "t1" });
-    await expect(svc.issue(ACTOR, { email: "a@x.com", name: "Ad" })).rejects.toThrow(ConflictException);
+    await expect(svc.issue(ACTOR, { lawyerId: "L1", email: "a@x.com", name: "Ad" })).rejects.toThrow(ConflictException);
     expect(user.create).not.toHaveBeenCalled();
   });
 
   it("[21] feature flag OFF iken issue çalışmaz", async () => {
     const { svc, user } = make({ enabled: false });
-    await expect(svc.issue(ACTOR, { email: "a@x.com", name: "Ad" })).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(svc.issue(ACTOR, { lawyerId: "L1", email: "a@x.com", name: "Ad" })).rejects.toBeInstanceOf(ForbiddenException);
     expect(user.create).not.toHaveBeenCalled();
   });
 
   it("[23] default/random parola ÜRETİLMEZ (issue passwordHash=null, e-postada parola yok)", async () => {
     const { svc, user, email } = make();
-    await svc.issue(ACTOR, { email: "a@x.com", name: "Ad" });
+    await svc.issue(ACTOR, { lawyerId: "L1", email: "a@x.com", name: "Ad" });
     expect(user.create.mock.calls[0][0].data.passwordHash).toBeNull();
     const sent = email.send.mock.calls[0][0];
     expect(sent.text.toLowerCase()).not.toMatch(/parola\s*[:=]\s*\S/); // maile parola konmaz (yalnız link)
@@ -184,14 +186,45 @@ describe("UserInviteService", () => {
     );
   });
 
-  it("[OWN-01] issue lawyerId/staffMemberId hiç verilmezse davranış değişmez (regression)", async () => {
-    const { svc, lawyer, staffMember, user } = make();
-    await svc.issue(ACTOR, { email: "a@x.com", name: "Ad" });
-    expect(lawyer.findFirst).not.toHaveBeenCalled();
+  // ---- K-A1 davet yolu (owner ek talimatı 30.10.2026): "davet kişi kartından" API'de ZORUNLU ----
+  it("[K-A1] kartsız davet → 400; DB sorgusu, user/invite yazımı, kart bağlama, e-posta ve audit YOK (yan etki 0)", async () => {
+    const { svc, prisma, user, userInvite, lawyer, staffMember, email, audit } = make();
+    await expect(svc.issue(ACTOR, { email: "a@x.com", name: "Ad", surname: "Kartsız" })).rejects.toBeInstanceOf(BadRequestException);
+    expect(user.findFirst).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(user.create).not.toHaveBeenCalled();
+    expect(userInvite.create).not.toHaveBeenCalled();
     expect(lawyer.updateMany).not.toHaveBeenCalled();
-    expect(staffMember.findFirst).not.toHaveBeenCalled();
     expect(staffMember.updateMany).not.toHaveBeenCalled();
-    expect(user.create).toHaveBeenCalled();
+    expect(email.send).not.toHaveBeenCalled();
+    expect(audit.log).not.toHaveBeenCalled();
+  });
+
+  it("[K-A1] kart sorgusu aynı kiracı + AKTİF şartı taşır; başka kiracı / pasif kart bulunamaz → 400; user/invite/e-posta YOK", async () => {
+    const { svc, user, userInvite, lawyer, email } = make();
+    await expect(svc.issue(ACTOR, { email: "a@x.com", name: "Ad", lawyerId: "baska-kiraci-veya-pasif" })).rejects.toBeInstanceOf(BadRequestException);
+    expect(lawyer.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "baska-kiraci-veya-pasif", tenantId: "t1", isActive: true } }));
+    expect(user.create).not.toHaveBeenCalled();
+    expect(userInvite.create).not.toHaveBeenCalled();
+    expect(email.send).not.toHaveBeenCalled();
+  });
+
+  it("[K-A1] ad / soyad KARTTAN türetilir; istemci beyanı (name/surname) yok sayılır; audit identitySource LAWYER_CARD", async () => {
+    const { svc, user, audit } = make();
+    await svc.issue(ACTOR, { email: "a@x.com", name: "Sahte", surname: "Beyan", lawyerId: "L1" });
+    const data = user.create.mock.calls[0][0].data;
+    expect(data.name).toBe("Kart");
+    expect(data.surname).toBe("Avukat");
+    const call = audit.log.mock.calls.find((c: any) => c[0].action === "USER_INVITE_ISSUED")![0];
+    expect(call.metadata.identitySource).toBe("LAWYER_CARD");
+  });
+
+  it("[K-A1] personel kartı: firstName/lastName karttan; kart bağlanır; audit identitySource STAFF_CARD", async () => {
+    const { svc, user, staffMember, audit } = make();
+    await svc.issue(ACTOR, { email: "a@x.com", name: "Sahte", staffMemberId: "S1" });
+    expect(user.create.mock.calls[0][0].data).toEqual(expect.objectContaining({ name: "Kart", surname: "Personel" }));
+    expect(staffMember.updateMany).toHaveBeenCalledWith({ where: { id: "S1", tenantId: "t1", userId: null }, data: { userId: "u9" } });
+    expect(audit.log.mock.calls.find((c: any) => c[0].action === "USER_INVITE_ISSUED")![0].metadata.identitySource).toBe("STAFF_CARD");
   });
 
   // ---- accept ----
@@ -407,7 +440,7 @@ describe("W5-INVITE-LIFECYCLE-I01 — revoke/resend/issue yaşam döngüsü", ()
     const { svc, user, userInvite } = make();
     user.findFirst.mockResolvedValue(pendingUser({ isActive: true }));
     userInvite.findMany.mockResolvedValue(invitesOf([{ id: "inv1", consumedAt: null, revokedAt: new Date() }]));
-    await expect(svc.issue(ACTOR, { email: "a@x.com", name: "Ad" } as any)).rejects.toBeInstanceOf(ConflictException);
+    await expect(svc.issue(ACTOR, { lawyerId: "L1", email: "a@x.com", name: "Ad" } as any)).rejects.toBeInstanceOf(ConflictException);
     expect(user.create).not.toHaveBeenCalled();
   });
 
@@ -415,21 +448,21 @@ describe("W5-INVITE-LIFECYCLE-I01 — revoke/resend/issue yaşam döngüsü", ()
     const { svc, user, userInvite } = make();
     user.findFirst.mockResolvedValue(pendingUser({ passwordHash: "x" }));
     userInvite.findMany.mockResolvedValue(invitesOf([{ id: "inv1", consumedAt: null, revokedAt: new Date() }]));
-    await expect(svc.issue(ACTOR, { email: "a@x.com", name: "Ad" } as any)).rejects.toBeInstanceOf(ConflictException);
+    await expect(svc.issue(ACTOR, { lawyerId: "L1", email: "a@x.com", name: "Ad" } as any)).rejects.toBeInstanceOf(ConflictException);
   });
 
   it("[W5-6] consume edilmiş daveti olan pending kayıt devralınamaz (replay koruması)", async () => {
     const { svc, user, userInvite } = make();
     user.findFirst.mockResolvedValue(pendingUser());
     userInvite.findMany.mockResolvedValue(invitesOf([{ id: "inv1", consumedAt: new Date(), revokedAt: null }]));
-    await expect(svc.issue(ACTOR, { email: "a@x.com", name: "Ad" } as any)).rejects.toBeInstanceOf(ConflictException);
+    await expect(svc.issue(ACTOR, { lawyerId: "L1", email: "a@x.com", name: "Ad" } as any)).rejects.toBeInstanceOf(ConflictException);
   });
 
   it("[W5-7] revoked daveti OLMAYAN pending kayıt devralınamaz (yalnız orphan senaryosu)", async () => {
     const { svc, user, userInvite } = make();
     user.findFirst.mockResolvedValue(pendingUser());
     userInvite.findMany.mockResolvedValue(invitesOf([{ id: "inv1", consumedAt: null, revokedAt: null }]));
-    await expect(svc.issue(ACTOR, { email: "a@x.com", name: "Ad" } as any)).rejects.toBeInstanceOf(ConflictException);
+    await expect(svc.issue(ACTOR, { lawyerId: "L1", email: "a@x.com", name: "Ad" } as any)).rejects.toBeInstanceOf(ConflictException);
   });
 
   it("[W5-8] adoption yarışı: hesap arada aktifleşirse fail-closed (count=0 → Conflict)", async () => {
@@ -437,13 +470,13 @@ describe("W5-INVITE-LIFECYCLE-I01 — revoke/resend/issue yaşam döngüsü", ()
     user.findFirst.mockResolvedValue(pendingUser());
     userInvite.findMany.mockResolvedValue(invitesOf([{ id: "inv1", consumedAt: null, revokedAt: new Date() }]));
     user.updateMany.mockResolvedValue({ count: 0 });
-    await expect(svc.issue(ACTOR, { email: "a@x.com", name: "Ad" } as any)).rejects.toBeInstanceOf(ConflictException);
+    await expect(svc.issue(ACTOR, { lawyerId: "L1", email: "a@x.com", name: "Ad" } as any)).rejects.toBeInstanceOf(ConflictException);
   });
 
   it("[W5-9] cross-tenant: sorgu tenant-scoped; devralma başka tenant kaydını GÖREMEZ", async () => {
     const { svc, user, prisma } = make();
     user.findFirst.mockResolvedValue(null);   // farklı tenant → bulunamaz
-    await svc.issue(ACTOR, { email: "a@x.com", name: "Ad" } as any);
+    await svc.issue(ACTOR, { lawyerId: "L1", email: "a@x.com", name: "Ad" } as any);
     expect(user.findFirst.mock.calls[0][0].where).toEqual(expect.objectContaining({ tenantId: "t1" }));
     expect(user.create).toHaveBeenCalled();   // normal yol: yeni pending User
     expect(prisma.$transaction).toHaveBeenCalled();
@@ -486,7 +519,7 @@ describe("GÜV-01 P3 — davet bağlantısı belirteci parçada taşır", () => 
 
   it("[P3-1] issue: e-postadaki bağlantı `#token=` taşır, `?token=` / `&token=` TAŞIMAZ (metin + html)", async () => {
     const { svc, email, userInvite } = makeWithConfig({ WEB_BASE_URL: `${BASE}/` });
-    await svc.issue(ACTOR, { email: "a@x.com", name: "Ad" });
+    await svc.issue(ACTOR, { lawyerId: "L1", email: "a@x.com", name: "Ad" });
     const raw = rawFromEmail(email);
     expect(userInvite.create.mock.calls[0][0].data.tokenHash).toBe(hashInviteToken(raw));
 
@@ -518,12 +551,12 @@ describe("GÜV-01 P3 — davet bağlantısı belirteci parçada taşır", () => 
     const spy = jest.spyOn(Date, "now").mockReturnValue(now);
     try {
       const a = makeWithConfig({ WEB_BASE_URL: BASE });
-      const ra = await a.svc.issue(ACTOR, { email: "a@x.com", name: "Ad" });
+      const ra = await a.svc.issue(ACTOR, { lawyerId: "L1", email: "a@x.com", name: "Ad" });
       expect(ra.expiresAt).toBe(new Date(now + 72 * 3600_000).toISOString());
       expect(a.userInvite.create.mock.calls[0][0].data.expiresAt.getTime()).toBe(now + 72 * 3600_000);
 
       const b = makeWithConfig({ WEB_BASE_URL: BASE, LOGIN_INVITE_TTL_HOURS: "5" });
-      const rb = await b.svc.issue(ACTOR, { email: "a@x.com", name: "Ad" });
+      const rb = await b.svc.issue(ACTOR, { lawyerId: "L1", email: "a@x.com", name: "Ad" });
       expect(rb.expiresAt).toBe(new Date(now + 5 * 3600_000).toISOString());
 
       const c = makeWithConfig({ WEB_BASE_URL: BASE });
@@ -539,7 +572,7 @@ describe("GÜV-01 P3 — davet bağlantısı belirteci parçada taşır", () => 
 
   it("[P3-4] parçadan alınan belirteç kabulde bir kez geçer; ikinci kullanım ve süresi dolmuş belirteç aynı genel iletiyle reddedilir", async () => {
     const { svc, prisma, email, userInvite, user } = makeWithConfig({ WEB_BASE_URL: BASE });
-    await svc.issue(ACTOR, { email: "a@x.com", name: "Ad" });
+    await svc.issue(ACTOR, { lawyerId: "L1", email: "a@x.com", name: "Ad" });
     const raw = new URLSearchParams(linksFromEmail(email).text.hash.slice(1)).get("token")!;
     const stored = userInvite.create.mock.calls[0][0].data;
     const row = {
