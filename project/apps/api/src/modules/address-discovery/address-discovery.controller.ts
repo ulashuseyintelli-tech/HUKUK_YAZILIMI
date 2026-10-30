@@ -11,6 +11,7 @@ import {
   Request,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { AddressDiscoveryService } from './address-discovery.service';
 import { ClientInfoRequestService } from './client-info-request.service';
 import { ConfidenceScoreService } from './confidence-score.service';
@@ -22,8 +23,9 @@ import type { ClientWorkspaceCommandActor } from '../client/client-workspace-com
 import { CreateUyapQueryDto, UpdateUyapQueryResponseDto, ProcessQueryAddressesDto } from './dto/uyap-query.dto';
 import { CreateInstitutionLetterDto, MarkLetterAsSentDto, MarkLetterAsRespondedDto } from './dto/institution-letter.dto';
 
+// F02-D-2 dilim 5 (owner ek talimatı 30.10.2026): VIEWER müvekkil bilgi talebi / kurum yazısı / UYAP sorgusu / araştırma / adres kopyalama / skor güncelleme YAZAMAZ (17 yazma; servisler rol sormuyor). Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`; okuma uçları DEĞİŞMEZ.
 @Controller('address-discovery')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class AddressDiscoveryController {
   constructor(
     private addressDiscoveryService: AddressDiscoveryService,

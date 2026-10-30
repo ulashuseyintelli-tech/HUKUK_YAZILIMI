@@ -1,10 +1,12 @@
 import { Controller, Get, Post, Put, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ExecutionOfficeService } from './execution-office.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
+// F02-D-2 dilim 5 (owner ek talimatı 30.10.2026): VIEWER icra dairesi oluşturamaz / güncelleyemez / tohumlayamaz (3 yazma). Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`; okuma uçları DEĞİŞMEZ.
 @Controller('execution-offices')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class ExecutionOfficeController {
   constructor(private readonly service: ExecutionOfficeService) {}
 

@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { Request } from 'express';
 import { ClientIntakeSubmissionStatus } from '@prisma/client';
 import { ClientIntakeReviewService } from './client-intake-review.service';
@@ -20,8 +21,9 @@ interface AuthRequest extends Request {
  * Client Intake Review Queue controller (Faz 4.5) — personel/JWT.
  * Yalnız inceleme/lifecycle işaretler. PROMOTE endpoint'i YOK (4.6). Kanoniğe yazım YOK.
  */
+// F02-D-2 dilim 5 (owner ek talimatı 30.10.2026): VIEWER intake incelemesi (claim / reject / review) yapamaz (yetki yalnız PermissionGrant capability, rol sormaz; 4 yazma). Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`; okuma uçları DEĞİŞMEZ.
 @Controller()
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(AuthGuard('jwt'), ViewerWriteDenyGuard)
 export class ClientIntakeReviewController {
   constructor(
     private readonly service: ClientIntakeReviewService,

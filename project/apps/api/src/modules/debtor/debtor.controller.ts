@@ -19,13 +19,15 @@ import {
   CreateDebtorIntelligenceDto,
 } from "./dto/debtor.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { DebtorCrossCaseNotificationService } from "./debtor-cross-case-notification.service";
 import { CaseDebtorService } from "./case-debtor.service";
 import { DebtorCrossCaseNotificationTaskLinkService } from "./debtor-cross-case-notification-task-link.service";
 
+// F02-D-2 dilim 5 (owner ek talimatı 30.10.2026): VIEWER borçlu / adres / istihbarat / tebligat durumu / çapraz dosya bildirimi YAZAMAZ (13 yazma); `check-duplicate` saf arama → açık. Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`; okuma uçları DEĞİŞMEZ.
 @Controller("debtors")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class DebtorController {
   constructor(
     private debtorService: DebtorService,
@@ -256,6 +258,7 @@ export class DebtorController {
 
   // ==================== DUPLICATE CHECK ====================
 
+  @AllowViewerReadOnlyPost() // saf: mükerrer borçlu araması (DebtorService.checkDuplicate yalnız okur) — DB yazma / denetim izi / dış çağrı yok (servis yan etki haritası)
   @Post("check-duplicate")
   checkDuplicate(
     @CurrentUser("tenantId") tenantId: string,

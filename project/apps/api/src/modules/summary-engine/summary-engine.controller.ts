@@ -10,10 +10,12 @@ import {
 } from '@nestjs/common';
 import { SummaryEngineService, SummaryResult } from './summary-engine.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
+// F02-D-2 dilim 5 (owner ek talimatı 30.10.2026): VIEWER ödeme kaydı / talep tutarı YAZAMAZ (2 yazma). Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`; okuma uçları DEĞİŞMEZ.
 @Controller('summary-engine')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class SummaryEngineController {
   constructor(private readonly service: SummaryEngineService) {}
 

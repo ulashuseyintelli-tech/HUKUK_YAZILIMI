@@ -3,9 +3,11 @@ import { Response } from 'express';
 import { AiService } from './ai.service';
 import { AiDocumentService, DocumentGenerationRequest } from './ai-document.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 
+// F02-D-2 dilim 5 (owner ek talimatı 30.10.2026): VIEWER AI önerisi / belge üretimi tetikleyemez (OpenAI dış çağrısı = yan etki; 4 yazma). Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`; okuma uçları DEĞİŞMEZ.
 @Controller('ai')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class AiController {
   constructor(
     private readonly aiService: AiService,

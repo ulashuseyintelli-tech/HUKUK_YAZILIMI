@@ -2,6 +2,7 @@ import { Controller, Post, Get, Query, UseGuards, Request } from '@nestjs/common
 import { SeedService } from './seed.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../auth/guards/admin.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { buildClientMutationActor } from '../client/client.service';
 import { assertOfficeWriteRole } from '../office-approval/office-write-role.policy';
 
@@ -9,7 +10,7 @@ import { assertOfficeWriteRole } from '../office-approval/office-write-role.poli
 export class SeedController {
   constructor(private readonly seedService: SeedService) {}
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
   @Post('all')
   async seedAll(@Request() req: any) {
     // OWN-13 I02-R3 (owner D04): seedAll CLIENT üretimini de içerir → AYNI elevated aktör.
@@ -17,13 +18,13 @@ export class SeedController {
     return this.seedService.seedAll(req.user.tenantId, actor);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
   @Post('lookups')
   async seedLookups(@Request() req: any) {
     return this.seedService.seedLookups(req.user.tenantId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
   @Post('lawyers')
   async seedLawyers(@Request() req: any) {
     assertOfficeWriteRole(req.user?.role); // AK-1a: VIEWER OFFICE'e yazamaz (seed dahil)
@@ -31,7 +32,7 @@ export class SeedController {
     return this.seedService.seedLawyers(req.user.tenantId, { userId: req.user.id });
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
   @Post('clients')
   async seedClients(@Request() req: any) {
     // OWN-13 I02-R3 (owner D04): CLIENT seed authority — yalnız elevated aktör (ADMIN tek başına yetmez).
@@ -39,25 +40,25 @@ export class SeedController {
     return this.seedService.seedClients(req.user.tenantId, actor);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
   @Post('debtors')
   async seedDebtors(@Request() req: any) {
     return this.seedService.seedDebtors(req.user.tenantId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
   @Post('cases')
   async seedCases(@Request() req: any) {
     return this.seedService.seedCases(req.user.tenantId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
   @Post('execution-offices')
   async seedExecutionOffices(@Request() req: any) {
     return this.seedService.seedExecutionOffices(req.user.tenantId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
   @Post('staff')
   async seedStaff(@Request() req: any) {
     assertOfficeWriteRole(req.user?.role); // AK-1a
@@ -70,7 +71,7 @@ export class SeedController {
     return this.seedService.getDataStatus(req.user.tenantId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
   @Post('fix-clients')
   async fixClients(@Request() req: any) {
     // OWN-13 I02-R3 (owner D04): identityNo dahil hassas alan yazar — yalnız elevated aktör.
@@ -78,21 +79,21 @@ export class SeedController {
     return this.seedService.fixExistingClients(req.user.tenantId, actor);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
   @Post('fix-lawyers')
   async fixLawyers(@Request() req: any) {
     assertOfficeWriteRole(req.user?.role); // AK-1a
     return this.seedService.fixExistingLawyers(req.user.tenantId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
   @Post('office')
   async seedOffice(@Request() req: any) {
     assertOfficeWriteRole(req.user?.role); // AK-1a
     return this.seedService.seedOffice(req.user.tenantId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
   @Post('bank-accounts')
   async seedBankAccounts(@Request() req: any) {
     assertOfficeWriteRole(req.user?.role); // AK-1a
@@ -109,14 +110,15 @@ export class SeedController {
   // seed uçları tenant-scoped'tur ve BİLEREK dokunulmamıştır (blanket dönüşüm yasak).
   // seedAll içindeki servis-düzeyi çağrı bu kapıdan geçmez; seedAll'ın kendi elevated
   // aktör kapısı vardır (assertCanRunElevatedClientBulkOperation).
-  @UseGuards(JwtAuthGuard, AdminGuard)
+  // F02-D-2 dilim 5 (owner ek talimatı 30.10.2026): VIEWER tohum (seed) verisi YAZAMAZ — 14 yazma ucu metot düzeyi ViewerWriteDenyGuard (JwtAuthGuard'dan SONRA; AdminGuard'dan ÖNCE: rol kapısı ilk). D03/B02R1 kilitleri korunur.
+  @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard, AdminGuard)
   @Post('public-institutions')
   async seedPublicInstitutions() {
     return this.seedService.seedPublicInstitutions();
   }
 
   // Kamu kurumlarını borçlu olarak ekle
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
   @Post('public-institution-debtors')
   async seedPublicInstitutionDebtors(@Request() req: any) {
     return this.seedService.seedPublicInstitutionDebtors(req.user.tenantId);

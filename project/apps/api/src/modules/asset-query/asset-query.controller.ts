@@ -10,11 +10,13 @@ import {
   Request,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { AssetQueryService } from './asset-query.service';
 import { RunAssetQueriesDTO, UpdateAssetQueryResultDTO } from './dto/asset-query.dto';
 
+// F02-D-2 dilim 5 (owner ek talimatı 30.10.2026): VIEWER mal varlığı sorgusu çalıştıramaz / sonuç yazamaz / iptal edemez (4 yazma). Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`; okuma uçları DEĞİŞMEZ.
 @Controller('asset-queries')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class AssetQueryController {
   constructor(private readonly assetQueryService: AssetQueryService) {}
 

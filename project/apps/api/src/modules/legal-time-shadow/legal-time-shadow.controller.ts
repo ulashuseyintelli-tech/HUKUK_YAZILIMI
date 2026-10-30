@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Param, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { LegalTimeShadowService } from "./legal-time-shadow.service";
 
@@ -12,8 +13,9 @@ import { LegalTimeShadowService } from "./legal-time-shadow.service";
  * `LEGAL_TIME_SHADOW_ENABLED` kapalıyken (varsayılan) compute endpoint'i hiçbir
  * satır yazmaz, `triggered: false` döner.
  */
+// F02-D-2 dilim 5 (owner ek talimatı 30.10.2026): VIEWER gölge hesap tetikleyemez (`compute` LegalTimeShadowDiff YAZAR). Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`; okuma uçları DEĞİŞMEZ.
 @Controller("legal-time-shadow")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class LegalTimeShadowController {
   constructor(private legalTimeShadowService: LegalTimeShadowService) {}
 
