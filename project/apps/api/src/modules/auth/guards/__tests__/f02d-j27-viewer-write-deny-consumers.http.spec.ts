@@ -76,6 +76,9 @@
  * KAPALI kalır, bu PR açmaz; `v28-surface-containment.spec` değişmez). GET-only timeline / runs / actions DOKUNULMAZ. validation-gate
  * `bank-claim-validation` metot düzeyi JwtAuthGuard (kimliksiz 401; saf işareti korunur — web `lib/api/validation.ts` JWT'li apiClient).
  *
+ * R09 (F02 K-A1 B-1, owner kararı 31.10.2026): `auth/account-card-links` (kartsız hesabı kişi kartına bağlama; ADMIN) sınıf düzeyi
+ * JwtAuthGuard + ViewerWriteDenyGuard + AdminGuard — VIEWER ret kodu VIEWER_WRITE_DENIED (guard AdminGuard'dan ÖNCE); USER AdminGuard 403.
+ *
  * Kapsam dışı (DEĞİŞMEZ): user `me/password` (öz-servis), auth ve portal KULLANICI rotaları, office/lawyer/staff (zaten
  * OfficeF01AuthorizationGuard), client.controller ve client-address (zaten servis düzeyi VIEWER DENY). Envanterdeki öteki
  * yalnız-JWT yazıcılar F02-D KALAN yüzeydir; dilimler hâlinde ele alınır, raporda listelenir.
@@ -231,6 +234,9 @@ import { SeedService as V28SeedService } from '../../../icrabot/v28-engine/seed.
 import { TimelineService } from '../../../icrabot/v28-engine/timeline.service';
 import { UyapEventIngestService } from '../../../icrabot/v28-engine/uyap-event-ingest.service';
 import { IcrabotV28DevSurfaceGuard, IcrabotV28ExternalIngestGuard, IcrabotV28UnsafeMutationGuard } from '../../../icrabot/v28-engine/guards/v28-surface.guard';
+// R09 (F02 K-A1 B-1): hesabı karta bağlama (ADMIN)
+import { AccountCardLinkController } from '../../account-card-link/account-card-link.controller';
+import { AccountCardLinkService } from '../../account-card-link/account-card-link.service';
 // R07 (F02-D-2 dilim 5): kalan operasyonel yollar
 import { AddressDiscoveryController } from '../../../address-discovery/address-discovery.controller';
 import { AddressDiscoveryService } from '../../../address-discovery/address-discovery.service';
@@ -357,6 +363,8 @@ const CLASS_GUARDED = [
   ClientIntakePromotionController, ClientIntakeReviewController,
   // R08 (F02-C B-4, owner kararı 31.10.2026): v28-engine yazma yüzeyleri (containment bayrakları KAPALI kalır; GET-only timeline / runs / actions dışarıda)
   UyapEventController, FactStoreController, OutboxController, RulesController, ComputeController, V28SeedController, ScenarioHarnessController, ActionFeedbackController,
+  // R09 (F02 K-A1 B-1): kartsız hesabı kişi kartına bağlama (ADMIN; ViewerWriteDenyGuard AdminGuard'dan ÖNCE)
+  AccountCardLinkController,
 ];
 /** R02: METOT düzeyi ViewerWriteDenyGuard beklenen handler'lar (sınıf düzeyi kapı ölçülmüş sözleşmeleri değiştirirdi). */
 const METHOD_GUARDED: ReadonlyArray<readonly [Function, string]> = [
@@ -553,6 +561,8 @@ describe('F02-D / J-27: VIEWER yazma reddi — consumer uygulaması (gerçek JWT
         { provide: ScenarioHarnessService, useValue: stubService('ScenarioHarnessService') },
         { provide: ActionFeedbackService, useValue: stubService('ActionFeedbackService') },
         IcrabotV28DevSurfaceGuard, IcrabotV28ExternalIngestGuard, IcrabotV28UnsafeMutationGuard,
+        // R09 (F02 K-A1 B-1) servisi (stub; kart bağlama yazımı YOK)
+        { provide: AccountCardLinkService, useValue: stubService('AccountCardLinkService') },
       ],
     }).compile();
     app = module.createNestApplication();
