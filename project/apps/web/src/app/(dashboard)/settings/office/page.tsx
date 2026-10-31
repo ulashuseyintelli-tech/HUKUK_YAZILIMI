@@ -1875,6 +1875,29 @@ function OfficeSettingsInner() {
 }
 
 
+// Kişi kartı modal çerçevesi: panel görünür alana sığar, yalnız form gövdesi kayar; başlık, kapatma ve İptal/Kaydet görünür kalır.
+function PersonModalFrame({ title, widthClass, onSubmit, onClose, saving, children }: { title: string; widthClass: string; onSubmit: (e: React.FormEvent) => void; onClose: () => void; saving: boolean; children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div data-testid="person-modal-panel" className={`bg-white rounded-lg w-full ${widthClass} max-h-full flex flex-col`}>
+        <div className="flex justify-between p-4 pb-3 shrink-0">
+          <h3 className="font-semibold">{title}</h3>
+          <button type="button" onClick={onClose} aria-label="Kapat"><X className="h-4 w-4" /></button>
+        </div>
+        <form onSubmit={onSubmit} className="flex flex-col min-h-0 flex-1 text-xs">
+          <div data-testid="person-modal-body" className="space-y-3 overflow-y-auto min-h-0 flex-1 px-4">
+            {children}
+          </div>
+          <div className="flex justify-end gap-2 p-4 pt-3 shrink-0">
+            <button type="button" onClick={onClose} className="px-3 py-1 border rounded">İptal</button>
+            <button type="submit" disabled={saving} className="px-3 py-1 bg-primary text-white rounded disabled:opacity-50">{saving ? "..." : "Kaydet"}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // Avukat Modal
 function LawyerModal({ lawyer, permissionStatus = null, onSave, onClose, saving }: { lawyer: any; permissionStatus?: LawyerDefaultPermissionsStatus | null; onSave: (data: any) => void; onClose: () => void; saving: boolean }) {
   const [form, setForm] = useState({
@@ -1976,13 +1999,7 @@ function LawyerModal({ lawyer, permissionStatus = null, onSave, onClose, saving 
   ];
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-4 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex justify-between mb-3">
-          <h3 className="font-semibold">{lawyer ? "Avukat Düzenle" : "Yeni Avukat"}</h3>
-          <button onClick={onClose}><X className="h-4 w-4" /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="space-y-3 text-xs">
+    <PersonModalFrame title={lawyer ? "Avukat Düzenle" : "Yeni Avukat"} widthClass="max-w-2xl" onSubmit={handleSubmit} onClose={onClose} saving={saving}>
           {/* Kişisel Bilgiler */}
           <div className="grid grid-cols-4 gap-2">
             <div><label>Ad *</label><input value={form.name} onChange={e => setForm({...form, name: e.target.value})} required className="w-full border rounded px-2 py-1" /></div>
@@ -2129,13 +2146,7 @@ function LawyerModal({ lawyer, permissionStatus = null, onSave, onClose, saving 
           )}
           {lawyer?.id && <AccountCardLinkCard personType="lawyer" personId={lawyer.id} personUserId={lawyer.userId ?? null} formDirty={isLawyerDirty} />}
           {lawyer?.id && <WorkScopePermissionCard personType="lawyer" personId={lawyer.id} formDirty={isLawyerDirty} />}
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={onClose} className="px-3 py-1 border rounded">İptal</button>
-            <button type="submit" disabled={saving} className="px-3 py-1 bg-primary text-white rounded disabled:opacity-50">{saving ? "..." : "Kaydet"}</button>
-          </div>
-        </form>
-      </div>
-    </div>
+    </PersonModalFrame>
   );
 }
 
@@ -2204,13 +2215,7 @@ function StaffModal({ staff, onSave, onClose, saving }: { staff: any; onSave: (d
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-4 w-full max-w-md">
-        <div className="flex justify-between mb-3">
-          <h3 className="font-semibold">{staff ? "Personel Düzenle" : "Yeni Personel"}</h3>
-          <button onClick={onClose}><X className="h-4 w-4" /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="space-y-3 text-xs">
+    <PersonModalFrame title={staff ? "Personel Düzenle" : "Yeni Personel"} widthClass="max-w-md" onSubmit={handleSubmit} onClose={onClose} saving={saving}>
           <div className="grid grid-cols-2 gap-2">
             <div><label>Ad *</label><input value={form.firstName} onChange={e => setForm({...form, firstName: e.target.value})} required className="w-full border rounded px-2 py-1" /></div>
             <div><label>Soyad *</label><input value={form.lastName} onChange={e => setForm({...form, lastName: e.target.value})} required className="w-full border rounded px-2 py-1" /></div>
@@ -2295,12 +2300,6 @@ function StaffModal({ staff, onSave, onClose, saving }: { staff: any; onSave: (d
           )}
           {staff?.id && <AccountCardLinkCard personType="staff" personId={staff.id} personUserId={staff.userId ?? null} formDirty={isStaffDirty} />}
           {staff?.id && <WorkScopePermissionCard personType="staff" personId={staff.id} formDirty={isStaffDirty} />}
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={onClose} className="px-3 py-1 border rounded">İptal</button>
-            <button type="submit" disabled={saving} className="px-3 py-1 bg-primary text-white rounded disabled:opacity-50">{saving ? "..." : "Kaydet"}</button>
-          </div>
-        </form>
-      </div>
-    </div>
+    </PersonModalFrame>
   );
 }
