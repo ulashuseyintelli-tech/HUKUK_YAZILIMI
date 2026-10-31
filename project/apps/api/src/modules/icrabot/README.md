@@ -18,9 +18,8 @@ v1-v38 blueprint'lerinden entegre edilmiştir.
     - Immutable audit log with SHA-256 hash chain
     - Değiştirilemez kayıt zinciri
     - Chain integrity doğrulama
-    - `AuditChainService`: Audit log yönetimi
-    - `POST /icrabot/enterprise/audit/log`
-    - `GET /icrabot/enterprise/audit/verify/:tenantId`
+    - `AuditChainService`: Audit log yönetimi (yalnızca dahili servis)
+    - HTTP yüzeyi YOK — guard'sız audit uçları F02-C B-2 (owner kararı 31.10.2026) ile kaldırıldı
 
 46. **Approval Workflow (v38)**
     - Yüksek etkili aksiyonlar için onay workflow'u
@@ -44,23 +43,15 @@ v1-v38 blueprint'lerinden entegre edilmiştir.
     - Rate limiting ve backpressure yönetimi
     - UYAP yavaşladığında otomatik throttle
     - Fail rate bazlı cooldown
-    - `BackpressureService`: Backpressure yönetimi
-    - `GET /icrabot/enterprise/backpressure/status/:tenantId`
-    - `POST /icrabot/enterprise/backpressure/record-action/:tenantId`
-    - `POST /icrabot/enterprise/backpressure/enable-throttle`
-    - `POST /icrabot/enterprise/backpressure/disable-throttle/:tenantId`
+    - `BackpressureService`: Backpressure yönetimi (yalnızca dahili servis)
+    - HTTP yüzeyi YOK — guard'sız backpressure uçları F02-C B-2 (owner kararı 31.10.2026) ile kaldırıldı
 
 49. **Plan Limits (v38)**
     - FREE/PRO/ENTERPRISE plan kotaları
     - Dosya, job, kullanıcı limitleri
     - Feature bazlı erişim kontrolü
-    - `PlanLimitsService`: Plan limit yönetimi
-    - `GET /icrabot/enterprise/plan/limits/:plan`
-    - `GET /icrabot/enterprise/plan/usage/:tenantId`
-    - `GET /icrabot/enterprise/plan/summary/:tenantId`
-    - `GET /icrabot/enterprise/plan/can-create-case/:tenantId`
-    - `GET /icrabot/enterprise/plan/can-create-job/:tenantId`
-    - `GET /icrabot/enterprise/plan/has-feature`
+    - `PlanLimitsService`: Plan limit yönetimi (yalnızca dahili servis)
+    - HTTP yüzeyi YOK — guard'sız plan uçları F02-C B-2 (owner kararı 31.10.2026) ile kaldırıldı
 
 ### v37 Yenilikleri (MVP Completion)
 

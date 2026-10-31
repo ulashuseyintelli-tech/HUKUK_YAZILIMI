@@ -3,11 +3,11 @@
  * 
  * Kurumsal ölçek katmanı API endpoint'leri.
  * - PII masking
- * - Audit chain
+ * - Audit chain (HTTP yuzeyi F02-C B-2 ile KALDIRILDI; AuditChainService dahili)
  * - Approval workflow
  * - Job leasing
- * - Backpressure
- * - Plan limits
+ * - Backpressure (HTTP yuzeyi F02-C B-2 ile KALDIRILDI; BackpressureService dahili)
+ * - Plan limits (HTTP yuzeyi F02-C B-2 ile KALDIRILDI; PlanLimitsService dahili)
  */
 
 import {
@@ -18,7 +18,6 @@ import {
   Param,
   Query,
   UseGuards,
-  Request,
   HttpCode,
   HttpStatus,
   ForbiddenException,
@@ -30,10 +29,7 @@ import {
   CreateApprovalRequestDto,
   SubmitApprovalDecisionDto,
 } from './dto/enterprise-approval.dto';
-import { AuditChainService } from './audit-chain.service';
 import { ApprovalWorkflowService, ApprovalDecision } from './approval-workflow.service';
-import { BackpressureService } from './backpressure.service';
-import { PlanLimitsService, PlanType } from './plan-limits.service';
 
 // ============================================================
 // PII MASKING CONTROLLER — KALDIRILDI
@@ -58,47 +54,18 @@ import { PlanLimitsService, PlanType } from './plan-limits.service';
 // ============================================================
 
 // ============================================================
-// AUDIT CHAIN CONTROLLER
+// AUDIT CHAIN CONTROLLER — KALDIRILDI
+//
+// F02-C B-2 (owner karari 31.10.2026; karar listesi R04 §B B-2 secenek (a): "HTTP yuzeyinden kaldir")
+//
+// `POST /icrabot/enterprise/audit/log` (tenantId + userId GOVDEDEN) ve `GET /icrabot/enterprise/audit/verify/:tenantId`
+// (tenantId URL'den) JwtAuthGuard TASIMIYORDU: kimliksiz bir cagiran baska kiracinin denetim zincirine kayit yazabilir,
+// zincir dogrulamasini okuyabilirdi. Depoda web / API / betik cagirani YOK (F02-D-2 dilim 4 ve F02-C taramasi; I01A
+// bilinçli "guard yok" bekliyordu). Yetki modeli ICAT EDILMEDI; public HTTP yuzeyi kaldirildi.
+//
+// `AuditChainService` DEGISTIRILMEDI ve provider olarak kayitli kalir (dahili yetenek). Ileride gercek bir tuketici cikarsa
+// principal'dan tenant/aktor okuyan AUTHENTICATED bir yuzey TASARLANARAK eklenir; eski guard'siz uclar geri getirilmez.
 // ============================================================
-@Controller('icrabot/enterprise/audit')
-export class AuditChainController {
-  constructor(private readonly auditService: AuditChainService) {}
-
-  /**
-   * Log an audit event
-   */
-  @Post('log')
-  @HttpCode(HttpStatus.CREATED)
-  async logEvent(
-    @Body() body: {
-      tenantId: string;
-      caseId?: string;
-      userId: string;
-      action: string;
-      payload: Record<string, any>;
-      ipAddress?: string;
-      userAgent?: string;
-    },
-  ) {
-    const entry = await this.auditService.logEvent(body);
-    return { ok: true, entry };
-  }
-
-  /**
-   * Verify audit chain integrity
-   */
-  @Get('verify/:tenantId')
-  async verifyChain(
-    @Param('tenantId') tenantId: string,
-    @Query('limit') limit?: string,
-  ) {
-    const result = await this.auditService.verifyChain(
-      tenantId,
-      limit ? parseInt(limit, 10) : 1000,
-    );
-    return { ok: result.valid, ...result };
-  }
-}
 
 // ============================================================
 // APPROVAL WORKFLOW CONTROLLER
@@ -114,7 +81,7 @@ export class AuditChainController {
  */
 // F02-D-2 dilim 4 (owner ek talimatı 30.10.2026): VIEWER onay talebi açamaz / karar veremez (ApprovalWorkflowService rütbe/eligibility soruyor, ROL sormuyor —
 // AK-1a: rol kapısı rütbeden ÖNCE). Yalnız bu sınıf (I01A containment korunur: audit / backpressure / plan sınıfları DEĞİŞMEZ —
-// guard'sız ve gövdeden/yoldan tenantId okuyan o yüzeyler F02 karar listesinde AYRI owner kalemi).
+// o yüzeyler owner kalemiydi → F02-C B-2 (owner kararı 31.10.2026) ile audit / backpressure / plan HTTP yüzeyleri BU DOSYADAN KALDIRILDI; servisler dahili).
 @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class ApprovalWorkflowController {
   constructor(private readonly approvalService: ApprovalWorkflowService) {}
@@ -257,141 +224,19 @@ export class ApprovalWorkflowController {
 // ============================================================
 
 // ============================================================
-// BACKPRESSURE CONTROLLER
+// BACKPRESSURE CONTROLLER — KALDIRILDI
+//
+// F02-C B-2 (owner karari 31.10.2026): `POST record-action/:tenantId`, `POST enable-throttle` (tenantId govdeden),
+// `POST disable-throttle/:tenantId`, `GET status/:tenantId`, `GET config` JwtAuthGuard TASIMIYORDU ve kiraciyi URL/govdeden
+// okuyordu (kimliksiz cagiran baska kiraci icin throttle acip kapatabilirdi). Depoda cagiran YOK. Yetki modeli ICAT EDILMEDI;
+// public HTTP yuzeyi kaldirildi. `BackpressureService` DEGISTIRILMEDI, provider olarak kalir (dahili yetenek).
 // ============================================================
-@Controller('icrabot/enterprise/backpressure')
-export class BackpressureController {
-  constructor(private readonly backpressureService: BackpressureService) {}
-
-  /**
-   * Check backpressure status
-   */
-  @Get('status/:tenantId')
-  async getStatus(@Param('tenantId') tenantId: string) {
-    const status = await this.backpressureService.checkBackpressure(tenantId);
-    return { ok: true, ...status };
-  }
-
-  /**
-   * Record an action (for rate limiting)
-   */
-  @Post('record-action/:tenantId')
-  @HttpCode(HttpStatus.OK)
-  recordAction(@Param('tenantId') tenantId: string) {
-    this.backpressureService.recordAction(tenantId);
-    return { ok: true };
-  }
-
-  /**
-   * Manually enable throttle
-   */
-  @Post('enable-throttle')
-  @HttpCode(HttpStatus.OK)
-  enableThrottle(
-    @Body() body: {
-      tenantId: string;
-      durationSeconds: number;
-      reason: string;
-    },
-  ) {
-    this.backpressureService.enableThrottle(
-      body.tenantId,
-      body.durationSeconds,
-      body.reason,
-    );
-    return { ok: true };
-  }
-
-  /**
-   * Manually disable throttle
-   */
-  @Post('disable-throttle/:tenantId')
-  @HttpCode(HttpStatus.OK)
-  disableThrottle(@Param('tenantId') tenantId: string) {
-    this.backpressureService.disableThrottle(tenantId);
-    return { ok: true };
-  }
-
-  /**
-   * Get current configuration
-   */
-  @Get('config')
-  getConfig() {
-    return { ok: true, config: this.backpressureService.getConfig() };
-  }
-}
 
 // ============================================================
-// PLAN LIMITS CONTROLLER
+// PLAN LIMITS CONTROLLER — KALDIRILDI
+//
+// F02-C B-2 (owner karari 31.10.2026): `GET limits/:plan`, `GET usage/:tenantId`, `GET summary/:tenantId`,
+// `GET can-create-case/:tenantId`, `GET can-create-job/:tenantId`, `GET has-feature` JwtAuthGuard TASIMIYORDU ve kiraciyi
+// URL'den okuyordu (kimliksiz cagiran baska kiracinin kullanim / kota bilgisini okuyabilirdi). Depoda cagiran YOK. Yetki modeli
+// ICAT EDILMEDI; public HTTP yuzeyi kaldirildi. `PlanLimitsService` DEGISTIRILMEDI, provider olarak kalir (dahili yetenek).
 // ============================================================
-@Controller('icrabot/enterprise/plan')
-export class PlanLimitsController {
-  constructor(private readonly planService: PlanLimitsService) {}
-
-  /**
-   * Get plan limits
-   */
-  @Get('limits/:plan')
-  getPlanLimits(@Param('plan') plan: PlanType) {
-    return { ok: true, limits: this.planService.getPlanLimits(plan) };
-  }
-
-  /**
-   * Get usage stats for a tenant
-   */
-  @Get('usage/:tenantId')
-  async getUsage(@Param('tenantId') tenantId: string) {
-    const stats = await this.planService.getUsageStats(tenantId);
-    return { ok: true, usage: stats };
-  }
-
-  /**
-   * Get usage summary with percentages
-   */
-  @Get('summary/:tenantId')
-  async getSummary(
-    @Param('tenantId') tenantId: string,
-    @Query('plan') plan: PlanType = 'FREE',
-  ) {
-    const summary = await this.planService.getUsageSummary(tenantId, plan);
-    return { ok: true, ...summary };
-  }
-
-  /**
-   * Check if a new case can be created
-   */
-  @Get('can-create-case/:tenantId')
-  async canCreateCase(
-    @Param('tenantId') tenantId: string,
-    @Query('plan') plan: PlanType = 'FREE',
-  ) {
-    const result = await this.planService.canCreateCase(tenantId, plan);
-    return { ok: true, ...result };
-  }
-
-  /**
-   * Check if a new job can be created
-   */
-  @Get('can-create-job/:tenantId')
-  async canCreateJob(
-    @Param('tenantId') tenantId: string,
-    @Query('plan') plan: PlanType = 'FREE',
-  ) {
-    const result = await this.planService.canCreateJob(tenantId, plan);
-    return { ok: true, ...result };
-  }
-
-  /**
-   * Check if a feature is available
-   */
-  @Get('has-feature')
-  hasFeature(
-    @Query('plan') plan: PlanType,
-    @Query('feature') feature: string,
-  ) {
-    return {
-      ok: true,
-      hasFeature: this.planService.hasFeature(plan, feature),
-    };
-  }
-}
