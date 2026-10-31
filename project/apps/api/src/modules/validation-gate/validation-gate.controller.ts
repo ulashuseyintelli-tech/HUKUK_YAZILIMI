@@ -188,7 +188,9 @@ export class ValidationGateController {
    * Banka alacağı validasyonu
    * POST /api/validation-gate/bank-claim-validation
    */
-  // F02-D-2 dilim 5: kimliksiz saf hesap ucu (guard yok — F02 karar listesinde owner kalemi); yazma yok.
+  // F02-C B-5 (owner kararı 31.10.2026): metot düzeyi JwtAuthGuard — kimliksiz çağrı 401. Saf hesap (yazma yok) → VIEWER saf işareti korunur.
+  // Web çağıranı (`apps/web/src/lib/api/validation.ts` → JWT'li apiClient) etkilenmez.
+  @UseGuards(JwtAuthGuard)
   @AllowViewerReadOnlyPost() // saf: banka alacağı doğrulaması (yalnız hesap) — DB yazma / denetim izi / dış çağrı yok (servis yan etki haritası)
   @Post('bank-claim-validation')
   validateBankClaimEndpoint(@Body() params: {

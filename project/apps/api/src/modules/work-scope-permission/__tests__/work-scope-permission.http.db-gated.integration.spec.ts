@@ -75,7 +75,7 @@ dbDescribe('F02-B-1 — /office/view-all-permissions (gerçek HTTP + PostgreSQL)
   afterEach(async () => { for (const id of [tenant, foreign]) await db.tenant.delete({ where: { id } }); });
   afterAll(async () => { await app?.close(); await db?.$disconnect(); });
   // F02-B görünürlük: bayraklar yalnız bu izole süreçte, test içinde açılır; her testten sonra geri alınır.
-  const FLAGS = ['OFFICE_EXPENSE_VIEW_SCOPE_ENABLED', 'OFFICE_TASK_VIEW_SCOPE_ENABLED'] as const;
+  const FLAGS = ['OFFICE_EXPENSE_VIEW_SCOPE_ENABLED', 'OFFICE_TASK_VIEW_SCOPE_ENABLED', 'OFFICE_APPROVAL_IDENTITY_PROOF_REQUIRED'] as const;
   const savedFlags: Record<string, string | undefined> = Object.fromEntries(FLAGS.map((k) => [k, process.env[k]]));
   afterEach(() => { for (const k of FLAGS) { if (savedFlags[k] === undefined) delete process.env[k]; else process.env[k] = savedFlags[k]; } });
 
@@ -177,10 +177,15 @@ dbDescribe('F02-B-1 — /office/view-all-permissions (gerçek HTTP + PostgreSQL)
 
   it('F02-B görünürlük (madde 4): GET /office/view-scope — bayrak kapalı → OFF (izin olsa da; resolution görünür); açık → NONE/DENY → BOUND, ALLOW → TENANT; anahtarlar bağımsız; USER ve VIEWER kendi kapsamını okur', async () => {
     const scopeOf = (uid: string) => http(app.getHttpServer()).get('/office/view-scope').set('x-test-user-id', uid);
-    delete process.env.OFFICE_EXPENSE_VIEW_SCOPE_ENABLED; delete process.env.OFFICE_TASK_VIEW_SCOPE_ENABLED;
+    delete process.env.OFFICE_EXPENSE_VIEW_SCOPE_ENABLED; delete process.env.OFFICE_TASK_VIEW_SCOPE_ENABLED; delete process.env.OFFICE_APPROVAL_IDENTITY_PROOF_REQUIRED;
     let r = await scopeOf(subjectUser);
     expect(r.status).toBe(200);
-    expect(r.body).toEqual({ expenses: { flagEnabled: false, resolution: 'NONE', mode: 'OFF' }, tasks: { flagEnabled: false, resolution: 'NONE', mode: 'OFF' } });
+    // F02 yayın ölçümü (owner 31.10 madde 3): süreç içi ETKİN bayrak değeri — kimlik bayrağı da aynı uçtan okunur (yalnız boolean; env değeri dökülmez)
+    expect(r.body).toEqual({ expenses: { flagEnabled: false, resolution: 'NONE', mode: 'OFF' }, tasks: { flagEnabled: false, resolution: 'NONE', mode: 'OFF' }, approvalIdentity: { flagEnabled: false } });
+    process.env.OFFICE_APPROVAL_IDENTITY_PROOF_REQUIRED = 'true';
+    r = await scopeOf(subjectUser); expect(r.body.approvalIdentity).toEqual({ flagEnabled: true }); expect(r.body.expenses.mode).toBe('OFF');
+    process.env.OFFICE_APPROVAL_IDENTITY_PROOF_REQUIRED = 'TRUE '; r = await scopeOf(subjectUser); expect(r.body.approvalIdentity).toEqual({ flagEnabled: false }); // birebir 'true' (büyük/küçük harf duyarsız, boşluk değil)
+    delete process.env.OFFICE_APPROVAL_IDENTITY_PROOF_REQUIRED;
     // Grant hazırlığı (G3 adım 1): bayrak KAPALIYKEN ALLOW verilir → mode OFF kalır, resolution ALLOW görünür (hazırlık doğrulanabilir)
     expect([200, 201]).toContain((await post(admin, '', { personType: 'lawyer', personId: linkedLawyer, key: 'office.expenses.view_all', effect: 'ALLOW' })).status);
     r = await scopeOf(subjectUser);
@@ -201,6 +206,6 @@ dbDescribe('F02-B-1 — /office/view-all-permissions (gerçek HTTP + PostgreSQL)
     expect(r.body.expenses).toEqual({ flagEnabled: true, resolution: 'NONE', mode: 'BOUND' });
     // Her rol KENDİ kapsamını okur (salt okuma; 403 yok); yanıt kişisel veri / grant kimliği taşımaz
     const v = await scopeOf(viewer); expect(v.status).toBe(200); expect(v.body.tasks.mode).toBe('BOUND');
-    const m = await scopeOf(member); expect(m.status).toBe(200); expect(Object.keys(m.body).sort()).toEqual(['expenses', 'tasks']);
+    const m = await scopeOf(member); expect(m.status).toBe(200); expect(Object.keys(m.body).sort()).toEqual(['approvalIdentity', 'expenses', 'tasks']);
   });
 });

@@ -21,6 +21,8 @@ import {
 import { tenantScopeFromRequestUser } from './outbox-scope';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../../auth/guards/admin.guard';
+// F02-C B-4 (owner kararı 31.10.2026): VIEWER yazma reddi — sınıf düzeyi, JwtAuthGuard'dan SONRA, containment guard'larından ÖNCE.
+import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from '../../auth/guards/viewer-write-deny.guard';
 import { UyapEventIngestService, UyapEvent } from './uyap-event-ingest.service';
 import { FactStoreService } from './factstore.service';
 import { TimelineService, TimelineEntryType, TimelineSeverity, TimelineSource } from './timeline.service';
@@ -39,7 +41,7 @@ import {
 
 // ============ UYAP Event Ingest Controller ============
 @Controller('icrabot/v28/events')
-@UseGuards(JwtAuthGuard, IcrabotV28ExternalIngestGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard, IcrabotV28ExternalIngestGuard) // F02-C B-4: VIEWER yazamaz; dış ingest bayrağı (KAPALI) değişmez
 export class UyapEventController {
   constructor(private readonly ingestService: UyapEventIngestService) {}
 
@@ -58,7 +60,7 @@ export class UyapEventController {
 
 // ============ FactStore Controller ============
 @Controller('icrabot/v28/facts')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard) // F02-C B-4 (owner kararı 31.10.2026): VIEWER yazamaz (GET'ler açık; containment bayrakları değişmez)
 export class FactStoreController {
   constructor(private readonly factStore: FactStoreService) {}
 
@@ -381,7 +383,7 @@ export class EngineRunController {
 
 // ============ Outbox Controller ============
 @Controller('icrabot/v28/outbox')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard) // F02-C B-4 (owner kararı 31.10.2026): VIEWER yazamaz (GET'ler açık; containment bayrakları değişmez)
 export class OutboxController {
   constructor(
     private readonly outbox: OutboxService,
@@ -529,7 +531,7 @@ export class ActionsController {
 
 // ============ Rules Controller ============
 @Controller('icrabot/v28/rules')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard) // F02-C B-4 (owner kararı 31.10.2026): VIEWER yazamaz (GET'ler açık; containment bayrakları değişmez)
 export class RulesController {
   constructor(private readonly ruleLoader: RuleLoaderService) {}
 
@@ -671,7 +673,7 @@ export class RulesController {
 
 // ============ Compute Registry Controller ============
 @Controller('icrabot/v28/compute')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard) // F02-C B-4 (owner kararı 31.10.2026): VIEWER yazamaz (GET'ler açık; containment bayrakları değişmez)
 export class ComputeController {
   constructor(private readonly computeRegistry: ComputeRegistryService) {}
 
@@ -680,6 +682,7 @@ export class ComputeController {
     return { engines: this.computeRegistry.listEngines() };
   }
 
+  @AllowViewerReadOnlyPost() // F02-C B-4: saf parametrik hesap — compute-registry servis yan etki haritası 0 (DB yazma / denetim izi / dış çağrı yok)
   @Post(':engineName')
   @HttpCode(HttpStatus.OK)
   async runEngine(
@@ -696,7 +699,7 @@ export class ComputeController {
 import { SeedService } from './seed.service';
 
 @Controller('icrabot/v28/seed')
-@UseGuards(JwtAuthGuard, IcrabotV28DevSurfaceGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard, IcrabotV28DevSurfaceGuard) // F02-C B-4: VIEWER yazamaz; dev yüzeyi bayrağı (KAPALI) değişmez
 export class SeedController {
   constructor(private readonly seed: SeedService) {}
 
@@ -725,7 +728,7 @@ export class SeedController {
 
 // ============ Scenario Harness Controller (v28_ops_bundle) ============
 @Controller('icrabot/v28/scenarios')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard) // F02-C B-4 (owner kararı 31.10.2026): VIEWER yazamaz (GET'ler açık; containment bayrakları değişmez)
 export class ScenarioHarnessController {
   constructor(private readonly harness: ScenarioHarnessService) {}
 
@@ -783,7 +786,7 @@ export class ScenarioHarnessController {
 
 // ============ Action Feedback Controller (v28_policy_feedback) ============
 @Controller('icrabot/v28/feedback')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard) // F02-C B-4 (owner kararı 31.10.2026): VIEWER yazamaz (GET'ler açık; containment bayrakları değişmez)
 export class ActionFeedbackController {
   constructor(private readonly feedback: ActionFeedbackService) {}
 

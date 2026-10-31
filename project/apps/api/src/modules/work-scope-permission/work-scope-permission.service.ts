@@ -7,6 +7,7 @@ import { AuditService } from '../audit/audit.service';
 // F02-B görünürlük: liste servisleriyle AYNI bayrak okuyucuları (saf fonksiyonlar; Nest modülü bağımlılığı değil)
 import { EXPENSE_VIEW_ALL_KEY, isExpenseViewScopeEnabled } from '../expense-request/expense-view-scope';
 import { TASK_VIEW_ALL_KEY, isTaskViewScopeEnabled } from '../task/task-view-scope';
+import { isApprovalIdentityProofRequired } from '../../common/approval-identity';
 import {
   WORK_SCOPE_EFFECTS,
   WORK_SCOPE_PERSON_TYPES,
@@ -36,7 +37,8 @@ type Db = Prisma.TransactionClient | PrismaService;
 /** F02-B görünürlük (owner ek talimatı 30.10.2026): bir alanda aktöre ŞU AN uygulanan liste kapsamı. */
 export type WorkScopeViewMode = 'OFF' | 'TENANT' | 'BOUND';
 export interface WorkScopeAreaView { flagEnabled: boolean; resolution: WorkScopeResolution; mode: WorkScopeViewMode }
-export interface WorkScopeViewState { expenses: WorkScopeAreaView; tasks: WorkScopeAreaView }
+/** F02 yayın ölçümü (owner 31.10.2026 madde 3): süreç içi ETKİN bayrak değeri — K-A1 kimlik bayrağı da aynı salt okuma uçtan (yalnız boolean). */
+export interface WorkScopeViewState { expenses: WorkScopeAreaView; tasks: WorkScopeAreaView; approvalIdentity: { flagEnabled: boolean } }
 
 /**
  * F02-B-1 — görev / masraf "büro geneli görünüm" izinleri (PermissionGrant GLOBAL). Bildirim geçmişi izni servisiyle AYNI
@@ -88,7 +90,8 @@ export class WorkScopePermissionService {
       area(isExpenseViewScopeEnabled(env), EXPENSE_VIEW_ALL_KEY),
       area(isTaskViewScopeEnabled(env), TASK_VIEW_ALL_KEY),
     ]);
-    return { expenses, tasks };
+    // Kimlik bayrağı: onay motorunun kullandığı AYNI okuyucu (common/approval-identity) → ekran/ölçüm ↔ yürütme yolu tutarlı; env değeri dökülmez.
+    return { expenses, tasks, approvalIdentity: { flagEnabled: isApprovalIdentityProofRequired(env) } };
   }
 
   /** Caller: controller GET — ADMIN (güncel DB rolü); kişi kartı → bağlı hesap → anahtar başına etkin durum. */
