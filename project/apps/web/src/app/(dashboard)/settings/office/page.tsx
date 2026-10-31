@@ -14,6 +14,7 @@ import { useKeyedSubmitLock } from "@/lib/use-submit-lock";
 import { SettingsSection, WorkbenchHeader, SettingsDrawer, CollectionHeader } from "@/components/settings/settings-shell";
 import { PersonAccessInviteCard } from "@/components/settings/person-access-invite-card";
 import { WorkScopePermissionCard } from "@/components/settings/work-scope-permission-card"; // F02-B-1: büro geneli görünüm izinleri (ADMIN)
+import { AccountCardLinkCard } from "@/components/settings/account-card-link-card"; // F02 K-A1 B-1: kartsız hesabı karta bağlama (ADMIN)
 import { PasswordInput } from "@/components/ui/PasswordInput";
 import { LawyerDefaultPermissionsBadge, LawyerDefaultPermissionsStatusBlock } from "@/components/settings/lawyer-default-permissions-status";
 import {
@@ -2126,6 +2127,7 @@ function LawyerModal({ lawyer, permissionStatus = null, onSave, onClose, saving 
               formDirty={isLawyerDirty}
             />
           )}
+          {lawyer?.id && <AccountCardLinkCard personType="lawyer" personId={lawyer.id} personUserId={lawyer.userId ?? null} formDirty={isLawyerDirty} />}
           {lawyer?.id && <WorkScopePermissionCard personType="lawyer" personId={lawyer.id} formDirty={isLawyerDirty} />}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="px-3 py-1 border rounded">İptal</button>
@@ -2291,6 +2293,7 @@ function StaffModal({ staff, onSave, onClose, saving }: { staff: any; onSave: (d
               formDirty={isStaffDirty}
             />
           )}
+          {staff?.id && <AccountCardLinkCard personType="staff" personId={staff.id} personUserId={staff.userId ?? null} formDirty={isStaffDirty} />}
           {staff?.id && <WorkScopePermissionCard personType="staff" personId={staff.id} formDirty={isStaffDirty} />}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="px-3 py-1 border rounded">İptal</button>
