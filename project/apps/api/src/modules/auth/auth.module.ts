@@ -12,6 +12,9 @@ import { UserInviteService } from "./invite/user-invite.service";
 import { UserInviteController } from "./invite/user-invite.controller";
 import { PasswordResetService } from "./password-reset/password-reset.service";
 import { PasswordResetController } from "./password-reset/password-reset.controller";
+// F02 K-A1 B-1 (owner kararı 31.10.2026): kartsız hesabı kişi kartına bağlama (ADMIN; dar ürün ucu; yeni kimlik mimarisi yok).
+import { AccountCardLinkService } from "./account-card-link/account-card-link.service";
+import { AccountCardLinkController } from "./account-card-link/account-card-link.controller";
 
 @Module({
   imports: [
@@ -32,8 +35,8 @@ import { PasswordResetController } from "./password-reset/password-reset.control
     // AuditService global (AuditModule @Global), ConfigService global → ek import gerekmez.
     NotificationModule,
   ],
-  controllers: [AuthController, UserInviteController, PasswordResetController],
-  providers: [AuthService, JwtStrategy, UserInviteService, PasswordResetService],
+  controllers: [AuthController, UserInviteController, PasswordResetController, AccountCardLinkController],
+  providers: [AuthService, JwtStrategy, UserInviteService, PasswordResetService, AccountCardLinkService],
   exports: [AuthService],
 })
 export class AuthModule {}

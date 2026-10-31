@@ -49,6 +49,8 @@ src/modules/auth/guards/__tests__/viewer-write-deny.guard.spec.ts
 #   gercek JWT + Nest HTTP, rotalar controller meta verisinden kesfedilir; servisler stub (DB yok).
 src/modules/auth/guards/__tests__/f02d-j27-viewer-write-deny-consumers.http.spec.ts
 src/modules/auth/invite/__tests__/user-invite.service.spec.ts
+# F02 K-A1 B-1 (31.10.2026): hesabı karta bağlama birim testi
+src/modules/auth/account-card-link/__tests__/account-card-link.service.spec.ts
 src/modules/auth/password-reset/__tests__/password-reset.service.spec.ts
 src/modules/auth/__tests__/security-tenant-runtime-certification.spec.ts
 src/modules/lawyer/__tests__/acting-lawyer-resolver.spec.ts
