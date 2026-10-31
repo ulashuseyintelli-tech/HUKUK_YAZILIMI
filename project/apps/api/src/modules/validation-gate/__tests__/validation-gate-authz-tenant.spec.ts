@@ -30,6 +30,15 @@ describe('CLIENT-SEC-H1 (S3) — Validation Gate auth + tenant', () => {
     });
   });
 
+  describe('F02-C B-5 (owner kararı 31.10.2026): bank-claim-validation kimliksiz DEĞİL', () => {
+    it('validateBankClaimEndpoint metot düzeyi JwtAuthGuard taşır (kimliksiz → 401; saf hesap işareti korunur)', () => {
+      const guards =
+        new Reflector().get<any[]>('__guards__', (ValidationGateController.prototype as any).validateBankClaimEndpoint) || [];
+      expect(guards).toContain(JwtAuthGuard);
+      expect(new Reflector().get<boolean>('allowViewerReadOnlyPost', (ValidationGateController.prototype as any).validateBankClaimEndpoint)).toBe(true);
+    });
+  });
+
   describe('getCaseData tenant-scoped fail-closed (T-03/T-06)', () => {
     it('case load findFirst {id, tenantId}; findUnique KULLANILMAZ; cross-tenant → null', async () => {
       const prisma: any = {

@@ -63,12 +63,18 @@
  * · policy-engine (`action-executed`; `can-perform-action` saf) · client-intake-promotion (rütbe eligibility, rol sormaz) ·
  * client-intake-review (PermissionGrant capability, rol sormaz) → sınıf düzeyi guard. METOT düzeyi: seed (14 yazma; D03/B02R1
  * kilitleri korunur, ViewerWriteDenyGuard AdminGuard'dan ÖNCE), validation-gate (6 rota validateGate → ValidationResult yazar;
- * `bank-claim-validation` kimliksiz saf hesap — işaretli, owner kalemi). KANITLA KAPATILAN (kod değişmez): client / client-address
+ * `bank-claim-validation` saf hesap — işaretli; R08'de JwtAuthGuard, owner B-5). KANITLA KAPATILAN (kod değişmez): client / client-address
  * (OWN-13 D01 servis düzeyi VIEWER DENY — client-*-authorization spec'leri), client-intake-link (`runAuthorizedClientWorkspaceCommand`
  * B03), office-approval (karar sınırı spec'leri), scheduler (5 POST'un hepsi J-26 `runManual` → `decideManualSchedulerRun` kapısından;
  * VIEWER 403 VIEWER_DENIED — `scheduler-manual-run-boundary` KABUL-1c; sınıf guard'ı o sözleşmeyi gölgeleyeceği için EKLENMEDİ),
  * related-lawsuits ve stage-trigger (servis yan etki 0), error-log (AdminGuard),
  * calc-preview/* (kendi guard modeli), user me/password (öz-servis), auth / portal (kendi kapıları).
+ *
+ * R08 (F02-C owner kararları 31.10.2026 — B-4 v28, B-5 bank-claim): v28-engine yazma yüzeyleri (events ingest 2 · facts 8 · outbox 5 ·
+ * rules 6 · compute 1 (saf; compute-registry yan etki 0) · seed 2 · scenarios 3 · feedback callback 1) sınıf düzeyi ViewerWriteDenyGuard —
+ * JwtAuthGuard'dan SONRA, ICRABOT_V28_* containment guard'larından ÖNCE (VIEWER ret kodu VIEWER_WRITE_DENIED; containment bayrakları
+ * KAPALI kalır, bu PR açmaz; `v28-surface-containment.spec` değişmez). GET-only timeline / runs / actions DOKUNULMAZ. validation-gate
+ * `bank-claim-validation` metot düzeyi JwtAuthGuard (kimliksiz 401; saf işareti korunur — web `lib/api/validation.ts` JWT'li apiClient).
  *
  * Kapsam dışı (DEĞİŞMEZ): user `me/password` (öz-servis), auth ve portal KULLANICI rotaları, office/lawyer/staff (zaten
  * OfficeF01AuthorizationGuard), client.controller ve client-address (zaten servis düzeyi VIEWER DENY). Envanterdeki öteki
@@ -211,6 +217,20 @@ import { UiMapRecorderService } from '../../../icrabot/recorder/uimap-recorder.s
 import { SelectorHealthService } from '../../../icrabot/recorder/selector-health.service';
 import { ApprovalWorkflowController } from '../../../icrabot/enterprise/enterprise.controller';
 import { ApprovalWorkflowService } from '../../../icrabot/enterprise/approval-workflow.service';
+// R08 (F02-C B-4): v28-engine yazma yüzeyleri (containment bayrakları kapalı; guard'lar gerçek — USER için kodsuz 403, VIEWER için VIEWER_WRITE_DENIED)
+import { ActionFeedbackController, ComputeController, FactStoreController, OutboxController, RulesController, ScenarioHarnessController, SeedController as V28SeedController, UyapEventController } from '../../../icrabot/v28-engine/v28-engine.controller';
+import { ActionFeedbackService } from '../../../icrabot/v28-engine/action-feedback.service';
+import { ActionHandlerService } from '../../../icrabot/v28-engine/action-handler.service';
+import { ComputeRegistryService } from '../../../icrabot/v28-engine/compute-registry.service';
+import { EngineRunService } from '../../../icrabot/v28-engine/engine-run.service';
+import { FactStoreService } from '../../../icrabot/v28-engine/factstore.service';
+import { OutboxService } from '../../../icrabot/v28-engine/outbox.service';
+import { RuleLoaderService } from '../../../icrabot/v28-engine/rule-loader.service';
+import { ScenarioHarnessService } from '../../../icrabot/v28-engine/scenario-harness.service';
+import { SeedService as V28SeedService } from '../../../icrabot/v28-engine/seed.service';
+import { TimelineService } from '../../../icrabot/v28-engine/timeline.service';
+import { UyapEventIngestService } from '../../../icrabot/v28-engine/uyap-event-ingest.service';
+import { IcrabotV28DevSurfaceGuard, IcrabotV28ExternalIngestGuard, IcrabotV28UnsafeMutationGuard } from '../../../icrabot/v28-engine/guards/v28-surface.guard';
 // R07 (F02-D-2 dilim 5): kalan operasyonel yollar
 import { AddressDiscoveryController } from '../../../address-discovery/address-discovery.controller';
 import { AddressDiscoveryService } from '../../../address-discovery/address-discovery.service';
@@ -335,6 +355,8 @@ const CLASS_GUARDED = [
   AddressController, DebtorController, ThirdPartyController, ExecutionOfficeController, ExpenseBlockReasonController, GroupController, CaseGroupController,
   LegalTimeShadowController, LookupController, RiskController, SummaryEngineController, PolicyEngineController,
   ClientIntakePromotionController, ClientIntakeReviewController,
+  // R08 (F02-C B-4, owner kararı 31.10.2026): v28-engine yazma yüzeyleri (containment bayrakları KAPALI kalır; GET-only timeline / runs / actions dışarıda)
+  UyapEventController, FactStoreController, OutboxController, RulesController, ComputeController, V28SeedController, ScenarioHarnessController, ActionFeedbackController,
 ];
 /** R02: METOT düzeyi ViewerWriteDenyGuard beklenen handler'lar (sınıf düzeyi kapı ölçülmüş sözleşmeleri değiştirirdi). */
 const METHOD_GUARDED: ReadonlyArray<readonly [Function, string]> = [
@@ -518,6 +540,19 @@ describe('F02-D / J-27: VIEWER yazma reddi — consumer uygulaması (gerçek JWT
         { provide: SeedService, useValue: stubService('SeedService') },
         { provide: ValidationGateService, useValue: stubService('ValidationGateService') },
         { provide: AuditService, useValue: stubService('AuditService') },
+        // R08 (F02-C B-4) v28 servisleri (stub; UYAP olayı / outbox / kural / tohum yazımı YOK) + containment guard'ları (GERÇEK; bayraklar kapalı)
+        { provide: UyapEventIngestService, useValue: stubService('UyapEventIngestService') },
+        { provide: FactStoreService, useValue: stubService('FactStoreService') },
+        { provide: TimelineService, useValue: stubService('TimelineService') },
+        { provide: EngineRunService, useValue: stubService('EngineRunService') },
+        { provide: OutboxService, useValue: stubService('OutboxService') },
+        { provide: ActionHandlerService, useValue: stubService('ActionHandlerService') },
+        { provide: RuleLoaderService, useValue: stubService('RuleLoaderService') },
+        { provide: ComputeRegistryService, useValue: stubService('ComputeRegistryService') },
+        { provide: V28SeedService, useValue: stubService('V28SeedService') },
+        { provide: ScenarioHarnessService, useValue: stubService('ScenarioHarnessService') },
+        { provide: ActionFeedbackService, useValue: stubService('ActionFeedbackService') },
+        IcrabotV28DevSurfaceGuard, IcrabotV28ExternalIngestGuard, IcrabotV28UnsafeMutationGuard,
       ],
     }).compile();
     app = module.createNestApplication();
@@ -538,15 +573,17 @@ describe('F02-D / J-27: VIEWER yazma reddi — consumer uygulaması (gerçek JWT
   const call = (r: Route, key: ActorKey) =>
     request(app.getHttpServer())[VERB[r.method]](r.url).set('Authorization', bearer(key)).send({});
 
-  it('keşif kör değil: yazma rotası ≥ 270, GET ≥ 225, saf POST = 30 (R01 4 + template-engine 10 + R05 11 + R06 2 + R07 3)', () => {
-    expect(WRITE_ROUTES.length).toBeGreaterThanOrEqual(270);
-    expect(GET_ROUTES.length).toBeGreaterThanOrEqual(225);
+  it('keşif kör değil: yazma rotası ≥ 300, GET ≥ 250, saf POST = 31 (R01 4 + template-engine 10 + R05 11 + R06 2 + R07 3 + R08 1)', () => {
+    expect(WRITE_ROUTES.length).toBeGreaterThanOrEqual(300);
+    expect(GET_ROUTES.length).toBeGreaterThanOrEqual(250);
     expect(READ_ONLY_POSTS.map((r) => `${r.ctrl}.${r.handler}`).sort()).toEqual([
       'BundleController.validateBundle', // R06: paket içerik doğrulaması (saf)
       'CaseInstrumentController.analyzeChain',
       // R05: saf hesap / önizleme POST'ları (servis yan etki haritası: ilgili metotlarda yazma / denetim / dış çağrı yok)
       'ClaimEngineController.calculatePenalty', 'ClaimEngineController.classifyDocument', 'ClaimEngineController.generateClaimItems',
-      'ClaimEngineController.routeCase', 'ClaimEngineController.validateCase', 'CostPackageController.computeExpenseRequest',
+      'ClaimEngineController.routeCase', 'ClaimEngineController.validateCase',
+      'ComputeController.runEngine', // R08: v28 parametrik hesap motoru (saf; compute-registry yan etki 0 — DB yazma / denetim / dış çağrı yok)
+      'CostPackageController.computeExpenseRequest',
       'DebtorController.checkDuplicate', // R07: mükerrer borçlu araması (saf)
       'DocumentController.previewTemplate', 'IcrabotController.determineChannel', 'InterestEngineController.preview',
       'LimitationEngineController.checkLimitation', 'LimitationEngineController.recommendEnforcement',
@@ -557,7 +594,7 @@ describe('F02-D / J-27: VIEWER yazma reddi — consumer uygulaması (gerçek JWT
       'TemplateEngineController.downloadTakipTalebiXml', 'TemplateEngineController.generateHacizTutanagi', 'TemplateEngineController.generateIcraEmri',
       'TemplateEngineController.generateOdemeEmri', 'TemplateEngineController.generateTakipTalebi', 'TemplateEngineController.generateTakipTalebiUdf',
       'TemplateEngineController.previewTakipTalebi',
-      'ValidationGateController.validateBankClaimEndpoint', // R07: kimliksiz saf hesap (owner kalemi)
+      'ValidationGateController.validateBankClaimEndpoint', // R07: saf hesap; R08: metot düzeyi JwtAuthGuard (owner B-5)
     ]);
   });
 
