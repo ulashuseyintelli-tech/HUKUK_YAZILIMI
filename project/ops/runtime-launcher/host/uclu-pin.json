@@ -1,0 +1,20 @@
+{
+  "ad": "F02-K1",
+  "aciklama": "Kurulu baslatici uclusu. Host, baslatici ozetlerini derleme zamani sabiti olarak icerir; uclu birlikte degisir, karisik durum exit 104 ile baslamaz.",
+  "api": "51681B6D6FE19F43A10A831D5695107F5F01226EF0A0A1EBA314A8693493BCEB",
+  "web": "898F7E5B5C2754419F10AAB62CAC0999002D0DD9F1F5E890172316B109281240",
+  "host": "D1E89E092F18EC40ACDC76EDFAAB4378C70F5710AF995B00552680BFB70754A0",
+  "onceki": {
+    "ad": "P1-SONRASI",
+    "api": "DDCCD09157E0AAF209AB38316A33815A0298FFACBC9006ED62F35F137F86219C",
+    "web": "F39F7A54BC51972B94FD0CF13A08F4E1AB82822A528EDAD58FC8F2318C1F59E0",
+    "host": "27099BDF66C83A44B3061D65AE2DAF24EADB523EE4F464179C2F53BB6C78DEAB"
+  },
+  "hostDerleme": {
+    "kaynak": "hukuk-task-host.gen.cs",
+    "derleyiciSha256": "ECA02E6B15CDE93009A59A3D129D5A77FB5008F2E1CF62CF573B6737C747ECC3",
+    "derleyiciSurum": "14.8.10001",
+    "arguman": "/nologo /target:winexe /platform:x64 /optimize+",
+    "not": ".NET Framework csc bayt-tekrar-uretilebilir degildir: host kimligi tam cikti ozetidir. Ayni kaynak yeniden derlenirse ozet degisir; yeni ozet yeni pin ve yayin betigi degisikligi demektir."
+  }
+}

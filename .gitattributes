@@ -11,3 +11,7 @@ project/apps/api/src/modules/case/inventory/__tests__/fixtures/rich-interest-uya
 project/docs/governance/receivable-legal-subtype-registry-cek-r2-draft.json text eol=lf
 project/docs/governance/receivable-legal-basis-release-r2-cek-draft*.json text eol=lf
 project/docs/governance/receivable-cek-legal-basis-r2-decision-pack-draft.md text eol=lf
+
+# Baslatici + host kaynagi: SHA-256 pinli; kurulu uclu ile bayt-kararli kalir (donusum YOK)
+project/ops/runtime-launcher/start-*.ps1 -text
+project/ops/runtime-launcher/host/hukuk-task-host.gen.cs -text

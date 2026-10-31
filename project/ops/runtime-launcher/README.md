@@ -1,9 +1,39 @@
-# runtime-launcher — HukukPlatform-API başlatıcısı (repo kaynağı)
+# runtime-launcher — HukukPlatform başlatıcıları ve host pin kaynağı
 
-**Durum: MAIN'DE / CANLIDA DEĞİL.** Bu dizindeki `start-api.ps1` canlıda çalışan dosya değildir.
-Canlı başlatıcı `C:\Ops\hukuk\bin\start-api.ps1` olarak durur ve `hukuk-task-host.exe` bu dosyanın
-SHA-256 değerini derleme sırasında gömülü pin olarak doğrular. Bu dosyanın canlıya alınması için
-ayrı bir yayın üretimi, host'un yeni pinle yeniden derlenmesi ve owner onaylı cutover gerekir.
+**Durum:** Bu dizin kurulu üçlü `F02-K1` ile bayt bayt aynıdır (`host/uclu-pin.json`). Üçlü 2026-10-31 başlatıcı penceresinde canlıya alındı. Canlı dosyalar `C:\Ops\hukuk\bin\` altındadır; bu dizinden otomatik kurulum yoktur. Değişiklik ayrı üretim, yeni pin ve owner onaylı pencere ister.
+
+| Dosya | Görev |
+|---|---|
+| `start-api.ps1`, `start-web.ps1` | Görev başlatıcıları |
+| `host/hukuk-task-host.gen.cs` | Host kaynağı. Başlatıcı özetlerini `SHA_PAPI` ve `SHA_PWEB` derleme zamanı sabitleriyle doğrular |
+| `host/uclu-pin.json` | Kurulu üçlü, önceki üçlü, derleyici kimliği |
+| `host/pin-uret.ps1` | Pin denetimi ve üretimi. `C:\Ops` altına yazmaz |
+
+## Üçlü ve pin kuralı
+
+- Host, başlatıcı özetlerini içine gömer. Başlatıcı değişirse host yeniden derlenir. Karışık durum `SCRIPT_HASH_MISMATCH` çıkış 104 ile başlamaz.
+- `.NET Framework csc` bayt-tekrar-üretilebilir değildir. Host kimliği tam çıktı özetidir; aynı kaynak yeniden derlenirse özet değişir.
+- Başlatıcıyı değiştirince sıra: `host/pin-uret.ps1 -CiktiDizini <boş dizin>` → `uclu-pin.json` → yayın betiği üçlü tablosu → prova → owner onaylı pencere. Sessiz pin güncellemesi yoktur.
+
+```bash
+pwsh -NoProfile -File project/ops/runtime-launcher/host/pin-uret.ps1
+```
+
+## Dinleyici sözleşmesi (F02-K1)
+
+Ölçüm: incelenen bağlamlarda durum alanına bakan soket sorguları dinleyen süreci kaçırdı ve yanlış pozitif verdi. Kök neden bilinmiyor. Başlatıcı bu nedenle `GetExtendedTcpTable` + `TCP_TABLE_OWNER_PID_LISTENER` kullanır ve satırın durum alanına bakmaz.
+
+| Durum | Anlam | Davranış |
+|---|---|---|
+| `EXACT` | Çocuk beklenen her adres ailesinde tek sahip | `STARTED` |
+| `YOK` | Sorgu başarılı, satır yok | Beklemeye devam; süre sonunda ardışık kesin ölçümle çıkış 16 |
+| `YABANCI` | Portta başka süreç | Kabul edilmez; yabancıya dokunulmaz; süre sonunda kendi çocuğu sonlanır, çıkış 16 |
+| `KISMI` | Çocuk tek ailede | `STARTED` yok; çocuk sonlandırılmaz |
+| `BELIRSIZ` | Sorgu hatası | "Dinleyici yok" sayılmaz; çocuk sonlandırılmaz; kilit ve host takibi sürer |
+
+- Spawn öncesinde sorgu üç denemede de belirsizse çocuk başlatılmaz, çıkış 26. Görev PT15M yeniden dener.
+- Belirsizlikten çıkış yalnız `EXACT` ya da ardışık kesin ölçümle olur (`BindUncertainDefiniteSamples`, varsayılan 36 × 5 sn).
+- Kanıt düzeyi: tek makine, canlıda tek başlatma örneği. **Oturum açma ve yeniden başlatma yolu henüz gözlenmedi.**
 
 ## Taban
 
@@ -51,6 +81,7 @@ Bu yamanın kapsamı dışında kalanlar (ayrı ölçüm/karar):
 
 ## Test
 
-`project/apps/api/src/scripts/__tests__/ops-runtime-launcher-db-ready-retry.spec.ts` — başlatıcının
-gerçek fonksiyonlarını pwsh ile izole geçici dizinde koşar: sahte yardımcı ve sahte giriş kullanılır.
-CI manifesti: `apps/api/ci-manifests/pure/platform-scripts-shared.txt`. pwsh yoksa test düşer.
+- `project/apps/api/src/scripts/__tests__/ops-runtime-launcher-db-ready-retry.spec.ts`: DB yeniden deneme yolu. Başlatıcının gerçek fonksiyonlarını pwsh ile izole geçici dizinde koşar; sahte yardımcı ve sahte giriş kullanılır.
+- `project/apps/api/src/scripts/__tests__/ops-runtime-launcher-listener-contract.spec.ts`: dinleyici sözleşmesi, iki başlatıcı, pin tutarlılığı. Gerçek node çocuğu; tek gölge ham Windows sorgusu.
+
+CI manifesti: `apps/api/ci-manifests/pure/platform-scripts-shared.txt`. pwsh yoksa testler düşer.
