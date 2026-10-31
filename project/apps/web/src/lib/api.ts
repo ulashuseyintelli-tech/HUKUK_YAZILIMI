@@ -120,6 +120,10 @@ export interface WorkScopePermissionState {
   permissions: Array<{ key: WorkScopeViewAllKey; effect: WorkScopeResolution; validUntil: string | null }>;
 }
 
+// F02 K-A1 B-1 (owner kararı 31.10.2026): kartsız hesabı kişi kartına bağlama (ADMIN; yeni kimlik mimarisi yok; e-posta yok).
+export interface UnlinkedAccountRow { id: string; email: string; name: string; surname: string; role: string; pendingInvite: boolean }
+export interface AccountCardLinkResult { userId: string; cardType: "LAWYER" | "STAFF"; cardId: string; identityProofReady: boolean }
+
 export interface ClientOperatingSnapshotResponse {
   data: ClientOperatingSnapshot;
 }
@@ -400,6 +404,16 @@ class ApiClient {
       `/auth/invites/${inviteId}/revoke`,
       { method: "POST" }
     );
+  }
+
+  // F02 K-A1 B-1 (owner kararı 31.10.2026): mevcut kartsız hesabı kişi kartına bağla (ADMIN). Backend: lawyerId XOR staffMemberId; aynı kiracı;
+  // hesap ve kart aktif + bağsız; audit; hesabın ad / soyad / rol / parola DEĞİŞMEZ; e-posta GÖNDERİLMEZ.
+  async listUnlinkedAccounts() {
+    return this.request<UnlinkedAccountRow[]>("/auth/account-card-links/unlinked-users");
+  }
+
+  async linkAccountToCard(data: { userId: string; lawyerId?: string; staffMemberId?: string }) {
+    return this.request<AccountCardLinkResult>("/auth/account-card-links", { method: "POST", body: JSON.stringify(data) });
   }
 
   // F02-B-1 (owner kararı 29–30.10.2026): görev / masraf "büro geneli görünüm" izinleri (PermissionGrant GLOBAL;
