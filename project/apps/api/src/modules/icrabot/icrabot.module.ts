@@ -64,12 +64,8 @@ import { ApprovalWorkflowService } from './enterprise/approval-workflow.service'
 import { JobLeasingService } from './enterprise/job-leasing.service';
 import { BackpressureService } from './enterprise/backpressure.service';
 import { PlanLimitsService } from './enterprise/plan-limits.service';
-import {
-  AuditChainController,
-  ApprovalWorkflowController,
-  BackpressureController,
-  PlanLimitsController,
-} from './enterprise/enterprise.controller';
+// F02-C B-2 (owner karari 31.10.2026): AuditChain / Backpressure / PlanLimits controller'lari public HTTP yuzeyinden KALDIRILDI; servisler provider.
+import { ApprovalWorkflowController } from './enterprise/enterprise.controller';
 
 /**
  * ICRABOT MODULE
@@ -169,12 +165,11 @@ import {
     WeeklyExportController,
     // v38: Enterprise Layer
     // PiiMaskingController: R02-F09D / I02 ile public HTTP yuzeyinden kaldirildi.
-    AuditChainController,
+    // AuditChainController / BackpressureController / PlanLimitsController: F02-C B-2 (31.10.2026) ile public HTTP yuzeyinden kaldirildi;
+    //   AuditChainService / BackpressureService / PlanLimitsService provider olarak KORUNUR (dormant internal capability).
     ApprovalWorkflowController,
     // JobLeasingController: R02-F09C / I03 ile public HTTP yuzeyinden kaldirildi.
     // JobLeasingService provider olarak KORUNUR (dormant internal capability).
-    BackpressureController,
-    PlanLimitsController,
   ],
   providers: [
     RecipeService,

@@ -22,10 +22,7 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 
-import {
-  ApprovalWorkflowController,
-  AuditChainController,
-} from '../enterprise.controller';
+import { ApprovalWorkflowController } from '../enterprise.controller';
 import { ApprovalWorkflowService } from '../approval-workflow.service';
 import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
 import {
@@ -76,15 +73,12 @@ describe('I01A · authentication ve guard kapsami', () => {
     expect(guards).toContain(JwtAuthGuard);
   });
 
-  it('guard F09B controller sinifina SIZMAZ (kapsam disi yuzey degismedi)', () => {
-    // Approval guard'i yalniz kendi sinifina uygulanir. F09B (audit) AYRI bir siniftir
-    // ve davranisi bilerek DEGISTIRILMEMISTIR.
-    // F09D (PII) I02 ile, F09C (leasing) I03 ile HTTP yuzeyinden tamamen kaldirildi;
-    // asagidaki containment bloklari bunu ayrica ve daha guclu bicimde dogrular.
-    for (const cls of [AuditChainController]) {
-      const guards = Reflect.getMetadata('__guards__', cls) || [];
-      expect(guards).toHaveLength(0);
-    }
+  it('F09B audit, backpressure ve plan HTTP yuzeyleri KALDIRILDI (F02-C B-2, owner karari 31.10.2026); runtime export yalniz onay akisi', () => {
+    // Onceden: AuditChainController guard'siz AYRI sinifti (I01A bilincli). F02-C B-2 ile uc guard'siz, kiraciyi govde/URL'den okuyan
+    // yuzey (audit / backpressure / plan) PII (I02) ve leasing (I03) ile AYNI yontemle public HTTP'den kaldirildi; servisler dahili kalir.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const exported = require('../enterprise.controller');
+    expect(Object.keys(exported).sort()).toEqual(['ApprovalWorkflowController']);
   });
 });
 
@@ -436,8 +430,17 @@ describe('I02 · PII teshis HTTP yuzeyi kaldirildi', () => {
     expect(PII_SERVICE_SRC).toMatch(/shouldMask\(/);
   });
 
-  it('F09B audit yuzeyi HALA MEVCUT (kapsam disi, dokunulmadi)', () => {
-    expect(CONTROLLER_SRC).toMatch(/@Controller\('icrabot\/enterprise\/audit'\)/);
+  it('F09B audit / backpressure / plan yuzeyleri ARTIK MEVCUT DEGIL (F02-C B-2 ile kaldirildi)', () => {
+    for (const p of ['audit', 'backpressure', 'plan']) {
+      expect(CONTROLLER_SRC).not.toMatch(new RegExp("@Controller\\('icrabot\\/enterprise\\/" + p + "'\\)"));
+    }
+    for (const n of ['AuditChainController', 'BackpressureController', 'PlanLimitsController']) {
+      expect(CONTROLLER_SRC).not.toMatch(new RegExp('export class ' + n + '\\b'));
+      expect(BARREL_SRC).not.toMatch(new RegExp('\\b' + n + '\\b'));
+      expect(MODULE_SRC).not.toMatch(new RegExp('^\\s*' + n + ',\\s*$', 'm'));
+    }
+    // servisler DEGISTIRILMEDI ve barrel'da dahili olarak kalir
+    for (const sv of ['AuditChainService', 'BackpressureService', 'PlanLimitsService']) expect(BARREL_SRC).toMatch(new RegExp('\\b' + sv + '\\b'));
   });
 
   it('F09C leasing yuzeyi ARTIK MEVCUT DEGIL (I03 ile kaldirildi)', () => {
@@ -532,11 +535,13 @@ describe('I03 · job leasing HTTP yuzeyi kaldirildi (composition tabanli)', () =
     expect(guards).toContain(JwtAuthGuard);
   });
 
-  it('F09B audit controller HALA kayitli ve davranisi DEGISMEDI', () => {
-    expect(moduleControllers).toContain(AuditChainController);
-    expect(controllerPaths).toContain('icrabot/enterprise/audit');
-    const guards = Reflect.getMetadata('__guards__', AuditChainController) || [];
-    expect(guards).toHaveLength(0);
+  it('F09B audit / backpressure / plan controller\'lari modulde KAYITLI DEGIL; servisleri provider olarak KALIYOR (F02-C B-2)', () => {
+    const names = moduleControllers.map((c) => c.name);
+    for (const n of ['AuditChainController', 'BackpressureController', 'PlanLimitsController']) expect(names).not.toContain(n);
+    for (const p of ['icrabot/enterprise/audit', 'icrabot/enterprise/backpressure', 'icrabot/enterprise/plan']) expect(controllerPaths).not.toContain(p);
+    const providers: any[] = Reflect.getMetadata('providers', IcrabotModule) || [];
+    const pn = providers.map((p) => p?.name ?? p);
+    for (const sv of ['AuditChainService', 'BackpressureService', 'PlanLimitsService']) expect(pn).toContain(sv);
   });
 
   it('F09D PII controller HALA kayitli DEGIL (I02 geri alinmadi)', () => {
