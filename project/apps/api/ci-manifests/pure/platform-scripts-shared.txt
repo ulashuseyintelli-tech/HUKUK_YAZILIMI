@@ -916,3 +916,7 @@ src/modules/policy-engine/__tests__/kvkk-compliance.spec.ts
 #   (servis baglantisi; saf yardimci testleri ve belge govdesi karakterizasyonu gecer). Kardes template-engine spec'leri
 #   bu manifestte.
 src/modules/template-engine/__tests__/template-totals-currency.spec.ts
+
+# F02-K1 baslatici dinleyici sozlesmesi (start-api / start-web / host pin): LISTENER sinifi + port + adres ailesi + sahip pid; sorgu hatasi BELIRSIZ;
+#   belirsizlik tek basina cocugu sonlandirmaz; kaynak = kurulu uclu. Gercek fonksiyonlar + gercek node cocugu, izole dizin; tek golge ham Windows sorgusu. pwsh yoksa DUSER.
+src/scripts/__tests__/ops-runtime-launcher-listener-contract.spec.ts

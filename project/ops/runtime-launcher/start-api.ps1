@@ -14,6 +14,8 @@
 #               DbAttempts butcesi icinde yeniden denenir. Kodlu 23 (or. P1003) ve
 #               21/22/24/25 eskisi gibi HEMEN doner. Anahtarlar yoksa davranis R03 ile ayni.
 # Kodlama     : saf ASCII. Dot-source edildiginde main KOSMAZ.
+# F02-K1 delta: dinleyici tespiti LISTENER sinifi + port + adres ailesi + sahip pid; sorgu hatasi BELIRSIZ ('dinleyici yok' DEGIL);
+#               belirsizlik tek basina cocugu sonlandirmaz (Wait-HLBindUncertain); kesin ardisik olcumle PORT_BIND_TIMEOUT aynen. Host ayni anda yeniden derlenir (derleme-zamani pin).
 # Exit kodlari:
 #   0  = child-exit-0 / ALREADY_RUNNING / LAUNCHER_BUSY
 #   10 = DB_NOT_READY (bounded 24 deneme x 5 sn)
@@ -23,6 +25,7 @@
 #   18 = HELPER_INVALID          19 = DB_AUTH_FAILED
 #   23 = DB_PROBE_UNCLASSIFIED (kodlu 23 hemen; kodsuz 23 sinirli yeniden deneme sonrasi)
 #   20 = CHILD_CLEANUP_FAILED (bind-timeout sonrasi exact-owned cocuk sonlandirilamadi)
+#   26 = LISTENER_QUERY_UNCERTAIN (spawn oncesi dinleyici sorgusu belirsiz; cocuk baslatilmadi)
 #   diger = child (node) exit kodu AYNEN aktarilir.
 # =============================================================================
 
@@ -54,6 +57,9 @@ function Get-HLApiDefaultConfig {
         DbUnclassifiedRetryMax  = 12
         DbUnclassifiedWindowSec = 90
         BindTimeoutSec = 180
+        ListenFamilies = @('V4', 'V6')
+        BindUncertainPollSec = 5
+        BindUncertainDefiniteSamples = 36
         LogDir         = 'C:\Ops\hukuk\logs\api'
         LockPath       = 'C:\Ops\hukuk\logs\api\launch.lock'
         MaxChildLogs   = 8
@@ -106,11 +112,124 @@ function Test-HLNodeBinary {
 
 # --- port identity -------------------------------------------------------------
 
-function Get-HLListenerPids {
+# F02-K1: dinleyici tespiti GetExtendedTcpTable + TCP_TABLE_OWNER_PID_LISTENER (sinif 3). Satirin durum alanina BAKILMAZ.
+#   Neden (olculdu 31.10.2026, incelenen baglamlarda): durum alanina bakan sorgular (-State Listen, netstat, .NET, ham ALL) dinleyen cocugu kacirdi ve yanlis pozitif verdi;
+#   bu sinif mevcut senaryolarda dogru calisti. Bu, sorgunun kok nedeni hakkinda bir hukum DEGILDIR. Sorgu hatasi 'dinleyici yok' SAYILMAZ: BELIRSIZ uretir.
+function Initialize-HLListenerTable {
+    if ($null -ne ('HukukLauncher.ListenerTable' -as [type])) { return }
+    Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+namespace HukukLauncher {
+  public static class ListenerTable {
+    [DllImport("iphlpapi.dll")]
+    static extern uint GetExtendedTcpTable(IntPtr table, ref int size, bool order, int af, int tableClass, uint reserved);
+    const int TCP_TABLE_OWNER_PID_LISTENER = 3;
+    const uint ERROR_INSUFFICIENT_BUFFER = 122;
+    public static int[] Read(int af, int port) {
+      if (af != 2 && af != 23) throw new ArgumentException("af");
+      int rowSize = (af == 2) ? 24 : 56, portOfs = (af == 2) ? 8 : 20, pidOfs = (af == 2) ? 20 : 52;
+      int size = 0;
+      GetExtendedTcpTable(IntPtr.Zero, ref size, false, af, TCP_TABLE_OWNER_PID_LISTENER, 0);
+      for (int attempt = 0; attempt < 5; attempt++) {
+        int cap = size + 4096;
+        IntPtr buf = Marshal.AllocHGlobal(cap);
+        try {
+          int got = cap;
+          uint rc = GetExtendedTcpTable(buf, ref got, false, af, TCP_TABLE_OWNER_PID_LISTENER, 0);
+          if (rc == ERROR_INSUFFICIENT_BUFFER) { size = got; continue; }
+          if (rc != 0) throw new InvalidOperationException("GetExtendedTcpTable rc=" + rc);
+          int n = Marshal.ReadInt32(buf);
+          if (n < 0 || 4L + (long)n * rowSize > got) throw new InvalidOperationException("tablo boyutu tutarsiz n=" + n);
+          List<int> pids = new List<int>();
+          for (int i = 0; i < n; i++) {
+            IntPtr row = IntPtr.Add(buf, 4 + i * rowSize);
+            int w = Marshal.ReadInt32(row, portOfs);
+            if ((((w & 0xff) << 8) | ((w >> 8) & 0xff)) == port) pids.Add(Marshal.ReadInt32(row, pidOfs));
+          }
+          return pids.ToArray();
+        } finally { Marshal.FreeHGlobal(buf); }
+      }
+      throw new InvalidOperationException("tablo okunamadi (buyume)");
+    }
+  }
+}
+'@
+}
+
+function Read-HLListenerFamily {
+    # Tek adres ailesi (2 = IPv4, 23 = IPv6): o portu dinleyen sahip pid'ler. Sorgu hatasi FIRLATIR.
+    param([Parameter(Mandatory)][int]$AddressFamily, [Parameter(Mandatory)][int]$Port)
+    Initialize-HLListenerTable
+    return [HukukLauncher.ListenerTable]::Read($AddressFamily, $Port)
+}
+
+function Get-HLListenerProbe {
+    # Sonuc: @{ Ok; V4; V6; Note }. FIRLATMAZ. Ok=$false = BELIRSIZ ('dinleyici yok' DEGIL).
     param([Parameter(Mandatory)][int]$Port)
-    $c = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
-    if ($null -eq $c) { return @() }
-    return @($c.OwningProcess | Sort-Object -Unique)
+    try {
+        $v4 = @(Read-HLListenerFamily -AddressFamily 2 -Port $Port)
+        $v6 = @(Read-HLListenerFamily -AddressFamily 23 -Port $Port)
+        return @{ Ok = $true; V4 = $v4; V6 = $v6; Note = '' }
+    } catch {
+        return @{ Ok = $false; V4 = @(); V6 = @(); Note = ('{0}: {1}' -f $_.Exception.GetType().Name, $_.Exception.Message) }
+    }
+}
+
+function Get-HLBindState {
+    # Sonuc State: EXACT (cocuk beklenen her ailede tek sahip) | KISMI (cocuk bir ailede, digeri bos) | YOK (kesin, satir yok) | YABANCI (baska pid ayni portta; KABUL EDILMEZ) | BELIRSIZ (sorgu hatasi)
+    param([Parameter(Mandatory)][hashtable]$Probe, [Parameter(Mandatory)][int]$ChildPid, [Parameter(Mandatory)][string[]]$Families)
+    if (-not $Probe.Ok) { return @{ State = 'BELIRSIZ'; Detail = [string]$Probe.Note } }
+    $all = @(@($Probe.V4) + @($Probe.V6))
+    $foreign = @($all | Where-Object { $_ -ne $ChildPid } | Sort-Object -Unique)
+    if ($foreign.Count -gt 0) { return @{ State = 'YABANCI'; Detail = ('pid=' + ($foreign -join ',')) } }
+    if ($all.Count -eq 0) { return @{ State = 'YOK'; Detail = '' } }
+    foreach ($fam in $Families) { if (@($Probe[$fam]).Count -eq 0) { return @{ State = 'KISMI'; Detail = ('eksik aile=' + $fam) } } }
+    return @{ State = 'EXACT'; Detail = '' }
+}
+
+function Get-HLPreSpawnListeners {
+    # Spawn oncesi port sahipleri. Sonuc: @{ Ok; Pids; Note }. Belirsiz sorgu 3 x 2 sn yeniden denenir; sonra Ok=$false (cagiran COCUK BASLATMAZ, exit 26; gorev PT15M yeniden dener).
+    param([Parameter(Mandatory)][hashtable]$Cfg)
+    $note = ''
+    for ($i = 1; $i -le 3; $i++) {
+        $q = Get-HLListenerProbe -Port $Cfg.Port
+        if ($q.Ok) { return @{ Ok = $true; Pids = @(@(@($q.V4) + @($q.V6)) | Sort-Object -Unique); Note = '' } }
+        $note = [string]$q.Note
+        if ($i -lt 3) { Start-Sleep -Seconds 2 }
+    }
+    return @{ Ok = $false; Pids = @(); Note = $note }
+}
+
+function Wait-HLBindUncertain {
+    # Bind penceresi kesin olmayan olcumle bitti. Cocuk SONLANDIRILMAZ; sahiplik (Process nesnesi, kilit, host-watchdog, host Job Object) surer; STARTED YAZILMAZ.
+    # Sonuc: BOUND | NOT_BOUND | EXITED | HOST_GONE. NOT_BOUND yalniz ard arda N kesin olcumle (YOK / YABANCI); BELIRSIZ ve KISMI sayaci sifirlar.
+    param([Parameter(Mandatory)][hashtable]$Cfg, [Parameter(Mandatory)]$Proc, [Parameter(Mandatory)][string[]]$Families, [Parameter(Mandatory)][AllowEmptyString()][string]$Reason)
+    $pollSec = $(if ($Cfg.ContainsKey('BindUncertainPollSec')) { [int]$Cfg['BindUncertainPollSec'] } else { 5 })
+    $need = $(if ($Cfg.ContainsKey('BindUncertainDefiniteSamples')) { [int]$Cfg['BindUncertainDefiniteSamples'] } else { 36 })
+    Write-HLLog -Cfg $Cfg -Message ("BIND_UNCERTAIN after {0}s (child pid={1}) last={2} - child kept, no kill on uncertainty, start not confirmed" -f $Cfg.BindTimeoutSec, $Proc.Id, $Reason) | Out-Null
+    $definite = 0; $sw = [System.Diagnostics.Stopwatch]::StartNew(); $nextLog = 300
+    while (-not $Proc.HasExited) {
+        if ($script:HLHostPid -ne 0) {
+            $hp = Get-Process -Id $script:HLHostPid -ErrorAction SilentlyContinue
+            if ($null -eq $hp -or $hp.StartTime -ne $script:HLHostCtime) {
+                Write-HLLog -Cfg $Cfg -Message 'host exited - killing exact-owned child tree (orphan-prevention)' | Out-Null
+                try { $Proc.Kill($true) } catch { }
+                [void]$Proc.WaitForExit(10000)
+                return 'HOST_GONE'
+            }
+        }
+        $bs = Get-HLBindState -Probe (Get-HLListenerProbe -Port $Cfg.Port) -ChildPid $Proc.Id -Families $Families
+        if ($bs.State -eq 'EXACT') { Write-HLLog -Cfg $Cfg -Message ("BIND_UNCERTAIN resolved after {0}s more: EXACT (child pid={1})" -f [int]$sw.Elapsed.TotalSeconds, $Proc.Id) | Out-Null; return 'BOUND' }
+        if ($bs.State -in @('YOK', 'YABANCI')) {
+            $definite++
+            if ($definite -ge $need) { Write-HLLog -Cfg $Cfg -Message ("BIND_UNCERTAIN resolved: NOT_BOUND state={0} {1} samples={2} (child pid={3})" -f $bs.State, $bs.Detail, $definite, $Proc.Id) | Out-Null; return 'NOT_BOUND' }
+        } else { $definite = 0 }
+        if ($sw.Elapsed.TotalSeconds -ge $nextLog) { Write-HLLog -Cfg $Cfg -Message ("BIND_UNCERTAIN continues {0}s state={1} (child pid={2})" -f [int]$sw.Elapsed.TotalSeconds, $bs.State, $Proc.Id) | Out-Null; $nextLog += 300 }
+        [void]$Proc.WaitForExit($pollSec * 1000)
+    }
+    return 'EXITED'
 }
 
 function Get-HLCmdlinePathsNormalized {
@@ -442,6 +561,8 @@ function Start-HLChildAndWait {
 
     $deadline = (Get-Date).AddSeconds($Cfg.BindTimeoutSec)
     $bound = $false
+    $families = $(if ($Cfg.ContainsKey('ListenFamilies')) { [string[]]@($Cfg['ListenFamilies']) } else { [string[]]@('V4', 'V6') })
+    $lastBind = ''; $definite = 0
     while ((Get-Date) -lt $deadline) {
         if ($proc.HasExited) {
             Close-HLChildStreams -Child $child
@@ -450,8 +571,27 @@ function Start-HLChildAndWait {
             Close-HLLock -Cfg $Cfg -Stream $Lock.Stream -OwnerNonce $Lock.Nonce
             return @{ Code = $c; ChildPid = $proc.Id; Phase = 'early-exit' }
         }
-        if ((Get-HLListenerPids -Port $Cfg.Port) -contains $proc.Id) { $bound = $true; break }
+        $bs = Get-HLBindState -Probe (Get-HLListenerProbe -Port $Cfg.Port) -ChildPid $proc.Id -Families $families
+        if ($bs.State -eq 'EXACT') { $bound = $true; break }
+        if ($bs.State -in @('YOK', 'YABANCI')) { $definite++ } else { $definite = 0 }
+        if ($bs.State -ne $lastBind) { Write-HLLog -Cfg $Cfg -Message ("bind state {0} {1} (child pid={2})" -f $bs.State, $bs.Detail, $proc.Id) | Out-Null; $lastBind = $bs.State }
         Start-Sleep -Milliseconds 900
+    }
+    if (-not $bound -and $definite -lt 3) {
+        # F02-K1: pencere kesin olmayan olcumle bitti: belirsizlik TEK BASINA cocugu sonlandirmaz.
+        $w = Wait-HLBindUncertain -Cfg $Cfg -Proc $proc -Families $families -Reason $lastBind
+        if ($w -eq 'BOUND') { $bound = $true }
+        elseif ($w -ne 'NOT_BOUND') {
+            Close-HLChildStreams -Child $child
+            Close-HLLock -Cfg $Cfg -Stream $Lock.Stream -OwnerNonce $Lock.Nonce
+            if (-not $proc.HasExited) {
+                Write-HLLog -Cfg $Cfg -Message 'CHILD_CLEANUP_FAILED (fail-closed exit 20)' | Out-Null
+                return @{ Code = 20; ChildPid = $proc.Id; Phase = 'cleanup-failed' }
+            }
+            $c = [int]$proc.ExitCode
+            Write-HLLog -Cfg $Cfg -Message ("child exit code={0} after bind uncertainty ({1}) (propagate)" -f $c, $w) | Out-Null
+            return @{ Code = $c; ChildPid = $proc.Id; Phase = ('uncertain-' + $w) }
+        }
     }
     if (-not $bound) {
         Write-HLLog -Cfg $Cfg -Message ("PORT_BIND_TIMEOUT after {0}s (child pid={1}) - exact-owned cleanup" -f $Cfg.BindTimeoutSec, $proc.Id) | Out-Null
@@ -498,7 +638,7 @@ function Start-HLChildAndWait {
 
 function Invoke-HLApiMain {
     param([Parameter(Mandatory)][hashtable]$Cfg)
-    Write-HLLog -Cfg $Cfg -Message 'launcher begin (R02)' | Out-Null
+    Write-HLLog -Cfg $Cfg -Message 'launcher begin (R02 F02-K1)' | Out-Null
 
     if (-not (Test-HLNodeBinary -Cfg $Cfg)) {
         Write-HLLog -Cfg $Cfg -Message 'NODE_BINARY_INVALID exit 11' | Out-Null
@@ -513,7 +653,12 @@ function Invoke-HLApiMain {
         return 18
     }
 
-    foreach ($lp in (Get-HLListenerPids -Port $Cfg.Port)) {
+    $pre = Get-HLPreSpawnListeners -Cfg $Cfg
+    if (-not $pre.Ok) {
+        Write-HLLog -Cfg $Cfg -Message ("LISTENER_QUERY_UNCERTAIN(pre-spawn): {0} - child NOT spawned, exit 26" -f $pre.Note) | Out-Null
+        return 26
+    }
+    foreach ($lp in $pre.Pids) {
         $id = Test-HLInstanceIdentity -OwnerPid $lp -Cfg $Cfg
         if ($id -in @('EXACT', 'LEGACY')) {
             Write-HLLog -Cfg $Cfg -Message ("ALREADY_RUNNING identity={0} pid={1} exit 0" -f $id, $lp) | Out-Null
@@ -529,7 +674,13 @@ function Invoke-HLApiMain {
         return 0
     }
     try {
-        foreach ($lp in (Get-HLListenerPids -Port $Cfg.Port)) {
+        $pre = Get-HLPreSpawnListeners -Cfg $Cfg
+        if (-not $pre.Ok) {
+            Write-HLLog -Cfg $Cfg -Message ("LISTENER_QUERY_UNCERTAIN(post-lock): {0} - child NOT spawned, exit 26" -f $pre.Note) | Out-Null
+            Close-HLLock -Cfg $Cfg -Stream $lock.Stream -OwnerNonce $lock.Nonce; $lock.Stream = $null
+            return 26
+        }
+        foreach ($lp in $pre.Pids) {
             $id = Test-HLInstanceIdentity -OwnerPid $lp -Cfg $Cfg
             if ($id -in @('EXACT', 'LEGACY')) {
                 Write-HLLog -Cfg $Cfg -Message ("ALREADY_RUNNING(post-lock) identity={0} pid={1} exit 0" -f $id, $lp) | Out-Null

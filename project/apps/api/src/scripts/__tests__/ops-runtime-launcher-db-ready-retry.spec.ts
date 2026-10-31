@@ -4,8 +4,9 @@
  * Baslaticinin GERCEK fonksiyonlari (Invoke-HLApiMain -> lock -> DB kimligi -> Wait-HLDbReady -> cocuk)
  * pwsh ile dot-source edilerek izole gecici dizinde kosulur. Canli dosyalara, gorevlere, .env'e ve
  * veritabanina DOKUNULMAZ: db-readiness.js yerine senaryo dosyasini okuyan sahte yardimci, main.js
- * yerine yalniz spawn kaydi yazan sahte giris kullanilir. Get-NetTCPConnection (yalniz Windows) bos
- * donen bir fonksiyonla golgelenir; port kimligi bu testin konusu degildir.
+ * yerine yalniz spawn kaydi yazan sahte giris kullanilir. Read-HLListenerFamily (ham Windows sorgusu) bos
+ * donen bir fonksiyonla golgelenir: 'sorgu basarili, dinleyici yok'. Dinleyici sozlesmesi bu testin konusu
+ * degildir; bkz. ops-runtime-launcher-listener-contract.spec.ts.
  *
  * pwsh bulunamazsa test ATLANMAZ, DUSER (CI'da sessiz gecis olmasin).
  */
@@ -47,8 +48,8 @@ const DRIVER_PS1 = `param(
   [switch]$LegacyConfig
 )
 $ErrorActionPreference = 'Stop'
-function Get-NetTCPConnection { [CmdletBinding()] param([int]$LocalPort, [string]$State) }
 . $Launcher
+function script:Read-HLListenerFamily { param([int]$AddressFamily, [int]$Port) return @() }
 $cfg = Get-HLApiDefaultConfig
 Write-Output ('HLTEST_DEFAULTS=' + $cfg['DbAttempts'] + ',' + $cfg['DbPollSec'] + ',' + $cfg['DbUnclassifiedRetryMax'] + ',' + $cfg['DbUnclassifiedWindowSec'])
 $cfg.NodeExe = $NodeExe
