@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { 
-  FileText, CheckSquare, 
-  Zap, Brain, AlertTriangle, Clock, 
+  FileText,
+  Zap, Brain, AlertTriangle,
   Activity, FileCheck,
   Settings2, X, Lock, Unlock, GripVertical
 } from 'lucide-react';
@@ -26,11 +26,12 @@ import { FavoriteCases } from '@/components/dashboard/favorite-cases';
 import { QuickSummary } from '@/components/dashboard/quick-summary';
 import { ReminderWidget } from '@/components/reminders/reminder-widget';
 
+/**
+ * GET /automation/stats yanıtından kullanılan alan. Gövde ZARFSIZDIR:
+ * `{ totalAutoCases, totalAutoActions, recentActions }` (automation.service.ts getAutomationStats).
+ */
 interface AutomationStats {
-  totalCases: number;
-  autoCases: number;
-  pendingActions: number;
-  completedToday: number;
+  totalAutoCases: number;
 }
 
 interface RiskDistribution {
@@ -73,16 +74,20 @@ interface ExpiringPoa {
  * kart "0" göstermek yerine "veri alınamadı" durumuna düşer.
  */
 const validateAutomationStats = (raw: unknown): AutomationStats | undefined => {
-  const d = (raw as { data?: { data?: unknown } })?.data?.data as Record<string, unknown> | undefined;
+  const d = (raw as { data?: unknown })?.data as Record<string, unknown> | undefined;
   if (!d || typeof d !== 'object') return undefined;
-  const keys = ['totalCases', 'autoCases', 'pendingActions', 'completedToday'] as const;
-  if (!keys.every((k) => typeof d[k] === 'number' && Number.isFinite(d[k]))) return undefined;
-  return {
-    totalCases: d.totalCases as number,
-    autoCases: d.autoCases as number,
-    pendingActions: d.pendingActions as number,
-    completedToday: d.completedToday as number,
-  };
+  if (typeof d.totalAutoCases !== 'number' || !Number.isFinite(d.totalAutoCases)) return undefined;
+  return { totalAutoCases: d.totalAutoCases };
+};
+
+/**
+ * GET /cases/stats `total` alanı (case.service.ts getStats; zarfsız gövde). Hızlı Özet'in
+ * "Toplam Dosya"sı ile aynı uç, aynı alan ve aynı kapsam (kiracının bütün dosyaları).
+ */
+const validateCaseTotal = (raw: unknown): number | undefined => {
+  const d = (raw as { data?: unknown })?.data as Record<string, unknown> | undefined;
+  if (!d || typeof d !== 'object') return undefined;
+  return typeof d.total === 'number' && Number.isFinite(d.total) ? d.total : undefined;
 };
 
 const validateAiConfigured = (raw: unknown): boolean | undefined => {
@@ -106,7 +111,8 @@ const validateRiskSummary = (raw: unknown): RiskSummaryData | undefined => {
 };
 
 const validateExpiringPoas = (raw: unknown): ExpiringPoa[] | undefined => {
-  const d = (raw as { data?: { data?: unknown } })?.data?.data;
+  // GET /poa/expiring/list zarfsız DÜZ DİZİ döner (poa.service.ts getExpiringPoas).
+  const d = (raw as { data?: unknown })?.data;
   if (!Array.isArray(d)) return undefined;
   const now = Date.now();
   const out: ExpiringPoa[] = [];
@@ -129,6 +135,7 @@ const validateExpiringPoas = (raw: unknown): ExpiringPoa[] | undefined => {
 
 export default function DashboardPage() {
   const [automation, setAutomation] = useState<DashboardReadState<AutomationStats>>({ status: 'IDLE' });
+  const [caseTotal, setCaseTotal] = useState<DashboardReadState<number>>({ status: 'IDLE' });
   const [risk, setRisk] = useState<DashboardReadState<RiskSummaryData>>({ status: 'IDLE' });
   const [ai, setAi] = useState<DashboardReadState<boolean>>({ status: 'IDLE' });
   const [poas, setPoas] = useState<DashboardReadState<ExpiringPoa[]>>({ status: 'IDLE' });
@@ -191,18 +198,20 @@ export default function DashboardPage() {
   }, []);
 
   /**
-   * Dört okuma yolu BİRBİRİNDEN BAĞIMSIZ yürür (`allSettled`): birinin hatası
+   * Beş okuma yolu BİRBİRİNDEN BAĞIMSIZ yürür (`allSettled`): birinin hatası
    * diğerlerinin doğrulanmış verisini düşürmez. Hiçbir yol hatayı varsayılan
    * değere çevirmez; her yol kendi durumunu taşır.
    */
   const loadDashboardData = async () => {
     setAutomation((p) => (isPending(p) ? { status: 'LOADING' } : p));
+    setCaseTotal((p) => (isPending(p) ? { status: 'LOADING' } : p));
     setRisk((p) => (isPending(p) ? { status: 'LOADING' } : p));
     setAi((p) => (isPending(p) ? { status: 'LOADING' } : p));
     setPoas((p) => (isPending(p) ? { status: 'LOADING' } : p));
 
-    const [autoRes, aiRes, riskRes, poaRes] = await Promise.allSettled([
+    const [autoRes, casesRes, aiRes, riskRes, poaRes] = await Promise.allSettled([
       api.get('/automation/stats'),
+      api.get('/cases/stats'),
       api.get('/ai/stats'),
       api.get('/reports/risk-summary'),
       api.get('/poa/expiring/list?days=30'),
@@ -213,6 +222,12 @@ export default function DashboardPage() {
       fromSettled(autoRes, validateAutomationStats, () => false, prev, {
         endpoint: '/automation/stats',
         widget: 'Otomasyon istatistikleri',
+      }, now),
+    );
+    setCaseTotal((prev) =>
+      fromSettled(casesRes, validateCaseTotal, () => false, prev, {
+        endpoint: '/cases/stats',
+        widget: 'Toplam dosya',
       }, now),
     );
     setAi((prev) =>
@@ -333,11 +348,22 @@ export default function DashboardPage() {
             );
           
           case 'expiringPoas':
-            if (!widgets?.expiringPoas || expiringPoas.length === 0) return null;
+            if (!widgets?.expiringPoas) return null;
+            // Okuma hatası "süresi dolan vekalet yok" gibi GİZLENMEZ (WSMR-A2): doğrulanmış
+            // eski veri yoksa hata ve tekrar dene gösterilir; boş liste yalnız başarılı yanıttan.
+            if (poas.status === 'ERROR' && staleData(poas) === undefined) {
+              return (
+                <div key={widgetId} {...wrapperProps}>
+                  {dragHandle}
+                  <ExpiringPoasError onRetry={loadDashboardData} />
+                </div>
+              );
+            }
+            if (expiringPoas.length === 0) return null;
             return (
               <div key={widgetId} {...wrapperProps}>
                 {dragHandle}
-                <ExpiringPoasWidget expiringPoas={expiringPoas} />
+                <ExpiringPoasWidget expiringPoas={expiringPoas} stale={isStale(poas)} />
               </div>
             );
           
@@ -345,11 +371,11 @@ export default function DashboardPage() {
             return (
               <div key={widgetId} {...wrapperProps}>
                 {dragHandle}
-                <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-                  <StatCard title="Toplam Dosya" state={automation} select={(s) => s.totalCases} onRetry={loadDashboardData} icon={<FileText className="h-5 w-5" />} color="blue" />
-                  <StatCard title="Otomatik Mod" state={automation} select={(s) => s.autoCases} onRetry={loadDashboardData} subtitle="dosya" icon={<Zap className="h-5 w-5" />} color="green" />
-                  <StatCard title="Bekleyen İşlem" state={automation} select={(s) => s.pendingActions} onRetry={loadDashboardData} icon={<Clock className="h-5 w-5" />} color="yellow" />
-                  <StatCard title="Bugün Tamamlanan" state={automation} select={(s) => s.completedToday} onRetry={loadDashboardData} icon={<CheckSquare className="h-5 w-5" />} color="purple" />
+                {/* Bekleyen İşlem ve Bugün Tamamlanan kartları KALDIRILDI: API bu sayıları üretmiyor;
+                    anlamı ve kaynağı tanımlanana kadar ekranda yer almaz (owner kararı 03.11.2026). */}
+                <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
+                  <StatCard title="Toplam Dosya" state={caseTotal} select={(n) => n} onRetry={loadDashboardData} icon={<FileText className="h-5 w-5" />} color="blue" />
+                  <StatCard title="Otomatik Mod" state={automation} select={(s) => s.totalAutoCases} onRetry={loadDashboardData} subtitle="dosya" icon={<Zap className="h-5 w-5" />} color="green" />
                 </div>
               </div>
             );
@@ -451,7 +477,7 @@ export default function DashboardPage() {
  * WSMR-A2: kart değeri artık hazır bir string DEĞİL, okuma durumundan türetilir.
  * `state` + `select` alır; böylece "gerçek 0" ile "veri alınamadı" aynı görünemez.
  */
-function StatCard({
+function StatCard<T>({
   title,
   state,
   select,
@@ -461,8 +487,8 @@ function StatCard({
   onRetry,
 }: {
   title: string;
-  state: DashboardReadState<AutomationStats>;
-  select: (value: AutomationStats) => number;
+  state: DashboardReadState<T>;
+  select: (value: T) => number;
   subtitle?: string;
   icon: React.ReactNode;
   color?: 'blue' | 'green' | 'yellow' | 'purple';
@@ -496,7 +522,7 @@ function StatCard({
   } else {
     body = (
       <span className="flex flex-col gap-0.5">
-        <span>{value === undefined ? '—' : String(select(value as AutomationStats))}</span>
+        <span>{value === undefined ? '—' : String(select(value as T))}</span>
         {isStale(state) && (
           <span className="text-[10px] font-normal text-yellow-700">Güncel olmayabilir</span>
         )}
@@ -562,7 +588,22 @@ function RiskBarDynamic({
 }
 
 // Expiring POAs Widget
-function ExpiringPoasWidget({ expiringPoas }: { expiringPoas: ExpiringPoa[] }) {
+function ExpiringPoasError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="p-4 bg-white border rounded-xl flex items-center justify-between gap-3">
+      <span className="text-sm font-medium text-red-600">Süresi dolan vekalet bilgisi alınamadı</span>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="text-xs text-blue-600 underline hover:text-blue-800"
+      >
+        Tekrar dene
+      </button>
+    </div>
+  );
+}
+
+function ExpiringPoasWidget({ expiringPoas, stale }: { expiringPoas: ExpiringPoa[]; stale: boolean }) {
   return (
     <div className="p-4 bg-amber-50 border border-amber-300 rounded-xl">
       <div className="flex items-start gap-3">
@@ -576,6 +617,7 @@ function ExpiringPoasWidget({ expiringPoas }: { expiringPoas: ExpiringPoa[] }) {
               {expiringPoas.length} vekalet
             </span>
           </div>
+          {stale && <p className="text-[10px] text-yellow-700 mb-1">Güncel olmayabilir</p>}
           <div className="space-y-2 max-h-32 overflow-y-auto">
             {expiringPoas.slice(0, 5).map((poa) => (
               <div key={poa.id} className="flex items-center justify-between text-sm">

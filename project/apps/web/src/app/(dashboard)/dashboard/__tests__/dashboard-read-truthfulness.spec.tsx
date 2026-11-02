@@ -10,6 +10,16 @@ import { api } from '@/lib/api';
  * yanıttan doğar. Hata, bozuk gövde ve eksik alan "0" olarak GÖSTERİLEMEZ —
  * eski davranışta `.catch(() => ({ data: null }))` + `stats?.total || '0'`
  * zinciri, API çökmüşken kullanıcıya "Toplam Dosya 0" diye okutuyordu.
+ *
+ * Mock'lar API'nin GERÇEK yanıt biçimini taşır (`api.get` gövdeyi `{ data: <gövde> }`
+ * olarak sarar):
+ * - `/automation/stats` → zarfsız `{ totalAutoCases, totalAutoActions, recentActions }`
+ *   (automation.service.ts getAutomationStats).
+ * - `/cases/stats` → zarfsız `{ total, active, closed, ... }` (case.service.ts getStats).
+ * - `/poa/expiring/list` → düz dizi (poa.service.ts getExpiringPoas).
+ * - `/ai/stats`, `/reports/risk-summary` → `{ success, data }` zarfı.
+ * Önceki mock'lar otomasyon ve vekâlet uçları için API'nin hiç döndürmediği bir biçim
+ * kullanıyordu; bu yüzden canlıdaki "Veri alınamadı" kartları testte yeşil geçiyordu.
  */
 
 vi.mock('@/lib/api', () => ({
@@ -20,8 +30,8 @@ vi.mock('@/lib/user-settings', () => ({
   useUserSettings: () => ({
     settings: {
       dashboardLocked: true,
-      dashboardWidgets: { stats: true, riskAutomation: true, aiSuggestions: true },
-      dashboardWidgetOrder: ['stats', 'riskAutomation', 'aiSuggestions'],
+      dashboardWidgets: { stats: true, riskAutomation: true, aiSuggestions: true, expiringPoas: true },
+      dashboardWidgetOrder: ['expiringPoas', 'stats', 'riskAutomation', 'aiSuggestions'],
     },
     updateSettings: vi.fn(),
   }),
@@ -38,18 +48,35 @@ vi.mock('@/components/reminders/reminder-widget', () => ({ ReminderWidget: () =>
 const mocked = api as unknown as { get: ReturnType<typeof vi.fn> };
 
 const AUTOMATION = '/automation/stats';
+const CASES = '/cases/stats';
 const AI = '/ai/stats';
 const RISK = '/reports/risk-summary';
 const POA = '/poa/expiring/list?days=30';
 
-const ok = (data: unknown) => ({ data: { data } });
+/** `api.get` sonucu: gövde `{ data: <gövde> }` içinde döner. */
+const body = (b: unknown) => ({ data: b });
+/** `{ success, data }` zarfıyla dönen uçlar (ai, risk). */
+const envelope = (data: unknown) => body({ success: true, data });
 
-const STATS = { totalCases: 42, autoCases: 7, pendingActions: 3, completedToday: 5 };
-const ZEROS = { totalCases: 0, autoCases: 0, pendingActions: 0, completedToday: 0 };
+const AUTO_OK = { totalAutoCases: 7, totalAutoActions: 12, recentActions: [] };
+const AUTO_ZERO = { totalAutoCases: 0, totalAutoActions: 0, recentActions: [] };
+const CASES_OK = { total: 42, active: 30, closed: 12, thisMonth: 3, ownerless: 0, legalResponsibleMissing: 0 };
+const CASES_ZERO = { total: 0, active: 0, closed: 0, thisMonth: 0, ownerless: 0, legalResponsibleMissing: 0 };
 const RISK_OK = {
   totalActive: 9,
   distribution: [{ id: 'r1', code: 'HIGH', name: 'Yüksek Risk', color: '#f00', count: 9, totalAmount: 0, percentage: 100 }],
   summary: { high: 9, medium: 0, low: 0, unassigned: 0 },
+};
+const inDays = (n: number) => new Date(Date.now() + n * 24 * 60 * 60 * 1000).toISOString();
+/** Prisma `findMany` + include biçimi: client ve lawyers[].lawyer. */
+const POA_ROW = {
+  id: 'poa-1',
+  clientId: 'c-1',
+  isLimited: true,
+  status: 'ACTIVE',
+  validUntil: inDays(5),
+  client: { id: 'c-1', displayName: 'Örnek Müvekkil' },
+  lawyers: [{ lawyerId: 'l-1', lawyer: { id: 'l-1', name: 'Deneme', surname: 'Avukat' } }],
 };
 
 /** Endpoint'e göre yanıt kuran yardımcı — çağrı SAYISI ve URL'i de doğrulanır. */
@@ -64,26 +91,35 @@ function route(map: Record<string, () => unknown>) {
   });
 }
 
-/** "Toplam Dosya" kartının gövde metni. */
-async function totalCard(): Promise<HTMLElement> {
-  const card = (await screen.findByText('Toplam Dosya')).closest('div')!
-    .parentElement as HTMLElement;
+/** Hepsi başarılı, gerçek biçimli yanıtlar; testler yalnız değişen yolu ezer. */
+function healthy(overrides: Record<string, () => unknown> = {}) {
+  route({
+    [AUTOMATION]: () => body(AUTO_OK),
+    [CASES]: () => body(CASES_OK),
+    [AI]: () => envelope({ isOpenAiConfigured: true }),
+    [RISK]: () => envelope(RISK_OK),
+    [POA]: () => body([]),
+    ...overrides,
+  });
+}
+
+/** Başlığı verilen kartın kutusu, ara durumdan çıkmış olarak. */
+async function card(title: string): Promise<HTMLElement> {
+  const el = (await screen.findByText(title)).closest('div')!.parentElement as HTMLElement;
   /**
    * WSMR-A4l DUZELTMESI — YARIS KAPATILDI.
    *
-   * Etiket ("Toplam Dosya") YUKLEME sirasinda da render ediliyor; bu yuzden
-   * `findByText` kart YERLESMEDEN cozulebiliyordu ve `textContent` hala
-   * "Yükleniyor…" iken dogrulaniyordu. Yerel makinede gecen bu yaris, CI'nin
-   * daha yavas runner'inda "expected 'Toplam DosyaYükleniyor…' to contain '0'"
-   * seklinde kirmiziya dustu.
-   *
-   * Kart ARA durumdan cikana kadar beklenir. Bu bir zayiflatma DEGILDIR:
-   * cagiran testlerin iddialari (gercek 0 basilir / yalanci sifir YASAK)
-   * aynen gecerlidir, yalnizca DOGRU ana uygulanir.
+   * Etiket YUKLEME sirasinda da render ediliyor; bu yuzden `findByText` kart
+   * YERLESMEDEN cozulebiliyordu ve `textContent` hala "Yükleniyor…" iken
+   * dogrulaniyordu. Kart ARA durumdan cikana kadar beklenir. Bu bir zayiflatma
+   * DEGILDIR: cagiran testlerin iddialari aynen gecerlidir.
    */
-  await vi.waitFor(() => expect(card.textContent).not.toMatch(/Yükleniyor/));
-  return card;
+  await vi.waitFor(() => expect(el.textContent).not.toMatch(/Yükleniyor/));
+  return el;
 }
+
+const totalCard = () => card('Toplam Dosya');
+const autoCard = () => card('Otomatik Mod');
 
 let consoleErr: ReturnType<typeof vi.spyOn>;
 
@@ -102,82 +138,66 @@ afterEach(() => {
 
 describe('WSMR-A2 · dashboard okuma durumları', () => {
   it('LOADING: ilk render rakam basmaz, yükleniyor der', async () => {
-    route({
-      [AUTOMATION]: () => new Promise(() => {}), // hiç çözülmez
-      [AI]: () => new Promise(() => {}),
-      [RISK]: () => new Promise(() => {}),
-      [POA]: () => new Promise(() => {}),
-    });
+    const never = () => new Promise(() => {}); // hiç çözülmez
+    route({ [AUTOMATION]: never, [CASES]: never, [AI]: never, [RISK]: never, [POA]: never });
     render(<DashboardPage />);
     expect(await screen.findAllByText('Yükleniyor…')).not.toHaveLength(0);
     expect(screen.queryByText('0')).toBeNull();
   });
 
   it('SUCCESS_DATA: pozitif değerler doğrulanmış yanıttan basılır', async () => {
-    route({
-      [AUTOMATION]: () => ok(STATS),
-      [AI]: () => ok({ isOpenAiConfigured: true }),
-      [RISK]: () => ok(RISK_OK),
-      [POA]: () => ok([]),
-    });
+    healthy();
     render(<DashboardPage />);
-    expect(await screen.findByText('42')).toBeTruthy();
-    expect(screen.getByText('7')).toBeTruthy();
+    expect((await totalCard()).textContent).toContain('42');
+    expect((await autoCard()).textContent).toContain('7');
     expect(screen.getByText('AI Aktif')).toBeTruthy();
-    // Endpoint sözleşmesi: dört okuma, tam bu URL'lerle, birer kez.
-    expect(mocked.get).toHaveBeenCalledTimes(4);
-    for (const u of [AUTOMATION, AI, RISK, POA]) expect(mocked.get).toHaveBeenCalledWith(u);
+    // Endpoint sözleşmesi: beş okuma, tam bu URL'lerle, birer kez.
+    expect(mocked.get).toHaveBeenCalledTimes(5);
+    for (const u of [AUTOMATION, CASES, AI, RISK, POA]) expect(mocked.get).toHaveBeenCalledWith(u);
   });
 
   it('SUCCESS_EMPTY: DOĞRULANMIŞ gerçek 0 basılır ve hata gösterilmez', async () => {
-    route({
-      [AUTOMATION]: () => ok(ZEROS),
-      [AI]: () => ok({ isOpenAiConfigured: false }),
-      [RISK]: () => ok({ ...RISK_OK, totalActive: 0, distribution: [], summary: { high: 0, medium: 0, low: 0, unassigned: 0 } }),
-      [POA]: () => ok([]),
+    healthy({
+      [AUTOMATION]: () => body(AUTO_ZERO),
+      [CASES]: () => body(CASES_ZERO),
+      [AI]: () => envelope({ isOpenAiConfigured: false }),
+      [RISK]: () => envelope({ ...RISK_OK, totalActive: 0, distribution: [], summary: { high: 0, medium: 0, low: 0, unassigned: 0 } }),
     });
     render(<DashboardPage />);
-    const card = await totalCard();
-    expect(card.textContent).toContain('0');
+    expect((await totalCard()).textContent).toContain('0');
+    expect((await autoCard()).textContent).toContain('0');
     expect(screen.queryByText('Veri alınamadı')).toBeNull();
     expect(await screen.findByText('Aktif riskli dosya yok.')).toBeTruthy();
   });
 
   it('ERROR (ağ): rakam YERİNE "Veri alınamadı" + tekrar dene', async () => {
-    route({
-      [AUTOMATION]: () => new Error('network down'),
-      [AI]: () => new Error('network down'),
-      [RISK]: () => new Error('network down'),
-      [POA]: () => new Error('network down'),
-    });
+    const down = () => new Error('network down');
+    route({ [AUTOMATION]: down, [CASES]: down, [AI]: down, [RISK]: down, [POA]: down });
     render(<DashboardPage />);
     expect(await screen.findAllByText('Veri alınamadı')).not.toHaveLength(0);
     // Yalancı sıfır YASAK.
-    const card = await totalCard();
-    expect(card.textContent).not.toContain('0');
+    expect((await totalCard()).textContent).not.toContain('0');
+    expect((await autoCard()).textContent).not.toContain('0');
     expect(screen.getAllByRole('button', { name: 'Tekrar dene' }).length).toBeGreaterThan(0);
   });
 
   it('MALFORMED: bozuk gövde gerçek 0 SAYILMAZ', async () => {
     route({
-      [AUTOMATION]: () => ok({ totalCases: 'çok', autoCases: null }), // tip bozuk
-      [AI]: () => ok({ isOpenAiConfigured: 'evet' }), // boolean değil
-      [RISK]: () => ok({ totalActive: 'yok' }),
-      [POA]: () => ok('dizi değil'),
+      [AUTOMATION]: () => body({ totalAutoCases: 'çok' }), // tip bozuk
+      [CASES]: () => body({ total: null }),
+      [AI]: () => envelope({ isOpenAiConfigured: 'evet' }), // boolean değil
+      [RISK]: () => envelope({ totalActive: 'yok' }),
+      [POA]: () => body('dizi değil'),
     });
     render(<DashboardPage />);
     expect(await screen.findAllByText('Veri alınamadı')).not.toHaveLength(0);
-    const card = await totalCard();
-    expect(card.textContent).not.toContain('0');
+    expect((await totalCard()).textContent).not.toContain('0');
+    expect((await autoCard()).textContent).not.toContain('0');
+    expect(await screen.findByText('Süresi dolan vekalet bilgisi alınamadı')).toBeTruthy();
   });
 
   it('AI: hata halinde "AI Yapılandırılmadı" İDDİA EDİLMEZ', async () => {
-    route({
-      [AUTOMATION]: () => ok(STATS),
-      [AI]: () => new Error('boom'),
-      [RISK]: () => ok(RISK_OK),
-      [POA]: () => ok([]),
-    });
+    healthy({ [AI]: () => new Error('boom') });
     render(<DashboardPage />);
     expect(await screen.findByText('AI durumu alınamadı')).toBeTruthy();
     expect(screen.queryByText('AI Yapılandırılmadı')).toBeNull();
@@ -185,32 +205,24 @@ describe('WSMR-A2 · dashboard okuma durumları', () => {
   });
 
   it('İZOLASYON: bir endpoint çökerken diğerinin gerçek verisi düşmez', async () => {
-    route({
-      [AUTOMATION]: () => ok(STATS),
-      [AI]: () => ok({ isOpenAiConfigured: true }),
-      [RISK]: () => new Error('risk down'),
-      [POA]: () => ok([]),
-    });
+    healthy({ [RISK]: () => new Error('risk down') });
     render(<DashboardPage />);
-    expect(await screen.findByText('42')).toBeTruthy(); // otomasyon SAĞLAM
+    expect((await autoCard()).textContent).toContain('7'); // otomasyon SAĞLAM
+    expect((await totalCard()).textContent).toContain('42'); // dosya toplamı SAĞLAM
     expect(await screen.findByText('Risk dağılımı alınamadı')).toBeTruthy();
   });
 
   it('RETRY: yalnız okuma tekrarlanır ve başarıda gerçek veri gelir', async () => {
     let fail = true;
-    route({
-      [AUTOMATION]: () => (fail ? new Error('geçici') : ok(STATS)),
-      [AI]: () => ok({ isOpenAiConfigured: true }),
-      [RISK]: () => ok(RISK_OK),
-      [POA]: () => ok([]),
-    });
+    healthy({ [AUTOMATION]: () => (fail ? new Error('geçici') : body(AUTO_OK)) });
     render(<DashboardPage />);
     await screen.findAllByText('Veri alınamadı');
 
     fail = false;
     fireEvent.click(screen.getAllByRole('button', { name: 'Tekrar dene' })[0]);
 
-    expect(await screen.findByText('42')).toBeTruthy();
+    await waitFor(() => expect(screen.queryAllByText('Veri alınamadı')).toHaveLength(0));
+    expect((await autoCard()).textContent).toContain('7');
     // Retry SALT-OKUMA: hiçbir mutation üretilmedi.
     const m = api as unknown as Record<string, ReturnType<typeof vi.fn>>;
     for (const verb of ['post', 'put', 'patch', 'delete']) expect(m[verb]).not.toHaveBeenCalled();
@@ -221,14 +233,12 @@ describe('WSMR-A2 · dashboard okuma durumları', () => {
     // ÖNCEDEN BAŞARILI olan otomasyon çöker. Otomasyonun doğrulanmış eski verisi
     // korunur ama AÇIKÇA "Güncel olmayabilir" diye işaretlenir.
     let automationFails = false;
-    route({
-      [AUTOMATION]: () => (automationFails ? new Error('sonradan çöktü') : ok(STATS)),
-      [AI]: () => ok({ isOpenAiConfigured: true }),
+    healthy({
+      [AUTOMATION]: () => (automationFails ? new Error('sonradan çöktü') : body(AUTO_OK)),
       [RISK]: () => new Error('risk down'),
-      [POA]: () => ok([]),
     });
     render(<DashboardPage />);
-    expect(await screen.findByText('42')).toBeTruthy();
+    expect((await autoCard()).textContent).toContain('7');
     expect(screen.queryByText('Güncel olmayabilir')).toBeNull(); // taze veri etiketsiz
 
     automationFails = true;
@@ -236,23 +246,69 @@ describe('WSMR-A2 · dashboard okuma durumları', () => {
 
     // Eski değer korunur AMA bayat olarak işaretlenir — taze veriden ayırt edilebilir.
     await waitFor(() => expect(screen.getAllByText('Güncel olmayabilir').length).toBeGreaterThan(0));
-    expect(screen.getByText('42')).toBeTruthy();
+    expect((await autoCard()).textContent).toContain('7');
   });
 
   it('SÖZLEŞME: sahte "Yaklaşan Otomatik İşlemler" ve uydurma AI önerileri KALDIRILDI', async () => {
-    route({
-      [AUTOMATION]: () => ok(STATS),
-      [AI]: () => ok({ isOpenAiConfigured: true }),
-      [RISK]: () => ok(RISK_OK),
-      [POA]: () => ok([]),
-    });
+    healthy();
     render(<DashboardPage />);
-    await screen.findByText('42');
+    await autoCard();
     expect(screen.queryByText('Yaklaşan Otomatik İşlemler')).toBeNull();
     expect(screen.queryByText(/Banka haczi önerilir/)).toBeNull();
     expect(screen.queryByText(/2024\/1234/)).toBeNull();
     expect(screen.queryByText(/%85 güven/)).toBeNull();
     // Veri kaynağı olmayan "Çalışıyor" iddiası da kalkmış olmalı.
     expect(screen.queryByText('Kural Motoru')).toBeNull();
+  });
+});
+
+describe('GERÇEK API SÖZLEŞMESİ · kartlar ve vekâlet bandı', () => {
+  it('Otomatik Mod, zarfsız /automation/stats yanıtındaki totalAutoCases alanından basılır', async () => {
+    healthy();
+    render(<DashboardPage />);
+    const el = await autoCard();
+    expect(el.textContent).toContain('7');
+    expect(el.textContent).not.toContain('Veri alınamadı');
+  });
+
+  it('Toplam Dosya, /cases/stats toplamından basılır', async () => {
+    healthy();
+    render(<DashboardPage />);
+    const el = await totalCard();
+    expect(el.textContent).toContain('42');
+    expect(el.textContent).not.toContain('Veri alınamadı');
+    expect(mocked.get).toHaveBeenCalledWith(CASES);
+  });
+
+  it('Bekleyen İşlem ve Bugün Tamamlanan kartları yok (veri kaynağı tanımlı değil)', async () => {
+    healthy();
+    render(<DashboardPage />);
+    await autoCard();
+    expect(screen.queryByText('Bekleyen İşlem')).toBeNull();
+    expect(screen.queryByText('Bugün Tamamlanan')).toBeNull();
+  });
+
+  it('Vekâlet bandı, düz dizi yanıtıyla görünür', async () => {
+    healthy({ [POA]: () => body([POA_ROW]) });
+    render(<DashboardPage />);
+    expect(await screen.findByText('⚠️ Süresi Dolmak Üzere Olan Vekaletler')).toBeTruthy();
+    expect(screen.getByText('1 vekalet')).toBeTruthy();
+    expect(screen.getByText('Örnek Müvekkil')).toBeTruthy();
+  });
+
+  it('Vekâlet isteği hatası boş liste gibi GİZLENMEZ: hata ve tekrar dene görünür', async () => {
+    healthy({ [POA]: () => new Error('poa down') });
+    render(<DashboardPage />);
+    expect(await screen.findByText('Süresi dolan vekalet bilgisi alınamadı')).toBeTruthy();
+    expect(screen.queryByText('⚠️ Süresi Dolmak Üzere Olan Vekaletler')).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Tekrar dene' }).length).toBeGreaterThan(0);
+  });
+
+  it('Vekâlet boş (doğrulanmış): bant gösterilmez, hata da gösterilmez', async () => {
+    healthy({ [POA]: () => body([]) });
+    render(<DashboardPage />);
+    await autoCard();
+    expect(screen.queryByText('⚠️ Süresi Dolmak Üzere Olan Vekaletler')).toBeNull();
+    expect(screen.queryByText('Süresi dolan vekalet bilgisi alınamadı')).toBeNull();
   });
 });
