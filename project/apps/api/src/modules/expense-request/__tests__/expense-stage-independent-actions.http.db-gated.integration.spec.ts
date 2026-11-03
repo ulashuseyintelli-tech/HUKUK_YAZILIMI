@@ -37,6 +37,10 @@ import { StageTriggerModule } from '../../stage-trigger/stage-trigger.module';
  * policy-engine/__tests__/case-policy-engine-stage-independence.spec.ts.
  *
  * Bu test düzeltmesiz kodla düşer (13 aşamanın 12'sinde 403); "korunan kurallar" kilitleri düzeltmeden bağımsız geçer.
+ *
+ * O-7 (owner, 2026-11-04): dağıtım onayı / reddi artık yetkili onaycı (PARTNER ya da delege avukat) ve talep edenden FARKLI
+ * kişi ister; ret gerekçesi zorunludur. Talepler `adminId` (kartsız ADMIN) adına oluşur, kararları `partnerId` verir. Öz-onay,
+ * yeterlilik, yarış ve geri alma senaryoları: expense-distribution-decision.http.db-gated.integration.spec.ts.
  */
 const TEST_DB_URL = resolveTestDatabaseUrl(process.env);
 if (process.env.CI && !TEST_DB_URL) {
@@ -77,6 +81,7 @@ describeWithDisposableDb('Masraf finalize / approve / reject aşamadan bağıms�
   let adminId: string;
   let viewerId: string;
   let otherAdminId: string;
+  let partnerId: string;
   let clientId: string;
   const suffix = randomUUID().slice(0, 8);
 
@@ -107,6 +112,9 @@ describeWithDisposableDb('Masraf finalize / approve / reject aşamadan bağıms�
     adminId = (await prisma.user.create({ data: { tenantId, email: `admin-${suffix}@example.test`, name: 'admin', surname: 'ESIA', role: 'ADMIN' } })).id;
     viewerId = (await prisma.user.create({ data: { tenantId, email: `viewer-${suffix}@example.test`, name: 'viewer', surname: 'ESIA', role: 'VIEWER' } })).id;
     otherAdminId = (await prisma.user.create({ data: { tenantId: otherTenantId, email: `admin-b-${suffix}@example.test`, name: 'adminb', surname: 'ESIA', role: 'ADMIN' } })).id;
+    // O-7: dağıtım kararı veren — avukat kartlı PARTNER (genel onaycı yüklemi), talepleri oluşturan admin'den farklı kişi.
+    partnerId = (await prisma.user.create({ data: { tenantId, email: `partner-${suffix}@example.test`, name: 'partner', surname: 'ESIA', role: 'USER' } })).id;
+    await prisma.lawyer.create({ data: { tenantId, userId: partnerId, name: 'Ortak', surname: 'ESIA', lawyerRank: 'PARTNER' } });
     clientId = (await prisma.client.create({ data: { tenantId, type: 'COMPANY', companyName: 'ESIA müvekkil', displayName: 'ESIA müvekkil' } })).id;
   });
 
@@ -170,13 +178,13 @@ describeWithDisposableDb('Masraf finalize / approve / reject aşamadan bağıms�
       const since = new Date();
 
       const finalized = await postAs(adminId, `/expense-requests/${finalizeId}/finalize`, { channel: 'EMAIL' });
-      const approved = await postAs(adminId, `/expense-requests/${approveId}/approve`, {});
-      const rejected = await postAs(adminId, `/expense-requests/${rejectId}/reject`, { note: 'ölçüm' });
+      const approved = await postAs(partnerId, `/expense-requests/${approveId}/approve`, {});
+      const rejected = await postAs(partnerId, `/expense-requests/${rejectId}/reject`, { note: 'ölçüm' });
       expect({ stage, finalize: finalized.status, approve: approved.status, reject: rejected.status }).toEqual({ stage, finalize: 201, approve: 201, reject: 201 });
 
       expect(await snapshot(finalizeId)).toMatchObject({ status: 'SENT', sentVia: 'EMAIL', audit: ['SENT'] });
-      expect(await snapshot(approveId)).toMatchObject({ approval: 'APPROVED', approvedById: adminId, audit: ['APPROVAL_GRANTED'] });
-      expect(await snapshot(rejectId)).toMatchObject({ approval: 'REJECTED', approvedById: adminId, audit: ['APPROVAL_REJECTED'] });
+      expect(await snapshot(approveId)).toMatchObject({ approval: 'APPROVED', approvedById: partnerId, audit: ['APPROVAL_GRANTED'] });
+      expect(await snapshot(rejectId)).toMatchObject({ approval: 'REJECTED', approvedById: partnerId, audit: ['APPROVAL_REJECTED'] });
 
       // Karar günlüğü: üç izinli karar, aşama anlık görüntüsüyle (aşama bu kayıtta görünür kalır)
       const rows = await cpeRows(caseId, since);
@@ -207,8 +215,8 @@ describeWithDisposableDb('Masraf finalize / approve / reject aşamadan bağıms�
       const since = new Date();
       const results = [
         await postAs(adminId, `/expense-requests/${ids[0]}/finalize`, { channel: 'EMAIL' }),
-        await postAs(adminId, `/expense-requests/${ids[1]}/approve`, {}),
-        await postAs(adminId, `/expense-requests/${ids[2]}/reject`, {}),
+        await postAs(partnerId, `/expense-requests/${ids[1]}/approve`, {}),
+        await postAs(partnerId, `/expense-requests/${ids[2]}/reject`, { note: 'ölçüm' }),
       ];
       for (const res of results) {
         expect(res.status).toBe(403);
@@ -224,7 +232,7 @@ describeWithDisposableDb('Masraf finalize / approve / reject aşamadan bağıms�
       await prisma.case.update({ where: { id: caseId }, data: { workflowStage: 'SEIZURE', isArchived: true } });
       const id = await makeRequestRow(caseId);
       const before = await snapshot(id);
-      const res = await postAs(adminId, `/expense-requests/${id}/approve`, {});
+      const res = await postAs(partnerId, `/expense-requests/${id}/approve`, {});
       expect(res.status).toBe(403);
       expect(res.body).toMatchObject({ code: 'GATE_BLOCKED', blockedBy: { gateCode: 'CASE_ARCHIVED' } });
       expect(await snapshot(id)).toEqual(before);
@@ -237,14 +245,14 @@ describeWithDisposableDb('Masraf finalize / approve / reject aşamadan bağıms�
       const caseId = await openCase('sicak-kapali');
       await prisma.case.update({ where: { id: caseId }, data: { workflowStage: 'SEIZURE' } });
       const warm = await makeRequestRow(caseId);
-      expect((await postAs(adminId, `/expense-requests/${warm}/approve`, {})).status).toBe(201); // önbellek ısındı (is_closed=false)
+      expect((await postAs(partnerId, `/expense-requests/${warm}/approve`, {})).status).toBe(201); // önbellek ısındı (is_closed=false)
       const ids = [await makeRequestRow(caseId), await makeRequestRow(caseId), await makeRequestRow(caseId)];
       await prisma.case.update({ where: { id: caseId }, data: { caseStatus: 'HITAM' } }); // statü yazımı olgu önbelleğine dokunmaz
       const before = await Promise.all(ids.map(snapshot));
       const results = [
         await postAs(adminId, `/expense-requests/${ids[0]}/finalize`, { channel: 'EMAIL' }),
-        await postAs(adminId, `/expense-requests/${ids[1]}/approve`, {}),
-        await postAs(adminId, `/expense-requests/${ids[2]}/reject`, {}),
+        await postAs(partnerId, `/expense-requests/${ids[1]}/approve`, {}),
+        await postAs(partnerId, `/expense-requests/${ids[2]}/reject`, { note: 'ölçüm' }),
       ];
       for (const res of results) {
         expect(res.status).toBe(403);
@@ -257,11 +265,11 @@ describeWithDisposableDb('Masraf finalize / approve / reject aşamadan bağıms�
       const caseId = await openCase('sicak-arsiv');
       await prisma.case.update({ where: { id: caseId }, data: { workflowStage: 'SEIZURE' } });
       const warm = await makeRequestRow(caseId);
-      expect((await postAs(adminId, `/expense-requests/${warm}/approve`, {})).status).toBe(201);
+      expect((await postAs(partnerId, `/expense-requests/${warm}/approve`, {})).status).toBe(201);
       const id = await makeRequestRow(caseId);
       await prisma.case.update({ where: { id: caseId }, data: { isArchived: true } });
       const before = await snapshot(id);
-      const res = await postAs(adminId, `/expense-requests/${id}/approve`, {});
+      const res = await postAs(partnerId, `/expense-requests/${id}/approve`, {});
       expect(res.status).toBe(403);
       expect(res.body).toMatchObject({ code: 'GATE_BLOCKED', blockedBy: { gateCode: 'CASE_ARCHIVED' } });
       expect(await snapshot(id)).toEqual(before);
@@ -312,17 +320,17 @@ describeWithDisposableDb('Masraf finalize / approve / reject aşamadan bağıms�
       const paidRow = await makeRequestRow(caseId, { status: 'PAID', paidTotal: 500 });
 
       const beforeRejected = await snapshot(rejectedRow);
-      const approveRejected = await postAs(adminId, `/expense-requests/${rejectedRow}/approve`, {});
+      const approveRejected = await postAs(partnerId, `/expense-requests/${rejectedRow}/approve`, {});
       expect({ status: approveRejected.status, message: String(approveRejected.body?.message) }).toMatchObject({ status: 400, message: expect.stringContaining('Yalnız PENDING_APPROVAL') });
       expect(await snapshot(rejectedRow)).toEqual(beforeRejected);
 
       const beforeApproved = await snapshot(approvedRow);
-      const rejectApproved = await postAs(adminId, `/expense-requests/${approvedRow}/reject`, {});
+      const rejectApproved = await postAs(partnerId, `/expense-requests/${approvedRow}/reject`, { note: 'ölçüm' });
       expect({ status: rejectApproved.status, message: String(rejectApproved.body?.message) }).toMatchObject({ status: 400, message: expect.stringContaining('Yalnız PENDING_APPROVAL') });
       expect(await snapshot(approvedRow)).toEqual(beforeApproved);
 
       // idempotent onay: ikinci onay yeni denetim kaydı yazmaz
-      const again = await postAs(adminId, `/expense-requests/${approvedRow}/approve`, {});
+      const again = await postAs(partnerId, `/expense-requests/${approvedRow}/approve`, {});
       expect(again.status).toBe(201);
       expect(await snapshot(approvedRow)).toEqual(beforeApproved);
 

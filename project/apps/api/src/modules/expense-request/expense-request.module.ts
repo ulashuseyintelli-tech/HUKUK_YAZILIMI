@@ -15,9 +15,10 @@ import { OfficeModule } from '@/modules/office/office.module';
 import { ClientSettlementModule } from '@/modules/client-settlement/client-settlement.module';
 import { PolicyEngineModule } from '@/modules/policy-engine/policy-engine.module';
 import { WorkScopePermissionModule } from '@/modules/work-scope-permission/work-scope-permission.module';
+import { OfficeApprovalModule } from '@/modules/office-approval/office-approval.module';
 
 @Module({
-  imports: [PrismaModule, forwardRef(() => CaseBalanceModule), TariffModule, NotificationModule, ClientNotificationModule, OfficeModule, ClientSettlementModule, PolicyEngineModule, WorkScopePermissionModule],
+  imports: [PrismaModule, forwardRef(() => CaseBalanceModule), TariffModule, NotificationModule, ClientNotificationModule, OfficeModule, ClientSettlementModule, PolicyEngineModule, WorkScopePermissionModule, OfficeApprovalModule],
   controllers: [ExpenseRequestController],
   providers: [ExpenseRequestService, ExpenseCalculatorService, ExpenseGateService, ExpenseNotificationService, ExpenseViewService, ExpensePaymentReversalContractService],
   exports: [ExpenseRequestService, ExpenseCalculatorService, ExpenseGateService, ExpenseNotificationService, ExpenseViewService, ExpensePaymentReversalContractService],

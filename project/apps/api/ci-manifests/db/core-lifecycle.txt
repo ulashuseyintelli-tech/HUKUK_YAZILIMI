@@ -272,6 +272,10 @@ src/modules/expense-request/__tests__/expense-view-office-iban.http.db-gated.int
 #   Odeme kaydi ucu bu teslimde ACILMADI (ayri karar maddesi; testte kapali kaldigi sabit). Duzeltmesiz kodla 20 testin 14u DUSER,
 #   6 kontrol GECER (RED kanitlandi). Bu konum bilerek dosya sonu DEGIL: es zamanli PR lar sona ekler.
 src/modules/expense-request/__tests__/expense-stage-independent-actions.http.db-gated.integration.spec.ts
+# O-7 (owner 2026-11-04): masraf dagitim karari — oz-onay (kisi duzeyi, iki hesap), onayci yeterliligi, system talebi (D1-A),
+#   iptal, zorunlu ret gerekcesi, ayni kararin tekrari / ters karar, GERCEK ayri transaction yarislari (cift onay, onay-ret)
+#   ve denetim hatasinda geri alma. Duzeltmesiz kodla 16 testin 13u DUSER (iki yarista iki denetim satiri), 3 korunan davranis GECER.
+src/modules/expense-request/__tests__/expense-distribution-decision.http.db-gated.integration.spec.ts
 src/modules/expense-request/__tests__/expense-view-scope.http.db-gated.integration.spec.ts
 
 # Alacak ozeti para birimi baglami (GET /claim-items/case/:caseId/summary), GERCEK HTTP + disposable PostgreSQL. Olculen

@@ -102,10 +102,11 @@ export const financeApi = {
     });
   },
 
-  async rejectExpenseRequest(id: string, reason: string) {
+  // O-7: API ret gerekçesini `note` alanından okur ve zorunlu tutar (eski `reason` alanı yok sayılıyordu).
+  async rejectExpenseRequest(id: string, note: string) {
     return apiClient.request<any>(`/expense-requests/${id}/reject`, {
       method: "POST",
-      body: JSON.stringify({ reason }),
+      body: JSON.stringify({ note }),
     });
   },
 
