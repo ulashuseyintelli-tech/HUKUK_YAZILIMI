@@ -10,6 +10,7 @@ import { buildLawyerUpdatePayload } from "@/lib/lawyer-update-payload";
 import { ActionError } from "@/components/ui/action-error";
 import { toActionErrorMessage } from "@/lib/action-error";
 import { runMutation, runRefreshOnly } from "@/lib/mutation-outcome";
+import { classifyLawyerDeactivationFailure } from "@/lib/lawyer-deactivation";
 import { useKeyedSubmitLock } from "@/lib/use-submit-lock";
 import { SettingsSection, WorkbenchHeader, SettingsDrawer, CollectionHeader } from "@/components/settings/settings-shell";
 import { PersonAccessInviteCard } from "@/components/settings/person-access-invite-card";
@@ -202,6 +203,11 @@ function OfficeSettingsInner() {
   const [staleLockedIds, setStaleLockedIds] = useState<string[]>([]);
   const [refreshingStale, setRefreshingStale] = useState(false);
   const rowLock = useKeyedSubmitLock();
+  // O-1: backend devralan isterse açılan seçim. Seçim ve eksik atanmış dosyalar başarısızlıkta KORUNUR;
+  // `deactivatingLawyerIds` istek sürerken O avukatın düğmelerini kapatır; avukat başına tutulur çünkü
+  // satır kilidi farklı avukatların eşzamanlı isteklerine izin verir (kilit ayrıca çift gönderimi engeller).
+  const [lawyerReplacement, setLawyerReplacement] = useState<{ lawyerId: string; selectedId: string; notice: string; missingCaseIds: string[] } | null>(null);
+  const [deactivatingLawyerIds, setDeactivatingLawyerIds] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
   // Office bölümüne özel belirgin geri bildirim (paylaşılan saved/saving'e dokunmadan)
   const [officeStatus, setOfficeStatus] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -677,34 +683,69 @@ function OfficeSettingsInner() {
 
   const handleSaveLawyer = (data: any) => submitLawyer(data, false);
 
-  const handleDeleteLawyer = async (id: string) => {
-    // Cancel mutation BAŞLATMAZ.
-    if (!confirm("Avukat pasifleştirilecek, kalıcı olarak silinmeyecektir. Devam edilsin mi?")) return;
+  // O-1: önce devralansız istek gider — sorumlu dosyası olmayan avukatı backend doğrudan pasifleştirir,
+  // gereksiz seçim istenmez. Backend devralan isterse seçim açılır ve seçimle AYNI kilit anahtarıyla yeniden
+  // gönderilir. Eksik atanmış dosyalar backend yanıtından gösterilir; otomatik atama YAPILMAZ.
+  const deactivateLawyer = async (id: string, replacementLawyerId?: string) => {
     setLawyerActionError(null);
     setLawyerStale(null);
 
     // PR-2A1: PESSIMISTIC + kaynak bazlı kilit — aynı avukata çift tık tek mutation,
     // farklı avukatlar birbirini BLOKLAMAZ. Satır yalnız doğrulanmış success sonrası gider.
     await rowLock.run(`office:lawyer:delete:${id}`, async () => {
-      const outcome = await runMutation({
-        mutate: () => api.delete(`/lawyers/${id}`),
-        refresh: () => loadOffice({ propagateError: true }),
-        failureMessage: "Avukat pasifleştirilemedi. Kayıt DURUYOR, lütfen tekrar deneyin.",
-        staleMessage: "Avukat PASİFLEŞTİRİLDİ, ancak liste yenilenemedi.",
-      });
-      if (!rowLock.isMounted()) return;
-      if (outcome.status === "FAILED") {
-        // Satır KORUNUR; backend'in typed mesajı görünür (yeni iş kuralı uydurulmaz).
-        setLawyerActionError(outcome.error.message);
-        return;
-      }
-      showSaved();
-      if (outcome.status === "SUCCESS_STALE") {
-        // Pasifleştirme KESİNLEŞTİ; bayat listede görünen bu satır yeniden tetiklenemez.
-        setLawyerStale(outcome.stale);
-        setStaleLockedIds((p) => (p.includes(`lawyer:${id}`) ? p : [...p, `lawyer:${id}`]));
+      setDeactivatingLawyerIds((p) => (p.includes(id) ? p : [...p, id]));
+      let raw: unknown = null;
+      try {
+        const outcome = await runMutation({
+          mutate: async () => {
+            try {
+              return replacementLawyerId
+                ? await api.delete(`/lawyers/${id}`, { replacementLawyerId })
+                : await api.delete(`/lawyers/${id}`);
+            } catch (e) {
+              raw = e; // yapısal gövde (code / caseIds) — kullanıcı yüzeyi hatası bunu taşımaz
+              throw e;
+            }
+          },
+          refresh: () => loadOffice({ propagateError: true }),
+          failureMessage: "Avukat pasifleştirilemedi. Kayıt DURUYOR, lütfen tekrar deneyin.",
+          staleMessage: "Avukat PASİFLEŞTİRİLDİ, ancak liste yenilenemedi.",
+        });
+        if (!rowLock.isMounted()) return;
+        if (outcome.status === "FAILED") {
+          // Satır KORUNUR ve pasif GÖSTERİLMEZ; açık seçim korunur.
+          const failure = classifyLawyerDeactivationFailure(raw, outcome.error);
+          if (failure.kind === "REPLACEMENT_REQUIRED") {
+            setLawyerReplacement((p) => ({ lawyerId: id, selectedId: p?.lawyerId === id ? p.selectedId : "", notice: failure.message, missingCaseIds: [] }));
+            return;
+          }
+          if (failure.kind === "REPLACEMENT_NOT_ASSIGNED") {
+            setLawyerReplacement((p) => ({ lawyerId: id, selectedId: replacementLawyerId ?? (p?.lawyerId === id ? p.selectedId : ""), notice: failure.message, missingCaseIds: failure.caseIds }));
+            return;
+          }
+          // Diğer her hata GİZLENMEZ: backend'in güvenli mesajı (ya da genel metin) görünür.
+          setLawyerReplacement((p) => (p?.lawyerId === id ? { ...p, notice: "", missingCaseIds: [] } : p));
+          setLawyerActionError(failure.message);
+          return;
+        }
+        setLawyerReplacement((p) => (p?.lawyerId === id ? null : p));
+        showSaved();
+        if (outcome.status === "SUCCESS_STALE") {
+          // Pasifleştirme KESİNLEŞTİ; bayat listede görünen bu satır yeniden tetiklenemez.
+          setLawyerStale(outcome.stale);
+          setStaleLockedIds((p) => (p.includes(`lawyer:${id}`) ? p : [...p, `lawyer:${id}`]));
+        }
+      } finally {
+        // Yalnız BU avukatın meşgul durumu kalkar; süren diğer isteklerin durumu korunur.
+        if (rowLock.isMounted()) setDeactivatingLawyerIds((p) => p.filter((x) => x !== id));
       }
     });
+  };
+
+  const handleDeleteLawyer = async (id: string) => {
+    // Cancel mutation BAŞLATMAZ.
+    if (!confirm("Avukat pasifleştirilecek, kalıcı olarak silinmeyecektir. Devam edilsin mi?")) return;
+    await deactivateLawyer(id);
   };
 
   // PR-2A1 — `isDefaultForNewCases` ÇOKLU-SEÇİM bayrağıdır (owner sözleşme notu
@@ -1283,6 +1324,66 @@ function OfficeSettingsInner() {
               </button>
             </div>
           ) : null}
+          {(() => {
+            // O-1: devralan seçimi — yalnız backend devralan istediğinde açılır. Adaylar `/office`'in AKTİF
+            // avukatları (kendisi hariç); dosyalara atanmışlık backend'de doğrulanır, eksikse liste gösterilir.
+            const target = lawyerReplacement ? office?.lawyers?.find((l) => l.id === lawyerReplacement.lawyerId) : undefined;
+            if (!lawyerReplacement || !target) return null;
+            const candidates = (office?.lawyers ?? []).filter((l) => l.id !== target.id);
+            const busy = deactivatingLawyerIds.includes(target.id);
+            return (
+              <div role="region" aria-label="Devralan avukat seçimi" className="mx-5 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-[12px] text-amber-900">
+                <p className="font-medium">{target.name} {target.surname} pasifleştirilmeden önce sorumlu olduğu dosyaları devralacak avukatı seçin.</p>
+                {lawyerReplacement.notice ? <p role="alert" className="mt-1">{lawyerReplacement.notice}</p> : null}
+                {lawyerReplacement.missingCaseIds.length > 0 ? (
+                  <ul aria-label="Devralanın atanmadığı dosyalar" className="mt-1 list-disc pl-5">
+                    {lawyerReplacement.missingCaseIds.map((caseId) => (
+                      <li key={caseId}>
+                        <a href={`/cases/${caseId}`} target="_blank" rel="noopener noreferrer" className="underline">Dosya {caseId}</a>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                {candidates.length === 0 ? (
+                  <p className="mt-2">Büroda devralabilecek başka aktif avukat yok. Önce devralacak avukatı ekleyip dosyalara atayın.</p>
+                ) : (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <label htmlFor="lawyer-replacement-select" className="font-medium">Yeni sorumlu avukat</label>
+                    <select
+                      id="lawyer-replacement-select"
+                      value={lawyerReplacement.selectedId}
+                      disabled={busy}
+                      onChange={(e) => {
+                        const selectedId = e.target.value;
+                        // Önceki seçime ait eksik dosya listesi yeni seçim için geçerli değildir.
+                        setLawyerReplacement((p) => (p ? { ...p, selectedId, notice: "", missingCaseIds: [] } : p));
+                      }}
+                      className="rounded border border-amber-300 bg-white px-2 py-1"
+                    >
+                      <option value="">Seçin…</option>
+                      {candidates.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name} {c.surname}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    aria-label="Devret ve pasifleştir"
+                    onClick={() => deactivateLawyer(target.id, lawyerReplacement.selectedId)}
+                    disabled={busy || !lawyerReplacement.selectedId || candidates.length === 0}
+                    className="rounded bg-red-600 px-2.5 py-1 font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {busy ? "Gönderiliyor…" : "Devret ve pasifleştir"}
+                  </button>
+                  <button type="button" onClick={() => setLawyerReplacement(null)} disabled={busy} className="rounded border border-amber-300 px-2.5 py-1 hover:bg-amber-100 disabled:opacity-50">
+                    Vazgeç
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
           <div className="px-5 py-4">
             <div className="rounded-xl border-2 border-indigo-300 bg-indigo-50/30 p-2">
               <div className="divide-y divide-indigo-100">
@@ -1367,7 +1468,7 @@ function OfficeSettingsInner() {
                         {lawyer.isDefaultForNewCases ? '⭐ Varsayılan' : '☆ Seç'}
                       </button>
                       <button onClick={() => { setEditingLawyer(lawyer); setShowLawyerModal(true); }} className="p-1.5 hover:bg-indigo-100 rounded-md" title="Düzenle"><Pencil className="h-3.5 w-3.5 text-gray-500" /></button>
-                      <button type="button" onClick={() => handleDeleteLawyer(lawyer.id)} disabled={staleLockedIds.includes(`lawyer:${lawyer.id}`)} aria-label={`${lawyer.name} ${lawyer.surname} avukatını pasifleştir`} className="p-1.5 hover:bg-red-100 rounded-md disabled:opacity-40" title="Pasifleştir"><Trash2 className="h-3.5 w-3.5 text-red-500" /></button>
+                      <button type="button" onClick={() => handleDeleteLawyer(lawyer.id)} disabled={staleLockedIds.includes(`lawyer:${lawyer.id}`) || deactivatingLawyerIds.includes(lawyer.id)} aria-label={`${lawyer.name} ${lawyer.surname} avukatını pasifleştir`} className="p-1.5 hover:bg-red-100 rounded-md disabled:opacity-40" title="Pasifleştir"><Trash2 className="h-3.5 w-3.5 text-red-500" /></button>
                     </div>
                   </div>
                 ))}
