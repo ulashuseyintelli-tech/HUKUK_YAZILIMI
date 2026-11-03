@@ -1097,9 +1097,12 @@ class ApiClient {
     return { data };
   }
 
-  async delete<T = any>(endpoint: string): Promise<{ data: T }> {
+  // O-1: gövde YALNIZ verildiğinde eklenir (ör. avukat pasifleştirmede `replacementLawyerId`);
+  // gövdesiz çağrılar öncekiyle aynı isteği gönderir.
+  async delete<T = any>(endpoint: string, body?: unknown): Promise<{ data: T }> {
     const data = await this.request<T>(endpoint, {
       method: "DELETE",
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     return { data };
   }
