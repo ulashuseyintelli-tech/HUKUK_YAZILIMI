@@ -311,4 +311,42 @@ describe('GERÇEK API SÖZLEŞMESİ · kartlar ve vekâlet bandı', () => {
     expect(screen.queryByText('⚠️ Süresi Dolmak Üzere Olan Vekaletler')).toBeNull();
     expect(screen.queryByText('Süresi dolan vekalet bilgisi alınamadı')).toBeNull();
   });
+
+  it('Vekâlet: önceki başarılı yanıt BOŞ iken sonraki okuma hatası "vekalet yok" gibi GİZLENMEZ', async () => {
+    // Sınır durumu: ilk okuma doğrulanmış boş dizi → hata halinde bayat veri `[]` olarak taşınır.
+    // Boş bayat veri gösterilecek bir şey değildir; yeni hata ve Tekrar dene görünmelidir.
+    let poaFails = false;
+    healthy({
+      [POA]: () => (poaFails ? new Error('poa sonradan çöktü') : body([])),
+      [RISK]: () => new Error('risk down'), // yeniden okumayı tetikleyecek Tekrar dene düğmesi
+    });
+    render(<DashboardPage />);
+    await screen.findByText('Risk dağılımı alınamadı');
+    expect(screen.queryByText('Süresi dolan vekalet bilgisi alınamadı')).toBeNull(); // başarılı boş: gizli
+
+    poaFails = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Tekrar dene' }));
+
+    expect(await screen.findByText('Süresi dolan vekalet bilgisi alınamadı')).toBeTruthy();
+    expect(screen.queryByText('⚠️ Süresi Dolmak Üzere Olan Vekaletler')).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Tekrar dene' }).length).toBeGreaterThan(1);
+  });
+
+  it('Vekâlet: önceki DOLU veride sonraki hata → bant korunur ve "Güncel olmayabilir" etiketlenir', async () => {
+    let poaFails = false;
+    healthy({
+      [POA]: () => (poaFails ? new Error('poa sonradan çöktü') : body([POA_ROW])),
+      [RISK]: () => new Error('risk down'),
+    });
+    render(<DashboardPage />);
+    expect(await screen.findByText('⚠️ Süresi Dolmak Üzere Olan Vekaletler')).toBeTruthy();
+    expect(screen.queryByText('Güncel olmayabilir')).toBeNull(); // taze veri etiketsiz
+
+    poaFails = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Tekrar dene' }));
+
+    await waitFor(() => expect(screen.getByText('Güncel olmayabilir')).toBeTruthy());
+    expect(screen.getByText('Örnek Müvekkil')).toBeTruthy();
+    expect(screen.queryByText('Süresi dolan vekalet bilgisi alınamadı')).toBeNull();
+  });
 });

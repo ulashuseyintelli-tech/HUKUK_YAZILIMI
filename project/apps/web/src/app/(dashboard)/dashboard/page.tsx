@@ -349,9 +349,10 @@ export default function DashboardPage() {
           
           case 'expiringPoas':
             if (!widgets?.expiringPoas) return null;
-            // Okuma hatası "süresi dolan vekalet yok" gibi GİZLENMEZ (WSMR-A2): doğrulanmış
-            // eski veri yoksa hata ve tekrar dene gösterilir; boş liste yalnız başarılı yanıttan.
-            if (poas.status === 'ERROR' && staleData(poas) === undefined) {
+            // Okuma hatası "süresi dolan vekalet yok" gibi GİZLENMEZ (WSMR-A2): gösterilecek eski veri
+            // yoksa (hiç başarılı okuma olmadıysa ya da önceki başarılı yanıt BOŞSA) hata ve tekrar dene
+            // gösterilir. Boş liste yalnız başarılı yanıttan gizlenir; dolu eski veri bayat etiketiyle kalır.
+            if (poas.status === 'ERROR' && expiringPoas.length === 0) {
               return (
                 <div key={widgetId} {...wrapperProps}>
                   {dragHandle}
