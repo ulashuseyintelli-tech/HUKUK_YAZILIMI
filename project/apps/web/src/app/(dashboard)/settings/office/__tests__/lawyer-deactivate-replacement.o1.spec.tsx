@@ -231,6 +231,43 @@ describe('O-1 avukat pasifleştirme — devralan seçimi', () => {
     expect(mocked.delete).toHaveBeenCalledTimes(2);
   });
 
+  it('FARKLI iki avukatın eşzamanlı istekleri: her satır kendi isteği bitene kadar meşgul; biri bitince diğeri AÇILMAZ', async () => {
+    const DEL_L2 = 'DENEME IKI avukatını pasifleştir';
+    const pending: Record<string, (v: unknown) => void> = {};
+    mocked.delete.mockImplementation((url: string) => new Promise((_, rej) => { pending[url] = rej; }));
+    const d = await renderLawyers();
+    const b1 = d.getByRole('button', { name: DEL_L1 }) as HTMLButtonElement;
+    const b2 = d.getByRole('button', { name: DEL_L2 }) as HTMLButtonElement;
+
+    fireEvent.click(b1);
+    await waitFor(() => expect(b1.disabled).toBe(true));
+    fireEvent.click(b2);
+    await waitFor(() => expect(b2.disabled).toBe(true));
+    // ikinci istek ilkinin meşgul durumunu SİLMEZ
+    expect(b1.disabled).toBe(true);
+    expect(mocked.delete.mock.calls).toEqual([['/lawyers/l1'], ['/lawyers/l2']]);
+
+    // ikinci biter → yalnız ikinci satır açılır
+    await act(async () => {
+      pending['/lawyers/l2']({ status: 400, body: { message: 'İkinci istek reddedildi.' } });
+    });
+    await screen.findByText('İkinci istek reddedildi.');
+    expect(b2.disabled).toBe(false);
+    expect(b1.disabled).toBe(true);
+    // çift gönderim koruması: hâlâ meşgul satıra tıklama yeni istek BAŞLATMAZ
+    fireEvent.click(b1);
+    expect(mocked.delete).toHaveBeenCalledTimes(2);
+
+    // ilk biter → o satır da açılır
+    await act(async () => {
+      pending['/lawyers/l1']({ status: 400, body: { message: 'İlk istek reddedildi.' } });
+    });
+    await screen.findByText('İlk istek reddedildi.');
+    expect(b1.disabled).toBe(false);
+    expect(b2.disabled).toBe(false);
+    expect(mocked.delete).toHaveBeenCalledTimes(2);
+  });
+
   it('devralabilecek başka aktif avukat yoksa açıklama görünür, gönderim kapalı', async () => {
     primeReads({ '/office': { data: office([LAWYERS[0]]) } });
     const d = await renderLawyers();

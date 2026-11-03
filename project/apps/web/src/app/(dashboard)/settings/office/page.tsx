@@ -204,9 +204,10 @@ function OfficeSettingsInner() {
   const [refreshingStale, setRefreshingStale] = useState(false);
   const rowLock = useKeyedSubmitLock();
   // O-1: backend devralan isterse açılan seçim. Seçim ve eksik atanmış dosyalar başarısızlıkta KORUNUR;
-  // `deactivatingLawyerId` istek sürerken düğmeleri kapatır (kilit ayrıca çift gönderimi engeller).
+  // `deactivatingLawyerIds` istek sürerken O avukatın düğmelerini kapatır; avukat başına tutulur çünkü
+  // satır kilidi farklı avukatların eşzamanlı isteklerine izin verir (kilit ayrıca çift gönderimi engeller).
   const [lawyerReplacement, setLawyerReplacement] = useState<{ lawyerId: string; selectedId: string; notice: string; missingCaseIds: string[] } | null>(null);
-  const [deactivatingLawyerId, setDeactivatingLawyerId] = useState<string | null>(null);
+  const [deactivatingLawyerIds, setDeactivatingLawyerIds] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
   // Office bölümüne özel belirgin geri bildirim (paylaşılan saved/saving'e dokunmadan)
   const [officeStatus, setOfficeStatus] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -692,7 +693,7 @@ function OfficeSettingsInner() {
     // PR-2A1: PESSIMISTIC + kaynak bazlı kilit — aynı avukata çift tık tek mutation,
     // farklı avukatlar birbirini BLOKLAMAZ. Satır yalnız doğrulanmış success sonrası gider.
     await rowLock.run(`office:lawyer:delete:${id}`, async () => {
-      setDeactivatingLawyerId(id);
+      setDeactivatingLawyerIds((p) => (p.includes(id) ? p : [...p, id]));
       let raw: unknown = null;
       try {
         const outcome = await runMutation({
@@ -735,7 +736,8 @@ function OfficeSettingsInner() {
           setStaleLockedIds((p) => (p.includes(`lawyer:${id}`) ? p : [...p, `lawyer:${id}`]));
         }
       } finally {
-        if (rowLock.isMounted()) setDeactivatingLawyerId((p) => (p === id ? null : p));
+        // Yalnız BU avukatın meşgul durumu kalkar; süren diğer isteklerin durumu korunur.
+        if (rowLock.isMounted()) setDeactivatingLawyerIds((p) => p.filter((x) => x !== id));
       }
     });
   };
@@ -1328,7 +1330,7 @@ function OfficeSettingsInner() {
             const target = lawyerReplacement ? office?.lawyers?.find((l) => l.id === lawyerReplacement.lawyerId) : undefined;
             if (!lawyerReplacement || !target) return null;
             const candidates = (office?.lawyers ?? []).filter((l) => l.id !== target.id);
-            const busy = deactivatingLawyerId === target.id;
+            const busy = deactivatingLawyerIds.includes(target.id);
             return (
               <div role="region" aria-label="Devralan avukat seçimi" className="mx-5 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-[12px] text-amber-900">
                 <p className="font-medium">{target.name} {target.surname} pasifleştirilmeden önce sorumlu olduğu dosyaları devralacak avukatı seçin.</p>
@@ -1466,7 +1468,7 @@ function OfficeSettingsInner() {
                         {lawyer.isDefaultForNewCases ? '⭐ Varsayılan' : '☆ Seç'}
                       </button>
                       <button onClick={() => { setEditingLawyer(lawyer); setShowLawyerModal(true); }} className="p-1.5 hover:bg-indigo-100 rounded-md" title="Düzenle"><Pencil className="h-3.5 w-3.5 text-gray-500" /></button>
-                      <button type="button" onClick={() => handleDeleteLawyer(lawyer.id)} disabled={staleLockedIds.includes(`lawyer:${lawyer.id}`) || deactivatingLawyerId === lawyer.id} aria-label={`${lawyer.name} ${lawyer.surname} avukatını pasifleştir`} className="p-1.5 hover:bg-red-100 rounded-md disabled:opacity-40" title="Pasifleştir"><Trash2 className="h-3.5 w-3.5 text-red-500" /></button>
+                      <button type="button" onClick={() => handleDeleteLawyer(lawyer.id)} disabled={staleLockedIds.includes(`lawyer:${lawyer.id}`) || deactivatingLawyerIds.includes(lawyer.id)} aria-label={`${lawyer.name} ${lawyer.surname} avukatını pasifleştir`} className="p-1.5 hover:bg-red-100 rounded-md disabled:opacity-40" title="Pasifleştir"><Trash2 className="h-3.5 w-3.5 text-red-500" /></button>
                     </div>
                   </div>
                 ))}
