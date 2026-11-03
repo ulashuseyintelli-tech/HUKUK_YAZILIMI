@@ -11,6 +11,8 @@ import { ExpenseNotificationService } from './expense-notification.service';
 import { ExpensePaymentReversalContractService, ExpensePaymentReversalRequestKind } from './expense-payment-reversal-contract.service';
 import { lockExpenseRequest } from './expense-request-lock';
 import { normalizeExpensePayment, type PaymentInput } from './expense-payment-command';
+import { OfficeApprovalService } from '@/modules/office-approval/office-approval.service';
+import { isSameApprovalIdentity } from '@/common/approval-identity';
 export type { PaymentInput } from './expense-payment-command';
 import {
   AccountingJournalWriterService,
@@ -50,6 +52,14 @@ import {
 } from './stage-expense-idempotency';
 
 const OPENING_EXPENSE_ALREADY_CREATED = 'Bu takip için açılış masrafları zaten oluşturulmuş';
+
+/**
+ * O-7 (owner D1-A, 2026-11-04) — sunucunun KENDİ ürettiği masraf taleplerinin `createdById` değeri. Yalnız iç çağıranlar
+ * yazar: CaseService.runOpeningExpenseAutomation() (dosya açılışı) ve WorkflowEngineService (aşama otomasyonu). HTTP
+ * oluşturma uçları `req.user.id` geçirir; DTO'lar `createdById` almaz ve `User.id` cuid'dir → kullanıcı bu değeri seçemez.
+ * Bu taleplerde talep eden kişi yoktur: kişi düzeyi öz-onay karşılaştırması uygulanmaz, onaycı yeterliliği yine şarttır.
+ */
+export const SYSTEM_EXPENSE_REQUESTER = 'system';
 
 export interface ExpenseItem {
   /** Kanonik katalog kodu veya bilinen legacy alias (create anında kanonik koda çözülür). */
@@ -141,6 +151,9 @@ export class ExpenseRequestService {
     // F02-B dilim 2: masraf liste/istatistik görünüm kapsamı (bayrak açıkken zorunlu; bkz. viewScopeWhere)
     @Optional()
     private readonly workScope?: WorkScopePermissionService,
+    // O-7: dağıtım kararı için genel onaycı yüklemi (isApproverEligibleInTx). Yoksa karar fail-closed reddedilir.
+    @Optional()
+    private readonly officeApproval?: OfficeApprovalService,
   ) {}
 
   async findAll(tenantId: string, params?: { caseId?: string; clientId?: string; status?: ExpenseRequestStatus }, actorUserId?: string) {
@@ -548,45 +561,81 @@ export class ExpenseRequestService {
   /**
    * S8-B FAZ-1b — Masraf DAĞITIM-UYGUNLUĞU onayı (collection-lifecycle status'tan AYRI eksen). PENDING_APPROVAL → APPROVED.
    * Yalnız APPROVED masraf otomatik dağıtıma (CollectionDisposition reimbursement) girer. finalizeAndSend (müvekkile
-   * gönder) ile KARIŞTIRILMAZ — bu iç dağıtım-onayı. İdempotent (zaten APPROVED → no-op).
+   * gönder) ile KARIŞTIRILMAZ — bu iç dağıtım-onayı. Kurallar: bkz. decideDistribution (O-7).
    */
   async approveForDistribution(tenantId: string, id: string, userId: string) {
-    const existing = await this.findOne(tenantId, id);
-    if (existing.expenseApprovalStatus === 'APPROVED') return existing; // idempotent
-    if (existing.expenseApprovalStatus !== 'PENDING_APPROVAL') {
-      throw new BadRequestException(`Yalnız PENDING_APPROVAL masraf onaylanabilir (durum: ${existing.expenseApprovalStatus})`);
-    }
-    return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.expenseRequest.update({
-        where: { id },
-        data: { expenseApprovalStatus: 'APPROVED', approvedAt: new Date(), approvedById: userId },
-      });
-      await tx.expenseAuditLog.create({
-        data: { expenseRequestId: id, action: 'APPROVAL_GRANTED', details: { scope: 'DISTRIBUTION' }, userId },
-      });
-      return updated;
-    });
+    return this.decideDistribution(tenantId, id, userId, 'APPROVED');
   }
 
   /**
-   * S8-B FAZ-1b — Masraf dağıtım-onayını reddet. PENDING_APPROVAL → REJECTED. İdempotent (zaten REJECTED → no-op). Gerekçe opsiyonel.
+   * S8-B FAZ-1b — Masraf dağıtım-onayını reddet. PENDING_APPROVAL → REJECTED. O-7: gerekçe (note) ZORUNLU (genel onay
+   * motorundaki ret kuralıyla aynı); onayla aynı aktör ve durum kuralları.
    */
   async rejectForDistribution(tenantId: string, id: string, userId: string, note?: string) {
-    const existing = await this.findOne(tenantId, id);
-    if (existing.expenseApprovalStatus === 'REJECTED') return existing; // idempotent
-    if (existing.expenseApprovalStatus !== 'PENDING_APPROVAL') {
-      throw new BadRequestException(`Yalnız PENDING_APPROVAL masraf reddedilebilir (durum: ${existing.expenseApprovalStatus})`);
+    if (typeof note !== 'string' || !note.trim()) {
+      throw new BadRequestException('Reddetme gerekçesi (note) zorunludur.');
     }
+    return this.decideDistribution(tenantId, id, userId, 'REJECTED', note.trim());
+  }
+
+  /**
+   * O-7 — dağıtım kararı (onay / ret). Mevcut kurallar, YENİ rol / yetki modeli YOK:
+   *  - karar veren = genel onaycı (OfficeApprovalService.isApproverEligible: aktif + aynı tenant + bağlı avukat + PARTNER
+   *    ya da canApproveOfficeActions; personel asla). CPE `APPROVE_EXPENSE` dosya durumu kapısı olarak kalır.
+   *  - talep eden ≠ karar veren, KİŞİ düzeyinde (OD-11 B; `common/approval-identity`). SYSTEM_EXPENSE_REQUESTER talebinde
+   *    talep eden kişi yoktur → karşılaştırma uygulanmaz (owner D1-A), yeterlilik yine şart.
+   *  - tek transaction: satır kilidi (lockExpenseRequest) → yeniden okuma → aktör kapıları (aynı kararın tekrarında da) →
+   *    iptal → durum → koşullu güncelleme (yalnız PENDING_APPROVAL) + denetim. Aynı kararın tekrarı yazım ÜRETMEZ; ters
+   *    karar reddedilir; yarışı kaybeden kilit sonrası yeni durumu okur ve ikinci denetim / yazım üretmez.
+   */
+  private async decideDistribution(
+    tenantId: string,
+    id: string,
+    userId: string,
+    decision: 'APPROVED' | 'REJECTED',
+    note?: string,
+  ) {
+    const officeApproval = this.officeApproval;
+    if (!officeApproval) {
+      throw new ForbiddenException('Onaylayıcı yeterliliği doğrulanamadı; dağıtım kararı uygulanmadı.');
+    }
+    const verb = decision === 'APPROVED' ? 'onaylanabilir' : 'reddedilebilir';
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.expenseRequest.update({
-        where: { id },
-        data: { expenseApprovalStatus: 'REJECTED', approvedAt: new Date(), approvedById: userId },
+      const existing = await this.findLockedRequest(tx, tenantId, id);
+
+      if (!(await officeApproval.isApproverEligibleInTx(tx, userId, tenantId))) {
+        throw new ForbiddenException({
+          code: 'EXPENSE_APPROVER_NOT_ELIGIBLE',
+          message: 'Masraf dağıtım kararı için yetki yok (PARTNER veya yetkilendirilmiş avukat gerekir).',
+        });
+      }
+      if (existing.createdById !== SYSTEM_EXPENSE_REQUESTER && (await isSameApprovalIdentity(tx, userId, existing.createdById, tenantId))) {
+        throw new BadRequestException({
+          code: 'SELF_APPROVAL_FORBIDDEN',
+          message: 'Kendi masraf talebinizi onaylayamaz ya da reddedemezsiniz.',
+        });
+      }
+      if (existing.status === 'CANCELLED') {
+        throw new BadRequestException('İptal edilmiş masraf talebi için dağıtım kararı verilemez');
+      }
+      if (existing.expenseApprovalStatus === decision) return existing; // aynı kararın tekrarı: yazım YOK
+      if (existing.expenseApprovalStatus !== 'PENDING_APPROVAL') {
+        throw new BadRequestException(`Yalnız PENDING_APPROVAL masraf ${verb} (durum: ${existing.expenseApprovalStatus})`);
+      }
+
+      const decidedAt = new Date();
+      const res = await tx.expenseRequest.updateMany({
+        where: { id, tenantId, expenseApprovalStatus: 'PENDING_APPROVAL' },
+        data: { expenseApprovalStatus: decision, approvedAt: decidedAt, approvedById: userId },
       });
+      if (res.count !== 1) throw new ConflictException('Masraf talebi eşzamanlı değiştirildi; dağıtım kararı uygulanmadı.');
       await tx.expenseAuditLog.create({
-        data: { expenseRequestId: id, action: 'APPROVAL_REJECTED', details: { scope: 'DISTRIBUTION', note: note ?? null }, userId },
+        data: decision === 'APPROVED'
+          ? { expenseRequestId: id, action: 'APPROVAL_GRANTED', details: { scope: 'DISTRIBUTION' }, userId }
+          : { expenseRequestId: id, action: 'APPROVAL_REJECTED', details: { scope: 'DISTRIBUTION', note: note ?? null }, userId },
       });
-      return updated;
-    });
+      return { ...existing, expenseApprovalStatus: decision, approvedAt: decidedAt, approvedById: userId };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   }
 
   async delete(tenantId: string, id: string) {
