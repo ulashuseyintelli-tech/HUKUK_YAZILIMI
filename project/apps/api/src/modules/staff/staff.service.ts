@@ -1,13 +1,51 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import { Prisma, StaffMember } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { normalizePersonName } from '../../common/name-match.util';
 import { maskTckn } from '../../common/pii-mask.util';
 import { AuditService } from '../audit/audit.service';
+import { ReactivateStaffDto } from './dto/staff.dto';
 
 export interface StaffDeactivateAuditActor {
   userId: string;
   role: string;
   requestId: string;
+}
+
+/** O-5: yeniden etkinleştirme de pasifleştirme ile aynı denetim bağlamını ister (aktör + rol + istek kimliği). */
+export type StaffReactivateAuditActor = StaffDeactivateAuditActor;
+
+/**
+ * O-5: yeniden etkinleştirmede yöneticinin AÇIKÇA belirlediği alanlar (ReactivateStaffDto ile birebir).
+ * Kimlik, iletişim, hesap bağı ve sıra bu kümeye girmez.
+ */
+const STAFF_REACTIVATION_FIELDS = [
+  'staffType',
+  'canCreateCase',
+  'canEditCase',
+  'canGenerateDocuments',
+  'canApproveDocuments',
+  'canSeeFinance',
+  'canApproveFinance',
+  'canPrepareCollectionDisposition',
+  'canSendNotifications',
+  'isDefaultForNewCases',
+] as const;
+type StaffReactivationValues = Pick<StaffMember, (typeof STAFF_REACTIVATION_FIELDS)[number]>;
+
+const pickReactivationValues = (src: StaffReactivationValues): StaffReactivationValues =>
+  Object.fromEntries(STAFF_REACTIVATION_FIELDS.map((k) => [k, src[k]])) as unknown as StaffReactivationValues;
+
+type StaffContextReader = Pick<Prisma.TransactionClient, 'caseStaff' | 'case' | 'user'>;
+
+/** O-5: yeniden etkinleştirmenin etkisi — onay öncesinde ve sonrasında GERÇEK durumla gösterilir. */
+export interface StaffReactivationContext {
+  /** Kartın bağlı giriş hesabı; bu işlem hesabı, rolü ve büro geneli grantleri DEĞİŞTİRMEZ. */
+  linkedAccount: { exists: boolean; isActive: boolean };
+  /** Pasifleştirmede silinmeyen dosya atamaları (CaseStaff); kart etkinleşince yeniden etkili olur. */
+  caseAssignmentCount: number;
+  /** Personelin dosya sorumlusu olduğu dosyalar (Case.responsibleStaffId). */
+  responsibleCaseCount: number;
 }
 
 @Injectable()
@@ -57,8 +95,15 @@ export class StaffService {
    * Yeni personel ekle.
    *
    * Mükerrer politikası (PR-S — duplicate-handling kontratı):
-   * - KESİN kimlik (TCKN/e-posta) eşleşmesi → kesin duplicate: yeni AÇMA, mevcut döndür
-   *   (soft-deleted ise reactivate) + transient `_existingReturned`/`_reactivated` bayrağı.
+   * - KESİN kimlik (TCKN/e-posta) eşleşmesi, AKTİF kart → kesin duplicate: yeni AÇMA, mevcut döndür
+   *   + transient `_existingReturned` bayrağı (`_reactivated: false`).
+   * - O-5 (owner 05.11.2026, C politikası): kimlik eşleşmesi yalnız PASİF kartta → HİÇBİR YAZIM
+   *   YAPILMAZ; 409 STAFF_REACTIVATION_REVIEW { code, message, staff } döner. Önceden kart burada
+   *   sessizce etkinleşiyor, ESKİ izinler ve yeni dosyalara otomatik atama geri geliyor, formdaki
+   *   değerler yazılmıyor ve denetim kaydı oluşmuyordu. Yeniden etkinleştirme artık yalnız
+   *   yöneticinin izinleri gözden geçirip açıkça gönderdiği `reactivate()` ile olur (create yetkisi
+   *   yaşam döngüsü kararını İÇERMEZ — LawyerService B3 / CLIENT R1A emsali).
+   *   Aynı kimlik hem aktif hem pasif kartta varsa AKTİF kart döner (pasif kart açılmaz).
    * - Kimlik YOK + SADECE ad-soyad eşleşmesi → SESSİZ MERGE YASAK: 409 SIMILAR_NAME_REVIEW
    *   { code, message, candidates } döner → frontend review-dialog açar (insan kararı).
    *   İki farklı kimliksiz "Fatih engin" meşru olabilir.
@@ -74,18 +119,34 @@ export class StaffService {
     const wantName = normalizePersonName(data.firstName, data.lastName);
     const all = await this.prisma.staffMember.findMany({ where: { tenantId } });
 
-    // 1) KESİN kimlik (TCKN/e-posta) → mevcut kullan + bildir (gerekirse reactivate). forceCreate bunu GEÇMEZ.
-    const identityMatch = all.find(
+    // 1) KESİN kimlik (TCKN/e-posta) → aktif kartı kullan + bildir; pasif kart YAZIMSIZ incelemeye
+    //    gider (O-5). forceCreate bunu GEÇMEZ.
+    const identityMatches = all.filter(
       (s) =>
         (data.tckn && s.tckn === data.tckn) ||
         (data.email && s.email === data.email),
     );
-    if (identityMatch) {
-      const wasReactivated = identityMatch.isActive === false;
-      if (wasReactivated) {
-        await this.prisma.staffMember.update({ where: { id: identityMatch.id }, data: { isActive: true } });
-      }
-      return { ...(identityMatch as any), isActive: true, _existingReturned: true, _reactivated: wasReactivated };
+    const activeMatch = identityMatches.find((s) => s.isActive);
+    if (activeMatch) {
+      return { ...(activeMatch as any), isActive: true, _existingReturned: true, _reactivated: false };
+    }
+    if (identityMatches.length > 0) {
+      const inactive = identityMatches[0];
+      const context = await this.readReactivationContext(this.prisma, tenantId, inactive);
+      throw new ConflictException({
+        code: 'STAFF_REACTIVATION_REVIEW',
+        message:
+          'Bu TCKN veya e-posta ile pasif bir personel kaydı var. Kayıt yeniden etkinleştirilmedi ve hiçbir değişiklik yapılmadı; izinleri gözden geçirerek ayrıca yeniden etkinleştirin.',
+        // Yalnız gözden geçirme için gereken alanlar: ad, tür, izinler ve etki. TCKN / e-posta /
+        // telefon / hesap kimliği GİRMEZ (istemci zaten kimliği yazdı; yanıt veriyi genişletmez).
+        staff: {
+          id: inactive.id,
+          firstName: inactive.firstName,
+          lastName: inactive.lastName,
+          ...pickReactivationValues(inactive),
+          ...context,
+        },
+      });
     }
 
     // 2) Kimlik YOK + sadece ad-soyad eşleşmesi + forceCreate yok → review (sessiz merge yasak).
@@ -297,6 +358,128 @@ export class StaffService {
 
       return deactivated;
     });
+  }
+
+  /**
+   * O-5 (owner 05.11.2026, C politikası): pasif personeli yöneticinin gözden geçirdiği izinlerle
+   * yeniden etkinleştir.
+   *
+   * - İzinler YALNIZ doğrulanmış gövdeden (ReactivateStaffDto) alınır; eski karttan sessizce
+   *   devralınmaz. Kimlik, iletişim, hesap bağı ve sıra değişmez.
+   * - Bağlı giriş hesabı, rolü ve büro geneli grantler (PermissionGrant) DEĞİŞMEZ; dosya
+   *   atamaları (CaseStaff) ve dosya sorumluluğu silinmez. Yanıt bunların GERÇEK durumunu döner.
+   * - Koşullu yazım: güncelleme, kararın verildiği duruma (aynı tenant + pasif + okunan
+   *   updatedAt) bağlıdır. Kayıt bu arada değiştiyse ya da eşzamanlı ikinci istek geldiyse
+   *   count 0 → 409; tek güncelleme ve tek denetim kaydı oluşur.
+   * - STAFF_REACTIVATE denetimi AYNI transaction'da yazılır; logInTransaction hata yutmaz →
+   *   denetim yazılamazsa yeniden etkinleştirme de geri alınır.
+   * - Başka AKTİF kart aynı TCKN / e-postayı taşıyorsa 409 DUPLICATE_IDENTITY (iki aktif kimlik oluşmaz).
+   *
+   * Çağrıldığı yerler:
+   * - StaffController.reactivate() → POST /staff/:id/reactivate (OfficeF01AuthorizationGuard)
+   */
+  async reactivate(id: string, tenantId: string, data: ReactivateStaffDto, actor: StaffReactivateAuditActor) {
+    if (!actor || !actor.userId || !actor.role || !actor.requestId) {
+      throw new ConflictException('Personel yeniden etkinleştirme aktör, rol veya istek kimliği eksik; işlem iptal edildi.');
+    }
+    const auditConsumer = this.audit ?? new AuditService(this.prisma);
+    const next = pickReactivationValues(data as unknown as StaffReactivationValues);
+
+    const existing = await this.prisma.staffMember.findFirst({ where: { id, tenantId } });
+    if (!existing) throw new NotFoundException('Personel bulunamadı');
+    if (existing.isActive) {
+      throw new ConflictException({
+        code: 'STAFF_ALREADY_ACTIVE',
+        message: 'Personel zaten etkin; yeniden etkinleştirme yapılmadı.',
+      });
+    }
+
+    const identity: Prisma.StaffMemberWhereInput[] = [
+      ...(existing.tckn ? [{ tckn: existing.tckn }] : []),
+      ...(existing.email ? [{ email: existing.email }] : []),
+    ];
+    if (identity.length > 0) {
+      const activeDuplicate = await this.prisma.staffMember.findFirst({
+        where: { tenantId, isActive: true, id: { not: id }, OR: identity },
+        select: { id: true, firstName: true, lastName: true },
+      });
+      if (activeDuplicate) {
+        throw new ConflictException({
+          code: 'DUPLICATE_IDENTITY',
+          message: 'Bu TCKN veya e-posta ile kayıtlı başka bir etkin personel var; yeniden etkinleştirme yapılmadı.',
+          existingStaff: {
+            id: activeDuplicate.id,
+            name: `${activeDuplicate.firstName} ${activeDuplicate.lastName}`.replace(/\s+/g, ' ').trim(),
+          },
+        });
+      }
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.staffMember.updateMany({
+        where: { id, tenantId, isActive: false, updatedAt: existing.updatedAt },
+        data: { ...next, isActive: true },
+      });
+      if (count !== 1) {
+        throw new ConflictException({
+          code: 'STAFF_REACTIVATION_CONFLICT',
+          message: 'Personel kaydı bu arada değişti ya da başka bir istekle etkinleştirildi; yeniden etkinleştirme uygulanmadı. Kaydı yeniden açıp tekrar deneyin.',
+        });
+      }
+
+      const context = await this.readReactivationContext(tx, tenantId, existing);
+
+      await auditConsumer.logInTransaction(tx, {
+        tenantId,
+        action: 'STAFF_REACTIVATE',
+        entityType: 'STAFF',
+        entityId: id,
+        userId: actor.userId,
+        actorType: 'USER',
+        decisionResult: 'SUCCESS',
+        reasonCode: 'OFFICE_F01_AUTHORIZED',
+        correlationId: actor.requestId,
+        requestId: actor.requestId,
+        policyRef: 'OFFICE-GOVERNANCE:O-5',
+        policyVersion: '2026-11-05',
+        // Yalnız yaşam döngüsü + izin değerleri; ad, kimlik ve iletişim verisi GİRMEZ.
+        oldValues: { isActive: false, ...pickReactivationValues(existing) },
+        newValues: { isActive: true, ...next },
+        metadata: {
+          actorRole: actor.role,
+          authoritySource: 'OFFICE_F01_AUTHORIZATION_GUARD',
+          reviewedReactivation: true,
+          linkedUserAccountExists: context.linkedAccount.exists,
+          linkedUserAccountActive: context.linkedAccount.isActive,
+          linkedUserAccountChanged: false,
+          caseAssignmentCount: context.caseAssignmentCount,
+          responsibleCaseCount: context.responsibleCaseCount,
+        },
+      });
+
+      const updated = await tx.staffMember.findFirst({ where: { id, tenantId } });
+      if (!updated) throw new NotFoundException('Personel bulunamadı');
+      return { staff: this.maskListRow(updated), ...context };
+    });
+  }
+
+  /** O-5: yeniden etkinleştirmenin gerçek etkisi (salt okuma; hesap / grant / atama YAZILMAZ). */
+  private async readReactivationContext(
+    db: StaffContextReader,
+    tenantId: string,
+    staff: Pick<StaffMember, 'id' | 'userId'>,
+  ): Promise<StaffReactivationContext> {
+    // Sıralı okuma: interactive transaction içinde aynı bağlantı paylaşılır.
+    const caseAssignmentCount = await db.caseStaff.count({ where: { staffMemberId: staff.id } });
+    const responsibleCaseCount = await db.case.count({ where: { tenantId, responsibleStaffId: staff.id } });
+    const user = staff.userId
+      ? await db.user.findFirst({ where: { id: staff.userId, tenantId }, select: { isActive: true } })
+      : null;
+    return {
+      linkedAccount: { exists: !!user, isActive: user?.isActive === true },
+      caseAssignmentCount,
+      responsibleCaseCount,
+    };
   }
 
   // Personel türüne göre listele

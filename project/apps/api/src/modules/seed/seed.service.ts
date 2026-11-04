@@ -205,6 +205,9 @@ export class SeedService {
    * (TCKN/e-posta) eşleşmesi mevcut satırı döndürür (gerekirse reactivate), yalnız ad-soyad
    * eşleşmesi 409 SIMILAR_NAME_REVIEW üretir. Seed insan kararı VEREMEZ: review çıkan satır
    * `forceCreate` ile GEÇİLMEZ, atlanır ve `skippedForReview` ile açıkça raporlanır.
+   * O-5 (owner 05.11.2026): kimlik eşleşmesi PASİF kartta ise create yazım yapmadan
+   * 409 STAFF_REACTIVATION_REVIEW döner — yeniden etkinleştirme de insan kararıdır; satır atlanır
+   * ve `skippedForReactivationReview` ile ayrıca raporlanır (pasif kart seed ile AÇILMAZ).
    * Satır-bazlı devam korunur (D07 emsali); review-dışı hatalar YUTULMAZ.
    */
   async seedStaff(tenantId: string) {
@@ -223,6 +226,7 @@ export class SeedService {
     let created = 0;
     let existing = 0;
     let skippedForReview = 0;
+    let skippedForReactivationReview = 0;
     for (const s of staff) {
       try {
         const res: any = await this.staffService!.create(tenantId, s);
@@ -233,6 +237,10 @@ export class SeedService {
           skippedForReview++;
           continue;
         }
+        if (e instanceof ConflictException && (e.getResponse() as any)?.code === 'STAFF_REACTIVATION_REVIEW') {
+          skippedForReactivationReview++;
+          continue;
+        }
         throw e;
       }
     }
@@ -240,7 +248,11 @@ export class SeedService {
       created,
       existing,
       skippedForReview,
-      message: `${created} personel oluşturuldu (${existing} mevcut, ${skippedForReview} isim-benzerliği nedeniyle atlandı)`,
+      skippedForReactivationReview,
+      message:
+        `${created} personel oluşturuldu (${existing} mevcut, ${skippedForReview} isim-benzerliği nedeniyle atlandı` +
+        (skippedForReactivationReview > 0 ? `, ${skippedForReactivationReview} pasif kayıt yeniden etkinleştirme incelemesi gerektirdiği için atlandı` : '') +
+        ')',
     };
   }
 
