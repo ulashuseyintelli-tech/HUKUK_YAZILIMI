@@ -516,3 +516,4 @@ src/modules/portal/__tests__/portal-admin-actor-id.spec.ts
 src/modules/portal/__tests__/portal-client-audit.spec.ts
 src/modules/portal/__tests__/portal-jwt-fail-closed.spec.ts
 src/modules/portal/__tests__/rfa013-portaluser-reactivate.spec.ts
+src/modules/client-intake-promotion/client-intake-promotion-capability.spec.ts

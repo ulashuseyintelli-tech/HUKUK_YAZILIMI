@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Param, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards, Req } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { Request } from 'express';
@@ -20,6 +20,11 @@ interface AuthRequest extends Request {
 @UseGuards(AuthGuard('jwt'), ViewerWriteDenyGuard)
 export class ClientIntakePromotionController {
   constructor(private readonly service: ClientIntakePromotionService) {}
+
+  @Get('client-intake-submissions/:id/promotion-capability')
+  getPromotionCapability(@Req() req: AuthRequest, @Param('id') id: string) {
+    return this.service.getPromotionCapability(req.user.tenantId, id, req.user.id);
+  }
 
   /**
    * Promote — POST /client-intake-submissions/:id/promote { debtorId }

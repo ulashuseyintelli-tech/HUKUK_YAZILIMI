@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { api, IntakeSubmission, IntakeSubmissionStatus } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 
 /**
  * Müvekkil Bilgi Formu — İnceleme Kuyruğu (Faz 4.7 PR-C1) — personel/JWT.
@@ -42,6 +43,7 @@ function fmtDate(iso: string): string {
 }
 
 export default function IntakeQueuePage() {
+  const { user } = useAuth();
   const [items, setItems] = useState<IntakeSubmission[] | null>(null);
   const [status, setStatus] = useState<"" | IntakeSubmissionStatus>("");
   const [error, setError] = useState("");
@@ -66,6 +68,9 @@ export default function IntakeQueuePage() {
     <div className="max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-1">
         <h1 className="text-xl font-semibold text-slate-800">Bilgi Formları</h1>
+        {user?.role === "ADMIN" && (
+          <Link href="/client-intake/permissions" className="text-sm text-blue-600 underline">İnceleme izinleri</Link>
+        )}
         <select
           aria-label="Durum filtresi"
           value={status}

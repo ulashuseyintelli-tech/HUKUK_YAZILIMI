@@ -3533,6 +3533,28 @@ class ApiClient {
   // BİLİNÇLİ olarak yer almaz). Bu metodlar yalnız submission/field lifecycle işaretler.
   // ============================================
 
+  /** ADMIN-only bounded subject selector for the single intake-review permission. */
+  async listIntakeReviewPermissionSubjects(cursor?: string) {
+    const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
+    return this.request<{ items: IntakeReviewPermissionSubject[]; nextCursor: string | null }>(`/client-intake-review-permissions/subjects${query}`);
+  }
+
+  async getIntakeReviewPermission(subjectUserId: string) {
+    return this.request<IntakeReviewPermissionState>(`/client-intake-review-permissions/${encodeURIComponent(subjectUserId)}`);
+  }
+
+  async grantIntakeReviewPermission(subjectUserId: string, input: { validFrom?: string; validUntil?: string; reason?: string }) {
+    return this.request<{ id: string }>(`/client-intake-review-permissions/${encodeURIComponent(subjectUserId)}`, { method: 'POST', body: JSON.stringify(input) });
+  }
+
+  async revokeIntakeReviewPermission(subjectUserId: string, reason?: string) {
+    return this.request<{ revoked: number }>(`/client-intake-review-permissions/${encodeURIComponent(subjectUserId)}/revoke`, { method: 'POST', body: JSON.stringify({ reason }) });
+  }
+
+  async getIntakePromotionCapability(submissionId: string) {
+    return this.request<{ canPromote: boolean }>(`/client-intake-submissions/${encodeURIComponent(submissionId)}/promotion-capability`);
+  }
+
   /** İnceleme kuyruğu (default CLIENT_SUBMITTED+IN_REVIEW). */
   async listIntakeSubmissions(params?: { status?: IntakeSubmissionStatus; caseId?: string }) {
     const q = new URLSearchParams();
@@ -3613,6 +3635,24 @@ class ApiClient {
 // Client Intake Link Types (Faz 4.7 PR-B)
 // ============================================
 export type IntakeLinkStatus = 'ACTIVE' | 'USED' | 'EXPIRED' | 'REVOKED';
+
+export interface IntakeReviewPermissionSubject {
+  id: string;
+  displayName: string;
+  isActive: boolean;
+  profileActive: boolean;
+  canReceiveGrant: boolean;
+}
+
+export interface IntakeReviewPermissionState {
+  subject: IntakeReviewPermissionSubject;
+  permissionKey: 'client.intake.review';
+  scope: 'GLOBAL';
+  effectiveEffect: 'ALLOW' | 'DENY' | 'NONE';
+  canReview: boolean;
+  revocableAllowCount: number;
+  scheduledAllowCount: number;
+}
 
 export type IntakeFieldCategory =
   | 'INCOME_SOURCE'

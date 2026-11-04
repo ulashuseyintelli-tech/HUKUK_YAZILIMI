@@ -4,6 +4,7 @@ import type { Prisma } from '@prisma/client';
 import { CLIENT_INTAKE_WRITE_TX, lockClientIntakeFieldSubmission, lockClientIntakeSubmission } from '../../common/client-intake-submission-lock';
 import { AuditService } from '../audit/audit.service';
 import { OfficeApprovalService } from '../office-approval/office-approval.service';
+import { isOfficeWriteDeniedForRole } from '../office-approval/office-write-role.policy';
 import { CaseDebtorLifecycleGuardService } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service';
 import {
   ClientIntakeSubmissionStatus,
@@ -80,6 +81,14 @@ export class ClientIntakePromotionService {
     private officeApproval: OfficeApprovalService,
     private readonly caseDebtorLifecycleGuard: CaseDebtorLifecycleGuardService,
   ) {}
+
+  /** Read-only UI hint; mutation endpoints retain their independent authorization and business checks. */
+  async getPromotionCapability(tenantId: string, submissionId: string, userId: string) {
+    const submission = await this.prisma.clientIntakeSubmission.findFirst({ where: { id: submissionId, tenantId }, select: { id: true } });
+    if (!submission) throw new NotFoundException('Gönderim bulunamadı');
+    const actor = await this.prisma.user.findFirst({ where: { id: userId, tenantId, isActive: true }, select: { role: true } });
+    return { canPromote: !!actor && !isOfficeWriteDeniedForRole(actor.role) && await this.officeApproval.isApproverEligible(userId, tenantId) };
+  }
 
   /**
    * I1A (owner-locked 2026-07-02) — promote, müvekkilin doğrulanmamış beyanını kanonik kayda

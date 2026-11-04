@@ -502,3 +502,4 @@ src/modules/client-notification/__tests__/notification-history-access.http.db-ga
 src/modules/client/__tests__/client-internal-read.http.db-gated.integration.spec.ts
 src/modules/client/__tests__/cl-r04-dedup-return-scope.http.db-gated.integration.spec.ts
 src/modules/export-import/__tests__/generic-export-privacy.http.db-gated.integration.spec.ts
+src/modules/client-intake-review/client-intake-review-permission.http.db-gated.integration.spec.ts
