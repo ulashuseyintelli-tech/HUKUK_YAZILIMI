@@ -44,6 +44,9 @@ src/modules/icrabot/v28-engine/__tests__/uyap-event-ingest.boundary.integration.
 src/modules/interest-engine/__tests__/golden-fixture-matrix.db-gated.integration.spec.ts
 src/modules/interest-engine/__tests__/scenario-diagnostic.db-gated.integration.spec.ts
 src/modules/lawyer/__tests__/office-update-boundary.db-gated.integration.spec.ts
+# O-5: personel yeniden etkinlestirme — yazimsiz create reddi, F01 403, secilen izinler,
+#   hesap/grant/atama degismez, gercek ayri transaction yarisi, denetim hatasinda geri alma.
+src/modules/staff/__tests__/staff-reactivation-o5.http.db-gated.integration.spec.ts
 src/modules/poa/__tests__/poa-tenant-safety.db-gated.integration.spec.ts
 # Intake delivery replay target/payload identity and real unique-key race recovery.
 src/modules/client-intake-link/client-intake-delivery-replay.db-gated.integration.spec.ts

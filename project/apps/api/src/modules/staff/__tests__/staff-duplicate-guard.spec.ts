@@ -25,9 +25,14 @@ describe("StaffService.create — duplicate handling (PR-S)", () => {
       staffMember: {
         findMany: jest.fn().mockResolvedValue(existing),
         update: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         create: jest.fn().mockResolvedValue({ id: "new" }),
       },
       office: { findUnique: jest.fn().mockResolvedValue({ id: "o1" }) },
+      // O-5 inceleme özeti (salt okuma): dosya atamaları, sorumluluk ve bağlı hesap durumu.
+      caseStaff: { count: jest.fn().mockResolvedValue(2) },
+      case: { count: jest.fn().mockResolvedValue(1) },
+      user: { findFirst: jest.fn().mockResolvedValue({ isActive: false }) },
     };
     return { svc: new StaffService(prisma), prisma };
   };
@@ -46,11 +51,65 @@ describe("StaffService.create — duplicate handling (PR-S)", () => {
     expect((res as any)._existingReturned).toBe(true);
   });
 
-  it("soft-deleted + aynı TCKN → reactivate", async () => {
-    const { svc, prisma } = build([{ id: "s1", firstName: "A", lastName: "B", tckn: "111", isActive: false }]);
-    const res = await svc.create("t1", { firstName: "X", lastName: "Y", tckn: "111" });
-    expect(prisma.staffMember.update).toHaveBeenCalledWith({ where: { id: "s1" }, data: { isActive: true } });
-    expect((res as any)._reactivated).toBe(true);
+  // O-5 (owner 05.11.2026, C politikası): pasif kart create ile SESSİZCE etkinleşmez. Eskiden burada
+  // `update({ isActive: true })` çalışıyor, ESKİ izinler geri geliyor, formdaki değerler yazılmıyordu.
+  const PASIF = {
+    id: "s1", firstName: "A", lastName: "B", tckn: "111", email: "a@b.test", isActive: false, userId: "u1",
+    staffType: "MUHASEBE", canCreateCase: false, canEditCase: true, canGenerateDocuments: false, canApproveDocuments: false,
+    canSeeFinance: true, canApproveFinance: false, canPrepareCollectionDisposition: true, canSendNotifications: false,
+    isDefaultForNewCases: true,
+  };
+  const yazimYok = (prisma: any) => {
+    expect(prisma.staffMember.update).not.toHaveBeenCalled();
+    expect(prisma.staffMember.updateMany).not.toHaveBeenCalled();
+    expect(prisma.staffMember.create).not.toHaveBeenCalled();
+  };
+
+  it("soft-deleted + aynı TCKN → YAZIMSIZ 409 STAFF_REACTIVATION_REVIEW (O-5)", async () => {
+    const { svc, prisma } = build([PASIF]);
+    const err: any = await svc
+      .create("t1", { firstName: "X", lastName: "Y", tckn: "111", canSeeFinance: false, isDefaultForNewCases: false })
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(ConflictException);
+    const body = err.getResponse();
+    expect(body.code).toBe("STAFF_REACTIVATION_REVIEW");
+    expect(body.message).toContain("hiçbir değişiklik yapılmadı");
+    // Gözden geçirme için kartın MEVCUT izinleri + etki; istekteki değerler değil.
+    expect(body.staff).toEqual({
+      id: "s1", firstName: "A", lastName: "B", staffType: "MUHASEBE",
+      canCreateCase: false, canEditCase: true, canGenerateDocuments: false, canApproveDocuments: false,
+      canSeeFinance: true, canApproveFinance: false, canPrepareCollectionDisposition: true, canSendNotifications: false,
+      isDefaultForNewCases: true,
+      linkedAccount: { exists: true, isActive: false }, caseAssignmentCount: 2, responsibleCaseCount: 1,
+    });
+    // Yanıt kimlik / iletişim / hesap kimliği taşımaz.
+    for (const k of ["tckn", "email", "phone", "mobilePhone", "userId", "tenantId"]) expect(body.staff).not.toHaveProperty(k);
+    yazimYok(prisma);
+  });
+
+  it("soft-deleted + aynı e-posta → YAZIMSIZ 409 STAFF_REACTIVATION_REVIEW (O-5)", async () => {
+    const { svc, prisma } = build([PASIF]);
+    await expect(svc.create("t1", { firstName: "X", lastName: "Y", email: "a@b.test" })).rejects.toMatchObject({
+      response: expect.objectContaining({ code: "STAFF_REACTIVATION_REVIEW" }),
+    });
+    yazimYok(prisma);
+  });
+
+  it("forceCreate pasif kimlik incelemesini GEÇMEZ (O-5)", async () => {
+    const { svc, prisma } = build([PASIF]);
+    await expect(svc.create("t1", { firstName: "X", lastName: "Y", tckn: "111", forceCreate: true })).rejects.toMatchObject({
+      response: expect.objectContaining({ code: "STAFF_REACTIVATION_REVIEW" }),
+    });
+    yazimYok(prisma);
+  });
+
+  it("aynı kimlik hem aktif hem pasif kartta → AKTİF kart döner, pasif kart açılmaz (O-5)", async () => {
+    const { svc, prisma } = build([PASIF, { ...PASIF, id: "s2", isActive: true }]);
+    const res: any = await svc.create("t1", { firstName: "X", lastName: "Y", tckn: "111" });
+    expect(res.id).toBe("s2");
+    expect(res._existingReturned).toBe(true);
+    expect(res._reactivated).toBe(false);
+    yazimYok(prisma);
   });
 
   it("kimliksiz aynı ad-soyad + forceCreate yok → SESSİZ MERGE YOK, 409 SIMILAR_NAME_REVIEW", async () => {

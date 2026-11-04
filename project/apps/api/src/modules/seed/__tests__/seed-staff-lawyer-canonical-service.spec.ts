@@ -67,6 +67,28 @@ describe('P5-B02 — seedStaff kanonik StaffService yolu', () => {
     expect(res.skippedForReview).toBe(1);
   });
 
+  it('O-5: STAFF_REACTIVATION_REVIEW → pasif kart seed ile AÇILMAZ; satır atlanır, ayrı sayılır, kalanlar DEVAM eder', async () => {
+    let call = 0;
+    const staffService = {
+      create: jest.fn().mockImplementation(() => {
+        call++;
+        if (call === 3) {
+          return Promise.reject(new ConflictException({ code: 'STAFF_REACTIVATION_REVIEW', message: 'pasif kayıt', staff: {} }));
+        }
+        return Promise.resolve({ id: `s${call}` });
+      }),
+    };
+    const { svc } = build({ staffService });
+
+    const res: any = await svc.seedStaff('t1');
+
+    expect(staffService.create).toHaveBeenCalledTimes(10);
+    expect(res.created).toBe(9);
+    expect(res.skippedForReview).toBe(0);
+    expect(res.skippedForReactivationReview).toBe(1);
+    expect(res.message).toContain('1 pasif kayıt yeniden etkinleştirme incelemesi gerektirdiği için atlandı');
+  });
+
   it('review-dışı hata YUTULMAZ (rethrow)', async () => {
     const staffService = { create: jest.fn().mockRejectedValue(new Error('db down')) };
     const { svc } = build({ staffService });

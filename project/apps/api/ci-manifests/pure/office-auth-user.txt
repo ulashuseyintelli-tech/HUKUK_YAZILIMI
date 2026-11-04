@@ -197,6 +197,9 @@ src/modules/staff/__tests__/staff-update-active-boundary.spec.ts
 src/modules/staff/__tests__/staff-duplicate-guard.spec.ts
 src/modules/staff/__tests__/staff-list-masking.spec.ts
 src/modules/staff/__tests__/staff-update-duplicate-guard.spec.ts
+# O-5 (owner 05.11.2026, C politikasi): pasif personel create ile sessizce acilmaz; ayri F01
+#   yeniden etkinlestirme (izinler yalniz govdeden, kosullu yazim + STAFF_REACTIVATE ayni tx).
+src/modules/staff/__tests__/staff-reactivate-o5.spec.ts
 # OFFICE-P6B-CI-E2E-EXECUTION-OFFICE-R01: actual execution-office module surface and lifecycle.
 src/modules/execution-office/__tests__/execution-office.module.spec.ts
 # OFFICE-P6B-CI-E2E-EXECUTION-OFFICE-R01: fail-closed disposable runtime harness contract.
