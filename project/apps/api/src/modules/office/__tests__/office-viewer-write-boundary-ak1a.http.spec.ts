@@ -133,6 +133,15 @@ const WRITE_ROUTES: Route[] = [
   { method: 'put', path: '/staff/S1', body: { phone: '05320000000' } },
   { method: 'delete', path: '/staff/S1' },
   { method: 'put', path: '/staff/order/update', body: { staffIds: ['S1'] } },
+  // O-5: pasif personelin gözden geçirilmiş yeniden etkinleştirilmesi — VIEWER için de yazma rotasıdır.
+  {
+    method: 'post', path: '/staff/S1/reactivate',
+    body: {
+      staffType: 'DIGER', canCreateCase: false, canEditCase: false, canGenerateDocuments: false, canApproveDocuments: false,
+      canSeeFinance: false, canApproveFinance: false, canPrepareCollectionDisposition: false, canSendNotifications: false,
+      isDefaultForNewCases: false,
+    },
+  },
 ];
 const READ_ROUTES = ['/office', '/office/smtp-settings', '/lawyers'];
 
@@ -191,8 +200,8 @@ describe('AK-1a — VIEWER OFFICE yazma rotalarında reddedilir, okuma değişme
         });
       }
     }
-    // Bakıldığının kanıtı: office 10 · lawyers 6 · staff 4 · kontrollü yürütme 2.
-    expect(seen).toHaveLength(22);
+    // Bakıldığının kanıtı: office 10 · lawyers 6 · staff 5 (O-5 reactivate dahil) · kontrollü yürütme 2.
+    expect(seen).toHaveLength(23);
   });
 
   describe.each(WRITE_ROUTES)('$method $path', (route) => {

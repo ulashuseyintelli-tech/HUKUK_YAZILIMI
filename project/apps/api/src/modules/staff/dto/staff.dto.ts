@@ -82,6 +82,27 @@ export class UpdateStaffDto extends StaffMutationPassthroughDto {
   @IsOptional() @IsBoolean() confirmSimilarNameUpdate?: boolean;
 }
 
+/**
+ * O-5 (owner 05.11.2026, C politikası): pasif personelin yeniden etkinleştirilmesi AYRI bir yaşam
+ * döngüsü işlemidir (`POST /staff/:id/reactivate`). Yönetici kartın izinlerini gözden geçirir ve
+ * bütün izin kümesini AÇIKÇA gönderir: hiçbir alan eski karttan ya da varsayılandan sessizce
+ * alınmaz (hepsi zorunlu). Kimlik / iletişim alanı, hesap bağı ve passthrough YOK — bilinmeyen
+ * anahtar global pipe'ta (forbidNonWhitelisted) 400 olur.
+ */
+export class ReactivateStaffDto {
+  @IsEnum(StaffType) staffType: StaffType;
+
+  @IsBoolean() canCreateCase: boolean;
+  @IsBoolean() canEditCase: boolean;
+  @IsBoolean() canGenerateDocuments: boolean;
+  @IsBoolean() canApproveDocuments: boolean;
+  @IsBoolean() canSeeFinance: boolean;
+  @IsBoolean() canApproveFinance: boolean;
+  @IsBoolean() canPrepareCollectionDisposition: boolean;
+  @IsBoolean() canSendNotifications: boolean;
+  @IsBoolean() isDefaultForNewCases: boolean;
+}
+
 export class UpdateStaffOrderDto {
   @IsArray()
   @IsString({ each: true })

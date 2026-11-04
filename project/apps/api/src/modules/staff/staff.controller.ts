@@ -7,7 +7,7 @@ import { StaffType } from '@prisma/client';
 import { OfficeF01AuthorizationGuard } from '../office-approval/office-f01-authorization.guard';
 import { OfficeApprovalService } from '../office-approval/office-approval.service';
 import { projectStaffRowForActor, projectStaffRowsForActor } from './staff-public-projection';
-import { CreateStaffDto, UpdateStaffDto, UpdateStaffOrderDto } from './dto/staff.dto';
+import { CreateStaffDto, ReactivateStaffDto, UpdateStaffDto, UpdateStaffOrderDto } from './dto/staff.dto';
 
 @Controller('staff')
 @UseGuards(JwtAuthGuard)
@@ -75,6 +75,20 @@ export class StaffController {
       requestId: getRequestId(req) ?? randomUUID(),
     });
     return { success: true };
+  }
+
+  // O-5: pasif personeli yöneticinin gözden geçirdiği izinlerle yeniden etkinleştir. Pasifleştirme ile
+  // AYNI F01 kapısı; giriş hesabı / rol / büro geneli grant DEĞİŞMEZ (yanıt gerçek durumu taşır).
+  @Post(':id/reactivate')
+  @UseGuards(OfficeF01AuthorizationGuard)
+  async reactivate(@Request() req: any, @Param('id') id: string, @Body() body: ReactivateStaffDto) {
+    const tenantId = req.user.tenantId;
+    const result = await this.staffService.reactivate(id, tenantId, body, {
+      userId: req.user.id,
+      role: req.user.role,
+      requestId: getRequestId(req) ?? randomUUID(),
+    });
+    return { data: result };
   }
 
   // Sıralama güncelle
