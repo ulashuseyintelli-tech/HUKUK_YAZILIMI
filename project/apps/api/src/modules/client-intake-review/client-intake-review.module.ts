@@ -3,6 +3,8 @@ import { PrismaModule } from '@/prisma/prisma.module';
 import { ClientIntakeReviewController } from './client-intake-review.controller';
 import { ClientIntakeReviewService } from './client-intake-review.service';
 import { ClientIntakeReviewAuthorizationService } from './client-intake-review-authorization.service';
+import { ClientIntakeReviewPermissionController } from './client-intake-review-permission.controller';
+import { ClientIntakeReviewPermissionService } from './client-intake-review-permission.service';
 
 /**
  * Client Intake Review Queue modülü (Faz 4.5).
@@ -13,8 +15,8 @@ import { ClientIntakeReviewAuthorizationService } from './client-intake-review-a
  */
 @Module({
   imports: [PrismaModule],
-  controllers: [ClientIntakeReviewController],
-  providers: [ClientIntakeReviewService, ClientIntakeReviewAuthorizationService],
+  controllers: [ClientIntakeReviewController, ClientIntakeReviewPermissionController],
+  providers: [ClientIntakeReviewService, ClientIntakeReviewAuthorizationService, ClientIntakeReviewPermissionService],
   exports: [ClientIntakeReviewService],
 })
 export class ClientIntakeReviewModule {}

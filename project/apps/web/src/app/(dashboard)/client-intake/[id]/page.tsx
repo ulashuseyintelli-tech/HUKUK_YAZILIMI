@@ -52,6 +52,12 @@ const REVIEW_CLASSES: Record<IntakeFieldReviewStatus, string> = {
   REJECTED: "bg-red-100 text-red-700",
 };
 
+// Only categories supported by the existing promotion screen; ASSET/CONTACT stay outside this delivery.
+const PROMOTION_SCREEN_CATEGORIES = new Set<IntakeFieldCategory>([
+  "INCOME_SOURCE", "COMMERCIAL_RELATION", "FAMILY_CIRCLE", "DIGITAL_FOOTPRINT",
+  "PAYMENT_HISTORY", "STRATEGY", "ADDRESS",
+]);
+
 export default function IntakeSubmissionDetailPage({ params }: { params: { id: string } }) {
   const [sub, setSub] = useState<IntakeSubmissionDetail | null>(null);
   const [caseLabel, setCaseLabel] = useState("");
@@ -61,8 +67,12 @@ export default function IntakeSubmissionDetailPage({ params }: { params: { id: s
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [promotionCapability, setPromotionCapability] = useState<{ submissionId: string; canPromote: boolean } | null>(null);
+  const [capabilityError, setCapabilityError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    setPromotionCapability(null);
+    setCapabilityError(null);
     setError("");
     setLoadError(null);
     setNotFound(false);
@@ -70,6 +80,12 @@ export default function IntakeSubmissionDetailPage({ params }: { params: { id: s
       const d = await api.getIntakeSubmission(params.id);
       setSub(d);
       setSelected(new Set());
+      try {
+        const capability = await api.getIntakePromotionCapability(params.id);
+        setPromotionCapability({ submissionId: params.id, canPromote: capability.canPromote === true });
+      } catch {
+        setCapabilityError("Aktarım yetkisi doğrulanamadı. İnceleme kaydı yüklenmiştir.");
+      }
       // Okunabilir başlık için dosya bağlamı (best-effort; başarısızsa caseId gösterilir).
       try {
         const c = (await api.getCase(d.caseId)) as {
@@ -216,6 +232,14 @@ export default function IntakeSubmissionDetailPage({ params }: { params: { id: s
       </div>
 
       {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      {capabilityError && <p role="status" className="mt-3 text-sm text-amber-700">{capabilityError}</p>}
+      {promotionCapability?.submissionId === sub.id && promotionCapability.canPromote &&
+        (sub.status === "IN_REVIEW" || sub.status === "PARTIALLY_PROMOTED") &&
+        sub.fields.some(field => field.reviewStatus === "APPROVED" && !field.promotedRefId && PROMOTION_SCREEN_CATEGORIES.has(field.category)) && (
+          <Link href={`/client-intake/${sub.id}/promote`} className="mt-3 inline-block text-sm text-blue-600 underline">
+            Aktarım ekranını aç
+          </Link>
+        )}
 
       {/* Aksiyon çubuğu — REVIEW lifecycle (promote YOK) */}
       <div className="mt-4 flex flex-wrap items-center gap-2">
