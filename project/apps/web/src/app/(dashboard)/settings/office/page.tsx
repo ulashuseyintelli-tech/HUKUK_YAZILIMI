@@ -11,6 +11,15 @@ import { ActionError } from "@/components/ui/action-error";
 import { toActionErrorMessage } from "@/lib/action-error";
 import { runMutation, runRefreshOnly } from "@/lib/mutation-outcome";
 import { classifyLawyerDeactivationFailure } from "@/lib/lawyer-deactivation";
+import {
+  classifyStaffReactivationFailure,
+  reactivationResultMessage,
+  readStaffReactivationReview,
+  STAFF_REACTIVATION_REVIEW_FALLBACK,
+  type StaffReactivationReview,
+  type StaffReactivationValues,
+} from "@/lib/staff-reactivation";
+import { StaffReactivationDialog, type StaffReactivationOutcome } from "@/components/settings/staff-reactivation-dialog";
 import { useKeyedSubmitLock } from "@/lib/use-submit-lock";
 import { SettingsSection, WorkbenchHeader, SettingsDrawer, CollectionHeader } from "@/components/settings/settings-shell";
 import { PersonAccessInviteCard } from "@/components/settings/person-access-invite-card";
@@ -226,6 +235,8 @@ function OfficeSettingsInner() {
   const [staffSimilar, setStaffSimilar] = useState<{ candidates: { id: string; name: string }[]; data: any } | null>(null);
   // PR-U3: personel UPDATE-path benzer-isim review — 2 buton (güncelle/vazgeç). Create'ten ayrı.
   const [staffUpdateReview, setStaffUpdateReview] = useState<{ candidates: { id: string; name: string }[]; data: any } | null>(null);
+  // O-5: aynı kimlikle eklenmek istenen PASİF personel — create yazım yapmaz; yönetici izinleri gözden geçirip ayrıca onaylar.
+  const [staffReactivation, setStaffReactivation] = useState<StaffReactivationReview | null>(null);
   const [officeForm, setOfficeForm] = useState({ name: "", address: "", city: "", district: "", postalCode: "", phone: "", fax: "", email: "", website: "", barAssociation: "", vergiNo: "", vergiDairesi: "", mersisNo: "", kepAddress: "" });
   const [officeInitial, setOfficeInitial] = useState({ name: "", address: "", city: "", district: "", postalCode: "", phone: "", fax: "", email: "", website: "", barAssociation: "", vergiNo: "", vergiDairesi: "", mersisNo: "", kepAddress: "" });
   // Geç gelen okuma yanıtı kullanıcının kaydedilmemiş büro düzenlemesini ezmesin diye son değerler ref'te tutulur.
@@ -926,9 +937,33 @@ function OfficeSettingsInner() {
         else setStaffSimilar({ candidates: e.body.candidates || [], data });
         return;
       }
+      // O-5: pasif kart create ile AÇILMAZ (sunucu yazım yapmadı) → gözden geçirme diyaloğu; form açık kalır.
+      if (e?.body?.code === "STAFF_REACTIVATION_REVIEW") {
+        const review = readStaffReactivationReview(e.body);
+        if (review) setStaffReactivation(review);
+        else alert(STAFF_REACTIVATION_REVIEW_FALLBACK);
+        return;
+      }
       if (e?.body?.code === "DUPLICATE_IDENTITY") { alert(e.body.message || "Bu TCKN ile kayıtlı başka bir personel mevcut."); return; }
       console.error(e);
     } finally { setSaving(false); }
+  };
+
+  // O-5: yöneticinin onayladığı izinlerle ayrı yeniden etkinleştirme (F01). Giriş hesabı / rol / büro geneli izin
+  // DEĞİŞMEZ; sonuç mesajı yanıttaki gerçek hesap durumunu söyler. Otomatik yeniden deneme YOK.
+  const confirmStaffReactivation = async (values: StaffReactivationValues): Promise<StaffReactivationOutcome> => {
+    const target = staffReactivation;
+    if (!target) return { ok: false, message: "Gözden geçirilecek personel kaydı yok; hiçbir değişiklik yapılmadı." };
+    if (writeBlocked("staff")) return { ok: false, message: "Personel bilgisi okunamadığı için hiçbir değişiklik yapılmadı." };
+    try {
+      const res = await api.post(`/staff/${target.staffId}/reactivate`, values);
+      const body = (res as any)?.data?.data ?? (res as any)?.data;
+      setShowStaffModal(false); setEditingStaff(null);
+      await loadStaff();
+      return { ok: true, message: reactivationResultMessage(body) };
+    } catch (e: unknown) {
+      return { ok: false, message: classifyStaffReactivationFailure(e) };
+    }
   };
 
   const handleSaveStaff = (data: any) => submitStaff(data, {});
@@ -1938,6 +1973,17 @@ function OfficeSettingsInner() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* O-5: pasif personelin gözden geçirilmiş yeniden etkinleştirilmesi (Vazgeç hiçbir istek göndermez) */}
+      {staffReactivation && (
+        <StaffReactivationDialog
+          key={staffReactivation.staffId}
+          review={staffReactivation}
+          staffTypes={STAFF_TYPES}
+          onConfirm={confirmStaffReactivation}
+          onClose={() => setStaffReactivation(null)}
+        />
       )}
 
       {/* PR-U3: personel update-path benzer-isim review (2 buton: güncelle / vazgeç; merge YOK) */}
