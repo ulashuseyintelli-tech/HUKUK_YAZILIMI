@@ -7,6 +7,8 @@ vi.mock("next/link", () => ({
   default: ({ children, href }: { children: React.ReactNode; href: string }) => <a href={href}>{children}</a>,
 }));
 vi.mock("@/lib/api", () => ({ api: { listIntakeSubmissions: vi.fn() } }));
+// Dashboard supplies AuthProvider in production; preserve the existing ordinary-user queue assertions.
+vi.mock("@/lib/auth-context", () => ({ useAuth: () => ({ user: { id: "u", tenantId: "t", role: "USER" }, loading: false }) }));
 
 const listIntakeSubmissions = api.listIntakeSubmissions as unknown as ReturnType<typeof vi.fn>;
 
