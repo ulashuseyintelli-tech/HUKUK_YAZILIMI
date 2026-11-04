@@ -1,3 +1,11 @@
+// Existing action/lifecycle/response unit fixture explicitly has object access.
+// The real intersection and transaction checks are exercised without this mock in client-object-scope-1b.http.db-gated.integration.spec.ts.
+jest.mock('../client-object-scope', () => ({
+  ...jest.requireActual('../client-object-scope'),
+  assertClientObjectScope: jest.fn(async () => undefined),
+  clientObjectScope: jest.fn(async () => ({})),
+  isClientObjectInScope: jest.fn(async () => true),
+}));
 /**
  * C3-B02 — §13/6 K6.1-K6.5 aydınlatma + ilgili kişi başvuru akışı.
  *
@@ -23,6 +31,7 @@ const actorOf = (role: 'ADMIN' | 'USER' | 'VIEWER', userId = 'u1') =>
 
 const buildTx = () => ({
   clientDataSubjectRequest: {
+    findFirst: jest.fn(),
     create: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: 'dsar-1', ...data })),
     update: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: 'dsar-1', ...data })),
   },
@@ -38,6 +47,7 @@ const buildTx = () => ({
 
 const buildDeps = (opts: { existingRequest?: any; disclosureText?: any } = {}) => {
   const tx = buildTx();
+  tx.clientDataSubjectRequest.findFirst.mockResolvedValue(opts.existingRequest ?? null);
   const prisma: any = {
     client: {
       findFirst: jest.fn().mockResolvedValue({ id: 'c1', tenantId: 't1' }),

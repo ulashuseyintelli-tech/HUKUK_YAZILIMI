@@ -1,3 +1,11 @@
+// Existing action/lifecycle/response unit fixture explicitly has object access.
+// The real intersection and transaction checks are exercised without this mock in client-object-scope-1b.http.db-gated.integration.spec.ts.
+jest.mock('../client/client-object-scope', () => ({
+  ...jest.requireActual('../client/client-object-scope'),
+  assertClientObjectScope: jest.fn(async () => undefined),
+  clientObjectScope: jest.fn(async () => ({})),
+  isClientObjectInScope: jest.fn(async () => true),
+}));
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -169,10 +177,11 @@ describe('ClientApprovalService', () => {
 
   describe('read', () => {
     it('listByCase default tüm statüler (filtre yok)', async () => {
+      mockPrisma.client.findFirst.mockResolvedValue({ id: 'client-1' });
       mockPrisma.clientApprovalRequest.findMany.mockResolvedValue([]);
       await service.listByCase(TENANT, CASE);
       expect(mockPrisma.clientApprovalRequest.findMany).toHaveBeenCalledWith({
-        where: { tenantId: TENANT, caseId: CASE },
+        where: { tenantId: TENANT, caseId: CASE, client: { AND: [{}] } },
         orderBy: { createdAt: 'desc' },
       });
     });

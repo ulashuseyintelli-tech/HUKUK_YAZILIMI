@@ -1,3 +1,11 @@
+// Existing action/lifecycle/response unit fixture explicitly has object access.
+// The real intersection and transaction checks are exercised without this mock in client-object-scope-1b.http.db-gated.integration.spec.ts.
+jest.mock('../client-object-scope', () => ({
+  ...jest.requireActual('../client-object-scope'),
+  assertClientObjectScope: jest.fn(async () => undefined),
+  clientObjectScope: jest.fn(async () => ({})),
+  isClientObjectInScope: jest.fn(async () => true),
+}));
 /**
  * C3-B03 — §13/8 K8.1-K8.5 legal hold + 8-koşullu fail-closed silme kapısı.
  *
@@ -31,6 +39,7 @@ const ALL_CONFIRMED: ClientLifecycleAssessment = Object.fromEntries(
 const buildDeps = (opts: { hold?: any } = {}) => {
   const tx = {
     clientLegalHold: {
+      findFirst: jest.fn().mockResolvedValue(opts.hold ?? null),
       create: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: 'hold-1', ...data })),
       update: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: 'hold-1', ...data })),
     },

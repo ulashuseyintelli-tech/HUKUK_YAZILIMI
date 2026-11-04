@@ -71,7 +71,7 @@ export class NotificationDispatchController {
       dto.clientId,
       CLIENT_WORKSPACE_COMMAND.NOTIFICATION_RESEND,
       () =>
-        this.dispatcher.resend(req.user.tenantId, req.user.id, {
+        this.dispatcher.resendForActor(req.user.tenantId, req.user.id, {
           clientId: dto.clientId,
           caseId: dto.caseId,
           templateCode: dto.templateCode,

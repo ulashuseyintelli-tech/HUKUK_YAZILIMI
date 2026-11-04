@@ -1,3 +1,11 @@
+// Existing action/lifecycle/response unit fixture explicitly has object access.
+// The real intersection and transaction checks are exercised without this mock in client-object-scope-1b.http.db-gated.integration.spec.ts.
+jest.mock('../client-object-scope', () => ({
+  ...jest.requireActual('../client-object-scope'),
+  assertClientObjectScope: jest.fn(async () => undefined),
+  clientObjectScope: jest.fn(async () => ({})),
+  isClientObjectInScope: jest.fn(async () => true),
+}));
 /**
  * P0.4–P0.7 — Client-core low-risk patch testleri (Task 1).
  * - P0.5 tenant-scoped write: update/remove `updateMany {id,tenantId}`; eşleşme yoksa NotFoundException.
@@ -44,7 +52,7 @@ describe("ClientService.update — P0.5 tenant-scoped + P0.7 parity", () => {
     const { svc, tx } = buildHarness();
     await svc.update("c1", "t1", { type: "PERSON", firstName: "A", lastName: "B" }, { userId: "u1", tenantId: "t1", role: 'ADMIN' });
     expect(tx.client.updateMany).toHaveBeenCalledTimes(1);
-    expect(tx.client.updateMany.mock.calls[0][0].where).toEqual({ id: "c1", tenantId: "t1" });
+    expect(tx.client.updateMany.mock.calls[0][0].where).toEqual({ id: "c1", tenantId: "t1", AND: [{}] });
   });
 
   // C2-I08 E1: postalCode flat adres ailesindendir ve artık YAZILMAZ — parite listesi 7 alan.

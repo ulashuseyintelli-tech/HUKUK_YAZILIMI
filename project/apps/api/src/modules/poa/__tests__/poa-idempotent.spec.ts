@@ -1,3 +1,11 @@
+// Existing action/lifecycle/response unit fixture explicitly has object access.
+// The real intersection and transaction checks are exercised without this mock in client-object-scope-1b.http.db-gated.integration.spec.ts.
+jest.mock('../../client/client-object-scope', () => ({
+  ...jest.requireActual('../../client/client-object-scope'),
+  assertClientObjectScope: jest.fn(async () => undefined),
+  clientObjectScope: jest.fn(async () => ({})),
+  isClientObjectInScope: jest.fn(async () => true),
+}));
 /**
  * PR-2 — POA semantik idempotency (tarama kaynaklı mükerrer vekalet bastırma).
  * Anahtar: clientId + normalizedNotaryName + dateIssued (aktif). poaNumber/yevmiyeNo OCR-gürültülü,

@@ -134,7 +134,7 @@ export class ClientKvkkRightsController {
 
   @Get(':id/disclosure-deliveries')
   listDeliveries(@Request() req: AuthRequest, @Param('id') id: string) {
-    return this.disclosure.listDeliveries(req.user.tenantId, id);
+    return this.disclosure.listDeliveries(req.user.tenantId, id, req.user.id);
   }
 
   @Post(':id/disclosure-deliveries')

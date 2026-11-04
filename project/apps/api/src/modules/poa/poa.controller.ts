@@ -51,7 +51,7 @@ export class PoaController {
     @Query("lawyerId") lawyerId: string,
     @Request() req: any
   ) {
-    return this.poaService.checkValidPoa(clientId, lawyerId, req.user.tenantId);
+    return this.poaService.checkValidPoaForActor(clientId, lawyerId, req.user.tenantId, req.user.id);
   }
 
   /**
@@ -65,7 +65,7 @@ export class PoaController {
     @Body() body: { clientId: string; lawyerIds: string[] },
     @Request() req: any
   ) {
-    return this.poaService.checkValidPoaForLawyers(body.clientId, body.lawyerIds, req.user.tenantId);
+    return this.poaService.checkValidPoaForLawyersForActor(body.clientId, body.lawyerIds, req.user.tenantId, req.user.id);
   }
 
   /**
@@ -77,7 +77,7 @@ export class PoaController {
     @Query("days") days: string = "30",
     @Request() req: any
   ) {
-    return this.poaService.getExpiringPoas(req.user.tenantId, parseInt(days));
+    return this.poaService.getExpiringPoasForActor(req.user.tenantId, parseInt(days), req.user.id);
   }
 
   /**
@@ -86,7 +86,7 @@ export class PoaController {
    */
   @Get("client/:clientId")
   async findByClient(@Param("clientId") clientId: string, @Request() req: any) {
-    return this.poaService.findByClient(clientId, req.user.tenantId);
+    return this.poaService.findByClientForActor(clientId, req.user.tenantId, req.user.id);
   }
 
   // ==================== PARAMETRELİ ROUTE'LAR ====================
@@ -97,7 +97,7 @@ export class PoaController {
    */
   @Get(":id")
   async findOne(@Param("id") id: string, @Request() req: any) {
-    return this.poaService.findOne(id, req.user.tenantId);
+    return this.poaService.findOneForActor(id, req.user.tenantId, req.user.id);
   }
 
   /**
@@ -185,7 +185,7 @@ export class PoaController {
     @Request() req: any,
     @Res() res: Response
   ) {
-    const result = await this.poaService.getFile(id, req.user.tenantId);
+    const result = await this.poaService.getFile(id, req.user.tenantId, req.user.id);
     
     res.setHeader("Content-Type", result.mimeType);
     res.setHeader("Content-Disposition", `attachment; filename="${result.filename}"`);

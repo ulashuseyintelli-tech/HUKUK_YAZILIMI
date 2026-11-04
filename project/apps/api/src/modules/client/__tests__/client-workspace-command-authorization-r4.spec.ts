@@ -192,6 +192,7 @@ describe('runAuthorizedClientWorkspaceCommand (yetki → yürütme → audit zin
 describe('ClientController — 6 workspace endpoint\'i R4 kapısından geçer', () => {
   function buildControllerHarness(role: string | undefined, eligible = false) {
     const clientService: AnyRecord = {
+      assertObjectScope: jest.fn().mockResolvedValue(undefined),
       sendPoaReminder: jest.fn().mockResolvedValue({ clientId: 'client-1', status: 'sent', sent: 1, failed: 0, skipped: 0 }),
       sendTemplateNotification: jest.fn().mockResolvedValue({ status: 'sent' }),
       sendDocumentRequest: jest.fn().mockResolvedValue({ status: 'sent' }),

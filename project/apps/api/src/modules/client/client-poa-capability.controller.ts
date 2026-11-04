@@ -17,6 +17,6 @@ export class ClientPoaCapabilityController {
 
   @Get(':id/effective-capabilities')
   get(@Request() req: AuthRequest, @Param('id') id: string) {
-    return this.capabilities.getEffectiveCapabilities(req.user.tenantId, id);
+    return this.capabilities.getEffectiveCapabilitiesForActor(req.user.tenantId, id, req.user.id);
   }
 }

@@ -80,7 +80,10 @@ export class ClientController {
       },
       { userId: req.user.id, tenantId: req.user.tenantId, role: req.user.role },
       { tenantId: req.user.tenantId, clientId, commandType },
-      execute,
+      async () => {
+        await this.clientService.assertObjectScope(req.user.tenantId, req.user.id, clientId);
+        return execute();
+      },
       resultMeta,
     );
   }
@@ -131,7 +134,7 @@ export class ClientController {
     @Query('cursor') cursor?: string,
     @Query('sources') sources?: string,
   ) {
-    return this.clientService.getTimeline(clientId, req.user.tenantId, { limit, cursor, sources });
+    return this.clientService.getTimeline(clientId, req.user.tenantId, { limit, cursor, sources }, req.user.id);
   }
 
   // Client Workspace action catalog (read-only V1)
@@ -140,7 +143,7 @@ export class ClientController {
     @Request() req: any,
     @Param('clientId') clientId: string,
   ) {
-    return this.clientService.getActionCatalog(clientId, req.user.tenantId, req.user.role);
+    return this.clientService.getActionCatalog(clientId, req.user.tenantId, req.user.role, req.user.id);
   }
 
   // Client Workspace operating snapshot (read-only V1)
@@ -149,7 +152,7 @@ export class ClientController {
     @Request() req: any,
     @Param('clientId') clientId: string,
   ) {
-    return this.clientService.getOperatingSnapshot(clientId, req.user.tenantId);
+    return this.clientService.getOperatingSnapshot(clientId, req.user.tenantId, req.user.id);
   }
 
   // Client Workspace POA reminder manual typed command
@@ -162,7 +165,7 @@ export class ClientController {
       req,
       clientId,
       CLIENT_WORKSPACE_COMMAND.POA_REMINDER_SEND,
-      () => this.clientService.sendPoaReminder(clientId, req.user.tenantId),
+      () => this.clientService.sendPoaReminder(clientId, req.user.tenantId, req.user.id),
       (r) => ({ status: r.status, sent: r.sent, failed: r.failed, skipped: r.skipped }),
     );
     return { data: result };
@@ -288,7 +291,7 @@ export class ClientController {
       req,
       clientId,
       CLIENT_WORKSPACE_COMMAND.POA_FILE_UPLOAD,
-      () => this.poaService!.uploadFileForClientWorkspace(clientId, poaId, file, req.user.tenantId),
+      () => this.poaService!.uploadFileForClientWorkspace(clientId, poaId, file, req.user.tenantId, req.user.id),
       (r) => ({ status: (r as { status?: string })?.status ?? null, poaId }),
     );
     return { data: result };

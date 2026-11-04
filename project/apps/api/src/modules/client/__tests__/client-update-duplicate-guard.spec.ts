@@ -1,3 +1,11 @@
+// Existing action/lifecycle/response unit fixture explicitly has object access.
+// The real intersection and transaction checks are exercised without this mock in client-object-scope-1b.http.db-gated.integration.spec.ts.
+jest.mock('../client-object-scope', () => ({
+  ...jest.requireActual('../client-object-scope'),
+  assertClientObjectScope: jest.fn(async () => undefined),
+  clientObjectScope: jest.fn(async () => ({})),
+  isClientObjectInScope: jest.fn(async () => true),
+}));
 /**
  * PR-U4: Müvekkil UPDATE-path kimlik-block.
  * client.service.update'te guard YOKTU. Müvekkilde TCKN zorunlu/kesin → isim-review YOK;

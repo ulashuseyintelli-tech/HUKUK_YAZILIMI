@@ -25,11 +25,11 @@ describe('CN-1 canonical notification authority wiring', () => {
   const officeApproval = { isApproverEligible: jest.fn() };
   const audit = { log: jest.fn() };
   const notificationService = {
-    sendEmail: jest.fn(),
-    sendSms: jest.fn(),
-    sendBulkEmail: jest.fn(),
+    sendEmailForActor: jest.fn(),
+    sendSmsForActor: jest.fn(),
+    sendBulkEmailForActor: jest.fn(),
   };
-  const dispatcher = { resend: jest.fn() };
+  const dispatcher = { resendForActor: jest.fn() };
 
   const emailBody = {
     clientId: 'client-secret-a',
@@ -65,17 +65,17 @@ describe('CN-1 canonical notification authority wiring', () => {
     jest.clearAllMocks();
     officeApproval.isApproverEligible.mockResolvedValue(false);
     audit.log.mockResolvedValue(undefined);
-    notificationService.sendEmail.mockResolvedValue({
+    notificationService.sendEmailForActor.mockResolvedValue({
       success: true,
       notificationId: 'notification-email',
       recipient: 'masked@example.test',
     });
-    notificationService.sendSms.mockResolvedValue({
+    notificationService.sendSmsForActor.mockResolvedValue({
       success: true,
       notificationId: 'notification-sms',
       recipient: '+90******23',
     });
-    notificationService.sendBulkEmail.mockResolvedValue({
+    notificationService.sendBulkEmailForActor.mockResolvedValue({
       success: true,
       message: '1 e-posta gönderildi, 1 başarısız',
       details: {
@@ -84,7 +84,7 @@ describe('CN-1 canonical notification authority wiring', () => {
         errors: ['secret@example.test: provider credential rejected'],
       },
     });
-    dispatcher.resend.mockResolvedValue({
+    dispatcher.resendForActor.mockResolvedValue({
       status: 'sent',
       notificationId: 'notification-resend',
       dedupeKey: 'CLIENT_INFO:Client:client-secret-a:1',
@@ -114,28 +114,28 @@ describe('CN-1 canonical notification authority wiring', () => {
     {
       name: 'send-email',
       commandType: CLIENT_WORKSPACE_COMMAND.NOTIFICATION_SEND_EMAIL,
-      sideEffect: notificationService.sendEmail,
+      sideEffect: notificationService.sendEmailForActor,
       invoke: (role) =>
         notificationController.sendEmail('tenant-1', 'actor-1', emailBody, role as string),
     },
     {
       name: 'send-sms',
       commandType: CLIENT_WORKSPACE_COMMAND.NOTIFICATION_SEND_SMS,
-      sideEffect: notificationService.sendSms,
+      sideEffect: notificationService.sendSmsForActor,
       invoke: (role) =>
         notificationController.sendSms('tenant-1', 'actor-1', smsBody, role as string),
     },
     {
       name: 'bulk-email',
       commandType: CLIENT_WORKSPACE_COMMAND.NOTIFICATION_BULK_EMAIL,
-      sideEffect: notificationService.sendBulkEmail,
+      sideEffect: notificationService.sendBulkEmailForActor,
       invoke: (role) =>
         notificationController.sendBulkEmail('tenant-1', 'actor-1', bulkBody, role as string),
     },
     {
-      name: 'resend',
+      name: 'resendForActor',
       commandType: CLIENT_WORKSPACE_COMMAND.NOTIFICATION_RESEND,
-      sideEffect: dispatcher.resend,
+      sideEffect: dispatcher.resendForActor,
       invoke: (role) =>
         dispatchController.resend(
           { user: { id: 'actor-1', tenantId: 'tenant-1', role } } as any,
@@ -224,13 +224,13 @@ describe('CN-1 canonical notification authority wiring', () => {
     }
   });
 
-  it('resend failed-status sonucunun public DispatchResult shape’ını değiştirmeden audit eder', async () => {
+  it('resendForActor failed-status sonucunun public DispatchResult shape’ını değiştirmeden audit eder', async () => {
     const dispatchResult = {
       status: 'failed' as const,
       dedupeKey: 'CLIENT_INFO:Client:client-secret-a:1',
       error: 'provider failure',
     };
-    dispatcher.resend.mockResolvedValue(dispatchResult);
+    dispatcher.resendForActor.mockResolvedValue(dispatchResult);
 
     const result = await dispatchController.resend(
       { user: { id: 'actor-1', tenantId: 'tenant-1', role: 'ADMIN' } } as any,
@@ -251,7 +251,7 @@ describe('CN-1 canonical notification authority wiring', () => {
   });
 
   it('execute throw ederse primitive sözleşmesine uygun olarak audit üretmez', async () => {
-    notificationService.sendEmail.mockRejectedValue(new Error('smtp failed'));
+    notificationService.sendEmailForActor.mockRejectedValue(new Error('smtp failed'));
 
     await expect(
       notificationController.sendEmail('tenant-1', 'actor-1', emailBody, 'ADMIN'),

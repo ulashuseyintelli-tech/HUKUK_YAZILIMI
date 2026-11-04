@@ -1,3 +1,5 @@
+import type { Prisma } from '@prisma/client';
+import { assertClientObjectScope, clientObjectScope } from '../client/client-object-scope';
 import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { PoaStatus, PoaScopeType } from "@prisma/client";
@@ -196,6 +198,37 @@ export class PoaService {
   /**
    * Müvekkilin tüm vekaletlerini getir
    */
+  /** External actor read. @remarks Called by PoaController.findByClient; raw internal readers retain their existing business authority. */
+  async findByClientForActor(clientId: string, tenantId: string, actorUserId: string) {
+    await assertClientObjectScope(this.prisma, tenantId, actorUserId, clientId);
+    return this.findByClient(clientId, tenantId);
+  }
+
+  /** @remarks Called by PoaController.findOne and PoaService.getFile; resolves the real parent before access. */
+  async findOneForActor(id: string, tenantId: string, actorUserId: string | undefined) {
+    const poa = await this.findOne(id, tenantId);
+    await assertClientObjectScope(this.prisma, tenantId, actorUserId, poa.clientId);
+    return poa;
+  }
+
+  /** @remarks Called by PoaController.checkValidPoa; internal validity consumers use checkValidPoa. */
+  async checkValidPoaForActor(clientId: string, lawyerId: string, tenantId: string, actorUserId: string) {
+    await assertClientObjectScope(this.prisma, tenantId, actorUserId, clientId);
+    return this.checkValidPoa(clientId, lawyerId, tenantId);
+  }
+
+  /** @remarks Called by PoaController.checkValidPoaForLawyers; internal validity consumers retain the raw reader. */
+  async checkValidPoaForLawyersForActor(clientId: string, lawyerIds: string[], tenantId: string, actorUserId: string) {
+    await assertClientObjectScope(this.prisma, tenantId, actorUserId, clientId);
+    return this.checkValidPoaForLawyers(clientId, lawyerIds, tenantId);
+  }
+
+  /** @remarks Called by PoaController.getExpiringPoas; the scheduled expiry path remains internal. */
+  async getExpiringPoasForActor(tenantId: string, days: number, actorUserId: string) {
+    const objectScope = await clientObjectScope(this.prisma, tenantId, actorUserId);
+    return this.getExpiringPoas(tenantId, days, objectScope);
+  }
+
   async findByClient(clientId: string, tenantId: string) {
     return this.prisma.clientPowerOfAttorney.findMany({
       where: {
@@ -269,7 +302,10 @@ export class PoaService {
       this.workspaceCommandDeps(),
       actor,
       { tenantId, clientId: input.clientId, commandType: CLIENT_WORKSPACE_COMMAND.POA_CREATE },
-      () => this.createUnchecked(input, tenantId),
+      async () => {
+        await assertClientObjectScope(this.prisma, tenantId, actor?.userId, input.clientId);
+        return this.createUnchecked(input, tenantId);
+      },
       (r: any) => ({
         poaId: r?.id ?? null,
         status: r?._suppressedDuplicate ? 'duplicate_suppressed' : 'created',
@@ -385,7 +421,10 @@ export class PoaService {
       this.workspaceCommandDeps(),
       actor,
       { tenantId, clientId: existing.clientId, commandType: CLIENT_WORKSPACE_COMMAND.POA_UPDATE },
-      () => this.updateUnchecked(id, input, tenantId, existing),
+      async () => {
+        await assertClientObjectScope(this.prisma, tenantId, actor?.userId, existing.clientId);
+        return this.updateUnchecked(id, input, tenantId, existing);
+      },
       () => ({
         poaId: id,
         status: 'updated',
@@ -456,9 +495,11 @@ export class PoaService {
 
     // P1A: iptal yetkisi — transaction'dan ÖNCE (yetkisiz aktör hiçbir yazma yapmaz).
     await this.assertCanManagePoaLifecycle(actor?.userId, tenantId);
+    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, existing.clientId);
 
     // P1A: revoke + audit AYNI transaction (old snapshot revoke ÖNCESİ alındı).
     return this.prisma.$transaction(async (tx) => {
+      await assertClientObjectScope(tx, tenantId, actor?.userId, existing.clientId);
       const { count } = await tx.clientPowerOfAttorney.updateMany({
         where: { id, client: { tenantId } },
         data: { status: PoaStatus.REVOKED, isActive: false },
@@ -489,6 +530,7 @@ export class PoaService {
    */
   async addLawyers(poaId: string, lawyerIds: string[], tenantId: string, actor: ClientWorkspaceCommandActor) {
     const poa = await this.findOne(poaId, tenantId); // tenant-scoped okuma; audit icin clientId
+    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, poa.clientId);
     return runAuthorizedClientWorkspaceCommand(
       this.workspaceCommandDeps(),
       actor,
@@ -600,6 +642,7 @@ export class PoaService {
    */
   async removeLawyer(poaId: string, lawyerId: string, tenantId: string, actor: ClientWorkspaceCommandActor) {
     const poa = await this.findOne(poaId, tenantId); // Yetki kontrolü (tenant) + audit icin clientId
+    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, poa.clientId);
     return runAuthorizedClientWorkspaceCommand(
       this.workspaceCommandDeps(),
       actor,
@@ -739,14 +782,14 @@ export class PoaService {
   /**
    * Süresi dolmak üzere olan vekaletleri getir
    */
-  async getExpiringPoas(tenantId: string, days: number = 30) {
+  async getExpiringPoas(tenantId: string, days: number = 30, objectScope?: Prisma.ClientWhereInput) {
     const now = new Date();
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + days);
 
     return this.prisma.clientPowerOfAttorney.findMany({
       where: {
-        client: { tenantId },
+        client: { tenantId, ...(objectScope ? { AND: [objectScope] } : {}) },
         isLimited: true,
         status: PoaStatus.ACTIVE,
         validUntil: {
@@ -825,6 +868,7 @@ export class PoaService {
     // veya yok → NotFound (mevcut davranış). Yetki kararı hemen ardından, yazımdan ÖNCE gelir.
     const poa = await this.findOne(poaId, tenantId);
 
+    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, poa.clientId);
     return runAuthorizedClientWorkspaceCommand(
       {
         isApproverEligible: (userId, actorTenantId) =>
@@ -915,7 +959,9 @@ export class PoaService {
     poaId: string,
     file: Express.Multer.File,
     tenantId: string,
+    actorUserId?: string,
   ): Promise<ClientWorkspacePoaUploadResult> {
+    await assertClientObjectScope(this.prisma, tenantId, actorUserId, clientId);
     const poa = await this.prisma.clientPowerOfAttorney.findFirst({
       where: {
         id: poaId,
@@ -944,8 +990,8 @@ export class PoaService {
   /**
    * Vekalet dosyasını getir
    */
-  async getFile(poaId: string, tenantId: string) {
-    const poa = await this.findOne(poaId, tenantId);
+  async getFile(poaId: string, tenantId: string, actorUserId?: string) {
+    const poa = await this.findOneForActor(poaId, tenantId, actorUserId);
 
     if (!poa.filePath) {
       throw new NotFoundException("Dosya bulunamadı");
@@ -980,6 +1026,7 @@ export class PoaService {
    */
   async deleteFile(poaId: string, tenantId: string, actor: ClientWorkspaceCommandActor) {
     const poa = await this.findOne(poaId, tenantId);
+    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, poa.clientId);
     return runAuthorizedClientWorkspaceCommand(
       this.workspaceCommandDeps(),
       actor,

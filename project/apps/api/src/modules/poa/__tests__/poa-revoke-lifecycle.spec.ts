@@ -1,3 +1,11 @@
+// Existing action/lifecycle/response unit fixture explicitly has object access.
+// The real intersection and transaction checks are exercised without this mock in client-object-scope-1b.http.db-gated.integration.spec.ts.
+jest.mock('../../client/client-object-scope', () => ({
+  ...jest.requireActual('../../client/client-object-scope'),
+  assertClientObjectScope: jest.fn(async () => undefined),
+  clientObjectScope: jest.fn(async () => ({})),
+  isClientObjectInScope: jest.fn(async () => true),
+}));
 /**
  * P1A (owner-locked 2026-07-02) — Vekaletname kalıcı hukuki yetki kaydı: DELETE /poa/:id fiziksel
  * silme DEĞİL, status=REVOKED + isActive=false iptalidir. ClientService.remove() / LawyerService.

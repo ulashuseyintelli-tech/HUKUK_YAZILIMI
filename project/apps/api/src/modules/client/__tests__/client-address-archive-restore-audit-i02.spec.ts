@@ -1,3 +1,11 @@
+// Existing action/lifecycle/response unit fixture explicitly has object access.
+// The real intersection and transaction checks are exercised without this mock in client-object-scope-1b.http.db-gated.integration.spec.ts.
+jest.mock('../client-object-scope', () => ({
+  ...jest.requireActual('../client-object-scope'),
+  assertClientObjectScope: jest.fn(async () => undefined),
+  clientObjectScope: jest.fn(async () => ({})),
+  isClientObjectInScope: jest.fn(async () => true),
+}));
 /**
  * CLIENT-ARC-07-ARCHIVE-RESTORE-AUDIT-I02 — açık arşiv/restore yaşam döngüsü, deterministik
  * birincil yeniden-atama, transaction-bağlı lifecycle audit ve fiziksel silme fail-closed.

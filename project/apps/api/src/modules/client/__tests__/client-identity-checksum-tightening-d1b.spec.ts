@@ -1,3 +1,11 @@
+// Existing action/lifecycle/response unit fixture explicitly has object access.
+// The real intersection and transaction checks are exercised without this mock in client-object-scope-1b.http.db-gated.integration.spec.ts.
+jest.mock('../client-object-scope', () => ({
+  ...jest.requireActual('../client-object-scope'),
+  assertClientObjectScope: jest.fn(async () => undefined),
+  clientObjectScope: jest.fn(async () => ({})),
+  isClientObjectInScope: jest.fn(async () => true),
+}));
 /**
  * D-1b (owner GO 2026-09-06) — KIMLIK CHECKSUM SIKILASTIRMASI (bilincli davranis degisikligi).
  *
@@ -204,9 +212,9 @@ describe('D-1b — ClientService.update() kimlik kapilari', () => {
     expect(caught.response.code).toBe('CLIENT_STATE_CHANGED');
   });
 
-  it('normal (reaktivasyon olmayan) update where\'i DEGISMEZ — yalniz id + tenantId', async () => {
+  it('normal update identity/lifecycle koşullarını korur ve object scope ekler', async () => {
     const h = buildService({ ...base, tckn: VALID_TCKN });
     await h.service.update(ID, TENANT, { notes: 'x' }, ACTOR);
-    expect(h.tx.client.updateMany.mock.calls[0][0].where).toEqual({ id: ID, tenantId: TENANT });
+    expect(h.tx.client.updateMany.mock.calls[0][0].where).toEqual({ id: ID, tenantId: TENANT, AND: [{}] });
   });
 });

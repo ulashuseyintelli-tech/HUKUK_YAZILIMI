@@ -56,7 +56,7 @@ export default function ClientDetailPage() {
           </Link>
         </div>
       </div>
-      <ClientProfile clientId={clientId} />
+      <ClientProfile key={clientId} clientId={clientId} />
     </div>
   );
 }

@@ -82,12 +82,12 @@ export class ClientApprovalController {
     @Param('caseId') caseId: string,
     @Query('status') status?: ClientApprovalStatus,
   ) {
-    return this.service.listByCase(req.user.tenantId, caseId, status);
+    return this.service.listByCase(req.user.tenantId, caseId, status, req.user.id);
   }
 
   /** Detay + event geçmişi — GET /client-approvals/:id */
   @Get(':id')
   async findOne(@Req() req: AuthRequest, @Param('id') id: string) {
-    return this.service.findOne(req.user.tenantId, id);
+    return this.service.findOne(req.user.tenantId, id, req.user.id);
   }
 }

@@ -55,7 +55,7 @@ export class ClientAddressController {
         message: 'Geçersiz adres durumu filtresi.',
       });
     }
-    return this.clientAddressService.findForClient(req.user.tenantId, clientId, normalized);
+    return this.clientAddressService.findForClient(req.user.tenantId, clientId, normalized, req.user.id);
   }
 
   /// <remarks>
@@ -108,7 +108,7 @@ export class ClientAddressController {
   /// </remarks>
   @Delete('clients/:clientId/addresses/:addressId')
   remove(@Request() req: any, @Param('clientId') clientId: string, @Param('addressId') addressId: string) {
-    return this.clientAddressService.remove(req.user.tenantId, clientId, addressId);
+    return this.clientAddressService.remove(req.user.tenantId, clientId, addressId, req.user.id);
   }
 
   /// <remarks>

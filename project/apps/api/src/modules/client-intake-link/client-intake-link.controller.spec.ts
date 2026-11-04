@@ -93,7 +93,7 @@ describe('ClientIntakeLinkController — X3-B02 C2-R5 authority wiring', () => {
       response: { reasonCode: CLIENT_MUTATION_REASON.WORKSPACE_COMMAND_DENIED },
     });
 
-    expect(service.findOne).toHaveBeenCalledWith(TENANT, 'link-1');
+    expect(service.findOne).toHaveBeenCalledWith(TENANT, 'link-1', 'user-1');
     expect(service.revoke).not.toHaveBeenCalled();
     expect(audit.log).not.toHaveBeenCalled();
   });

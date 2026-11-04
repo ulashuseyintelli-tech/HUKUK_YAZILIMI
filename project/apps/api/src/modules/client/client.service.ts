@@ -1,3 +1,4 @@
+import { assertClientObjectScope, clientObjectScope, isClientObjectInScope } from './client-object-scope';
 import { Injectable, BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -626,28 +627,13 @@ export class ClientService {
   }
 
   /** Consumed only by the two bounded internal HTTP readers above. No rank/Admin shortcut. */
+  /** @remarks Called by ClientController.runWorkspaceCommand after the existing action policy. */
+  async assertObjectScope(tenantId: string, actorUserId: string, clientId: string): Promise<void> {
+    await assertClientObjectScope(this.prisma, tenantId, actorUserId, clientId);
+  }
+
   private async internalClientReadScope(tenantId: string, actorUserId: string): Promise<Prisma.ClientWhereInput> {
-    if (!tenantId || !actorUserId) throw new ForbiddenException({ code: 'CLIENT_READ_DENIED' });
-    const actor = await this.prisma.user.findFirst({
-      where: { id: actorUserId, tenantId, isActive: true, role: { in: ['USER', 'ADMIN'] } },
-      select: { id: true },
-    });
-    if (!actor) throw new ForbiddenException({ code: 'CLIENT_READ_DENIED' });
-    // Canonical CaseClient only: Case.clientId, assignments in other cases/tenants,
-    // ReportingLine, role/title and observe-only permission decisions grant nothing here.
-    return {
-      caseClients: { some: { case: {
-        tenantId,
-        OR: [
-          { lawyers: { some: { lawyer: {
-            tenantId, isActive: true, user: { id: actorUserId, tenantId, isActive: true, role: { in: ['USER', 'ADMIN'] } },
-          } } } },
-          { staff: { some: { canView: true, staffMember: {
-            tenantId, isActive: true, user: { id: actorUserId, tenantId, isActive: true, role: { in: ['USER', 'ADMIN'] } },
-          } } } },
-        ],
-      } } },
-    };
+    return clientObjectScope(this.prisma, tenantId, actorUserId);
   }
 
   /**
@@ -684,7 +670,8 @@ export class ClientService {
    * - ClientController.timeline() -> GET /clients/:clientId/timeline (Client Workspace read model)
    * </remarks>
    */
-  async getTimeline(id: string, tenantId: string, query: ClientTimelineQuery = {}): Promise<ClientTimelineResponse> {
+  async getTimeline(id: string, tenantId: string, query: ClientTimelineQuery = {}, actorUserId?: string): Promise<ClientTimelineResponse> {
+    await assertClientObjectScope(this.prisma, tenantId, actorUserId, id);
     const limit = this.parseTimelineLimit(query.limit);
     const sources = this.parseTimelineSources(query.sources);
     const cursor = this.parseTimelineCursor(query.cursor);
@@ -818,7 +805,8 @@ export class ClientService {
    * - ClientController.actionCatalog() -> GET /clients/:clientId/action-catalog (Client Workspace read model)
    * </remarks>
    */
-  async getActionCatalog(id: string, tenantId: string, actorRole?: string | null): Promise<ClientActionCatalogResponse> {
+  async getActionCatalog(id: string, tenantId: string, actorRole?: string | null, actorUserId?: string): Promise<ClientActionCatalogResponse> {
+    await assertClientObjectScope(this.prisma, tenantId, actorUserId, id);
     const client = await this.prisma.client.findFirst({
       where: { id, tenantId, isActive: true },
       select: {
@@ -872,7 +860,8 @@ export class ClientService {
    * - ClientController.operatingSnapshot() -> GET /clients/:clientId/operating-snapshot (Client Workspace health read model)
    * </remarks>
    */
-  async getOperatingSnapshot(id: string, tenantId: string): Promise<ClientOperatingSnapshotResponse> {
+  async getOperatingSnapshot(id: string, tenantId: string, actorUserId?: string): Promise<ClientOperatingSnapshotResponse> {
+    await assertClientObjectScope(this.prisma, tenantId, actorUserId, id);
     const client = await this.prisma.client.findFirst({
       where: { id, tenantId, isActive: true },
       select: {
@@ -1009,7 +998,8 @@ export class ClientService {
    * - ClientController.sendPoaReminder() -> POST /clients/:clientId/poa-reminders/send (manual typed command)
    * </remarks>
    */
-  async sendPoaReminder(id: string, tenantId: string): Promise<ClientPoaReminderSendResult> {
+  async sendPoaReminder(id: string, tenantId: string, actorUserId?: string): Promise<ClientPoaReminderSendResult> {
+    await assertClientObjectScope(this.prisma, tenantId, actorUserId, id);
     const client = await this.prisma.client.findFirst({
       where: { id, tenantId, isActive: true },
       select: { id: true },
@@ -1043,6 +1033,7 @@ export class ClientService {
     idempotencyKey: string | undefined,
     input: ClientTemplateNotificationSendInput,
   ): Promise<ClientTemplateNotificationSendResult> {
+    await assertClientObjectScope(this.prisma, tenantId, userId, id, input.caseId);
     const normalizedKey = String(idempotencyKey ?? '').trim();
     if (!normalizedKey) throw new BadRequestException('Idempotency-Key header is required');
     if (!CLIENT_TEMPLATE_NOTIFICATION_CODES.includes(input.templateCode)) throw new BadRequestException('Unsupported templateCode');
@@ -1104,6 +1095,7 @@ export class ClientService {
     idempotencyKey: string | undefined,
     input: ClientDocumentRequestSendInput,
   ): Promise<ClientDocumentRequestSendResult> {
+    await assertClientObjectScope(this.prisma, tenantId, userId, id, input.caseId);
     const normalizedKey = String(idempotencyKey ?? '').trim();
     if (!normalizedKey) throw new BadRequestException('Idempotency-Key header is required');
     if (!this.notificationDispatcher) throw new Error('Notification dispatcher is not configured');
@@ -1765,6 +1757,7 @@ export class ClientService {
     // OWN-13 I02-R1: hiçbir okuma/yazma yapılmadan ÖNCE — tenant eşitliği, sonra D02 kapısı.
     this.assertActorTenantMatches(tenantId, actor);
     await this.assertCanUpdateClient(tenantId, data, actor);
+    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, id);
     // Lifecycle kapısı (assertCanManageLifecycle) AŞAĞIDA, kendi yerinde AYNEN korunur;
     // OWN-13 onu ne gevşetir ne değiştirir.
     // C0-a (acceptance #2): contacts diff için old snapshot CONTACTS ile alınır.
@@ -1823,7 +1816,9 @@ export class ClientService {
           throw new ConflictException({
             code: 'DUPLICATE_IDENTITY',
             message: 'Bu kimlik numarasına sahip başka bir müvekkil mevcut',
-            existingClient: { id: dup.id, name: (dup as any).displayName || (dup as any).name },
+            ...(await isClientObjectInScope(this.prisma, tenantId, actor?.userId, dup.id)
+              ? { existingClient: { id: dup.id, name: (dup as any).displayName || (dup as any).name } }
+              : {}),
           });
         }
       }
@@ -1869,6 +1864,8 @@ export class ClientService {
     // aynı DUPLICATE_IDENTITY sözleşmesine çevrilir.
     try {
     await this.prisma.$transaction(async (tx) => {
+      const objectScope = await clientObjectScope(tx, tenantId, actor?.userId);
+      await assertClientObjectScope(tx, tenantId, actor?.userId, id);
       // P0.5: tenant-scoped write — update() whereUnique tenantId taşıyamaz; updateMany {id,tenantId} guard.
       // D-1b TOCTOU: aktifleştirme, DOĞRULADIĞIMIZ duruma koşulludur — kayıt bu arada
       // değiştiyse (başka bir yazma kimliği veya isActive'i çevirdiyse) yazma GERÇEKLEŞMEZ.
@@ -1934,7 +1931,7 @@ export class ClientService {
       // ve bu testte VAR sayilirlar (owner: gercek degerleri undefined ile karistirma).
       const hasEffectiveUpdateField = Object.values(clientUpdateData).some((v) => v !== undefined);
       const { count } = await tx.client.updateMany({
-        where: { id, tenantId, ...lifecycleGuard },
+        where: { id, tenantId, AND: [objectScope], ...lifecycleGuard },
         data: clientUpdateData,
       });
       if (count === 0) {
@@ -2226,8 +2223,9 @@ export class ClientService {
   ): Promise<{ scanned: number; createdOrUpdated: number; skippedWaived: number; alreadyActive: number; failed: number }> {
     await this.assertCanRunElevatedClientBulkOperation(tenantId, actor);
 
+    const objectScope = await clientObjectScope(this.prisma, tenantId, actor?.userId);
     const clients = await this.prisma.client.findMany({
-      where: { tenantId, isActive: true },
+      where: { tenantId, isActive: true, AND: [objectScope] },
       select: { id: true, phone: true, email: true, contactFollowUpStatus: true },
     });
 
@@ -2269,12 +2267,14 @@ export class ClientService {
 
   // Müvekkil sil (soft delete)
   async remove(id: string, tenantId: string, actor?: AuditActor) {
+    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, id);
     const existing = await this.prisma.client.findFirst({ where: { id, tenantId } });
     if (!existing) throw new NotFoundException('Müvekkil bulunamadı');
     // Task 8A: lifecycle capability gate — transaction'dan ÖNCE (yetkisiz aktör hiçbir yazma yapmaz).
     await this.assertCanManageLifecycle(actor?.userId, tenantId);
     // C0-a: soft-delete + audit AYNI transaction (old snapshot delete ÖNCESİ alındı).
     return this.prisma.$transaction(async (tx) => {
+      await assertClientObjectScope(tx, tenantId, actor?.userId, id);
       // P0.5: tenant-scoped soft-delete (updateMany {id,tenantId}).
       const { count } = await tx.client.updateMany({ where: { id, tenantId }, data: { isActive: false } });
       if (count === 0) throw new NotFoundException('Müvekkil bulunamadı');

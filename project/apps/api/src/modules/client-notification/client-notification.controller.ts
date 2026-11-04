@@ -75,7 +75,7 @@ export class ClientNotificationController {
       { userId, tenantId, role },
       body.clientId,
       CLIENT_WORKSPACE_COMMAND.NOTIFICATION_SEND_EMAIL,
-      () => this.service.sendEmail(tenantId, userId, body),
+      () => this.service.sendEmailForActor(tenantId, userId, body),
       (result) => ({ status: result.success ? "sent" : "failed" })
     );
   }
@@ -93,7 +93,7 @@ export class ClientNotificationController {
       { userId, tenantId, role },
       body.clientId,
       CLIENT_WORKSPACE_COMMAND.NOTIFICATION_SEND_SMS,
-      () => this.service.sendSms(tenantId, userId, body),
+      () => this.service.sendSmsForActor(tenantId, userId, body),
       (result) => ({ status: result.success ? "sent" : "failed" })
     );
   }
@@ -214,7 +214,7 @@ export class ClientNotificationController {
     if (body?.channel !== "EMAIL" && body?.channel !== "SMS") {
       throw new BadRequestException("Geçersiz kanal (EMAIL veya SMS olmalı)");
     }
-    const data = await this.service.testSend(tenantId, userId, {
+    const data = await this.service.testSendForActor(tenantId, userId, {
       clientId: body.clientId,
       channel: body.channel,
     });
@@ -235,7 +235,7 @@ export class ClientNotificationController {
       { userId, tenantId, role },
       targetScopeId,
       CLIENT_WORKSPACE_COMMAND.NOTIFICATION_BULK_EMAIL,
-      () => this.service.sendBulkEmail(tenantId, userId, body),
+      () => this.service.sendBulkEmailForActor(tenantId, userId, body),
       (result) => ({
         status: result.success && result.details.failed === 0 ? "sent" : "failed",
         recipientCount: body.recipients.length,

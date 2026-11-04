@@ -1,3 +1,4 @@
+import { assertClientObjectScope, clientObjectScope } from './client-object-scope';
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -42,6 +43,12 @@ export class ClientPoaCapabilityService {
       (client as any).powerOfAttorneys ?? [],
       new Date(),
     );
+  }
+
+  /** HTTP visibility only; internal business readers retain their authority. @remarks Called by ClientPoaCapabilityController.get. */
+  async getEffectiveCapabilitiesForActor(tenantId: string, clientId: string, actorUserId: string) {
+    await assertClientObjectScope(this.prisma, tenantId, actorUserId, clientId);
+    return this.getEffectiveCapabilities(tenantId, clientId);
   }
 
   /**

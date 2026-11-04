@@ -1,3 +1,4 @@
+import { assertClientObjectScope, clientObjectScope } from './client-object-scope';
 import {
   BadRequestException,
   ConflictException,
@@ -89,6 +90,7 @@ export class ClientLegalHoldService {
   }) {
     const { tenantId, clientId, scopeType, reason, actor, caseId, recordFamily } = params;
     await this.assertElevated(actor, tenantId, 'Legal hold koyma');
+    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, clientId, caseId);
     if (!reason?.trim()) {
       throw new BadRequestException('Legal hold gerekçesi zorunludur (K8.4)');
     }
@@ -103,6 +105,7 @@ export class ClientLegalHoldService {
 
     const now = new Date();
     return this.prisma.$transaction(async (tx: any) => {
+      await assertClientObjectScope(tx, tenantId, actor?.userId, clientId, caseId);
       const created = await this.delegate(tx).create({
         data: {
           tenantId,
@@ -140,13 +143,14 @@ export class ClientLegalHoldService {
     if (!releaseReason?.trim()) {
       throw new BadRequestException('Kaldırma gerekçesi zorunludur (K8.4)');
     }
-    const hold = await this.requireHold(tenantId, holdId);
+    const hold = await this.requireHold(tenantId, holdId, actor?.userId);
     if (hold.status !== 'ACTIVE') {
       throw new ConflictException(`Hold ${hold.status} durumunda — kaldırma talebi yalnız ACTIVE hold için`);
     }
 
     const now = new Date();
     return this.prisma.$transaction(async (tx: any) => {
+      await this.requireHold(tenantId, holdId, actor?.userId, tx);
       const updated = await this.delegate(tx).update({
         where: { id: holdId },
         data: {
@@ -175,7 +179,7 @@ export class ClientLegalHoldService {
   async approveRelease(params: { tenantId: string; holdId: string; actor: ClientMutationActor }) {
     const { tenantId, holdId, actor } = params;
     await this.assertElevated(actor, tenantId, 'Legal hold kaldırma onayı');
-    const hold = await this.requireHold(tenantId, holdId);
+    const hold = await this.requireHold(tenantId, holdId, actor?.userId);
     if (hold.status !== 'RELEASE_REQUESTED') {
       throw new ConflictException('Onaylanacak bekleyen kaldırma talebi yok');
     }
@@ -188,6 +192,7 @@ export class ClientLegalHoldService {
 
     const now = new Date();
     return this.prisma.$transaction(async (tx: any) => {
+      await this.requireHold(tenantId, holdId, actor?.userId, tx);
       const updated = await this.delegate(tx).update({
         where: { id: holdId },
         data: { status: 'RELEASED', releasedByUserId: actor.userId, releasedAt: now },
@@ -208,9 +213,11 @@ export class ClientLegalHoldService {
     });
   }
 
-  async listHolds(tenantId: string, clientId?: string) {
+  async listHolds(tenantId: string, clientId?: string, actorUserId?: string) {
+    const objectScope = await clientObjectScope(this.prisma, tenantId, actorUserId);
+    if (clientId) await assertClientObjectScope(this.prisma, tenantId, actorUserId, clientId);
     return this.delegate().findMany({
-      where: { tenantId, ...(clientId ? { clientId } : {}) },
+      where: { tenantId, client: { AND: [objectScope] }, ...(clientId ? { clientId } : {}) },
       orderBy: { placedAt: 'desc' },
     });
   }
@@ -232,6 +239,7 @@ export class ClientLegalHoldService {
   }): Promise<ClientLifecycleGateDecision> {
     const { tenantId, clientId, actor, assessment, caseId, recordFamily, requestNote } = params;
     await this.assertElevated(actor, tenantId, 'Silme değerlendirme talebi');
+    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, clientId, caseId);
 
     const holdActive = await this.hasActiveHold(tenantId, { clientId, caseId, recordFamily });
     const effectiveAssessment: ClientLifecycleAssessment = {
@@ -259,9 +267,10 @@ export class ClientLegalHoldService {
     return decision;
   }
 
-  private async requireHold(tenantId: string, holdId: string) {
-    const hold = await this.delegate().findFirst({ where: { id: holdId, tenantId } });
+  private async requireHold(tenantId: string, holdId: string, actorUserId: string | null | undefined, db: any = this.prisma) {
+    const hold = await this.delegate(db).findFirst({ where: { id: holdId, tenantId } });
     if (!hold) throw new NotFoundException('Legal hold bulunamadı');
+    await assertClientObjectScope(db, tenantId, actorUserId, hold.clientId, hold.caseId ?? undefined);
     return hold;
   }
 }

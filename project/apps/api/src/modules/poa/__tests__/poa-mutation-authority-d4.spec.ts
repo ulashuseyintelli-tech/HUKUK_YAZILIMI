@@ -1,3 +1,11 @@
+// Existing action/lifecycle/response unit fixture explicitly has object access.
+// The real intersection and transaction checks are exercised without this mock in client-object-scope-1b.http.db-gated.integration.spec.ts.
+jest.mock('../../client/client-object-scope', () => ({
+  ...jest.requireActual('../../client/client-object-scope'),
+  assertClientObjectScope: jest.fn(async () => undefined),
+  clientObjectScope: jest.fn(async () => ({})),
+  isClientObjectInScope: jest.fn(async () => true),
+}));
 /**
  * D-4 (owner GO 2026-09-06) — POA ENTITY YAZMA YETKISI (C2 frozen primitive, additive POA_* komutlari).
  *

@@ -1,3 +1,4 @@
+import { assertClientObjectScope } from '../client/client-object-scope';
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { ClientNotificationService, type ClientNotificationAttachment } from './client-notification.service';
@@ -143,6 +144,12 @@ export class NotificationDispatcherService {
    * - NotificationDispatchController.resend() → POST /client-notifications/resend
    * </remarks>
    */
+  /** Manual HTTP resend; background dispatch is explicitly a different entry point. */
+  async resendForActor(tenantId: string, userId: string, input: DispatchInput): Promise<DispatchResult> {
+    await assertClientObjectScope(this.prisma, tenantId, userId, input.clientId, input.caseId ?? undefined);
+    return this.resend(tenantId, userId, input);
+  }
+
   async resend(tenantId: string, userId: string, input: DispatchInput): Promise<DispatchResult> {
     // force=false ise dispatch zaten SENT'i skip eder; force=true açık tekrar gönderim.
     return this.dispatch(tenantId, userId, input);

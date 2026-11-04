@@ -1,3 +1,4 @@
+import { assertClientObjectScope, clientObjectScope } from './client-object-scope';
 import {
   ForbiddenException,
   Injectable,
@@ -138,6 +139,7 @@ export class ClientSpecialCategoryService {
   }) {
     const { tenantId, clientId, content, actor } = params;
     await this.assertElevated(actor, tenantId);
+    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, clientId);
     const category = this.assertCategory(params.category);
     const key = this.requireKey();
 
@@ -146,6 +148,7 @@ export class ClientSpecialCategoryService {
 
     const contentEncrypted = encryptSpecialContent(key, content);
     return this.prisma.$transaction(async (tx: any) => {
+      await assertClientObjectScope(tx, tenantId, actor?.userId, clientId);
       const created = await this.delegate(tx).create({
         data: { tenantId, clientId, category, contentEncrypted, createdByUserId: actor.userId },
       });
@@ -166,6 +169,7 @@ export class ClientSpecialCategoryService {
   async listRecords(params: { tenantId: string; clientId: string; actor: ClientMutationActor }) {
     const { tenantId, clientId, actor } = params;
     await this.assertElevated(actor, tenantId);
+    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, clientId);
     const rows = await this.delegate().findMany({
       where: { tenantId, clientId },
       orderBy: { createdAt: 'desc' },
@@ -182,10 +186,11 @@ export class ClientSpecialCategoryService {
   async readRecord(params: { tenantId: string; recordId: string; actor: ClientMutationActor }) {
     const { tenantId, recordId, actor } = params;
     await this.assertElevated(actor, tenantId);
-    const key = this.requireKey();
     const row = await this.delegate().findFirst({ where: { id: recordId, tenantId } });
     if (!row) throw new NotFoundException('Kayıt bulunamadı');
 
+    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, row.clientId);
+    const key = this.requireKey();
     const content = decryptSpecialContent(key, row.contentEncrypted);
     await this.audit.log({
       tenantId,

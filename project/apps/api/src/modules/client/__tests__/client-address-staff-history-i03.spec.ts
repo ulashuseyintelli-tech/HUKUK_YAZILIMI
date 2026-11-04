@@ -1,3 +1,11 @@
+// Existing action/lifecycle/response unit fixture explicitly has object access.
+// The real intersection and transaction checks are exercised without this mock in client-object-scope-1b.http.db-gated.integration.spec.ts.
+jest.mock('../client-object-scope', () => ({
+  ...jest.requireActual('../client-object-scope'),
+  assertClientObjectScope: jest.fn(async () => undefined),
+  clientObjectScope: jest.fn(async () => ({})),
+  isClientObjectInScope: jest.fn(async () => true),
+}));
 /**
  * CLIENT-ARC-07-STAFF-HISTORY-I03 — staff-only aktif/arşiv adres okuma sözleşmesi.
  *
@@ -205,13 +213,13 @@ describe('ARC-07 I03 — controller ve yetkilendirme', () => {
   it('[C1] tenantId YALNIZ JWT\'den geçirilir; status normalize edilir', async () => {
     const { ctrl, service } = buildController();
     await ctrl.list({ user: { id: 'u1', tenantId: 't1' } } as any, 'c1', 'archived');
-    expect(service.findForClient).toHaveBeenCalledWith('t1', 'c1', 'archived');
+    expect(service.findForClient).toHaveBeenCalledWith('t1', 'c1', 'archived', 'u1');
   });
 
   it('[C2] status verilmezse active kullanılır', async () => {
     const { ctrl, service } = buildController();
     await ctrl.list({ user: { id: 'u1', tenantId: 't1' } } as any, 'c1', undefined);
-    expect(service.findForClient).toHaveBeenCalledWith('t1', 'c1', 'active');
+    expect(service.findForClient).toHaveBeenCalledWith('t1', 'c1', 'active', 'u1');
   });
 
   it('[C3] bilinmeyen status controller katmanında da fail-closed reddedilir', async () => {
