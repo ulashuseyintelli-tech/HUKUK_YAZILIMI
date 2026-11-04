@@ -578,7 +578,9 @@ describe('Sekmedeki "Tekrar dene" — ilgili kaynağı yeniden okur, yazma işle
     await okumalariBekle(TUM_BASARILI, { getExpenseThreeViewForCase: 2 });
 
     await tumGorunumuBekle({ ...TAHSILAT_DOLU, ...MASRAF_DOLU });
-    expect(eylemdekiCagrilar()).toEqual({ getExpenseThreeViewForCase: 1 });
+    // D4: talep satırları görününce aynı bölümün dağıtım uygunluğu durumu okunur (by-case, YALNIZ okuma).
+    // Başka kaynak (tahsilat, alacak, dağıtım) yeniden okunmaz; yazma tetiklenmez.
+    await waitFor(() => expect(eylemdekiCagrilar()).toEqual({ getExpenseThreeViewForCase: 1, getExpenseRequestsByCase: 1 }), WAIT);
     expect(fetchStub.mock.calls.length).toBe(fetchOnce);
     // Üstteki bant da aynı okumayla kalktı
     await waitFor(() => expect(uyarilar().some((text) => text.includes('Masraf görev/talep/finans'))).toBe(false), WAIT);

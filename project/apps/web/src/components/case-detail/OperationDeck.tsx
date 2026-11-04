@@ -6,6 +6,7 @@ import { collectionFinanceTotalCurrencies, splitCollectionFinanceTotals } from "
 import { resolveFinanceSourceView, type FinanceSourceStatus } from "@/lib/operation-deck-finance-sources";
 import { recordCurrencySuffix } from "@/lib/record-currency-display";
 import { FinanceSourceListNotice, FinanceSourceRefreshNote } from "./FinanceSourceNotice";
+import { ExpenseDistributionDecisionRow, useExpenseDistributionDecisions } from "@/components/expense/ExpenseDistributionDecision";
 import {
   FileText, ListTodo, Receipt, Database, FolderOpen, MessageSquare,
   ChevronDown, Plus, AlertTriangle, Clock, Zap, User, Check, X,
@@ -961,6 +962,13 @@ export function OperationDeck({
   const collectionsView = resolveFinanceSourceView(collectionsSource);
   const expenseRequestsView = resolveFinanceSourceView(expenseRequestsSource);
   const expenseRequestItems = expenseRequestsView.hasData ? financeItems.filter(f => f.type === "MASRAF_TALEP") : [];
+  // D4: masraf dağıtım uygunluğu durumu ve kararı. Durum yalnız Finans sekmesi açıkken ve bölümde talep varken okunur
+  // (GET /expense-requests/by-case/:caseId); bölümün satır kaynağı (three-view) bu alanı taşımaz. Sekme her açıldığında
+  // durum yeniden okunur.
+  const expenseDistributionDecisions = useExpenseDistributionDecisions(
+    caseId,
+    caseId && activePanel === "finance" ? expenseRequestItems.map(item => item.id).join(",") : "",
+  );
   const shownRecentFinanceItems = collectionsView.hasData
     ? recentFinanceItems
     : recentFinanceItems.filter(f => f.type !== "TAHSILAT");
@@ -1311,7 +1319,7 @@ export function OperationDeck({
                   {/* F02-B görünürlük: masraf listesine UYGULANAN kapsam (GET /office/view-scope); başlığın KARDEŞİ — bölüm DOM yapısı değişmez */}
                   <ViewScopeBadge area="expenses" className="mb-2" />
                   {expenseRequestItems.length > 0 && (
-                  <div className="space-y-2 max-h-[150px] overflow-y-auto">
+                  <div className="space-y-2 max-h-[360px] overflow-y-auto">
                     {expenseRequestItems.map(item => (
                       <div key={item.id} className={`p-3 rounded-lg border ${
                         item.status === 'PAID' ? 'border-emerald-200 bg-emerald-50/50' :
@@ -1352,6 +1360,10 @@ export function OperationDeck({
                               )}
                             </div>
                           </div>
+                        )}
+                        {/* D4: dağıtım uygunluğu durumu ve kararı (ödeme / müvekkile gönderim / finalize DEĞİL) */}
+                        {caseId && (
+                          <ExpenseDistributionDecisionRow expenseId={item.id} decisions={expenseDistributionDecisions} />
                         )}
                       </div>
                     ))}
