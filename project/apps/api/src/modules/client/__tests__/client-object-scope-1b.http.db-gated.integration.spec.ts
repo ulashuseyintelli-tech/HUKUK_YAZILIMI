@@ -242,6 +242,26 @@ dbDescribe('1b canonical Client object boundary — real Nest HTTP and PostgreSQ
     await update({ phone: 'stale authority' }).expect(404);
     expect(await snapshot()).toEqual(before);
   });
+  it.each(['NO_OP', 'CONTACTS_ONLY'] as const)('%s rejects scope loss before zero-write fallback', async kind => {
+    const original = db.$transaction.bind(db); const before = await snapshot(); let reached = false;
+    jest.spyOn(db, '$transaction').mockImplementationOnce((async (callback: any, ...rest: any[]) => original(async tx => {
+      const client = new Proxy(tx.client, { get(target, property, receiver) {
+        if (property !== 'updateMany') return Reflect.get(target, property, receiver);
+        return async (args: any) => {
+          reached = true;
+          await db.caseLawyer.deleteMany({ where: { caseId, lawyer: { userId: admin } } });
+          const result = await target.updateMany(args);
+          expect(result.count).toBe(0); // Reach the real Prisma empty-data fallback, not an earlier rejection.
+          return result;
+        };
+      } });
+      return callback(new Proxy(tx, { get(target, property, receiver) {
+        return property === 'client' ? client : Reflect.get(target, property, receiver);
+      } }));
+    }, ...rest)) as any);
+    await update(kind === 'NO_OP' ? { isActive: true } : { phones: [{ type: 'MOBILE', value: '5558887799' }] }).expect(404);
+    expect(reached).toBe(true); expect(await snapshot()).toEqual(before);
+  });
   it.each(['timeline', 'action-catalog', 'operating-snapshot', 'addresses', 'consents', 'disclosure-deliveries', 'effective-capabilities'] as const)('%s cannot bypass root Client scope', async sub => {
     const before = await snapshot(); await req('get', `/clients/${otherId}/${sub}`).expect(404); expect(await snapshot()).toEqual(before);
   });

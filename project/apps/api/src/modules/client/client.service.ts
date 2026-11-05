@@ -1958,7 +1958,7 @@ export class ClientService {
         //   1) `hasEffectiveUpdateField === false` — Prisma'ya verilen veri GERÇEKTEN boş.
         //      Yazılacak bir alan VARDI ama satır güncellenmediyse bu no-op DEĞİLDİR
         //      (satır kayboldu veya yüklem eşleşmedi) → 404 KALIR.
-        //   2) satır AYNI TENANT kapsamında hâlâ mevcut. Yalnız varlık YETMEZ; (1) olmadan
+        //   2) satır AYNI TENANT ve canonical aktör kapsamında hâlâ mevcut. Yalnız varlık YETMEZ; (1) olmadan
         //      varlık başarı üretmez.
         // Ayrım AYNI TRANSACTION İÇİNDE ölçülür (dışarıdaki `existing` okuması bayat olabilir).
         // Yetki, tenant, kimlik ve lifecycle kapıları YUKARIDA çalıştı ve DEĞİŞMEDİ; burada
@@ -1966,7 +1966,7 @@ export class ClientService {
         // audit'e YAPAY YAZMA EKLENMEZ — no-op gerçekten hiçbir alanı yazmaz.
         if (hasEffectiveUpdateField) throw new NotFoundException('Müvekkil bulunamadı');
         const stillPresent = await tx.client.findFirst({
-          where: { id, tenantId },
+          where: { id, tenantId, AND: [objectScope] },
           select: { id: true },
         });
         if (!stillPresent) throw new NotFoundException('Müvekkil bulunamadı');
