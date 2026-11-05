@@ -1,3 +1,4 @@
+import { assertClientObjectScope, clientObjectScope } from './client-object-scope';
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -153,12 +154,14 @@ export class ClientConsentService {
   }) {
     const { tenantId, clientId, activity, actor, note, source } = params;
     this.assertConsentMutationAuthorized(actor);
+    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, clientId);
     const entry = this.assertConsentActivity(activity);
 
     const client = await this.prisma.client.findFirst({ where: { id: clientId, tenantId } });
     if (!client) throw new NotFoundException('Müvekkil bulunamadı');
 
     return this.prisma.$transaction(async (tx: any) => {
+      await assertClientObjectScope(tx, tenantId, actor?.userId, clientId);
       const already = await this.consentDelegate(tx).findFirst({
         where: { tenantId, clientId, activity: entry.activity, status: 'GRANTED', revokedAt: null },
       });
@@ -205,6 +208,7 @@ export class ClientConsentService {
   }) {
     const { tenantId, clientId, activity, actor, note } = params;
     this.assertConsentMutationAuthorized(actor);
+    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, clientId);
     const entry = this.assertConsentActivity(activity);
 
     const active = await this.consentDelegate().findFirst({
@@ -214,6 +218,7 @@ export class ClientConsentService {
 
     const gatedFlags = CLIENT_CONSENT_GATED_FLAGS[entry.activity] ?? [];
     return this.prisma.$transaction(async (tx: any) => {
+      await assertClientObjectScope(tx, tenantId, actor?.userId, clientId);
       const revoked = await this.consentDelegate(tx).update({
         where: { id: active.id },
         data: {
@@ -246,7 +251,8 @@ export class ClientConsentService {
     });
   }
 
-  async listConsents(tenantId: string, clientId: string) {
+  async listConsents(tenantId: string, clientId: string, actorUserId?: string) {
+    await assertClientObjectScope(this.prisma, tenantId, actorUserId, clientId);
     const delegate = this.consentDelegate();
     if (!delegate) return [];
     return delegate.findMany({

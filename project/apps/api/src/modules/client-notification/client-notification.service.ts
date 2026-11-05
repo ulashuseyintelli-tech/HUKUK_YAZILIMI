@@ -1,3 +1,4 @@
+import { assertClientObjectScope } from '../client/client-object-scope';
 import { Injectable, Logger, BadRequestException, NotFoundException } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -540,6 +541,34 @@ export class ClientNotificationService {
     };
   }
 
+  /** @remarks Called by ClientNotificationController.sendEmail after its action gate; raw transport stays internal. */
+  async sendEmailForActor(tenantId: string, userId: string, dto: SendEmailDto) {
+    await assertClientObjectScope(this.prisma, tenantId, userId, dto.clientId, dto.caseId ?? undefined);
+    return this.sendEmail(tenantId, userId, dto);
+  }
+
+  /** @remarks Called by ClientNotificationController.sendSms after its action gate; raw transport stays internal. */
+  async sendSmsForActor(tenantId: string, userId: string, dto: SendSmsDto) {
+    await assertClientObjectScope(this.prisma, tenantId, userId, dto.clientId, dto.caseId ?? undefined);
+    return this.sendSms(tenantId, userId, dto);
+  }
+
+  /** @remarks Called by ClientNotificationController.testSend after its existing ADMIN gate. */
+  async testSendForActor(tenantId: string, userId: string, params: { clientId: string; channel: 'EMAIL' | 'SMS' }) {
+    await assertClientObjectScope(this.prisma, tenantId, userId, params.clientId);
+    return this.testSend(tenantId, userId, params);
+  }
+
+  /** @remarks Called by ClientNotificationController.sendBulkEmail after its action gate. */
+  async sendBulkEmailForActor(tenantId: string, userId: string, data: Parameters<ClientNotificationService['sendBulkEmail']>[2]) {
+    // Authorize the whole Client batch BEFORE any provider/configuration read or partial send.
+    // Debtor recipient authority belongs to its existing independent contract.
+    if (data.type === 'clients') {
+      for (const clientId of data.recipients) await assertClientObjectScope(this.prisma, tenantId, userId, clientId);
+    }
+    return this.sendBulkEmail(tenantId, userId, data);
+  }
+
   /**
    * Bildirim Kontrol Merkezi — seçili GERÇEK müvekkile GERÇEK [TEST] bildirimi (PR-N3).
    *
@@ -550,7 +579,7 @@ export class ClientNotificationService {
    *
    * /// <remarks>
    * Çağrıldığı yerler:
-   * - ClientNotificationController.testSend() → POST /client-notifications/test-send (ADMIN) — Kontrol Merkezi "Gerçek Test Gönderimi"
+   * - ClientNotificationController.testSend() → ClientNotificationService.testSendForActor() → POST /client-notifications/test-send (ADMIN) — Kontrol Merkezi "Gerçek Test Gönderimi"
    * </remarks>
    */
   async testSend(

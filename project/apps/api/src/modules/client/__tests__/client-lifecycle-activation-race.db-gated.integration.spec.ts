@@ -45,6 +45,7 @@ describeWithDatabase('LIFECYCLE aktivasyon yarisi (gercek PostgreSQL, bariyer si
   let prisma: PrismaClient;
   let tenantId: string;
   let userId: string;
+  let lawyerId: string;
 
   /** Bariyer: `update()`'in `existing` okumasi dondugu anda BIR KEZ calisir. */
   let barrier: null | (() => Promise<void>);
@@ -169,9 +170,14 @@ describeWithDatabase('LIFECYCLE aktivasyon yarisi (gercek PostgreSQL, bariyer si
       select: { id: true },
     });
     userId = user.id;
+    lawyerId = (await prisma.lawyer.create({ data: { tenantId, userId, name: 'Race', surname: 'Lawyer' } })).id;
   });
 
   afterEach(async () => {
+    await prisma.caseLawyer.deleteMany({ where: { case: { tenantId } } });
+    await prisma.caseClient.deleteMany({ where: { case: { tenantId } } });
+    await prisma.case.deleteMany({ where: { tenantId } });
+    await prisma.lawyer.deleteMany({ where: { tenantId } });
     await prisma.clientContact.deleteMany({ where: { client: { tenantId } } }).catch(() => undefined);
     await prisma.client.deleteMany({ where: { tenantId } }).catch(() => undefined);
     await prisma.user.deleteMany({ where: { tenantId } }).catch(() => undefined);
@@ -193,6 +199,9 @@ describeWithDatabase('LIFECYCLE aktivasyon yarisi (gercek PostgreSQL, bariyer si
       },
       select: { id: true },
     });
+    const scopedCase = await prisma.case.create({ data: { tenantId, type: 'GENERAL_EXECUTION', fileNumber: randomUUID() } });
+    await prisma.caseClient.create({ data: { caseId: scopedCase.id, clientId: row.id } });
+    await prisma.caseLawyer.create({ data: { caseId: scopedCase.id, lawyerId } });
     return row.id;
   }
 
@@ -392,9 +401,10 @@ describeWithDatabase('LIFECYCLE aktivasyon yarisi (gercek PostgreSQL, bariyer si
     });
     try {
       const service = buildService();
+      const foreignActor = await prisma.user.create({ data: { tenantId: foreign.id, role: 'ADMIN', email: `${randomUUID()}@test.invalid`, name: 'Foreign', surname: 'Actor' } });
       // Aktor KENDI tenant'inda; hedef BASKA tenant'ta → tenant yuklemi eslesmez.
       await expect(
-        service.update(id, foreign.id, { isActive: true }, { userId, tenantId: foreign.id, role: 'ADMIN' } as any),
+        service.update(id, foreign.id, { isActive: true }, { userId: foreignActor.id, tenantId: foreign.id, role: 'ADMIN' } as any),
       ).rejects.toThrow(/bulunamadı/i);
 
       const after = await prisma.client.findUniqueOrThrow({
@@ -404,6 +414,7 @@ describeWithDatabase('LIFECYCLE aktivasyon yarisi (gercek PostgreSQL, bariyer si
       expect(after.isActive).toBe(before.isActive);
       expect(after.updatedAt.toISOString()).toBe(before.updatedAt.toISOString());
     } finally {
+      await prisma.user.deleteMany({ where: { tenantId: foreign.id } });
       await prisma.tenant.delete({ where: { id: foreign.id } }).catch(() => undefined);
     }
   });

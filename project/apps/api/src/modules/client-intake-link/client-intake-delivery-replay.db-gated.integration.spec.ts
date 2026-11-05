@@ -15,6 +15,7 @@ dbDescribe('Intake delivery command identity — disposable PostgreSQL', () => {
   let otherClientId: string;
   let caseId: string;
   let otherCaseId: string;
+  let actorId: string;
   let dispatch: jest.Mock;
   const dto = () => ({ scope: ['ADDRESS', 'STRATEGY'] as any, expiresAt: new Date(Date.now() + 3600_000).toISOString(), maxUses: 2 });
   const oldBase = process.env.PUBLIC_INTAKE_BASE_URL;
@@ -37,6 +38,9 @@ dbDescribe('Intake delivery command identity — disposable PostgreSQL', () => {
     caseId = (await a.case.create({ data: { tenantId, type: 'GENERAL_EXECUTION', fileNumber: `${tenantId}-1` } })).id;
     otherCaseId = (await a.case.create({ data: { tenantId, type: 'GENERAL_EXECUTION', fileNumber: `${tenantId}-2` } })).id;
     await a.caseClient.createMany({ data: [{ caseId, clientId }, { caseId, clientId: otherClientId }, { caseId: otherCaseId, clientId }] });
+    actorId = (await a.user.create({ data: { tenantId, email: `${randomUUID()}@example.test`, name: 'Synthetic', surname: 'Actor', role: 'USER' } })).id;
+    const lawyer = await a.lawyer.create({ data: { tenantId, userId: actorId, name: 'Synthetic', surname: 'Lawyer' } });
+    await a.caseLawyer.createMany({ data: [caseId, otherCaseId].map(id => ({ caseId: id, lawyerId: lawyer.id })) });
     dispatch = jest.fn().mockResolvedValue({ status: 'sent' });
   });
   afterEach(async () => {
@@ -44,15 +48,18 @@ dbDescribe('Intake delivery command identity — disposable PostgreSQL', () => {
     await a.clientIntakeLinkDelivery.deleteMany({ where: { tenantId } });
     await a.clientIntakeLink.deleteMany({ where: { tenantId } });
     await a.caseClient.deleteMany({ where: { case: { tenantId } } });
+    await a.caseLawyer.deleteMany({ where: { case: { tenantId } } });
     await a.case.deleteMany({ where: { tenantId } });
     await a.client.deleteMany({ where: { tenantId } });
+    await a.lawyer.deleteMany({ where: { tenantId } });
+    await a.user.deleteMany({ where: { tenantId } });
     await a.tenant.delete({ where: { id: tenantId } });
   });
   function service(db = a) {
     return new ClientIntakeLinkService(db, { dispatch } as any, { getOfficeIdentity: jest.fn().mockResolvedValue({ name: 'Synthetic Office' }) } as any, new AuditService(db));
   }
   function send(s: ClientIntakeLinkService, body = dto(), client = clientId, kase = caseId, key: any = 'stable-key') {
-    return s.createAndDeliverForClientWorkspace(tenantId, client, kase, 'synthetic-actor', key, body);
+    return s.createAndDeliverForClientWorkspace(tenantId, client, kase, actorId, key, body);
   }
   async function rows() {
     return { links: await a.clientIntakeLink.findMany({ where: { tenantId }, orderBy: { id: 'asc' } }), deliveries: await a.clientIntakeLinkDelivery.findMany({ where: { tenantId }, orderBy: { id: 'asc' } }) };
@@ -102,7 +109,7 @@ dbDescribe('Intake delivery command identity — disposable PostgreSQL', () => {
 
   it.each([undefined, '', '  ', 'x'.repeat(201), 12, ['key']] as any[])('invalid key %p rejects before DB writes or dispatch', async key => {
     const before = await rows();
-    await expect(service().createAndDeliverForClientWorkspace(tenantId, clientId, caseId, 'synthetic-actor', key, dto())).rejects.toMatchObject({ status: 400 });
+    await expect(service().createAndDeliverForClientWorkspace(tenantId, clientId, caseId, actorId, key, dto())).rejects.toMatchObject({ status: 400 });
     expect(await rows()).toEqual(before); expect(dispatch).not.toHaveBeenCalled();
   });
 

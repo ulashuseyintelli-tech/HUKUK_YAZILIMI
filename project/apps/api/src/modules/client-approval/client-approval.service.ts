@@ -1,3 +1,4 @@
+import { assertClientObjectScope, clientObjectScope } from '../client/client-object-scope';
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import {
@@ -53,6 +54,7 @@ export class ClientApprovalService {
    * </remarks>
    */
   async create(tenantId: string, caseId: string, userId: string, dto: CreateClientApprovalRequestDto) {
+    await assertClientObjectScope(this.prisma, tenantId, userId, dto.clientId, caseId);
     const caseItem = await this.prisma.case.findFirst({
       where: { id: caseId, tenantId },
       select: { id: true },
@@ -78,6 +80,7 @@ export class ClientApprovalService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      await assertClientObjectScope(tx, tenantId, userId, dto.clientId, caseId);
       const request = await tx.clientApprovalRequest.create({
         data: {
           tenantId,
@@ -189,9 +192,12 @@ export class ClientApprovalService {
    * - ClientApprovalController.listByCase() → GET /client-approvals/case/:caseId?status=
    * </remarks>
    */
-  async listByCase(tenantId: string, caseId: string, status?: ClientApprovalStatus) {
+  async listByCase(tenantId: string, caseId: string, status?: ClientApprovalStatus, actorUserId?: string) {
+    const scope = await clientObjectScope(this.prisma, tenantId, actorUserId, caseId);
+    const parent = await this.prisma.client.findFirst({ where: { tenantId, AND: [scope] }, select: { id: true } });
+    if (!parent) throw new NotFoundException('Takip/müvekkil ilişkisi bulunamadı');
     return this.prisma.clientApprovalRequest.findMany({
-      where: { tenantId, caseId, ...(status ? { status } : {}) },
+      where: { tenantId, caseId, client: { AND: [scope] }, ...(status ? { status } : {}) },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -204,12 +210,13 @@ export class ClientApprovalService {
    * - ClientApprovalController.findOne() → GET /client-approvals/:id
    * </remarks>
    */
-  async findOne(tenantId: string, id: string) {
+  async findOne(tenantId: string, id: string, actorUserId?: string) {
     const record = await this.prisma.clientApprovalRequest.findFirst({
       where: { id, tenantId },
       include: { events: { orderBy: { createdAt: 'asc' } } },
     });
     if (!record) throw new NotFoundException('Onay talebi bulunamadı');
+    await assertClientObjectScope(this.prisma, tenantId, actorUserId, record.clientId, record.caseId);
     return record;
   }
 
@@ -283,9 +290,10 @@ export class ClientApprovalService {
   ) {
     const existing = await this.prisma.clientApprovalRequest.findFirst({
       where: { id, tenantId },
-      select: { id: true, status: true },
+      select: { id: true, status: true, clientId: true, caseId: true },
     });
     if (!existing) throw new NotFoundException('Onay talebi bulunamadı');
+    await assertClientObjectScope(this.prisma, tenantId, userId, existing.clientId, existing.caseId);
 
     if (TERMINAL.includes(existing.status)) {
       throw new BadRequestException(
@@ -299,6 +307,9 @@ export class ClientApprovalService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const current = await tx.clientApprovalRequest.findFirst({ where: { id, tenantId }, select: { clientId: true, caseId: true } });
+      if (!current) throw new NotFoundException('Onay talebi bulunamadı');
+      await assertClientObjectScope(tx, tenantId, userId, current.clientId, current.caseId);
       const updated = await tx.clientApprovalRequest.update({
         where: { id },
         data: { status: opts.to, ...(opts.extra ?? {}) },

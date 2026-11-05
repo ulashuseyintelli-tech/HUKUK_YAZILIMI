@@ -24,7 +24,7 @@ export default function ClientCompliancePage() {
   const clientId = params.clientId;
 
   return (
-    <div className="space-y-4 p-4">
+    <div key={clientId} className="space-y-4 p-4">
       <div className="flex items-center justify-between">
         <Link
           href={`/clients/${clientId}`}

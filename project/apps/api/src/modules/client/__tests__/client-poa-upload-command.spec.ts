@@ -1,3 +1,11 @@
+// Existing action/lifecycle/response unit fixture explicitly has object access.
+// The real intersection and transaction checks are exercised without this mock in client-object-scope-1b.http.db-gated.integration.spec.ts.
+jest.mock('../client-object-scope', () => ({
+  ...jest.requireActual('../client-object-scope'),
+  assertClientObjectScope: jest.fn(async () => undefined),
+  clientObjectScope: jest.fn(async () => ({})),
+  isClientObjectInScope: jest.fn(async () => true),
+}));
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ClientController } from '../client.controller';
 import { POA_UPLOAD_MAX_BYTES, PoaService, validatePoaUploadFile } from '../../poa/poa.service';
@@ -62,7 +70,7 @@ describe('PoaService.uploadFileForClientWorkspace', () => {
     const { service, prisma } = buildPoaServiceHarness();
     const file = buildFile();
 
-    const result = await service.uploadFileForClientWorkspace('client-1', 'poa-1', file, 'tenant-1');
+    const result = await service.uploadFileForClientWorkspace('client-1', 'poa-1', file, 'tenant-1', 'user-1');
     const serialized = JSON.stringify(result);
 
     expect(prisma.clientPowerOfAttorney.findFirst).toHaveBeenCalledWith({
@@ -112,13 +120,13 @@ describe('ClientController.uploadPoaFile', () => {
     // C2-B02 R4: workspace komutları artık rol-gated — elevated USER aktörle çağrılır.
     const officeApproval = { isApproverEligible: jest.fn().mockResolvedValue(true) };
     const audit = { log: jest.fn().mockResolvedValue(undefined) };
-    const controller = new ClientController({} as any, {} as any, poaService as any, officeApproval as any, audit as any);
+    const controller = new ClientController({ assertObjectScope: jest.fn().mockResolvedValue(undefined) } as any, {} as any, poaService as any, officeApproval as any, audit as any);
     const req = { user: { id: 'user-1', tenantId: 'tenant-1', role: 'USER' } } as any;
     const file = buildFile();
 
     const result = await controller.uploadPoaFile(req, 'client-1', 'poa-1', file);
 
-    expect(poaService.uploadFileForClientWorkspace).toHaveBeenCalledWith('client-1', 'poa-1', file, 'tenant-1');
+    expect(poaService.uploadFileForClientWorkspace).toHaveBeenCalledWith('client-1', 'poa-1', file, 'tenant-1', 'user-1');
     expect(result).toEqual({
       data: {
         clientId: 'client-1',

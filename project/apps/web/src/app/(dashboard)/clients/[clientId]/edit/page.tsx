@@ -44,6 +44,8 @@ export default function EditClientPage() {
     (async () => {
       setLoading(true);
       setLoadError(null);
+      setClient(null);
+      setSubmitError(null);
       try {
         const res = await api.getClient(clientId);
         const c = (res?.data ?? null) as Client | null;
@@ -71,7 +73,13 @@ export default function EditClientPage() {
       await api.put(`/clients/${clientId}`, payload);
       router.push(`/clients/${clientId}`);
     } catch (e: any) {
-      setSubmitError(e?.body?.message || e?.message || 'Müvekkil güncellenemedi.');
+      const message = e?.body?.message || e?.message || 'Müvekkil güncellenemedi.';
+      setSubmitError(message);
+      const status = e?.status ?? e?.response?.status;
+      if (status === 403 || status === 404) {
+        setClient(null);
+        setLoadError(message);
+      }
     } finally {
       setSaving(false);
     }

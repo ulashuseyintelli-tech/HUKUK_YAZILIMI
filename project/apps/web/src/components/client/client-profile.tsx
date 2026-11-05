@@ -266,8 +266,9 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
     try {
       const c = await loadClient();
       setClient(c);
-    } catch {
-      // sessiz — mevcut client state korunur
+    } catch (error) {
+      setClient(null);
+      setError(toActionErrorMessage(error, 'Müvekkil yüklenemedi.'));
     }
   };
 
@@ -299,6 +300,9 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
     (async () => {
       setLoading(true);
       setError(null);
+      setClient(null);
+      setCases([]);
+      setCasesError(null);
       try {
         const c = await loadClient();
         if (active) setClient(c);

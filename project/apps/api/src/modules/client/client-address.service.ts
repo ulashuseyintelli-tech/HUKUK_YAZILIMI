@@ -1,3 +1,4 @@
+import { assertClientObjectScope, clientObjectScope } from './client-object-scope';
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -234,6 +235,7 @@ export class ClientAddressService {
     tenantId: string,
     clientId: string,
     status: ClientAddressListStatus = 'active',
+    actorUserId?: string,
   ): Promise<Array<ClientAddressRow & { createdAt: Date; updatedAt: Date }>> {
     if (!CLIENT_ADDRESS_LIST_STATUSES.includes(status)) {
       throw new BadRequestException({
@@ -242,6 +244,7 @@ export class ClientAddressService {
       });
     }
 
+    await assertClientObjectScope(this.prisma, tenantId, actorUserId, clientId);
     const client = await this.prisma.client.findFirst({
       where: { id: clientId, tenantId },
       select: { id: true },
@@ -279,6 +282,7 @@ export class ClientAddressService {
   ): Promise<ClientAddressRow> {
     // OWN-13 I02-R2: tenant eşitliği — hiçbir sorgu yapılmadan ÖNCE.
     this.assertActorTenantMatches(tenantId, actor);
+    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, clientId);
 
     const client = await this.prisma.client.findFirst({
       where: { id: clientId, tenantId },
@@ -303,6 +307,7 @@ export class ClientAddressService {
     });
 
     return this.prisma.$transaction(async (tx) => {
+      await assertClientObjectScope(tx, tenantId, actor?.userId, clientId);
       // OWN-13 I02-R2 (owner D04): parent Client AYNI transaction içinde tenant-scoped olarak
       // YENİDEN doğrulanır; create yalnız doğrulanan clientId'ye bağlanır.
       const verifiedClient = await tx.client.findFirst({
@@ -414,6 +419,7 @@ export class ClientAddressService {
     actor: ClientMutationActorContext,
   ): Promise<ClientAddressRow> {
     this.assertActorTenantMatches(tenantId, actor);
+    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, clientId);
     const address = await this.findAddressInClient(tenantId, clientId, addressId);
 
     // Owner D02: MEVCUT birincil kaydın herhangi bir alanını değiştirmek VE birincillik
@@ -425,6 +431,7 @@ export class ClientAddressService {
     });
 
     return this.prisma.$transaction(async (tx) => {
+      await assertClientObjectScope(tx, tenantId, actor?.userId, clientId);
       // I01 §5: kardeş durumu YAZMA İLE AYNI transaction'da okunur (count-then-write yarışı yok).
       const siblings = await tx.clientAddress.findMany({
         where: { clientId: address.clientId },
@@ -544,12 +551,14 @@ export class ClientAddressService {
     actor: ClientMutationActorContext,
   ): Promise<ClientAddressRow> {
     this.assertActorTenantMatches(tenantId, actor);
+    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, clientId);
     // Owner D02: arşivleme HER ZAMAN elevated (açık lifecycle aksiyonu).
     await this.assertAddressMutationAllowed(tenantId, actor, { operation: 'ARCHIVE' });
     // Tenant+client sınırı ve 404 sözleşmesi create/update/remove ile AYNI (fail-closed).
     const address = await this.findAddressInClient(tenantId, clientId, addressId);
 
     return this.prisma.$transaction(async (tx) => {
+      await assertClientObjectScope(tx, tenantId, actor?.userId, clientId);
       const siblings = await tx.clientAddress.findMany({
         where: { clientId: address.clientId },
         select: LIFECYCLE_SIBLING_SELECT,
@@ -697,11 +706,13 @@ export class ClientAddressService {
     actor: ClientMutationActorContext,
   ): Promise<ClientAddressRow> {
     this.assertActorTenantMatches(tenantId, actor);
+    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, clientId);
     // Owner D02: restore HER ZAMAN elevated — `makePrimary` değerinden BAĞIMSIZ.
     await this.assertAddressMutationAllowed(tenantId, actor, { operation: 'RESTORE' });
     const address = await this.findAddressInClient(tenantId, clientId, addressId);
 
     return this.prisma.$transaction(async (tx) => {
+      await assertClientObjectScope(tx, tenantId, actor?.userId, clientId);
       const siblings = await tx.clientAddress.findMany({
         where: { clientId: address.clientId },
         select: LIFECYCLE_SIBLING_SELECT,
@@ -811,9 +822,10 @@ export class ClientAddressService {
   /// Bu, I01'de "aynen korunan" `CLIENT_ADDRESS_PRIMARY_DELETE_FORBIDDEN` reddinin YERİNİ ALIR:
   /// artık yalnız birincil değil, HER adres için silme reddedilir. Birincil adresin silinememesi
   /// KORUNUR (daha geniş bir reddin içinde), fakat dönen kod artık fiziksel-silme kodudur.
-  async remove(tenantId: string, clientId: string, addressId: string): Promise<never> {
+  async remove(tenantId: string, clientId: string, addressId: string, actorUserId?: string): Promise<never> {
     // Yetkilendirme okuması ÖNCE: var olmayan/başka müvekkilin adresi için 404 sözleşmesi
     // DEĞİŞMEDİ — kapsam-dışı kimliğe "silinemez" demek varlık sızdırırdı.
+    await assertClientObjectScope(this.prisma, tenantId, actorUserId, clientId);
     await this.findAddressInClient(tenantId, clientId, addressId);
 
     // Mutasyon YOK → transaction YOK. Audit da YOK: reddedilen bir istek adres yaşam döngüsünü

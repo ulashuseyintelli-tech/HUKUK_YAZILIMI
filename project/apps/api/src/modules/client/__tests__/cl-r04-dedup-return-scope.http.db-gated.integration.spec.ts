@@ -201,6 +201,10 @@ dbDescribe('CL-R04 — POST /clients dedup dönüşü: K16 kapsamı, genel 409, 
   it('KABUL-8: reaktivasyon yalnız mevcut yetkili lifecycle ucu — eligible PARTNER PUT /clients/:id isActive:true ile aktifleştirir; USER (kart LAWYER) 403', async () => {
     const partner = await actor('ADMIN', 'PARTNER');
     const plain = await actor('USER', 'LAWYER');
+    // 1b: prove object scope for both actors so this still tests the independent lifecycle gate.
+    await db.caseClient.create({ data: { caseId, clientId: inactiveClient } });
+    await assignToCase(partner);
+    await assignToCase(plain);
     const denied = await put(plain.id, inactiveClient, { isActive: true });
     expect(denied.status).toBe(403);
     expect((await db.client.findUniqueOrThrow({ where: { id: inactiveClient } })).isActive).toBe(false);

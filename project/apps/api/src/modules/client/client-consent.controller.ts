@@ -33,7 +33,7 @@ export class ClientConsentController {
 
   @Get(':id/consents')
   list(@Request() req: AuthRequest, @Param('id') id: string) {
-    return this.consent.listConsents(req.user.tenantId, id);
+    return this.consent.listConsents(req.user.tenantId, id, req.user.id);
   }
 
   @Post(':id/consents')

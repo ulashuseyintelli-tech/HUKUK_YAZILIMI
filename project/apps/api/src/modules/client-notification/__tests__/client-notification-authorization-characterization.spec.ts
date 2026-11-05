@@ -12,13 +12,13 @@ import { CLIENT_WORKSPACE_COMMAND } from "../../client/client-workspace-command-
 
 describe("CN-1 notification authorization characterization", () => {
   const notificationService: any = {
-    sendEmail: jest.fn(),
-    sendSms: jest.fn(),
-    sendBulkEmail: jest.fn(),
+    sendEmailForActor: jest.fn(),
+    sendSmsForActor: jest.fn(),
+    sendBulkEmailForActor: jest.fn(),
     getNotificationOverview: jest.fn(),
-    testSend: jest.fn(),
+    testSendForActor: jest.fn(),
   };
-  const dispatcher: any = { resend: jest.fn() };
+  const dispatcher: any = { resendForActor: jest.fn() };
   const authority: any = {
     createBulkTargetScopeId: jest.fn().mockReturnValue("client-notification-bulk:scope"),
     run: jest.fn(
@@ -29,12 +29,12 @@ describe("CN-1 notification authorization characterization", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    notificationService.sendEmail.mockResolvedValue({ success: true });
-    notificationService.sendSms.mockResolvedValue({ success: true });
-    notificationService.sendBulkEmail.mockResolvedValue({ success: true });
+    notificationService.sendEmailForActor.mockResolvedValue({ success: true });
+    notificationService.sendSmsForActor.mockResolvedValue({ success: true });
+    notificationService.sendBulkEmailForActor.mockResolvedValue({ success: true });
     notificationService.getNotificationOverview.mockResolvedValue({});
-    notificationService.testSend.mockResolvedValue({ success: true });
-    dispatcher.resend.mockResolvedValue({ status: "sent" });
+    notificationService.testSendForActor.mockResolvedValue({ success: true });
+    dispatcher.resendForActor.mockResolvedValue({ status: "sent" });
   });
 
   it("send-email/send-sms/bulk-email JWT guard taşır ve canonical command wiring'ini tüketir", async () => {
@@ -60,17 +60,17 @@ describe("CN-1 notification authorization characterization", () => {
       type: BulkEmailRecipientType.CLIENTS,
     }, "ADMIN");
 
-    expect(notificationService.sendEmail).toHaveBeenCalledWith(
+    expect(notificationService.sendEmailForActor).toHaveBeenCalledWith(
       "tenant-1",
       "actor-1",
       expect.any(Object)
     );
-    expect(notificationService.sendSms).toHaveBeenCalledWith(
+    expect(notificationService.sendSmsForActor).toHaveBeenCalledWith(
       "tenant-1",
       "actor-1",
       expect.any(Object)
     );
-    expect(notificationService.sendBulkEmail).toHaveBeenCalledWith(
+    expect(notificationService.sendBulkEmailForActor).toHaveBeenCalledWith(
       "tenant-1",
       "actor-1",
       expect.any(Object)
@@ -82,7 +82,7 @@ describe("CN-1 notification authorization characterization", () => {
     ]);
   });
 
-  it("resend JWT guard taşır ve canonical NOTIFICATION_RESEND wiring'ini tüketir", async () => {
+  it("resendForActor JWT guard taşır ve canonical NOTIFICATION_RESEND wiring'ini tüketir", async () => {
     const controller = new NotificationDispatchController(dispatcher, authority);
     const guards = Reflect.getMetadata(GUARDS_METADATA, NotificationDispatchController);
     expect(guards).toHaveLength(1);
@@ -98,7 +98,7 @@ describe("CN-1 notification authorization characterization", () => {
       } as any
     );
 
-    expect(dispatcher.resend).toHaveBeenCalledWith(
+    expect(dispatcher.resendForActor).toHaveBeenCalledWith(
       "tenant-1",
       "viewer-1",
       expect.objectContaining({ clientId: "client-1", force: undefined })
@@ -127,6 +127,6 @@ describe("CN-1 notification authorization characterization", () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
 
     expect(notificationService.getNotificationOverview).not.toHaveBeenCalled();
-    expect(notificationService.testSend).not.toHaveBeenCalled();
+    expect(notificationService.testSendForActor).not.toHaveBeenCalled();
   });
 });

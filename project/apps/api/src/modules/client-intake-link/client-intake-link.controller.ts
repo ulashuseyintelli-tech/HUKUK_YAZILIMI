@@ -75,7 +75,7 @@ export class ClientIntakeLinkController {
   /** İptal (ACTIVE → REVOKED) — POST /client-intake-links/:id/revoke */
   @Post(':id/revoke')
   async revoke(@Req() req: AuthRequest, @Param('id') id: string) {
-    const link = await this.service.findOne(req.user.tenantId, id);
+    const link = await this.service.findOne(req.user.tenantId, id, req.user.id);
     return this.runWorkspaceCommand(
       req,
       link.clientId,
@@ -92,12 +92,12 @@ export class ClientIntakeLinkController {
     @Param('caseId') caseId: string,
     @Query('status') status?: ClientIntakeLinkStatus,
   ) {
-    return this.service.listByCase(req.user.tenantId, caseId, status);
+    return this.service.listByCase(req.user.tenantId, caseId, status, req.user.id);
   }
 
   /** Detay (token DÖNMEZ) — GET /client-intake-links/:id */
   @Get(':id')
   async findOne(@Req() req: AuthRequest, @Param('id') id: string) {
-    return this.service.findOne(req.user.tenantId, id);
+    return this.service.findOne(req.user.tenantId, id, req.user.id);
   }
 }

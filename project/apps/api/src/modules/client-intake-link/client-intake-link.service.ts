@@ -1,3 +1,4 @@
+import { assertClientObjectScope, clientObjectScope } from '../client/client-object-scope';
 import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { randomBytes, createHash } from 'crypto';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -81,6 +82,7 @@ export class ClientIntakeLinkService {
    * </remarks>
    */
   async create(tenantId: string, caseId: string, userId: string, dto: CreateClientIntakeLinkDto) {
+    await assertClientObjectScope(this.prisma, tenantId, userId, dto.clientId, caseId);
     await this.assertLegacyCreateBoundary(tenantId, caseId, dto.clientId);
     const result = await this.createLinkRecord(this.prisma, tenantId, dto.clientId, caseId, userId, dto);
 
@@ -106,6 +108,7 @@ export class ClientIntakeLinkService {
     userId: string,
     dto: CreateClientWorkspaceIntakeLinkDto,
   ) {
+    await assertClientObjectScope(this.prisma, tenantId, userId, clientId, caseId);
     await this.assertClientWorkspaceCreateBoundary(tenantId, clientId, caseId);
     return this.createLinkRecord(this.prisma, tenantId, clientId, caseId, userId, dto);
   }
@@ -128,6 +131,7 @@ export class ClientIntakeLinkService {
     dto: CreateClientWorkspaceIntakeLinkDto,
   ) {
     const normalizedIdempotencyKey = this.normalizeIdempotencyKey(idempotencyKey);
+    await assertClientObjectScope(this.prisma, tenantId, userId, clientId, caseId);
     await this.assertClientWorkspaceCreateBoundary(tenantId, clientId, caseId);
 
     const existing = await this.findDeliveryByIdempotencyKey(tenantId, normalizedIdempotencyKey);
@@ -140,6 +144,7 @@ export class ClientIntakeLinkService {
     let created: { link: any; rawToken: string; intakeUrl: string; delivery: any };
     try {
       created = await this.prisma.$transaction(async (tx) => {
+        await assertClientObjectScope(tx, tenantId, userId, clientId, caseId);
         const result = await this.createLinkRecord(tx, tenantId, clientId, caseId, userId, dto);
         const delivery = await tx.clientIntakeLinkDelivery.create({
           data: {
@@ -212,13 +217,17 @@ export class ClientIntakeLinkService {
    * </remarks>
    */
   async revoke(tenantId: string, id: string, userId: string) {
-    const existing = await this.prisma.clientIntakeLink.findFirst({ where: { id, tenantId }, select: { id: true, status: true } });
+    const existing = await this.prisma.clientIntakeLink.findFirst({ where: { id, tenantId }, select: { id: true, status: true, clientId: true, caseId: true } });
     if (!existing) throw new NotFoundException('İntake linki bulunamadı');
+    await assertClientObjectScope(this.prisma, tenantId, userId, existing.clientId, existing.caseId);
     if (existing.status !== ClientIntakeLinkStatus.ACTIVE) {
       throw new BadRequestException(`Yalnız ACTIVE link iptal edilebilir (durum: ${existing.status})`);
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const current = await tx.clientIntakeLink.findFirst({ where: { id, tenantId }, select: { clientId: true, caseId: true } });
+      if (!current) throw new NotFoundException('İntake linki bulunamadı');
+      await assertClientObjectScope(tx, tenantId, userId, current.clientId, current.caseId);
       const updated = await tx.clientIntakeLink.update({
         where: { id },
         data: { status: ClientIntakeLinkStatus.REVOKED },
@@ -247,9 +256,12 @@ export class ClientIntakeLinkService {
    * - ClientIntakeLinkController.listByCase() → GET /client-intake-links/case/:caseId?status=
    * </remarks>
    */
-  async listByCase(tenantId: string, caseId: string, status?: ClientIntakeLinkStatus) {
+  async listByCase(tenantId: string, caseId: string, status?: ClientIntakeLinkStatus, actorUserId?: string) {
+    const scope = await clientObjectScope(this.prisma, tenantId, actorUserId, caseId);
+    const parent = await this.prisma.client.findFirst({ where: { tenantId, AND: [scope] }, select: { id: true } });
+    if (!parent) throw new NotFoundException('Takip/müvekkil ilişkisi bulunamadı');
     return this.prisma.clientIntakeLink.findMany({
-      where: { tenantId, caseId, ...(status ? { status } : {}) },
+      where: { tenantId, caseId, client: { AND: [scope] }, ...(status ? { status } : {}) },
       select: PUBLIC_SELECT,
       orderBy: { createdAt: 'desc' },
     });
@@ -263,9 +275,10 @@ export class ClientIntakeLinkService {
    * - ClientIntakeLinkController.findOne() → GET /client-intake-links/:id
    * </remarks>
    */
-  async findOne(tenantId: string, id: string) {
+  async findOne(tenantId: string, id: string, actorUserId?: string) {
     const record = await this.prisma.clientIntakeLink.findFirst({ where: { id, tenantId }, select: PUBLIC_SELECT });
     if (!record) throw new NotFoundException('İntake linki bulunamadı');
+    await assertClientObjectScope(this.prisma, tenantId, actorUserId, record.clientId, record.caseId);
     return record;
   }
 

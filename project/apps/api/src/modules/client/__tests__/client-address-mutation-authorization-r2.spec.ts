@@ -1,3 +1,11 @@
+// Existing action/lifecycle/response unit fixture explicitly has object access.
+// The real intersection and transaction checks are exercised without this mock in client-object-scope-1b.http.db-gated.integration.spec.ts.
+jest.mock('../client-object-scope', () => ({
+  ...jest.requireActual('../client-object-scope'),
+  assertClientObjectScope: jest.fn(async () => undefined),
+  clientObjectScope: jest.fn(async () => ({})),
+  isClientObjectInScope: jest.fn(async () => true),
+}));
 /**
  * CLIENT-OWN-13-I02-R2-ADDRESS-MUTATION-AUTHORIZATION-I01 — owner test matrisi (19 madde).
  *
@@ -422,10 +430,10 @@ describe('R2 — sözleşme sabitleri', () => {
 
   it('19. DELETE fail-closed sözleşmesi DEĞİŞMEDİ (D05)', async () => {
     const src = read('client-address.service.ts');
-    expect(src).toMatch(/async remove\(tenantId: string, clientId: string, addressId: string\): Promise<never>/);
+    expect(src).toMatch(/async remove\(tenantId: string, clientId: string, addressId: string, actorUserId\?: string\): Promise<never>/);
     expect(src).toContain('CLIENT_ADDRESS_PHYSICAL_DELETE_NOT_AUTHORIZED');
-    // remove() actor ALMAZ ve yetki kapısı EKLENMEDİ (owner E).
-    expect(src).not.toMatch(/async remove\([^)]*actor/s);
+    // Physical deletion remains denied; actor context only narrows parent access.
+    expect(src).toContain("await assertClientObjectScope(this.prisma, tenantId, actorUserId, clientId)");
 
     const { svc, prisma, tx } = buildSvc({ target: row() });
     await expect(svc.remove('t1', 'c1', 'a1')).rejects.toBeTruthy();

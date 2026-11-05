@@ -1,3 +1,4 @@
+import { assertClientObjectScope, clientObjectScope } from './client-object-scope';
 import {
   ConflictException,
   ForbiddenException,
@@ -110,6 +111,7 @@ export class ClientDataSubjectRequestService {
     const { tenantId, clientId, type, channel, receivedAt, actor, summary, assignedToUserId } =
       params;
     this.assertStaffWrite(actor);
+    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, clientId);
     // Atama nihai-sorumluluk tayinidir → yükseltilmiş yetki (staff kaydeder, atamaz).
     if (assignedToUserId) await this.assertElevated(actor, tenantId, 'Başvuru ataması');
 
@@ -118,6 +120,7 @@ export class ClientDataSubjectRequestService {
 
     const dueAt = computeDsarDueAt(receivedAt);
     return this.prisma.$transaction(async (tx: any) => {
+      await assertClientObjectScope(tx, tenantId, actor?.userId, clientId);
       const created = await this.delegate(tx).create({
         data: {
           tenantId,
@@ -153,10 +156,11 @@ export class ClientDataSubjectRequestService {
   async startReview(params: { tenantId: string; requestId: string; actor: ClientMutationActor }) {
     const { tenantId, requestId, actor } = params;
     this.assertStaffWrite(actor);
-    const existing = await this.requireRequest(tenantId, requestId);
+    const existing = await this.requireRequest(tenantId, requestId, actor?.userId);
     this.assertTransition(existing.status, 'IN_REVIEW');
 
     return this.prisma.$transaction(async (tx: any) => {
+      await this.requireRequest(tenantId, requestId, actor?.userId, tx);
       const updated = await this.delegate(tx).update({
         where: { id: requestId },
         data: { status: 'IN_REVIEW' },
@@ -182,12 +186,13 @@ export class ClientDataSubjectRequestService {
   }) {
     const { tenantId, requestId, assignedToUserId, actor } = params;
     await this.assertElevated(actor, tenantId, 'Başvuru ataması');
-    const existing = await this.requireRequest(tenantId, requestId);
+    const existing = await this.requireRequest(tenantId, requestId, actor?.userId);
     if (existing.status === 'RESPONDED') {
       throw new ConflictException('Cevaplanmış başvuruda atama değiştirilemez');
     }
 
     return this.prisma.$transaction(async (tx: any) => {
+      await this.requireRequest(tenantId, requestId, actor?.userId, tx);
       const updated = await this.delegate(tx).update({
         where: { id: requestId },
         data: { assignedToUserId },
@@ -217,11 +222,12 @@ export class ClientDataSubjectRequestService {
   }) {
     const { tenantId, requestId, responseNote, actor } = params;
     await this.assertElevated(actor, tenantId, 'Nihai cevap');
-    const existing = await this.requireRequest(tenantId, requestId);
+    const existing = await this.requireRequest(tenantId, requestId, actor?.userId);
     this.assertTransition(existing.status, 'RESPONDED');
 
     const now = new Date();
     return this.prisma.$transaction(async (tx: any) => {
+      await this.requireRequest(tenantId, requestId, actor?.userId, tx);
       const updated = await this.delegate(tx).update({
         where: { id: requestId },
         data: {
@@ -260,17 +266,20 @@ export class ClientDataSubjectRequestService {
     if (!actor?.userId) {
       throw new ForbiddenException({ code: 'NO_ACTOR', message: 'Yetkisiz' });
     }
+    const objectScope = await clientObjectScope(this.prisma, tenantId, actor.userId);
+    if (clientId) await assertClientObjectScope(this.prisma, tenantId, actor?.userId, clientId);
     const elevated = await this.isElevated(actor, tenantId);
-    const where: any = { tenantId };
+    const where: any = { tenantId, client: { AND: [objectScope] } };
     if (clientId) where.clientId = clientId;
     if (status) where.status = status;
     if (!elevated) where.assignedToUserId = actor.userId;
     return this.delegate().findMany({ where, orderBy: { dueAt: 'asc' } });
   }
 
-  private async requireRequest(tenantId: string, requestId: string) {
-    const existing = await this.delegate().findFirst({ where: { id: requestId, tenantId } });
+  private async requireRequest(tenantId: string, requestId: string, actorUserId: string | null | undefined, db: any = this.prisma) {
+    const existing = await this.delegate(db).findFirst({ where: { id: requestId, tenantId } });
     if (!existing) throw new NotFoundException('Başvuru bulunamadı');
+    await assertClientObjectScope(db, tenantId, actorUserId, existing.clientId);
     return existing;
   }
 

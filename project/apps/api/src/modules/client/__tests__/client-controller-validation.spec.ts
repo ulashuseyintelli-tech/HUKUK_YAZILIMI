@@ -9,6 +9,7 @@ import { ClientController } from "../client.controller";
 
 function build() {
   const service = {
+    assertObjectScope: jest.fn().mockResolvedValue(undefined),
     create: jest.fn(async (_t: string, d: any) => ({ id: "c1", ...d })),
     update: jest.fn(async (_id: string, _t: string, d: any) => ({ id: "c1", ...d })),
     readInternalClient: jest.fn(async () => ({ id: "c1" })),

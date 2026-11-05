@@ -82,7 +82,7 @@ export class ClientLegalHoldController {
 
   @Get('legal-holds')
   list(@Request() req: AuthRequest, @Query('clientId') clientId?: string) {
-    return this.holds.listHolds(req.user.tenantId, clientId);
+    return this.holds.listHolds(req.user.tenantId, clientId, req.user.id);
   }
 
   @Post(':id/legal-holds')

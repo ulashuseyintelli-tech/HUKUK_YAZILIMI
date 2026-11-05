@@ -1,3 +1,4 @@
+import { assertClientObjectScope, clientObjectScope } from './client-object-scope';
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -112,6 +113,7 @@ export class ClientDisclosureService {
   }) {
     const { tenantId, clientId, disclosureTextId, method, deliveredAt, actor, note } = params;
     this.assertStaffWrite(actor);
+    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, clientId);
 
     const client = await this.prisma.client.findFirst({ where: { id: clientId, tenantId } });
     if (!client) throw new NotFoundException('Müvekkil bulunamadı');
@@ -121,6 +123,7 @@ export class ClientDisclosureService {
     if (!text) throw new NotFoundException('Aydınlatma metni versiyonu bulunamadı');
 
     return this.prisma.$transaction(async (tx: any) => {
+      await assertClientObjectScope(tx, tenantId, actor?.userId, clientId);
       const created = await this.delegate('clientDisclosureDelivery', tx).create({
         data: {
           tenantId,
@@ -151,7 +154,8 @@ export class ClientDisclosureService {
     });
   }
 
-  async listDeliveries(tenantId: string, clientId: string) {
+  async listDeliveries(tenantId: string, clientId: string, actorUserId?: string) {
+    await assertClientObjectScope(this.prisma, tenantId, actorUserId, clientId);
     return this.delegate('clientDisclosureDelivery').findMany({
       where: { tenantId, clientId },
       orderBy: { deliveredAt: 'desc' },
