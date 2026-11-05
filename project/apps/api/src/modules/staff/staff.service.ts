@@ -727,9 +727,11 @@ export class StaffService {
               JSON.stringify({
                 v: 1,
                 card: { id: card.id, isActive: card.isActive, updatedAt: card.updatedAt.toISOString(), userId: card.userId },
+                // Parola / parola durumu parmak izine GİRMEZ: parmak izi yalnız "açılabilir" (parolası olan) hesapta üretilir;
+                // parola değişikliği updatedAt ve tokenVersion'ı zaten değiştirir.
                 account: {
                   id: user.id, role: user.role, isActive: user.isActive, tokenVersion: user.tokenVersion,
-                  updatedAt: user.updatedAt.toISOString(), hasPassword,
+                  updatedAt: user.updatedAt.toISOString(),
                 },
                 allow: allow.map((g) => ({
                   id: g.id, permissionKey: g.permissionKey, effect: g.effect, scope: g.scope, validFrom: g.validFrom.toISOString(),
