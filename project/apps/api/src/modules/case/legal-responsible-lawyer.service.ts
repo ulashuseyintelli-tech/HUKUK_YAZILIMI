@@ -1,10 +1,12 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
+import type { Prisma } from "@prisma/client";
 import { PermissionHardGuardService } from "../permission-diagnostics/permission-hard-guard.service";
 
 // WP-1d-5-4 — Hukuki Sorumlu Avukat (CaseLawyer.isResponsible) KONTROLLÜ DEĞİŞİKLİĞİ (backend, ilk impl).
@@ -45,14 +47,23 @@ export class LegalResponsibleLawyerService {
     userId: string,
     role: string,
   ): Promise<ChangeLegalResponsibleResult> {
-    // 1) ADMIN-only hard guard (non-ADMIN → 403 + best-effort PERMISSION_DENIED audit). Tenant scoping AYRI sınır.
-    await this.hardGuard.assertBridgeAdmin("cases.legalResponsibleLawyer", {
+    const actorContext = {
       tenantId,
       actorUserId: userId,
       role,
       entityId: caseId,
       requestPath: `PATCH /cases/${caseId}/legal-responsible-lawyer`,
-    });
+    };
+    // AK-1c: DB-backed staff denial precedes the technical ADMIN shortcut.
+    try {
+      await this.assertActorBoundary(this.prisma, tenantId, userId, role);
+    } catch (error) {
+      if (error instanceof ForbiddenException) {
+        await this.hardGuard.emitDenied("cases.legalResponsibleLawyer", actorContext, error.message);
+      }
+      throw error;
+    }
+    await this.hardGuard.assertBridgeAdmin("cases.legalResponsibleLawyer", actorContext);
 
     // 2) Payload (reason ZORUNLU; trim sonrası boş olamaz).
     const lawyerId = dto.lawyerId?.trim();
@@ -102,6 +113,11 @@ export class LegalResponsibleLawyerService {
 
     // 7) Atomik: clear-before-set (önce demote → sonra promote) + tek audit (aynı tx). Kısmi başarı olmaz.
     const audit = await this.prisma.$transaction(async (tx: any) => {
+      // FOR SHARE does not conflict with the FK KEY SHARE used by a new staff link.
+      // The User UPDATE lock orders both existing and newly-created staff links
+      // against this mutation without changing the shared F01/approval policy.
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} AND "tenantId" = ${tenantId} FOR UPDATE`;
+      await this.assertActorBoundary(tx, tenantId, userId, role);
       await tx.caseLawyer.update({
         where: { id: current.id },
         data: { isResponsible: false, role: "ASSIGNED" },
@@ -131,6 +147,12 @@ export class LegalResponsibleLawyerService {
         },
         select: { id: true, createdAt: true },
       });
+    }).catch(async (error: unknown) => {
+      // Emit outside the rolled-back transaction, after releasing its User lock.
+      if (error instanceof ForbiddenException) {
+        await this.hardGuard.emitDenied("cases.legalResponsibleLawyer", actorContext, error.message);
+      }
+      throw error;
     });
 
     return {
@@ -140,5 +162,25 @@ export class LegalResponsibleLawyerService {
       changedAt: audit.createdAt.toISOString(),
       auditLogId: audit.id,
     };
+  }
+
+  private async assertActorBoundary(
+    db: Prisma.TransactionClient,
+    tenantId: string,
+    userId: string,
+    role: string,
+  ): Promise<void> {
+    if (typeof tenantId !== "string" || !tenantId.trim() || typeof userId !== "string" || !userId.trim()) {
+      throw new ForbiddenException("Bu işlem için yetkiniz yok. [LEGAL_RESPONSIBLE_CHANGE_FORBIDDEN]");
+    }
+    const actor = await db.user.findFirst({
+      where: { id: userId, tenantId },
+      select: { role: true, isActive: true, staffMember: { select: { id: true } } },
+    });
+    // Staff linkage is disqualifying even for inactive personnel or a dual profile.
+    // Existing ADMIN-only authority remains necessary; F01 rank/delegation is not substituted.
+    if (!actor || !actor.isActive || actor.staffMember || role !== "ADMIN" || actor.role !== "ADMIN") {
+      throw new ForbiddenException("Bu işlem için yetkiniz yok. [LEGAL_RESPONSIBLE_CHANGE_FORBIDDEN]");
+    }
   }
 }
