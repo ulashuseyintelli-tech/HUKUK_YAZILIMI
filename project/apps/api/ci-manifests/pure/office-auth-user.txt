@@ -63,6 +63,7 @@ src/modules/user/__tests__/change-password.service.spec.ts
 src/modules/office/__tests__/office-settings-security.spec.ts
 # F02-B-1 (owner 2026-10-29/30): gorev/masraf buro geneli gorunum izinleri — PermissionGrant GLOBAL, ADMIN tx, DENY > ALLOW (saf, mock).
 src/modules/work-scope-permission/__tests__/work-scope-permission.service.spec.ts
+src/modules/work-scope-permission/__tests__/work-scope-permission-expire-allow-o5b.spec.ts
 src/scripts/__tests__/office-cap02-identity-binding-dry-run.core.spec.ts
 src/scripts/__tests__/office-cap02-reportingline-population.core.spec.ts
 src/scripts/__tests__/office-cap02-identity-binding-operate.core.spec.ts
@@ -200,6 +201,7 @@ src/modules/staff/__tests__/staff-update-duplicate-guard.spec.ts
 # O-5 (owner 05.11.2026, C politikasi): pasif personel create ile sessizce acilmaz; ayri F01
 #   yeniden etkinlestirme (izinler yalniz govdeden, kosullu yazim + STAFF_REACTIVATE ayni tx).
 src/modules/staff/__tests__/staff-reactivate-o5.spec.ts
+src/modules/staff/__tests__/staff-account-reopen-o5b.spec.ts
 # OFFICE-P6B-CI-E2E-EXECUTION-OFFICE-R01: actual execution-office module surface and lifecycle.
 src/modules/execution-office/__tests__/execution-office.module.spec.ts
 # OFFICE-P6B-CI-E2E-EXECUTION-OFFICE-R01: fail-closed disposable runtime harness contract.

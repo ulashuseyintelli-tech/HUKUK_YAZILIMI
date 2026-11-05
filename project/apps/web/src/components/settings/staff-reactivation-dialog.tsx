@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useAuth } from "@/lib/auth-context";
 import {
   AUTO_ASSIGN_EXPLANATION,
   buildStaffReactivationPayload,
@@ -19,6 +20,17 @@ import {
  */
 export type StaffReactivationOutcome = { ok: true; message: string } | { ok: false; message: string };
 
+/** O-5b: yeniden etkinleştirme sonrası bağlı hesap KAPALI kaldıysa ADMIN'e hesap açma incelemesine geçiş (yazım yok). */
+function ReviewAccountButton({ onClick }: { onClick: () => void }) {
+  const { user } = useAuth();
+  if (user?.role !== "ADMIN") return null;
+  return (
+    <button type="button" onClick={onClick} className="w-full px-3 py-2 rounded-lg bg-amber-600 text-white hover:bg-amber-700">
+      Giriş erişimini gözden geçir
+    </button>
+  );
+}
+
 type BooleanField = Exclude<keyof StaffReactivationValues, "staffType">;
 
 const INEFFECTIVE: Array<{ key: BooleanField; label: string }> = [
@@ -35,11 +47,14 @@ export function StaffReactivationDialog({
   staffTypes,
   onConfirm,
   onClose,
+  onReviewAccount,
 }: {
   review: StaffReactivationReview;
   staffTypes: ReadonlyArray<{ value: string; label: string }>;
   onConfirm: (values: StaffReactivationValues) => Promise<StaffReactivationOutcome>;
   onClose: () => void;
+  /** O-5b: verilirse ve bağlı hesap kapalıysa sonuç ekranında hesap açma incelemesine geçiş düğmesi gösterilir. */
+  onReviewAccount?: () => void;
 }) {
   const [values, setValues] = useState<StaffReactivationValues>(review.values);
   const [busy, setBusy] = useState(false);
@@ -157,9 +172,14 @@ export function StaffReactivationDialog({
 
         <div className="mt-4 flex flex-col gap-2">
           {done ? (
-            <button type="button" onClick={onClose} className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200">
-              Kapat
-            </button>
+            <>
+              {onReviewAccount && review.linkedAccount.exists && !review.linkedAccount.isActive && (
+                <ReviewAccountButton onClick={onReviewAccount} />
+              )}
+              <button type="button" onClick={onClose} className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200">
+                Kapat
+              </button>
+            </>
           ) : (
             <>
               <button
