@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable, NotFoundException, ForbiddenException, Optional } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException, ForbiddenException, MethodNotAllowedException, Optional, ServiceUnavailableException } from "@nestjs/common";
+import { createHash } from "node:crypto";
 
 /**
  * `dueDate` normalizasyonu (F01 K-F7): tarih-only `YYYY-MM-DD` → UTC gece yarısı; tam ISO-8601 → aynı an (saat dilimi
@@ -19,7 +20,8 @@ export function normalizeDueDate(value: string | null | undefined): Date | null 
 }
 import { Prisma, TaskCategory as PrismaTaskCategory, TaskStatus as PrismaTaskStatus } from "@prisma/client";
 import { PrismaService } from "@/prisma/prisma.service";
-import { CreateTaskDto, TASK_LIST_DEFAULT_LIMIT, UpdateTaskDto } from "./dto/task.dto";
+import { CancelTaskDto, CreateTaskDto, ListTaskCancellationsQueryDto, TASK_LIST_DEFAULT_LIMIT, UpdateTaskDto } from "./dto/task.dto";
+import { AuditService } from "@/modules/audit/audit.service";
 import { WorkScopePermissionService } from "@/modules/work-scope-permission/work-scope-permission.service";
 import { TASK_VIEW_ALL_KEY, isTaskViewScopeEnabled, taskViewWhereFor } from "./task-view-scope";
 
@@ -45,6 +47,7 @@ export interface TaskListSummary {
 }
 
 type TaskStatusGroup = { status: PrismaTaskStatus; taskCategory: PrismaTaskCategory; _count: { _all: number } };
+type TaskDb = PrismaService | Prisma.TransactionClient;
 
 function summarizeTaskGroups(groups: TaskStatusGroup[]): TaskListSummary {
   const summary: TaskListSummary = { pending: 0, inProgress: 0, operationalOpen: 0 };
@@ -64,6 +67,7 @@ export class TaskService {
     private prisma: PrismaService,
     // F02-B dilim 3: görev liste görünüm kapsamı (bayrak açıkken zorunlu; bkz. viewScopeWhere)
     @Optional() private readonly workScope?: WorkScopePermissionService,
+    @Optional() private readonly audit?: AuditService,
   ) {}
 
   /**
@@ -75,12 +79,12 @@ export class TaskService {
    *
    * @remarks Çağrıldığı yer: findAll() → GET /tasks.
    */
-  private async viewScopeWhere(tenantId: string, actorUserId?: string): Promise<Prisma.TaskWhereInput | null> {
+  private async viewScopeWhere(tenantId: string, actorUserId?: string, db: TaskDb = this.prisma): Promise<Prisma.TaskWhereInput | null> {
     if (!isTaskViewScopeEnabled()) return null;
     if (!actorUserId || !this.workScope) {
       throw new ForbiddenException({ code: "TASK_VIEW_SCOPE_UNRESOLVED", message: "Görev görünüm kapsamı çözümlenemedi" });
     }
-    const resolution = await this.workScope.resolve(this.prisma, tenantId, actorUserId, TASK_VIEW_ALL_KEY);
+    const resolution = await this.workScope.resolve(db, tenantId, actorUserId, TASK_VIEW_ALL_KEY);
     return taskViewWhereFor(resolution, tenantId, actorUserId);
   }
 
@@ -194,6 +198,9 @@ export class TaskService {
 
   // Çağıran: TaskController.create → POST /tasks.
   async create(tenantId: string, userId: string, dto: CreateTaskDto) {
+    if (dto.status === "CANCELLED") {
+      throw new BadRequestException("İptal için mevcut görevde gerekçeli iptal işlemini kullanın.");
+    }
     await this.assertCaseTenant(tenantId, dto.caseId);
     // CANDIDATE-J1: dolu assignee → aynı-tenant + aktif doğrulaması. Boş/null assignee dokunulmaz
     // (sahipsiz görev meşru; null assignee davranışı korunur).
@@ -220,7 +227,10 @@ export class TaskService {
    * Görev COMPLETED'dan çıkarılırsa (yeniden açılır) kapanış alanları temizlenir (yalan veri bırakmaz).
    */
   async update(tenantId: string, id: string, userId: string, dto: UpdateTaskDto) {
-    await this.findOne(tenantId, id);
+    const existing = await this.findOne(tenantId, id);
+    if (dto.status === "CANCELLED" && existing.status !== "CANCELLED") {
+      throw new BadRequestException("Durum değişikliği için gerekçeli iptal işlemini kullanın.");
+    }
     await this.assertCaseTenant(tenantId, dto.caseId);
 
     // CANDIDATE-J1: dolu assignee güncellemesi → aynı-tenant + aktif doğrulaması. Assignee alanı
@@ -230,11 +240,13 @@ export class TaskService {
     }
 
     const data: any = { ...dto, dueDate: normalizeDueDate(dto.dueDate) };
+    // An unchanged CANCELLED field is not authority to cancel again after a concurrent reopen.
+    if (dto.status === "CANCELLED") delete data.status;
     if (dto.status === "COMPLETED") {
       data.completedAt = new Date();
       data.completedByUserId = userId; // insan kapanışı → kapatanı yakala
       data.resolutionType = "MANUAL";
-    } else if (dto.status !== undefined) {
+    } else if (dto.status !== undefined && dto.status !== "CANCELLED") {
       // COMPLETED dışı bir statüye geçiş (yeniden açma vb.) → kapanış izini temizle.
       data.completedAt = null;
       data.completedByUserId = null;
@@ -248,7 +260,79 @@ export class TaskService {
   }
 
   async delete(tenantId: string, id: string) {
-    await this.findOne(tenantId, id);
-    return this.prisma.task.delete({ where: { id } });
+    throw new MethodNotAllowedException({ code: "TASK_PHYSICAL_DELETE_DISABLED", message: "Görev fiziksel silinemez; gerekçeli iptal işlemini kullanın." });
+  }
+
+  private assertCancellationIdentity(tenantId: string, id: string, userId: string): void {
+    if (![tenantId, id, userId].every(value => typeof value === "string" && value.trim().length > 0)) {
+      throw new ForbiddenException("Görev aktörü ve kapsamı doğrulanamadı.");
+    }
+  }
+
+  /** Used only by cancel/findCancellations; reuse the scope flag/grant contract without activating it. */
+  private async cancellationContext(db: TaskDb, tenantId: string, id: string, userId: string) {
+    const actor = await db.user.findFirst({ where: { id: userId, tenantId, isActive: true }, select: { id: true, role: true } });
+    if (!actor) throw new ForbiddenException("Görev aktörü doğrulanamadı.");
+    const scope = await this.viewScopeWhere(tenantId, userId, db);
+    const task = await db.task.findFirst({
+      where: { id, tenantId, OR: [{ caseId: null }, { case: { tenantId } }], ...(scope ? { AND: [scope] } : {}) },
+    });
+    if (!task) throw new NotFoundException("Görev bulunamadı.");
+    return { actor, task };
+  }
+
+  /** TaskController.cancel -> POST /tasks/:id/cancel. Trusted Client/expense system writers remain separate. */
+  async cancel(tenantId: string, id: string, userId: string, dto: CancelTaskDto) {
+    this.assertCancellationIdentity(tenantId, id, userId);
+    const reason = typeof dto?.reason === "string" ? dto.reason.trim() : "";
+    if (!reason || reason.length > 2000 || reason.includes("\u0000")) throw new BadRequestException("İptal gerekçesi 1–2000 karakter olmalıdır.");
+    if (!this.audit) throw new ServiceUnavailableException("Görev iptal denetim kaydı kullanılamıyor.");
+    return this.prisma.$transaction(async tx => {
+      // Lock account authority first, then the task state; concurrent cancellation sees the first commit.
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} AND "tenantId" = ${tenantId} FOR SHARE`;
+      await tx.$queryRaw`SELECT "id" FROM "Task" WHERE "id" = ${id} AND "tenantId" = ${tenantId} FOR UPDATE`;
+      const { actor, task } = await this.cancellationContext(tx, tenantId, id, userId);
+      if (actor.role === "VIEWER" || (actor.role !== "ADMIN" && task.createdById !== actor.id)) {
+        throw new ForbiddenException("Görevi yalnız oluşturan yazma yetkili kullanıcı veya ADMIN iptal edebilir.");
+      }
+      if (task.status === "CANCELLED") throw new ConflictException({ code: "TASK_ALREADY_CANCELLED", message: "Görev zaten iptal edilmiş." });
+      const event = await tx.taskCancellationEvent.create({ data: {
+        tenantId, taskId: id, actorUserId: actor.id, actorRole: actor.role,
+        authoritySource: actor.role === "ADMIN" ? "ADMIN" : "CREATOR",
+        fromStatus: task.status, toStatus: "CANCELLED", reason,
+        previousCompletedAt: task.completedAt, previousCompletedByUserId: task.completedByUserId,
+        previousResolutionType: task.resolutionType,
+      } });
+      const updated = await tx.task.update({ where: { id }, data: {
+        status: "CANCELLED", completedAt: null, completedByUserId: null, resolutionType: null,
+      } });
+      await this.audit!.logInTransaction(tx, {
+        tenantId, userId: actor.id, action: "TASK_CANCELLED", entityType: "TASK", entityId: id,
+        description: "Görev gerekçeli olarak iptal edildi.",
+        oldValues: { status: task.status }, newValues: { status: "CANCELLED" },
+        metadata: { cancellationId: event.id, authoritySource: event.authoritySource,
+          reasonPresent: true, reasonLength: reason.length, reasonHash: createHash("sha256").update(reason).digest("hex") },
+      });
+      return { task: updated, cancellationId: event.id };
+    });
+  }
+
+  /** TaskController.findCancellations -> GET /tasks/:id/cancellations; domain projection, no raw audit endpoint. */
+  async findCancellations(tenantId: string, id: string, userId: string, query: ListTaskCancellationsQueryDto = {}) {
+    this.assertCancellationIdentity(tenantId, id, userId);
+    const page = query.page ?? 1, limit = query.limit ?? TASK_LIST_DEFAULT_LIMIT;
+    if (!Number.isInteger(page) || page < 1 || !Number.isInteger(limit) || limit < 1 || limit > 100) throw new BadRequestException("Geçersiz geçmiş sayfası.");
+    return this.prisma.$transaction(async tx => {
+      await this.cancellationContext(tx, tenantId, id, userId);
+      const where = { tenantId, taskId: id };
+      const [events, total] = await Promise.all([
+        tx.taskCancellationEvent.findMany({ where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (page - 1) * limit, take: limit,
+          select: { id: true, actorUserId: true, actorRole: true, authoritySource: true, fromStatus: true, toStatus: true, reason: true, createdAt: true } }),
+        tx.taskCancellationEvent.count({ where }),
+      ]);
+      const actors = await tx.user.findMany({ where: { tenantId, id: { in: [...new Set(events.map(event => event.actorUserId))] } }, select: { id: true, name: true, surname: true } });
+      const names = new Map(actors.map(actor => [actor.id, `${actor.name ?? ""} ${actor.surname ?? ""}`.trim()]));
+      return { data: events.map(event => ({ ...event, actorName: names.get(event.actorUserId) || null })), meta: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    });
   }
 }

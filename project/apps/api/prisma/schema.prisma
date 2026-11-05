@@ -2293,7 +2293,9 @@ model Task {
   escalationEvents         EscalationEvent[]
   // D-G3a: dosya görevi eskalasyon izleri (operasyonel EscalationEvent'ten AYRI, K-D1)
   caseTaskEscalationEvents CaseTaskEscalationEvent[]
+  cancellationEvents      TaskCancellationEvent[]
 
+  @@unique([id, tenantId])
   @@index([tenantId, status])
   @@index([tenantId, dueDate])
   @@index([assigneeId])
@@ -2302,6 +2304,28 @@ model Task {
   @@index([debtorId])
   @@index([addressId])
   @@index([nextFollowUpAt])
+}
+
+// 2b / KI-048: append-only manual cancellation facts; raw reason is domain data, not AuditLog metadata.
+// The tenant-bound Task FK restricts physical deletion and preserves existing escalation records.
+// Scalar actor attribution survives account removal; User lifecycle is unchanged.
+model TaskCancellationEvent {
+  id              String     @id @default(cuid())
+  tenantId        String
+  taskId          String
+  task            Task       @relation(fields: [taskId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: Restrict)
+  actorUserId     String
+  actorRole       UserRole
+  authoritySource String
+  fromStatus      TaskStatus
+  toStatus        TaskStatus @default(CANCELLED)
+  previousCompletedAt       DateTime?
+  previousCompletedByUserId String?
+  previousResolutionType    TaskResolutionType?
+  reason          String
+  createdAt       DateTime   @default(now())
+
+  @@index([tenantId, taskId, createdAt, id])
 }
 
 // K2: Eskalasyon geçmişi (append-only). Operasyonel görevin eskalasyon motoru (PR-3b) her
