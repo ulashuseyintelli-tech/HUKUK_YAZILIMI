@@ -1,5 +1,5 @@
-import { IsString, IsOptional, IsEnum, IsDateString, IsInt, Min, Max } from "class-validator";
-import { Type } from "class-transformer";
+import { IsString, IsOptional, IsEnum, IsDateString, IsInt, Min, Max, IsNotEmpty, MaxLength } from "class-validator";
+import { Transform, Type } from "class-transformer";
 
 export enum TaskStatus {
   PENDING = "PENDING",
@@ -25,6 +25,30 @@ export enum TaskCategory {
 export const TASK_LIST_DEFAULT_LIMIT = 20;
 /** GET /tasks üst sınırı: daha büyük `limit` 400 döner; ekran birden çok sayfa çeker. */
 export const TASK_LIST_MAX_LIMIT = 100;
+
+/** 2b / KI-048: the user reason belongs to the domain record, never raw AuditLog. */
+export class CancelTaskDto {
+  @Transform(({ value }) => typeof value === "string" ? value.trim() : value)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(2000)
+  reason: string;
+}
+
+export class ListTaskCancellationsQueryDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  page?: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(TASK_LIST_MAX_LIMIT)
+  @IsOptional()
+  limit?: number;
+}
 
 /**
  * GET /tasks sorgu sözleşmesi (F01-A / OFP-01).

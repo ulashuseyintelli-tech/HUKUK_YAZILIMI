@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Plus, CheckCircle2, Circle, Clock, AlertCircle, LayoutGrid, Loader2, Trash2, Edit2, X, User, Ban } from "lucide-react";
+import { Plus, CheckCircle2, Circle, Clock, AlertCircle, LayoutGrid, Loader2, History, Edit2, X, User, Ban } from "lucide-react";
 import { Badge } from "@hukuk/ui";
 import { ViewScopeBadge } from "@/components/scope/ViewScopeBadge";
 import Link from "next/link";
@@ -22,10 +22,21 @@ interface Task {
   case?: { id: string; fileNumber: string };
   assignee?: { id: string; name: string; surname: string };
   createdAt: string;
+  createdById?: string | null;
   taskCategory?: string;
   clientId?: string;
   client?: { id: string; displayName?: string; companyName?: string; firstName?: string; lastName?: string };
   missingFields?: string[];
+}
+
+interface TaskCancellation {
+  id: string;
+  actorUserId: string;
+  actorName: string | null;
+  fromStatus: string;
+  toStatus: string;
+  reason: string;
+  createdAt: string;
 }
 
 /**
@@ -134,6 +145,16 @@ export default function TasksPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [saving, setSaving] = useState(false);
+  const [cancelTarget, setCancelTarget] = useState<Task | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [historyTarget, setHistoryTarget] = useState<Task | null>(null);
+  const [history, setHistory] = useState<TaskCancellation[]>([]);
+  const [historyMeta, setHistoryMeta] = useState<TaskListMeta | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const historyRequestRef = useRef(0);
   const [cases, setCases] = useState<{ id: string; fileNumber: string }[]>([]);
   const [users, setUsers] = useState<{ id: string; name: string; surname: string; isActive?: boolean }[]>([]);
   // WSMR-A4-AC-05: eskiden `Promise.all` + yalnız console.error ile HER İKİ
@@ -336,13 +357,57 @@ export default function TasksPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Bu görevi silmek istediğinize emin misiniz?")) return;
+  const canCancel = (task: Task) => !!currentUser && !!currentUser.role && currentUser.role !== "VIEWER"
+    && task.status !== "CANCELLED" && (currentUser.role === "ADMIN" || task.createdById === currentUser.id);
+
+  const handleCancel = async () => {
+    if (!cancelTarget || !cancelReason.trim() || cancelling) return;
+    const target = cancelTarget;
+    setCancelling(true);
+    setCancelError(null);
+    setStaleNotice(null);
     try {
-      await api.delete(`/tasks/${id}`);
-      loadTasks();
-    } catch (e: any) {
-      alert(e.message || "Silinemedi");
+      await rowLock.run(`task:status:${target.id}`, async () => {
+        const outcome = await runMutation({
+          mutate: () => api.cancelTask(target.id, cancelReason.trim()),
+          refresh: () => loadTasks({ propagateError: true }),
+          failureMessage: "Görev iptal edilemedi. Durum DEĞİŞMEDİ.",
+          staleMessage: "Görev İPTAL EDİLDİ, ancak liste yenilenemedi.",
+        });
+        if (!rowLock.isMounted()) return;
+        if (outcome.status === "FAILED") {
+          setCancelError(outcome.error.message);
+          return;
+        }
+        setCancelTarget(null);
+        setCancelReason("");
+        if (outcome.status === "SUCCESS_STALE") setStaleNotice(outcome.stale);
+      });
+    } finally {
+      if (rowLock.isMounted()) setCancelling(false);
+    }
+  };
+
+  const loadCancellationHistory = async (task: Task, historyPage = 1) => {
+    const token = ++historyRequestRef.current;
+    setHistoryTarget(task);
+    setHistory([]);
+    setHistoryMeta(null);
+    setHistoryError(null);
+    setHistoryLoading(true);
+    try {
+      const response = await api.getTaskCancellations(task.id, historyPage);
+      if (!isMountedRef.current || token !== historyRequestRef.current) return;
+      const body = response?.data;
+      const parsed = parseMeta(body?.meta);
+      if (!Array.isArray(body?.data) || !parsed) throw new Error("İptal geçmişi yanıtı geçersiz.");
+      setHistory(body.data);
+      setHistoryMeta(parsed);
+    } catch (error) {
+      if (!isMountedRef.current || token !== historyRequestRef.current) return;
+      setHistoryError(toActionErrorMessage(error, "İptal geçmişi alınamadı."));
+    } finally {
+      if (isMountedRef.current && token === historyRequestRef.current) setHistoryLoading(false);
     }
   };
 
@@ -608,12 +673,14 @@ export default function TasksPage() {
                 >
                   <Edit2 className="h-4 w-4" />
                 </button>
-                <button
-                  onClick={() => handleDelete(task.id)}
-                  className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"
-                >
-                  <Trash2 className="h-4 w-4" />
+                <button aria-label={`${task.title} iptal geçmişi`} onClick={() => void loadCancellationHistory(task)} className="p-2 text-gray-400 hover:text-primary rounded">
+                  <History className="h-4 w-4" />
                 </button>
+                {canCancel(task) && (
+                  <button aria-label={`${task.title} görevini iptal et`} onClick={() => { setCancelTarget(task); setCancelReason(""); setCancelError(null); }} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded">
+                    <Ban className="h-4 w-4" />
+                  </button>
+                )}
               </div>
               {task.priority === "URGENT" && task.status !== "COMPLETED" && task.status !== "CANCELLED" && (
                 <AlertCircle className="h-5 w-5 text-destructive" />
@@ -622,7 +689,7 @@ export default function TasksPage() {
           </div>
         ))}
 
-        {/* Boş durum yalnız GERÇEK sıfırda: okuma hatası / erişim reddi boş listeyle KARIŞTIRILMAZ (deny ≠ empty). */}
+      {/* Boş durum yalnız GERÇEK sıfırda: okuma hatası / erişim reddi boş listeyle KARIŞTIRILMAZ (deny ≠ empty). */}
         {!loadError && tasks.length === 0 && (
           <div className="text-center py-12 bg-white rounded-xl border">
             <CheckCircle2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
@@ -636,6 +703,52 @@ export default function TasksPage() {
           </div>
         )}
       </div>
+
+      {cancelTarget && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="task-cancel-title" className="bg-white rounded-xl p-6 max-w-lg w-full">
+            <h2 id="task-cancel-title" className="text-lg font-semibold">Görevi gerekçeli iptal et</h2>
+            <p className="mt-2">{cancelTarget.title}</p>
+            <p className="text-sm text-muted-foreground mt-1">Görev ve geçmişi korunur. İptal, tamamlanma olarak sayılmaz.</p>
+            <label htmlFor="task-cancel-reason" className="block mt-4 mb-1">İptal gerekçesi</label>
+            <textarea id="task-cancel-reason" value={cancelReason} onChange={event => setCancelReason(event.target.value)} maxLength={2000} disabled={cancelling} className="w-full border rounded-lg p-2" rows={4} />
+            {cancelError && <div role="alert" className="text-red-700 mt-2">{cancelError}</div>}
+            <div className="flex justify-end gap-2 mt-4">
+              <button disabled={cancelling} onClick={() => { setCancelTarget(null); setCancelReason(""); }} className="border rounded px-3 py-2">Vazgeç</button>
+              <button disabled={cancelling || !cancelReason.trim()} onClick={() => void handleCancel()} className="bg-red-700 text-white rounded px-3 py-2 disabled:opacity-50">{cancelling ? "İptal ediliyor…" : "İptali kaydet"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {historyTarget && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="task-history-title" className="bg-white rounded-xl p-6 max-w-xl w-full max-h-[85vh] overflow-auto">
+            <h2 id="task-history-title" className="text-lg font-semibold">İptal geçmişi — {historyTarget.title}</h2>
+            <p className="text-sm text-muted-foreground mt-1">Bu kayıtlar gerekçeli manuel iptalleri gösterir.</p>
+            {historyLoading && <p role="status">İptal geçmişi yükleniyor…</p>}
+            {historyError && <div role="alert" className="text-red-700 mt-2">{historyError}</div>}
+            {!historyLoading && !historyError && history.length === 0 && <p className="mt-3">Kayıtlı manuel iptal yok.</p>}
+            <ul className="space-y-3 mt-4">
+              {history.map(event => (
+                <li key={event.id} className="border rounded p-3">
+                  <p>{event.actorName || event.actorUserId} · {new Date(event.createdAt).toLocaleString("tr-TR")}</p>
+                  <p className="text-sm">{statusLabels[event.fromStatus] ?? event.fromStatus} → {statusLabels[event.toStatus] ?? event.toStatus}</p>
+                  <p className="whitespace-pre-wrap mt-2">{event.reason}</p>
+                </li>
+              ))}
+            </ul>
+            {historyMeta && historyMeta.totalPages > 1 && (
+              <div className="flex justify-between items-center mt-3">
+                <button disabled={historyLoading || historyMeta.page <= 1} onClick={() => void loadCancellationHistory(historyTarget, historyMeta.page - 1)}>Önceki kayıtlar</button>
+                <span>{historyMeta.page} / {historyMeta.totalPages}</span>
+                <button disabled={historyLoading || historyMeta.page >= historyMeta.totalPages} onClick={() => void loadCancellationHistory(historyTarget, historyMeta.page + 1)}>Sonraki kayıtlar</button>
+              </div>
+            )}
+            <button onClick={() => { ++historyRequestRef.current; setHistoryTarget(null); setHistory([]); setHistoryError(null); }} className="mt-4 border rounded px-3 py-2">Kapat</button>
+          </div>
+        </div>
+      )}
 
       {/* F01-B: sayfalama — sunucu toplamı ve gösterilen aralık açık yazılır. Sağ boşluk (pr-20): sayfa sonuna
           kaydırılınca sabit "Hızlı İşlemler" düğmesi sağ alt köşeyi kapatıyor; "Sonraki" onun altında kalmasın

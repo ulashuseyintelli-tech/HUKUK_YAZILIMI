@@ -219,3 +219,52 @@ describe("TaskService — dueDate normalizasyonu (F01 K-F7: tarih-only 500 düze
     expect(p3.task.update.mock.calls[0][0].data.dueDate).toBeUndefined();
   });
 });
+
+describe("2b / KI-048 — legacy cancellation bypasses", () => {
+  it("physical DELETE is rejected without querying/deleting task or history", async () => {
+    const db = { task: { findFirst: jest.fn().mockResolvedValue({ id: "task" }), delete: jest.fn().mockResolvedValue({ id: "task" }), deleteMany: jest.fn() } } as any;
+    await expect(new TaskService(db).delete("tenant", "task")).rejects.toMatchObject({ status: 405 });
+    expect(db.task.findFirst).not.toHaveBeenCalled();
+    expect(db.task.delete).not.toHaveBeenCalled();
+    expect(db.task.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("create cannot manufacture a cancelled task without a cancellation record", async () => {
+    const db = { task: { create: jest.fn() } } as any;
+    await expect(new TaskService(db).create("tenant", "actor", { title: "T", status: "CANCELLED" } as any)).rejects.toMatchObject({ status: 400 });
+    expect(db.task.create).not.toHaveBeenCalled();
+  });
+
+  it("generic PUT cannot introduce CANCELLED even with other assignment/title changes", async () => {
+    const db = buildPrisma({ id: "task", status: "PENDING" }) as any;
+    db.user = { findFirst: jest.fn().mockResolvedValue({ id: "actor" }) };
+    await expect(new TaskService(db).update("tenant", "task", "actor", { status: "CANCELLED", assigneeId: "actor", title: "T" } as any)).rejects.toMatchObject({ status: 400 });
+    expect(db.task.update).not.toHaveBeenCalled();
+  });
+
+  it("unchanged CANCELLED round trip never rewrites lifecycle fields", async () => {
+    const db = buildPrisma({ id: "task", status: "CANCELLED" }) as any;
+    await new TaskService(db).update("tenant", "task", "actor", { status: "CANCELLED", title: "Yeni" } as any);
+    const data = db.task.update.mock.calls[0][0].data;
+    expect(data.title).toBe("Yeni");
+    for (const key of ["status", "completedAt", "completedByUserId", "resolutionType"]) expect(data).not.toHaveProperty(key);
+  });
+
+  it.each([undefined, "", { not: "" }])("missing/operator actor is rejected before transaction (%p)", async actor => {
+    const db = { $transaction: jest.fn() } as any;
+    await expect(new TaskService(db).cancel("tenant", "task", actor as any, { reason: "Gerekçe" })).rejects.toMatchObject({ status: 403 });
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it.each(["   ", "x".repeat(2001), "a\u0000b"])("invalid reason is rejected before any write", async reason => {
+    const db = { $transaction: jest.fn() } as any;
+    await expect(new TaskService(db).cancel("tenant", "task", "actor", { reason })).rejects.toMatchObject({ status: 400 });
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("missing audit dependency fails closed before transaction", async () => {
+    const db = { $transaction: jest.fn() } as any;
+    await expect(new TaskService(db).cancel("tenant", "task", "actor", { reason: "Gerekçe" })).rejects.toMatchObject({ status: 503 });
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+});

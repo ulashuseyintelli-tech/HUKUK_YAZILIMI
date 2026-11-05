@@ -817,6 +817,17 @@ class ApiClient {
     });
   }
 
+  async cancelTask(id: string, reason: string) {
+    return this.request<any>(`/tasks/${id}/cancel`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  async getTaskCancellations(id: string, page = 1) {
+    return this.request<any>(`/tasks/${id}/cancellations?page=${page}&limit=20`);
+  }
+
   // Clients
   async getClients(search?: string) {
     const query = search ? `?search=${encodeURIComponent(search)}` : "";
