@@ -336,3 +336,4 @@ src/modules/auth/invite/__tests__/user-invite-atomic.db-gated.integration.spec.t
 src/modules/auth/account-card-link/__tests__/account-card-link.http.db-gated.integration.spec.ts
 src/modules/task/__tests__/task-list-pagination.http.db-gated.integration.spec.ts
 src/modules/task/__tests__/task-view-scope.http.db-gated.integration.spec.ts
+src/modules/case/__tests__/legal-responsible-lawyer-admin-staff.http.db-gated.integration.spec.ts
