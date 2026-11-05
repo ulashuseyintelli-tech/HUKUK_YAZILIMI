@@ -179,6 +179,11 @@ dbDescribe('1b canonical Client object boundary — real Nest HTTP and PostgreSQ
     await expect(assertClientObjectScope(db, tenant, undefined, clientId)).rejects.toMatchObject({ status: 403 });
     expect(await snapshot()).toEqual(before);
   });
+  it('missing target Client cannot become an unfiltered Prisma lookup', async () => {
+    const before = await snapshot();
+    await expect(assertClientObjectScope(db, tenant, admin, undefined as any)).rejects.toMatchObject({ status: 404 });
+    expect(await snapshot()).toEqual(before);
+  });
   it('object relation does not grant sensitive update or lifecycle authority to ordinary Staff/ADMIN', async () => {
     const before = await snapshot();
     await update({ firstName: 'Denied identity' }, staffUser).expect(403);

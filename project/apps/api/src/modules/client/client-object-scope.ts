@@ -43,6 +43,8 @@ export async function assertClientObjectScope(
   clientId: string,
   caseId?: string,
 ): Promise<void> {
+  // Prisma omits undefined filters; an absent parent must never match any scoped Client.
+  if (typeof clientId !== 'string' || !clientId) throw new NotFoundException('Müvekkil bulunamadı');
   const scope = await clientObjectScope(db, tenantId, actorUserId, caseId);
   const client = await db.client.findFirst({ where: { id: clientId, tenantId, AND: [scope] }, select: { id: true } });
   if (!client) throw new NotFoundException('Müvekkil bulunamadı');
