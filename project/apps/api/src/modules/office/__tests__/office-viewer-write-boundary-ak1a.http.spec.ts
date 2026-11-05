@@ -142,6 +142,8 @@ const WRITE_ROUTES: Route[] = [
       isDefaultForNewCases: false,
     },
   },
+  // O-5b: kapalı giriş hesabını açma — VIEWER için de yazma rotasıdır (servis ayrıca GÜNCEL DB rolü ADMIN ister).
+  { method: 'post', path: '/staff/S1/account-reopen', body: { reviewFingerprint: 'a'.repeat(64), keepGrantIds: [] } },
 ];
 const READ_ROUTES = ['/office', '/office/smtp-settings', '/lawyers'];
 
@@ -200,8 +202,8 @@ describe('AK-1a — VIEWER OFFICE yazma rotalarında reddedilir, okuma değişme
         });
       }
     }
-    // Bakıldığının kanıtı: office 10 · lawyers 6 · staff 5 (O-5 reactivate dahil) · kontrollü yürütme 2.
-    expect(seen).toHaveLength(23);
+    // Bakıldığının kanıtı: office 10 · lawyers 6 · staff 6 (O-5 reactivate + O-5b account-reopen dahil) · kontrollü yürütme 2.
+    expect(seen).toHaveLength(24);
   });
 
   describe.each(WRITE_ROUTES)('$method $path', (route) => {

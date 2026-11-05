@@ -1,10 +1,13 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
-import { Prisma, StaffMember } from '@prisma/client';
+import { Injectable, NotFoundException, ConflictException, BadRequestException, ForbiddenException, Optional } from '@nestjs/common';
+import { PermissionGrantEffect, PermissionGrantScope, Prisma, StaffMember } from '@prisma/client';
+import { createHash } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { normalizePersonName } from '../../common/name-match.util';
 import { maskTckn } from '../../common/pii-mask.util';
 import { AuditService } from '../audit/audit.service';
-import { ReactivateStaffDto } from './dto/staff.dto';
+import { WorkScopePermissionService } from '../work-scope-permission/work-scope-permission.service';
+import { WORK_SCOPE_VIEW_ALL_KEYS } from '../work-scope-permission/work-scope-permission.constants';
+import { ReactivateStaffDto, ReopenStaffAccountDto } from './dto/staff.dto';
 
 export interface StaffDeactivateAuditActor {
   userId: string;
@@ -48,6 +51,36 @@ export interface StaffReactivationContext {
   responsibleCaseCount: number;
 }
 
+/** O-5b: hesap açmanın uygulanamadığı durumlar (inceleme ve yazım AYNI yüklemi kullanır). */
+export type StaffAccountReopenBlockReason =
+  | 'STAFF_INACTIVE' // kart pasif: önce O-5 yeniden etkinleştirme
+  | 'NO_LINKED_ACCOUNT' // karta bağlı giriş hesabı yok
+  | 'ACCOUNT_ALREADY_ACTIVE' // hesap zaten açık
+  | 'ACCOUNT_PENDING_INVITE'; // parolasız bekleyen davet hesabı: açma değil davet yolu
+
+/** O-5b: yönetici onay ekranının gördüğü inceleme (kişisel veri, parola özeti ve TCKN içermez). */
+export interface StaffAccountReopenReview {
+  staffId: string;
+  reopenable: boolean;
+  reason: StaffAccountReopenBlockReason | null;
+  account: { role: string; isActive: boolean; hasPassword: boolean } | null;
+  /** İki F02 anahtarındaki GLOBAL, bitmemiş ALLOW kayıtları (ileri tarihliler dahil). */
+  allowGrants: Array<{ id: string; permissionKey: string; validFrom: string; validUntil: string | null; startsInFuture: boolean }>;
+  /** Bilgi: açık ret (DENY) taşıyan anahtarlar; hesap açma bunlara DOKUNMAZ. */
+  denyKeys: string[];
+  /** Onayın bağlandığı içerik parmak izi; uygulanamıyorsa null. */
+  reviewFingerprint: string | null;
+}
+
+type AccountReopenState = {
+  review: StaffAccountReopenReview;
+  userId: string | null;
+  userUpdatedAt: Date | null;
+  tokenVersion: number | null;
+};
+
+type AccountReopenReader = Pick<Prisma.TransactionClient, 'staffMember' | 'user' | 'permissionGrant'>;
+
 @Injectable()
 export class StaffService {
   constructor(
@@ -55,6 +88,9 @@ export class StaffService {
     // AuditModule globaldir. Opsiyonel işaret yalnız doğrudan kurulan mevcut unit-test
     // fixture'larını korur; Nest runtime'da provider yoksa DI zaten fail-closed olur.
     private readonly audit?: AuditService,
+    // O-5b: StaffModule WorkScopePermissionModule'ü içe aktarır. @Optional yalnız doğrudan kurulan
+    // test fixture'ları içindir; yoksa hesap açma aynı servisi yerel olarak kurar (aynı kilit + denetim).
+    @Optional() private readonly workScope?: WorkScopePermissionService,
   ) {}
 
   /**
@@ -479,6 +515,247 @@ export class StaffService {
       linkedAccount: { exists: !!user, isActive: user?.isActive === true },
       caseAssignmentCount,
       responsibleCaseCount,
+    };
+  }
+
+  /**
+   * O-5b (owner 05.11.2026, A politikası): yeniden etkinleştirilmiş personelin KAPALI giriş hesabını açma İNCELEMESİ
+   * (salt okuma). Yetki: F01 kapısı (controller) + GÜNCEL DB rolü ADMIN (burada — büro geneli izin yazma kuralı; F01
+   * kapısı ADMIN olmayan PARTNER/MANAGER/delege avukatı da geçirir). Yanıt parola özeti, e-posta ya da TCKN taşımaz.
+   *
+   * Çağrıldığı yerler:
+   * - StaffController.accountReopenReview() → GET /staff/:id/account-reopen-review
+   */
+  async reviewAccountReopen(id: string, tenantId: string, actorUserId: string): Promise<StaffAccountReopenReview> {
+    await this.assertCurrentAdmin(this.prisma, tenantId, actorUserId);
+    return (await this.readAccountReopenState(this.prisma, tenantId, id, new Date())).review;
+  }
+
+  /**
+   * O-5b (owner 05.11.2026, A politikası): etkin personel kartına bağlı, parolası olan KAPALI giriş hesabını yöneticinin
+   * gözden geçirdiği haliyle açar. Hepsi TEK transaction'da (biri başarısızsa hiçbiri yazılmaz):
+   *  1. grant / revoke ile AYNI danışma kilidi (WorkScopePermissionService.lockPersonInTx);
+   *  2. güncel DB rolü ADMIN (aynı tx);
+   *  3. kilit sırası pasifleştirmeyle aynı: User satırları (sıralı) → personel kartı;
+   *  4. inceleme yeniden okunur; uygulanamıyorsa 409 STAFF_ACCOUNT_REOPEN_NOT_APPLICABLE, parmak izi tutmuyorsa
+   *     409 STAFF_ACCOUNT_REVIEW_STALE (yalnız kimlik listesi değil: içerik, süre ve updatedAt parmak izine girer);
+   *  5. hesap koşullu açılır ve tokenVersion 1 artar → pasifleştirmeden önce verilmiş JWT'ler reddedilir;
+   *  6. seçilmeyen F02 GLOBAL ALLOW kayıtları sona erer (DENY ve F02 dışı izinler DEĞİŞMEZ);
+   *  7. açık parola sıfırlama belirteçleri iptal edilir;
+   *  8. STAFF_ACCOUNT_REOPEN denetimi (+ anahtar başına PERMISSION_GRANT denetimi).
+   * Rol, parola, kimlik alanları, kart izinleri ve dosya atamaları DEĞİŞMEZ.
+   *
+   * Çağrıldığı yerler:
+   * - StaffController.reopenAccount() → POST /staff/:id/account-reopen (OfficeF01AuthorizationGuard)
+   */
+  async reopenAccount(id: string, tenantId: string, data: ReopenStaffAccountDto, actor: StaffReactivateAuditActor) {
+    if (!actor || !actor.userId || !actor.role || !actor.requestId) {
+      throw new ConflictException('Hesap açma aktör, rol veya istek kimliği eksik; işlem iptal edildi.');
+    }
+    const auditConsumer = this.audit ?? new AuditService(this.prisma);
+    const workScope = this.workScope ?? new WorkScopePermissionService(this.prisma, auditConsumer);
+    const person = { personType: 'staff' as const, personId: id };
+    const keep = [...data.keepGrantIds];
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        await workScope.lockPersonInTx(tx, tenantId, person);
+        await this.assertCurrentAdmin(tx, tenantId, actor.userId);
+
+        const pre = await tx.staffMember.findFirst({ where: { id, tenantId }, select: { userId: true } });
+        if (!pre) throw new NotFoundException('Personel bulunamadı');
+        const users = [...new Set([actor.userId, ...(pre.userId ? [pre.userId] : [])])].sort();
+        await tx.$queryRaw`SELECT "id" FROM "User" WHERE "tenantId" = ${tenantId} AND "id" IN (${Prisma.join(users)}) ORDER BY "id" FOR UPDATE`;
+        await tx.$queryRaw`SELECT "id" FROM "StaffMember" WHERE "tenantId" = ${tenantId} AND "id" = ${id} FOR UPDATE`;
+
+        const now = new Date();
+        const state = await this.readAccountReopenState(tx, tenantId, id, now);
+        if (state.userId !== pre.userId) throw this.reopenConflict();
+        if (!state.review.reopenable || !state.userId || !state.userUpdatedAt || state.tokenVersion === null || !state.review.account) {
+          throw new ConflictException({
+            code: 'STAFF_ACCOUNT_REOPEN_NOT_APPLICABLE',
+            reason: state.review.reason,
+            message: 'Bu kartın giriş hesabı şu an açılamaz; hiçbir şey yazılmadı.',
+          });
+        }
+        if (state.review.reviewFingerprint !== data.reviewFingerprint) {
+          throw new ConflictException({
+            code: 'STAFF_ACCOUNT_REVIEW_STALE',
+            message: 'Hesap ya da büro geneli izinler inceleme sonrasında değişti; hiçbir şey yazılmadı. İncelemeyi yenileyin.',
+          });
+        }
+        const reviewedIds = state.review.allowGrants.map((g) => g.id);
+        if (keep.some((g) => !reviewedIds.includes(g))) {
+          throw new BadRequestException({
+            code: 'STAFF_ACCOUNT_REOPEN_UNKNOWN_GRANT',
+            message: 'Korunacak izinlerden biri incelemede yok; hiçbir şey yazılmadı.',
+          });
+        }
+        const expireIds = reviewedIds.filter((g) => !keep.includes(g));
+        const userId = state.userId;
+
+        const opened = await tx.user.updateMany({
+          where: { id: userId, tenantId, isActive: false, passwordHash: { not: null }, updatedAt: state.userUpdatedAt },
+          data: { isActive: true, tokenVersion: { increment: 1 } },
+        });
+        if (opened.count !== 1) throw this.reopenConflict();
+
+        const expiredGrantCount = await workScope.expireAllowGrantsInTx(tx, {
+          tenantId, actorUserId: actor.userId, person, subjectUserId: userId, grantIds: expireIds, now, requestId: actor.requestId,
+        });
+        const revoked = await tx.passwordResetToken.updateMany({
+          where: { tenantId, userId, consumedAt: null, revokedAt: null, expiresAt: { gt: now } },
+          data: { revokedAt: now },
+        });
+
+        await auditConsumer.logInTransaction(tx, {
+          tenantId,
+          action: 'STAFF_ACCOUNT_REOPEN',
+          entityType: 'USER',
+          entityId: userId,
+          userId: actor.userId,
+          actorType: 'USER',
+          decisionResult: 'SUCCESS',
+          reasonCode: 'OFFICE_F01_AND_CURRENT_ADMIN_AUTHORIZED',
+          correlationId: actor.requestId,
+          requestId: actor.requestId,
+          policyRef: 'OFFICE-GOVERNANCE:O-5b',
+          policyVersion: '2026-11-05',
+          // Yalnız yaşam döngüsü; ad, e-posta, parola ve kimlik verisi GİRMEZ.
+          oldValues: { isActive: false, tokenVersion: state.tokenVersion },
+          newValues: { isActive: true, tokenVersion: state.tokenVersion + 1 },
+          metadata: {
+            actorRole: actor.role,
+            authoritySource: 'OFFICE_F01_AUTHORIZATION_GUARD+CURRENT_DB_ADMIN',
+            staffId: id,
+            reviewFingerprint: data.reviewFingerprint,
+            keptGrantIds: keep,
+            expiredGrantIds: expireIds,
+            revokedResetTokenCount: revoked.count,
+            sessionsInvalidated: true,
+            roleChanged: false,
+            passwordChanged: false,
+            denyGrantsChanged: false,
+          },
+        });
+
+        return {
+          staffId: id,
+          account: { isActive: true, role: state.review.account.role },
+          keptGrantCount: keep.length,
+          expiredGrantCount,
+          revokedResetTokenCount: revoked.count,
+          sessionsInvalidated: true,
+        };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 15_000, maxWait: 10_000 },
+    );
+  }
+
+  private reopenConflict(): ConflictException {
+    return new ConflictException({
+      code: 'STAFF_ACCOUNT_REOPEN_CONFLICT',
+      message: 'Hesap kaydı bu arada değişti; hiçbir şey yazılmadı. İncelemeyi yenileyin.',
+    });
+  }
+
+  /** O-5b yetkisi: yalnız GÜNCEL DB rolü ADMIN, aktif, aynı kiracı (token iddiası değil). */
+  private async assertCurrentAdmin(db: Pick<Prisma.TransactionClient, 'user'>, tenantId: string, actorUserId: string): Promise<void> {
+    const actor =
+      typeof actorUserId === 'string' && actorUserId.length > 0
+        ? await db.user.findFirst({ where: { id: actorUserId, tenantId, isActive: true, role: 'ADMIN' }, select: { id: true } })
+        : null;
+    if (!actor) {
+      throw new ForbiddenException({
+        code: 'STAFF_ACCOUNT_REOPEN_ADMIN_REQUIRED',
+        message: 'Giriş hesabını açmak ve büro geneli izinleri gözden geçirmek için güncel ADMIN rolü gerekir.',
+      });
+    }
+  }
+
+  /** O-5b: inceleme ve yazımın ORTAK okuması; parmak izi kart + hesap + ALLOW satırlarının tam içeriğinden üretilir. */
+  private async readAccountReopenState(
+    db: AccountReopenReader,
+    tenantId: string,
+    staffId: string,
+    now: Date,
+  ): Promise<AccountReopenState> {
+    // Sıralı okuma: interactive transaction içinde aynı bağlantı paylaşılır.
+    const card = await db.staffMember.findFirst({
+      where: { id: staffId, tenantId },
+      select: { id: true, isActive: true, updatedAt: true, userId: true },
+    });
+    if (!card) throw new NotFoundException('Personel bulunamadı');
+    const user = card.userId
+      ? await db.user.findFirst({
+          where: { id: card.userId, tenantId },
+          select: { id: true, role: true, isActive: true, tokenVersion: true, updatedAt: true, passwordHash: true },
+        })
+      : null;
+    const hasPassword = !!user && user.passwordHash !== null;
+    const reason: StaffAccountReopenBlockReason | null = !card.isActive
+      ? 'STAFF_INACTIVE'
+      : !user
+        ? 'NO_LINKED_ACCOUNT'
+        : user.isActive
+          ? 'ACCOUNT_ALREADY_ACTIVE'
+          : !hasPassword
+            ? 'ACCOUNT_PENDING_INVITE'
+            : null;
+
+    // "Bitmemiş" = süresiz ya da bitişi gelecekte; başlangıcı gelecekte olan (ileri tarihli) kayıtlar da DAHİL.
+    const notEnded = { OR: [{ validUntil: null }, { validUntil: { gt: now } }] };
+    const subject = user
+      ? { tenantId, subjectUserId: user.id, permissionKey: { in: [...WORK_SCOPE_VIEW_ALL_KEYS] }, scope: PermissionGrantScope.GLOBAL, ...notEnded }
+      : null;
+    const allow = subject
+      ? await db.permissionGrant.findMany({
+          where: { ...subject, effect: PermissionGrantEffect.ALLOW },
+          orderBy: { id: 'asc' },
+          select: { id: true, permissionKey: true, effect: true, scope: true, validFrom: true, validUntil: true, updatedAt: true, grantedByUserId: true },
+        })
+      : [];
+    const deny = subject
+      ? await db.permissionGrant.findMany({ where: { ...subject, effect: PermissionGrantEffect.DENY }, select: { permissionKey: true } })
+      : [];
+
+    const iso = (d: Date | null) => (d ? d.toISOString() : null);
+    const reviewFingerprint =
+      reason === null && user
+        ? createHash('sha256')
+            .update(
+              JSON.stringify({
+                v: 1,
+                card: { id: card.id, isActive: card.isActive, updatedAt: card.updatedAt.toISOString(), userId: card.userId },
+                account: {
+                  id: user.id, role: user.role, isActive: user.isActive, tokenVersion: user.tokenVersion,
+                  updatedAt: user.updatedAt.toISOString(), hasPassword,
+                },
+                allow: allow.map((g) => ({
+                  id: g.id, permissionKey: g.permissionKey, effect: g.effect, scope: g.scope, validFrom: g.validFrom.toISOString(),
+                  validUntil: iso(g.validUntil), updatedAt: g.updatedAt.toISOString(), grantedByUserId: g.grantedByUserId,
+                })),
+              }),
+            )
+            .digest('hex')
+        : null;
+
+    return {
+      review: {
+        staffId: card.id,
+        reopenable: reason === null,
+        reason,
+        account: user ? { role: user.role, isActive: user.isActive, hasPassword } : null,
+        allowGrants: allow.map((g) => ({
+          id: g.id, permissionKey: g.permissionKey, validFrom: g.validFrom.toISOString(), validUntil: iso(g.validUntil),
+          startsInFuture: g.validFrom > now,
+        })),
+        denyKeys: [...new Set(deny.map((d) => d.permissionKey))].sort(),
+        reviewFingerprint,
+      },
+      userId: user?.id ?? null,
+      userUpdatedAt: user?.updatedAt ?? null,
+      tokenVersion: user?.tokenVersion ?? null,
     };
   }
 

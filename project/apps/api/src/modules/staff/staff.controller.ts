@@ -7,7 +7,7 @@ import { StaffType } from '@prisma/client';
 import { OfficeF01AuthorizationGuard } from '../office-approval/office-f01-authorization.guard';
 import { OfficeApprovalService } from '../office-approval/office-approval.service';
 import { projectStaffRowForActor, projectStaffRowsForActor } from './staff-public-projection';
-import { CreateStaffDto, ReactivateStaffDto, UpdateStaffDto, UpdateStaffOrderDto } from './dto/staff.dto';
+import { CreateStaffDto, ReactivateStaffDto, ReopenStaffAccountDto, UpdateStaffDto, UpdateStaffOrderDto } from './dto/staff.dto';
 
 @Controller('staff')
 @UseGuards(JwtAuthGuard)
@@ -84,6 +84,28 @@ export class StaffController {
   async reactivate(@Request() req: any, @Param('id') id: string, @Body() body: ReactivateStaffDto) {
     const tenantId = req.user.tenantId;
     const result = await this.staffService.reactivate(id, tenantId, body, {
+      userId: req.user.id,
+      role: req.user.role,
+      requestId: getRequestId(req) ?? randomUUID(),
+    });
+    return { data: result };
+  }
+
+  // O-5b: kapalı giriş hesabını açma incelemesi (salt okuma). F01 kapısı + serviste GÜNCEL DB rolü ADMIN;
+  // rol, hesap durumu ve F02 büro geneli ALLOW izinleri parmak iziyle döner (parola / e-posta / TCKN yok).
+  @Get(':id/account-reopen-review')
+  @UseGuards(OfficeF01AuthorizationGuard)
+  async accountReopenReview(@Request() req: any, @Param('id') id: string) {
+    return { data: await this.staffService.reviewAccountReopen(id, req.user.tenantId, req.user.id) };
+  }
+
+  // O-5b: incelenmiş hesabı aç — hesap açma, tokenVersion artışı, seçilmeyen ALLOW'ların sona ermesi, sıfırlama
+  // belirteçlerinin iptali ve denetim TEK transaction'da. F01 kapısı + serviste aynı tx içinde GÜNCEL DB rolü ADMIN.
+  @Post(':id/account-reopen')
+  @UseGuards(OfficeF01AuthorizationGuard)
+  async reopenAccount(@Request() req: any, @Param('id') id: string, @Body() body: ReopenStaffAccountDto) {
+    const tenantId = req.user.tenantId;
+    const result = await this.staffService.reopenAccount(id, tenantId, body, {
       userId: req.user.id,
       role: req.user.role,
       requestId: getRequestId(req) ?? randomUUID(),

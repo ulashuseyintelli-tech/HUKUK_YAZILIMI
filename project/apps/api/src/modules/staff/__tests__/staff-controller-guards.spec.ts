@@ -13,7 +13,7 @@ import "reflect-metadata";
 import { StaffController } from "../staff.controller";
 import { JwtAuthGuard } from "../../auth/guards/jwt-auth.guard";
 import { OfficeF01AuthorizationGuard } from "../../office-approval/office-f01-authorization.guard";
-import { CreateStaffDto, ReactivateStaffDto, UpdateStaffDto, UpdateStaffOrderDto } from "../dto/staff.dto";
+import { CreateStaffDto, ReactivateStaffDto, ReopenStaffAccountDto, UpdateStaffDto, UpdateStaffOrderDto } from "../dto/staff.dto";
 
 const GUARDS_METADATA = "__guards__";
 const classGuards = (): any[] => Reflect.getMetadata(GUARDS_METADATA, StaffController) || [];
@@ -28,7 +28,8 @@ describe("P5-B04 — StaffController guard wiring", () => {
   });
 
   // O-5: yeniden etkinleştirme pasifleştirme ile AYNI F01 kapısını kullanır.
-  it.each(["create", "update", "remove", "updateOrder", "reactivate"])(
+  // O-5b: hesap açma incelemesi ve yazımı da F01 kapısında (servis ayrıca GÜNCEL DB rolü ADMIN ister).
+  it.each(["create", "update", "remove", "updateOrder", "reactivate", "accountReopenReview", "reopenAccount"])(
     "%s → OfficeF01AuthorizationGuard ile korunur (#2076 sözleşmesi DEĞİŞMEDİ)",
     (method) => {
       expect(methodGuards(method)).toContain(OfficeF01AuthorizationGuard);
@@ -47,5 +48,6 @@ describe("P5-B04 — StaffController guard wiring", () => {
     expect(paramTypes("update")).toContain(UpdateStaffDto);
     expect(paramTypes("updateOrder")).toContain(UpdateStaffOrderDto);
     expect(paramTypes("reactivate")).toContain(ReactivateStaffDto);
+    expect(paramTypes("reopenAccount")).toContain(ReopenStaffAccountDto);
   });
 });
