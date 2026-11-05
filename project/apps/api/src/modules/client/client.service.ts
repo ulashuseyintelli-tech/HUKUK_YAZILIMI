@@ -626,12 +626,12 @@ export class ClientService {
     return presentInternalClient(client, 'CONTACT_DETAIL');
   }
 
-  /** Consumed only by the two bounded internal HTTP readers above. No rank/Admin shortcut. */
   /** @remarks Called by ClientController.runWorkspaceCommand after the existing action policy. */
   async assertObjectScope(tenantId: string, actorUserId: string, clientId: string): Promise<void> {
     await assertClientObjectScope(this.prisma, tenantId, actorUserId, clientId);
   }
 
+  /** Consumed only by the two bounded internal HTTP readers above. No rank/Admin shortcut. */
   private async internalClientReadScope(tenantId: string, actorUserId: string): Promise<Prisma.ClientWhereInput> {
     return clientObjectScope(this.prisma, tenantId, actorUserId);
   }

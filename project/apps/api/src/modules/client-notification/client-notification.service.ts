@@ -541,19 +541,6 @@ export class ClientNotificationService {
     };
   }
 
-  /**
-   * Bildirim Kontrol Merkezi — seçili GERÇEK müvekkile GERÇEK [TEST] bildirimi (PR-N3).
-   *
-   * Mevcut sendEmail/sendSms yolunu type:"TEST" + NÖTR içerikle yeniden kullanır:
-   * gerçek gönderim yapılır ve sonuç ClientNotification'a (SENT/FAILED) loglanır.
-   * Yeni model / migration / transport YOK; rastgele alıcı YOK (clientId zorunlu, tenant-scoped).
-   * Alıcı yanıtta maskelenir; sağlayıcı hata mesajı sır/uzunluk açısından sanitize edilir.
-   *
-   * /// <remarks>
-   * Çağrıldığı yerler:
-   * - ClientNotificationController.testSend() → POST /client-notifications/test-send (ADMIN) — Kontrol Merkezi "Gerçek Test Gönderimi"
-   * </remarks>
-   */
   /** @remarks Called by ClientNotificationController.sendEmail after its action gate; raw transport stays internal. */
   async sendEmailForActor(tenantId: string, userId: string, dto: SendEmailDto) {
     await assertClientObjectScope(this.prisma, tenantId, userId, dto.clientId, dto.caseId ?? undefined);
@@ -582,6 +569,19 @@ export class ClientNotificationService {
     return this.sendBulkEmail(tenantId, userId, data);
   }
 
+  /**
+   * Bildirim Kontrol Merkezi — seçili GERÇEK müvekkile GERÇEK [TEST] bildirimi (PR-N3).
+   *
+   * Mevcut sendEmail/sendSms yolunu type:"TEST" + NÖTR içerikle yeniden kullanır:
+   * gerçek gönderim yapılır ve sonuç ClientNotification'a (SENT/FAILED) loglanır.
+   * Yeni model / migration / transport YOK; rastgele alıcı YOK (clientId zorunlu, tenant-scoped).
+   * Alıcı yanıtta maskelenir; sağlayıcı hata mesajı sır/uzunluk açısından sanitize edilir.
+   *
+   * /// <remarks>
+   * Çağrıldığı yerler:
+   * - ClientNotificationController.testSend() → ClientNotificationService.testSendForActor() → POST /client-notifications/test-send (ADMIN) — Kontrol Merkezi "Gerçek Test Gönderimi"
+   * </remarks>
+   */
   async testSend(
     tenantId: string,
     userId: string,
