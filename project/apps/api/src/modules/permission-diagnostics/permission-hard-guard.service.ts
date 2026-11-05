@@ -34,7 +34,8 @@ export class PermissionHardGuardService {
     );
   }
 
-  private async emitDenied(operation: string, ctx: HardGuardContext): Promise<void> {
+  // Diagnostic reuse only; callers still enforce their own action-specific denial.
+  async emitDenied(operation: string, ctx: HardGuardContext, reason?: string): Promise<void> {
     const entry = PERMISSION_DIAGNOSTICS_MAP[operation];
     try {
       await this.audit.log({
@@ -53,7 +54,7 @@ export class PermissionHardGuardService {
           currentGuard: entry?.currentGuard ?? "TENANT_ONLY",
           enforcementPhase: "PHASE_3_HARD_ENFORCE",
           requestPath: ctx.requestPath,
-          reason: `Missing required bridge authority for ${operation}.`,
+          reason: reason ?? `Missing required bridge authority for ${operation}.`,
           bridgeGuard: "ADMIN_ONLY",
         },
       });

@@ -10,7 +10,7 @@ import { LegalResponsibleLawyerService } from "../legal-responsible-lawyer.servi
 import { ResponsibilityHistoryService } from "../responsibility-history.service";
 
 function makeService(
-  opts: { case?: any; target?: any; responsibles?: any[] } = {},
+  opts: { case?: any; target?: any; responsibles?: any[]; actor?: any } = {},
 ) {
   const auditCreate = jest.fn(async (_a: any) => ({
     id: "audit-1",
@@ -18,8 +18,12 @@ function makeService(
   }));
   const clUpdate = jest.fn(async (_a: any) => ({}));
   const caseUpdate = jest.fn(async (_a: any) => ({}));
-  const tx = { caseLawyer: { update: clUpdate }, auditLog: { create: auditCreate } };
+  const actorRead = jest.fn(async (_a: any) => 'actor' in opts ? opts.actor : {
+    role: 'ADMIN', isActive: true, staffMember: null,
+  });
+  const tx = { user: { findFirst: actorRead }, $queryRaw: jest.fn(async () => [{ id: 'u-admin' }]), caseLawyer: { update: clUpdate }, auditLog: { create: auditCreate } };
   const prisma = {
+    user: { findFirst: actorRead },
     case: {
       findFirst: jest.fn(async (..._a: any[]) => ("case" in opts ? opts.case : { id: "c1" })),
       update: caseUpdate,
@@ -35,17 +39,67 @@ function makeService(
     $transaction: jest.fn(async (cb: any) => cb(tx)),
   } as any;
   const hardGuard = {
+    emitDenied: jest.fn(async () => undefined),
     assertBridgeAdmin: jest.fn(async (_op: string, ctx: any) => {
       if (ctx.role !== "ADMIN") throw new ForbiddenException();
     }),
   } as any;
   const service = new LegalResponsibleLawyerService(prisma, hardGuard);
-  return { service, prisma, hardGuard, clUpdate, caseUpdate, auditCreate };
+  return { service, prisma, hardGuard, clUpdate, caseUpdate, auditCreate, actorRead, tx };
 }
 
 const DTO = { lawyerId: "L2", reason: "Dosya hukuki sorumlusu değişiklik kararı", note: "opsiyonel not" };
 
 describe("LegalResponsibleLawyerService.changeLegalResponsibleLawyer (WP-1d-5-4)", () => {
+  it.each([
+    ['active staff', { id: 'staff-1', isActive: true }],
+    ['inactive staff', { id: 'staff-1', isActive: false }],
+  ])('AK-1c: %s linked ADMIN is denied before the ADMIN bridge and any case write', async (_label, staffMember) => {
+    const { service, prisma, hardGuard, clUpdate, auditCreate } = makeService({
+      actor: { role: 'ADMIN', isActive: true, staffMember },
+    });
+    await expect(service.changeLegalResponsibleLawyer('t1', 'c1', DTO, 'u-admin', 'ADMIN'))
+      .rejects.toBeInstanceOf(ForbiddenException);
+    expect(hardGuard.assertBridgeAdmin).not.toHaveBeenCalled();
+    expect(prisma.case.findFirst).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(clUpdate).not.toHaveBeenCalled();
+    expect(auditCreate).not.toHaveBeenCalled();
+    expect(hardGuard.emitDenied).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['missing actor', null],
+    ['inactive account', { role: 'ADMIN', isActive: false, staffMember: null }],
+    ['DB USER with supplied ADMIN', { role: 'USER', isActive: true, staffMember: null }],
+    ['DB VIEWER with supplied ADMIN', { role: 'VIEWER', isActive: true, staffMember: null }],
+  ])('AK-1c: %s cannot manufacture bridge authority', async (_label, actor) => {
+    const { service, prisma } = makeService({ actor });
+    await expect(service.changeLegalResponsibleLawyer('t1', 'c1', DTO, 'u-admin', 'ADMIN'))
+      .rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('AK-1c: staff linkage committed after preflight is rejected inside the write transaction', async () => {
+    const { service, actorRead, tx, clUpdate, auditCreate, hardGuard } = makeService();
+    actorRead.mockResolvedValueOnce({ role: 'ADMIN', isActive: true, staffMember: null })
+      .mockResolvedValueOnce({ role: 'ADMIN', isActive: true, staffMember: { id: 'new-link' } });
+    await expect(service.changeLegalResponsibleLawyer('t1', 'c1', DTO, 'u-admin', 'ADMIN'))
+      .rejects.toBeInstanceOf(ForbiddenException);
+    expect(tx.$queryRaw).toHaveBeenCalled();
+    expect(clUpdate).not.toHaveBeenCalled();
+    expect(auditCreate).not.toHaveBeenCalled();
+    expect(hardGuard.emitDenied).toHaveBeenCalledTimes(1);
+  });
+
+  it('AK-1c: actor lookup includes tenant and is repeated after the User row lock', async () => {
+    const { service, actorRead, tx } = makeService();
+    await service.changeLegalResponsibleLawyer('t1', 'c1', DTO, 'u-admin', 'ADMIN');
+    expect(actorRead).toHaveBeenCalledTimes(2);
+    expect(actorRead).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'u-admin', tenantId: 't1' } }));
+    expect(tx.$queryRaw.mock.calls[0][0].join('')).toContain('FOR UPDATE');
+    expect(tx.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(actorRead.mock.invocationCallOrder[1]);
+  });
   it("1+2: ADMIN başarı → eski demote, yeni promote; role coupling (clear-before-set sırası)", async () => {
     const { service, clUpdate } = makeService();
     const out = await service.changeLegalResponsibleLawyer("t1", "c1", DTO, "u-admin", "ADMIN");
