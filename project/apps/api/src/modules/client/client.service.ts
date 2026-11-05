@@ -1033,7 +1033,7 @@ export class ClientService {
     idempotencyKey: string | undefined,
     input: ClientTemplateNotificationSendInput,
   ): Promise<ClientTemplateNotificationSendResult> {
-    await assertClientObjectScope(this.prisma, tenantId, userId, id, input.caseId);
+    await assertClientObjectScope(this.prisma, tenantId, userId, id, input.caseId ?? undefined);
     const normalizedKey = String(idempotencyKey ?? '').trim();
     if (!normalizedKey) throw new BadRequestException('Idempotency-Key header is required');
     if (!CLIENT_TEMPLATE_NOTIFICATION_CODES.includes(input.templateCode)) throw new BadRequestException('Unsupported templateCode');
@@ -1095,7 +1095,7 @@ export class ClientService {
     idempotencyKey: string | undefined,
     input: ClientDocumentRequestSendInput,
   ): Promise<ClientDocumentRequestSendResult> {
-    await assertClientObjectScope(this.prisma, tenantId, userId, id, input.caseId);
+    await assertClientObjectScope(this.prisma, tenantId, userId, id, input.caseId ?? undefined);
     const normalizedKey = String(idempotencyKey ?? '').trim();
     if (!normalizedKey) throw new BadRequestException('Idempotency-Key header is required');
     if (!this.notificationDispatcher) throw new Error('Notification dispatcher is not configured');
@@ -1137,6 +1137,7 @@ export class ClientService {
       );
     }
 
+    await assertClientObjectScope(this.prisma, tenantId, userId, id, selectedCaseId);
     const relatedCase = selectedCaseId
       ? await this.prisma.case.findFirst({
           where: {

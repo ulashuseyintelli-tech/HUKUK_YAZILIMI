@@ -184,6 +184,13 @@ dbDescribe('1b canonical Client object boundary — real Nest HTTP and PostgreSQ
     await expect(assertClientObjectScope(db, tenant, admin, undefined as any)).rejects.toMatchObject({ status: 404 });
     expect(await snapshot()).toEqual(before);
   });
+  it.each(['ACTOR', 'TENANT', 'CASE'] as const)('%s identity cannot be a Prisma operator object', async kind => {
+    const operator = { not: '' } as any; const before = await snapshot();
+    await expect(assertClientObjectScope(db, kind === 'TENANT' ? operator : tenant,
+      kind === 'ACTOR' ? operator : admin, clientId, kind === 'CASE' ? operator : undefined))
+      .rejects.toMatchObject({ status: kind === 'CASE' ? 404 : 403 });
+    expect(await snapshot()).toEqual(before);
+  });
   it('object relation does not grant sensitive update or lifecycle authority to ordinary Staff/ADMIN', async () => {
     const before = await snapshot();
     await update({ firstName: 'Denied identity' }, staffUser).expect(403);
@@ -274,6 +281,17 @@ dbDescribe('1b canonical Client object boundary — real Nest HTTP and PostgreSQ
     await expect(core.sendDocumentRequest(otherId, tenant, admin, '1b', { documentCodes: ['GENEL_BELGE'] } as any)).rejects.toMatchObject({ status: 404 });
     await expect(core.sendPoaReminder(clientId, tenant)).rejects.toMatchObject({ status: 403 });
     expect(send).not.toHaveBeenCalled(); expect(await snapshot()).toEqual(before);
+  });
+  it('retains optional null case semantics without weakening canonical Client scope', async () => {
+    const send = jest.spyOn(dispatcher, 'dispatch').mockResolvedValue({ status: 'sent' } as any);
+    await req('post', `/clients/${clientId}/template-notifications/send`, admin, { templateCode: 'DOSYA_DURUMU', caseId: null })
+      .set('idempotency-key', '1b-null-case').expect(201);
+    expect(send).toHaveBeenCalledWith(tenant, admin, expect.objectContaining({ clientId, caseId: undefined }));
+    await req('post', `/clients/${clientId}/legal-holds`, admin, { scopeType: 'CLIENT', caseId: null, reason: 'Synthetic optional case' }).expect(201);
+    const calls = send.mock.calls.length;
+    await req('post', `/clients/${otherId}/template-notifications/send`, admin, { templateCode: 'DOSYA_DURUMU', caseId: null })
+      .set('idempotency-key', '1b-null-other').expect(404);
+    expect(send).toHaveBeenCalledTimes(calls);
   });
   it('manual contact backfill retains elevated authority and only scans canonical in-scope Clients', async () => {
     const sync = jest.spyOn(core as any, 'syncContactFollowUpTaskSafe').mockResolvedValue(true);

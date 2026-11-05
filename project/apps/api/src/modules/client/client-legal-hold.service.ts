@@ -90,7 +90,7 @@ export class ClientLegalHoldService {
   }) {
     const { tenantId, clientId, scopeType, reason, actor, caseId, recordFamily } = params;
     await this.assertElevated(actor, tenantId, 'Legal hold koyma');
-    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, clientId, caseId);
+    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, clientId, caseId ?? undefined);
     if (!reason?.trim()) {
       throw new BadRequestException('Legal hold gerekçesi zorunludur (K8.4)');
     }
@@ -105,7 +105,7 @@ export class ClientLegalHoldService {
 
     const now = new Date();
     return this.prisma.$transaction(async (tx: any) => {
-      await assertClientObjectScope(tx, tenantId, actor?.userId, clientId, caseId);
+      await assertClientObjectScope(tx, tenantId, actor?.userId, clientId, caseId ?? undefined);
       const created = await this.delegate(tx).create({
         data: {
           tenantId,
@@ -239,7 +239,7 @@ export class ClientLegalHoldService {
   }): Promise<ClientLifecycleGateDecision> {
     const { tenantId, clientId, actor, assessment, caseId, recordFamily, requestNote } = params;
     await this.assertElevated(actor, tenantId, 'Silme değerlendirme talebi');
-    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, clientId, caseId);
+    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, clientId, caseId ?? undefined);
 
     const holdActive = await this.hasActiveHold(tenantId, { clientId, caseId, recordFamily });
     const effectiveAssessment: ClientLifecycleAssessment = {

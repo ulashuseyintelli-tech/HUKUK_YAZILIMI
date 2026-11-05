@@ -13,7 +13,12 @@ export async function clientObjectScope(
   actorUserId: string | null | undefined,
   caseId?: string,
 ): Promise<Prisma.ClientWhereInput> {
-  if (!tenantId || !actorUserId) throw new ForbiddenException({ code: 'CLIENT_READ_DENIED' });
+  if (typeof tenantId !== 'string' || !tenantId || typeof actorUserId !== 'string' || !actorUserId) {
+    throw new ForbiddenException({ code: 'CLIENT_READ_DENIED' });
+  }
+  if (caseId !== undefined && (typeof caseId !== 'string' || !caseId)) {
+    throw new NotFoundException('Dosya bulunamadı');
+  }
   const actor = await db.user.findFirst({
     where: { id: actorUserId, tenantId, isActive: true, role: { in: ['USER', 'ADMIN'] } },
     select: { id: true },
