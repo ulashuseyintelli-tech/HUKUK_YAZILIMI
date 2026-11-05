@@ -182,10 +182,71 @@ export class WorkScopePermissionService {
     }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   }
 
+  /**
+   * O-5b (owner 05.11.2026, A politikası) — kişinin izin danışma kilidini ÇAĞIRANIN transaction'ında alır (grant / revoke ile
+   * AYNI anahtar). Hesap açma bu kilidi ilk iş olarak alır; eşzamanlı izin yazımı ve hesap açma sıralanır.
+   *
+   * @remarks Çağrıldığı yerler: StaffService.reopenAccount() (POST /staff/:id/account-reopen).
+   */
+  async lockPersonInTx(tx: Prisma.TransactionClient, tenantId: string, person: WorkScopePersonRef): Promise<void> {
+    const lockKey = this.lockKey(tenantId, person);
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
+  }
+
+  /**
+   * O-5b — verilen GLOBAL ALLOW kayıtlarını ÇAĞIRANIN transaction'ında sona erdirir (validUntil = now). Yalnız iki F02 anahtarı
+   * (office.tasks.view_all / office.expenses.view_all) ve yalnız ALLOW: DENY ve F02 dışı izinler kapsam dışıdır, dokunulmaz.
+   * Mevcut `revoke()` kendi transaction'ını açtığı ve anahtarın DENY kaydını da bitirdiği için hesap açmada kullanılamaz
+   * (O5B-ANALIZ-R01 ölçümü); bu yöntem onun yerine geçer, `grant()` / `revoke()` davranışı DEĞİŞMEZ.
+   * Yetki ve kilit ÇAĞIRANIN sorumluluğundadır (lockPersonInTx + güncel DB rolü ADMIN aynı tx'te). Beklenen kayıtlardan biri
+   * bu arada değiştiyse sayı tutmaz → 409 (çağıranın transaction'ı geri alınır). Denetim: anahtar başına `revoke()` ile AYNI
+   * biçimde PERMISSION_GRANT / UPDATE satırı (F02 grant uzlaşması bu satırları geri alma olarak sayar).
+   *
+   * @remarks Çağrıldığı yerler: StaffService.reopenAccount() (POST /staff/:id/account-reopen).
+   */
+  async expireAllowGrantsInTx(
+    tx: Prisma.TransactionClient,
+    input: { tenantId: string; actorUserId: string; person: WorkScopePersonRef; subjectUserId: string; grantIds: string[]; now: Date; requestId: string },
+  ): Promise<number> {
+    const { tenantId, actorUserId, person, subjectUserId, grantIds, now, requestId } = input;
+    if (grantIds.length === 0) return 0;
+    const where: Prisma.PermissionGrantWhereInput = {
+      id: { in: grantIds }, tenantId, subjectUserId, permissionKey: { in: [...WORK_SCOPE_VIEW_ALL_KEYS] },
+      scope: PermissionGrantScope.GLOBAL, effect: PermissionGrantEffect.ALLOW, OR: [{ validUntil: null }, { validUntil: { gt: now } }],
+    };
+    const before = await tx.permissionGrant.findMany({
+      where, orderBy: { id: 'asc' }, select: { id: true, permissionKey: true, effect: true, validUntil: true },
+    });
+    if (before.length !== grantIds.length) {
+      throw new ConflictException({ code: 'WORK_SCOPE_GRANT_CHANGED', message: 'Büro geneli izin kaydı bu arada değişti; işlem uygulanmadı.' });
+    }
+    const result = await tx.permissionGrant.updateMany({ where, data: { validUntil: now } });
+    if (result.count !== grantIds.length) {
+      throw new ConflictException({ code: 'WORK_SCOPE_GRANT_CHANGED', message: 'Büro geneli izin kaydı bu arada değişti; işlem uygulanmadı.' });
+    }
+    for (const key of WORK_SCOPE_VIEW_ALL_KEYS) {
+      const rows = before.filter((r) => r.permissionKey === key);
+      if (rows.length === 0) continue;
+      await this.audit.logInTransaction(tx, {
+        tenantId, userId: actorUserId, action: 'UPDATE', entityType: 'PERMISSION_GRANT', entityId: subjectUserId,
+        oldValues: { grants: rows.map((r) => ({ id: r.id, effect: r.effect, validUntil: r.validUntil?.toISOString() ?? null })) },
+        newValues: { subjectUserId, personType: person.personType, personId: person.personId, permissionKey: key, scope: 'GLOBAL', validUntil: now.toISOString(), expiredCount: rows.length },
+        description: 'Work-scope view-all ALLOW permission expired on account reopen',
+        metadata: { source: 'STAFF_ACCOUNT_REOPEN', effectFilter: 'ALLOW', requestId },
+      });
+    }
+    return result.count;
+  }
+
+  /** Callers: grant / revoke / lockPersonInTx — kişi başına TEK danışma kilidi anahtarı. */
+  private lockKey(tenantId: string, person: WorkScopePersonRef): string {
+    return `work-scope-permission:${tenantId}:${person.personType}:${person.personId}`;
+  }
+
   /** Callers: grant/revoke. Danışma kilidi + sıralı kullanıcı kilitleri; ADMIN rolü AYNI tx'te DB'den okunur; kişi kartı → bağlı hesap. */
   private async lockAndResolve(tx: Prisma.TransactionClient, tenantId: string, actorUserId: string, person: WorkScopePersonRef, granting: boolean): Promise<string> {
     if ([tenantId, actorUserId].some((v) => typeof v !== 'string' || v.length === 0 || v !== v.trim())) throw new ForbiddenException({ code: 'WORK_SCOPE_ADMIN_REQUIRED' });
-    const lockKey = `work-scope-permission:${tenantId}:${person.personType}:${person.personId}`;
+    const lockKey = this.lockKey(tenantId, person);
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
     await this.assertAdmin(tx, tenantId, actorUserId);
     const subjectUserId = await this.linkedUserId(tx, tenantId, person);

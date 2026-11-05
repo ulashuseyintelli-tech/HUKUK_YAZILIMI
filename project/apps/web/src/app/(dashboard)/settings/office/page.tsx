@@ -20,6 +20,9 @@ import {
   type StaffReactivationValues,
 } from "@/lib/staff-reactivation";
 import { StaffReactivationDialog, type StaffReactivationOutcome } from "@/components/settings/staff-reactivation-dialog";
+// O-5b: yeniden etkinleştirilmiş personelin KAPALI giriş hesabını yönetici gözden geçirmesiyle açma (F01 + güncel ADMIN).
+import { StaffAccountReopenDialog } from "@/components/settings/staff-account-reopen-dialog";
+import { StaffAccountReopenCard } from "@/components/settings/staff-account-reopen-card";
 import { useKeyedSubmitLock } from "@/lib/use-submit-lock";
 import { SettingsSection, WorkbenchHeader, SettingsDrawer, CollectionHeader } from "@/components/settings/settings-shell";
 import { PersonAccessInviteCard } from "@/components/settings/person-access-invite-card";
@@ -237,6 +240,8 @@ function OfficeSettingsInner() {
   const [staffUpdateReview, setStaffUpdateReview] = useState<{ candidates: { id: string; name: string }[]; data: any } | null>(null);
   // O-5: aynı kimlikle eklenmek istenen PASİF personel — create yazım yapmaz; yönetici izinleri gözden geçirip ayrıca onaylar.
   const [staffReactivation, setStaffReactivation] = useState<StaffReactivationReview | null>(null);
+  // O-5b: O-5 sonucundan açılan hesap açma incelemesi (diyalog açılışta incelemeyi okur; Vazgeç yazmaz).
+  const [accountReopenTarget, setAccountReopenTarget] = useState<{ staffId: string; name: string } | null>(null);
   const [officeForm, setOfficeForm] = useState({ name: "", address: "", city: "", district: "", postalCode: "", phone: "", fax: "", email: "", website: "", barAssociation: "", vergiNo: "", vergiDairesi: "", mersisNo: "", kepAddress: "" });
   const [officeInitial, setOfficeInitial] = useState({ name: "", address: "", city: "", district: "", postalCode: "", phone: "", fax: "", email: "", website: "", barAssociation: "", vergiNo: "", vergiDairesi: "", mersisNo: "", kepAddress: "" });
   // Geç gelen okuma yanıtı kullanıcının kaydedilmemiş büro düzenlemesini ezmesin diye son değerler ref'te tutulur.
@@ -1983,6 +1988,20 @@ function OfficeSettingsInner() {
           staffTypes={STAFF_TYPES}
           onConfirm={confirmStaffReactivation}
           onClose={() => setStaffReactivation(null)}
+          onReviewAccount={() => {
+            setAccountReopenTarget({ staffId: staffReactivation.staffId, name: staffReactivation.name });
+            setStaffReactivation(null);
+          }}
+        />
+      )}
+
+      {/* O-5b: kapalı giriş hesabını açma onayı (inceleme açılışta okunur; Vazgeç hiçbir yazım isteği göndermez) */}
+      {accountReopenTarget && (
+        <StaffAccountReopenDialog
+          key={accountReopenTarget.staffId}
+          staffId={accountReopenTarget.staffId}
+          staffName={accountReopenTarget.name}
+          onClose={() => setAccountReopenTarget(null)}
         />
       )}
 
@@ -2446,6 +2465,14 @@ function StaffModal({ staff, onSave, onClose, saving }: { staff: any; onSave: (d
             />
           )}
           {staff?.id && <AccountCardLinkCard personType="staff" personId={staff.id} personUserId={staff.userId ?? null} formDirty={isStaffDirty} />}
+          {staff?.id && (
+            <StaffAccountReopenCard
+              staffId={staff.id}
+              personUserId={staff.userId ?? null}
+              staffName={`${staff.firstName ?? ""} ${staff.lastName ?? ""}`.trim() || "Personel"}
+              formDirty={isStaffDirty}
+            />
+          )}
           {staff?.id && <WorkScopePermissionCard personType="staff" personId={staff.id} formDirty={isStaffDirty} />}
     </PersonModalFrame>
   );

@@ -1,4 +1,16 @@
-import { Allow, IsArray, IsBoolean, IsEnum, IsInt, IsOptional, IsString } from 'class-validator';
+import {
+  Allow,
+  ArrayMaxSize,
+  ArrayUnique,
+  IsArray,
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Matches,
+} from 'class-validator';
 import { StaffType } from '@prisma/client';
 
 /**
@@ -101,6 +113,24 @@ export class ReactivateStaffDto {
   @IsBoolean() canPrepareCollectionDisposition: boolean;
   @IsBoolean() canSendNotifications: boolean;
   @IsBoolean() isDefaultForNewCases: boolean;
+}
+
+/**
+ * O-5b (owner 05.11.2026, A politikası): yeniden etkinleştirilmiş personelin KAPALI giriş hesabını açma
+ * (`POST /staff/:id/account-reopen`). Yönetici önce inceleme okumasını (`GET /staff/:id/account-reopen-review`)
+ * görür; onay o incelemenin parmak izine bağlıdır. `keepGrantIds` incelemede listelenen F02 büro geneli ALLOW
+ * kayıtlarından KORUNACAK olanlardır (boş dizi = hiçbiri korunmaz); listelenmeyen her ALLOW sona erer.
+ * Rol, parola, kimlik ya da başka alan bu gövdeyle değiştirilemez (forbidNonWhitelisted → 400).
+ */
+export class ReopenStaffAccountDto {
+  @IsString() @Matches(/^[a-f0-9]{64}$/) reviewFingerprint: string;
+
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ArrayUnique()
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
+  keepGrantIds: string[];
 }
 
 export class UpdateStaffOrderDto {
