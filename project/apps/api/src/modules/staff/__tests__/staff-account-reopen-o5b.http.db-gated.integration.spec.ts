@@ -448,8 +448,8 @@ describeWithDisposableDb('O-5b kapalı giriş hesabını açma — yetki, tek tr
      * yok). İstek JWT, F01 ve ön ADMIN kontrolünü COMMIT EDİLMİŞ (eski) değerle geçer, sonra User kilidinde bekler (ölçülür).
      * Engel commit edince kilit açılır; yazıma esas kilit sonrası kontrol 403 vermeli ve hiçbir şey yazılmamalıdır.
      */
-    it.each([
-      ['ADMIN rolü kaldırılır', { role: 'USER' as const }],
+    it.each<[string, { role?: 'USER'; isActive?: boolean }]>([
+      ['ADMIN rolü kaldırılır', { role: 'USER' }],
       ['hesabı pasifleştirilir', { isActive: false }],
     ])('istek User kilidinde beklerken aktörün %s → kilit açılınca 403; hesap, grant, belirteç ve denetimde sıfır değişiklik', async (_ad, demote) => {
       const t = await hedef();
