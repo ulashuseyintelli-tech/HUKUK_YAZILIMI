@@ -40,13 +40,14 @@ const ALLOW = [
 ];
 const DENY = [{ permissionKey: 'office.expenses.view_all' }];
 
-type Opts = { card?: any; user?: any; allow?: any[]; actorAdmin?: boolean; userUpdateCount?: number; auditThrows?: boolean };
+type Opts = { card?: any; user?: any; allow?: any[]; actorAdmin?: boolean | 'lostWhileLocked'; userUpdateCount?: number; auditThrows?: boolean };
 
 const build = (opts: Opts = {}) => {
   const calls: string[] = [];
   const card = opts.card === undefined ? CARD : opts.card;
   const user = opts.user === undefined ? USER : opts.user;
   const allow = opts.allow ?? ALLOW;
+  let adminChecks = 0;
   const tx: any = {
     $executeRaw: jest.fn(async (_s: TemplateStringsArray, ...v: unknown[]) => { calls.push(`ADVISORY:${String(v[0])}`); return 1; }),
     $queryRaw: jest.fn(async (s: TemplateStringsArray) => {
@@ -57,7 +58,14 @@ const build = (opts: Opts = {}) => {
     staffMember: { findFirst: jest.fn(async () => card), update: jest.fn(), updateMany: jest.fn() },
     user: {
       findFirst: jest.fn(async ({ where }: any) => {
-        if (where.role === 'ADMIN') { calls.push('ADMIN_CHECK'); return opts.actorAdmin === false ? null : { id: ACTOR.userId }; }
+        if (where.role === 'ADMIN') {
+          calls.push('ADMIN_CHECK');
+          adminChecks++;
+          if (opts.actorAdmin === false) return null;
+          // Kilit beklenirken rol kaldırıldı: ön kontrol geçer, kilit sonrası kontrol düşer.
+          if (opts.actorAdmin === 'lostWhileLocked' && adminChecks > 1) return null;
+          return { id: ACTOR.userId };
+        }
         return user;
       }),
       update: jest.fn(),
@@ -153,13 +161,14 @@ describe('O-5b StaffService.reopenAccount — tek transaction', () => {
   const onayla = async (b: ReturnType<typeof build>, keepGrantIds: string[] = ['g-masraf'], fp?: string | null) =>
     b.svc.reopenAccount(ID, TENANT, { reviewFingerprint: (fp ?? (await fingerprintOf())) as string, keepGrantIds }, ACTOR);
 
-  it('başarı: kilit → ADMIN → User → kart sırası; hesap açılır + tokenVersion artar; yalnız seçilmeyen ALLOW biter; belirteç iptal; denetim', async () => {
+  it('başarı: kilit → ADMIN → User → ADMIN (kilit sonrası) → kart sırası; hesap açılır + tokenVersion artar; yalnız seçilmeyen ALLOW biter; belirteç iptal; denetim', async () => {
     const b = build();
     const res = await onayla(b);
     expect(b.calls).toEqual([
       'ADVISORY:work-scope-permission:t1:staff:s1',
       'ADMIN_CHECK',
       'LOCK_USER',
+      'ADMIN_CHECK', // yazıma esas karar User kilidinden SONRA
       'LOCK_CARD',
       'USER_UPDATE',
       'GRANT_EXPIRE',
@@ -234,6 +243,16 @@ describe('O-5b StaffService.reopenAccount — tek transaction', () => {
     const err = await onayla(b, ['g-masraf'], fp).catch((e) => e);
     expect(err).toBeInstanceOf(ForbiddenException);
     expect(b.calls).toEqual(['ADVISORY:work-scope-permission:t1:staff:s1', 'ADMIN_CHECK']);
+    yazimYok(b.tx, b.calls);
+  });
+
+  it('ön kontrol geçer ama User kilidinden sonra aktör ADMIN değil → 403; kart kilidi ve hiçbir yazım yok', async () => {
+    const fp = await fingerprintOf();
+    const b = build({ actorAdmin: 'lostWhileLocked' });
+    const err = await onayla(b, ['g-masraf'], fp).catch((e) => e);
+    expect(err).toBeInstanceOf(ForbiddenException);
+    expect(err.getResponse().code).toBe('STAFF_ACCOUNT_REOPEN_ADMIN_REQUIRED');
+    expect(b.calls).toEqual(['ADVISORY:work-scope-permission:t1:staff:s1', 'ADMIN_CHECK', 'LOCK_USER', 'ADMIN_CHECK']);
     yazimYok(b.tx, b.calls);
   });
 

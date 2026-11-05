@@ -535,8 +535,10 @@ export class StaffService {
    * O-5b (owner 05.11.2026, A politikası): etkin personel kartına bağlı, parolası olan KAPALI giriş hesabını yöneticinin
    * gözden geçirdiği haliyle açar. Hepsi TEK transaction'da (biri başarısızsa hiçbiri yazılmaz):
    *  1. grant / revoke ile AYNI danışma kilidi (WorkScopePermissionService.lockPersonInTx);
-   *  2. güncel DB rolü ADMIN (aynı tx);
-   *  3. kilit sırası pasifleştirmeyle aynı: User satırları (sıralı) → personel kartı;
+   *  2. güncel DB rolü ADMIN (aynı tx; ön kontrol);
+   *  3. kilit sırası pasifleştirmeyle aynı: User satırları (sıralı) → personel kartı. Yazıma esas yetki kararı User
+   *     kilitleri ALINDIKTAN SONRA yeniden okunur: istek kilitte beklerken aktörün rolü kaldırılır ya da hesabı kapatılırsa
+   *     kilit açıldığında 403 olur ve hiçbir şey yazılmaz;
    *  4. inceleme yeniden okunur; uygulanamıyorsa 409 STAFF_ACCOUNT_REOPEN_NOT_APPLICABLE, parmak izi tutmuyorsa
    *     409 STAFF_ACCOUNT_REVIEW_STALE (yalnız kimlik listesi değil: içerik, süre ve updatedAt parmak izine girer);
    *  5. hesap koşullu açılır ve tokenVersion 1 artar → pasifleştirmeden önce verilmiş JWT'ler reddedilir;
@@ -566,6 +568,9 @@ export class StaffService {
         if (!pre) throw new NotFoundException('Personel bulunamadı');
         const users = [...new Set([actor.userId, ...(pre.userId ? [pre.userId] : [])])].sort();
         await tx.$queryRaw`SELECT "id" FROM "User" WHERE "tenantId" = ${tenantId} AND "id" IN (${Prisma.join(users)}) ORDER BY "id" FOR UPDATE`;
+        // Yazıma esas yetki kararı: aktörün User satırı artık bu transaction'ın kilidinde; kilit beklenirken commit olan rol
+        // kaldırma / pasifleştirme burada görülür (READ COMMITTED yeni anlık görüntü) ve commit'e kadar değişemez.
+        await this.assertCurrentAdmin(tx, tenantId, actor.userId);
         await tx.$queryRaw`SELECT "id" FROM "StaffMember" WHERE "tenantId" = ${tenantId} AND "id" = ${id} FOR UPDATE`;
 
         const now = new Date();

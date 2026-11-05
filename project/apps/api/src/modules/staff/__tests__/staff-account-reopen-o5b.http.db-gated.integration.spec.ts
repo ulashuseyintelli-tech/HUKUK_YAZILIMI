@@ -442,6 +442,41 @@ describeWithDisposableDb('O-5b kapalı giriş hesabını açma — yetki, tek tr
       expect(after.reopenAudits).toHaveLength(0);
       expect(after.grantAudits).toHaveLength(0);
     });
+
+    /**
+     * Aktör yetkisi yarışı: engel aktörün User satırını rolünü kaldıran / hesabını kapatan güncellemeyle tutar (henüz commit
+     * yok). İstek JWT, F01 ve ön ADMIN kontrolünü COMMIT EDİLMİŞ (eski) değerle geçer, sonra User kilidinde bekler (ölçülür).
+     * Engel commit edince kilit açılır; yazıma esas kilit sonrası kontrol 403 vermeli ve hiçbir şey yazılmamalıdır.
+     */
+    it.each([
+      ['ADMIN rolü kaldırılır', { role: 'USER' as const }],
+      ['hesabı pasifleştirilir', { isActive: false }],
+    ])('istek User kilidinde beklerken aktörün %s → kilit açılınca 403; hesap, grant, belirteç ve denetimde sıfır değişiklik', async (_ad, demote) => {
+      const t = await hedef();
+      const fp = await fingerprint(t);
+      const aktor = await prisma.user.create({
+        data: { tenantId, email: `o5b-gecici-${randomUUID().slice(0, 6)}-${suffix}@example.test`, name: 'Gecici', surname: 'Admin', role: 'ADMIN' },
+      });
+      const token = await tokenFor(aktor.id);
+      const before = await snapshot(t);
+      const holder = holdInTx(async (tx) => { await tx.user.update({ where: { id: aktor.id }, data: demote }); });
+      await holder.readyNow;
+      // supertest isteği then() çağrılınca gönderir: engel commit etmeden ÖNCE başlat (ön kontroller eski değerle geçsin).
+      const p = request(server()).post(`/staff/${t.staffId}/account-reopen`).set(bearer(token)).send({ reviewFingerprint: fp, keepGrantIds: [] })
+        .then((r) => r);
+      const waiting = await waitForLockWaiters(1, `query ILIKE '%"User"%' AND query ILIKE '%FOR UPDATE%'`);
+      holder.release();
+      await holder.done;
+      const res = await p;
+      expect(waiting).toBeGreaterThanOrEqual(1); // istek ön kontrolleri geçip User kilidinde gerçekten bekledi
+      expect({ status: res.status, code: res.body.code }).toEqual({ status: 403, code: 'STAFF_ACCOUNT_REOPEN_ADMIN_REQUIRED' });
+      expect(await prisma.user.findUniqueOrThrow({ where: { id: aktor.id }, select: { role: true, isActive: true } }))
+        .toEqual({ role: demote.role ?? 'ADMIN', isActive: demote.isActive ?? true });
+      const after = await snapshot(t);
+      expect(after).toEqual(before); // hesap, tokenVersion, grant, belirteç, kart, atama, denetim aynı
+      expect(after.reopenAudits).toHaveLength(0);
+      expect(await prisma.auditLog.count({ where: { tenantId, userId: aktor.id } })).toBe(0);
+    });
   });
 
   describe('atomiklik', () => {
