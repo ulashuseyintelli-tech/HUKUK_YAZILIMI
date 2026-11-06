@@ -41,6 +41,7 @@ export interface OpeningExpenseEmailNotSentStatus {
 export interface OpeningExpenseAutomationStatus {
   caseId: string;
   clientAssigned: boolean;
+  expenseTarget?: { selectionRequired: boolean; available: boolean; message: string };
   openingRequestExists: boolean;
   activeExpenseRequestCount: number;
   automaticCalculation: { calculable: true } | OpeningExpenseNotCalculable;
@@ -109,8 +110,12 @@ export interface OpeningExpenseNotice {
  * yapılamadığını bildiriyorsa gösterilir. Talep varsa (otomatik ya da elle) uyarı gösterilmez.
  */
 export function openingExpenseNoticeOf(status: OpeningExpenseAutomationStatus | null | undefined): OpeningExpenseNotice | null {
-  if (!status || !status.clientAssigned) return null;
+  if (!status) return null;
   if (status.openingRequestExists || status.activeExpenseRequestCount > 0) return null;
+  if (status.expenseTarget && (!status.expenseTarget.available || status.expenseTarget.selectionRequired)) {
+    return { message: status.expenseTarget.message, requiredInfo: ['Masraf hedefini seçin.'] };
+  }
+  if (!status.clientAssigned) return null;
   const calculation = status.automaticCalculation;
   if (!calculation || calculation.calculable) return null;
   return { message: calculation.message, requiredInfo: calculation.requiredInfo ?? [] };

@@ -239,6 +239,7 @@ describeWithDisposableDb('Aşama masraf seti — dövizli dosyada oranlı kalem 
   const openTryCaseWithoutOpeningRequest = async (label: string) => {
     const caseId = await openCase(label, { currency: 'TRY', dues: [principal(10_000)] });
     await prisma.case.update({ where: { id: caseId }, data: { clientId } });
+    await prisma.caseClient.create({ data: { caseId, clientId, role: 'ALACAKLI' } });
     expect(await expenseFootprint(caseId)).toEqual(EMPTY_FOOTPRINT);
     return caseId;
   };

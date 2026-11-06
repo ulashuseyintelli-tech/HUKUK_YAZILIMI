@@ -77,8 +77,8 @@ export function checkStageExpenseIdempotencyKey(raw: unknown): StageExpenseIdemp
  * - ExpenseRequestService.createStageExpenseSet()
  * </remarks>
  */
-export function stageExpenseRequestFingerprint(input: { readonly caseId: string; readonly stageCode: string }): string {
-  const canonical = JSON.stringify({ caseId: input.caseId, stageCode: input.stageCode });
+export function stageExpenseRequestFingerprint(input: { readonly caseId: string; readonly stageCode: string; readonly clientId?: string }): string {
+  const canonical = JSON.stringify({ caseId: input.caseId, stageCode: input.stageCode, ...(input.clientId !== undefined ? { clientId: input.clientId } : {}) });
   return createHash('sha256').update(canonical).digest('hex');
 }
 

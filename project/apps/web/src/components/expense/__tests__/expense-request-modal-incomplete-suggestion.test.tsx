@@ -100,7 +100,7 @@ const renderModal = (initialPackageCode: string = OPENING) =>
       isOpen
       onClose={() => undefined}
       caseId="case-1"
-      clientId="client-1"
+      clientId="client-1" targetClients={[{ clientId: "client-1", name: "Müvekkil" }]}
       clientName="Müvekkil A.Ş."
       caseFileNumber="2026/1"
       initialPackageCode={initialPackageCode}
@@ -254,7 +254,7 @@ describe("ExpenseRequestModal — paket önerisi", () => {
       renderModal();
       await screen.findByTestId("paket-oneri-eksik");
 
-      fireEvent.change(screen.getByRole("combobox"), { target: { value: SEIZURE } });
+      fireEvent.change(screen.getByRole("combobox", { name: "Masraf Paketi" }), { target: { value: SEIZURE } });
 
       await screen.findByText("Haciz Harcı");
       expect(screen.queryByTestId("paket-oneri-eksik")).toBeNull();
@@ -272,7 +272,7 @@ describe("ExpenseRequestModal — paket önerisi", () => {
       renderModal();
       await screen.findByTestId("paket-oneri-eksik");
 
-      fireEvent.change(screen.getByRole("combobox"), { target: { value: SEIZURE } });
+      fireEvent.change(screen.getByRole("combobox", { name: "Masraf Paketi" }), { target: { value: SEIZURE } });
 
       await screen.findByText("Kalem bulunamadı");
       expect(screen.queryByTestId("paket-oneri-eksik")).toBeNull();
@@ -328,7 +328,7 @@ describe("ExpenseRequestModal — paket önerisi", () => {
       await waitFor(() => expect((screen.getAllByRole("spinbutton")[0] as HTMLInputElement).value).toBe(""));
       fireEvent.click(screen.getByRole("button", { name: /Paket Seç/ }));
 
-      expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("");
+      expect((screen.getByRole("combobox", { name: "Masraf Paketi" }) as HTMLSelectElement).value).toBe("");
       expect(screen.queryByTestId("paket-oneri-eksik")).toBeNull();
       expect(screen.queryByTestId("paket-kalem-hesaplanamadi")).toBeNull();
       expect(screen.queryByTestId("masraf-toplam-gosterilemez")).toBeNull();
@@ -354,7 +354,7 @@ describe("ExpenseRequestModal — paket önerisi", () => {
     renderModal();
     await screen.findByText("Peşin Harç");
 
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: SEIZURE } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Masraf Paketi" }), { target: { value: SEIZURE } });
 
     await screen.findByText("Kalem bulunamadı");
     expect(alertSpy).toHaveBeenCalledWith("Masraf hesaplama hatası: Sunucu hatası");

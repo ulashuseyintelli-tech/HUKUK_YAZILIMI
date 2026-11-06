@@ -240,6 +240,7 @@ describe('ExpenseRequestService — açılış talebinin e-posta durumu ve takip
 
   function makeService() {
     const prisma: any = {
+      caseClient: { findMany: jest.fn().mockResolvedValue([{ clientId: 'client-1', role: 'ALACAKLI', client: { tenantId: TENANT, name: 'Client', displayName: null } }]) },
       case: { findFirst: jest.fn().mockResolvedValue({ clientId: 'client-1', currency: 'TRY', dues: [{ currency: 'TRY' }], claimItems: [] }) },
       expenseRequest: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(1) },
       task: { create: jest.fn().mockResolvedValue({ id: 'task-1' }) },

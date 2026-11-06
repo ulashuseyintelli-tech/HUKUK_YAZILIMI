@@ -424,10 +424,6 @@ export class WorkflowEngine {
     action: string,
     notificationId: string,
   ): Promise<boolean> {
-    const caseRow = await this.prisma.case.findFirst({ where: { id: caseId, tenantId }, select: { clientId: true } });
-    if (!caseRow?.clientId) {
-      return true; // eski davranış: müvekkilsiz dosyada set yazılmaz
-    }
     try {
       await this.expenseRequestService.createStageExpenseSet(caseId, expenseStageCode, tenantId, 'system', {
         idempotencyKey: eventIdempotencyKey(action, notificationId),
@@ -481,7 +477,7 @@ export class WorkflowEngine {
     // Get case data for tenant info
     const caseData = await this.prisma.case.findFirst({
       where: { id: caseId, tenantId },
-      select: { tenantId: true, clientId: true },
+      select: { tenantId: true },
     });
 
     if (!caseData) {
@@ -511,7 +507,7 @@ export class WorkflowEngine {
     // (aynı aşama değişimi tekrar işlenirse ikinci talep yazılabilir); anahtarlı koruma yalnız POST .../stage/:stageCode
     // çağıranlarındadır. Bu yolun mükerrer kuralı ayrı owner kararıdır.
     const expenseStageCode = STAGE_TO_EXPENSE_CODE[newStage];
-    if (expenseStageCode && caseData?.tenantId && caseData?.clientId) {
+    if (expenseStageCode && caseData?.tenantId) {
       this.expenseRequestService
         .createStageExpenseSet(caseId, expenseStageCode, caseData.tenantId, 'system')
         .then(() => {

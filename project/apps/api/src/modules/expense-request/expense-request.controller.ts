@@ -72,7 +72,7 @@ export class ExpenseRequestController {
     @Req() req: AuthRequest,
     @Body() dto: {
       caseId: string;
-      clientId: string;
+      clientId?: string;
       packageCode: string;
       items: Array<{
         itemCode: string;
@@ -138,8 +138,8 @@ export class ExpenseRequestController {
    * POST /expense-requests/case/:caseId/opening
    */
   @Post('case/:caseId/opening')
-  async createOpeningExpenses(@Req() req: AuthRequest, @Param('caseId') caseId: string) {
-    return this.service.createOpeningExpenseSet(caseId, req.user.tenantId, req.user.id);
+  async createOpeningExpenses(@Req() req: AuthRequest, @Param('caseId') caseId: string, @Body() body?: { clientId?: unknown }) {
+    return this.service.createOpeningExpenseSet(caseId, req.user.tenantId, req.user.id, body?.clientId);
   }
 
   /**
@@ -164,10 +164,11 @@ export class ExpenseRequestController {
     @Req() req: AuthRequest,
     @Param('caseId') caseId: string,
     @Param('stageCode') stageCode: string,
-    @Body() body?: { idempotencyKey?: unknown },
+    @Body() body?: { idempotencyKey?: unknown; clientId?: unknown },
   ) {
     return this.service.createStageExpenseSet(caseId, stageCode, req.user.tenantId, req.user.id, {
       idempotencyKey: body?.idempotencyKey,
+      clientId: body?.clientId,
     });
   }
 

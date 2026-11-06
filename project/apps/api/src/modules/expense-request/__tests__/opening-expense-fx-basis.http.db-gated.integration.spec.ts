@@ -348,12 +348,26 @@ describeWithDisposableDb('Açılış masraf talebi — dövizli dosyada peşin h
     expect(retry.body.message).toContain(context);
   });
 
-  it('müvekkilsiz dövizli dosya: otomatik talep zaten denenmez (mevcut davranış); yanıtta sonuç alanı yoktur', async () => {
+  it('3b: çok alacaklı dosya açılır; masraf açık seçimden önce oluşturulmaz veya gönderilmez', async () => {
+    const second = await prisma.client.create({ data: { tenantId, type: 'COMPANY', displayName: '3b ikinci alacaklı' } });
+    const opened = await openCase('3b-cok-alacakli', { currency: 'TRY', sendExpenseEmail: true, dues: [principal(10_000)], creditors: [
+      { id: clientId, type: 'COMPANY', name: 'Birinci' }, { id: second.id, type: 'COMPANY', name: 'İkinci' },
+    ] });
+    expect(opened.openingExpenseRequest).toMatchObject({ status: 'NOT_CREATED', reasonCode: 'EXPENSE_TARGET_REQUIRED', expenseEmailRequested: true, expenseEmailSent: false });
+    expect(await expenseFootprint(opened.id)).toEqual({ requests: [], journalEntries: 0 });
+    const status = await get(`/expense-requests/case/${opened.id}/opening-status`);
+    expect(status.body.expenseTarget).toMatchObject({ selectionRequired: true, available: true });
+    expect(status.body.expenseTarget).not.toHaveProperty('candidates');
+    const explicit = await post(`/expense-requests/case/${opened.id}/opening`, { clientId: second.id });
+    expect(explicit.status).toBe(201); expect(explicit.body.clientId).toBe(second.id);
+  });
+
+  it('3b: canonical hedefi olmayan dosyada kayıt yoktur; oluşturulmadı nedeni bildirilir', async () => {
     const opened = await openCase('fx-muvekkilsiz', { currency: 'USD', subCategory: 'DOVIZ', dues: [principal(10_000)] });
 
     await waitForLaterControlCase('fx-muvekkilsiz');
     expect(await expenseFootprint(opened.id)).toEqual({ requests: [], journalEntries: 0 });
-    expect(opened.openingExpenseRequest).toBeUndefined();
+    expect(opened.openingExpenseRequest).toMatchObject({ status: 'NOT_CREATED', reasonCode: 'EXPENSE_TARGET_MISSING', expenseEmailSent: false });
     const status = await get(`/expense-requests/case/${opened.id}/opening-status`);
     expect(status.body).toMatchObject({ clientAssigned: false, openingRequestExists: false, activeExpenseRequestCount: 0 });
   });

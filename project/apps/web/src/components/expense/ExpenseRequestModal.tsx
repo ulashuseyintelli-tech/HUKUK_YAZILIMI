@@ -12,6 +12,7 @@ interface ExpenseRequestModalProps {
   caseId: string;
   clientId: string;
   clientName: string;
+  targetClients: ReadonlyArray<{ clientId: string; name: string }>;
   caseFileNumber: string;
   executionFileNumber?: string;
   onSuccess?: () => void;
@@ -51,12 +52,21 @@ export function ExpenseRequestModal({
   caseId,
   clientId,
   clientName,
+  targetClients,
   caseFileNumber,
   executionFileNumber,
   onSuccess,
   initialPackageCode,
   expenseRequestId,
 }: ExpenseRequestModalProps) {
+  const [selectedClientId, setSelectedClientId] = useState('');
+  const target = targetClients.find(row => row.clientId === selectedClientId);
+  useEffect(() => {
+    setSelectedClientId(clientId || (targetClients.length === 1 ? targetClients[0].clientId : ''));
+    createdRequestRef.current = null;
+    setCreatedRequestId(null);
+    setSendState(null);
+  }, [caseId, clientId, isOpen]);
   // Paket modu vs manuel mod
   const [mode, setMode] = useState<"package" | "manual">(initialPackageCode ? "package" : "manual");
   const [packages, setPackages] = useState<CostPackage[]>([]);
@@ -239,6 +249,10 @@ export function ExpenseRequestModal({
     if (submittingRef.current) return; // çift tıklama / eşzamanlı istek: ikinci talep ya da ikinci gönderim yok
 
     if (createdRequestRef.current === null) {
+      if (!target) {
+        alert('Masraf talebi için dosyaya bağlı uygun hedef müvekkili seçin.');
+        return;
+      }
       if (mode === "manual" && items.some((item) => !item.description || item.amount <= 0)) {
         alert("Lütfen tüm kalemleri doldurun");
         return;
@@ -261,7 +275,7 @@ export function ExpenseRequestModal({
           // Paket modunda - yeni API kullan
           request = await api.createExpenseRequestFromPackage({
             caseId,
-            clientId,
+            clientId: selectedClientId,
             packageCode: selectedPackage,
             items: computedItems.map(item => ({
               itemCode: item.itemCode,
@@ -282,7 +296,7 @@ export function ExpenseRequestModal({
           // Manuel mod - eski API
           request = await api.createExpenseRequest({
             caseId,
-            clientId,
+            clientId: selectedClientId,
             items,
             dueDate: dueDate || undefined,
             notes: paidByLawyer 
@@ -334,7 +348,7 @@ export function ExpenseRequestModal({
             <div>
               <h2 className="text-lg font-semibold text-gray-900">Masraf Talebi Oluştur</h2>
               <p className="text-sm text-gray-500 mt-0.5">
-                {clientName} • {executionFileNumber || caseFileNumber}
+                {target?.name || clientName} • {executionFileNumber || caseFileNumber}
               </p>
             </div>
             <button onClick={handleClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
@@ -355,6 +369,14 @@ export function ExpenseRequestModal({
         <div className="flex-1 overflow-y-auto p-5">
           {/* Talep oluşturulduktan sonra alanlar kilitlenir: yeniden deneme AYNI talebi kullanır, formdaki değer o talebe yansımaz */}
           <fieldset disabled={createdRequestId !== null} className="space-y-4 min-w-0">
+          <div>
+            <label htmlFor="expense-target" className="block text-sm font-medium">Masraf hedefi</label>
+            <select id="expense-target" value={target ? selectedClientId : ''} onChange={event => setSelectedClientId(event.target.value)} className="w-full border rounded px-3 py-2">
+              <option value="">Hedef müvekkili seçin</option>
+              {targetClients.map(row => <option key={row.clientId} value={row.clientId}>{row.name}</option>)}
+            </select>
+            {!target && <p role="status" className="text-sm text-amber-700">{targetClients.length ? 'Masraf talebi için hedef müvekkili seçin.' : 'Dosyaya bağlı uygun alacaklı yok; masraf talebi oluşturulamaz.'}</p>}
+          </div>
           {/* Mod Seçimi */}
           <div className="flex gap-2">
             <button
@@ -388,6 +410,7 @@ export function ExpenseRequestModal({
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Masraf Paketi</label>
                 <select
+                  aria-label="Masraf Paketi"
                   value={selectedPackage}
                   onChange={(e) => setSelectedPackage(e.target.value)}
                   disabled={loadingPackages}
@@ -688,7 +711,7 @@ export function ExpenseRequestModal({
           {(createdRequestId === null || (sendState !== null && sendState.kind !== "accepted" && (sendState.retryable || sendState.kind === 'approval')) || loading) && (
           <button
             onClick={handleSubmit}
-            disabled={loading || totalAmount <= 0 || packageIncomplete}
+            disabled={loading || totalAmount <= 0 || packageIncomplete || (createdRequestId === null && !target)}
             className="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {loading ? (
