@@ -89,7 +89,7 @@ const renderModal = (props: { initialPackageCode?: string; onClose?: () => void;
       onClose={props.onClose ?? (() => undefined)}
       onSuccess={props.onSuccess}
       caseId="case-1"
-      clientId="client-1"
+      clientId="client-1" targetClients={[{ clientId: "client-1", name: "Müvekkil" }]}
       clientName="Müvekkil A.Ş."
       caseFileNumber="2026/1"
       initialPackageCode={props.initialPackageCode}
@@ -552,7 +552,7 @@ describe("ExpenseRequestModal — Oluştur ve Gönder", () => {
     await fillManualAndCheckSend(); // kutu işaretli, elle kip
     fireEvent.click(screen.getByRole("button", { name: "Paket Seç" }));
     await screen.findByText("Başvurma Harcı").catch(() => undefined);
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "UYAP_PRE" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Masraf Paketi" }), { target: { value: "UYAP_PRE" } });
     await screen.findByText("Başvurma Harcı");
 
     expect((screen.getByLabelText(/Oluşturduktan sonra e-posta gönderim onayı iste/) as HTMLInputElement).checked).toBe(false);

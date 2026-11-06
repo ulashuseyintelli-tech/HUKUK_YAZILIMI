@@ -2389,7 +2389,7 @@ class ApiClient {
     return this.request<any[]>(`/expense-requests/by-case/${caseId}`);
   }
 
-  async createExpenseRequest(data: { caseId: string; clientId: string; items: any[]; dueDate?: string; notes?: string; paidByLawyer?: boolean }) {
+  async createExpenseRequest(data: { caseId: string; clientId?: string; items: any[]; dueDate?: string; notes?: string; paidByLawyer?: boolean }) {
     return this.request<any>('/expense-requests', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -2398,7 +2398,7 @@ class ApiClient {
 
   async createExpenseRequestFromPackage(data: {
     caseId: string;
-    clientId: string;
+    clientId?: string;
     packageCode: string;
     items: Array<{
       itemCode: string;
@@ -2480,9 +2480,10 @@ class ApiClient {
   /**
    * Otomatik açılış masraf seti oluştur
    */
-  async createOpeningExpenses(caseId: string) {
+  async createOpeningExpenses(caseId: string, clientId?: string) {
     return this.request<any>(`/expense-requests/case/${caseId}/opening`, {
       method: 'POST',
+      body: JSON.stringify({ clientId }),
     });
   }
 
@@ -2494,10 +2495,10 @@ class ApiClient {
    * Sunucu aynı büro + anahtar + aynı içerikte yeni talep yazmaz, mevcut talebi `idempotentReplay: true` ile döndürür;
    * aynı anahtar farklı dosya / aşamayla gelirse 409. OPENING aşaması anahtar kabul etmez (açılış ucu kullanılır).
    */
-  async createStageExpenses(caseId: string, stageCode: string, idempotencyKey: string) {
+  async createStageExpenses(caseId: string, stageCode: string, idempotencyKey: string, clientId?: string) {
     return this.request<any>(`/expense-requests/case/${caseId}/stage/${stageCode}`, {
       method: 'POST',
-      body: JSON.stringify({ idempotencyKey }),
+      body: JSON.stringify({ idempotencyKey, clientId }),
     });
   }
 
@@ -5588,7 +5589,7 @@ declare module './api' {
     getExpenseRequests(params?: { caseId?: string; clientId?: string; status?: ExpenseRequestStatus }): Promise<ExpenseRequest[]>;
     getExpenseRequest(id: string): Promise<ExpenseRequest>;
     getExpenseRequestsByCase(caseId: string): Promise<ExpenseRequest[]>;
-    createExpenseRequest(data: { caseId: string; clientId: string; items: ExpenseItem[]; dueDate?: string; notes?: string }): Promise<ExpenseRequest>;
+    createExpenseRequest(data: { caseId: string; clientId?: string; items: ExpenseItem[]; dueDate?: string; notes?: string }): Promise<ExpenseRequest>;
     updateExpenseRequest(id: string, data: Partial<ExpenseRequest>): Promise<ExpenseRequest>;
     sendExpenseRequest(id: string, channel: string): Promise<ExpenseRequest>;
     remindExpenseRequest(id: string): Promise<ExpenseRequest>;

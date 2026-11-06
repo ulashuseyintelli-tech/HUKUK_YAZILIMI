@@ -10,6 +10,7 @@
  * masraf ya da e-posta hatası dosya açılışını bozmaz.
  */
 import { CaseService } from '../case.service';
+import { ConflictException } from '@nestjs/common';
 import {
   describeOpeningExpenseEmailFailure,
   OPENING_EXPENSE_EMAIL_WAIT_MS,
@@ -43,6 +44,15 @@ const NOT_SENT = (reasonCode: Parameters<typeof describeOpeningExpenseEmailFailu
 };
 
 describe('CaseService — otomatik açılış masraf akışının sonucu', () => {
+  it.each([false, true])('3b: hedef seçimi gerektiğinde talep oluşturuldu/gönderildi denmez (email=%s)', async shouldSend => {
+    const expense = {
+      createOpeningExpenseSet: jest.fn().mockRejectedValue(new ConflictException({ code: 'EXPENSE_TARGET_REQUIRED', message: 'Hedef müvekkili seçin.' })),
+      sendExpenseEmail: jest.fn(), recordOpeningExpenseEmailNotSent: jest.fn(),
+    };
+    const { run, log } = build(expense);
+    expect(await run(shouldSend)).toMatchObject({ status: 'NOT_CREATED', reasonCode: 'EXPENSE_TARGET_REQUIRED', expenseEmailSent: false });
+    expect(log).not.toHaveBeenCalled(); expect(expense.sendExpenseEmail).not.toHaveBeenCalled(); expect(expense.recordOpeningExpenseEmailNotSent).not.toHaveBeenCalled();
+  });
   describe('e-posta istenmedi ("Sadece Oluştur")', () => {
     it('talep oluşturulur; e-posta DENENMEZ, sonuç üretilmez, günlük bugünkü satırı yazar', async () => {
       const expense = {

@@ -53,6 +53,7 @@ import { resolveInitialPolicy } from "../interest-engine/interest-strategy.confi
 import { mapDtoCaseTypeToInterestCaseType } from "./case-type-mapping";
 import { validateResponsibleSelection } from "./responsible-candidates.service"; // M2-A3a: create'te ortak Dosya Sorumlusu validator
 import { ExpenseRequestService } from "../expense-request/expense-request.service";
+import { loadExpenseTargetStatus, EXPENSE_TARGET_MISSING, EXPENSE_TARGET_REQUIRED } from '../expense-request/expense-target';
 import type { ExpenseSendApprovalOutcome } from '../client-notification/expense-send-approval.service';
 import { buildOpeningExpenseNotCreatedOutcome, OpeningExpenseNotCreatedOutcome } from "../expense-request/opening-expense-basis";
 import {
@@ -2207,6 +2208,15 @@ export class CaseService {
     expenseEmailRequested: boolean,
   ): Promise<OpeningExpenseNotCreatedOutcome | undefined> {
     try {
+      const target = await loadExpenseTargetStatus(this.prisma, caseId, tenantId);
+      if (!target.available || target.selectionRequired) {
+        return {
+          status: 'NOT_CREATED', reasonCode: target.selectionRequired ? EXPENSE_TARGET_REQUIRED : EXPENSE_TARGET_MISSING,
+          message: target.message, requiredInfo: ['Dosyanın Finans bölümünden masraf hedefini seçin.'],
+          notCalculableItems: [], caseCurrency: '', basisCurrencies: [], tariffCurrency: 'TRY',
+          expenseEmailRequested, expenseEmailSent: false,
+        };
+      }
       const basis = await this.expenseRequestService.evaluateOpeningExpenseBasisForCase(caseId, tenantId);
       if (basis.calculable) return undefined;
       this.logger.warn(
@@ -2232,12 +2242,21 @@ export class CaseService {
     fileNumber: string,
     shouldSendEmail: boolean,
     requesterUserId?: string,
-  ): Promise<OpeningExpenseEmailNotSentOutcome | ExpenseSendApprovalOutcome | undefined> {
+  ): Promise<OpeningExpenseNotCreatedOutcome | OpeningExpenseEmailNotSentOutcome | ExpenseSendApprovalOutcome | undefined> {
     let expenseResult: { id?: string } | null | undefined;
     try {
       expenseResult = await this.expenseRequestService.createOpeningExpenseSet(caseId, tenantId, 'system');
     } catch (err: any) {
       this.logger.warn(`Otomatik masraf seti oluşturulamadı: ${err?.message ?? err}`);
+      const code = err?.getResponse?.()?.code;
+      if (code === EXPENSE_TARGET_REQUIRED || code === EXPENSE_TARGET_MISSING) {
+        return {
+          status: 'NOT_CREATED', reasonCode: code, message: err.getResponse().message,
+          requiredInfo: ['Dosyanın Finans bölümünden masraf hedefini seçin.'],
+          notCalculableItems: [], caseCurrency: '', basisCurrencies: [], tariffCurrency: 'TRY',
+          expenseEmailRequested: shouldSendEmail, expenseEmailSent: false,
+        };
+      }
       return shouldSendEmail
         ? buildOpeningExpenseEmailNotSentOutcome(describeOpeningExpenseEmailFailure('OPENING_REQUEST_NOT_CREATED'))
         : undefined;
@@ -2281,8 +2300,8 @@ export class CaseService {
   /// E-posta denemesinin sonucunu yanıtta bildirebilmek için en çok OPENING_EXPENSE_EMAIL_WAIT_MS bekler. Süre dolarsa
   /// "sonuç henüz belli değil" döner; deneme arka planda sürer ve sonucu dosya sayfası + görev üzerinden görünür.
   private async awaitOpeningExpenseEmailOutcome(
-    automation: Promise<OpeningExpenseEmailNotSentOutcome | ExpenseSendApprovalOutcome | undefined>,
-  ): Promise<OpeningExpenseEmailNotSentOutcome | ExpenseSendApprovalOutcome | OpeningExpenseEmailResultPendingOutcome | undefined> {
+    automation: Promise<OpeningExpenseNotCreatedOutcome | OpeningExpenseEmailNotSentOutcome | ExpenseSendApprovalOutcome | undefined>,
+  ): Promise<OpeningExpenseNotCreatedOutcome | OpeningExpenseEmailNotSentOutcome | ExpenseSendApprovalOutcome | OpeningExpenseEmailResultPendingOutcome | undefined> {
     let timer: NodeJS.Timeout | undefined;
     const timeout = new Promise<OpeningExpenseEmailResultPendingOutcome>((resolve) => {
       timer = setTimeout(() => resolve(buildOpeningExpenseEmailResultPendingOutcome()), OPENING_EXPENSE_EMAIL_WAIT_MS);
@@ -3021,13 +3040,11 @@ export class CaseService {
 
         // Peşin harç matrahı TL olarak hesaplanamıyorsa (dövizli / karma dosya) yanlış ya da eksik tutarlı talep kayda
         // geçmez: otomatik talep DENENMEZ, dosya açılışı engellenmez, neden ve gereken bilgi yanıtta bildirilir.
-        if (result.case.clientId) {
-          openingExpenseRequest = await this.resolveOpeningExpenseNotCreated(tenantId, result.case.id, dto.sendExpenseEmail === true);
-        }
+        openingExpenseRequest = await this.resolveOpeningExpenseNotCreated(tenantId, result.case.id, dto.sendExpenseEmail === true);
 
         // Otomatik açılış masraf seti oluştur
         // Case oluşturulduğunda OPENING masrafları otomatik oluşturulur
-        if (result.case.clientId && !openingExpenseRequest) {
+        if (!openingExpenseRequest) {
           const shouldSendEmail = dto.sendExpenseEmail === true;
           // E-posta istenmediyse eskisi gibi arka planda çalışır. Beklenmeyen hata dosya açılışını bozmaz.
           const automation = this.runOpeningExpenseAutomation(tenantId, result.case.id, result.case.fileNumber, shouldSendEmail, userId).catch(

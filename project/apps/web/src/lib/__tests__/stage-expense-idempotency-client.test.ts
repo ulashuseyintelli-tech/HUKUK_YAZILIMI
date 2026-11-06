@@ -29,6 +29,13 @@ describe('api.createStageExpenses — çağıranın anahtarı aynen gider', () =
 });
 
 describe('startStageExpenseOperation — işlem başına tek anahtar', () => {
+  it('3b: seçilen hedef aynı işlem boyunca anahtarla birlikte korunur', async () => {
+    const request = spyRequest();
+    const operation = startStageExpenseOperation('case-1', 'SEIZURE', 'client-b');
+    await operation.submit(); await operation.submit();
+    expect(request.mock.calls.every(([, init]) => JSON.parse(String((init as RequestInit)?.body)).clientId === 'client-b')).toBe(true);
+    expect(sentKeys(request)).toEqual([operation.idempotencyKey, operation.idempotencyKey]);
+  });
   it('TEKRAR = AYNI ANAHTAR: aynı işlemin submit()’i çift tıklamada ve yeniden denemede aynı anahtarı gönderir', async () => {
     const request = spyRequest();
     const operation = startStageExpenseOperation('case-1', 'SEIZURE');

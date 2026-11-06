@@ -65,6 +65,7 @@ export type OpeningExpenseBasisDecision = OpeningExpenseBasisCalculable | Openin
 export interface OpeningExpenseAutomationStatus {
   readonly caseId: string;
   readonly clientAssigned: boolean;
+  readonly expenseTarget?: Omit<import('./expense-target').ExpenseTargetStatus, 'candidates'>;
   /** İptal edilmemiş OPENING aşamalı talep var mı? */
   readonly openingRequestExists: boolean;
   /** Dosyadaki iptal edilmemiş masraf talebi sayısı (elle oluşturulanlar dahil). */
@@ -75,7 +76,8 @@ export interface OpeningExpenseAutomationStatus {
 }
 
 /** Dosya açılış yanıtındaki sonuç: otomatik açılış masraf talebi OLUŞTURULMADI. */
-export interface OpeningExpenseNotCreatedOutcome extends Omit<OpeningExpenseBasisNotCalculable, 'calculable'> {
+export interface OpeningExpenseNotCreatedOutcome extends Omit<OpeningExpenseBasisNotCalculable, 'calculable' | 'reasonCode'> {
+  readonly reasonCode: OpeningExpenseBasisNotCalculable['reasonCode'] | 'EXPENSE_TARGET_REQUIRED' | 'EXPENSE_TARGET_MISSING';
   readonly status: 'NOT_CREATED';
   /** Kullanıcı masraf e-postası istemiş miydi? Talep oluşmadığı için e-posta GÖNDERİLMEZ. */
   readonly expenseEmailRequested: boolean;

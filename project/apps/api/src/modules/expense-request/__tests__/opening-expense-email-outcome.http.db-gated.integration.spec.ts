@@ -661,11 +661,11 @@ describeWithDisposableDb('Açılış masraf talebi — masraf e-postası gönder
       expect(JSON.stringify(res.body)).not.toContain('openingRequestEmail');
     });
 
-    it('müvekkilsiz dosya: e-posta istense de açılış talebi ve e-posta sonucu üretilmez (mevcut davranış)', async () => {
+    it('3b: canonical hedef yoksa talep/e-posta üretilmez; NOT_CREATED nedeni bildirilir', async () => {
       const office = await setupOffice('muvekkilsiz', { ...READY, accounts: [] });
       const run = await openCase(office, { sendExpenseEmail: true, creditors: [] });
 
-      expect(run.opened.openingExpenseRequest).toBeUndefined();
+      expect(run.opened.openingExpenseRequest).toMatchObject({ status: 'NOT_CREATED', reasonCode: 'EXPENSE_TARGET_MISSING', expenseEmailSent: false });
       expect(await footprint(office, run.opened.id)).toEqual({ requests: [], notifications: [], tasks: [], journalEntries: 0 });
     });
 

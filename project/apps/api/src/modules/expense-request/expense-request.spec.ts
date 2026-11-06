@@ -99,6 +99,7 @@ const mockPrismaService: any = {
   client: {
     findFirst: jest.fn(),
   },
+  caseClient: { findMany: jest.fn() },
   // Paket modu talebi: paket tanımı okunur (bulunamazsa eksik-öneri denetimi atlanır — bugünkü davranış)
   costPackage: {
     findFirst: jest.fn(),
@@ -163,6 +164,14 @@ describe('ExpenseRequestService - Property Tests', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    // Explicit canonical relationship fixture; legacy Case.clientId is not authority.
+    mockPrismaService.caseClient.findMany.mockReset().mockResolvedValue([{ clientId: 'client-1', role: 'ALACAKLI', client: { tenantId: 'tenant-1', name: 'Test Client', displayName: null } }]);
+    mockPrismaService.$queryRaw.mockReset().mockImplementation((strings: TemplateStringsArray) => {
+      const sql = strings.join('?');
+      if (sql.includes('FROM "CaseClient"')) return Promise.resolve([{ clientId: 'client-1', role: 'ALACAKLI', tenantId: 'tenant-1', name: 'Test Client', displayName: null }]);
+      return Promise.resolve([{ id: sql.includes('FROM "Case"') ? 'case-1' : 'exp-1' }]);
+    });
+    mockPrismaService.expenseRequest.findFirst.mockReset();
     mockJournalWriter.write.mockReset();
     mockJournalWriter.write.mockResolvedValue(defaultJournalWriteResult);
     mockPrismaService.expensePayment.create.mockResolvedValue({ id: 'pay-default', createdAt: PAYMENT_CREATED_AT });
@@ -565,12 +574,14 @@ describe('ExpenseRequestService - Property Tests', () => {
       ).rejects.toThrow('Bu takip için açılış masrafları zaten oluşturulmuş');
     });
 
-    it('should throw error if case has no client', async () => {
+    it('should reject when no canonical creditor exists', async () => {
       mockPrismaService.case.findFirst.mockResolvedValue({ ...mockCase, clientId: null });
+      mockPrismaService.expenseRequest.findFirst.mockResolvedValue(null);
+      mockPrismaService.$queryRaw.mockImplementation((strings: TemplateStringsArray) => Promise.resolve(strings.join('?').includes('FROM "CaseClient"') ? [] : [{ id: 'case-1' }]));
 
       await expect(
         service.createOpeningExpenseSet('case-1', 'tenant-1', 'user-1')
-      ).rejects.toThrow('Takibe müvekkil atanmamış');
+      ).rejects.toThrow('Dosyaya bağlı uygun alacaklı bulunamadı');
     });
 
     it.each([
@@ -666,7 +677,6 @@ describe('ExpenseRequestService - Property Tests', () => {
     const legacyCase = { ...mockCase, currency: 'USD', claimItems: [{ itemType: 'PRINCIPAL', amount: new Decimal(100000), currency: 'TRY' }] };
 
     const expectNothingWritten = () => {
-      expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
       expect(mockPrismaService.expenseRequest.create).not.toHaveBeenCalled();
       expect(mockPrismaService.expenseRequestItem.create).not.toHaveBeenCalled();
       expect(mockPrismaService.expenseAuditLog.create).not.toHaveBeenCalled();
@@ -736,7 +746,7 @@ describe('ExpenseRequestService - Property Tests', () => {
 
       expect(result).toEqual({ id: 'opening-via-stage' });
       expect(opening).toHaveBeenCalledTimes(1);
-      expect(opening).toHaveBeenCalledWith('case-1', 'tenant-1', 'user-1');
+      expect(opening).toHaveBeenCalledWith('case-1', 'tenant-1', 'user-1', undefined);
       // Aşama yolunun kendi okuma / yazma adımları hiç çalışmaz
       expect(mockPrismaService.case.findFirst).not.toHaveBeenCalled();
       expectNothingWritten();
@@ -761,7 +771,7 @@ describe('ExpenseRequestService - Property Tests', () => {
 
   describe('Aşama masraf seti — istek anahtarı (idempotency)', () => {
     const tryCase = { ...mockCase, currency: 'TRY', claimItems: [{ itemType: 'PRINCIPAL', amount: new Decimal(100000), currency: 'TRY' }] };
-    const fingerprintOf = (caseId: string, stageCode: string) => stageExpenseRequestFingerprint({ caseId, stageCode });
+    const fingerprintOf = (caseId: string, stageCode: string) => stageExpenseRequestFingerprint({ caseId, stageCode, clientId: 'client-1' });
     const existingRow = (overrides: Record<string, unknown> = {}) => ({
       ...mockExpenseRequest,
       id: 'keyed-1',
@@ -772,14 +782,13 @@ describe('ExpenseRequestService - Property Tests', () => {
       ...overrides,
     });
     const expectNothingWritten = () => {
-      expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
       expect(mockPrismaService.expenseRequest.create).not.toHaveBeenCalled();
       expect(mockPrismaService.expenseRequestItem.create).not.toHaveBeenCalled();
       expect(mockPrismaService.expenseAuditLog.create).not.toHaveBeenCalled();
       expect(mockJournalWriter.write).not.toHaveBeenCalled();
     };
 
-    it('aynı büro + anahtar + aynı içerik: mevcut talep tekrar olarak döner; işlem, kilit, talep, kalem, denetim ve günlük yazımı YOK', async () => {
+    it('aynı büro + anahtar + aynı içerik: mevcut talep kilit altında döner; talep, kalem, denetim ve günlük yazımı YOK', async () => {
       mockPrismaService.case.findFirst.mockResolvedValue(tryCase);
       mockPrismaService.expenseRequest.findFirst.mockResolvedValue(existingRow());
 
@@ -787,7 +796,7 @@ describe('ExpenseRequestService - Property Tests', () => {
 
       expect(result).toEqual(expect.objectContaining({ id: 'keyed-1', idempotentReplay: true }));
       expect(mockPrismaService.expenseRequest.findFirst).toHaveBeenCalledWith({ where: { tenantId: 'tenant-1', idempotencyKey: 'key-1' } });
-      expect(mockPrismaService.$executeRaw).not.toHaveBeenCalled();
+      expect(mockPrismaService.$executeRaw).toHaveBeenCalledTimes(1);
       expectNothingWritten();
     });
 
@@ -835,11 +844,10 @@ describe('ExpenseRequestService - Property Tests', () => {
       expect(strings.join('?')).toBe('SELECT pg_advisory_xact_lock(hashtextextended(?, 0))');
       expect(lockKey).toBe('expense-request-stage-key:tenant-1:key-new');
       const where = { tenantId: 'tenant-1', idempotencyKey: 'key-new' };
-      expect(mockPrismaService.expenseRequest.findFirst.mock.calls.map(([args]: [any]) => args.where)).toEqual([where, where]);
-      const [preCheckOrder, reCheckOrder] = mockPrismaService.expenseRequest.findFirst.mock.invocationCallOrder;
+      expect(mockPrismaService.expenseRequest.findFirst.mock.calls.map(([args]: [any]) => args.where)).toEqual([where]);
+      const [reCheckOrder] = mockPrismaService.expenseRequest.findFirst.mock.invocationCallOrder;
       const lockOrder = mockPrismaService.$executeRaw.mock.invocationCallOrder[0];
       const createOrder = mockPrismaService.expenseRequest.create.mock.invocationCallOrder[0];
-      expect(preCheckOrder).toBeLessThan(lockOrder);
       expect(lockOrder).toBeLessThan(reCheckOrder);
       expect(reCheckOrder).toBeLessThan(createOrder);
       expect(mockPrismaService.expenseRequest.create).toHaveBeenCalledWith(
@@ -851,7 +859,7 @@ describe('ExpenseRequestService - Property Tests', () => {
 
     it('kilit beklenirken başka istek aynı anahtarı yazmışsa: tekrar olarak döner; ikinci talep, kalem, denetim ve günlük yazılmaz', async () => {
       mockPrismaService.case.findFirst.mockResolvedValue(tryCase);
-      mockPrismaService.expenseRequest.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(existingRow({ id: 'keyed-race' }));
+      mockPrismaService.expenseRequest.findFirst.mockResolvedValue(existingRow({ id: 'keyed-race' }));
 
       const result = await service.createStageExpenseSet('case-1', 'SEIZURE', 'tenant-1', 'user-1', { idempotencyKey: 'key-1' });
 
@@ -866,7 +874,6 @@ describe('ExpenseRequestService - Property Tests', () => {
     it('benzersiz indeks son savunma: yazım P2002 verirse kazanan satır yeniden okunur ve tekrar olarak döner', async () => {
       mockPrismaService.case.findFirst.mockResolvedValue(tryCase);
       mockPrismaService.expenseRequest.findFirst
-        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(existingRow({ id: 'keyed-winner' }));
       mockPrismaService.expenseRequest.create.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: 'test' }));

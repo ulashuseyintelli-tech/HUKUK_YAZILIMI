@@ -2074,13 +2074,7 @@ export default function CaseDetailPage() {
         // TODO: UYAP gönderim işlemini başlat
       } else if (result.action === 'OPEN_EXPENSE_MODAL') {
         // Masraf talebi gerekiyor
-        const client = caseData.caseClients?.[0]?.client || caseData.client;
-        if (client) {
-          setExpenseClientId(client.id);
-          setExpenseClientName(client.displayName || client.name || '');
-          setExpensePackageCode('UYAP_PRE');
-          setExpenseModalOpen(true);
-        }
+        handleCreateExpenseRequest('UYAP_PRE');
       } else if (result.action === 'BLOCKED') {
         // Masraf ödenmemiş, engellendi
         alert(result.blockReason || 'Masraf avansı ödenmeden UYAP\'a gönderim yapılamaz.');
@@ -2094,13 +2088,10 @@ export default function CaseDetailPage() {
   // Masraf talebi oluştur (paket ile)
   const handleCreateExpenseRequest = (packageCode?: string) => {
     if (!caseData) return;
-    const client = caseData.caseClients?.[0]?.client || caseData.client;
-    if (client) {
-      setExpenseClientId(client.id);
-      setExpenseClientName(client.displayName || client.name || '');
-      setExpensePackageCode(packageCode || '');
-      setExpenseModalOpen(true);
-    }
+    setExpenseClientId('');
+    setExpenseClientName('');
+    setExpensePackageCode(packageCode || '');
+    setExpenseModalOpen(true);
   };
 
   const getValue = (field: keyof CaseDetail) => {
@@ -2723,14 +2714,7 @@ export default function CaseDetailPage() {
                 <span className="font-semibold text-green-800 text-[11px]">Müvekkiller</span>
                 <div className="flex items-center gap-1">
                   <button
-                    onClick={() => {
-                      const firstClient = caseData.caseClients?.[0]?.client || caseData.client;
-                      if (firstClient) {
-                        setExpenseClientId(firstClient.id);
-                        setExpenseClientName(firstClient.displayName || firstClient.name || '');
-                        setExpenseModalOpen(true);
-                      }
-                    }}
+                    onClick={() => handleCreateExpenseRequest()}
                     className="text-[9px] text-amber-600 hover:text-amber-700 hover:bg-amber-50 px-1.5 py-0.5 rounded flex items-center gap-0.5"
                     title="Masraf Talebi Oluştur"
                   >
@@ -4469,6 +4453,9 @@ export default function CaseDetailPage() {
           caseId={caseData.id}
           clientId={expenseClientId}
           clientName={expenseClientName}
+          targetClients={(caseData.caseClients || [])
+            .filter(row => ['ALACAKLI', 'ORTAK_ALACAKLI'].includes(row.role ?? '') && row.client)
+            .map(row => ({ clientId: row.client.id, name: row.client.displayName || row.client.name || 'Müvekkil' }))}
           caseFileNumber={caseData.fileNumber}
           executionFileNumber={caseData.executionFileNumber}
           initialPackageCode={expensePackageCode}

@@ -26,10 +26,10 @@ export interface StageExpenseOperation {
  * - (henüz çağıran bileşen yok: web'de `createStageExpenses`'i kullanan ekran bulunmuyor; yeni ekran bu yardımcıyı kullanmalı)
  * </remarks>
  */
-export function startStageExpenseOperation(caseId: string, stageCode: string): StageExpenseOperation {
+export function startStageExpenseOperation(caseId: string, stageCode: string, clientId?: string): StageExpenseOperation {
   const idempotencyKey = createIdempotencyKey('stage-expense');
   return {
     idempotencyKey,
-    submit: () => api.createStageExpenses(caseId, stageCode, idempotencyKey),
+    submit: () => api.createStageExpenses(caseId, stageCode, idempotencyKey, clientId),
   };
 }

@@ -52,6 +52,8 @@ import {
   stageExpenseRequestFingerprint,
 } from './stage-expense-idempotency';
 
+import { loadExpenseTargetStatus, resolveExpenseTarget } from './expense-target';
+
 const OPENING_EXPENSE_ALREADY_CREATED = 'Bu takip için açılış masrafları zaten oluşturulmuş';
 
 /**
@@ -71,7 +73,7 @@ export interface ExpenseItem {
 
 export interface CreateExpenseRequestDto {
   caseId: string;
-  clientId: string;
+  clientId?: string;
   items: ExpenseItem[];
   dueDate?: string;
   notes?: string;
@@ -266,23 +268,16 @@ export class ExpenseRequestService {
       return { canonicalCode: entry.code, label: entry.officeLabel, description, amount: item.amount };
     });
 
-    // Validate client exists
-    const client = await this.prisma.client.findFirst({
-      where: { id: dto.clientId, tenantId },
-    });
-    if (!client) {
-      throw new NotFoundException('Müvekkil bulunamadı');
-    }
-
     // Calculate total
     const totalAmount = normalizedItems.reduce((sum, item) => sum + item.amount, 0);
 
     const expenseRequest = await this.prisma.$transaction(async (tx) => {
+      const clientId = await resolveExpenseTarget(tx, dto.caseId, tenantId, dto.clientId);
       const created = await tx.expenseRequest.create({
         data: {
           tenantId,
           caseId: dto.caseId,
-          clientId: dto.clientId,
+          clientId,
           items: dto.items as any,
           totalAmount,
           dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
@@ -345,7 +340,7 @@ export class ExpenseRequestService {
    */
   async createFromPackage(tenantId: string, userId: string, dto: {
     caseId: string;
-    clientId: string;
+    clientId?: string;
     packageCode: string;
     items: Array<{
       itemCode: string;
@@ -367,14 +362,6 @@ export class ExpenseRequestService {
     });
     if (!caseItem) {
       throw new NotFoundException('Takip bulunamadı');
-    }
-
-    // Validate client exists
-    const client = await this.prisma.client.findFirst({
-      where: { id: dto.clientId, tenantId },
-    });
-    if (!client) {
-      throw new NotFoundException('Müvekkil bulunamadı');
     }
 
     // Boş / eksik tutar reddi: tutarı belirtilmemiş kalem 0 sayılarak kaydedilmez. Açıkça girilmiş sayı (0 dahil) bugünkü
@@ -417,11 +404,12 @@ export class ExpenseRequestService {
     }));
 
     const expenseRequest = await this.prisma.$transaction(async (tx) => {
+      const clientId = await resolveExpenseTarget(tx, dto.caseId, tenantId, dto.clientId);
       const created = await tx.expenseRequest.create({
         data: {
           tenantId,
           caseId: dto.caseId,
-          clientId: dto.clientId,
+          clientId,
           // Yeni alanlar (migration sonrası aktif olacak)
           // packageCode: dto.packageCode,
           // totalSuggested,
@@ -724,7 +712,7 @@ export class ExpenseRequestService {
   async getOpeningExpenseAutomationStatus(caseId: string, tenantId: string): Promise<OpeningExpenseAutomationStatus> {
     const caseItem = await this.prisma.case.findFirst({
       where: { id: caseId, tenantId },
-      select: { clientId: true },
+      select: { id: true },
     });
 
     if (!caseItem) {
@@ -753,6 +741,7 @@ export class ExpenseRequestService {
       }),
     ]);
 
+    const expenseTarget = await loadExpenseTargetStatus(this.prisma, caseId, tenantId);
     const lastEmailAttempt = unsentOpeningRequest?.auditLogs?.[0];
     const openingRequestEmail =
       lastEmailAttempt?.action === 'EMAIL_FAILED'
@@ -764,7 +753,10 @@ export class ExpenseRequestService {
 
     return {
       caseId,
-      clientAssigned: !!caseItem.clientId,
+      clientAssigned: expenseTarget.available,
+      ...(!expenseTarget.available || expenseTarget.selectionRequired ? {
+        expenseTarget: { available: expenseTarget.available, selectionRequired: expenseTarget.selectionRequired, message: expenseTarget.message },
+      } : {}),
       openingRequestExists: !!openingRequest,
       activeExpenseRequestCount,
       automaticCalculation,
@@ -850,12 +842,11 @@ export class ExpenseRequestService {
    * - ExpenseRequestService.createStageExpenseSet() → POST /expense-requests/case/:caseId/stage/OPENING
    * </remarks>
    */
-  async createOpeningExpenseSet(caseId: string, tenantId: string, userId: string) {
+  async createOpeningExpenseSet(caseId: string, tenantId: string, userId: string, clientId?: unknown) {
     // Case ve client bilgilerini al
     const caseItem = await this.prisma.case.findFirst({
       where: { id: caseId, tenantId },
       include: {
-        client: true,
         claimItems: { where: { itemType: 'PRINCIPAL' } },
         dues: { where: { type: 'PRINCIPAL' } },
         debtors: true, // Borçlu sayısı için
@@ -864,10 +855,6 @@ export class ExpenseRequestService {
 
     if (!caseItem) {
       throw new NotFoundException('Takip bulunamadı');
-    }
-
-    if (!caseItem.clientId) {
-      throw new BadRequestException('Takibe müvekkil atanmamış');
     }
 
     // Aynı aşama için zaten masraf talebi var mı kontrol et
@@ -984,6 +971,7 @@ export class ExpenseRequestService {
       // arka plan işi ile açık istek) iki talep ve iki günlük kaydı yazıyordu. Aynı dosyanın açılış seti yazımları
       // serileştirilir; kural kilit altında yeniden denetlenir (kilit işlem bitince kendiliğinden bırakılır).
       await this.lockOpeningExpenseSet(tx, tenantId, caseId);
+      const targetClientId = await resolveExpenseTarget(tx, caseId, tenantId, clientId);
       const concurrent = await tx.expenseRequest.findFirst({
         where: { caseId, tenantId, stageCode: 'OPENING', status: { not: 'CANCELLED' } },
         select: { id: true },
@@ -997,7 +985,7 @@ export class ExpenseRequestService {
         data: {
           tenantId,
           caseId,
-          clientId: caseItem.clientId!,
+          clientId: targetClientId,
           packageCode: 'OPENING',
           stageCode: 'OPENING',
           gateType: 'BLOCKING',
@@ -1069,7 +1057,7 @@ export class ExpenseRequestService {
    *   SALE_REQUEST → SALE); o yolda hata yalnız sunucu günlüğüne yazılır
    * </remarks>
    *
-   * İSTEK ANAHTARI (isteğe bağlı, owner 2026-10-03): `options.idempotencyKey` verilirse aynı (büro, anahtar, dosya, aşama)
+   * İSTEK ANAHTARI (isteğe bağlı, owner 2026-10-03): `options.idempotencyKey` verilirse aynı (büro, anahtar, dosya, aşama, hedef)
    * tekrarı yeni talep YAZMAZ, mevcut talebi `idempotentReplay: true` ile döndürür; aynı anahtar farklı içerikle ya da iptal
    * edilmiş talebin anahtarıyla gelirse 409. Anahtarsız çağrılar (iş akışı yolu dahil) bu korumanın DIŞINDADIR.
    */
@@ -1078,7 +1066,7 @@ export class ExpenseRequestService {
     stageCode: string,
     tenantId: string,
     userId: string,
-    options?: { idempotencyKey?: unknown },
+    options?: { idempotencyKey?: unknown; clientId?: unknown },
   ) {
     const template = EXPENSE_SET_TEMPLATES[stageCode as keyof typeof EXPENSE_SET_TEMPLATES];
     if (!template) {
@@ -1102,150 +1090,132 @@ export class ExpenseRequestService {
           message: 'Açılış masraf seti idempotencyKey kabul etmez; açılış seti dosya başına tek kez oluşturulur',
         });
       }
-      return this.createOpeningExpenseSet(caseId, tenantId, userId);
+      return this.createOpeningExpenseSet(caseId, tenantId, userId, options?.clientId);
     }
 
-    // Case bilgilerini al
-    const caseItem = await this.prisma.case.findFirst({
-      where: { id: caseId, tenantId },
-      include: {
-        claimItems: { where: { itemType: 'PRINCIPAL' } },
-      },
-    });
-
-    if (!caseItem) {
-      throw new NotFoundException('Takip bulunamadı');
-    }
-
-    if (!caseItem.clientId) {
-      throw new BadRequestException('Takibe müvekkil atanmamış');
-    }
-
-    // İstek anahtarı: dosya / büro / müvekkil denetimleri YUKARIDA ilk çağrıda da tekrarda da aynen çalışır (başka büronun
-    // dosyası 404, anahtar yalnız kendi bürosunda aranır). Aynı anahtarla önceki işlem tamamlandıysa matrah denetimi ve
-    // hesap tekrarlanmaz: aynı kullanıcı işleminin tekrarı özgün sonucu döndürür.
-    const requestFingerprint = stageExpenseRequestFingerprint({ caseId, stageCode: template.code });
-    if (idempotencyKey) {
-      const existing = await this.prisma.expenseRequest.findFirst({ where: { tenantId, idempotencyKey } });
-      if (existing) {
-        return this.replayStageExpenseRequest(existing, requestFingerprint);
-      }
-    }
-
-    // Haciz harcı ve satış harcı TL tarifesi oranıdır: aşağıda toplanan anapara alacak kalemleri TL değilse hesaplanamaz
-    // (kur / matrah sözleşmesi yok). Eksik tutar 0 sayılmaz ve talep tamamlanmış gibi kayda geçmez (PENDING talep muhasebe
-    // günlüğüne de yazılır, UYAP kapısını kilitler) → hiçbir kayıt yazılmadan gerekçesiyle reddedilir. Oranlı kalemi
-    // olmayan set (yeniden tebligat) etkilenmez.
-    const basis = evaluateStageExpenseBasis(template, {
-      caseCurrency: caseItem.currency,
-      basisRecordCurrencies: caseItem.claimItems.map((item) => item.currency),
-    });
-    if (!basis.calculable) {
-      throw new ConflictException({
-        code: basis.reasonCode,
-        message: basis.message,
-        stageCode: basis.stageCode,
-        requiredInfo: basis.requiredInfo,
-        notCalculableItems: basis.notCalculableItems,
-        caseCurrency: basis.caseCurrency,
-        basisCurrencies: basis.basisCurrencies,
-        tariffCurrency: basis.tariffCurrency,
+    const write = async (tx: Prisma.TransactionClient) => {
+      if (idempotencyKey) await this.lockStageExpenseIdempotencyKey(tx, tenantId, idempotencyKey);
+      const clientId = await resolveExpenseTarget(tx, caseId, tenantId, options?.clientId);
+      // Case bilgilerini al
+      const caseItem = await tx.case.findFirst({
+        where: { id: caseId, tenantId },
+        include: {
+          claimItems: { where: { itemType: 'PRINCIPAL' } },
+        },
       });
-    }
 
-    // Anapara hesapla
-    const principalAmount = caseItem.claimItems.reduce(
-      (sum, item) => sum + (item.amount?.toNumber() || 0),
-      0
-    );
+      if (!caseItem) {
+        throw new NotFoundException('Takip bulunamadı');
+      }
 
-    const caseData: CaseData = {
-      principalAmount,
-      caseType: caseItem.type || 'ILAMSIZ',
-    };
 
-    const calculatedItems = this.expenseCalculator.calculateStageExpenses(stageCode, caseData);
-    const totalAmount = this.expenseCalculator.calculateTotal(calculatedItems);
-
-    const dueDate = new Date();
-    dueDate.setDate(dueDate.getDate() + 7);
-
-    let written: { row: Prisma.ExpenseRequestGetPayload<object>; replayed: boolean };
-    try {
-      written = await this.prisma.$transaction(async (tx) => {
-        if (idempotencyKey) {
-          // Aynı (büro, anahtar) yazımlarını serileştirir: ikinci istek birincinin işlemi bitene kadar bekler, sonra
-          // kilit altında yeniden okur (çift tıklama, birden fazla süreç).
-          await this.lockStageExpenseIdempotencyKey(tx, tenantId, idempotencyKey);
-          const duplicate = await tx.expenseRequest.findFirst({ where: { tenantId, idempotencyKey } });
-          if (duplicate) {
-            return { row: duplicate, replayed: true };
-          }
-        }
-
-        const expenseRequest = await tx.expenseRequest.create({
-          data: {
-            tenantId,
-            caseId,
-            clientId: caseItem.clientId!,
-            packageCode: stageCode,
-            stageCode,
-            gateType: template.gateType as ExpenseGateType,
-            totalSuggested: totalAmount,
-            totalAmount,
-            dueDate,
-            status: 'PENDING',
-            createdById: userId,
-            paidTotal: 0,
-            ...(idempotencyKey ? { idempotencyKey, requestFingerprint } : {}),
-          },
+      const requestFingerprint = stageExpenseRequestFingerprint({ caseId, stageCode: template.code, clientId });
+      if (idempotencyKey) {
+        const existing = await tx.expenseRequest.findFirst({ where: { tenantId, idempotencyKey } });
+        if (existing) return this.replayStageExpenseRequest(existing, requestFingerprint, { caseId, stageCode: template.code, clientId });
+      }
+      // Haciz harcı ve satış harcı TL tarifesi oranıdır: aşağıda toplanan anapara alacak kalemleri TL değilse hesaplanamaz
+      // (kur / matrah sözleşmesi yok). Eksik tutar 0 sayılmaz ve talep tamamlanmış gibi kayda geçmez (PENDING talep muhasebe
+      // günlüğüne de yazılır, UYAP kapısını kilitler) → hiçbir kayıt yazılmadan gerekçesiyle reddedilir. Oranlı kalemi
+      // olmayan set (yeniden tebligat) etkilenmez.
+      const basis = evaluateStageExpenseBasis(template, {
+        caseCurrency: caseItem.currency,
+        basisRecordCurrencies: caseItem.claimItems.map((item) => item.currency),
+      });
+      if (!basis.calculable) {
+        throw new ConflictException({
+          code: basis.reasonCode,
+          message: basis.message,
+          stageCode: basis.stageCode,
+          requiredInfo: basis.requiredInfo,
+          notCalculableItems: basis.notCalculableItems,
+          caseCurrency: basis.caseCurrency,
+          basisCurrencies: basis.basisCurrencies,
+          tariffCurrency: basis.tariffCurrency,
         });
+      }
 
-        for (let i = 0; i < calculatedItems.length; i++) {
-          const item = calculatedItems[i];
-          await tx.expenseRequestItem.create({
-            data: {
-              expenseRequestId: expenseRequest.id,
-              itemCode: item.itemCode,
-              label: item.label,
-              suggestedAmount: item.suggestedAmount,
-              finalAmount: item.suggestedAmount,
-              calcParams: item.calcParams as any,
-              sortOrder: i,
-            },
-          });
-        }
+      // Anapara hesapla
+      const principalAmount = caseItem.claimItems.reduce(
+        (sum, item) => sum + (item.amount?.toNumber() || 0),
+        0
+      );
 
-        await tx.expenseAuditLog.create({
+      const caseData: CaseData = {
+        principalAmount,
+        caseType: caseItem.type || 'ILAMSIZ',
+      };
+
+      const calculatedItems = this.expenseCalculator.calculateStageExpenses(stageCode, caseData);
+      const totalAmount = this.expenseCalculator.calculateTotal(calculatedItems);
+
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + 7);
+
+
+      const expenseRequest = await tx.expenseRequest.create({
+        data: {
+          tenantId,
+          caseId,
+          clientId,
+          packageCode: stageCode,
+          stageCode,
+          gateType: template.gateType as ExpenseGateType,
+          totalSuggested: totalAmount,
+          totalAmount,
+          dueDate,
+          status: 'PENDING',
+          createdById: userId,
+          paidTotal: 0,
+          ...(idempotencyKey ? { idempotencyKey, requestFingerprint } : {}),
+        },
+      });
+
+      for (let i = 0; i < calculatedItems.length; i++) {
+        const item = calculatedItems[i];
+        await tx.expenseRequestItem.create({
           data: {
             expenseRequestId: expenseRequest.id,
-            action: 'CREATED',
-            details: { stageCode, itemCount: calculatedItems.length, totalAmount },
-            userId,
+            itemCode: item.itemCode,
+            label: item.label,
+            suggestedAmount: item.suggestedAmount,
+            finalAmount: item.suggestedAmount,
+            calcParams: item.calcParams as any,
+            sortOrder: i,
           },
         });
+      }
 
-        await this.writeExpenseRequestRecordedJournal(tx, tenantId, userId, expenseRequest as JournalableExpenseRequestRow);
-        return { row: expenseRequest, replayed: false };
+      await tx.expenseAuditLog.create({
+        data: {
+          expenseRequestId: expenseRequest.id,
+          action: 'CREATED',
+          details: { stageCode, itemCount: calculatedItems.length, totalAmount },
+          userId,
+        },
       });
+
+      await this.writeExpenseRequestRecordedJournal(tx, tenantId, userId, expenseRequest as JournalableExpenseRequestRow);
+      return idempotencyKey ? { ...expenseRequest, idempotentReplay: false } : expenseRequest;
+
+    };
+    try {
+      const result = await this.prisma.$transaction(write);
+      this.logger.log(`Stage expense set resolved for case ${caseId}, stage ${stageCode}: ${result.id}`);
+      return result;
     } catch (error) {
-      // Kilidi atlayan eşzamanlı yazım (ör. kilit öncesi sürümle çalışan eski süreç): benzersiz indeks son savunmadır →
-      // kazanan satır yeniden okunur ve tekrar olarak oynatılır.
+      // A legacy concurrent writer may not use our advisory key lock. Revalidate
+      // the canonical target in a fresh transaction before replaying its winner.
       if (idempotencyKey && error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        const winner = await this.prisma.expenseRequest.findFirst({ where: { tenantId, idempotencyKey } });
-        if (winner) {
-          return this.replayStageExpenseRequest(winner, requestFingerprint);
-        }
+        return this.prisma.$transaction(async tx => {
+          const clientId = await resolveExpenseTarget(tx, caseId, tenantId, options?.clientId);
+          const winner = await tx.expenseRequest.findFirst({ where: { tenantId, idempotencyKey } });
+          if (!winner) throw error;
+          return this.replayStageExpenseRequest(winner, stageExpenseRequestFingerprint({ caseId, stageCode: template.code, clientId }), { caseId, stageCode: template.code, clientId });
+        });
       }
       throw error;
     }
-
-    if (written.replayed) {
-      return this.replayStageExpenseRequest(written.row, requestFingerprint);
-    }
-
-    this.logger.log(`Stage expense set created for case ${caseId}, stage ${stageCode}: ${written.row.id}`);
-    return idempotencyKey ? { ...written.row, idempotentReplay: false } : written.row;
   }
 
   /**
@@ -1257,8 +1227,16 @@ export class ExpenseRequestService {
    * - ExpenseRequestService.createStageExpenseSet() (kilit öncesi, kilit altı ve P2002 sonrası)
    * </remarks>
    */
-  private replayStageExpenseRequest(existing: Prisma.ExpenseRequestGetPayload<object>, requestFingerprint: string) {
-    const decision = decideStageExpenseIdempotency(existing, requestFingerprint);
+  private replayStageExpenseRequest(
+    existing: Prisma.ExpenseRequestGetPayload<object>, requestFingerprint: string,
+    target: { caseId: string; stageCode: string; clientId: string },
+  ) {
+    // Old fingerprints did not bind the target. Replay is provable only when the
+    // persisted case, stage AND client agree; never rewrite the historical row.
+    const legacy = stageExpenseRequestFingerprint({ caseId: target.caseId, stageCode: target.stageCode });
+    const provenLegacy = existing.requestFingerprint === legacy && existing.caseId === target.caseId
+      && existing.stageCode === target.stageCode && existing.clientId === target.clientId;
+    const decision = decideStageExpenseIdempotency(existing, provenLegacy ? legacy : requestFingerprint);
     if (decision.outcome !== 'REPLAY') {
       throw new ConflictException({ code: decision.code, message: decision.message });
     }

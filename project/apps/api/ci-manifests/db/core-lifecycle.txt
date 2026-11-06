@@ -341,3 +341,5 @@ src/modules/task/__tests__/task-cancellation.http.db-gated.integration.spec.ts
 src/modules/case/__tests__/legal-responsible-lawyer-admin-staff.http.db-gated.integration.spec.ts
 # 3a/T-3: internal pre-send approval, real HTTP/disposable DB and isolated SMTP; distribution is separate.
 src/modules/expense-request/__tests__/expense-send-approval.http.db-gated.integration.spec.ts
+# 3b/KI-221–MK-13: canonical expense target, real HTTP and disposable DB with transaction race/rollback acceptance.
+src/modules/expense-request/__tests__/expense-canonical-target.http.db-gated.integration.spec.ts
