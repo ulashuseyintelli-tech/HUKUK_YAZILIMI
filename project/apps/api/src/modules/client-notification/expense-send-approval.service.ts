@@ -127,7 +127,7 @@ export class ExpenseSendApprovalService {
       const key = `expense-send:${id}:${intent.contentHash}`;
       let row = await tx.officeApprovalRequest.findUnique({ where: { tenantId_idempotencyKey: { tenantId, idempotencyKey: key } } });
       if (!row) {
-        row = await this.approval.createPendingRequest({
+        row = await this.approval.createPendingRequestInTransaction({
           tenantId, actionCode: EXPENSE_SEND_ACTION, targetType: 'ExpenseRequest', targetRef: id,
           requesterUserId: userId, savedIntent: intent, idempotencyKey: key,
         }, tx);

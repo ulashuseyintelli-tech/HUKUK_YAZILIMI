@@ -2251,7 +2251,7 @@ export class CaseService {
     let fallbackReason: OpeningExpenseEmailReasonCode = 'DELIVERY_NOT_CONFIRMED';
     try {
       const emailResult = await this.expenseRequestService.sendExpenseEmail(tenantId, expenseResult.id, requesterUserId ?? '');
-      if ('approvalRequired' in emailResult && emailResult.approvalRequired) return emailResult;
+      if (emailResult && 'approvalRequired' in emailResult && emailResult.approvalRequired) return emailResult;
       if (emailResult?.success === true) {
         this.logger.log(`Masraf talebi maili gönderildi: ${fileNumber}`);
         return undefined;

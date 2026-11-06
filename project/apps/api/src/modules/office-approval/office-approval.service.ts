@@ -92,7 +92,16 @@ export class OfficeApprovalService {
    * PENDING_APPROVAL bir kayıt oluşur. Eşzamanlı çağrılar: CAS'i kaybeden de create()'e düşer; create P2002 alırsa
    * MEVCUT catch bloğu (aşağıda) taze kaydı bulup döner — race-safe, ekstra kilit gerekmez.
    */
-  async createPendingRequest(input: CreatePendingRequestInput, tx?: Prisma.TransactionClient): Promise<OfficeApprovalRequest> {
+  async createPendingRequest(input: CreatePendingRequestInput): Promise<OfficeApprovalRequest> {
+    return this.createPendingRequestWithTransaction(input);
+  }
+
+  /** Caller: ExpenseSendApprovalService.prepare; append and strict audit share the caller's transaction. */
+  async createPendingRequestInTransaction(input: CreatePendingRequestInput, tx: Prisma.TransactionClient): Promise<OfficeApprovalRequest> {
+    return this.createPendingRequestWithTransaction(input, tx);
+  }
+
+  private async createPendingRequestWithTransaction(input: CreatePendingRequestInput, tx?: Prisma.TransactionClient): Promise<OfficeApprovalRequest> {
     const db = tx ?? this.prisma;
     if (input.idempotencyKey) {
       const existing = await db.officeApprovalRequest.findUnique({
