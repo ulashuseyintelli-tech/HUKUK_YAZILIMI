@@ -7,6 +7,7 @@ import { resolveFinanceSourceView, type FinanceSourceStatus } from "@/lib/operat
 import { recordCurrencySuffix } from "@/lib/record-currency-display";
 import { FinanceSourceListNotice, FinanceSourceRefreshNote } from "./FinanceSourceNotice";
 import { ExpenseDistributionDecisionRow, useExpenseDistributionDecisions } from "@/components/expense/ExpenseDistributionDecision";
+import { ExpenseSendAction } from '@/components/expense/ExpenseSendAction';
 import {
   FileText, ListTodo, Receipt, Database, FolderOpen, MessageSquare,
   ChevronDown, Plus, AlertTriangle, Clock, Zap, User, Check, X,
@@ -1365,6 +1366,7 @@ export function OperationDeck({
                         {caseId && (
                           <ExpenseDistributionDecisionRow expenseId={item.id} decisions={expenseDistributionDecisions} />
                         )}
+                        {caseId && <ExpenseSendAction expenseId={item.id} status={item.status} />}
                       </div>
                     ))}
                   </div>

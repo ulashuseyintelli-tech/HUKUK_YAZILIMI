@@ -624,7 +624,7 @@ export function ExpenseRequestModal({
                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
                 <span className="text-sm text-gray-700">
-                  Oluşturduktan sonra müvekkile e-posta gönder
+                  Oluşturduktan sonra e-posta gönderim onayı iste
                   {mode === "package" && (
                     <span className="text-gray-500 text-xs block">Paket kipinde e-posta gönderimi bu pencerede henüz yapılamıyor; talep oluşturulur, e-posta gönderilmez.</span>
                   )}
@@ -659,6 +659,9 @@ export function ExpenseRequestModal({
                   : "Masraf talebi oluşturuldu ancak e-posta gönderilemedi."}
             </p>
             <p className="mt-1">{sendState.message}</p>
+            {sendState.kind === 'approval' && (
+              <p className="mt-2"><a href="/office-approvals" target="_blank" rel="noreferrer" className="underline">Onay Kutusu</a> — karar: {sendState.approvalStatus}. Onaydan sonra gönderimi kontrol edin.</p>
+            )}
             {sendState.kind !== "accepted" && sendState.requiredInfo.length > 0 && (
               <p className="mt-1">Gereken bilgi: {sendState.requiredInfo.join("; ")}</p>
             )}
@@ -682,7 +685,7 @@ export function ExpenseRequestModal({
           </button>
           {/* Talep oluşturulduktan sonra gönderim sonucu kesinleştiyse (kabul / belirsiz) ikinci gönderim düğmesi yoktur;
               yalnız kesin başarısızlıkta / sonuç alınamadığında aynı talebi yeniden deneme düğmesi vardır. */}
-          {(createdRequestId === null || (sendState !== null && sendState.kind !== "accepted" && sendState.retryable) || loading) && (
+          {(createdRequestId === null || (sendState !== null && sendState.kind !== "accepted" && (sendState.retryable || sendState.kind === 'approval')) || loading) && (
           <button
             onClick={handleSubmit}
             disabled={loading || totalAmount <= 0 || packageIncomplete}
@@ -697,7 +700,7 @@ export function ExpenseRequestModal({
             ) : (
               <CheckCircle className="h-4 w-4" />
             )}
-            {createdRequestId !== null ? (loading ? "Gönderiliyor…" : "Yeniden Dene") : paidByLawyer ? "Karşıladım & Kaydet" : willSend ? "Oluştur ve Gönder" : "Oluştur"}
+            {createdRequestId !== null ? (loading ? "Kontrol ediliyor…" : sendState?.kind === 'approval' ? 'Onay Durumunu Kontrol Et ve Gönder' : "Yeniden Dene") : paidByLawyer ? "Karşıladım & Kaydet" : willSend ? "Oluştur ve Gönderim Onayı İste" : "Oluştur"}
           </button>
           )}
         </div>

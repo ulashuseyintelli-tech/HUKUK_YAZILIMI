@@ -92,9 +92,10 @@ export class OfficeApprovalService {
    * PENDING_APPROVAL bir kayıt oluşur. Eşzamanlı çağrılar: CAS'i kaybeden de create()'e düşer; create P2002 alırsa
    * MEVCUT catch bloğu (aşağıda) taze kaydı bulup döner — race-safe, ekstra kilit gerekmez.
    */
-  async createPendingRequest(input: CreatePendingRequestInput): Promise<OfficeApprovalRequest> {
+  async createPendingRequest(input: CreatePendingRequestInput, tx?: Prisma.TransactionClient): Promise<OfficeApprovalRequest> {
+    const db = tx ?? this.prisma;
     if (input.idempotencyKey) {
-      const existing = await this.prisma.officeApprovalRequest.findUnique({
+      const existing = await db.officeApprovalRequest.findUnique({
         where: { tenantId_idempotencyKey: { tenantId: input.tenantId, idempotencyKey: input.idempotencyKey } },
       });
       if (existing) {
@@ -103,7 +104,7 @@ export class OfficeApprovalService {
         }
         // H7: terminal kayıt bu anahtarı işgal ediyor — canlı bir çakışma DEĞİL. Anahtarı CAS ile boşalt (yalnız
         // hâlâ bu tam değeri taşıyorsa; eşzamanlı ikinci çağrı no-op görür, aşağıda create()'e düşer).
-        await this.prisma.officeApprovalRequest.updateMany({
+        await db.officeApprovalRequest.updateMany({
           where: { id: existing.id, idempotencyKey: input.idempotencyKey },
           data: { idempotencyKey: `${input.idempotencyKey}::superseded:${existing.id}` },
         });
@@ -112,7 +113,7 @@ export class OfficeApprovalService {
     const payloadHash = stableJsonHash(input.savedIntent);
     let created: OfficeApprovalRequest;
     try {
-      created = await this.prisma.officeApprovalRequest.create({
+      created = await db.officeApprovalRequest.create({
         data: {
           tenantId: input.tenantId,
           actionCode: input.actionCode,
@@ -135,14 +136,14 @@ export class OfficeApprovalService {
         e instanceof Prisma.PrismaClientKnownRequestError &&
         e.code === 'P2002'
       ) {
-        const existing = await this.prisma.officeApprovalRequest.findUnique({
+        const existing = await db.officeApprovalRequest.findUnique({
           where: { tenantId_idempotencyKey: { tenantId: input.tenantId, idempotencyKey: input.idempotencyKey } },
         });
         if (existing) return existing;
       }
       throw e;
     }
-    await this.auditLog('OFFICE_APPROVAL_REQUESTED', created, input.requesterUserId);
+    await this.auditLog('OFFICE_APPROVAL_REQUESTED', created, input.requesterUserId, tx);
     return created;
   }
 
@@ -709,6 +710,21 @@ export class OfficeApprovalService {
     await lockExecutionActorRows(tx, approverUserId);
     // K-A1 SINIR: kişi kimliği kanıtı (bayrak açıkken) — öz-onay ve uygunluk kurallarından ÖNCE, ilk yazmadan ÖNCE.
     await this.assertApprovalIdentityProven(req, approverUserId, tx);
+    // 3a/T-3 only: prove both people and preserve the expense creator's independence too.
+    // No activation or expansion of the existing identity-proof feature flag for other actions.
+    if (req.actionCode === 'EXPENSE_REQUEST_SEND') {
+      const parties = [req.requesterUserId, approverUserId];
+      for (const userId of parties) {
+        if (!(await resolveApprovalIdentityCandidates(tx, userId, req.tenantId)).size) {
+          throw new ForbiddenException({ code: 'APPROVAL_IDENTITY_UNPROVEN' });
+        }
+      }
+      const expense = await tx.expenseRequest.findFirst({ where: { id: req.targetRef, tenantId: req.tenantId }, select: { createdById: true } });
+      if (!expense) throw new NotFoundException('Masraf talebi bulunamadı');
+      if (expense.createdById !== 'system' && await isSameApprovalIdentity(tx, approverUserId, expense.createdById, req.tenantId)) {
+        throw new BadRequestException('SELF_APPROVAL_FORBIDDEN: Kendi masraf talebinizi onaylayamazsınız.');
+      }
+    }
     if (selfApprovalRule === 'APPROVE') {
       await this.assertApproveSelfApprovalPolicy(req, approverUserId, tx);
     } else {
@@ -799,8 +815,8 @@ export class OfficeApprovalService {
   }
 
   /** Olgusal kayıt AuditLog'a. GİZLİLİK: ham savedIntent YAZILMAZ — yalnız payloadHash + kimlik/durum alanları. */
-  private async auditLog(action: string, req: OfficeApprovalRequest, actorUserId: string): Promise<void> {
-    await this.audit.log({
+  private async auditLog(action: string, req: OfficeApprovalRequest, actorUserId: string, tx?: Prisma.TransactionClient): Promise<void> {
+    const input = {
       tenantId: req.tenantId,
       action,
       entityType: 'OFFICE_APPROVAL',
@@ -818,6 +834,8 @@ export class OfficeApprovalService {
         ...(req.approverUserId ? { approverUserId: req.approverUserId } : {}),
         // NOT: ham decisionNote/reason/savedIntent/replacementSavedIntent audit metadata'ya YAZILMAZ (yalnız DB alanları).
       },
-    });
+    };
+    if (tx) await this.audit.logInTransaction(tx, input);
+    else await this.audit.log(input);
   }
 }

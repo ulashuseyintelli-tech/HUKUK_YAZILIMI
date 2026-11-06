@@ -1,8 +1,9 @@
 import { assertClientObjectScope } from '../client/client-object-scope';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional, ForbiddenException, ConflictException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { ClientNotificationService, type ClientNotificationAttachment } from './client-notification.service';
 import { MessageTemplateService, TemplateTokens } from '@/modules/message-template/message-template.service';
+import { ExpenseSendApprovalService, type ExpenseSendContext, type ExpenseSendApprovalOutcome } from './expense-send-approval.service';
 
 export interface DispatchInput {
   clientId: string;
@@ -29,6 +30,7 @@ export interface DispatchResult {
   notificationId?: string;
   dedupeKey: string;
   error?: string;
+  approval?: ExpenseSendApprovalOutcome;
 }
 
 /**
@@ -36,7 +38,7 @@ export interface DispatchResult {
  *
  * SÖZLEŞME (Faz 3 omurgası):
  * - Mail gönderimi/başarısızlığı finansal/onay/ekstre state'ini DEĞİŞTİRMEZ.
- * - dispatch() ASLA throw etmez — çağıran state-sahibi akış, mail başarısız olsa da bozulmaz.
+ * - Transport hataları best-effort sonucudur; masraf gönderim yetkisi/onayı ve atomik audit reddi fırlatılır.
  * - Idempotency: aynı dedupeKey için SENT bildirim varsa tekrar gönderilmez (force hariç).
  * - Yeni mail sistemi YOK: ClientNotificationService.sendEmail reuse edilir.
  */
@@ -48,6 +50,7 @@ export class NotificationDispatcherService {
     private prisma: PrismaService,
     private clientNotification: ClientNotificationService,
     private messageTemplate: MessageTemplateService,
+    @Optional() private readonly expenseApproval?: ExpenseSendApprovalService,
   ) {}
 
   /**
@@ -59,27 +62,32 @@ export class NotificationDispatcherService {
   }
 
   /**
-   * Tek bir mail gönder (best-effort, idempotent). Throw ETMEZ.
+   * Tek bir mail gönder (best-effort, idempotent); masraf yetki/onay reddi çağırana taşınır.
    *
    * <remarks>
    * Çağrıldığı yerler:
-   * - (3.4/3.5) ClientApproval/ClientStatement/Expense tetikleri → bu servisi çağıracak (henüz bağlanmadı)
-   * - NotificationDispatchController.resend() → POST /client-notifications/resend
+   * - ExpenseNotificationService.sendExpenseRequest/sendReminder; ExpenseRequestService.recordPayment
+   * - ClientApprovalService; ClientStatementService; ClientStatementNotificationDeliveryAdapter
+   * - ClientService; ClientIntakeLinkService; resendForActor (HTTP resend adapter)
    * </remarks>
    */
-  async dispatch(tenantId: string, userId: string, input: DispatchInput): Promise<DispatchResult> {
-    const dedupeKey = input.dedupeKey ?? this.buildDedupeKey(input.templateCode, input.refType, input.refId);
+  async dispatch(tenantId: string, userId: string, input: DispatchInput, expenseMessage?: { subject: string; body: string }): Promise<DispatchResult> {
+    let dedupeKey = input.dedupeKey ?? this.buildDedupeKey(input.templateCode, input.refType, input.refId);
+    let isExpense = !!expenseMessage || input.refType === 'ExpenseRequest' || ['EXPENSE_REQUEST', 'EXPENSE_REMINDER'].includes(input.templateCode) || input.type === 'MASRAF_ISTEK';
+    let expenseContext: ExpenseSendContext | undefined;
+    let approvalPhaseFailed = false;
 
     try {
       // 1) Şablonu bul + render et (fail-closed: çözülmemiş {{token}} → throw → aşağıda 'failed').
       //    Render CLAIM'den ÖNCE: kalıcı claim satırına güvenli subject/body yazılabilsin, hatalı
       //    şablon için orphan claim oluşmasın.
-      const template = await this.messageTemplate.findByCode(tenantId, input.templateCode);
-      const { subject, body } = this.messageTemplate.renderTemplate(
-        { subject: template.subject, body: template.body },
+      const template = expenseMessage ? null : await this.messageTemplate.findByCode(tenantId, input.templateCode);
+      isExpense ||= !!template && ['EXPENSE_REQUEST', 'EXPENSE_REMINDER'].includes(template.category);
+      const { subject, body } = expenseMessage ?? this.messageTemplate.renderTemplate(
+        { subject: template!.subject, body: template!.body },
         input.tokens,
       );
-      const persisted = input.persistedTokens
+      const persisted = input.persistedTokens && template
         ? this.messageTemplate.renderTemplate({ subject: template.subject, body: template.body }, input.persistedTokens)
         : undefined;
 
@@ -87,14 +95,29 @@ export class NotificationDispatcherService {
         clientId: input.clientId,
         caseId: input.caseId,
         type: input.type,
-        subject: subject || template.subject || '',
+        subject: subject || template?.subject || '',
         body,
         persistedSubject: persisted?.subject,
         persistedBody: persisted?.body,
-        templateId: template.id,
+        templateId: template?.id,
         dedupeKey,
         ...(input.attachments?.length ? { attachments: input.attachments } : {}),
       };
+
+      if (isExpense) {
+        if (!this.expenseApproval || input.refType !== 'ExpenseRequest' || !input.refId || input.attachments?.length) {
+          throw new ForbiddenException({ code: 'EXPENSE_SEND_DOMAIN_REQUIRED' });
+        }
+        const decision = await this.expenseApproval.prepare(tenantId, userId, input.refId, sendDto).catch(error => {
+          approvalPhaseFailed = true;
+          throw error;
+        });
+        if (!decision.allowed) return { status: 'skipped', dedupeKey, approval: decision.outcome };
+        expenseContext = decision.context;
+        // A new approved business content has its own slot; transport retries share that exact slot.
+        dedupeKey = `${input.templateCode}:ExpenseRequest:${input.refId}:${expenseContext.approvalRequestId}`;
+        sendDto.dedupeKey = dedupeKey;
+      }
 
       // 2) G4 atomik claim (force değilse). Inv-1: SENT/PENDING/FAILED üçü de EXISTING → normal
       //    dispatch retry ETMEZ (retry yalnız resend/force). Inv-5: claim sonucu public DispatchResult'a
@@ -102,14 +125,18 @@ export class NotificationDispatcherService {
       if (!input.force) {
         const claim = await this.clientNotification.claimNotificationSlot(tenantId, userId, sendDto);
         if (claim.kind !== 'ACQUIRED') {
+          if (expenseContext) await this.expenseApproval!.reconcile(tenantId, userId, expenseContext, claim.notificationId);
           // EXISTING_PENDING | EXISTING_SENT | EXISTING_FAILED → skipped (ikinci normal send yok).
           return { status: 'skipped', notificationId: claim.notificationId, dedupeKey };
         }
         // 3) Yalnız claim sahibi provider'a ulaşır (Inv-2/3). reuseNotificationId ile claim tx DIŞINDA gönderilir.
-        const res = await this.clientNotification.sendEmail(tenantId, userId, {
+        const claimedDto = {
           ...sendDto,
           reuseNotificationId: claim.notificationId,
-        });
+        };
+        const res = expenseContext ? await this.clientNotification.sendEmail(tenantId, userId, claimedDto, expenseContext)
+          : await this.clientNotification.sendEmail(tenantId, userId, claimedDto);
+        if (expenseContext) await this.expenseApproval!.reconcile(tenantId, userId, expenseContext, res.notificationId);
         return { status: 'sent', notificationId: res.notificationId, dedupeKey };
       }
 
@@ -124,12 +151,23 @@ export class NotificationDispatcherService {
           dedupeKey,
         };
       }
-      const res = await this.clientNotification.sendEmail(tenantId, userId, {
+      const reclaimedDto = {
         ...sendDto,
         reuseNotificationId: reclaim.notificationId,
-      });
+      };
+      const res = expenseContext ? await this.clientNotification.sendEmail(tenantId, userId, reclaimedDto, expenseContext)
+        : await this.clientNotification.sendEmail(tenantId, userId, reclaimedDto);
+      if (expenseContext) await this.expenseApproval!.reconcile(tenantId, userId, expenseContext, res.notificationId);
       return { status: 'sent', notificationId: res.notificationId, dedupeKey };
     } catch (error: any) {
+      // Approval/its atomic audit failed before transport: no fabricated EMAIL_FAILED attempt downstream.
+      if (approvalPhaseFailed) throw error;
+      if (expenseContext) {
+        const notification = await this.prisma.clientNotification.findFirst({ where: { tenantId, dedupeKey }, select: { id: true } });
+        if (notification) await this.expenseApproval!.reconcile(tenantId, userId, expenseContext, notification.id);
+      }
+      if (isExpense && (error instanceof ForbiddenException || error instanceof ConflictException ||
+        (expenseContext && error instanceof NotFoundException))) throw error;
       // BEST-EFFORT: hata yutulur, çağırana fırlatılmaz (state bozulmaz).
       this.logger.warn(`Mail dispatch başarısız (dedupeKey=${dedupeKey}): ${error.message}`);
       return { status: 'failed', dedupeKey, error: error.message };
@@ -146,6 +184,10 @@ export class NotificationDispatcherService {
    */
   /** Manual HTTP resend; background dispatch is explicitly a different entry point. */
   async resendForActor(tenantId: string, userId: string, input: DispatchInput): Promise<DispatchResult> {
+    // Public resend supplies arbitrary tokens. Expense payloads must be rebuilt by the expense domain.
+    if (input.refType === 'ExpenseRequest' || ['EXPENSE_REQUEST', 'EXPENSE_REMINDER'].includes(input.templateCode) || input.type === 'MASRAF_ISTEK') {
+      throw new ForbiddenException({ code: 'EXPENSE_SEND_DOMAIN_REQUIRED' });
+    }
     await assertClientObjectScope(this.prisma, tenantId, userId, input.clientId, input.caseId ?? undefined);
     return this.resend(tenantId, userId, input);
   }
@@ -185,6 +227,9 @@ export class NotificationDispatcherService {
       }
 
       const meta = (row.metadata ?? {}) as { templateCode?: string; tokens?: Record<string, string> };
+      if (row.type === 'MASRAF_ISTEK' || ['EXPENSE_REQUEST', 'EXPENSE_REMINDER'].includes(meta.templateCode ?? '')) {
+        return { status: 'failed', notificationId: row.id, dedupeKey, error: 'expense-send-domain-required' };
+      }
       if (!meta.templateCode || !meta.tokens) {
         await this.markQueuedIntentFailed(tenantId, row.id, 'intent-metadata-missing');
         return { status: 'failed', notificationId: row.id, dedupeKey, error: 'intent-metadata-missing' };
@@ -195,6 +240,9 @@ export class NotificationDispatcherService {
       let template: { id: string; subject: string | null };
       try {
         const t = await this.messageTemplate.findByCode(tenantId, meta.templateCode);
+        if (['EXPENSE_REQUEST', 'EXPENSE_REMINDER'].includes(t.category)) {
+          return { status: 'failed', notificationId: row.id, dedupeKey, error: 'expense-send-domain-required' };
+        }
         template = { id: t.id, subject: t.subject };
         rendered = this.messageTemplate.renderTemplate({ subject: t.subject, body: t.body }, meta.tokens);
       } catch (renderError: any) {

@@ -46,8 +46,8 @@ describe("foreignCurrencyExpenseConfirmCopy", () => {
       message:
         "Takip oluşturulacak. Dosyada TL dışı para birimi var (USD); açılış masraf talebinin otomatik oluşturulup " +
         "oluşturulmayacağını sunucu belirler ve sonuç dosya oluşturulduktan sonra gösterilir. Talep oluşturulursa müvekkile " +
-        "masraf talebi e-postası gönderilsin mi?",
-      sendEmailLabel: "Oluştur (Talep Oluşursa Mail Gönder)",
+        "masraf talebi e-postası için gönderim onayı istensin mi?",
+      sendEmailLabel: "Oluştur (Talep Oluşursa Gönderim Onayı İste)",
     });
   });
 

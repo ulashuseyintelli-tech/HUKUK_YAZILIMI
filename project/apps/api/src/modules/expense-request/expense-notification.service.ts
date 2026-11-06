@@ -427,7 +427,7 @@ export class ExpenseNotificationService {
     };
 
     // Stable domain dedupe key (timestamp YOK): ExpenseRequest id.
-    const dedupeKey = `EXPENSE_REQUEST:ExpenseRequest:${requestId}:1`;
+    let dedupeKey = `EXPENSE_REQUEST:ExpenseRequest:${requestId}:1`;
     const dispatchInput = {
       clientId: request.clientId,
       ...(request.caseId ? { caseId: request.caseId } : {}),
@@ -439,6 +439,8 @@ export class ExpenseNotificationService {
       refId: requestId,
     };
     let dispatch = await this.dispatcher.dispatch(tenantId, userId, dispatchInput);
+    if (dispatch.approval) return dispatch.approval;
+    dedupeKey = dispatch.dedupeKey;
     let existingNotificationStatus =
       dispatch.status === 'skipped'
         ? await this.readExistingNotificationStatus(tenantId, dedupeKey, dispatch.notificationId)
@@ -453,6 +455,7 @@ export class ExpenseNotificationService {
     if (dispatch.status === 'skipped' && existingNotificationStatus === 'FAILED') {
       retriedFailedNotification = true;
       dispatch = await this.dispatcher.dispatch(tenantId, userId, { ...dispatchInput, force: true });
+      if (dispatch.approval) return dispatch.approval;
       existingNotificationStatus =
         dispatch.status === 'skipped'
           ? await this.readExistingNotificationStatus(tenantId, dedupeKey, dispatch.notificationId)
@@ -467,26 +470,31 @@ export class ExpenseNotificationService {
     //   failed  → SENT DEĞİL (PENDING/uncertain/definitive-red/no-recipient/unresolved/claim-red).
     // Audit/task YALNIZ ilk SENT geçişinde.
     const delivered = dispatch.status === 'sent' || existingNotificationStatus === 'SENT';
+    if (delivered && !dispatch.notificationId) return { success: false as const, reason: 'EXISTING_NOTIFICATION_UNVERIFIED' };
     if (delivered) {
       const now = new Date();
       const formattedTotal = formatMoney(emailData.totalAmount);
       const formattedDate = now.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
       await this.prisma.$transaction(async (tx) => {
-        // Geçiş TEK atomik koşullu güncellemedir (satır kilidi): eşzamanlı iki çağrı da bu noktaya gelirse yalnız biri
-        // satırı SENT yapar (count=1), diğeri SENT'i görür (count=0) ve audit / görev ÜRETMEZ. Önceki "oku, sonra yaz"
-        // biçimi iki işlemin de PENDING okumasına izin veriyordu (ölçüldü: çift EMAIL_SENT + çift görev).
+        // New approved business content gets its own truthful delivery trace; transport replay does not.
+        await lockExpenseRequest(tx, tenantId, requestId);
+        const existingDelivery = await tx.expenseAuditLog.findFirst({ where: {
+          expenseRequestId: requestId, action: 'EMAIL_SENT', details: { path: ['notificationId'], equals: dispatch.notificationId },
+        } });
+        if (existingDelivery) return;
+        const previousDelivery = await tx.expenseAuditLog.findFirst({ where: { expenseRequestId: requestId, action: 'EMAIL_SENT' } });
         const moved = await tx.expenseRequest.updateMany({
           // A provider response must never replace a payment/cancellation that committed meanwhile.
-          where: { id: requestId, tenantId, status: { notIn: ['SENT', 'PAID', 'PARTIAL', 'RECEIVED', 'CANCELLED'] } },
+          where: { id: requestId, tenantId, status: { notIn: ['PAID', 'PARTIAL', 'RECEIVED', 'CANCELLED'] } },
           data: {
             status: 'SENT',
             sentAt: now,
             sentVia: 'EMAIL',
+            notificationId: dispatch.notificationId ?? null,
             renderedSubject: `${emailData.caseFileNumber ?? ''} - Masraf Talebi`,
             renderedBody: `EXPENSE_REQUEST şablonu ile kanonik dispatcher üzerinden gönderildi (bildirim=${dispatch.notificationId ?? 'reconciled'})`,
           },
         });
-        if (moved.count === 0) return; // zaten SENT → duplicate audit/task ÜRETİLMEZ (idempotent)
         await tx.expenseAuditLog.create({
           data: {
             expenseRequestId: requestId,
@@ -500,7 +508,7 @@ export class ExpenseNotificationService {
             userId,
           },
         });
-        await tx.task.create({
+        if (!previousDelivery && moved.count === 1) await tx.task.create({
           data: {
             tenantId,
             caseId: request.caseId,
@@ -695,14 +703,22 @@ export class ExpenseNotificationService {
     const subject = `⏰ Hatırlatma: Masraf Talebi - ${request.case.fileNumber}`;
     const text = `Sayın ${clientName},\n\n${request.case.fileNumber} numaralı dosyanız için gönderdiğimiz ${formattedTotal} TL tutarındaki masraf talebinin henüz ödenmediğini hatırlatmak isteriz.\n\nÖdemenizi en kısa sürede yapmanızı rica ederiz.\n\nSaygılarımızla`;
 
-    const result = await this.emailProvider.send({
-      to: clientEmail,
-      subject,
-      text,
-    });
-
-    if (result.success) {
+    const input = { clientId: request.clientId, caseId: request.caseId, templateCode: 'EXPENSE_REMINDER',
+      type: 'HATIRLATMA', tokens: {}, refType: 'ExpenseRequest', refId: requestId };
+    let result = await this.dispatcher.dispatch(tenantId, userId, input, { subject, body: text });
+    if (result.approval) return result.approval;
+    let status = result.notificationId ? await this.readExistingNotificationStatus(tenantId, result.dedupeKey, result.notificationId) : null;
+    if (result.status === 'skipped' && status === 'FAILED') {
+      result = await this.dispatcher.dispatch(tenantId, userId, { ...input, force: true }, { subject, body: text });
+      if (result.approval) return result.approval;
+      status = result.notificationId ? await this.readExistingNotificationStatus(tenantId, result.dedupeKey, result.notificationId) : null;
+    }
+    const delivered = result.status === 'sent' || status === 'SENT';
+    if (delivered) {
       await this.prisma.$transaction(async (tx) => {
+        await lockExpenseRequest(tx, tenantId, requestId);
+        const recorded = await tx.expenseAuditLog.findFirst({ where: { expenseRequestId: requestId, action: 'REMINDER_SENT', details: { path: ['notificationId'], equals: result.notificationId } } });
+        if (recorded) return;
         await tx.expenseRequest.updateMany({
           where: { id: requestId, tenantId, status: { notIn: ['PAID', 'PARTIAL', 'RECEIVED', 'CANCELLED'] } },
           data: {
@@ -716,7 +732,7 @@ export class ExpenseNotificationService {
           data: {
             expenseRequestId: requestId,
             action: 'REMINDER_SENT',
-            details: { to: clientEmail, messageId: result.messageId },
+            details: { notificationId: result.notificationId },
             userId,
           },
         });
@@ -725,7 +741,7 @@ export class ExpenseNotificationService {
       this.logger.log(`Reminder sent to ${maskEmail(clientEmail)} for request ${requestId}`);
     }
 
-    return result;
+    return { success: delivered, notificationId: result.notificationId };
   }
 
   /**

@@ -68,7 +68,13 @@ export interface OpeningExpenseEmailOutcome {
   expenseEmailSent: boolean;
 }
 
-export type OpeningExpenseCaseOpenOutcome = OpeningExpenseNotCreatedOutcome | OpeningExpenseEmailOutcome;
+export interface OpeningExpenseApprovalOutcome {
+  approvalRequired: true;
+  approvalRequestId: string;
+  approvalStatus: string;
+  message: string;
+}
+export type OpeningExpenseCaseOpenOutcome = OpeningExpenseNotCreatedOutcome | OpeningExpenseEmailOutcome | OpeningExpenseApprovalOutcome;
 
 const requiredInfoSentence = (requiredInfo: readonly string[] | undefined): string =>
   requiredInfo && requiredInfo.length > 0 ? ` Gereken bilgi: ${requiredInfo.join("; ")}.` : "";
@@ -79,6 +85,8 @@ const requiredInfoSentence = (requiredInfo: readonly string[] | undefined): stri
  */
 export function describeOpeningExpenseOutcome(outcome: OpeningExpenseCaseOpenOutcome | null | undefined): string | null {
   if (!outcome) return null;
+  if ('approvalRequired' in outcome) return outcome.approvalRequired
+    ? `Dosya oluşturuldu. ${outcome.message} Onay Kutusu'ndan kararı izleyin; onaydan sonra dosyanın Finans bölümünden gönderin.` : null;
   const reason = String(outcome.message || outcome.reasonCode || "").trim();
   if (outcome.status === "NOT_CREATED") {
     const email = outcome.expenseEmailRequested && !outcome.expenseEmailSent ? " Masraf e-postası GÖNDERİLMEDİ." : "";

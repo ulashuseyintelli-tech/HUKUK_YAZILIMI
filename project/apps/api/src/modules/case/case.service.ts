@@ -53,6 +53,7 @@ import { resolveInitialPolicy } from "../interest-engine/interest-strategy.confi
 import { mapDtoCaseTypeToInterestCaseType } from "./case-type-mapping";
 import { validateResponsibleSelection } from "./responsible-candidates.service"; // M2-A3a: create'te ortak Dosya Sorumlusu validator
 import { ExpenseRequestService } from "../expense-request/expense-request.service";
+import type { ExpenseSendApprovalOutcome } from '../client-notification/expense-send-approval.service';
 import { buildOpeningExpenseNotCreatedOutcome, OpeningExpenseNotCreatedOutcome } from "../expense-request/opening-expense-basis";
 import {
   buildOpeningExpenseEmailNotSentOutcome,
@@ -2230,7 +2231,8 @@ export class CaseService {
     caseId: string,
     fileNumber: string,
     shouldSendEmail: boolean,
-  ): Promise<OpeningExpenseEmailNotSentOutcome | undefined> {
+    requesterUserId?: string,
+  ): Promise<OpeningExpenseEmailNotSentOutcome | ExpenseSendApprovalOutcome | undefined> {
     let expenseResult: { id?: string } | null | undefined;
     try {
       expenseResult = await this.expenseRequestService.createOpeningExpenseSet(caseId, tenantId, 'system');
@@ -2248,7 +2250,8 @@ export class CaseService {
 
     let fallbackReason: OpeningExpenseEmailReasonCode = 'DELIVERY_NOT_CONFIRMED';
     try {
-      const emailResult = await this.expenseRequestService.sendExpenseEmail(tenantId, expenseResult.id, 'system');
+      const emailResult = await this.expenseRequestService.sendExpenseEmail(tenantId, expenseResult.id, requesterUserId ?? '');
+      if ('approvalRequired' in emailResult && emailResult.approvalRequired) return emailResult;
       if (emailResult?.success === true) {
         this.logger.log(`Masraf talebi maili gönderildi: ${fileNumber}`);
         return undefined;
@@ -2278,8 +2281,8 @@ export class CaseService {
   /// E-posta denemesinin sonucunu yanıtta bildirebilmek için en çok OPENING_EXPENSE_EMAIL_WAIT_MS bekler. Süre dolarsa
   /// "sonuç henüz belli değil" döner; deneme arka planda sürer ve sonucu dosya sayfası + görev üzerinden görünür.
   private async awaitOpeningExpenseEmailOutcome(
-    automation: Promise<OpeningExpenseEmailNotSentOutcome | undefined>,
-  ): Promise<OpeningExpenseEmailNotSentOutcome | OpeningExpenseEmailResultPendingOutcome | undefined> {
+    automation: Promise<OpeningExpenseEmailNotSentOutcome | ExpenseSendApprovalOutcome | undefined>,
+  ): Promise<OpeningExpenseEmailNotSentOutcome | ExpenseSendApprovalOutcome | OpeningExpenseEmailResultPendingOutcome | undefined> {
     let timer: NodeJS.Timeout | undefined;
     const timeout = new Promise<OpeningExpenseEmailResultPendingOutcome>((resolve) => {
       timer = setTimeout(() => resolve(buildOpeningExpenseEmailResultPendingOutcome()), OPENING_EXPENSE_EMAIL_WAIT_MS);
@@ -2953,6 +2956,7 @@ export class CaseService {
         | OpeningExpenseNotCreatedOutcome
         | OpeningExpenseEmailNotSentOutcome
         | OpeningExpenseEmailResultPendingOutcome
+        | ExpenseSendApprovalOutcome
         | undefined;
 
       // Audit log
@@ -3026,7 +3030,7 @@ export class CaseService {
         if (result.case.clientId && !openingExpenseRequest) {
           const shouldSendEmail = dto.sendExpenseEmail === true;
           // E-posta istenmediyse eskisi gibi arka planda çalışır. Beklenmeyen hata dosya açılışını bozmaz.
-          const automation = this.runOpeningExpenseAutomation(tenantId, result.case.id, result.case.fileNumber, shouldSendEmail).catch(
+          const automation = this.runOpeningExpenseAutomation(tenantId, result.case.id, result.case.fileNumber, shouldSendEmail, userId).catch(
             (err: any) => {
               this.logger.warn(`Otomatik açılış masraf akışı tamamlanamadı (${result.case!.fileNumber}): ${err?.message ?? err}`);
               return shouldSendEmail ? buildOpeningExpenseEmailNotSentOutcome(describeOpeningExpenseEmailFailure('SEND_ERROR')) : undefined;

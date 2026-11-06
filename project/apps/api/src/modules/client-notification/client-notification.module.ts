@@ -12,6 +12,7 @@ import { ClientNotificationAuthorityAdapter } from "./client-notification-author
 import { NotificationHistoryPermissionController } from "./notification-history-permission.controller";
 import { NotificationHistoryPermissionService } from "./notification-history-permission.service";
 import { ClientNotificationHistoryAccessService } from "./client-notification-history-access.service";
+import { ExpenseSendApprovalService } from './expense-send-approval.service';
 
 @Module({
   imports: [
@@ -28,7 +29,8 @@ import { ClientNotificationHistoryAccessService } from "./client-notification-hi
     ClientNotificationAuthorityAdapter,
     NotificationHistoryPermissionService,
     ClientNotificationHistoryAccessService,
+    ExpenseSendApprovalService,
   ],
-  exports: [ClientNotificationService, NotificationDispatcherService],
+  exports: [ClientNotificationService, NotificationDispatcherService, ExpenseSendApprovalService],
 })
 export class ClientNotificationModule {}

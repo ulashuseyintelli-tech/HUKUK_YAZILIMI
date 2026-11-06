@@ -6,6 +6,7 @@
 import { ExpenseNotificationService } from '../expense-notification.service';
 import { NotificationDispatcherService } from '../../client-notification/notification-dispatcher.service';
 import { openingExpenseEmailReasonOfAuditDetails } from '../opening-expense-email-outcome';
+import { approvedExpenseSendFixture } from './approved-expense-send.fixture';
 
 const TENANT = 'tenant-x';
 const USER = 'user-x';
@@ -43,7 +44,11 @@ function makeService(
   dispatchResult: any,
   opts: { requestStatus?: string; notificationStatus?: string; notificationError?: string; dispatcherOverride?: (prisma: any) => any } = {},
 ) {
-  const auditCreate = jest.fn().mockResolvedValue({});
+  const deliveries = new Set<string>(opts.requestStatus === 'SENT' ? [dispatchResult?.notificationId ?? 'ex-1'] : []);
+  const auditCreate = jest.fn(async ({ data }: any) => {
+    if (data.action === 'EMAIL_SENT') deliveries.add(data.details.notificationId);
+    return {};
+  });
   const taskCreate = jest.fn().mockResolvedValue({});
   // Talep SENT geçişi: atomik koşullu güncelleme (status != SENT). Durum bellekte tutulur → ikinci çağrı count=0 görür.
   const requestState = { status: opts.requestStatus ?? 'PENDING' };
@@ -56,22 +61,27 @@ function makeService(
     .fn()
     .mockResolvedValue(opts.notificationStatus ? { status: opts.notificationStatus, errorMessage: opts.notificationError ?? null } : null);
   const tx = {
+    $queryRaw: jest.fn().mockResolvedValue([]),
     expenseRequest: {
       updateMany: reqUpdate,
     },
-    expenseAuditLog: { create: auditCreate },
+    expenseAuditLog: { create: auditCreate, findFirst: jest.fn(async ({ where }: any) => {
+      const id = where.details?.equals;
+      return (id ? deliveries.has(id) : deliveries.size > 0) ? { action: 'EMAIL_SENT' } : null;
+    }) },
     task: { create: taskCreate },
   };
+  let serial: Promise<unknown> = Promise.resolve();
   const prisma: any = {
     expenseRequest: { findFirst: jest.fn().mockResolvedValue(makeRequest()) },
     office: { findFirst: jest.fn().mockResolvedValue({ name: 'Telli Hukuk', phone: '0212', email: 'ofis@x', bankAccounts: [{ iban: 'TR11' }] }) },
     expenseAuditLog: { create: auditCreate },
     clientNotification: { findFirst: notificationFindFirst },
-    $transaction: jest.fn(async (cb: any) => cb(tx)),
+    $transaction: jest.fn((cb: any) => { const result = serial.then(() => cb(tx)); serial = result.catch(() => undefined); return result; }),
   };
   const dispatcher: any = opts.dispatcherOverride
     ? opts.dispatcherOverride(prisma)
-    : { dispatch: jest.fn().mockResolvedValue(dispatchResult) };
+    : { dispatch: jest.fn().mockResolvedValue({ dedupeKey: `EXPENSE_REQUEST:ExpenseRequest:${REQ}:1`, ...dispatchResult }) };
   const configService: any = { get: jest.fn().mockReturnValue(undefined) };
   const emailProvider: any = { send: jest.fn() };
   const svc = new ExpenseNotificationService(prisma, emailProvider, configService, dispatcher);
@@ -152,9 +162,11 @@ describe('C1-B05-A ExpenseNotificationService migration', () => {
   it.each(['PAID', 'PARTIAL', 'RECEIVED', 'CANCELLED'])('a stale email result cannot overwrite %s or create a follow-up task', async status => {
     const { svc, reqUpdate, auditCreate, taskCreate } = makeService({ status: 'sent', notificationId: 'n-1' }, { requestStatus: status });
     await svc.sendExpenseRequest(TENANT, REQ, USER);
-    expect(reqUpdate).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: { notIn: ['SENT', 'PAID', 'PARTIAL', 'RECEIVED', 'CANCELLED'] } }) }));
+    expect(reqUpdate).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: { notIn: ['PAID', 'PARTIAL', 'RECEIVED', 'CANCELLED'] } }) }));
+    await expect(reqUpdate.mock.results[0].value).resolves.toEqual({ count: 0 });
     expect(taskCreate).not.toHaveBeenCalled();
-    expect(auditCreate.mock.calls.filter((c: any[]) => c[0].data.action === 'EMAIL_SENT')).toHaveLength(0);
+    // SMTP was already accepted before the competing payment/cancellation: retain delivery history only.
+    expect(auditCreate.mock.calls.filter((c: any[]) => c[0].data.action === 'EMAIL_SENT')).toHaveLength(1);
   });
   it('EmailProviderService’e GİTMEZ; dispatcher EXPENSE_REQUEST + stable dedupeKey ile çağrılır', async () => {
     const { svc, dispatcher, emailProvider } = makeService({ status: 'sent', notificationId: 'n-1' });
@@ -198,7 +210,7 @@ describe('C1-B05-A ExpenseNotificationService migration', () => {
     expect(reqUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'SENT' }) }));
     expect(auditCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ action: 'EMAIL_SENT' }) }));
     // Geçiş TEK atomik koşullu güncelleme: kiracı + "zaten SENT değil" koşulu aynı sorguda
-    expect(reqUpdate).toHaveBeenCalledWith(expect.objectContaining({ where: { id: REQ, tenantId: TENANT, status: { notIn: ['SENT', 'PAID', 'PARTIAL', 'RECEIVED', 'CANCELLED'] } } }));
+    expect(reqUpdate).toHaveBeenCalledWith(expect.objectContaining({ where: { id: REQ, tenantId: TENANT, status: { notIn: ['PAID', 'PARTIAL', 'RECEIVED', 'CANCELLED'] } } }));
     expect(taskCreate).toHaveBeenCalledTimes(1);
   });
 
@@ -209,7 +221,7 @@ describe('C1-B05-A ExpenseNotificationService migration', () => {
     );
     const res = await svc.sendExpenseRequest(TENANT, REQ, USER);
     expect(res).toMatchObject({ success: true });
-    await expect(reqUpdate.mock.results[0].value).resolves.toEqual({ count: 0 }); // zaten SENT: koşullu güncelleme hiçbir satırı değiştirmez
+    expect(reqUpdate).not.toHaveBeenCalled(); // same durable notification: no second business mutation
     expect(auditCreate).not.toHaveBeenCalled();
     expect(taskCreate).not.toHaveBeenCalled();
   });
@@ -356,7 +368,7 @@ describe('dispatch skipped — talep SENT yalnız mevcut bildirim satırı gerç
       const made = makeService(undefined, {
         requestStatus: 'PENDING',
         notificationStatus: rowStatus,
-        dispatcherOverride: (prisma) => new NotificationDispatcherService(prisma, clientNotification, messageTemplate),
+        dispatcherOverride: (prisma) => new NotificationDispatcherService(prisma, clientNotification, messageTemplate, approvedExpenseSendFixture()),
       });
       const dispatchSpy = jest.spyOn(made.dispatcher, 'dispatch');
       return { ...made, clientNotification, dispatchSpy };
@@ -412,7 +424,7 @@ describe('dispatch skipped — talep SENT yalnız mevcut bildirim satırı gerç
       };
       const made = makeService(undefined, {
         requestStatus: 'PENDING',
-        dispatcherOverride: (prisma) => new NotificationDispatcherService(prisma, clientNotification, messageTemplate),
+        dispatcherOverride: (prisma) => new NotificationDispatcherService(prisma, clientNotification, messageTemplate, approvedExpenseSendFixture()),
       });
       made.notificationFindFirst.mockImplementation(async () => ({ status: row.status, errorMessage: row.errorMessage }));
       return { ...made, row, clientNotification, dispatchSpy: jest.spyOn(made.dispatcher, 'dispatch') };
@@ -435,6 +447,16 @@ describe('dispatch skipped — talep SENT yalnız mevcut bildirim satırı gerç
       expect(emailSentAudits(auditCreate)[0][0].data.details).toEqual({ via: 'dispatcher', notificationId: 'ex-1', reconciled: false, retried: true });
       expect(emailFailedAudits(auditCreate)).toHaveLength(0);
       expect(taskCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it('FAILED transport retry returns a fresh business-approval requirement without a failed-send audit or task', async () => {
+      const { svc, clientNotification, dispatchSpy, reqUpdate, auditCreate, taskCreate } = machine('FAILED', 'ok');
+      const approval = { success: false, approvalRequired: true, approvalRequestId: 'fresh-approval', approvalStatus: 'PENDING_APPROVAL', retryable: false };
+      dispatchSpy.mockResolvedValueOnce({ status: 'skipped', notificationId: 'ex-1', dedupeKey: DEDUPE_KEY });
+      dispatchSpy.mockResolvedValueOnce({ status: 'skipped', dedupeKey: DEDUPE_KEY, approval } as any);
+      await expect(svc.sendExpenseRequest(TENANT, REQ, USER)).resolves.toEqual(approval);
+      expect(clientNotification.sendEmail).not.toHaveBeenCalled();
+      expect(reqUpdate).not.toHaveBeenCalled(); expect(auditCreate).not.toHaveBeenCalled(); expect(taskCreate).not.toHaveBeenCalled();
     });
 
     it('FAILED satır + yeniden denemede ZAMAN AŞIMI / belirsiz sonuç → satır PENDING kalır; talep SENT OLMAZ, "gönderilmedi" kesinliği iddia edilmez', async () => {
@@ -500,7 +522,7 @@ describe('dispatch skipped — talep SENT yalnız mevcut bildirim satırı gerç
       expect(a).toEqual({ success: true, notificationId: 'ex-1' });
       expect(b).toEqual({ success: true, notificationId: 'ex-1' });
       expect(clientNotification.sendEmail).not.toHaveBeenCalled();
-      expect(reqUpdate).toHaveBeenCalledTimes(2); // ikisi de geçişi dener
+      expect(reqUpdate).toHaveBeenCalledTimes(1); // parent lock + recorded notification skips the second write
       expect(emailSentAudits(auditCreate)).toHaveLength(1); // yalnız count=1 olan yazar
       expect(taskCreate).toHaveBeenCalledTimes(1);
     });

@@ -12,6 +12,7 @@ import { ExpensePaymentReversalContractService, ExpensePaymentReversalRequestKin
 import { lockExpenseRequest } from './expense-request-lock';
 import { normalizeExpensePayment, type PaymentInput } from './expense-payment-command';
 import { OfficeApprovalService } from '@/modules/office-approval/office-approval.service';
+import { ExpenseSendApprovalService } from '@/modules/client-notification/expense-send-approval.service';
 import { isSameApprovalIdentity } from '@/common/approval-identity';
 export type { PaymentInput } from './expense-payment-command';
 import {
@@ -154,6 +155,7 @@ export class ExpenseRequestService {
     // O-7: dağıtım kararı için genel onaycı yüklemi (isApproverEligibleInTx). Yoksa karar fail-closed reddedilir.
     @Optional()
     private readonly officeApproval?: OfficeApprovalService,
+    @Optional() private readonly sendApproval?: ExpenseSendApprovalService,
   ) {}
 
   async findAll(tenantId: string, params?: { caseId?: string; clientId?: string; status?: ExpenseRequestStatus }, actorUserId?: string) {
@@ -519,6 +521,8 @@ export class ExpenseRequestService {
       || (notificationId !== undefined && typeof notificationId !== 'string')) throw new BadRequestException('Gönderim girdisi geçersiz');
     return this.prisma.$transaction(async tx => {
       const existing = await this.findLockedRequest(tx, tenantId, id);
+      if (!this.sendApproval) throw new ForbiddenException({ code: 'EXPENSE_SEND_APPROVAL_REQUIRED' });
+      await this.sendApproval.assertRecordedSend(tx, tenantId, id);
       if (existing.status !== 'PENDING' && existing.status !== 'REMINDED') {
         throw new BadRequestException('Bu talep zaten gönderilmiş veya tamamlanmış');
       }
@@ -1843,6 +1847,8 @@ export class ExpenseRequestService {
     if (typeof channel !== 'string' || !channel.trim()) throw new BadRequestException('Gönderim kanalı geçersiz');
     const result = await this.prisma.$transaction(async tx => {
       const request = await this.findLockedRequest(tx, tenantId, requestId);
+      if (!this.sendApproval) throw new ForbiddenException({ code: 'EXPENSE_SEND_APPROVAL_REQUIRED' });
+      await this.sendApproval.assertRecordedSend(tx, tenantId, requestId);
       if (request.status !== 'PENDING') throw new BadRequestException('Sadece bekleyen talepler gönderilebilir');
       const updated = await tx.expenseRequest.update({
         where: { id: requestId }, data: { status: 'SENT', sentAt: new Date(), sentVia: channel },
@@ -1879,6 +1885,7 @@ export class ExpenseRequestService {
    */
   async sendExpenseEmailWithOutcome(tenantId: string, requestId: string, userId: string) {
     const result = await this.expenseNotification.sendExpenseRequest(tenantId, requestId, userId);
+    if ('approvalRequired' in result && result.approvalRequired) return result;
     if (result.success === true) {
       return { ...result, ...buildExpenseEmailAcceptedOutcome() };
     }
