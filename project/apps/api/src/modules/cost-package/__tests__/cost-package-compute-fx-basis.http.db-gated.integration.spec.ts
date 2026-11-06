@@ -483,6 +483,7 @@ describeWithDisposableDb('Masraf paketi önerisi — dövizli dosyada oranlı ka
   it('SALT HESAP: öneri ucu dövizli dosyada da TL dosyada da kayıt yazmaz; önceden paketten oluşturulmuş talep değişmez', async () => {
     const usd = await openCase('yazma-usd', { ...inCurrency('USD'), dues: [principal(1_000_000)] });
     const tl = await openCase('yazma-try', { ...inCurrency('TRY'), dues: [principal(1_000_000)] });
+    await prisma.caseClient.create({ data: { caseId: tl, clientId, role: 'ALACAKLI' } });
     // Geçmiş kayıt: düzeltmeden önce pencerede dolu gelen (yanlış) öneriyle kaydedilmiş paket talebi. Dövizli dosyada
     // artık paket yolundan oluşturulamaz (409) → geçmiş kayıt doğrudan eklenir; TL dosyada aynı yoldan oluşur.
     const legacyItems = bySortOrder([...fixedOpeningItems(), pesinHarcItem(1_000_000, 5_000)]).map((item) => ({
@@ -579,6 +580,7 @@ describeWithDisposableDb('Masraf paketi önerisi — dövizli dosyada oranlı ka
     it('TL dosya (kontrol): bugünkü gibi 201; altı kalem toplamı 5.857,90 kaydolur', async () => {
       const caseId = await openCase('fp-try', { ...inCurrency('TRY'), dues: [principal(1_000_000)] });
       await prisma.case.update({ where: { id: caseId }, data: { clientId } });
+      await prisma.caseClient.create({ data: { caseId, clientId, role: 'ALACAKLI' } });
 
       const res = await fromPackage(caseId, packageItems(true));
 
@@ -617,6 +619,7 @@ describeWithDisposableDb('Masraf paketi önerisi — dövizli dosyada oranlı ka
 
       beforeAll(async () => {
         caseId = await openCase('fp-bos-tutar', { ...inCurrency('TRY'), dues: [principal(10_000)] });
+        await prisma.caseClient.create({ data: { caseId, clientId, role: 'ALACAKLI' } });
       });
 
       it.each([
