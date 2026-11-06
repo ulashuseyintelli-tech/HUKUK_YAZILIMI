@@ -310,6 +310,15 @@ dbDescribe('3a/T-3 expense pre-send approval (HTTP + disposable DB + isolated SM
     expect(await db.expenseAuditLog.count({ where: { expenseRequestId: id, action: 'EMAIL_SENT' } })).toBe(1);
     expect(await db.task.count({ where: { tenantId, caseId } })).toBe(tasksBefore + 1);
   });
+  it('legacy status reconciliation cannot replace the proven delivery with a caller-supplied notification', async () => {
+    const id = await makeExpense(), approvalId = await requestApproval(id);
+    expect((await approve(approvalId)).status).toBe(201); expect((await send(id)).status).toBe(201);
+    // Simulate an unfinished business-state reconciliation, retaining the real approved receipt.
+    await db.expenseRequest.update({ where: { id }, data: { status: 'PENDING' } });
+    const before = await state(id);
+    expect((await post('REQUESTER', `/expense-requests/${id}/send`, { channel: 'EMAIL', notificationId: 'unrelated-notification' })).status).toBe(400);
+    expect(await state(id)).toEqual(before);
+  });
   it('the real ClientNotificationModule wires the approval gate into both dispatcher and transport', async () => {
     // Match the application's global providers; do not replace the new approval gate.
     const module = await Test.createTestingModule({ imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true }), StorageModule, ErrorLogModule, MetricsRegistryModule, ClientNotificationModule] })

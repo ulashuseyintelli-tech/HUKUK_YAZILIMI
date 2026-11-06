@@ -22,6 +22,7 @@ import { CaseModule } from '../../case/case.module';
 import { ErrorLogModule } from '../../error-log/error-log.module';
 import { MetricsRegistryModule } from '../../metrics-registry/metrics-registry.module';
 import { StageTriggerModule } from '../../stage-trigger/stage-trigger.module';
+import { stableJsonHash } from '../../permission-diagnostics/guided-edge/canonical-json';
 
 /**
  * Masraf kesinleştirme / onaylama / reddetme — DOSYA AŞAMASINDAN BAĞIMSIZ. GERÇEK HTTP + disposable PostgreSQL.
@@ -160,6 +161,22 @@ describeWithDisposableDb('Masraf finalize / approve / reject aşamadan bağıms�
     return { status: row.status, approval: row.expenseApprovalStatus, approvedById: row.approvedById, sentVia: row.sentVia, audit: row.auditLogs.map((log) => log.action).sort() };
   };
 
+  // 3a precondition fixture: provider receipt exists; the older test measures stage-policy/finalization,
+  // not SMTP delivery. Keep the real assertRecordedSend gate instead of replacing it with a mock.
+  const bindApprovedSend = async (requestId: string, caseId: string) => {
+    const savedIntent = { version: 'EXPENSE_SEND_V1', expenseRequestId: requestId, fixture: 'stage-policy-prior-delivery' };
+    const approval = await prisma.officeApprovalRequest.create({ data: {
+      tenantId, actionCode: 'EXPENSE_REQUEST_SEND', targetType: 'ExpenseRequest', targetRef: requestId,
+      requesterUserId: adminId, approverUserId: partnerId, status: 'APPROVED', executionStatus: 'SUCCEEDED',
+      savedIntent, payloadHash: stableJsonHash(savedIntent),
+    } });
+    const notification = await prisma.clientNotification.create({ data: {
+      tenantId, clientId, caseId, channel: 'EMAIL', type: 'MASRAF_ISTEK', body: 'Synthetic prior delivery receipt',
+      status: 'SENT', sentById: adminId, dedupeKey: `EXPENSE_REQUEST:ExpenseRequest:${requestId}:${approval.id}`,
+    } });
+    await prisma.expenseRequest.update({ where: { id: requestId }, data: { notificationId: notification.id } });
+  };
+
   const cpeRows = (caseId: string, since: Date) =>
     prisma.cpeDecisionLog.findMany({ where: { caseId, actionCode: 'APPROVE_EXPENSE', createdAt: { gte: since } }, orderBy: { createdAt: 'asc' } });
 
@@ -173,6 +190,7 @@ describeWithDisposableDb('Masraf finalize / approve / reject aşamadan bağıms�
     it.each(DB_STAGES)('aşama %s: finalize → SENT, approve → APPROVED, reject → REJECTED; denetim + karar günlüğü yazılır', async (stage) => {
       await prisma.case.update({ where: { id: caseId }, data: { workflowStage: stage } });
       const finalizeId = await makeRequestRow(caseId);
+      await bindApprovedSend(finalizeId, caseId);
       const approveId = await makeRequestRow(caseId);
       const rejectId = await makeRequestRow(caseId);
       const since = new Date();

@@ -521,10 +521,13 @@ export class ExpenseRequestService {
       || (notificationId !== undefined && typeof notificationId !== 'string')) throw new BadRequestException('Gönderim girdisi geçersiz');
     return this.prisma.$transaction(async tx => {
       const existing = await this.findLockedRequest(tx, tenantId, id);
-      if (!this.sendApproval) throw new ForbiddenException({ code: 'EXPENSE_SEND_APPROVAL_REQUIRED' });
-      await this.sendApproval.assertRecordedSend(tx, tenantId, id);
       if (existing.status !== 'PENDING' && existing.status !== 'REMINDED') {
         throw new BadRequestException('Bu talep zaten gönderilmiş veya tamamlanmış');
+      }
+      if (!this.sendApproval) throw new ForbiddenException({ code: 'EXPENSE_SEND_APPROVAL_REQUIRED' });
+      await this.sendApproval.assertRecordedSend(tx, tenantId, id);
+      if (notificationId !== undefined && notificationId !== existing.notificationId) {
+        throw new BadRequestException('Gönderim bildirimi doğrulanmış kayıtla eşleşmiyor');
       }
       return tx.expenseRequest.update({
         where: { id }, data: { status: 'SENT', sentAt: new Date(), sentVia: channel, notificationId },
@@ -1847,9 +1850,9 @@ export class ExpenseRequestService {
     if (typeof channel !== 'string' || !channel.trim()) throw new BadRequestException('Gönderim kanalı geçersiz');
     const result = await this.prisma.$transaction(async tx => {
       const request = await this.findLockedRequest(tx, tenantId, requestId);
+      if (request.status !== 'PENDING') throw new BadRequestException('Sadece bekleyen talepler gönderilebilir');
       if (!this.sendApproval) throw new ForbiddenException({ code: 'EXPENSE_SEND_APPROVAL_REQUIRED' });
       await this.sendApproval.assertRecordedSend(tx, tenantId, requestId);
-      if (request.status !== 'PENDING') throw new BadRequestException('Sadece bekleyen talepler gönderilebilir');
       const updated = await tx.expenseRequest.update({
         where: { id: requestId }, data: { status: 'SENT', sentAt: new Date(), sentVia: channel },
       });

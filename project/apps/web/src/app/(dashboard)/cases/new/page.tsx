@@ -3002,7 +3002,7 @@ export default function NewCasePage() {
               <p className="text-gray-600 mb-6">
                 {foreignExpenseConfirmCopy
                   ? foreignExpenseConfirmCopy.message
-                  : "Takip oluşturulacak ve açılış masrafları hesaplanacak. Müvekkile masraf talebi e-postası göndermek ister misiniz?"}
+                  : "Takip oluşturulacak ve açılış masrafları hesaplanacak. Müvekkile masraf talebi e-postası için gönderim onayı istensin mi?"}
               </p>
               
               <div className="flex flex-col gap-2">
