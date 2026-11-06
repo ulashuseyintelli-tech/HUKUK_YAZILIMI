@@ -1962,6 +1962,8 @@ P8 FINAL İLİŞKİSİ         BEKLETMEZ — P8 FINAL blocker'ı DEĞİL
 EXECUTION AUTHORITY       NONE (bu kayıt kimlik+statü envanteridir)
 ```
 
+> **D-WR-7 güncellik şerhi (2026-11-06):** Yukarıdaki `D-WR-7 OPEN`, 2026-08-13 envanterinin tarihsel ifadesidir ve korunur. D-WR-7'nin owner karar sorusu, 2c onayıyla kapanmış ve tek canonical karar olarak [decision-log.md](decision-log.md) içindeki `OFFICE-WR01-DWR7-2C-SA01` kaydına işlenmiştir. Mevcut WR01/B06 policy çalışmasının bu karara ilişkin sınırı o kayıttan izlenir; D-WR-1..6/B06 uygulama hedefleri bu şerhle tamamlanmış, seçilmiş veya etkinleştirilmiş sayılmaz. Bu kayıt yeni implementation authority üretmez.
+
 Kaynak: owner P8-C4 handoff (2026-08-13) + `decision-log.md` 2026-08-13 OFFICE P8-C4 satırları.
 
 ### 13.6 RUNTIME REFERANSI — SUPERSEDING POINTER (2026-08-26, retrospective reconciliation)
