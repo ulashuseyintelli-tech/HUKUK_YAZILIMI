@@ -23,7 +23,7 @@ function build(expenseRequestService: Record<string, jest.Mock>) {
   const log = jest.fn();
   const warn = jest.fn();
   (svc as any).logger = { log, warn };
-  const run = (shouldSendEmail: boolean) => (svc as any).runOpeningExpenseAutomation('tenant-1', 'case-1', '2026/77', shouldSendEmail);
+  const run = (shouldSendEmail: boolean) => (svc as any).runOpeningExpenseAutomation('tenant-1', 'case-1', '2026/77', shouldSendEmail, 'opening-initiator');
   const wait = (automation: Promise<unknown>) => (svc as any).awaitOpeningExpenseEmailOutcome(automation);
   return { svc, log, warn, run, wait };
 }
@@ -83,7 +83,7 @@ describe('CaseService — otomatik açılış masraf akışının sonucu', () =>
 
       await expect(run(true)).resolves.toBeUndefined();
 
-      expect(expense.sendExpenseEmail).toHaveBeenCalledWith('tenant-1', 'exp-1', 'system');
+      expect(expense.sendExpenseEmail).toHaveBeenCalledWith('tenant-1', 'exp-1', 'opening-initiator');
       expect(expense.recordOpeningExpenseEmailNotSent).not.toHaveBeenCalled();
       expect(lines(log)).toEqual(['Otomatik açılış masrafları oluşturuldu: 2026/77', 'Masraf talebi maili gönderildi: 2026/77']);
       expect(lines(warn)).toEqual([]);

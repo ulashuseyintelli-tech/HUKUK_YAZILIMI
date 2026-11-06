@@ -196,18 +196,18 @@ function expenseModal(): { message: string[]; buttons: string[] } | null {
 }
 
 // TL taslakta AYNEN kalması gereken metinler
-const TL_MESSAGE = 'Takip oluşturulacak ve açılış masrafları hesaplanacak. Müvekkile masraf talebi e-postası göndermek ister misiniz?';
-const TL_BUTTONS = ['Oluştur ve Masraf Maili Gönder', 'Sadece Oluştur (Mail Sonra)', 'İptal'];
+const TL_MESSAGE = 'Takip oluşturulacak ve açılış masrafları hesaplanacak. Müvekkile masraf talebi e-postası için gönderim onayı istensin mi?';
+const TL_BUTTONS = ['Oluştur ve Masraf Gönderim Onayı İste', 'Sadece Oluştur (Mail Sonra)', 'İptal'];
 
 // Taslakta TL dışı para birimi varken gösterilen metinler
 const foreignMessage = (currencies: string) =>
   `Takip oluşturulacak. Dosyada TL dışı para birimi var (${currencies}); açılış masraf talebinin otomatik oluşturulup ` +
   'oluşturulmayacağını sunucu belirler ve sonuç dosya oluşturulduktan sonra gösterilir. Talep oluşturulursa müvekkile ' +
-  'masraf talebi e-postası gönderilsin mi?';
-const FOREIGN_SEND = 'Oluştur (Talep Oluşursa Mail Gönder)';
+  'masraf talebi e-postası için gönderim onayı istensin mi?';
+const FOREIGN_SEND = 'Oluştur (Talep Oluşursa Gönderim Onayı İste)';
 const FOREIGN_BUTTONS = [FOREIGN_SEND, 'Sadece Oluştur (Mail Sonra)', 'İptal'];
 
-const OLD_PROMISES = ['Kur hesaplaması otomatik yapılacak', 'açılış masrafları hesaplanacak', 'Oluştur ve Masraf Maili Gönder'];
+const OLD_PROMISES = ['Kur hesaplaması otomatik yapılacak', 'açılış masrafları hesaplanacak', 'Oluştur ve Masraf Maili Gönder', 'Oluştur ve Masraf Gönderim Onayı İste'];
 
 let alertSpy: ReturnType<typeof vi.fn>;
 
@@ -303,7 +303,7 @@ describe('Sihirbaz son adım — gönderim öncesi metinler', () => {
     expect(document.body.textContent).not.toContain('TL dışı para birimi');
     expect(document.body.textContent).not.toContain('Talep Oluşursa');
 
-    const body = await submitWith('Oluştur ve Masraf Maili Gönder');
+    const body = await submitWith('Oluştur ve Masraf Gönderim Onayı İste');
     expect(body).toMatchObject({ currency: 'TRY', sendExpenseEmail: true });
     expect(alertSpy).not.toHaveBeenCalled();
     expect(push).toHaveBeenCalledWith('/cases/case-tl?tab=documents');

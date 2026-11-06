@@ -1,3 +1,5 @@
+import { toActionError } from './action-error';
+
 /**
  * Masraf talebi penceresi — gönderim denemesinin sonucu (POST /expense-requests/:id/send-email yanıtı → pencere durumu).
  *
@@ -13,6 +15,7 @@
  */
 
 export type ExpenseSendUiState =
+  | { readonly kind: 'approval'; readonly message: string; readonly approvalRequestId: string; readonly approvalStatus: string; readonly requiredInfo: readonly string[]; readonly retryable: false }
   | { readonly kind: 'accepted'; readonly message: string }
   | { readonly kind: 'not-sent'; readonly message: string; readonly requiredInfo: readonly string[]; readonly retryable: boolean }
   | { readonly kind: 'uncertain'; readonly message: string; readonly requiredInfo: readonly string[]; readonly retryable: false }
@@ -34,6 +37,11 @@ export function interpretExpenseSendResponse(response: unknown): ExpenseSendUiSt
   const r = (response && typeof response === 'object' ? response : {}) as Record<string, unknown>;
   const message = typeof r.message === 'string' && r.message.trim() ? r.message : null;
   const requiredInfo = asStringList(r.requiredInfo);
+
+  if (r.approvalRequired === true && typeof r.approvalRequestId === 'string' && typeof r.approvalStatus === 'string') {
+    return { kind: 'approval', message: message ?? 'E-posta gönderilmedi; bağımsız iç onay gerekiyor.',
+      approvalRequestId: r.approvalRequestId, approvalStatus: r.approvalStatus, requiredInfo: [], retryable: false };
+  }
 
   if (r.success === true) {
     return { kind: 'accepted', message: message ?? ACCEPTED_FALLBACK };
@@ -61,6 +69,10 @@ export function interpretExpenseSendResponse(response: unknown): ExpenseSendUiSt
  * </remarks>
  */
 export function expenseSendRequestFailed(error: unknown): ExpenseSendUiState {
+  const status = error && typeof error === 'object' && 'status' in error ? (error as { status?: unknown }).status : null;
+  if (typeof status === 'number' && status >= 400 && status < 500) {
+    return { kind: 'not-sent', message: toActionError(error, 'Masraf gönderimi reddedildi.').message, requiredInfo: [], retryable: false };
+  }
   const detail = error instanceof Error && error.message ? ` (${error.message})` : '';
   return {
     kind: 'error',

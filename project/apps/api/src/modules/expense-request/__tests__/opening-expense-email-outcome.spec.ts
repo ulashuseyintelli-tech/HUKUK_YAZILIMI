@@ -134,8 +134,9 @@ describe('ExpenseNotificationService.sendExpenseRequest — dağıtım başarıs
   }) {
     const auditCreate = jest.fn().mockResolvedValue({});
     const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
       expenseRequest: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) }, // SENT geçişi: atomik koşullu güncelleme
-      expenseAuditLog: { create: auditCreate },
+      expenseAuditLog: { create: auditCreate, findFirst: jest.fn().mockResolvedValue(null) },
       task: { create: jest.fn().mockResolvedValue({}) },
     };
     const notificationFindFirst =
@@ -160,7 +161,7 @@ describe('ExpenseNotificationService.sendExpenseRequest — dağıtım başarıs
       messageTemplate: { findFirst: templateFindFirst },
       $transaction: jest.fn(async (cb: any) => cb(tx)),
     };
-    const dispatcher: any = { dispatch: jest.fn().mockResolvedValue(options.dispatch) };
+    const dispatcher: any = { dispatch: jest.fn().mockResolvedValue({ dedupeKey: DEDUPE, ...options.dispatch }) };
     const configService: any = { get: jest.fn().mockReturnValue(undefined) };
     const svc = new ExpenseNotificationService(prisma, { send: jest.fn() } as any, configService, dispatcher);
     const failedAudit = () => auditCreate.mock.calls.map(([arg]) => arg.data).find((data: any) => data.action === 'EMAIL_FAILED');

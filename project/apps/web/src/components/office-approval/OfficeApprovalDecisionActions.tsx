@@ -62,7 +62,7 @@ export function OfficeApprovalDecisionActions({ detail, currentUserId, onDecided
   const isRequester = currentUserId !== null && currentUserId === detail.requesterUserId;
   // Müvekkile ödeme talebi "değiştirerek onaylanamaz": kesinleştirme yalnız ORİJİNAL niyetle çalışır, değiştirilmiş onay
   // talebi çıkışsız bırakırdı. Bu YALNIZ görünürlüktür — kapı sunucudadır (400); doğrudan istek de reddedilir.
-  const supportsApproveWithChanges = detail.actionCode !== PAYOUT_ACTION_CODE;
+  const supportsApproveWithChanges = detail.actionCode !== PAYOUT_ACTION_CODE && detail.actionCode !== 'EXPENSE_REQUEST_SEND';
 
   const openAction = (kind: DecisionKind) => {
     setActiveAction(kind);

@@ -42,7 +42,7 @@ export function foreignCurrencyExpenseConfirmCopy(foreignCurrencies: readonly st
     message:
       `Takip oluşturulacak. Dosyada TL dışı para birimi var (${foreignCurrencies.join(", ")}); açılış masraf talebinin ` +
       "otomatik oluşturulup oluşturulmayacağını sunucu belirler ve sonuç dosya oluşturulduktan sonra gösterilir. " +
-      "Talep oluşturulursa müvekkile masraf talebi e-postası gönderilsin mi?",
-    sendEmailLabel: "Oluştur (Talep Oluşursa Mail Gönder)",
+      "Talep oluşturulursa müvekkile masraf talebi e-postası için gönderim onayı istensin mi?",
+    sendEmailLabel: "Oluştur (Talep Oluşursa Gönderim Onayı İste)",
   };
 }

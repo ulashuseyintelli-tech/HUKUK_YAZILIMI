@@ -103,10 +103,10 @@ async function fillManualAndCheckSend() {
   });
   const amount = screen.getAllByRole("spinbutton")[0] as HTMLInputElement;
   fireEvent.change(amount, { target: { value: "252" } });
-  fireEvent.click(screen.getByLabelText("Oluşturduktan sonra müvekkile e-posta gönder"));
+  fireEvent.click(screen.getByLabelText("Oluşturduktan sonra e-posta gönderim onayı iste"));
 }
 
-const sendButton = () => screen.getByRole("button", { name: "Oluştur ve Gönder" });
+const sendButton = () => screen.getByRole("button", { name: "Oluştur ve Gönderim Onayı İste" });
 const resultBox = () => screen.getByTestId("expense-send-result");
 
 describe("ExpenseRequestModal — Oluştur ve Gönder", () => {
@@ -127,6 +127,17 @@ describe("ExpenseRequestModal — Oluştur ve Gönder", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('3a: onay beklerken gönderildi demez; onay sonrası aynı talebi kullanır, ikinci masraf oluşturmaz', async () => {
+    mocked.sendExpenseEmail.mockResolvedValueOnce({ success: false, approvalRequired: true, approvalRequestId: 'approval-3a', approvalStatus: 'PENDING_APPROVAL', message: 'İç onay bekleniyor; e-posta gönderilmedi.' }).mockResolvedValueOnce(ACCEPTED);
+    renderModal(); await fillManualAndCheckSend(); fireEvent.click(sendButton());
+    await screen.findByRole('link', { name: 'Onay Kutusu' });
+    expect(resultBox().textContent).toContain('gönderilmedi');
+    fireEvent.click(screen.getByRole('button', { name: 'Onay Durumunu Kontrol Et ve Gönder' }));
+    await waitFor(() => expect(mocked.sendExpenseEmail).toHaveBeenCalledTimes(2));
+    expect(mocked.createExpenseRequest).toHaveBeenCalledTimes(1);
+    expect(mocked.sendExpenseEmail.mock.calls.every(call => call[0] === 'talep-elle')).toBe(true);
   });
 
   it("elle kip: talep BİR kez oluşur, gerçek gönderim ucu çağrılır, ESKİ işaretleme ucu çağrılmaz", async () => {
@@ -159,7 +170,7 @@ describe("ExpenseRequestModal — Oluştur ve Gönder", () => {
     expect(onClose).not.toHaveBeenCalled();
     // ikinci gönderim düğmesi yok; yalnız Kapat
     expect(screen.queryByRole("button", { name: "Yeniden Dene" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Oluştur ve Gönder" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Oluştur ve Gönderim Onayı İste" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Kapat" }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
@@ -279,7 +290,7 @@ describe("ExpenseRequestModal — Oluştur ve Gönder", () => {
     expect(mocked.sendExpenseEmail).toHaveBeenCalledTimes(1);
   });
 
-  it("gönderim sürerken (yanıtsız SMTP): düğme 'Gönderiliyor…', kapatma yok sayılır, ikinci gönderim yok", async () => {
+  it("gönderim sürerken (yanıtsız SMTP): düğme 'Kontrol ediliyor…', kapatma yok sayılır, ikinci gönderim yok", async () => {
     let releaseSend: (v: unknown) => void = () => undefined;
     mocked.sendExpenseEmail.mockImplementation(
       () =>
@@ -293,12 +304,12 @@ describe("ExpenseRequestModal — Oluştur ve Gönder", () => {
 
     fireEvent.click(sendButton());
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Gönderiliyor…" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Kontrol ediliyor…" })).toBeTruthy();
     });
     // sürerken pencere kapanmaz (sonuç kaybolmasın) ve ikinci gönderim gitmez
     fireEvent.click(screen.getByRole("button", { name: "Kapat" }));
     act(() => {
-      (screen.getByRole("button", { name: "Gönderiliyor…" }) as HTMLButtonElement).click();
+      (screen.getByRole("button", { name: "Kontrol ediliyor…" }) as HTMLButtonElement).click();
     });
     expect(onClose).not.toHaveBeenCalled();
     expect(mocked.sendExpenseEmail).toHaveBeenCalledTimes(1);
@@ -444,7 +455,7 @@ describe("ExpenseRequestModal — Oluştur ve Gönder", () => {
       await fillManualAndCheckSend();
       fireEvent.click(sendButton());
       await waitFor(() => {
-        expect(screen.getByRole("button", { name: "Gönderiliyor…" })).toBeTruthy();
+        expect(screen.getByRole("button", { name: "Kontrol ediliyor…" })).toBeTruthy();
       });
 
       fireEvent.click(xButton());
@@ -519,7 +530,7 @@ describe("ExpenseRequestModal — Oluştur ve Gönder", () => {
     renderModal({ initialPackageCode: "UYAP_PRE", onClose });
     await screen.findByText("Başvurma Harcı");
 
-    const box = screen.getByLabelText(/Oluşturduktan sonra müvekkile e-posta gönder/) as HTMLInputElement;
+    const box = screen.getByLabelText(/Oluşturduktan sonra e-posta gönderim onayı iste/) as HTMLInputElement;
     expect(box.disabled).toBe(true);
     expect(box.checked).toBe(false);
     expect(screen.getByText(/Paket kipinde e-posta gönderimi bu pencerede henüz yapılamıyor/)).toBeTruthy();
@@ -544,7 +555,7 @@ describe("ExpenseRequestModal — Oluştur ve Gönder", () => {
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "UYAP_PRE" } });
     await screen.findByText("Başvurma Harcı");
 
-    expect((screen.getByLabelText(/Oluşturduktan sonra müvekkile e-posta gönder/) as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByLabelText(/Oluşturduktan sonra e-posta gönderim onayı iste/) as HTMLInputElement).checked).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Oluştur" }));
     await waitFor(() => {
       expect(onClose).toHaveBeenCalledTimes(1);

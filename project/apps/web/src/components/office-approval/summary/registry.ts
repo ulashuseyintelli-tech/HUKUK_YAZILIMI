@@ -7,11 +7,13 @@ import { projectCollectionDispositionPost } from "./collection-disposition-post.
 import { projectChangeStatus } from "./change-status.projector";
 import { projectFinancialCaseClose } from "./financial-case-close.projector";
 import { actionBehaviorNotes } from "./action-behavior-catalog";
+import { projectExpenseSend } from './expense-send.projector';
 
 const PROJECTORS: Record<string, ApprovalSummaryProjector> = {
   COLLECTION_DISPOSITION_POST: projectCollectionDispositionPost,
   CHANGE_STATUS: projectChangeStatus,
   FINANCIAL_CASE_CLOSE: projectFinancialCaseClose,
+  EXPENSE_REQUEST_SEND: projectExpenseSend,
 };
 
 const unsafe = (): ApprovalSummaryResult => ({ kind: "unsafe", fields: [], reason: UNSAFE_SUMMARY_REASON });

@@ -1,11 +1,13 @@
 import { assertClientObjectScope } from '../client/client-object-scope';
-import { Injectable, Logger, BadRequestException, NotFoundException } from "@nestjs/common";
+import { Injectable, Logger, BadRequestException, NotFoundException, ForbiddenException, Optional } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { OfficeService } from "../office/office.service";
 import { fetchWithTimeout } from "../../common/fetch-with-timeout.util";
 import { maskEmail, maskPhone } from "../../common/pii-mask.util";
 import * as nodemailer from "nodemailer";
+import { clientEmailRecipient } from './client-email-recipient';
+import { ExpenseSendApprovalService, type ExpenseSendContext } from './expense-send-approval.service';
 
 interface PoaRecentDeliveryOverviewRow {
   id: string;
@@ -264,7 +266,8 @@ export class ClientNotificationService {
 
   constructor(
     private prisma: PrismaService,
-    private officeService: OfficeService
+    private officeService: OfficeService,
+    @Optional() private readonly expenseApproval?: ExpenseSendApprovalService,
   ) {}
 
   /**
@@ -670,7 +673,10 @@ export class ClientNotificationService {
   }
 
   // E-posta gönder
-  async sendEmail(tenantId: string, userId: string, dto: SendEmailDto) {
+  async sendEmail(tenantId: string, userId: string, dto: SendEmailDto, expenseContext?: ExpenseSendContext) {
+    if ((dto.type === 'MASRAF_ISTEK' || expenseContext) && (!expenseContext || !this.expenseApproval || !dto.reuseNotificationId || dto.attachments?.length)) {
+      throw new ForbiddenException({ code: 'EXPENSE_SEND_DOMAIN_REQUIRED' });
+    }
     // Inv-2: reuse yolu → provider'a ulaşmadan ÖNCE claim kaydını tenant+client+dedupeKey+PENDING ile
     // YENİDEN DOĞRULA ve id'yi al. Pre-send hataları (no-recipient/SMTP) bu claim'i FAILED işaretler
     // (orphan-PENDING bırakılmaz; owner düzeltme-3).
@@ -710,10 +716,7 @@ export class ClientNotificationService {
       await markClaimFailed("client-not-found");
       throw new BadRequestException("Müvekkil bulunamadı");
     }
-    const emailContact =
-      client.contacts?.find((c) => c.type === "EMAIL" && c.isPrimary) ||
-      client.contacts?.find((c) => c.type === "EMAIL");
-    const recipientEmail = emailContact?.value || client.email;
+    const recipientEmail = clientEmailRecipient(client);
     if (!recipientEmail) {
       // Fail-closed: geçerli alıcı yok → provider çağrısı YOK, claim FAILED (güvenli terminal).
       await markClaimFailed("recipient-missing");
@@ -730,6 +733,16 @@ export class ClientNotificationService {
 
     const safeHtmlBody = sanitizeNotificationHtml(dto.body);
     const safePersistedBody = sanitizeNotificationHtml(dto.persistedBody ?? dto.body);
+
+    if (expenseContext) {
+      try {
+        await this.expenseApproval!.begin(tenantId, userId, expenseContext, dto, recipientEmail);
+      } catch (error) {
+        // No provider call has started: this exact claim can safely be failed, never left uncertain.
+        await markClaimFailed('expense-approval-pre-send-denied');
+        throw error;
+      }
+    }
 
     const transporter = nodemailer.createTransport({
       host: smtpSettings.smtpHost,
@@ -1028,6 +1041,7 @@ export class ClientNotificationService {
    * The fourth argument is server-only claim context, never read from an HTTP DTO.
    */
   async sendSms(tenantId: string, userId: string, dto: SendSmsDto, claim?: { notificationId: string; dedupeKey: string }) {
+    if (dto.type === 'MASRAF_ISTEK') throw new ForbiddenException({ code: 'EXPENSE_SEND_DOMAIN_REQUIRED' });
     if (claim) {
       const row = await this.prisma.clientNotification.findFirst({
         where: { id: claim.notificationId, tenantId, clientId: dto.clientId, dedupeKey: claim.dedupeKey, channel: 'SMS', status: 'PENDING' },

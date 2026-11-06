@@ -3002,7 +3002,7 @@ export default function NewCasePage() {
               <p className="text-gray-600 mb-6">
                 {foreignExpenseConfirmCopy
                   ? foreignExpenseConfirmCopy.message
-                  : "Takip oluşturulacak ve açılış masrafları hesaplanacak. Müvekkile masraf talebi e-postası göndermek ister misiniz?"}
+                  : "Takip oluşturulacak ve açılış masrafları hesaplanacak. Müvekkile masraf talebi e-postası için gönderim onayı istensin mi?"}
               </p>
               
               <div className="flex flex-col gap-2">
@@ -3014,7 +3014,7 @@ export default function NewCasePage() {
                 >
                   {loading && <Loader2 className="h-4 w-4 animate-spin" />}
                   <Mail className="h-4 w-4" />
-                  {foreignExpenseConfirmCopy ? foreignExpenseConfirmCopy.sendEmailLabel : "Oluştur ve Masraf Maili Gönder"}
+                  {foreignExpenseConfirmCopy ? foreignExpenseConfirmCopy.sendEmailLabel : "Oluştur ve Masraf Gönderim Onayı İste"}
                 </button>
                 
                 <button

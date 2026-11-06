@@ -22,6 +22,8 @@ import { ErrorLogModule } from '../../error-log/error-log.module';
 import { MessageTemplateService } from '../../message-template/message-template.service';
 import { MetricsRegistryModule } from '../../metrics-registry/metrics-registry.module';
 import { OPENING_EXPENSE_EMAIL_WAIT_MS } from '../opening-expense-email-outcome';
+import { ExpenseSendApprovalService } from '../../client-notification/expense-send-approval.service';
+import { approvedExpenseSendFixture } from './approved-expense-send.fixture';
 
 /**
  * Açılış masraf talebi — istenen masraf e-postası GÖNDERİLEMEDİĞİNDE sonuç. GERÇEK HTTP + disposable PostgreSQL + süreç
@@ -217,6 +219,8 @@ describeWithDisposableDb('Açılış masraf talebi — masraf e-postası gönder
       // Masraf talebi denetleyicisi passport korumasını doğrudan kullanır (AuthGuard('jwt') aynı sınıfı döndürür)
       .overrideGuard(AuthGuard('jwt'))
       .useValue(identity)
+      .overrideProvider(ExpenseSendApprovalService)
+      .useValue(approvedExpenseSendFixture())
       .compile();
     app = moduleRef.createNestApplication();
     app.useGlobalPipes(new ValidationPipe(PRODUCTION_VALIDATION_OPTIONS));

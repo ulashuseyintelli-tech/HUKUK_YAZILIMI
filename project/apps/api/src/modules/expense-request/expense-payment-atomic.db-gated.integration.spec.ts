@@ -18,6 +18,7 @@ import { ExpenseCalculatorService } from './expense-calculator.service';
 import { ExpenseNotificationService } from './expense-notification.service';
 import { CpeRequiredGuard } from '../policy-engine/decorators/cpe-required.guard';
 import { CasePolicyEngine } from '../policy-engine/case-policy-engine.service';
+import { approvedExpenseSendFixture } from './__tests__/approved-expense-send.fixture';
 
 const url = resolveTestDatabaseUrl(process.env);
 if (process.env.CI && !url) throw new Error('Expense payment acceptance requires disposable TEST_DATABASE_URL');
@@ -118,7 +119,8 @@ dbDescribe('Expense payment command — atomicity and durable identity (disposab
       jest.spyOn(balance, 'credit').mockImplementation(async (...args) => { await credit(...args); throw new Error('injected-credit'); });
     }
     return new ExpenseRequestService(access, balance, {} as any, { sendExpenseRequest: jest.fn() } as any,
-      { dispatch } as any, { getOfficeIdentity: jest.fn().mockResolvedValue({ name: 'Synthetic Office' }) } as any, writer);
+      { dispatch } as any, { getOfficeIdentity: jest.fn().mockResolvedValue({ name: 'Synthetic Office' }) } as any, writer,
+      undefined, undefined, undefined, approvedExpenseSendFixture());
   }
   const pay = (s = service(), body = input(), actor = userId, request = requestId, tenant = tenantId) => s.recordPayment(tenant, request, body, actor);
   async function snapshot() {
