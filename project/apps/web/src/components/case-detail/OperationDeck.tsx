@@ -484,6 +484,7 @@ export function OperationDeck({
   addressWorkflowLoading = false,
 }: OperationDeckProps) {
   const [activePanel, setActivePanel] = useState<PanelId>(null);
+  const [confirmedExpenseCancellations, setConfirmedExpenseCancellations] = useState<{ caseId?: string; ids: string[] }>({ caseId, ids: [] });
   const [postingActionMessage, setPostingActionMessage] = useState<string | null>(null);
   const [distributionModalRecord, setDistributionModalRecord] = useState<AccountingRecord | null>(null);
   const [distributionLines, setDistributionLines] = useState<DistributionDecisionLineState[]>([]);
@@ -1325,20 +1326,21 @@ export function OperationDeck({
                   <ViewScopeBadge area="expenses" className="mb-2" />
                   {expenseRequestItems.length > 0 && (
                   <div className="space-y-2 max-h-[360px] overflow-y-auto">
-                    {expenseRequestItems.map(item => (
-                      <div key={item.id} className={`p-3 rounded-lg border ${
-                        item.status === 'PAID' ? 'border-emerald-200 bg-emerald-50/50' :
-                        item.status === 'PARTIAL' ? 'border-amber-200 bg-amber-50/50' :
+                    {expenseRequestItems.map(item => {
+                      const rowStatus = confirmedExpenseCancellations.caseId === caseId && confirmedExpenseCancellations.ids.includes(item.id) ? 'CANCELLED' : item.status;
+                      return <div key={`${caseId}:${item.id}`} className={`p-3 rounded-lg border ${
+                        rowStatus === 'PAID' ? 'border-emerald-200 bg-emerald-50/50' :
+                        rowStatus === 'PARTIAL' ? 'border-amber-200 bg-amber-50/50' :
                         'border-slate-200 bg-white'
                       }`}>
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-sm font-medium text-slate-700">{item.description}</span>
                           <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${
-                            item.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' :
-                            item.status === 'PARTIAL' ? 'bg-amber-100 text-amber-700' :
+                            rowStatus === 'PAID' ? 'bg-emerald-100 text-emerald-700' :
+                            rowStatus === 'PARTIAL' ? 'bg-amber-100 text-amber-700' :
                             'bg-slate-100 text-slate-600'
                           }`}>
-                            {item.status === 'PAID' ? 'Ödendi' : item.status === 'PARTIAL' ? 'Kısmi' : item.status === 'CANCELLED' ? 'İptal Edildi' : 'Bekliyor'}
+                            {rowStatus === 'PAID' ? 'Ödendi' : rowStatus === 'PARTIAL' ? 'Kısmi' : rowStatus === 'CANCELLED' ? 'İptal Edildi' : 'Bekliyor'}
                           </span>
                         </div>
                         <div className="flex items-center justify-between text-xs">
@@ -1370,11 +1372,14 @@ export function OperationDeck({
                         {caseId && (
                           <ExpenseDistributionDecisionRow expenseId={item.id} decisions={expenseDistributionDecisions} />
                         )}
-                        {caseId && <ExpenseSendAction expenseId={item.id} status={item.status} />}
-                        {caseId && canCancelExpenseRequests && <ExpenseCancelAction expenseId={item.id} status={item.status}
-                          paidAmount={item.paidAmount} hasPaymentHistory={item.hasPaymentHistory} onCancelled={onRetryExpenseRequests} />}
-                      </div>
-                    ))}
+                        {caseId && <ExpenseSendAction expenseId={item.id} status={rowStatus} />}
+                        {caseId && canCancelExpenseRequests && <ExpenseCancelAction expenseId={item.id} status={rowStatus}
+                          paidAmount={item.paidAmount} hasPaymentHistory={item.hasPaymentHistory} onCancelled={() => {
+                            setConfirmedExpenseCancellations(previous => ({ caseId, ids: previous.caseId === caseId ? [...new Set([...previous.ids, item.id])] : [item.id] }));
+                            onRetryExpenseRequests?.();
+                          }} />}
+                      </div>;
+                    })}
                   </div>
                   )}
                   <FinanceSourceListNotice

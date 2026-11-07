@@ -149,6 +149,21 @@ const openFinanceTab = async () => fireEvent.click(await screen.findByRole('butt
 const openClientRequestsTab = async () => fireEvent.click(await screen.findByRole('button', { name: /Müvekkil Talepleri/ }));
 
 describe('3c cancellation in the existing case Finance surface', () => {
+  it('keeps confirmed cancellation visible when refresh fails', async () => {
+    mocked.getExpenseThreeViewForCase.mockResolvedValue([{ ...EXPENSE_ITEM, finance: { ...EXPENSE_ITEM.finance, hasPaymentHistory: false } }]);
+    mocked.cancelExpenseRequest.mockImplementation(async () => {
+      mocked.getExpenseThreeViewForCase.mockImplementation(networkError);
+      return { id: EXPENSE_ITEM.finance.id, status: 'CANCELLED' };
+    });
+    renderPage(); await openFinanceTab();
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Masraf talebi iptal gerekçesi' }), { target: { value: 'Gerekçeli iptal denemesi' } });
+    const readsBefore = mocked.getExpenseThreeViewForCase.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Talebi Gerekçeyle İptal Et' }));
+    await waitFor(() => expect(mocked.getExpenseThreeViewForCase.mock.calls.length).toBeGreaterThan(readsBefore));
+    expect(mocked.cancelExpenseRequest).toHaveBeenCalledExactlyOnceWith(EXPENSE_ITEM.finance.id, 'Gerekçeli iptal denemesi');
+    expect(await screen.findByText('İptal Edildi')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Gönderim Onayını Kontrol Et ve Gönder' })).toBeNull();
+  });
   it('passes actual history eligibility to the action and refreshes the existing three-view source after cancellation', async () => {
     mocked.getExpenseThreeViewForCase.mockResolvedValue([{ ...EXPENSE_ITEM, finance: { ...EXPENSE_ITEM.finance, hasPaymentHistory: false } }]);
     mocked.cancelExpenseRequest.mockImplementation(async () => {

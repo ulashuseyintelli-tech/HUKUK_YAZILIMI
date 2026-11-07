@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ExpenseCancelAction } from '../ExpenseCancelAction';
 import { api } from '@/lib/api';
 
@@ -9,6 +9,14 @@ const props = { expenseId: 'expense-1', status: 'PENDING', paidAmount: 0, hasPay
 const fill = () => fireEvent.change(screen.getByRole('textbox'), { target: { value: '  Talep artık gerekli değil  ' } });
 
 describe('unpaid expense cancellation action', () => {
+  it('does not refresh a case after its pending action unmounts', async () => {
+    let complete!: (value: any) => void; const refresh = vi.fn();
+    vi.mocked(api.cancelExpenseRequest).mockReturnValue(new Promise(resolve => { complete = resolve; }));
+    const view = render(<ExpenseCancelAction {...props} onCancelled={refresh} />); fill(); fireEvent.click(screen.getByRole('button'));
+    view.unmount();
+    await act(async () => { complete({ id: props.expenseId, status: 'CANCELLED' }); });
+    expect(refresh).not.toHaveBeenCalled();
+  });
   it('requires a reason, sends the trimmed reason once and refreshes the real source', async () => {
     const refresh = vi.fn().mockResolvedValue(undefined);
     vi.mocked(api.cancelExpenseRequest).mockResolvedValue({ id: props.expenseId, status: 'CANCELLED' });

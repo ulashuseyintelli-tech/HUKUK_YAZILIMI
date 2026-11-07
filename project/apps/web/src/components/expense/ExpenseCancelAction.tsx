@@ -15,12 +15,13 @@ export function ExpenseCancelAction({ expenseId, status, paidAmount, hasPaymentH
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ id: string; ok: boolean; message: string } | null>(null);
-  const current = useRef(expenseId);
+  const current = useRef<string | null>(expenseId);
   const inFlight = useRef(false);
   useEffect(() => {
     current.current = expenseId;
     inFlight.current = false;
     setBusy(false); setReason(''); setResult(null);
+    return () => { current.current = null; };
   }, [expenseId]);
   const activeResult = result?.id === expenseId ? result : null;
   if (!status || !['PENDING', 'SENT', 'REMINDED', 'OVERDUE'].includes(status) || paidAmount !== 0 || hasPaymentHistory !== false) return null;
