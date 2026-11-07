@@ -60,6 +60,8 @@ describe("ClientService.update — FIND-C1 displayName/name koruması (C1-B02)",
 
   const build = (existing: any) => {
     const tx = {
+      $queryRaw: jest.fn(async (_sql: unknown, clientId: unknown) => [{ id: clientId, isActive: true, hasPortalAccess: false, portalUserId: null }]),
+      clientPortalUser: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
       client: {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         findFirst: jest.fn().mockResolvedValue({ id: existing.id }),

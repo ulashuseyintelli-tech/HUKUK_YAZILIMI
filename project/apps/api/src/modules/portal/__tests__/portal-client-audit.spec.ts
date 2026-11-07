@@ -20,12 +20,13 @@ const RAW_EMAIL = 'muvekkil.portal@example.com';
 const RAW_PASSWORD = 'CokGizliSifre!9988';
 
 function build(over: any = {}) {
-  const currentClient = over.beforeClient ?? { id: 'c1', hasPortalAccess: false, portalUserId: null };
+  const currentClient = { isActive: true, ...(over.beforeClient ?? { id: 'c1', hasPortalAccess: false, portalUserId: null }) };
   const tx = {
     // D5-DIAG-R01: yazımdan önce transaction içinde adres kilidi + çakışma ölçümü (bu dosyada çakışma yok).
     $executeRaw: jest.fn().mockResolvedValue(0),
-    $queryRaw: jest.fn().mockResolvedValue([]),
+    $queryRaw: jest.fn(async (sql: any) => Array.isArray(sql) ? [currentClient] : []),
     client: {
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       // Gerçek Prisma update TÜM satırı döndürür → mock da before ile birleştirir (sadık diff).
       findUniqueOrThrow: jest.fn().mockResolvedValue({ ...currentClient }),
       update: jest.fn().mockImplementation((a: any) => Promise.resolve({ ...currentClient, ...a.data, id: a.where.id })),
@@ -159,7 +160,7 @@ describe('C0 bypass — disablePortalUser audit', () => {
     // portal kullanıcıları da pasifleniyor (aynı tx); CLIENT-P2-U02: AYNI update içinde
     // tokenVersion artışı — mevcut JWT'ler anında geçersiz kılınır.
     expect(tx.clientPortalUser.updateMany).toHaveBeenCalledWith({
-      where: { clientId: 'c1' },
+      where: { clientId: 'c1', client: { tenantId: 't1' } },
       // D5-SEC-R01: bekleyen sıfırlama token'ı da AYNI update'te geçersizleşir.
       data: { isActive: false, tokenVersion: { increment: 1 }, resetToken: null, resetTokenExp: null },
     });

@@ -255,7 +255,7 @@ export default function ClientsSettingsPage() {
     // Canonical karar (2026-07-02): Client kalıcı kimlik kaydıdır, sistemden silinmez — yalnız
     // pasifleştirilir (isActive=false). Endpoint/davranış AYNI (DELETE /clients/:id = soft-delete);
     // yalnız kullanıcıya doğru dili yansıtır.
-    if (!confirm("Bu müvekkili pasifleştirmek istediğinize emin misiniz? Bu müvekkil sistemden silinmez, yalnızca pasifleştirilir.")) return;
+    if (!confirm("Bu müvekkili pasifleştirmek istediğinize emin misiniz? Kayıt silinmez. Varsa portal erişimi de kapatılır; müvekkili yeniden etkinleştirmek portalı kendiliğinden açmaz.")) return;
     try {
       await api.delete(`/clients/${id}`);
       await loadClients();

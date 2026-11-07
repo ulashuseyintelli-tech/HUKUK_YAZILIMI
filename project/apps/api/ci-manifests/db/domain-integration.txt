@@ -504,3 +504,4 @@ src/modules/client/__tests__/cl-r04-dedup-return-scope.http.db-gated.integration
 src/modules/export-import/__tests__/generic-export-privacy.http.db-gated.integration.spec.ts
 src/modules/client-intake-review/client-intake-review-permission.http.db-gated.integration.spec.ts
 src/modules/client/__tests__/client-object-scope-1b.http.db-gated.integration.spec.ts
+src/modules/client/__tests__/client-deactivation-portal.http.db-gated.integration.spec.ts

@@ -31,12 +31,13 @@ const RAW_PASSWORD = 'CokGizliSifre!9988';
 const ACTOR = { userId: 'u-1' };
 
 function build(over: { eligible?: boolean; existingPortalUser?: any } = {}) {
-  const currentClient = { id: CLIENT_ID, hasPortalAccess: false, portalUserId: null };
+  const currentClient = { id: CLIENT_ID, isActive: true, hasPortalAccess: false, portalUserId: null };
   const tx = {
     // D5-DIAG-R01: yazımdan önce transaction içinde adres kilidi + çakışma ölçümü (bu dosyada çakışma yok).
     $executeRaw: jest.fn().mockResolvedValue(0),
-    $queryRaw: jest.fn().mockResolvedValue([]),
+    $queryRaw: jest.fn(async (sql: any) => Array.isArray(sql) ? [currentClient] : []),
     client: {
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       findUniqueOrThrow: jest.fn().mockResolvedValue({ ...currentClient }),
       update: jest.fn().mockImplementation((a: any) => Promise.resolve({ ...currentClient, ...a.data, id: a.where.id })),
     },
@@ -165,11 +166,11 @@ describe('A5 — disablePortalUser yetki kapısı', () => {
     expect(h.prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(h.tx.clientPortalUser.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { clientId: CLIENT_ID },
+        where: { clientId: CLIENT_ID, client: { tenantId: TENANT } },
         data: expect.objectContaining({ isActive: false, tokenVersion: { increment: 1 } }),
       }),
     );
-    expect(h.tx.client.update).toHaveBeenCalledWith(
+    expect(h.tx.client.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ hasPortalAccess: false }) }),
     );
     expect(h.audit.logInTransaction).toHaveBeenCalledWith(

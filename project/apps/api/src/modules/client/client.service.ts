@@ -27,6 +27,7 @@ import {
 // C3-B01 (§13/5 K5.5): rıza-kapılı tercih bayrakları için fail-closed kapı (DI'sız tüketim).
 import { assertClientConsentGateForWrite } from './client-consent.service';
 import { presentInternalClient } from './client-internal-read.presenter';
+import { disableClientPortalAccessInTx } from './client-portal-access-state';
 
 /** C0-a: audit actor — YALNIZ auth context'ten (req.user.id); body/data'dan ASLA türetilmez. */
 export interface AuditActor {
@@ -1984,6 +1985,9 @@ export class ClientService {
           data.emails === undefined &&
           data.addresses === undefined;
       }
+      if (lifecycleTransition && data.isActive === false) {
+        await disableClientPortalAccessInTx(tx, this.audit, tenantId, id, actor?.userId, 'CLIENT_DEACTIVATION');
+      }
       const updated = await tx.client.findFirst({ where: { id, tenantId } });
       if (!updated) throw new NotFoundException('Müvekkil bulunamadı');
 
@@ -2279,6 +2283,7 @@ export class ClientService {
       // P0.5: tenant-scoped soft-delete (updateMany {id,tenantId}).
       const { count } = await tx.client.updateMany({ where: { id, tenantId }, data: { isActive: false } });
       if (count === 0) throw new NotFoundException('Müvekkil bulunamadı');
+      await disableClientPortalAccessInTx(tx, this.audit, tenantId, id, actor?.userId, 'CLIENT_DEACTIVATION');
       await this.audit.logInTransaction(tx, {
         tenantId,
         action: 'CLIENT_DELETE',
@@ -2287,7 +2292,7 @@ export class ClientService {
         userId: actor?.userId,
         metadata: { softDelete: true, oldSnapshot: buildClientRemoveSnapshot(existing) },
       });
-      return { ...existing, isActive: false };
+      return { ...existing, isActive: false, hasPortalAccess: false };
     });
   }
 

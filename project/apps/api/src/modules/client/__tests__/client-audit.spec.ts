@@ -13,6 +13,8 @@ jest.mock('../client-object-scope', () => ({
  * audit payload'una düz metin GİRMEZ (masked/digest); reactivate ayrı action.
  */
 import { ClientService } from "../client.service";
+import { NotFoundException } from '@nestjs/common';
+import { disableClientPortalAccessInTx, lockClientPortalState } from '../client-portal-access-state';
 
 const RAW_TCKN = "40294995552";
 const RAW_PHONE = "05559998877";
@@ -20,6 +22,8 @@ const RAW_EMAIL = "ayse.yilmaz@example.com";
 
 function buildHarness(opts: { existing?: any; created?: any; updated?: any } = {}) {
   const tx = {
+    $queryRaw: jest.fn(async (_sql: unknown, clientId: unknown) => [{ id: clientId, isActive: true, hasPortalAccess: false, portalUserId: null }]),
+    clientPortalUser: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
     client: {
       create: jest.fn().mockResolvedValue(opts.created ?? { id: "c1" }),
       update: jest.fn().mockResolvedValue(opts.updated ?? { id: "c1" }),
@@ -124,5 +128,70 @@ describe("ClientService.remove — audit", () => {
     expect(input.metadata.softDelete).toBe(true);
     expect(input.metadata.oldSnapshot).toBeDefined();
     expect(auditJson(audit)).not.toContain(RAW_TCKN);
+  });
+});
+
+function fixture(hasPortalAccess = true, accountCount = 1) {
+  const order: string[] = [];
+  const state = { id: 'client-4a', isActive: false, hasPortalAccess, portalUserId: accountCount ? 'portal-4a' : null };
+  const tx = {
+    $queryRaw: jest.fn(async (..._args: unknown[]) => { order.push('parent'); return [state]; }),
+    clientPortalUser: { updateMany: jest.fn(async (_a: any) => { order.push('account'); return { count: accountCount }; }) },
+    client: { updateMany: jest.fn(async (_a: any) => { order.push('flag'); return { count: 1 }; }) },
+  };
+  const audit = { logInTransaction: jest.fn(async (..._args: any[]) => { order.push('audit'); }) };
+  return { tx, audit, order, state };
+}
+
+describe('4a transaction-local portal closure', () => {
+  it('locks the tenant-bound Client before account/flag/audit and uses the supplied transaction', async () => {
+    const { tx, audit, order } = fixture();
+    await disableClientPortalAccessInTx(tx as any, audit as any, 'tenant-4a', 'client-4a', 'actor-4a', 'CLIENT_DEACTIVATION');
+    expect(order).toEqual(['parent', 'account', 'flag', 'audit']);
+    const [sql, clientId, tenantId] = tx.$queryRaw.mock.calls[0];
+    expect((sql as TemplateStringsArray).join('')).toContain('FOR UPDATE');
+    expect([clientId, tenantId]).toEqual(['client-4a', 'tenant-4a']);
+    expect(tx.clientPortalUser.updateMany).toHaveBeenCalledWith({
+      where: { clientId: 'client-4a', client: { tenantId: 'tenant-4a' } },
+      data: { isActive: false, tokenVersion: { increment: 1 }, resetToken: null, resetTokenExp: null },
+    });
+    expect(audit.logInTransaction).toHaveBeenCalledWith(tx, expect.objectContaining({
+      userId: 'actor-4a', action: 'CLIENT_PORTAL_ACCESS_DISABLE',
+      metadata: expect.objectContaining({ source: 'CLIENT_DEACTIVATION', accountRevoked: true }),
+    }));
+  });
+
+  it('revokes an actual account even when the mirror flag was already false', async () => {
+    const { tx, audit } = fixture(false, 1);
+    await disableClientPortalAccessInTx(tx as any, audit as any, 'tenant-4a', 'client-4a', 'actor-4a', 'CLIENT_DEACTIVATION');
+    expect(tx.clientPortalUser.updateMany).toHaveBeenCalledTimes(1);
+    expect(tx.client.updateMany).not.toHaveBeenCalled();
+    expect(audit.logInTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not invent a portal account or portal audit for an unrelated Client', async () => {
+    const { tx, audit } = fixture(false, 0);
+    await disableClientPortalAccessInTx(tx as any, audit as any, 'tenant-4a', 'client-4a', 'actor-4a', 'CLIENT_DEACTIVATION');
+    expect(tx.client.updateMany).not.toHaveBeenCalled();
+    expect(audit.logInTransaction).not.toHaveBeenCalled();
+  });
+
+  it('keeps the existing explicit manual-disable audit even without an account', async () => {
+    const { tx, audit } = fixture(false, 0);
+    await disableClientPortalAccessInTx(tx as any, audit as any, 'tenant-4a', 'client-4a', 'actor-4a', 'PORTAL_DISABLE');
+    expect(audit.logInTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not write when the tenant-bound parent is missing', async () => {
+    const { tx, audit } = fixture(); tx.$queryRaw.mockResolvedValueOnce([]);
+    await expect(lockClientPortalState(tx as any, 'foreign', 'client-4a')).rejects.toBeInstanceOf(NotFoundException);
+    expect(tx.clientPortalUser.updateMany).not.toHaveBeenCalled();
+    expect(tx.client.updateMany).not.toHaveBeenCalled();
+    expect(audit.logInTransaction).not.toHaveBeenCalled();
+  });
+
+  it('propagates audit failure to the owning transaction', async () => {
+    const { tx, audit } = fixture(); audit.logInTransaction.mockRejectedValueOnce(new Error('4a audit failure'));
+    await expect(disableClientPortalAccessInTx(tx as any, audit as any, 'tenant-4a', 'client-4a', 'actor-4a', 'CLIENT_DEACTIVATION')).rejects.toThrow('4a audit failure');
   });
 });
