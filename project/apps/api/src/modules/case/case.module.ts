@@ -21,6 +21,8 @@ import { CasePaymentPreviewService } from "./case-payment-preview.service";
 import { PermissionDiagnosticsModule } from "../permission-diagnostics/permission-diagnostics.module";
 import { ClaimItemModule } from "../claim-item/claim-item.module";
 import { OfficeApprovalModule } from "../office-approval/office-approval.module";
+// F02 P3-D1: dosya liste + detay görünüm kapsamı — `office.cases.view_all` çözümü (WorkScopePermissionService.resolve).
+import { WorkScopePermissionModule } from "../work-scope-permission/work-scope-permission.module";
 
 @Module({
   imports: [
@@ -40,6 +42,7 @@ import { OfficeApprovalModule } from "../office-approval/office-approval.module"
     ClaimItemModule,
     // K2: dosya avukatı/personel yetki verme kapısı (F01 yazma kuralı) — OfficeApprovalService.
     OfficeApprovalModule,
+    WorkScopePermissionModule,
   ],
   controllers: [CaseController, CasePaymentPreviewController],
   providers: [CaseService, CasePaymentPreviewService, ResponsibleCandidatesService, TemporalResponsibilityService, ResponsibilityHistoryService, LegalResponsibleLawyerService],

@@ -84,7 +84,7 @@ dbDescribe('F02-B-1 — /office/view-all-permissions (gerçek HTTP + PostgreSQL)
   const post = (uid: string, path: string, body: Record<string, unknown>) =>
     http(app.getHttpServer()).post(`/office/view-all-permissions${path}`).set('x-test-user-id', uid).send(body);
   const grants = () => db.permissionGrant.findMany({ where: { tenantId: tenant }, orderBy: { createdAt: 'asc' } });
-  const TASKS = 'office.tasks.view_all'; const EXP = 'office.expenses.view_all';
+  const TASKS = 'office.tasks.view_all'; const EXP = 'office.expenses.view_all'; const CASES = 'office.cases.view_all'; // P3-D1
 
   it('KABUL-1/2/3: ADMIN ALLOW → DENY (eski süresi geçer; DENY > ALLOW) → revoke (hepsi süresi geçer, silme yok) — GET ve resolve() tutarlı', async () => {
     const r1 = await post(admin, '', { personType: 'lawyer', personId: linkedLawyer, key: TASKS, effect: 'ALLOW', reason: 'büro geneli' }).expect(201);
@@ -95,7 +95,7 @@ dbDescribe('F02-B-1 — /office/view-all-permissions (gerçek HTTP + PostgreSQL)
     expect(await db.auditLog.count({ where: { tenantId: tenant, entityType: 'PERMISSION_GRANT', action: 'CREATE', userId: admin } })).toBe(1);
     let state = (await get(admin, 'lawyer', linkedLawyer).expect(200)).body;
     expect(state).toMatchObject({ linked: true });
-    expect(state.permissions).toEqual([{ key: TASKS, effect: 'ALLOW', validUntil: null }, { key: EXP, effect: 'NONE', validUntil: null }]);
+    expect(state.permissions).toEqual([{ key: TASKS, effect: 'ALLOW', validUntil: null }, { key: EXP, effect: 'NONE', validUntil: null }, { key: CASES, effect: 'NONE', validUntil: null }]);
     expect(await service.resolve(db, tenant, subjectUser, TASKS)).toBe('ALLOW');
     expect(await service.resolve(db, tenant, subjectUser, EXP)).toBe('NONE');
 
@@ -121,7 +121,7 @@ dbDescribe('F02-B-1 — /office/view-all-permissions (gerçek HTTP + PostgreSQL)
   it('ayrı anahtarlar bağımsız: masraf ALLOW görevleri etkilemez; personel kartı da aynı hesabı çözer', async () => {
     await post(admin, '', { personType: 'staff', personId: linkedStaff, key: EXP, effect: 'ALLOW' }).expect(201);
     const state = (await get(admin, 'lawyer', linkedLawyer).expect(200)).body; // aynı subjectUser
-    expect(state.permissions).toEqual([{ key: TASKS, effect: 'NONE', validUntil: null }, { key: EXP, effect: 'ALLOW', validUntil: null }]);
+    expect(state.permissions).toEqual([{ key: TASKS, effect: 'NONE', validUntil: null }, { key: EXP, effect: 'ALLOW', validUntil: null }, { key: CASES, effect: 'NONE', validUntil: null }]);
     expect(await service.resolve(db, tenant, subjectUser, TASKS)).toBe('NONE');
   });
 
@@ -139,7 +139,7 @@ dbDescribe('F02-B-1 — /office/view-all-permissions (gerçek HTTP + PostgreSQL)
   it('KABUL-5: hesapsız kart → GET linked:false + NONE, POST 409 WORK_SCOPE_PERSON_NOT_LINKED; yabancı kiracı kartı → 404; satır yok', async () => {
     const s = (await get(admin, 'lawyer', unlinkedLawyer).expect(200)).body;
     expect(s.linked).toBe(false);
-    expect(s.permissions.map((p: { effect: string }) => p.effect)).toEqual(['NONE', 'NONE']);
+    expect(s.permissions.map((p: { effect: string }) => p.effect)).toEqual(['NONE', 'NONE', 'NONE']);
     const c = await post(admin, '', { personType: 'lawyer', personId: unlinkedLawyer, key: TASKS, effect: 'ALLOW' }).expect(409);
     expect(c.body.code).toBe('WORK_SCOPE_PERSON_NOT_LINKED');
     await post(admin, '', { personType: 'lawyer', personId: foreignLawyer, key: TASKS, effect: 'ALLOW' }).expect(404);
@@ -177,11 +177,11 @@ dbDescribe('F02-B-1 — /office/view-all-permissions (gerçek HTTP + PostgreSQL)
 
   it('F02-B görünürlük (madde 4): GET /office/view-scope — bayrak kapalı → OFF (izin olsa da; resolution görünür); açık → NONE/DENY → BOUND, ALLOW → TENANT; anahtarlar bağımsız; USER ve VIEWER kendi kapsamını okur', async () => {
     const scopeOf = (uid: string) => http(app.getHttpServer()).get('/office/view-scope').set('x-test-user-id', uid);
-    delete process.env.OFFICE_EXPENSE_VIEW_SCOPE_ENABLED; delete process.env.OFFICE_TASK_VIEW_SCOPE_ENABLED; delete process.env.OFFICE_APPROVAL_IDENTITY_PROOF_REQUIRED;
+    delete process.env.OFFICE_EXPENSE_VIEW_SCOPE_ENABLED; delete process.env.OFFICE_TASK_VIEW_SCOPE_ENABLED; delete process.env.OFFICE_CASE_VIEW_SCOPE_ENABLED; delete process.env.OFFICE_APPROVAL_IDENTITY_PROOF_REQUIRED;
     let r = await scopeOf(subjectUser);
     expect(r.status).toBe(200);
     // F02 yayın ölçümü (owner 31.10 madde 3): süreç içi ETKİN bayrak değeri — kimlik bayrağı da aynı uçtan okunur (yalnız boolean; env değeri dökülmez)
-    expect(r.body).toEqual({ expenses: { flagEnabled: false, resolution: 'NONE', mode: 'OFF' }, tasks: { flagEnabled: false, resolution: 'NONE', mode: 'OFF' }, approvalIdentity: { flagEnabled: false } });
+    expect(r.body).toEqual({ expenses: { flagEnabled: false, resolution: 'NONE', mode: 'OFF' }, tasks: { flagEnabled: false, resolution: 'NONE', mode: 'OFF' }, cases: { flagEnabled: false, resolution: 'NONE', mode: 'OFF' }, approvalIdentity: { flagEnabled: false } });
     process.env.OFFICE_APPROVAL_IDENTITY_PROOF_REQUIRED = 'true';
     r = await scopeOf(subjectUser); expect(r.body.approvalIdentity).toEqual({ flagEnabled: true }); expect(r.body.expenses.mode).toBe('OFF');
     process.env.OFFICE_APPROVAL_IDENTITY_PROOF_REQUIRED = 'TRUE '; r = await scopeOf(subjectUser); expect(r.body.approvalIdentity).toEqual({ flagEnabled: false }); // birebir 'true' (büyük/küçük harf duyarsız, boşluk değil)
@@ -196,6 +196,7 @@ dbDescribe('F02-B-1 — /office/view-all-permissions (gerçek HTTP + PostgreSQL)
     r = await scopeOf(subjectUser);
     expect(r.body.expenses).toEqual({ flagEnabled: true, resolution: 'ALLOW', mode: 'TENANT' });
     expect(r.body.tasks).toEqual({ flagEnabled: true, resolution: 'NONE', mode: 'BOUND' });
+    expect(r.body.cases).toEqual({ flagEnabled: false, resolution: 'NONE', mode: 'OFF' }); // P3-D1: dosya bayrağı ayrı (kademeli)
     // DENY > ALLOW → BOUND
     expect([200, 201]).toContain((await post(admin, '', { personType: 'lawyer', personId: linkedLawyer, key: 'office.expenses.view_all', effect: 'DENY' })).status);
     r = await scopeOf(subjectUser);
@@ -206,6 +207,6 @@ dbDescribe('F02-B-1 — /office/view-all-permissions (gerçek HTTP + PostgreSQL)
     expect(r.body.expenses).toEqual({ flagEnabled: true, resolution: 'NONE', mode: 'BOUND' });
     // Her rol KENDİ kapsamını okur (salt okuma; 403 yok); yanıt kişisel veri / grant kimliği taşımaz
     const v = await scopeOf(viewer); expect(v.status).toBe(200); expect(v.body.tasks.mode).toBe('BOUND');
-    const m = await scopeOf(member); expect(m.status).toBe(200); expect(Object.keys(m.body).sort()).toEqual(['approvalIdentity', 'expenses', 'tasks']);
+    const m = await scopeOf(member); expect(m.status).toBe(200); expect(Object.keys(m.body).sort()).toEqual(['approvalIdentity', 'cases', 'expenses', 'tasks']);
   });
 });

@@ -143,6 +143,7 @@ describe('F02-B-1 — describe (ekran durumu)', () => {
     expect(state.permissions).toEqual([
       { key: 'office.tasks.view_all', effect: 'DENY', validUntil: null },
       { key: 'office.expenses.view_all', effect: 'ALLOW', validUntil: null },
+      { key: 'office.cases.view_all', effect: 'NONE', validUntil: null },
     ]);
     expect(await reject(build({ actor: USER }).svc.describe(T, USER.id, ref))).toBeInstanceOf(ForbiddenException);
   });
@@ -150,7 +151,7 @@ describe('F02-B-1 — describe (ekran durumu)', () => {
     const { svc, prisma } = build({ lawyer: { userId: null } });
     const state = await svc.describe(T, ADMIN.id, ref);
     expect(state.linked).toBe(false);
-    expect(state.permissions.map((p) => p.effect)).toEqual(['NONE', 'NONE']);
+    expect(state.permissions.map((p) => p.effect)).toEqual(['NONE', 'NONE', 'NONE']);
     expect(prisma.permissionGrant.findMany).not.toHaveBeenCalled();
   });
   void past;

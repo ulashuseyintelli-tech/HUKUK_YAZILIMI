@@ -4,6 +4,7 @@ import {
   blockedReasonMessage,
   buildStaffAccountReopenPayload,
   classifyStaffAccountReopenFailure,
+  grantLabel,
   readStaffAccountReopenReview,
   reopenConsequences,
 } from '../staff-account-reopen';
@@ -82,5 +83,14 @@ describe('mesajlar', () => {
     });
     expect(classifyStaffAccountReopenFailure(new Error('ağ')).refresh).toBe(false);
     expect(classifyStaffAccountReopenFailure(new Error('ağ')).message).toContain('doğrulanamadı');
+  });
+});
+
+describe('grantLabel — P3-D1', () => {
+  it('üç F02 anahtarı okunur etiket taşır; bilinmeyen anahtar olduğu gibi kalır', () => {
+    expect(grantLabel('office.tasks.view_all')).toBe('Görevler — büro geneli görünüm');
+    expect(grantLabel('office.expenses.view_all')).toBe('Masraflar — büro geneli görünüm');
+    expect(grantLabel('office.cases.view_all')).toBe('Dosyalar — büro geneli görünüm');
+    expect(grantLabel('office.other')).toBe('office.other');
   });
 });

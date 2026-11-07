@@ -183,7 +183,7 @@ describe('O-5b StaffService.reopenAccount — tek transaction', () => {
     const expire = b.tx.permissionGrant.updateMany.mock.calls[0][0];
     expect(expire.where).toMatchObject({
       id: { in: ['g-gorev', 'g-ileri'] }, tenantId: TENANT, subjectUserId: USER_ID, effect: 'ALLOW', scope: 'GLOBAL',
-      permissionKey: { in: ['office.tasks.view_all', 'office.expenses.view_all'] },
+      permissionKey: { in: ['office.tasks.view_all', 'office.expenses.view_all', 'office.cases.view_all'] },
     });
     expect(b.tx.passwordResetToken.updateMany.mock.calls[0][0].where).toMatchObject({ tenantId: TENANT, userId: USER_ID, consumedAt: null, revokedAt: null });
     const reopenAudit = b.audit.logInTransaction.mock.calls.find((c: any[]) => c[1].action === 'STAFF_ACCOUNT_REOPEN')[1];
