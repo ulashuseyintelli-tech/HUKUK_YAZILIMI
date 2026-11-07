@@ -4738,6 +4738,7 @@ model PortalNotification {
   // İçerik
   title   String
   message String
+  clientRejectionReason String? // Explicit client-facing document rejection; legacy rows stay null.
 
   // Durum
   isRead Boolean   @default(false)

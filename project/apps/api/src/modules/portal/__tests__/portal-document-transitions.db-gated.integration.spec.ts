@@ -50,12 +50,16 @@ dbDescribe('Portal document review/delete — single winner and normal-error com
     const identity = { canActivate(context: any) {
       const req = context.switchToHttp().getRequest(); const principal = req.headers['x-test-principal'];
       if (principal === 'portal' || principal === 'foreign') req.portalUser = { clientId, tenantId: principal === 'portal' ? tenantId : 'foreign-tenant' };
-      else if (principal === 'staff') req.user = { tenantId, id: 'synthetic-reviewer' };
+      else if (principal === 'staff' || principal === 'viewer' || principal === 'foreign-staff') req.user = {
+        tenantId: principal === 'foreign-staff' ? 'foreign-tenant' : tenantId,
+        id: 'synthetic-reviewer', role: principal === 'viewer' ? 'VIEWER' : 'ADMIN',
+      };
       else throw new UnauthorizedException(); return true;
     } };
     const commands = {
       deleteDocument: (...args: Parameters<PortalService['deleteDocument']>) => service().deleteDocument(...args),
       reviewDocument: (...args: Parameters<PortalService['reviewDocument']>) => service().reviewDocument(...args),
+      getNotifications: (...args: Parameters<PortalService['getNotifications']>) => service().getNotifications(...args),
     };
     const module = await Test.createTestingModule({ controllers: [PortalController], providers: [
       { provide: PortalService, useValue: commands }, { provide: ClientFinancialDisclosurePortalService, useValue: {} },
@@ -343,5 +347,109 @@ dbDescribe('Portal document review/delete — single winner and normal-error com
     await http(app.getHttpServer()).post(`${route}/reject`).set('x-test-principal', 'staff').send({}).expect(409);
     await http(app.getHttpServer()).delete(`/portal/documents/${documentId}`).set('x-test-principal', 'portal').expect(409);
     expect(await snapshot()).toEqual(before); expect(before.notifications).toHaveLength(1);
+  });
+
+  it('4c real HTTP rejection keeps the internal note and presents only the separate public reason', async () => {
+    const response = await http(app.getHttpServer()).post(`/portal/admin/documents/${documentId}/reject`).set('x-test-principal', 'staff')
+      .send({ note: 'INTERNAL-CASE-STRATEGY-ONLY', clientRejectionReason: '  İmza sayfası eksik.  ' }).expect(201);
+    expect(response.body).toEqual({ success: true });
+    const state = await snapshot();
+    expect(state.documents[0]).toMatchObject({ status: 'REJECTED', reviewedBy: 'synthetic-reviewer', reviewNote: 'INTERNAL-CASE-STRATEGY-ONLY' });
+    expect(state.documents[0].reviewedAt).toBeInstanceOf(Date);
+    expect(state.notifications).toHaveLength(1);
+    expect(state.notifications[0]).toMatchObject({ clientId, clientRejectionReason: 'İmza sayfası eksik.' });
+    expect(state.notifications[0].message).not.toContain('INTERNAL-CASE-STRATEGY-ONLY');
+    const portal = await http(app.getHttpServer()).get('/portal/notifications').set('x-test-principal', 'portal').expect(200);
+    expect(portal.body[0].message).toBe('Belgeniz reddedildi. Sebep: İmza sayfası eksik.');
+    expect(Object.keys(portal.body[0]).sort()).toEqual(['id', 'type', 'title', 'message', 'linkUrl', 'isRead', 'createdAt'].sort());
+    expect(JSON.stringify(portal.body)).not.toContain('INTERNAL-CASE-STRATEGY-ONLY');
+    expect(fs.readFileSync(target)).toEqual(bytes);
+  });
+
+  it('4c legacy note-only HTTP caller gets a safe explanation without changing its internal note', async () => {
+    await http(app.getHttpServer()).post(`/portal/admin/documents/${documentId}/reject`).set('x-test-principal', 'staff')
+      .send({ note: 'LEGACY-INTERNAL-REASON' }).expect(201);
+    const state = await snapshot();
+    expect(state.documents[0].reviewNote).toBe('LEGACY-INTERNAL-REASON');
+    expect(state.notifications[0].clientRejectionReason).toBeNull();
+    expect(state.notifications[0].message).toContain('Ayrıntı için büronuzla iletişime geçiniz.');
+    expect(state.notifications[0].message).not.toContain('LEGACY-INTERNAL-REASON');
+  });
+
+  it('4c historical raw notification body is omitted by HTTP reading and remains unchanged in storage', async () => {
+    const old = await a.portalNotification.create({ data: { clientId, type: 'BELGE', title: 'Belgeniz Reddedildi', message: 'HISTORICAL-PRIVATE-STRATEGY' } });
+    const before = await snapshot();
+    const portal = await http(app.getHttpServer()).get('/portal/notifications').set('x-test-principal', 'portal').expect(200);
+    expect(portal.body[0].message).toContain('Ayrıntı için büronuzla iletişime geçiniz.');
+    expect(JSON.stringify(portal.body)).not.toContain('HISTORICAL-PRIVATE-STRATEGY');
+    expect(await snapshot()).toEqual(before);
+    expect((await a.portalNotification.findUniqueOrThrow({ where: { id: old.id } })).message).toBe('HISTORICAL-PRIVATE-STRATEGY');
+    expect(await service().getNotifications('different-client')).toEqual([]);
+  });
+
+  it('4c HTTP cannot expose or invent a decision from an unclassified historical document notice', async () => {
+    await a.portalNotification.create({ data: { clientId, type: 'BELGE', title: 'OLD-PRIVATE-TITLE', message: 'UNKNOWN-PRIVATE-BODY' } });
+    const before = await snapshot();
+    const response = await http(app.getHttpServer()).get('/portal/notifications').set('x-test-principal', 'portal').expect(200);
+    expect(response.body[0]).toMatchObject({ title: 'Belge Bildirimi', message: 'Belge incelemesiyle ilgili bilgi için büronuzla iletişime geçiniz.' });
+    expect(JSON.stringify(response.body)).not.toContain('PRIVATE');
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it.each([null, 1, [], {}, '', '   ', 'x'.repeat(501)])('4c invalid HTTP public reason %p has zero row, audit and file side effects', async reason => {
+    const before = await snapshot();
+    await http(app.getHttpServer()).post(`/portal/admin/documents/${documentId}/reject`).set('x-test-principal', 'staff')
+      .send({ note: 'PRIVATE', clientRejectionReason: reason }).expect(400);
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it('4c missing identity, VIEWER and foreign tenant cannot reject or create a notification', async () => {
+    const before = await snapshot(); const route = `/portal/admin/documents/${documentId}/reject`;
+    const body = { note: 'PRIVATE', clientRejectionReason: 'İmza sayfası eksik.' };
+    await http(app.getHttpServer()).post(route).send(body).expect(401);
+    await http(app.getHttpServer()).post(route).set('x-test-principal', 'viewer').send(body).expect(403);
+    await http(app.getHttpServer()).post(route).set('x-test-principal', 'foreign-staff').send(body).expect(404);
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it('4c failure after notification insert rolls back the public reason, internal review and notification together', async () => {
+    const before = await snapshot();
+    await expect(service(failAfterWrite('portalNotification', 'create')).reviewDocument(documentId, tenantId, 'reviewer', false, 'PRIVATE', 'İmza sayfası eksik.')).rejects.toThrow('injected-db-failure');
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it('4c competing rejection reasons have one winner whose public and internal records stay paired', async () => {
+    const result = await Promise.allSettled([
+      service(a).reviewDocument(documentId, tenantId, 'a', false, 'PRIVATE-A', 'Eksik sayfa.'),
+      service(b).reviewDocument(documentId, tenantId, 'b', false, 'PRIVATE-B', 'Okunamayan belge.'),
+    ]);
+    expect(result.filter(x => x.status === 'fulfilled')).toHaveLength(1);
+    expect(result.filter(x => x.status === 'rejected')).toHaveLength(1);
+    const state = await snapshot(); expect(state.notifications).toHaveLength(1);
+    const winner = state.documents[0].reviewedBy;
+    expect(state.documents[0].reviewNote).toBe(winner === 'a' ? 'PRIVATE-A' : 'PRIVATE-B');
+    expect(state.notifications[0].clientRejectionReason).toBe(winner === 'a' ? 'Eksik sayfa.' : 'Okunamayan belge.');
+    expect(state.notifications[0].message).not.toContain('PRIVATE');
+  });
+
+  it('4c exact additive migration preserves a pre-column notification and leaves its new reason null', async () => {
+    const schema = `portal_4c_migration_test_${randomUUID().replace(/-/g, '')}`;
+    const sql = fs.readFileSync(join(__dirname, '../../../../prisma/migrations/20261107133000_portal_document_client_rejection_reason/migration.sql'), 'utf8');
+    expect(sql.replace(/--[^\n]*/g, '').trim()).toBe('ALTER TABLE "PortalNotification" ADD COLUMN "clientRejectionReason" TEXT;');
+    await expect(a.$transaction(async tx => {
+      await tx.$executeRawUnsafe(`CREATE SCHEMA "${schema}"`);
+      await tx.$executeRawUnsafe(`SET LOCAL search_path TO "${schema}", public`);
+      await tx.$executeRawUnsafe('CREATE TABLE "PortalNotification" (LIKE public."PortalNotification" INCLUDING ALL)');
+      await tx.$executeRawUnsafe('ALTER TABLE "PortalNotification" DROP COLUMN "clientRejectionReason"');
+      await tx.$executeRaw`INSERT INTO "PortalNotification" ("id", "clientId", "type", "title", "message", "isRead", "createdAt") VALUES ('legacy-4c', ${clientId}, 'BELGE', 'Belgeniz Reddedildi', 'PRESERVED-LEGACY-INTERNAL', false, '2026-01-01'::timestamp)`;
+      const before = await tx.$queryRawUnsafe<any[]>('SELECT legacy.* FROM "PortalNotification" AS legacy');
+      await tx.$executeRawUnsafe(sql);
+      const after = await tx.$queryRawUnsafe<any[]>('SELECT upgraded.* FROM "PortalNotification" AS upgraded');
+      expect(after[0].clientRejectionReason).toBeNull();
+      const { clientRejectionReason, ...oldColumns } = after[0];
+      expect(oldColumns).toEqual(before[0]);
+      throw new Error('migration-fixture-rollback');
+    })).rejects.toThrow('migration-fixture-rollback');
+    expect(await a.$queryRaw<Array<{ count: bigint }>>`SELECT count(*) FROM pg_namespace WHERE nspname = ${schema}`).toEqual([{ count: 0n }]);
   });
 });

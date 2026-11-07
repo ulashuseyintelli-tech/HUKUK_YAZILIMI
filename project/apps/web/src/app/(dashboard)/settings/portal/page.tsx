@@ -53,6 +53,11 @@ export default function PortalManagementPage() {
   const [clientsError, setClientsError] = useState<string | null>(null);
   const [messagesError, setMessagesError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [rejectionDocument, setRejectionDocument] = useState<PendingDocument | null>(null);
+  const [clientRejectionReason, setClientRejectionReason] = useState("");
+  const [internalReviewNote, setInternalReviewNote] = useState("");
+  const [rejectionError, setRejectionError] = useState<string | null>(null);
+  const [rejecting, setRejecting] = useState(false);
 
   useEffect(() => {
     if (activeTab === "documents") {
@@ -112,13 +117,34 @@ export default function PortalManagementPage() {
     }
   };
 
-  const handleReject = async (id: string) => {
-    const note = prompt("Red sebebi (opsiyonel):");
+  const openRejection = (document: PendingDocument) => {
+    setRejectionDocument(document);
+    setClientRejectionReason("");
+    setInternalReviewNote("");
+    setRejectionError(null);
+  };
+
+  const handleReject = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!rejectionDocument || rejecting) return;
+    const reason = clientRejectionReason.trim();
+    if (!reason || reason.length > 500) {
+      setRejectionError("Müvekkile gösterilecek ret gerekçesi 1–500 karakter olmalıdır.");
+      return;
+    }
+    setRejecting(true);
+    setRejectionError(null);
     try {
-      await api.post(`/portal/admin/documents/${id}/reject`, { note });
-      fetchPendingDocs();
+      await api.post(`/portal/admin/documents/${rejectionDocument.id}/reject`, {
+        note: internalReviewNote,
+        clientRejectionReason: reason,
+      });
+      setRejectionDocument(null);
+      await fetchPendingDocs();
     } catch (e) {
-      console.error(e);
+      setRejectionError(toActionErrorMessage(e, "Belge reddedilemedi."));
+    } finally {
+      setRejecting(false);
     }
   };
 
@@ -189,6 +215,29 @@ export default function PortalManagementPage() {
         </button>
       </div>
 
+      {activeTab === "documents" && rejectionDocument && (
+        <section aria-labelledby="document-rejection-title" className="rounded-lg border bg-white p-4">
+          <form aria-label="Belge ret kararı" onSubmit={handleReject} className="max-w-lg space-y-4">
+            <h2 id="document-rejection-title" className="font-semibold">Belgeyi reddet: {rejectionDocument.title}</h2>
+            <div>
+              <label htmlFor="client-rejection-reason" className="block text-sm font-medium">Müvekkile gösterilecek ret gerekçesi</label>
+              <p className="mb-1 text-xs text-gray-500">Kısa bir açıklama yazın. Bu alan müvekkilin portal bildiriminde görünür.</p>
+              <textarea id="client-rejection-reason" autoFocus required maxLength={500} value={clientRejectionReason} onChange={e => setClientRejectionReason(e.target.value)} disabled={rejecting} className="w-full rounded border p-2 text-sm" rows={3} />
+            </div>
+            <div>
+              <label htmlFor="internal-review-note" className="block text-sm font-medium">İç inceleme notu (isteğe bağlı)</label>
+              <p className="mb-1 text-xs text-gray-500">Yalnız büro içindir; portal bildirimine aktarılmaz.</p>
+              <textarea id="internal-review-note" value={internalReviewNote} onChange={e => setInternalReviewNote(e.target.value)} disabled={rejecting} className="w-full rounded border p-2 text-sm" rows={3} />
+            </div>
+            {rejectionError && <p role="alert" className="text-sm text-red-700">{rejectionError}</p>}
+            <div className="flex justify-end gap-2">
+              <button type="button" disabled={rejecting} onClick={() => setRejectionDocument(null)} className="rounded border px-3 py-2 text-sm">Vazgeç</button>
+              <button type="submit" disabled={rejecting} className="rounded bg-red-600 px-3 py-2 text-sm text-white disabled:opacity-50">{rejecting ? "Reddediliyor…" : "Ret kararını kaydet"}</button>
+            </div>
+          </form>
+        </section>
+      )}
+
       {loading ? (
         <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>
       ) : activeTab === "documents" ? (
@@ -235,10 +284,10 @@ export default function PortalManagementPage() {
                     <td className="px-4 py-3 text-gray-600">{new Date(doc.createdAt).toLocaleDateString("tr-TR")}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <button onClick={() => handleApprove(doc.id)} className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 flex items-center gap-1">
+                        <button disabled={rejecting} onClick={() => handleApprove(doc.id)} className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 flex items-center gap-1">
                           <CheckCircle className="h-3 w-3" /> Onayla
                         </button>
-                        <button onClick={() => handleReject(doc.id)} className="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 flex items-center gap-1">
+                        <button disabled={rejecting} onClick={() => openRejection(doc)} className="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 flex items-center gap-1">
                           <XCircle className="h-3 w-3" /> Reddet
                         </button>
                       </div>

@@ -11,6 +11,9 @@
  *  - sendMessageFromOffice: PortalMessage.senderId zorunlu → undefined ile Prisma create hatası (500).
  * Fix: `req.user.sub` → `req.user.id` (5 yerde), diğer tüm controller'larla aynı desen.
  */
+// This controller-delegation unit does not execute login/recovery guards or their process-global timers.
+jest.mock('../../auth/guards/login-rate-limit.guard', () => ({ PortalLoginRateLimitGuard: class {} }));
+jest.mock('../../auth/guards/credential-recovery-rate-limit.guard', () => ({ CredentialRecoveryRateLimitGuard: class {} }));
 import { PortalController } from '../portal.controller';
 
 const REQ_USER = { id: 'user-real-1', tenantId: 'tenant-1', email: 'avukat@buro.com', name: 'Ayşe Yılmaz', role: 'PARTNER' };
@@ -55,7 +58,13 @@ describe('CBND-7 (H4) PortalController — admin uçları req.user.id kullanır 
   it('rejectDocument: reviewedBy = req.user.id, undefined DEĞİL', async () => {
     const { controller, portalService } = setup();
     await controller.rejectDocument('doc-1', { user: REQ_USER } as any, { note: 'eksik' });
-    expect(portalService.reviewDocument).toHaveBeenCalledWith('doc-1', 'tenant-1', 'user-real-1', false, 'eksik');
+    expect(portalService.reviewDocument).toHaveBeenCalledWith('doc-1', 'tenant-1', 'user-real-1', false, 'eksik', undefined);
+  });
+
+  it('4c reject forwards the explicit public reason separately from the internal note', async () => {
+    const { controller, portalService } = setup();
+    await controller.rejectDocument('doc-1', { user: REQ_USER } as any, { note: 'internal strategy', clientRejectionReason: 'İmza sayfası eksik.' });
+    expect(portalService.reviewDocument).toHaveBeenCalledWith('doc-1', 'tenant-1', 'user-real-1', false, 'internal strategy', 'İmza sayfası eksik.');
   });
 
   it('sendMessageToClient: senderId = req.user.id, undefined DEĞİL', async () => {

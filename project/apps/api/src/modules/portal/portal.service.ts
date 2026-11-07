@@ -218,7 +218,17 @@ const PORTAL_NOTIFICATION_CLIENT_SELECT = Prisma.validator<Prisma.PortalNotifica
   linkUrl: true,
   isRead: true,
   createdAt: true,
+  clientRejectionReason: true, // Read input only; the existing seven-key public response stays unchanged.
 });
+
+const DOCUMENT_REJECTION_TITLE = "Belgeniz Reddedildi";
+const DOCUMENT_REJECTION_FALLBACK = "Belge inceleme koşullarını karşılamadığı için uygun bulunmadı. Ayrıntı için büronuzla iletişime geçiniz.";
+
+// Never derive a client reason from reviewNote or a historical notification body.
+function clientDocumentRejectionMessage(reason: unknown): string {
+  const text = typeof reason === "string" ? reason.trim() : "";
+  return `Belgeniz reddedildi. Sebep: ${text.length > 0 && text.length <= 500 ? text : DOCUMENT_REJECTION_FALLBACK}`;
+}
 
 /**
  * CLIENT-K1 (İ16 K-1, owner kararı 2026-09-19 — seçenek (a)): portal nesnelerindeki `caseId` referansı
@@ -970,11 +980,22 @@ export class PortalService {
    * Müvekkilin bildirimlerini getir
    */
   async getNotifications(clientId: string, limit: number = 20) {
-    return this.prisma.portalNotification.findMany({
+    const rows = await this.prisma.portalNotification.findMany({
       where: { clientId },
       orderBy: { createdAt: "desc" },
       take: limit,
       select: PORTAL_NOTIFICATION_CLIENT_SELECT,
+    });
+    return rows.map(row => {
+      // An unclassified historical BELGE row is not evidence of either approval or rejection.
+      const unknownDocumentNotice = row.type === "BELGE" && row.title !== DOCUMENT_REJECTION_TITLE && row.title !== "Belgeniz Onaylandı";
+      return {
+        id: row.id, type: row.type, title: unknownDocumentNotice ? "Belge Bildirimi" : row.title,
+        message: unknownDocumentNotice ? "Belge incelemesiyle ilgili bilgi için büronuzla iletişime geçiniz."
+          : row.type === "BELGE" && row.title === DOCUMENT_REJECTION_TITLE
+            ? clientDocumentRejectionMessage(row.clientRejectionReason) : row.message,
+        linkUrl: row.linkUrl, isRead: row.isRead, createdAt: row.createdAt,
+      };
     });
   }
 
@@ -1031,6 +1052,7 @@ export class PortalService {
     title: string;
     message: string;
     linkUrl?: string;
+    clientRejectionReason?: string;
   }, db: Pick<Prisma.TransactionClient, "portalNotification"> = this.prisma) {
     // Existing callers keep their own operation; reviewDocument supplies its transaction.
     return db.portalNotification.create({
@@ -1041,6 +1063,7 @@ export class PortalService {
         title: data.title,
         message: data.message,
         linkUrl: data.linkUrl,
+        ...(data.clientRejectionReason === undefined ? {} : { clientRejectionReason: data.clientRejectionReason }),
       },
     });
   }
@@ -1232,9 +1255,13 @@ export class PortalService {
   /**
    * Belgeyi onayla/reddet (büro için)
    */
-  async reviewDocument(documentId: string, tenantId: string, userId: string, approved: boolean, note?: string) {
+  async reviewDocument(documentId: string, tenantId: string, userId: string, approved: boolean, note?: string, clientRejectionReason?: string) {
     // Callers: PortalController.approveDocument / rejectDocument; existing JWT access policy is unchanged.
     if (typeof approved !== "boolean" || (note !== undefined && typeof note !== "string")) throw new BadRequestException("Belge inceleme girdisi geçersiz");
+    if (clientRejectionReason !== undefined && (approved || typeof clientRejectionReason !== "string" || !clientRejectionReason.trim() || clientRejectionReason.trim().length > 500)) {
+      throw new BadRequestException("Müvekkile gösterilecek ret gerekçesi 1–500 karakter olmalıdır");
+    }
+    const publicReason = clientRejectionReason?.trim();
     return this.prisma.$transaction(async tx => {
       await this.lockDocument(tx, tenantId, documentId);
       const doc = await tx.portalDocument.findFirst({ where: { id: documentId, tenantId } });
@@ -1246,8 +1273,9 @@ export class PortalService {
         status: approved ? "APPROVED" : "REJECTED", reviewedAt: new Date(), reviewedBy: userId, reviewNote: note,
       } });
       await this.createNotification({
-        clientId: doc.clientId, type: "BELGE", title: approved ? "Belgeniz Onaylandı" : "Belgeniz Reddedildi",
-        message: approved ? `"${doc.title}" başlıklı belgeniz onaylandı.` : `"${doc.title}" başlıklı belgeniz reddedildi. ${note ? `Sebep: ${note}` : ""}`,
+        clientId: doc.clientId, type: "BELGE", title: approved ? "Belgeniz Onaylandı" : DOCUMENT_REJECTION_TITLE,
+        message: approved ? `"${doc.title}" başlıklı belgeniz onaylandı.` : clientDocumentRejectionMessage(publicReason),
+        ...(publicReason === undefined ? {} : { clientRejectionReason: publicReason }),
       }, tx);
       return { success: true };
     }, PORTAL_ACCESS_WRITE_TX);
