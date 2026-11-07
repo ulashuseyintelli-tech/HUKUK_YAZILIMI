@@ -17,6 +17,7 @@ const mockedSeed = seedLookupCatalog as jest.MockedFunction<typeof seedLookupCat
 
 function buildTx() {
   return {
+    messageTemplate: { createMany: jest.fn().mockResolvedValue({ count: 12 }) },
     tenant: { create: jest.fn().mockResolvedValue({ id: 't1', name: 'Yeni Firma', slug: 'yeni-firma' }) },
     lawyer: { create: jest.fn().mockResolvedValue({ id: 'l1' }) }, // K-A1 a′: kişi kartı aynı tx'te
     staffMember: { create: jest.fn().mockResolvedValue({ id: 's1' }) },
@@ -54,6 +55,12 @@ describe('PR-B AuthService.register tenant-create auto-seed', () => {
     expect(mockedSeed).toHaveBeenCalledTimes(1);
     // tx client ile (this.prisma DEĞİL) + yeni tenant.id
     expect(mockedSeed).toHaveBeenCalledWith(tx, 't1');
+    expect(tx.messageTemplate.createMany).toHaveBeenCalledTimes(1);
+    const templates = tx.messageTemplate.createMany.mock.calls[0][0];
+    expect(templates.skipDuplicates).toBe(true);
+    expect(templates.data).toHaveLength(12);
+    expect(templates.data.every((row: any) => row.tenantId === 't1' && row.isActive && row.isSystem)).toBe(true);
+    expect(mockedSeed.mock.invocationCallOrder[0]).toBeLessThan(tx.messageTemplate.createMany.mock.invocationCallOrder[0]);
     // sıralama: seed, user create'ten SONRA
     expect(tx.user.create.mock.invocationCallOrder[0]).toBeLessThan(mockedSeed.mock.invocationCallOrder[0]);
     expect(res.token).toBe('fake-token');
@@ -69,5 +76,15 @@ describe('PR-B AuthService.register tenant-create auto-seed', () => {
     expect(mockedSeed).toHaveBeenCalledTimes(1);
     // user create denendi ama transaction reject oldu → register dönüş üretmedi (rollback)
     expect(tx.user.create).toHaveBeenCalledTimes(1);
+    expect(tx.messageTemplate.createMany).not.toHaveBeenCalled();
+  });
+
+  it('5b şablon kopyası başarısızsa register başarı veya token üretmez', async () => {
+    const tx = buildTx();
+    mockedSeed.mockResolvedValue({ takipTuru: 11, mahiyet: 18, asama: 9, risk: 3, durumEtiketi: 9 });
+    tx.messageTemplate.createMany.mockRejectedValueOnce(new Error('template seed failed'));
+    const svc = buildService(tx);
+    await expect(svc.register(dto)).rejects.toThrow('template seed failed');
+    expect(tx.messageTemplate.createMany).toHaveBeenCalledTimes(1);
   });
 });

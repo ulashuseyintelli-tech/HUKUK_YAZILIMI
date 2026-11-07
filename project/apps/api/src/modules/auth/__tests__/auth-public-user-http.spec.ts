@@ -74,6 +74,7 @@ const txProxy = (impl: Record<string, unknown>) =>
       return {
         upsert: jest.fn().mockResolvedValue({}),
         create: jest.fn().mockResolvedValue({}),
+        createMany: jest.fn().mockResolvedValue({ count: 12 }),
         update: jest.fn().mockResolvedValue({}),
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
         findMany: jest.fn().mockResolvedValue([]),

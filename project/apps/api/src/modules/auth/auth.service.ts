@@ -1,3 +1,4 @@
+import { seedDefaultMessageTemplates } from '../message-template/message-template-defaults';
 import {
   Injectable,
   UnauthorizedException,
@@ -106,6 +107,8 @@ export class AuthService {
       // tenant + user da ROLLBACK olur → yarı-kurulu (lookup'suz) tenant oluşmaz.
       // user create'ten SONRA: önce ucuz unique kontrolleri geçsin, ~53 upsert boşa gitmesin.
       await seedLookupCatalog(tx, tenant.id);
+      // New bureau only: copy the existing approved catalog in the SAME creation transaction.
+      await seedDefaultMessageTemplates(tx, tenant.id);
 
       return { tenant, user };
     });

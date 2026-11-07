@@ -42,6 +42,7 @@ describe('K-A1 a′ — POST /api/auth/register kişi kartıyla doğar (gerçek 
   let app: INestApplication;
   const prismaCalls: string[] = [];
   const tx = {
+    messageTemplate: { createMany: jest.fn().mockResolvedValue({ count: 12 }) },
     tenant: { create: jest.fn() },
     user: { create: jest.fn() },
     lawyer: { create: jest.fn().mockResolvedValue({ id: 'l-ka1' }) },
