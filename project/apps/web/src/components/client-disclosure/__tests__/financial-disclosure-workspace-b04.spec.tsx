@@ -10,12 +10,17 @@ const requestContentApproval = vi.fn();
 const completeContentApproval = vi.fn();
 const publish = vi.fn();
 const getInbox = vi.fn();
+const getRecipientSelection = vi.fn();
+let activeActor = { id: 'fd-office-actor', tenantId: 'fd-office-tenant' };
+
+vi.mock('@/lib/auth-context', () => ({ useAuth: () => ({ user: activeActor }) }));
 
 vi.mock('@/lib/api/client-financial-disclosure', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/lib/api/client-financial-disclosure')>();
   return {
     ...original,
     clientFinancialDisclosureApi: {
+      getRecipientSelection: (...args: unknown[]) => getRecipientSelection(...args),
       requestOfficeApproval: (...args: unknown[]) => requestOfficeApproval(...args),
       completeOfficeApproval: (...args: unknown[]) => completeOfficeApproval(...args),
       requestContentApproval: (...args: unknown[]) => requestContentApproval(...args),
@@ -45,7 +50,7 @@ const noActions: OfficeDisclosureActionCapabilities = {
 
 function renderPanel(actions: OfficeDisclosureActionCapabilities) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const view = render(
     <QueryClientProvider client={queryClient}>
       <DisclosureApprovalPanel
         clientId="client-scope"
@@ -54,10 +59,18 @@ function renderPanel(actions: OfficeDisclosureActionCapabilities) {
       />
     </QueryClientProvider>,
   );
+  return { ...view, queryClient };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  activeActor = { id: 'fd-office-actor', tenantId: 'fd-office-tenant' };
+  getRecipientSelection.mockReset();
+  getRecipientSelection.mockResolvedValue({
+    surface: 'OFFICE_RECIPIENT_SELECTION',
+    options: [{ email: 'client@example.test', label: 'Müvekkil iletişim kaydı' }],
+    selectedRecipient: null,
+  });
   requestOfficeApproval.mockResolvedValue({ status: 'OFFICE_APPROVAL_PENDING' });
   completeOfficeApproval.mockResolvedValue({ status: 'OFFICE_APPROVED' });
   requestContentApproval.mockResolvedValue({ status: 'CONTENT_APPROVAL_PENDING' });
@@ -117,6 +130,7 @@ describe('DisclosureApprovalPanel X1-B04', () => {
 
   it('içerik talebinde alıcıyı canonical mühürleme komutuna aynen bağlar', async () => {
     renderPanel({ ...noActions, canRequestContentApproval: true });
+    await screen.findByRole('option', { name: /client@example.test/ });
     fireEvent.change(screen.getByLabelText('Onaylanacak alıcı e-postası'), {
       target: { value: 'client@example.test' },
     });
@@ -131,19 +145,26 @@ describe('DisclosureApprovalPanel X1-B04', () => {
   });
 
   it('final content approval ve publish çağrılarını yalnız ayrı capability bayraklarıyla açar', async () => {
+    getRecipientSelection.mockResolvedValue({
+      surface: 'OFFICE_RECIPIENT_SELECTION', options: [], selectedRecipient: { email: 'client@example.test' },
+    });
     const first = renderPanel({ ...noActions, canCompleteContentApproval: true });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'İçerik onayını tamamla' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'İçerik onayını tamamla' }));
     await waitFor(() => expect(completeContentApproval).toHaveBeenCalledWith('version-scope'));
     first.unmount();
 
     renderPanel({ ...noActions, canPublish: true });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Yayınla ve gönder' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Yayınla ve gönder' }));
     await waitFor(() => expect(publish).toHaveBeenCalledWith('version-scope'));
   });
 
   it('backend/provider hata ayrıntısını ekrana taşımadan generic fail-closed mesaj gösterir', async () => {
     publish.mockRejectedValue(new Error('providerMessageId=secret raw SMTP failure'));
+    getRecipientSelection.mockResolvedValue({ surface: 'OFFICE_RECIPIENT_SELECTION', options: [], selectedRecipient: { email: 'client@example.test' } });
     const view = renderPanel({ ...noActions, canPublish: true });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Yayınla ve gönder' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Yayınla ve gönder' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
@@ -151,5 +172,73 @@ describe('DisclosureApprovalPanel X1-B04', () => {
     );
     expect(view.container.textContent).not.toContain('providerMessageId');
     expect(view.container.textContent).not.toContain('SMTP');
+  });
+
+  it('5a serbest adres alanı açmaz; kayıtlı olmayan adresle onay istemez', async () => {
+    renderPanel({ ...noActions, canRequestContentApproval: true });
+    await screen.findByRole('option', { name: /client@example.test/ });
+    expect(screen.queryByRole('textbox', { name: 'Onaylanacak alıcı e-postası' })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'outside@example.test' } });
+    fireEvent.submit(screen.getByRole('button', { name: 'İçerik onayına gönder' }).closest('form')!);
+    expect(requestContentApproval).not.toHaveBeenCalled();
+  });
+
+  it('5a alıcı GET reddini boş kayıt ya da başarı olarak göstermez', async () => {
+    getRecipientSelection.mockRejectedValue(new Error('private provider detail'));
+    const view = renderPanel({ ...noActions, canRequestContentApproval: true });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Müvekkilin alıcı kayıtları yüklenemedi');
+    expect(screen.queryByText('Müvekkil kayıtlarında seçilebilir e-posta adresi yok.')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'İçerik onayına gönder' })).toBeDisabled();
+    expect(view.container.textContent).not.toContain('private provider detail');
+    expect(requestContentApproval).not.toHaveBeenCalled();
+  });
+
+  it('5a gerçek boş seçenek listesinde alıcı uydurmaz', async () => {
+    getRecipientSelection.mockResolvedValue({ surface: 'OFFICE_RECIPIENT_SELECTION', options: [], selectedRecipient: null });
+    renderPanel({ ...noActions, canRequestContentApproval: true });
+    await screen.findByText('Müvekkil kayıtlarında seçilebilir e-posta adresi yok.');
+    expect(screen.getByRole('button', { name: 'İçerik onayına gönder' })).toBeDisabled();
+    expect(requestContentApproval).not.toHaveBeenCalled();
+  });
+
+  it('5a mühürlü alıcı yüklenmeden içerik onayı veya yayın düğmesi çalışmaz', async () => {
+    getRecipientSelection.mockReturnValue(new Promise(() => {}));
+    renderPanel({ ...noActions, canCompleteContentApproval: true, canPublish: true });
+    fireEvent.click(screen.getByRole('button', { name: 'İçerik onayını tamamla' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Yayınla ve gönder' }));
+    expect(completeContentApproval).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it('5a aktör değişince önceki aktörün alıcı önbelleğini göstermez', async () => {
+    const actions = { ...noActions, canRequestContentApproval: true };
+    const view = renderPanel(actions);
+    await screen.findByRole('option', { name: /client@example.test/ });
+    activeActor = { ...activeActor, id: 'different-actor' };
+    getRecipientSelection.mockRejectedValue(new Error('forbidden'));
+    view.rerender(<QueryClientProvider client={view.queryClient}><DisclosureApprovalPanel clientId="client-scope" versionId="version-scope" actions={actions} /></QueryClientProvider>);
+    expect(screen.queryByRole('option', { name: /client@example.test/ })).not.toBeInTheDocument();
+    await screen.findByRole('alert');
+    expect(screen.getByRole('button', { name: 'İçerik onayına gönder' })).toBeDisabled();
+  });
+
+  it('5a müvekkil/sürüm değişince eski seçim ve geç gelen başarı yeni ekrana taşınmaz', async () => {
+    let finish!: (value: unknown) => void;
+    requestContentApproval.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const actions = { ...noActions, canRequestContentApproval: true };
+    const view = renderPanel(actions);
+    await screen.findByRole('option', { name: /client@example.test/ });
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'client@example.test' } });
+    fireEvent.submit(screen.getByRole('button', { name: 'İçerik onayına gönder' }).closest('form')!);
+    await waitFor(() => expect(requestContentApproval).toHaveBeenCalledWith('version-scope', 'client@example.test'));
+    getRecipientSelection.mockResolvedValue({ surface: 'OFFICE_RECIPIENT_SELECTION', options: [{ email: 'next@example.test', label: 'Yeni müvekkil' }], selectedRecipient: null });
+    view.rerender(<QueryClientProvider client={view.queryClient}><DisclosureApprovalPanel clientId="next-client" versionId="next-version" actions={actions} /></QueryClientProvider>);
+    await screen.findByRole('option', { name: /next@example.test/ });
+    expect(screen.getByRole('combobox')).toHaveValue('');
+    expect(view.container.textContent).not.toContain('client@example.test');
+    finish({ status: 'CONTENT_APPROVAL_PENDING' });
+    await waitFor(() => expect(screen.getByRole('combobox')).not.toBeDisabled());
+    expect(screen.queryByText('İçerik ve alıcı onaya gönderildi.')).not.toBeInTheDocument();
+    expect(requestContentApproval).toHaveBeenCalledTimes(1);
   });
 });

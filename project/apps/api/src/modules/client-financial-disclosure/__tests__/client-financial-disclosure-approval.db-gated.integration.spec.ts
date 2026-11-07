@@ -40,6 +40,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I03 — disclosure approval (gerçek PostgreSQ
   const uOtherTenant = `i03-other-${S}`; // PARTNER ama tenant B
 
   const seedSource = async (key: string) => {
+    await prisma.clientContact.create({ data: { clientId: clA, type: 'EMAIL', value: `client-${key}@example.test` } });
     const colId = `i03-col-${key}`;
     const dispId = `i03-disp-${key}`;
     await sql(`INSERT INTO "Collection"("id","tenantId","caseId","amount","currency","type","date","status","idempotencyKey","updatedAt")
@@ -139,7 +140,8 @@ describeDb('CLIENT-P2-U03-TRACK-B-I03 — disclosure approval (gerçek PostgreSQ
   beforeAll(async () => {
     await sql(`INSERT INTO "Tenant"("id","name","slug","createdAt","updatedAt") VALUES
       ('${tA}','TA-${S}','i03-ta-${S}',now(),now()), ('${tB}','TB-${S}','i03-tb-${S}',now(),now())`);
-    await sql(`INSERT INTO "Client"("id","tenantId","type","updatedAt") VALUES ('${clA}','${tA}','PERSON'::"ClientType",now())`);
+    await sql(`INSERT INTO "Client"("id","tenantId","type","email","updatedAt") VALUES ('${clA}','${tA}','PERSON'::"ClientType",'c@example.test',now())`);
+    await prisma.clientContact.create({ data: { clientId: clA, type: 'EMAIL', value: 'p22@example.test' } });
     await sql(`INSERT INTO "Case"("id","tenantId","fileNumber","type","updatedAt")
       VALUES ('${caseA}','${tA}','2026/I03A-${S}','GENERAL_EXECUTION'::"CaseType",now())`);
     await sql(`INSERT INTO "CaseClient"("id","caseId","clientId","updatedAt") VALUES ('${ccA}','${caseA}','${clA}',now())`);
@@ -591,5 +593,93 @@ describeDb('CLIENT-P2-U03-TRACK-B-I03 — disclosure approval (gerçek PostgreSQ
       approvedRecipientEmail: '   ',
     }))).toBe('DISCLOSURE_APPROVAL_CONTENT_REQUIRED');
     expect((await readVersion(versionId)).status).toBe('OFFICE_APPROVED');
+  });
+
+  const receiptState = async (id: string) => ({
+    version: await prisma.clientFinancialDisclosureVersion.findUniqueOrThrow({ where: { id } }),
+    lines: await prisma.clientFinancialDisclosureLine.findMany({ where: { disclosureVersionId: id }, orderBy: { id: 'asc' } }),
+    requests: await prisma.officeApprovalRequest.findMany({ where: { tenantId: tA, targetRef: id }, orderBy: { id: 'asc' } }),
+    audits: await prisma.auditLog.findMany({ where: { tenantId: tA }, orderBy: { id: 'asc' } }),
+  });
+
+  it.each(['legacy', 'contact'])('5a bağlı %s adresi mevcut requester yetkisiyle mühürlenir; tekrar aynı bağa idempotenttir', async kind => {
+    const key = `5a-valid-${kind}-${S}`;
+    const { versionId } = await officeApproved(key);
+    const before = await readVersion(versionId);
+    const email = kind === 'legacy' ? 'c@example.test' : `client-${key}@example.test`;
+    const input = { tenantId: tA, disclosureVersionId: versionId, requesterUserId: uRequester, approvedRecipientEmail: email };
+    await svc.requestContentApproval(input);
+    expect((await svc.requestContentApproval(input)).replayed).toBe(true);
+    const after = await readVersion(versionId);
+    expect(after.approvedRecipientEmail).toBe(email);
+    expect(after.snapshotHash).toBe(before.snapshotHash);
+    expect(after.notificationContentHash).toHaveLength(64);
+  });
+
+  it.each([undefined, [], { not: '' }, 'unlinked-5a@example.test'])('5a serbest/ORM biçimli alıcı %j ret halinde tüm ilgili kayıtları korur', async email => {
+    const { versionId } = await officeApproved(`5a-invalid-${Math.random().toString(36).slice(2)}-${S}`);
+    const before = await receiptState(versionId);
+    await expect(svc.requestContentApproval({
+      tenantId: tA, disclosureVersionId: versionId, requesterUserId: uRequester, approvedRecipientEmail: email,
+    } as never)).rejects.toMatchObject({ response: { code: typeof email === 'string' ? 'DISCLOSURE_RECIPIENT_NOT_LINKED' : 'DISCLOSURE_APPROVAL_CONTENT_REQUIRED' } });
+    expect(await receiptState(versionId)).toEqual(before);
+  });
+
+  it('5a başka müvekkilde kayıtlı adres bu müvekkile alıcı yetkisi vermez', async () => {
+    const other = await prisma.client.create({ data: { tenantId: tB, type: 'PERSON', email: `other-${S}@example.test` } });
+    const { versionId } = await officeApproved(`5a-foreign-${S}`);
+    const before = await receiptState(versionId);
+    await expect(svc.requestContentApproval({ tenantId: tA, disclosureVersionId: versionId, requesterUserId: uRequester, approvedRecipientEmail: other.email! }))
+      .rejects.toMatchObject({ response: { code: 'DISCLOSURE_RECIPIENT_NOT_LINKED' } });
+    expect(await receiptState(versionId)).toEqual(before);
+  });
+
+  it('5a geçerli adres yabancı portal hesabı bağını yetkilendirmez', async () => {
+    const other = await prisma.client.create({ data: { tenantId: tB, type: 'PERSON' } });
+    const account = await prisma.clientPortalUser.create({ data: { clientId: other.id, email: 'c@example.test', passwordHash: 'test-only' } });
+    const { versionId } = await officeApproved(`5a-account-${S}`);
+    const before = await receiptState(versionId);
+    await expect(svc.requestContentApproval({ tenantId: tA, disclosureVersionId: versionId, requesterUserId: uRequester, approvedRecipientEmail: 'c@example.test', approvedRecipientPortalUserId: account.id }))
+      .rejects.toMatchObject({ response: { code: 'DISCLOSURE_RECIPIENT_NOT_LINKED' } });
+    expect(await receiptState(versionId)).toEqual(before);
+  });
+
+  it.each([tA, tB])('5a yanlış canonical dosya/tenant parent (%s) ile bağ kurmaz', async targetTenant => {
+    const { versionId } = await officeApproved(`5a-parent-${targetTenant}-${S}`);
+    const kase = await prisma.case.create({ data: { tenantId: targetTenant, fileNumber: `5a-parent-${targetTenant}-${S}`, type: 'GENERAL_EXECUTION' } });
+    const client = targetTenant === tA ? { id: clA } : await prisma.client.create({ data: { tenantId: tB, type: 'PERSON' } });
+    const link = await prisma.caseClient.create({ data: { caseId: kase.id, clientId: client.id } });
+    const version = await prisma.clientFinancialDisclosureVersion.findUniqueOrThrow({ where: { id: versionId } });
+    await prisma.clientFinancialDisclosure.update({ where: { id: version.disclosureId }, data: { caseClientId: link.id } });
+    try {
+      const before = await receiptState(versionId);
+      await expect(svc.requestContentApproval({ tenantId: tA, disclosureVersionId: versionId, requesterUserId: uRequester, approvedRecipientEmail: 'c@example.test' }))
+        .rejects.toMatchObject({ response: { code: 'DISCLOSURE_RECIPIENT_NOT_LINKED' } });
+      expect(await receiptState(versionId)).toEqual(before);
+    } finally {
+      await prisma.clientFinancialDisclosure.update({ where: { id: version.disclosureId }, data: { caseClientId: ccA } });
+    }
+  });
+
+  it('5a onay öncesinde iletişim kaydı kalkarsa eski alıcıyla tamamlamaz', async () => {
+    const key = `5a-contact-removed-${S}`;
+    const { versionId } = await contentPending(key);
+    await prisma.clientContact.deleteMany({ where: { clientId: clA, value: `client-${key}@example.test` } });
+    const before = await receiptState(versionId);
+    await expect(svc.completeContentApproval({ tenantId: tA, disclosureVersionId: versionId, contentApproverUserId: uPartner2 }))
+      .rejects.toMatchObject({ response: { code: 'DISCLOSURE_RECIPIENT_NOT_LINKED' } });
+    expect(await receiptState(versionId)).toEqual(before);
+  });
+
+  it('5a tamamlanmış onayın no-op tekrarı da kaldırılmış alıcıyı geçerli saymaz', async () => {
+    const key = `5a-replay-${S}`;
+    const { versionId } = await contentPending(key);
+    const input = { tenantId: tA, disclosureVersionId: versionId, contentApproverUserId: uPartner2 };
+    await svc.completeContentApproval(input);
+    expect((await svc.completeContentApproval(input)).replayed).toBe(true);
+    await prisma.clientContact.deleteMany({ where: { clientId: clA, value: `client-${key}@example.test` } });
+    const before = await receiptState(versionId);
+    await expect(svc.completeContentApproval(input)).rejects.toMatchObject({ response: { code: 'DISCLOSURE_RECIPIENT_NOT_LINKED' } });
+    expect(await receiptState(versionId)).toEqual(before);
   });
 });

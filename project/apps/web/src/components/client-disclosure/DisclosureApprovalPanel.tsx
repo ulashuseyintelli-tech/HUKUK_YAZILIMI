@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useRef, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/lib/auth-context';
 import { Button, Card, Spinner } from '@hukuk/ui';
 import { CheckCircle2 } from 'lucide-react';
 import {
@@ -20,6 +21,14 @@ type ApprovalAction =
   | { readonly kind: 'request-content'; readonly recipientEmail: string }
   | { readonly kind: 'complete-content' }
   | { readonly kind: 'publish' };
+
+type ScopedApprovalAction = ApprovalAction & {
+  readonly clientId: string;
+  readonly versionId: string;
+  readonly tenantId: string;
+  readonly actorUserId: string;
+  readonly contextKey: string;
+};
 
 const successMessage: Record<ApprovalAction['kind'], string> = {
   'request-office': 'Ofis onay talebi oluşturuldu.',
@@ -53,17 +62,31 @@ export function DisclosureApprovalPanel({
   actions: OfficeDisclosureActionCapabilities;
 }) {
   const queryClient = useQueryClient();
-  const [recipientEmail, setRecipientEmail] = useState('');
-  const [notice, setNotice] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { user } = useAuth();
+  const contextKey = `${user?.tenantId}:${user?.id}:${clientId}:${versionId}`;
+  const currentContext = useRef(contextKey);
+  currentContext.current = contextKey;
+  const [selection, setSelection] = useState({ contextKey, email: '' });
+  const [notice, setNotice] = useState<{ contextKey: string; text: string } | null>(null);
+  const [error, setError] = useState<{ contextKey: string; text: string } | null>(null);
+  const recipientStage = actions.canRequestContentApproval || actions.canCompleteContentApproval || actions.canPublish;
+  const recipients = useQuery({
+    queryKey: ['client-financial-disclosures', 'recipient-selection', user?.tenantId, user?.id, clientId, versionId],
+    queryFn: () => clientFinancialDisclosureApi.getRecipientSelection(clientId, versionId),
+    enabled: !!user && recipientStage,
+  });
+  const options = recipients.isSuccess ? recipients.data.options : [];
+  const recipientEmail = selection.contextKey === contextKey ? selection.email : '';
+  const validSelection = recipients.isSuccess && options.some(option => option.email === recipientEmail);
+  const selectedRecipient = recipients.isSuccess ? recipients.data.selectedRecipient : null;
 
   const mutation = useMutation({
-    mutationFn: async (action: ApprovalAction) => {
+    mutationFn: async (action: ScopedApprovalAction) => {
       switch (action.kind) {
         case 'request-office':
-          return clientFinancialDisclosureApi.requestOfficeApproval(versionId);
+          return clientFinancialDisclosureApi.requestOfficeApproval(action.versionId);
         case 'reconcile-consumed':
-          return clientFinancialDisclosureApi.reconcileConsumedOfficeApproval(versionId);
+          return clientFinancialDisclosureApi.reconcileConsumedOfficeApproval(action.versionId);
         case 'complete-office': {
           // Inbox yalnız eligible approver'a, kendi talepleri hariç, tenant-scoped kayıt döndürür.
           // ID komut bağlama girdisidir; UI'a render edilmez ve disclosure projection'ına eklenmez.
@@ -72,20 +95,20 @@ export function DisclosureApprovalPanel({
             (entry) =>
               entry.actionCode === DISCLOSURE_APPROVAL_ACTION &&
               entry.targetType === DISCLOSURE_APPROVAL_TARGET &&
-              entry.targetRef === versionId,
+              entry.targetRef === action.versionId,
           );
           if (!request) throw new Error('Disclosure approval binding unavailable');
-          return clientFinancialDisclosureApi.completeOfficeApproval(versionId, request.id);
+          return clientFinancialDisclosureApi.completeOfficeApproval(action.versionId, request.id);
         }
         case 'request-content':
           return clientFinancialDisclosureApi.requestContentApproval(
-            versionId,
+            action.versionId,
             action.recipientEmail,
           );
         case 'complete-content':
-          return clientFinancialDisclosureApi.completeContentApproval(versionId);
+          return clientFinancialDisclosureApi.completeContentApproval(action.versionId);
         case 'publish':
-          return clientFinancialDisclosureApi.publish(versionId);
+          return clientFinancialDisclosureApi.publish(action.versionId);
       }
     },
     onMutate: () => {
@@ -93,25 +116,40 @@ export function DisclosureApprovalPanel({
       setError(null);
     },
     onSuccess: async (_result, action) => {
-      setNotice(successMessage[action.kind]);
-      if (action.kind === 'request-content') setRecipientEmail('');
+      if (currentContext.current === action.contextKey) {
+        setNotice({ contextKey: action.contextKey, text: successMessage[action.kind] });
+        if (action.kind === 'request-content') setSelection({ contextKey: action.contextKey, email: '' });
+      }
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ['client-financial-disclosures', 'office-list', clientId],
+          queryKey: ['client-financial-disclosures', 'office-list', action.clientId],
         }),
         queryClient.invalidateQueries({
-          queryKey: ['client-financial-disclosures', 'office-detail', clientId, versionId],
+          queryKey: ['client-financial-disclosures', 'office-detail', action.clientId, action.versionId],
         }),
         queryClient.invalidateQueries({
-          queryKey: ['client-financial-disclosures', 'office-history', clientId],
+          queryKey: ['client-financial-disclosures', 'office-history', action.clientId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ['client-financial-disclosures', 'recipient-selection', action.tenantId, action.actorUserId, action.clientId, action.versionId],
         }),
       ]);
     },
     onError: (_cause, action) => {
       // Provider/backend ayrıntısı ve teknik hata kimlikleri office UI'a taşınmaz.
-      setError(errorMessage[action.kind]);
+      if (currentContext.current === action.contextKey) {
+        setError({ contextKey: action.contextKey, text: errorMessage[action.kind] });
+      }
     },
   });
+
+  const submit = (action: ApprovalAction) => {
+    if (!user) {
+      setError({ contextKey, text: 'Oturum bilgisi alınamadı.' });
+      return;
+    }
+    mutation.mutate({ ...action, clientId, versionId, contextKey, tenantId: user.tenantId, actorUserId: user.id });
+  };
 
   const hasAction =
     actions.canRequestOfficeApproval ||
@@ -130,6 +168,15 @@ export function DisclosureApprovalPanel({
         Kullanılabilir işlemler sunucudaki mevcut yetki ve yaşam döngüsü kurallarından gelir.
       </p>
 
+      {recipientStage && (
+        <div className="mt-3 text-sm">
+          {recipients.isError ? <p role="alert">Müvekkilin alıcı kayıtları yüklenemedi. İşlem tamamlanmadı.</p> :
+            recipients.isPending ? <p>Alıcı kayıtları yükleniyor...</p> :
+              selectedRecipient ? <p>Onaya bağlı alıcı: {selectedRecipient.email}</p> :
+                options.length === 0 ? <p>Müvekkil kayıtlarında seçilebilir e-posta adresi yok.</p> : null}
+        </div>
+      )}
+
       {!hasAction ? (
         <p className="mt-3 text-sm text-gray-500">Bu sürüm için kullanılabilir işlem bulunmuyor.</p>
       ) : null}
@@ -139,7 +186,7 @@ export function DisclosureApprovalPanel({
           <Button
             size="sm"
             disabled={mutation.isPending}
-            onClick={() => mutation.mutate({ kind: 'request-office' })}
+            onClick={() => submit({ kind: 'request-office' })}
           >
             {pendingKind === 'request-office' ? <Spinner className="h-4 w-4" /> : 'Ofis onayına gönder'}
           </Button>
@@ -149,7 +196,7 @@ export function DisclosureApprovalPanel({
           <Button
             size="sm"
             disabled={mutation.isPending}
-            onClick={() => mutation.mutate({ kind: 'complete-office' })}
+            onClick={() => submit({ kind: 'complete-office' })}
           >
             {pendingKind === 'complete-office' ? <Spinner className="h-4 w-4" /> : 'Ofis onayını tamamla'}
           </Button>
@@ -161,7 +208,7 @@ export function DisclosureApprovalPanel({
             variant="outline"
             data-testid="reconcile-consumed-approval"
             disabled={mutation.isPending}
-            onClick={() => mutation.mutate({ kind: 'reconcile-consumed' })}
+            onClick={() => submit({ kind: 'reconcile-consumed' })}
           >
             {pendingKind === 'reconcile-consumed' ? (
               <Spinner className="h-4 w-4" />
@@ -176,21 +223,23 @@ export function DisclosureApprovalPanel({
             className="flex flex-wrap items-end gap-2"
             onSubmit={(event) => {
               event.preventDefault();
-              mutation.mutate({ kind: 'request-content', recipientEmail: recipientEmail.trim() });
+              if (validSelection) submit({ kind: 'request-content', recipientEmail });
             }}
           >
             <label className="text-sm">
               <span className="mb-1 block text-gray-500">Onaylanacak alıcı e-postası</span>
-              <input
-                type="email"
+              <select
                 required
                 value={recipientEmail}
-                onChange={(event) => setRecipientEmail(event.target.value)}
+                onChange={(event) => setSelection({ contextKey, email: event.target.value })}
                 className="rounded-md border px-2 py-1.5"
-                autoComplete="email"
-              />
+                disabled={mutation.isPending || !recipients.isSuccess}
+              >
+                <option value="">Müvekkil kaydından alıcı seçin</option>
+                {options.map(option => <option key={option.email} value={option.email}>{option.label} — {option.email}</option>)}
+              </select>
             </label>
-            <Button size="sm" type="submit" disabled={mutation.isPending || !recipientEmail.trim()}>
+            <Button size="sm" type="submit" disabled={mutation.isPending || !validSelection}>
               {pendingKind === 'request-content' ? <Spinner className="h-4 w-4" /> : 'İçerik onayına gönder'}
             </Button>
           </form>
@@ -199,8 +248,8 @@ export function DisclosureApprovalPanel({
         {actions.canCompleteContentApproval ? (
           <Button
             size="sm"
-            disabled={mutation.isPending}
-            onClick={() => mutation.mutate({ kind: 'complete-content' })}
+            disabled={mutation.isPending || !selectedRecipient}
+            onClick={() => submit({ kind: 'complete-content' })}
           >
             {pendingKind === 'complete-content' ? <Spinner className="h-4 w-4" /> : 'İçerik onayını tamamla'}
           </Button>
@@ -209,16 +258,16 @@ export function DisclosureApprovalPanel({
         {actions.canPublish ? (
           <Button
             size="sm"
-            disabled={mutation.isPending}
-            onClick={() => mutation.mutate({ kind: 'publish' })}
+            disabled={mutation.isPending || !selectedRecipient}
+            onClick={() => submit({ kind: 'publish' })}
           >
             {pendingKind === 'publish' ? <Spinner className="h-4 w-4" /> : 'Yayınla ve gönder'}
           </Button>
         ) : null}
       </div>
 
-      {notice ? <p role="status" className="mt-3 text-sm text-emerald-700">{notice}</p> : null}
-      {error ? <p role="alert" className="mt-3 text-sm text-red-700">{error}</p> : null}
+      {notice?.contextKey === contextKey ? <p role="status" className="mt-3 text-sm text-emerald-700">{notice.text}</p> : null}
+      {error?.contextKey === contextKey ? <p role="alert" className="mt-3 text-sm text-red-700">{error.text}</p> : null}
     </Card>
   );
 }

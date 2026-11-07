@@ -204,7 +204,12 @@ const fdVersion = (id: string, over: Row = {}): Row => ({
     { type: 'CONTRACTUAL_FEE_WITHHELD', amount: new Prisma.Decimal('234.56'), sortOrder: 1 },
     { type: 'CLIENT_PAYABLE', amount: new Prisma.Decimal('1000.00'), sortOrder: 2 },
   ],
-  disclosure: { currentVersionId: null, case: { fileNumber: '2026/42' } },
+  disclosure: {
+    currentVersionId: null, tenantId: TENANT, caseId: 'case-1', case: { fileNumber: '2026/42' },
+    caseClient: { caseId: 'case-1', case: { tenantId: TENANT }, client: {
+      tenantId: TENANT, email: RECIPIENT, contacts: [], portalUser: null,
+    } },
+  },
   ...over,
 });
 

@@ -1,3 +1,4 @@
+import { assertDisclosureRecipient } from './client-financial-disclosure-recipient';
 import {
   ClientFinancialDisclosureStatus,
   Prisma,
@@ -128,6 +129,7 @@ export class ClientFinancialDisclosurePublicationService {
         this.assertNotTerminal(version);
 
         if (version.status === ClientFinancialDisclosureStatus.SEND_PENDING) {
+          await this.assertPublishablePayload(tx, version);
           return this.result(version, version.status, version.status, true);
         }
         this.assertExactStatus(version, ClientFinancialDisclosureStatus.CONTENT_APPROVED);
@@ -631,6 +633,7 @@ export class ClientFinancialDisclosurePublicationService {
         'DISCLOSURE_PUBLICATION_CONTENT_HASH_MISMATCH',
       );
     }
+    await assertDisclosureRecipient(tx, version.tenantId, version.id, version.approvedRecipientEmail, version.approvedRecipientPortalUserId);
   }
 
   /**

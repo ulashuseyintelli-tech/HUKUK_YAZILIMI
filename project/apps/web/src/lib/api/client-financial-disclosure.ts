@@ -37,6 +37,12 @@ export interface OfficeDisclosureActionCapabilities {
   readonly canSupersede: boolean;
 }
 
+export interface OfficeDisclosureRecipientSelection {
+  readonly surface: 'OFFICE_RECIPIENT_SELECTION';
+  readonly options: readonly { readonly email: string; readonly label: string }[];
+  readonly selectedRecipient: { readonly email: string } | null;
+}
+
 export interface OfficeDisclosureSummary {
   readonly disclosureId: string;
   readonly versionId: string;
@@ -238,6 +244,24 @@ export const clientFinancialDisclosureApi = {
       `/client-financial-disclosures/${encodeURIComponent(versionId)}/reconcile-consumed-office-approval`,
     );
     return response.data;
+  },
+
+  /** Recipient choices and the stored selection are restricted to the existing action scope. */
+  async getRecipientSelection(clientId: string, versionId: string): Promise<OfficeDisclosureRecipientSelection> {
+    const response = await apiClient.get<OfficeDisclosureRecipientSelection>(
+      `/client-financial-disclosures/office/clients/${encodeURIComponent(clientId)}/versions/${encodeURIComponent(versionId)}/recipients`,
+    );
+    const data = response.data;
+    if (!data || data.surface !== 'OFFICE_RECIPIENT_SELECTION' || !Array.isArray(data.options) ||
+      data.options.some(option => !option || typeof option.email !== 'string' || typeof option.label !== 'string') ||
+      (data.selectedRecipient !== null && (!data.selectedRecipient || typeof data.selectedRecipient.email !== 'string'))) {
+      throw new Error('DISCLOSURE_RECIPIENT_RESPONSE_INVALID');
+    }
+    return {
+      surface: data.surface,
+      options: data.options.map(option => ({ email: option.email, label: option.label })),
+      selectedRecipient: data.selectedRecipient === null ? null : { email: data.selectedRecipient.email },
+    };
   },
 
   /** Office workspace -> GET the frozen X2 renderer output for one scoped version. */

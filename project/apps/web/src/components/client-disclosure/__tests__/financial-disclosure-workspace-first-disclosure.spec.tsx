@@ -126,3 +126,5 @@ describe('FinancialDisclosureWorkspace — ilk bildirim hazırlanabilirliği', (
     expect(screen.getByTestId('financial-disclosures-loading')).toBeTruthy();
   });
 });
+
+vi.mock('@/lib/auth-context', () => ({ useAuth: () => ({ user: { id: 'fd-fixture-actor', tenantId: 'fd-fixture-tenant' } }) }));

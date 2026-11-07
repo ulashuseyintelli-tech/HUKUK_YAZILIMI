@@ -163,3 +163,5 @@ describe('FinancialDisclosureWorkspace X1-B01', () => {
     expect(alert.textContent).not.toContain('provider raw body');
   });
 });
+
+vi.mock('@/lib/auth-context', () => ({ useAuth: () => ({ user: { id: 'fd-fixture-actor', tenantId: 'fd-fixture-tenant' } }) }));

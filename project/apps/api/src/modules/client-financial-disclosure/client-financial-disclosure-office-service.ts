@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { disclosureRecipientSelection } from './client-financial-disclosure-recipient';
+import type { OfficeDisclosureRecipientSelection } from './client-financial-disclosure-office-contract';
 import {
   buildPreparationReference,
   preparationReferenceEquals,
@@ -230,6 +232,26 @@ export class ClientFinancialDisclosureOfficeService {
     });
 
     return this.safe({ surface: 'OFFICE_PREPARATION_SOURCES', items });
+  }
+
+  /** Existing FD approval UI -> purpose-bound recipients for this scoped version only. */
+  async getRecipientSelection(
+    scope: OfficeDisclosureReadScope,
+    disclosureVersionId: string,
+  ): Promise<OfficeDisclosureRecipientSelection> {
+    const resolved = await this.resolveScope(scope);
+    const version = await this.loadVersion(scope, resolved.caseClientIds, disclosureVersionId);
+    const request = await this.loadApprovalRequest(scope.tenantId, version.officeApprovalRequestId, version.id);
+    const actions = this.actions(this.status(version.status), request, version, resolved, scope.actorUserId);
+    if (!actions.canRequestContentApproval && !actions.canCompleteContentApproval && !actions.canPublish) {
+      throw new OfficeDisclosureProjectionForbiddenError();
+    }
+    const selection = await disclosureRecipientSelection(this.prisma, scope.tenantId, version.id);
+    return this.safe({
+      surface: 'OFFICE_RECIPIENT_SELECTION',
+      options: selection.options,
+      selectedRecipient: selection.selectedRecipient,
+    });
   }
 
   /**

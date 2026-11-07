@@ -1,3 +1,4 @@
+import { assertDisclosureRecipient } from './client-financial-disclosure-recipient';
 import {
   ClientFinancialDisclosureStatus,
   OfficeApprovalStatus,
@@ -554,7 +555,7 @@ export class ClientFinancialDisclosureApprovalService {
         this.assertNotTerminal(version);
         await this.assertActorInTenant(tx, input.requesterUserId, input.tenantId);
 
-        const recipientEmail = input.approvedRecipientEmail?.trim() ?? '';
+        const recipientEmail = typeof input.approvedRecipientEmail === 'string' ? input.approvedRecipientEmail.trim() : '';
         if (recipientEmail.length === 0) {
           throw new ClientFinancialDisclosureApprovalError('DISCLOSURE_APPROVAL_CONTENT_REQUIRED');
         }
@@ -563,6 +564,7 @@ export class ClientFinancialDisclosureApprovalService {
         if (version.status !== ClientFinancialDisclosureStatus.CONTENT_APPROVAL_PENDING) {
           this.assertExactStatus(version, ClientFinancialDisclosureStatus.OFFICE_APPROVED);
         }
+        await assertDisclosureRecipient(tx, version.tenantId, version.id, recipientEmail, recipientPortalUserId);
         await this.assertSnapshotFresh(tx, version);
         const content = this.renderNotificationContent(version);
         const contentHash = this.notificationContentHash({
@@ -636,6 +638,17 @@ export class ClientFinancialDisclosureApprovalService {
           version.status === ClientFinancialDisclosureStatus.CONTENT_APPROVED &&
           version.contentApprovedById === input.contentApproverUserId
         ) {
+          await assertDisclosureRecipient(tx, version.tenantId, version.id, version.approvedRecipientEmail, version.approvedRecipientPortalUserId);
+          await this.assertSnapshotFresh(tx, version);
+          this.assertSealedRenderedContent(version.notificationContent ?? '');
+          const replayHash = this.notificationContentHash({
+            tenantId: version.tenantId, disclosureVersionId: version.id, snapshotHash: version.snapshotHash,
+            notificationContent: version.notificationContent ?? '', approvedRecipientEmail: version.approvedRecipientEmail ?? '',
+            approvedRecipientPortalUserId: version.approvedRecipientPortalUserId,
+          });
+          if (replayHash !== version.notificationContentHash) {
+            throw new ClientFinancialDisclosureApprovalError('DISCLOSURE_APPROVAL_CONTENT_HASH_MISMATCH');
+          }
           return {
             disclosureVersionId: version.id,
             previousStatus: version.status,
@@ -669,6 +682,7 @@ export class ClientFinancialDisclosureApprovalService {
           );
         }
         this.assertSealedRenderedContent(version.notificationContent);
+        await assertDisclosureRecipient(tx, version.tenantId, version.id, version.approvedRecipientEmail, version.approvedRecipientPortalUserId);
 
         if (!version.officeApprovalRequestId || !version.officeApprovedById) {
           throw new ClientFinancialDisclosureApprovalError('DISCLOSURE_APPROVAL_REQUEST_NOT_FOUND');

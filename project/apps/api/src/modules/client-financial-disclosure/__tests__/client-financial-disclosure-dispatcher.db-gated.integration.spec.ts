@@ -49,6 +49,7 @@ describeDb('CLIENT-FD-ACT-R01-I04 — dispatcher + publication (gerçek PostgreS
     );
 
   const seedSource = async (key: string) => {
+    await prisma.clientContact.create({ data: { clientId: clA, type: 'EMAIL', value: `client-${key}@example.test` } });
     await sql(`INSERT INTO "Collection"("id","tenantId","caseId","amount","currency","type","date","status","idempotencyKey","updatedAt")
       VALUES ('fd4-col-${key}','${tA}','${caseA}',2500.75,'TRY','TAHSILAT'::"CollectionType",'2026-07-01T09:30:00Z','CONFIRMED'::"CollectionStatus",'fd4-idem-${key}',now())`);
     await sql(`INSERT INTO "CollectionDisposition"("id","tenantId","caseId","collectionId","beneficiaryScope","caseClientId","status","totalAmount","currency","postedAt","createdAt","updatedAt")
@@ -178,10 +179,11 @@ describeDb('CLIENT-FD-ACT-R01-I04 — dispatcher + publication (gerçek PostgreS
       SET "approvedRecipientEmail" = '${bad}', "notificationContentHash" = '${h}' WHERE "id" = '${versionId}'`);
 
     const spy = jest.fn();
-    const r = await pubWith(provider('smtp', () => ({ success: true, messageId: 'X', provider: 'smtp' }), spy))
-      .dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1 });
-    expect(r.status).toBe('SEND_FAILED');
-    expect(r.sendFailureCode).toBe('DISCLOSURE_RECIPIENT_INVALID');
+    const before = await read(versionId);
+    await expect(pubWith(provider('smtp', () => ({ success: true, messageId: 'X', provider: 'smtp' }), spy))
+      .dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1 }))
+      .rejects.toMatchObject({ response: { code: 'DISCLOSURE_RECIPIENT_NOT_LINKED' } });
+    expect(await read(versionId)).toEqual(before);
     expect(spy).not.toHaveBeenCalled();
     expect((await read(versionId)).publishedAt).toBeNull();
   });
