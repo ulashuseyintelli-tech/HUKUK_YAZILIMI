@@ -809,6 +809,8 @@ AS-IS lifecycle fact'leri kaydedilebilir: client-linked technical account · pas
 
 **OWNER KARARI 2026-09-19 (CLIENT-PSUS) — tenant yaşam döngüsü → portal erişimi (dar istisna; kalan §18.6 hedef politikası PARTIAL/OPEN kalır):** tenant `ACTIVE` değilse (QUIESCING · SUSPENDED · RETIRED · PROVISIONING) portal erişimi **KAPALIDIR**: portal girişi reddedilir; önceden üretilmiş portal oturumu **bir sonraki istekte** reddedilir; şifre sıfırlama talebi token/e-posta üretmez; askıdan ÖNCE üretilmiş sıfırlama token'ı KULLANILAMAZ (token tüketilmez, parola değişmez). Yüklem personel tarafıyla AYNIDIR (`isLoginableLifecycle`); ret nedeni yanıta yansımaz (genel mesaj; giriş kontrolü parola doğrulamasından sonra). Kontrol TENANT düzeyindedir, portal kullanıcı satırına YAZILMAZ → tenant yeniden etkinleştirildiğinde **ayrıca kapatılmış portal kullanıcıları kendiliğinden AÇILMAZ**. Bu karar yalnız bu yaptırımı YETKİLENDİRİR; davet, çok kullanıcılı temsil, 2FA ve ilişki-sonlandırma yayılımı §18.6'daki gibi SEÇİLMEMİŞ kalır.
 
+**OWNER KARARI 2026-11-07 — 4a (`CLIENT-PORTAL-DEACTIVATION-4A-SA01`):** İlişki-sonlandırma yayılımının yalnız açık Client pasifleştirmesi ve bağlı teknik portal hesabı için seçilen dar istisnası §50.3’tedir. Bu istisna dışındaki §18.6 hedefleri PARTIAL/OPEN kalır; yeni portal principal/temsil veya oturum modeli seçilmez.
+
 ### 18.7 AS-IS Security/Integrity Deltas (pointer; record-only, `OFFICE-RISK-REGISTER.md`'ye eklendi)
 
 - **Session invalidation** — AS-IS: disable/password-change mevcut portal session'ı kanıtlanabilir şekilde revoke ETMİYOR. IMPACT: stale authenticated session risk. REMEDIATION: NOT AUTHORIZED.
@@ -3757,6 +3759,12 @@ politikası, tarihsel/referans amaçlı başka-domain okumalarına **otomatik uy
 ### 50.3 D02 — Soft-Deactivation Etkisi (RATIFIED)
 
 Client soft-deactivation **yalnız `Client.isActive=false` etkisi doğurur.**
+
+**4a DAR PORTAL İSTİSNASI — OWNER APPROVED 2026-11-07 (`CLIENT-PORTAL-DEACTIVATION-4A-SA01`):** Yukarıdaki “yalnız Client.isActive=false” ve alt kayıtları pasifleştirmeme hükümleri, yalnız aşağıdaki teknik portal erişimi etkisi bakımından açıkça daraltılmıştır. Mevcut açık Client pasifleştirme işlemi ve normal güncellemedeki gerçek aktiften pasife geçiş, aynı tenant’taki canonical Client bağlantısıyla belirlenen portal hesabını da mevcut kapatma/tokenVersion mekanizmasıyla kapatır. Client pasifliği, portal erişim bayrağının kapanması, bağlı hesabın pasifleşmesi ve tokenVersion artışı, bekleyen reset token’ının temizlenmesi ve aktör/önce-sonra audit’i aynı transaction’da tamamlanır; hata halinde birlikte geri alınır. Mevcut portal JWT’si sonraki doğrulamada reddedilir. Portal hesabı ve geçmişi silinmez; hesap yoksa hesap oluşturulmaz.
+
+Client yeniden etkinleştirilince portal hesabı kendiliğinden açılmaz. Ayrı mevcut portal açma yetkisi gerekir ve açma sırasında Client aktif olmalıdır. Portal açma/yeniden açma ile Client pasifleştirmesi eşzamanlı yürürken bu sınır korunur. Normal profil güncellemesindeki değişmeyen isActive alanı yeni kapatma/açma talebi sayılmaz; mevcut action-specific yetki, canonical nesne kapsamı, tenant, kimlik ve koşullu lifecycle yazma korumaları değişmez.
+
+Bu ileriye dönük dar istisna, tarihsel OWN-14/D5 kabullerini başarısız ilan etmez. Diğer Case, vekalet, adres, muhasebe, belge, activity ve audit kayıtlarının koruması ile staff okuma politikası aynen kalır. Genel cascade, geçmiş pasif hesaplarda toplu kapatma/backfill, yeni rol/oturum sistemi, fiziksel silme veya migration yetkisi doğmaz.
 
 Soft-deactivation:
 
