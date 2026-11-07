@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import PortalManagementPage from '../page';
 import { api } from '@/lib/api';
 
@@ -52,6 +52,54 @@ const fail = () => Promise.reject(new Error('network down'));
 
 beforeEach(() => vi.clearAllMocks());
 afterEach(() => cleanup());
+
+describe('4c — iç not ve müvekkile gösterilen ret gerekçesi', () => {
+  async function open() {
+    render(<PortalManagementPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Reddet' }));
+  }
+  function fill() {
+    fireEvent.change(screen.getByLabelText('Müvekkile gösterilecek ret gerekçesi'), { target: { value: '  İmza sayfası eksik.  ' } });
+    fireEvent.change(screen.getByLabelText('İç inceleme notu (isteğe bağlı)'), { target: { value: 'INTERNAL-STRATEGY' } });
+  }
+  it('iki ayrı alan gönderilir; yalnız kabul sonrası form ve bekleyen belge kaldırılır', async () => {
+    let reads = 0;
+    routeApi({ docs: () => ({ data: ++reads === 1 ? PENDING_DOCS : [] }) });
+    await open(); fill();
+    fireEvent.click(screen.getByRole('button', { name: 'Ret kararını kaydet' }));
+    await waitFor(() => expect(mocked.post).toHaveBeenCalledWith('/portal/admin/documents/d1/reject', { note: 'INTERNAL-STRATEGY', clientRejectionReason: 'İmza sayfası eksik.' }));
+    await screen.findByText('Bekleyen belge yok');
+    expect(screen.queryByRole('form', { name: 'Belge ret kararı' })).toBeNull();
+  });
+  it('vazgeçme veya yalnız boşluk gerekçe ret isteği göndermez', async () => {
+    routeApi(); await open();
+    fireEvent.change(screen.getByLabelText('Müvekkile gösterilecek ret gerekçesi'), { target: { value: '   ' } });
+    fireEvent.submit(screen.getByRole('form', { name: 'Belge ret kararı' }));
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(mocked.post).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Vazgeç' }));
+    expect(screen.queryByRole('form', { name: 'Belge ret kararı' })).toBeNull();
+    expect(mocked.post).not.toHaveBeenCalled(); expect(screen.getByText('v.pdf')).toBeTruthy();
+  });
+  it('sunucu reddi görünür; iki metin ve belge korunur, başarı yenilemesi yapılmaz', async () => {
+    routeApi(); mocked.post.mockRejectedValue(new Error('rejected'));
+    await open(); fill(); const reads = mocked.get.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Ret kararını kaydet' }));
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(screen.getByLabelText('İç inceleme notu (isteğe bağlı)')).toHaveProperty('value', 'INTERNAL-STRATEGY');
+    expect(screen.getByLabelText('Müvekkile gösterilecek ret gerekçesi')).toHaveProperty('value', '  İmza sayfası eksik.  ');
+    expect(screen.getByText('v.pdf')).toBeTruthy(); expect(mocked.get.mock.calls.length).toBe(reads);
+  });
+  it('bekleyen istekte ikinci gönderim engellenir', async () => {
+    let complete!: (value: unknown) => void;
+    routeApi(); mocked.post.mockImplementation(() => new Promise(resolve => { complete = resolve; }));
+    await open(); fill(); fireEvent.click(screen.getByRole('button', { name: 'Ret kararını kaydet' }));
+    const waiting = await screen.findByRole('button', { name: 'Reddediliyor…' });
+    expect(waiting).toHaveProperty('disabled', true); fireEvent.click(waiting);
+    expect(mocked.post).toHaveBeenCalledTimes(1);
+    complete({ data: {} }); await waitFor(() => expect(screen.queryByRole('form', { name: 'Belge ret kararı' })).toBeNull());
+  });
+});
 
 describe('Bekleyen Belgeler — okuma hatası', () => {
   it('HATASI: "bekleyen belge yok" YAZILMAZ, gorunur hata cikar', async () => {

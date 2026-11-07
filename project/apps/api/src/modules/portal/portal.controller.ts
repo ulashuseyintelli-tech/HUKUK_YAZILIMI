@@ -421,9 +421,9 @@ export class PortalController {
   async rejectDocument(
     @Param("id") id: string,
     @Request() req: any,
-    @Body() body: { note?: string }
+    @Body() body: { note?: string; clientRejectionReason?: string }
   ) {
-    return this.portalService.reviewDocument(id, req.user.tenantId, req.user.id, false, body.note);
+    return this.portalService.reviewDocument(id, req.user.tenantId, req.user.id, false, body.note, body.clientRejectionReason);
   }
 
   // ==================== MESAJLAŞMA ENDPOINTS ====================

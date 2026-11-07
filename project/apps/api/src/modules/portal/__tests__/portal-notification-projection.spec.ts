@@ -4,7 +4,7 @@
  * Yapısal kanıt Prisma çağrısındaki EXACT `select` şeklinden gelir (mock'a "fazladan alan"
  * besleyip sonra "filtrelendiğini" test etmek YANLIŞTIR — gerçek Prisma zaten select'te
  * olmayanı hiç döndürmez). Testler: (a) select'in tam olarak onaylı şekilde olduğunu,
- * (b) service'in Prisma'dan gelen bounded satırı OLDUĞU GİBİ döndürdüğünü doğrular.
+ * (b) 4c dış gerekçesinin yedi alanlı public projeksiyona dönüşümünü doğrular.
  *
  * getUnreadCount()/markAsRead()/markAllAsRead()/createNotification() bu sabiti KULLANMAZ;
  * bu spec onların select'siz/raw davranışının DEĞİŞMEDİĞİNİ de ayrıca kanıtlar (regresyon).
@@ -22,6 +22,7 @@ const PORTAL_NOTIFICATION_CLIENT_SELECT_SHAPE = {
   linkUrl: true,
   isRead: true,
   createdAt: true,
+  clientRejectionReason: true,
 };
 
 const BOUNDED_NOTIFICATION_ROW = {
@@ -49,6 +50,7 @@ const RAW_NOTIFICATION_ROW = {
 
 function buildService(over: any = {}) {
   const prisma = {
+    $transaction: jest.fn(),
     portalNotification: {
       findMany: jest.fn().mockResolvedValue(over.findManyResult === undefined ? [BOUNDED_NOTIFICATION_ROW] : over.findManyResult),
       count: jest.fn().mockResolvedValue(over.countResult === undefined ? 0 : over.countResult),
@@ -63,6 +65,41 @@ function buildService(over: any = {}) {
 }
 
 describe("PortalService.getNotifications — CLIENT-P2-U03-I05 explicit projection", () => {
+  it('4c explicit public reason replaces even a contaminated raw rejection message', async () => {
+    const { svc } = buildService({ findManyResult: [{ ...BOUNDED_NOTIFICATION_ROW, type: 'BELGE', title: 'Belgeniz Reddedildi', message: 'INTERNAL-STRATEGY-MARKER', clientRejectionReason: '  İmza sayfası eksik.  ' }] });
+    const result = await svc.getNotifications(CLIENT_ID);
+    expect(result[0].message).toBe('Belgeniz reddedildi. Sebep: İmza sayfası eksik.');
+    expect(JSON.stringify(result)).not.toContain('INTERNAL-STRATEGY-MARKER');
+    expect(result[0]).not.toHaveProperty('clientRejectionReason');
+    expect(Object.keys(result[0]).sort()).toEqual(['id', 'type', 'title', 'message', 'linkUrl', 'isRead', 'createdAt'].sort());
+  });
+
+  it.each([null, undefined, '', '   ', 'x'.repeat(501), { note: 'PRIVATE' }])('4c legacy or invalid stored reason %p never falls back to the historical body', async reason => {
+    const { svc } = buildService({ findManyResult: [{ ...BOUNDED_NOTIFICATION_ROW, type: 'BELGE', title: 'Belgeniz Reddedildi', message: 'LEGACY-PRIVATE-REVIEW-NOTE', clientRejectionReason: reason }] });
+    const result = await svc.getNotifications(CLIENT_ID);
+    expect(result[0].message).toContain('Ayrıntı için büronuzla iletişime geçiniz.');
+    expect(JSON.stringify(result)).not.toContain('LEGACY-PRIVATE-REVIEW-NOTE');
+    expect(JSON.stringify(result)).not.toContain('PRIVATE');
+  });
+
+  it('4c non-rejection notifications keep their body and omit the new read-only input field', async () => {
+    const { svc } = buildService({ findManyResult: [{ ...BOUNDED_NOTIFICATION_ROW, clientRejectionReason: 'not applicable' }] });
+    expect(await svc.getNotifications(CLIENT_ID)).toEqual([BOUNDED_NOTIFICATION_ROW]);
+  });
+
+  it.each([null, 123, [], {}, '', '   ', 'x'.repeat(501)])('4c rejects invalid explicit public input %p before a transaction or notification', async reason => {
+    const { svc, prisma } = buildService();
+    await expect(svc.reviewDocument('doc', 'tenant', 'actor', false, 'INTERNAL', reason as any)).rejects.toMatchObject({ status: 400 });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.portalNotification.create).not.toHaveBeenCalled();
+  });
+
+  it('4c approval cannot use the rejection-only public field', async () => {
+    const { svc, prisma } = buildService();
+    await expect(svc.reviewDocument('doc', 'tenant', 'actor', true, 'INTERNAL', 'public')).rejects.toMatchObject({ status: 400 });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it("[1] PORTAL_NOTIFICATION_CLIENT_SELECT tam olarak onaylı allowlist'tir", async () => {
     const { svc, prisma } = buildService();
     await svc.getNotifications(CLIENT_ID);
