@@ -19,6 +19,7 @@ import { CreateCaseDto, CreateDueDto, UpdateCaseDto, UpdateDueDto } from "./dto/
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
+import { CaseViewScoped } from "./case-view-scope.guard";
 import { OcrService } from "../ocr/ocr.service";
 import { ResponsibleCandidatesService } from "./responsible-candidates.service";
 import { TemporalResponsibilityService } from "./temporal-responsibility.service";
@@ -101,6 +102,7 @@ export class CaseController {
   }
 
   // M2-G3b: Dosyanın MEVCUT Dosya Sorumlusu (gerçek kişi); legacy sorumluPersonel fallback. İzole servis.
+  @CaseViewScoped("id") // F02 P3-D3: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get(":id/responsible-person")
   getCaseResponsiblePerson(
     @CurrentUser("tenantId") tenantId: string,
@@ -114,6 +116,7 @@ export class CaseController {
 
   // WP-1d-3: read-only combined temporal sorumluluk. "asOf tarihinde Dosya Operasyon Sorumlusu ve
   // Hukuki Sorumlu Avukat kimdi?" İki mevcut temporal service'i birleştirir; yeni reconstruction/mutation YOK.
+  @CaseViewScoped("id") // F02 P3-D3: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get(":id/responsibility-at")
   async getResponsibilityAt(
     @CurrentUser("tenantId") tenantId: string,
@@ -143,6 +146,7 @@ export class CaseController {
   }
 
   // WP-1d-4c-1: Sorumluluk DEĞİŞİM geçmişi (timeline) — READ-ONLY. Mevcut responsibility-at (point-in-time) DEĞİŞMEZ.
+  @CaseViewScoped("id") // F02 P3-D3: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get(":id/responsibility-history")
   async getResponsibilityHistory(
     @CurrentUser("tenantId") tenantId: string,
@@ -354,6 +358,7 @@ export class CaseController {
   /**
    * Dosya notları - GET /cases/:id/notes
    */
+  @CaseViewScoped("id") // F02 P3-D3: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get(":id/notes")
   async getNotes(
     @CurrentUser("tenantId") tenantId: string,
@@ -390,6 +395,7 @@ export class CaseController {
   /**
    * Dosya zaman çizelgesi - GET /cases/:id/timeline
    */
+  @CaseViewScoped("id") // F02 P3-D3: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get(":id/timeline")
   async getTimeline(
     @CurrentUser("tenantId") tenantId: string,
@@ -404,6 +410,7 @@ export class CaseController {
    * Dosyadaki borçluların tebligat durumlarını getir
    * GET /cases/:id/debtors/notifications
    */
+  @CaseViewScoped("id") // F02 P3-D3: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get(":id/debtors/notifications")
   async getCaseDebtorsWithNotification(
     @CurrentUser("tenantId") tenantId: string,
@@ -438,6 +445,7 @@ export class CaseController {
    * Dosyadaki avukatları getir
    * GET /cases/:id/lawyers
    */
+  @CaseViewScoped("id") // F02 P3-D3: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get(":id/lawyers")
   async getCaseLawyers(
     @CurrentUser("tenantId") tenantId: string,
@@ -512,6 +520,7 @@ export class CaseController {
    * Dosyadaki personelleri getir
    * GET /cases/:id/staff
    */
+  @CaseViewScoped("id") // F02 P3-D3: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get(":id/staff")
   async getCaseStaff(
     @CurrentUser("tenantId") tenantId: string,
@@ -584,6 +593,7 @@ export class CaseController {
    * Dosyanın alacak kalemlerini getir
    * GET /cases/:id/dues
    */
+  @CaseViewScoped("id") // F02 P3-D3: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get(":id/dues")
   async getCaseDues(
     @CurrentUser("tenantId") tenantId: string,
@@ -641,6 +651,7 @@ export class CaseController {
    * Dosyanın tahsilatlarını getir
    * GET /cases/:id/collections
    */
+  @CaseViewScoped("id") // F02 P3-D3: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get(":id/collections")
   async getCaseCollections(
     @CurrentUser("tenantId") tenantId: string,
@@ -818,6 +829,7 @@ export class CaseController {
    * Dosya finans özeti
    * GET /cases/:id/finance-summary
    */
+  @CaseViewScoped("id") // F02 P3-D3: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get(":id/finance-summary")
   async getCaseFinanceSummary(
     @CurrentUser("tenantId") tenantId: string,
@@ -837,6 +849,7 @@ export class CaseController {
    * 
    * @see ARCHITECTURE.md - Source of Truth Matrix
    */
+  @CaseViewScoped("id") // F02 P3-D3: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get(":id/calculation-summary")
   async getCalculationSummary(
     @CurrentUser("tenantId") tenantId: string,
@@ -852,6 +865,7 @@ export class CaseController {
    * K3-L Faz 1c — borçlu bazlı bakiye (kalıcı defterden; işleyen faiz hariç).
    * GET /cases/:id/debtor-balances — hesap özetiyle aynı kiracı kapsamı.
    */
+  @CaseViewScoped("id") // F02 P3-D3: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get(":id/debtor-balances")
   async getDebtorLedgerBalances(
     @CurrentUser("tenantId") tenantId: string,

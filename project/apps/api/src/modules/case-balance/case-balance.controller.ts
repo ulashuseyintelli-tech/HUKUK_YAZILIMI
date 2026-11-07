@@ -3,6 +3,7 @@ import { CaseBalanceService, CreditBalanceDto, DebitBalanceDto, PostExpenseActua
 import { AuthGuard } from '@nestjs/passport';
 import { AdminGuard } from '@/modules/auth/guards/admin.guard';
 import { ViewerWriteDenyGuard } from '@/modules/auth/guards/viewer-write-deny.guard';
+import { CaseViewScoped } from '@/modules/case/case-view-scope.guard';
 import { Request } from 'express';
 
 interface AuthRequest extends Request {
@@ -20,6 +21,7 @@ export class CaseBalanceController {
   /**
    * Dosya bakiyesini getir
    */
+  @CaseViewScoped() // F02 P3-D3: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get()
   async getBalance(
     @Param('caseId') caseId: string,
@@ -31,6 +33,7 @@ export class CaseBalanceController {
   /**
    * Bakiye hareketlerini listele
    */
+  @CaseViewScoped() // F02 P3-D3: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get('ledger')
   async getLedger(
     @Param('caseId') caseId: string,

@@ -18,6 +18,8 @@ import { AuditModule } from "../audit/audit.module";
 import { OfficeApprovalModule } from "../office-approval/office-approval.module";
 import { LegalDeadlineModule } from "../legal-deadline/legal-deadline.module";
 import { LawyerModule } from "../lawyer/lawyer.module";
+// F02 P3-D3: dosya alt kaynağı okuma kapısı (CaseViewScopeGuard → CaseViewScopeService).
+import { CaseViewScopeModule } from "../case/case-view-scope.module";
 import { ExternalCaseStatusAuthorityService } from "./external-case-status-authority.service";
 import { ExternalCaseStatusTransitionService } from "./external-case-status-transition.service";
 
@@ -38,6 +40,7 @@ import { ExternalCaseStatusTransitionService } from "./external-case-status-tran
     OfficeApprovalModule,
     LegalDeadlineModule,
     LawyerModule,
+    CaseViewScopeModule,
   ],
   controllers: [
     DebtorController,
