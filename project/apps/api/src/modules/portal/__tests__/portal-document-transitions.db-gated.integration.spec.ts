@@ -1,3 +1,6 @@
+// Existing identity fixtures replace these guards below; avoid their unrelated process-global timers.
+jest.mock('../../auth/guards/login-rate-limit.guard', () => ({ PortalLoginRateLimitGuard: class { canActivate() { return true; } } }));
+jest.mock('../../auth/guards/credential-recovery-rate-limit.guard', () => ({ CredentialRecoveryRateLimitGuard: class { canActivate() { return true; } } }));
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -14,6 +17,8 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { PortalLoginRateLimitGuard } from '../../auth/guards/login-rate-limit.guard';
 import { CredentialRecoveryRateLimitGuard } from '../../auth/guards/credential-recovery-rate-limit.guard';
 import { ClientFinancialDisclosurePortalService } from '../client-financial-disclosure-portal.service';
+import { ClientLegalHoldService } from '../../client/client-legal-hold.service';
+import { AuditService } from '../../audit/audit.service';
 
 const url = resolveTestDatabaseUrl(process.env);
 if (process.env.CI && !url) throw new Error('Portal document acceptance requires disposable TEST_DATABASE_URL');
@@ -28,10 +33,15 @@ dbDescribe('Portal document review/delete — single winner and normal-error com
   let clientId: string;
   let documentId: string;
   let target: string;
+  let caseId: string;
+  let holdActorId: string;
   let app: INestApplication;
   const originalRoot = process.env.HUKUK_DATA_ROOT;
   const bytes = Buffer.from('synthetic portal document, no production data');
   const service = (db = a) => new PortalService(db, {} as any, {} as any, {} as any, {} as any, {} as any);
+  const holdService = (db = a) => new ClientLegalHoldService(db, new AuditService(db), {} as any);
+  const placeHold = (db = a) => holdService(db).placeHold({ tenantId, clientId, scopeType: 'CLIENT', reason: 'Synthetic preservation', actor: { userId: holdActorId, role: 'ADMIN', tenantId } as any });
+  const rawHold = (data: any = {}) => a.clientLegalHold.create({ data: { tenantId, clientId, scopeType: 'CLIENT', status: 'ACTIVE', reason: 'Synthetic preservation', placedByUserId: holdActorId, placedAt: new Date(), ...data } });
 
   beforeAll(async () => {
     a = new PrismaService({ datasources: { db: { url } } }); b = new PrismaService({ datasources: { db: { url } } });
@@ -58,6 +68,11 @@ dbDescribe('Portal document review/delete — single winner and normal-error com
     tenantId = `portal-doc-test-${randomUUID()}`; clientId = `client-${randomUUID()}`;
     await a.tenant.create({ data: { id: tenantId, slug: tenantId, name: 'Synthetic portal document' } });
     await a.client.create({ data: { id: clientId, tenantId, type: 'INDIVIDUAL', firstName: 'Synthetic', lastName: 'Document' } });
+    caseId = (await a.case.create({ data: { tenantId, clientId, type: 'GENERAL_EXECUTION', fileNumber: randomUUID() } })).id;
+    await a.caseClient.create({ data: { caseId, clientId } });
+    holdActorId = (await a.user.create({ data: { tenantId, role: 'ADMIN', email: `${randomUUID()}@example.test`, name: 'Synthetic', surname: 'Hold actor' } })).id;
+    const lawyer = await a.lawyer.create({ data: { tenantId, userId: holdActorId, name: 'Synthetic', surname: 'Hold lawyer' } });
+    await a.caseLawyer.create({ data: { caseId, lawyerId: lawyer.id } });
     root = fs.realpathSync.native(fs.mkdtempSync(join(tmpdir(), 'codex-portal-doc-')));
     process.env.HUKUK_DATA_ROOT = root;
     bucket = join(root, 'portal-documents', tenantId); fs.mkdirSync(bucket, { recursive: true });
@@ -67,6 +82,9 @@ dbDescribe('Portal document review/delete — single winner and normal-error com
   afterEach(async () => {
     jest.restoreAllMocks();
     await a.portalNotification.deleteMany({ where: { clientId } }); await a.portalDocument.deleteMany({ where: { tenantId } });
+    await a.auditLog.deleteMany({ where: { tenantId } }); await a.clientLegalHold.deleteMany({ where: { tenantId } });
+    await a.caseLawyer.deleteMany({ where: { caseId } }); await a.caseClient.deleteMany({ where: { caseId } });
+    await a.case.deleteMany({ where: { tenantId } }); await a.lawyer.deleteMany({ where: { tenantId } }); await a.user.deleteMany({ where: { tenantId } });
     await a.client.deleteMany({ where: { tenantId } }); await a.tenant.delete({ where: { id: tenantId } });
     // Exact own files and now-empty directories only; no recursive physical deletion.
     for (const name of fs.readdirSync(bucket)) { const p = join(bucket, name); if (fs.lstatSync(p).isFile()) fs.unlinkSync(p); else if (fs.lstatSync(p).isDirectory()) fs.rmdirSync(p); }
@@ -78,6 +96,8 @@ dbDescribe('Portal document review/delete — single winner and normal-error com
     return {
       documents: await a.portalDocument.findMany({ where: { tenantId }, orderBy: { id: 'asc' } }),
       notifications: await a.portalNotification.findMany({ where: { clientId }, orderBy: { id: 'asc' } }),
+      holds: await a.clientLegalHold.findMany({ where: { tenantId }, orderBy: { id: 'asc' } }),
+      audits: await a.auditLog.findMany({ where: { tenantId }, orderBy: { id: 'asc' } }),
       files: fs.readdirSync(bucket).sort().map(name => ({ name, bytes: fs.lstatSync(join(bucket, name)).isFile() ? fs.readFileSync(join(bucket, name)).toString('hex') : 'directory' })),
     };
   }
@@ -94,6 +114,135 @@ dbDescribe('Portal document review/delete — single winner and normal-error com
       const value = (target as any)[key]; return typeof value === 'function' ? value.bind(target) : value;
     } }) as PrismaService;
   }
+
+  it.each(['CLIENT', 'CASE', 'RECORD_FAMILY'] as const)('4b %s ACTIVE and RELEASE_REQUESTED hold preserves every record and file', async scopeType => {
+    await a.portalDocument.update({ where: { id: documentId }, data: { caseId } });
+    const hold = await rawHold({ scopeType, caseId: scopeType === 'CASE' ? caseId : null, recordFamily: scopeType === 'RECORD_FAMILY' ? 'PortalDocument' : null });
+    for (const status of ['ACTIVE', 'RELEASE_REQUESTED'] as const) {
+      await a.clientLegalHold.update({ where: { id: hold.id }, data: { status } });
+      const before = await snapshot();
+      await expect(service().deleteDocument(documentId, clientId, tenantId)).rejects.toMatchObject({ status: 409, response: { code: 'PORTAL_DOCUMENT_LEGAL_HOLD' } });
+      expect(await snapshot()).toEqual(before);
+    }
+  });
+
+  it.each(['CLIENT', 'CASE', 'RECORD_FAMILY'] as const)('4b unrelated %s scope does not manufacture a hold on this document', async scopeType => {
+    const other = await a.client.create({ data: { tenantId, type: 'INDIVIDUAL', firstName: 'Other', lastName: 'Synthetic' } });
+    await rawHold({ clientId: other.id, scopeType, caseId: scopeType === 'CASE' ? 'other-case' : null, recordFamily: scopeType === 'RECORD_FAMILY' ? 'ClientStatement' : null });
+    await service().deleteDocument(documentId, clientId, tenantId);
+    expect(await a.portalDocument.count({ where: { id: documentId } })).toBe(0); expect(fs.existsSync(target)).toBe(false);
+  });
+
+  it('4b preserves existing tenant-wide record-family matching rather than silently narrowing it to a Client', async () => {
+    const other = await a.client.create({ data: { tenantId, type: 'INDIVIDUAL', firstName: 'Other', lastName: 'Synthetic' } });
+    await rawHold({ clientId: other.id, scopeType: 'RECORD_FAMILY', recordFamily: 'PortalDocument' });
+    const before = await snapshot(); await expect(service().deleteDocument(documentId, clientId, tenantId)).rejects.toMatchObject({ status: 409 }); expect(await snapshot()).toEqual(before);
+  });
+
+  it('4b RELEASED hold does not block the existing authorized PENDING deletion', async () => {
+    await rawHold({ status: 'RELEASED' }); await service().deleteDocument(documentId, clientId, tenantId);
+    expect(fs.existsSync(target)).toBe(false); expect(await a.portalDocument.count({ where: { id: documentId } })).toBe(0);
+  });
+
+  it('4b hold keeps independent review available without deleting the file', async () => {
+    await rawHold(); await service().reviewDocument(documentId, tenantId, 'reviewer', true);
+    expect((await a.portalDocument.findUniqueOrThrow({ where: { id: documentId } })).status).toBe('APPROVED'); expect(fs.readFileSync(target)).toEqual(bytes);
+  });
+
+  function interceptTransactions(db: PrismaService, hook: (tx: any, fn: any, phase: number) => Promise<any>) {
+    let phase = 0;
+    return new Proxy(db, { get(target, key) {
+      if (key === '$transaction') return (fn: any, options: any) => target.$transaction(tx => hook(tx, fn, ++phase), options);
+      const value = (target as any)[key]; return typeof value === 'function' ? value.bind(target) : value;
+    } }) as PrismaService;
+  }
+  async function waitForBlocked(pid: () => number | undefined) {
+    const end = Date.now() + 3000;
+    while (Date.now() < end) {
+      if (pid()) { const rows = await a.$queryRaw<Array<{ blocked: boolean }>>`SELECT cardinality(pg_blocking_pids(${pid()}::int)) > 0 AS blocked`; if (rows[0].blocked) return; }
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    throw new Error('Expected exact PostgreSQL backend to reach the advisory-lock gate');
+  }
+
+  it('4b hold writer wins first: real waiting deleter reaches gate and rejects before any file change', async () => {
+    let held!: () => void, release!: () => void, pid: number | undefined;
+    const ready = new Promise<void>(r => { held = r; }), proceed = new Promise<void>(r => { release = r; });
+    const writer = interceptTransactions(a, async (tx, fn) => { const result = await fn(tx); held(); await proceed; return result; });
+    const waiting = interceptTransactions(b, async (tx, fn) => { pid = Number((await tx.$queryRaw`SELECT pg_backend_pid() AS pid`)[0].pid); return fn(tx); });
+    const one = placeHold(writer); await ready;
+    const two = service(waiting).deleteDocument(documentId, clientId, tenantId); const denied = expect(two).rejects.toMatchObject({ status: 409 });
+    try { await waitForBlocked(() => pid); expect(fs.readFileSync(target)).toEqual(bytes); } finally { release(); }
+    await one; await denied; expect(fs.readFileSync(target)).toEqual(bytes); expect(await a.portalDocument.count({ where: { id: documentId } })).toBe(1);
+  });
+
+  it('4b hold committed in the DB-delete/unlink gap restores exact row and file instead of unlinking', async () => {
+    const before = await snapshot(); let staged!: () => void, release!: () => void, phase = 0;
+    const ready = new Promise<void>(r => { staged = r; }), proceed = new Promise<void>(r => { release = r; });
+    const db = new Proxy(a, { get(target, key) {
+      if (key === '$transaction') return async (fn: any, options: any) => { if (++phase === 2) { staged(); await proceed; } return target.$transaction(fn, options); };
+      const value = (target as any)[key]; return typeof value === 'function' ? value.bind(target) : value;
+    } }) as PrismaService;
+    const deletion = service(db).deleteDocument(documentId, clientId, tenantId); const denied = expect(deletion).rejects.toMatchObject({ status: 409 });
+    await ready;
+    try { expect(await a.portalDocument.count({ where: { id: documentId } })).toBe(0); await placeHold(b); } finally { release(); }
+    await denied; const after = await snapshot(); expect(after.documents).toEqual(before.documents); expect(after.files).toEqual(before.files); expect(after.holds).toHaveLength(1); expect(after.audits).toHaveLength(1);
+  });
+
+  it('4b final unlink wins first: real hold writer waits until physical removal completes', async () => {
+    let unlinked!: () => void, release!: () => void, pid: number | undefined;
+    const ready = new Promise<void>(r => { unlinked = r; }), proceed = new Promise<void>(r => { release = r; });
+    const deleting = interceptTransactions(a, async (tx, fn, phase) => { const value = await fn(tx); if (phase === 2) { unlinked(); await proceed; } return value; });
+    const writer = interceptTransactions(b, async (tx, fn) => { pid = Number((await tx.$queryRaw`SELECT pg_backend_pid() AS pid`)[0].pid); return fn(tx); });
+    const one = service(deleting).deleteDocument(documentId, clientId, tenantId); await ready;
+    const two = placeHold(writer);
+    try { await waitForBlocked(() => pid); expect(fs.existsSync(target)).toBe(false); } finally { release(); }
+    await one; await two; expect(await a.portalDocument.count({ where: { id: documentId } })).toBe(0); expect(await a.clientLegalHold.count({ where: { tenantId } })).toBe(1);
+  });
+
+  it('4b a gate-only rollback after successful unlink reports the already completed deletion truthfully', async () => {
+    const db = interceptTransactions(a, async (tx, fn, phase) => { const value = await fn(tx); if (phase === 2) throw new Error('injected-gate-close-after-unlink'); return value; });
+    await expect(service(db).deleteDocument(documentId, clientId, tenantId)).resolves.toMatchObject({ success: true });
+    expect(fs.existsSync(target)).toBe(false); expect(await a.portalDocument.count({ where: { id: documentId } })).toBe(0);
+  });
+
+  it('4b a different tenant record-family hold does not affect this document', async () => {
+    const foreign = `portal-doc-foreign-test-${randomUUID()}`;
+    await a.tenant.create({ data: { id: foreign, slug: foreign, name: 'Synthetic foreign hold' } });
+    const client = await a.client.create({ data: { tenantId: foreign, type: 'INDIVIDUAL', firstName: 'Foreign', lastName: 'Synthetic' } });
+    try {
+      await rawHold({ tenantId: foreign, clientId: client.id, scopeType: 'RECORD_FAMILY', recordFamily: 'PortalDocument' });
+      await service().deleteDocument(documentId, clientId, tenantId); expect(fs.existsSync(target)).toBe(false);
+    } finally { await a.clientLegalHold.deleteMany({ where: { tenantId: foreign } }); await a.client.delete({ where: { id: client.id } }); await a.tenant.delete({ where: { id: foreign } }); }
+  });
+
+  it('4b real release workflow keeps pending release blocking until a different authorized checker approves', async () => {
+    const hold = await placeHold();
+    await holdService().requestRelease({ tenantId, holdId: hold.id, releaseReason: 'Synthetic reviewed', actor: { userId: holdActorId, role: 'ADMIN', tenantId } as any });
+    await expect(service().deleteDocument(documentId, clientId, tenantId)).rejects.toMatchObject({ status: 409 });
+    await expect(holdService().approveRelease({ tenantId, holdId: hold.id, actor: { userId: holdActorId, role: 'ADMIN', tenantId } as any })).rejects.toMatchObject({ status: 403 });
+    const checker = await a.user.create({ data: { tenantId, role: 'ADMIN', email: `${randomUUID()}@example.test`, name: 'Synthetic', surname: 'Checker' } });
+    const lawyer = await a.lawyer.create({ data: { tenantId, userId: checker.id, name: 'Synthetic', surname: 'Checker' } });
+    await a.caseLawyer.create({ data: { caseId, lawyerId: lawyer.id } });
+    await holdService().approveRelease({ tenantId, holdId: hold.id, actor: { userId: checker.id, role: 'ADMIN', tenantId } as any });
+    await service().deleteDocument(documentId, clientId, tenantId); expect(fs.existsSync(target)).toBe(false);
+    expect(await a.auditLog.count({ where: { tenantId, entityType: 'CLIENT_LEGAL_HOLD' } })).toBe(3);
+  });
+
+  it.each([1, 2])('4b unreadable hold state at deletion phase %s fails closed and preserves exact metadata/content', async failedPhase => {
+    const before = await snapshot();
+    const db = interceptTransactions(a, async (tx, fn, phase) => fn(phase !== failedPhase ? tx : new Proxy(tx, { get(target, key) {
+      if (key === 'clientLegalHold') return { findFirst: async () => { throw new Error('injected-hold-read'); } };
+      const value = target[key]; return typeof value === 'function' ? value.bind(target) : value;
+    } })));
+    await expect(service(db).deleteDocument(documentId, clientId, tenantId)).rejects.toThrow('injected-hold-read'); expect(await snapshot()).toEqual(before);
+  });
+
+  it('4b HTTP hold rejection exposes only a safe reason and preserves document and file', async () => {
+    await rawHold({ reason: 'internal strategy not for portal' }); const before = await snapshot();
+    const response = await http(app.getHttpServer()).delete(`/portal/documents/${documentId}`).set('x-test-principal', 'portal').expect(409);
+    expect(response.body.code).toBe('PORTAL_DOCUMENT_LEGAL_HOLD'); expect(JSON.stringify(response.body)).not.toContain('internal strategy'); expect(JSON.stringify(response.body)).not.toContain(target); expect(await snapshot()).toEqual(before);
+  });
 
   it('review/review has exactly one winner and one matching notification', async () => {
     const r = await Promise.allSettled([service(a).reviewDocument(documentId, tenantId, 'reviewer-a', true), service(b).reviewDocument(documentId, tenantId, 'reviewer-b', false)]);

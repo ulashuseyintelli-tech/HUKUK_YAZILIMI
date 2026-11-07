@@ -38,6 +38,7 @@ const ALL_CONFIRMED: ClientLifecycleAssessment = Object.fromEntries(
 
 const buildDeps = (opts: { hold?: any } = {}) => {
   const tx = {
+    $executeRaw: jest.fn().mockResolvedValue(1),
     clientLegalHold: {
       findFirst: jest.fn().mockResolvedValue(opts.hold ?? null),
       create: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: 'hold-1', ...data })),
@@ -58,9 +59,30 @@ const buildDeps = (opts: { hold?: any } = {}) => {
     logInTransaction: jest.fn().mockResolvedValue(undefined),
   };
   const office = { isApproverEligible: jest.fn().mockResolvedValue(false) };
+  tx.clientLegalHold.findFirst.mockImplementation((args: any) => prisma.clientLegalHold.findFirst(args));
   const svc = new ClientLegalHoldService(prisma, audit as any, office as any);
   return { svc, prisma, tx, audit, office };
 };
+
+describe('4b legal-hold writer barrier', () => {
+  it('a failed barrier cannot create a hold or success audit', async () => {
+    const { svc, tx, audit } = buildDeps(); tx.$executeRaw.mockRejectedValue(new Error('gate unavailable'));
+    await expect(svc.placeHold({ tenantId: 't1', clientId: 'c1', scopeType: 'CLIENT', reason: 'preserve', actor: actorOf('ADMIN') })).rejects.toThrow('gate unavailable');
+    expect(tx.clientLegalHold.create).not.toHaveBeenCalled(); expect(audit.logInTransaction).not.toHaveBeenCalled();
+  });
+  it('release request rechecks status after acquiring the shared writer barrier', async () => {
+    const { svc, prisma, tx, audit } = buildDeps();
+    prisma.clientLegalHold.findFirst.mockResolvedValueOnce({ id: 'h1', clientId: 'c1', status: 'ACTIVE' }).mockResolvedValue({ id: 'h1', clientId: 'c1', status: 'RELEASED' });
+    await expect(svc.requestRelease({ tenantId: 't1', holdId: 'h1', releaseReason: 'reviewed', actor: actorOf('ADMIN') })).rejects.toBeInstanceOf(ConflictException);
+    expect(tx.clientLegalHold.update).not.toHaveBeenCalled(); expect(audit.logInTransaction).not.toHaveBeenCalled();
+  });
+  it('release approval keeps maker-checker when the current requester differs from the precheck snapshot', async () => {
+    const { svc, prisma, tx, audit } = buildDeps();
+    prisma.clientLegalHold.findFirst.mockResolvedValueOnce({ id: 'h1', clientId: 'c1', status: 'RELEASE_REQUESTED', releaseRequestedByUserId: 'other' }).mockResolvedValue({ id: 'h1', clientId: 'c1', status: 'RELEASE_REQUESTED', releaseRequestedByUserId: 'checker' });
+    await expect(svc.approveRelease({ tenantId: 't1', holdId: 'h1', actor: actorOf('ADMIN', 'checker') })).rejects.toBeInstanceOf(ForbiddenException);
+    expect(tx.clientLegalHold.update).not.toHaveBeenCalled(); expect(audit.logInTransaction).not.toHaveBeenCalled();
+  });
+});
 
 // =========================================================================================
 // 1. Saf kapı — 8 koşul
