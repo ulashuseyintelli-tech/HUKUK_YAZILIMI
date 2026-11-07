@@ -21,7 +21,7 @@ function makeService(
   const actorRead = jest.fn(async (_a: any) => 'actor' in opts ? opts.actor : {
     role: 'ADMIN', isActive: true, staffMember: null,
   });
-  const tx = { user: { findFirst: actorRead }, $queryRaw: jest.fn(async () => [{ id: 'u-admin' }]), caseLawyer: { update: clUpdate }, auditLog: { create: auditCreate } };
+  const tx = { user: { findFirst: actorRead }, $queryRaw: jest.fn(async (_sql: TemplateStringsArray, ..._values: unknown[]) => [{ id: 'u-admin' }]), caseLawyer: { update: clUpdate }, auditLog: { create: auditCreate } };
   const prisma = {
     user: { findFirst: actorRead },
     case: {
@@ -97,7 +97,8 @@ describe("LegalResponsibleLawyerService.changeLegalResponsibleLawyer (WP-1d-5-4)
     await service.changeLegalResponsibleLawyer('t1', 'c1', DTO, 'u-admin', 'ADMIN');
     expect(actorRead).toHaveBeenCalledTimes(2);
     expect(actorRead).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'u-admin', tenantId: 't1' } }));
-    expect(tx.$queryRaw.mock.calls[0][0].join('')).toContain('FOR UPDATE');
+    const [lockSql] = tx.$queryRaw.mock.calls[0] ?? [];
+    expect(lockSql?.join('')).toContain('FOR UPDATE');
     expect(tx.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(actorRead.mock.invocationCallOrder[1]);
   });
   it("1+2: ADMIN başarı → eski demote, yeni promote; role coupling (clear-before-set sırası)", async () => {
