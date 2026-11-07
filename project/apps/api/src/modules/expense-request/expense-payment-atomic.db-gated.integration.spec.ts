@@ -231,7 +231,7 @@ dbDescribe('Expense payment command — atomicity and durable identity (disposab
     const find = (s as any).findLockedRequest.bind(s);
     jest.spyOn(s as any, 'findLockedRequest').mockImplementation(async (...args) => { const row = await find(...args); held(); await proceed; return row; });
     const paying = pay(s); await locked;
-    const writing = (action === 'cancel' ? other.cancel(tenantId, requestId) : action === 'delete' ? other.delete(tenantId, requestId)
+    const writing = (action === 'cancel' ? other.cancel(tenantId, requestId, 'Synthetic unpaid cancellation', userId) : action === 'delete' ? other.delete(tenantId, requestId)
       : action === 'send' ? other.markAsSent(tenantId, requestId, 'EMAIL') : other.markAsReminded(tenantId, requestId));
     // Attach rejection before releasing the lock to avoid an unhandled rejection in the harness.
     const rejected = expect(writing).rejects.toMatchObject({ status: 400 }); release();

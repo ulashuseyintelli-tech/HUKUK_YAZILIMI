@@ -2448,7 +2448,7 @@ class ApiClient {
     });
   }
 
-  async cancelExpenseRequest(id: string, reason?: string) {
+  async cancelExpenseRequest(id: string, reason: string) {
     return this.request<any>(`/expense-requests/${id}/cancel`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
@@ -5594,7 +5594,7 @@ declare module './api' {
     sendExpenseRequest(id: string, channel: string): Promise<ExpenseRequest>;
     remindExpenseRequest(id: string): Promise<ExpenseRequest>;
     receiveExpenseRequest(id: string, payment: ExpenseReceiptPaymentCommand): Promise<ExpenseRequest>;
-    cancelExpenseRequest(id: string, reason?: string): Promise<ExpenseRequest>;
+    cancelExpenseRequest(id: string, reason: string): Promise<ExpenseRequest>;
     deleteExpenseRequest(id: string): Promise<{ success: boolean }>;
     getExpenseRequestStats(caseId?: string): Promise<{ pending: number; sent: number; received: number; totalReceived: number }>;
     

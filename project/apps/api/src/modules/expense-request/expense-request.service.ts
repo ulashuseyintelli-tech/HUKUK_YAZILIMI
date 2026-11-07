@@ -10,6 +10,7 @@ import { ExpenseCalculatorService, CaseData, EXPENSE_SET_TEMPLATES } from './exp
 import { ExpenseNotificationService } from './expense-notification.service';
 import { ExpensePaymentReversalContractService, ExpensePaymentReversalRequestKind } from './expense-payment-reversal-contract.service';
 import { lockExpenseRequest } from './expense-request-lock';
+import { isOfficeWriteDeniedForRole } from '../office-approval/office-write-role.policy';
 import { normalizeExpensePayment, type PaymentInput } from './expense-payment-command';
 import { OfficeApprovalService } from '@/modules/office-approval/office-approval.service';
 import { ExpenseSendApprovalService } from '@/modules/client-notification/expense-send-approval.service';
@@ -541,15 +542,30 @@ export class ExpenseRequestService {
     return this.recordPayment(tenantId, id, payment, userId);
   }
 
-  async cancel(tenantId: string, id: string, reason?: string) {
+  async cancel(tenantId: string, id: string, reason: string, actorUserId: string) {
     // Caller: ExpenseRequestController.cancel; cannot overwrite a payment that won the row lock.
-    if (reason !== undefined && typeof reason !== 'string') throw new BadRequestException('İptal gerekçesi metin olmalıdır');
+    if (typeof reason !== 'string' || !reason.trim()) throw new BadRequestException('İptal gerekçesi zorunludur');
+    if (typeof actorUserId !== 'string' || !actorUserId.trim()) throw new ForbiddenException('İptal işlemi için doğrulanmış aktör gereklidir');
+    const cancellationReason = reason.trim();
     return this.prisma.$transaction(async tx => {
       const existing = await this.findLockedRequest(tx, tenantId, id);
+      const actor = await tx.user.findFirst({ where: { id: actorUserId, tenantId, isActive: true }, select: { id: true, role: true } });
+      if (!actor || isOfficeWriteDeniedForRole(actor.role)) throw new ForbiddenException('Masraf talebi iptaline izin yok');
       if (['RECEIVED', 'PAID', 'PARTIAL'].includes(existing.status) || new Prisma.Decimal(existing.paidTotal).gt(0)) {
         throw new BadRequestException('Ödeme alınmış talepler iptal edilemez');
       }
-      return tx.expenseRequest.update({ where: { id }, data: { status: 'CANCELLED', responseNotes: reason } });
+      const payment = await tx.expensePayment.findFirst({ where: { expenseRequestId: existing.id }, select: { id: true } });
+      if (payment) throw new BadRequestException('Ödeme geçmişi bulunan talep bu işlemle iptal edilemez');
+      if (existing.status === 'CANCELLED') {
+        if (existing.responseNotes !== cancellationReason) throw new ConflictException('İlk iptal gerekçesi değiştirilemez');
+        return existing;
+      }
+      const cancelled = await tx.expenseRequest.update({ where: { id }, data: { status: 'CANCELLED', responseNotes: cancellationReason } });
+      await tx.expenseAuditLog.create({ data: {
+        expenseRequestId: existing.id, action: 'CANCELLED', userId: actor.id,
+        details: { statusBefore: existing.status, statusAfter: 'CANCELLED', reason: cancellationReason },
+      } });
+      return cancelled;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   }
 
@@ -640,6 +656,8 @@ export class ExpenseRequestService {
       if (existing.status !== 'PENDING' || new Prisma.Decimal(existing.paidTotal).gt(0)) {
         throw new BadRequestException('Sadece bekleyen ve ödeme alınmamış talepler silinebilir');
       }
+      const payment = await tx.expensePayment.findFirst({ where: { expenseRequestId: existing.id }, select: { id: true } });
+      if (payment) throw new BadRequestException('Ödeme geçmişi bulunan talep silinemez');
       await tx.expenseRequest.delete({ where: { id } });
       return { success: true };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });

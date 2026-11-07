@@ -122,8 +122,8 @@ export class ExpenseRequestController {
   }
 
   @Post(':id/cancel')
-  async cancel(@Req() req: AuthRequest, @Param('id') id: string, @Body() body: { reason?: string }) {
-    return this.service.cancel(req.user.tenantId, id, body.reason);
+  async cancel(@Req() req: AuthRequest, @Param('id') id: string, @Body() body: { reason?: string } | null) {
+    return this.service.cancel(req.user.tenantId, id, body?.reason as string, req.user.id);
   }
 
   @Delete(':id')
