@@ -31,6 +31,8 @@ export interface ExpenseFinanceView {
   status: string;
   totalAmount: number;
   paidAmount: number;
+  /** UI eligibility hint only; cancellation rechecks real history under the parent lock. */
+  hasPaymentHistory?: boolean;
   remainingAmount: number;
   items: Array<{ code: string; label: string; suggestedAmount: number; finalAmount: number; wasOverridden: boolean }>;
   payments: Array<{ id: string; amount: number; date: string; method: string; reference?: string }>;
@@ -131,6 +133,7 @@ export class ExpenseViewService {
       status: expense.status,
       totalAmount,
       paidAmount,
+      hasPaymentHistory: Array.isArray(expense.payments) ? expense.payments.length > 0 : undefined,
       remainingAmount: totalAmount - paidAmount,
       items: (expense.requestItems || []).map((item: any) => ({
         code: item.itemCode,

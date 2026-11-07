@@ -4,6 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import CaseDetailPage from '../page';
 import { api } from '@/lib/api';
 
+const cancellationSession = vi.hoisted(() => ({ role: 'ADMIN' }));
+
 /**
  * WSMR-A4-AB-2 — DOSYA ÇALIŞMA ALANI: MASRAF ÜÇLÜ-GÖRÜNÜM (expense-three-view)
  * OKUMA HATASI SESSİZCE EKSİK VERİYİ TAM/BOŞ GİBİ SUNMAZ.
@@ -54,7 +56,7 @@ vi.mock('next/link', () => ({
 }));
 
 vi.mock('@/lib/auth-context', () => ({
-  useAuth: () => ({ user: { id: 'u1', tenantId: 't1', role: 'ADMIN' }, loading: false }),
+  useAuth: () => ({ user: { id: 'u1', tenantId: 't1', role: cancellationSession.role }, loading: false }),
 }));
 
 const mocked = api as unknown as Record<string, ReturnType<typeof vi.fn>>;
@@ -136,6 +138,7 @@ function applyRealContractDefaults() {
 }
 
 beforeEach(() => {
+  cancellationSession.role = 'ADMIN';
   vi.clearAllMocks();
   applyRealContractDefaults();
 });
@@ -144,6 +147,30 @@ afterEach(() => cleanup());
 const openTasksTab = async () => fireEvent.click(await screen.findByRole('button', { name: /Yapılacaklar/ }));
 const openFinanceTab = async () => fireEvent.click(await screen.findByRole('button', { name: /^Finans$/ }));
 const openClientRequestsTab = async () => fireEvent.click(await screen.findByRole('button', { name: /Müvekkil Talepleri/ }));
+
+describe('3c cancellation in the existing case Finance surface', () => {
+  it('passes actual history eligibility to the action and refreshes the existing three-view source after cancellation', async () => {
+    mocked.getExpenseThreeViewForCase.mockResolvedValue([{ ...EXPENSE_ITEM, finance: { ...EXPENSE_ITEM.finance, hasPaymentHistory: false } }]);
+    mocked.cancelExpenseRequest.mockImplementation(async () => {
+      mocked.getExpenseThreeViewForCase.mockResolvedValue([]);
+      return { id: EXPENSE_ITEM.finance.id, status: 'CANCELLED' };
+    });
+    renderPage(); await openFinanceTab();
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Masraf talebi iptal gerekçesi' }), { target: { value: 'Gerekçeli iptal denemesi' } });
+    const readsBefore = mocked.getExpenseThreeViewForCase.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Talebi Gerekçeyle İptal Et' }));
+    await waitFor(() => expect(mocked.getExpenseThreeViewForCase.mock.calls.length).toBeGreaterThan(readsBefore));
+    expect(mocked.cancelExpenseRequest).toHaveBeenCalledExactlyOnceWith(EXPENSE_ITEM.finance.id, 'Gerekçeli iptal denemesi');
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Talebi Gerekçeyle İptal Et' })).toBeNull());
+  });
+  it.each(['history', 'unknown', 'viewer'])('does not offer cancellation for %s in the real case surface', async mode => {
+    if (mode === 'viewer') cancellationSession.role = 'VIEWER';
+    mocked.getExpenseThreeViewForCase.mockResolvedValue([{ ...EXPENSE_ITEM, finance: { ...EXPENSE_ITEM.finance,
+      hasPaymentHistory: mode === 'history' ? true : mode === 'unknown' ? undefined : false } }]);
+    renderPage(); await openFinanceTab(); await screen.findByText(EXPENSE_ITEM.finance.description);
+    expect(screen.queryByRole('button', { name: 'Talebi Gerekçeyle İptal Et' })).toBeNull();
+  });
+});
 
 function findExpenseAlert(alerts: HTMLElement[]) {
   return alerts.find((a) => /Masraf görev\/talep\/finans verileri yüklenemedi/.test(a.textContent || ''));

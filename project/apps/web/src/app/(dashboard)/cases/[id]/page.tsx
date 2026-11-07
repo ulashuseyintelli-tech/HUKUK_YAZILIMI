@@ -3349,6 +3349,7 @@ export default function CaseDetailPage() {
                     description: item.finance.description,
                     status: item.finance.status,
                     paidAmount: item.finance.paidAmount,
+                    hasPaymentHistory: item.finance.hasPaymentHistory,
                     remainingAmount: item.finance.remainingAmount,
                     items: item.finance.items,
                   })),
@@ -3360,6 +3361,7 @@ export default function CaseDetailPage() {
                 expenseRequestsSource={expenseRequestsSourceStatus}
                 onRetryCollections={fetchFinanceData}
                 onRetryExpenseRequests={retryExpenseThreeView}
+                canCancelExpenseRequests={!!user && user.role !== 'VIEWER'}
                 // Aşağıdaki dört alan henüz bir veri kaynağına bağlı DEĞİL. Sabit 0 ya da boş liste verilmez:
                 // bağlanmamış alan sıfır / "kayıt yok" değildir — bileşen "henüz bağlanmadı" yazar.
                 // Hangi bakiyenin ve hangi masraf kapsamının gösterileceği seçilmedi (owner kararı 2026-10-01);

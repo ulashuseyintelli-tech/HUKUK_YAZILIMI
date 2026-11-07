@@ -8,6 +8,7 @@ import { recordCurrencySuffix } from "@/lib/record-currency-display";
 import { FinanceSourceListNotice, FinanceSourceRefreshNote } from "./FinanceSourceNotice";
 import { ExpenseDistributionDecisionRow, useExpenseDistributionDecisions } from "@/components/expense/ExpenseDistributionDecision";
 import { ExpenseSendAction } from '@/components/expense/ExpenseSendAction';
+import { ExpenseCancelAction } from '@/components/expense/ExpenseCancelAction';
 import {
   FileText, ListTodo, Receipt, Database, FolderOpen, MessageSquare,
   ChevronDown, Plus, AlertTriangle, Clock, Zap, User, Check, X,
@@ -157,6 +158,7 @@ interface FinanceItem {
   currency?: string | null;
   // Expense-specific fields
   paidAmount?: number;
+  hasPaymentHistory?: boolean;
   remainingAmount?: number;
   items?: Array<{ code: string; label: string; suggestedAmount?: number; finalAmount: number; wasOverridden?: boolean }>;
 }
@@ -255,6 +257,7 @@ interface OperationDeckProps {
   /** Finans sekmesindeki "Tekrar dene": ilgili kaynağı YENİDEN OKUR; yazma işlemi tetiklemez. */
   onRetryCollections?: () => void;
   onRetryExpenseRequests?: () => void;
+  canCancelExpenseRequests?: boolean;
   // Aşağıdaki dört alanın veri kaynağı durumu (OperationDeckSourceStatus). Verilmezse NOT_CONNECTED sayılır ve
   // alan sayı / "kayıt yok" yerine "henüz bağlanmadı" yazar. Değer yalnız durum READY iken okunur.
   /** "Yapılan Masraf" kartı ve "Son İşlemler"deki MASRAF_YAPILAN satırları (satırlar financeItems içinde gelir). */
@@ -460,6 +463,7 @@ export function OperationDeck({
   expenseRequestsSource,
   onRetryCollections,
   onRetryExpenseRequests,
+  canCancelExpenseRequests = false,
   actualExpenseSource = "NOT_CONNECTED",
   uyapQueriesSource = "NOT_CONNECTED",
   uyapQueries,
@@ -1334,7 +1338,7 @@ export function OperationDeck({
                             item.status === 'PARTIAL' ? 'bg-amber-100 text-amber-700' :
                             'bg-slate-100 text-slate-600'
                           }`}>
-                            {item.status === 'PAID' ? 'Ödendi' : item.status === 'PARTIAL' ? 'Kısmi' : 'Bekliyor'}
+                            {item.status === 'PAID' ? 'Ödendi' : item.status === 'PARTIAL' ? 'Kısmi' : item.status === 'CANCELLED' ? 'İptal Edildi' : 'Bekliyor'}
                           </span>
                         </div>
                         <div className="flex items-center justify-between text-xs">
@@ -1367,6 +1371,8 @@ export function OperationDeck({
                           <ExpenseDistributionDecisionRow expenseId={item.id} decisions={expenseDistributionDecisions} />
                         )}
                         {caseId && <ExpenseSendAction expenseId={item.id} status={item.status} />}
+                        {caseId && canCancelExpenseRequests && <ExpenseCancelAction expenseId={item.id} status={item.status}
+                          paidAmount={item.paidAmount} hasPaymentHistory={item.hasPaymentHistory} onCancelled={onRetryExpenseRequests} />}
                       </div>
                     ))}
                   </div>
