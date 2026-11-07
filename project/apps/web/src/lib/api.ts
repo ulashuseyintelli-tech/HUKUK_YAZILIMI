@@ -109,8 +109,8 @@ export interface ClientOperatingSnapshot {
   signals: ClientOperatingSignal[];
 }
 
-/** F02-B-1: görev / masraf "büro geneli görünüm" izin anahtarları (API: PermissionGrant GLOBAL). */
-export type WorkScopeViewAllKey = "office.tasks.view_all" | "office.expenses.view_all";
+/** F02-B-1: görev / masraf / (P3-D1) dosya "büro geneli görünüm" izin anahtarları (API: PermissionGrant GLOBAL). */
+export type WorkScopeViewAllKey = "office.tasks.view_all" | "office.expenses.view_all" | "office.cases.view_all";
 export type WorkScopeResolution = "ALLOW" | "DENY" | "NONE";
 export interface WorkScopePermissionState {
   personType: "lawyer" | "staff";

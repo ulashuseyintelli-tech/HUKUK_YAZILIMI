@@ -494,3 +494,5 @@ src/modules/public-institution/public-institution.service.spec.ts
 #   responsibility-history.service.spec (ayni sorumluluk servislerinin controller uclari).
 src/modules/case/__tests__/case-responsibility-at.spec.ts
 src/modules/case/__tests__/responsibility-history.controller.spec.ts
+# F02 P3-D1 (owner 07.11.2026): dosya liste + detay gorunum kapsami saf sozlesmesi (office.cases.view_all; OFFICE_CASE_VIEW_SCOPE_ENABLED).
+src/modules/case/__tests__/case-view-scope.spec.ts

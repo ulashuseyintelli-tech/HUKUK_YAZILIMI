@@ -42,6 +42,24 @@ describe('ViewScopeBadge — F02-B uygulanan kapsam rozeti', () => {
     expect(el.textContent).toBe(VIEW_SCOPE_TEXT.expenses.BOUND);
   });
 
+  it.each(MODES)('P3-D1 dosya alanı mode=%s → kendi metni; görev / masraf alanından bağımsız', async (mode) => {
+    const s = serverState('BOUND', 'TENANT');
+    mocked.get.mockResolvedValue({ data: { ...s.data, cases: { flagEnabled: mode !== 'OFF', resolution: mode === 'TENANT' ? 'ALLOW' : 'NONE', mode } } });
+    render(<ViewScopeBadge area="cases" />);
+    const el = await screen.findByTestId('view-scope-badge');
+    expect(el.getAttribute('data-scope-mode')).toBe(mode);
+    expect(el.textContent).toBe(VIEW_SCOPE_TEXT.cases[mode]);
+  });
+
+  it('P3-D1: yanıtta `cases` yoksa yalnız dosya rozeti "alınamadı"; görev rozeti etkilenmez', async () => {
+    mocked.get.mockResolvedValue(serverState('OFF', 'BOUND'));
+    render(<ViewScopeBadge area="cases" />);
+    expect((await screen.findByTestId('view-scope-badge')).getAttribute('data-scope-mode')).toBe('UNAVAILABLE');
+    cleanup();
+    render(<ViewScopeBadge area="tasks" />);
+    expect((await screen.findByTestId('view-scope-badge')).getAttribute('data-scope-mode')).toBe('BOUND');
+  });
+
   it('istek hatası → "alınamadı"; kapsam UYDURULMAZ', async () => {
     mocked.get.mockRejectedValue(new Error('ağ'));
     render(<ViewScopeBadge area="tasks" />);

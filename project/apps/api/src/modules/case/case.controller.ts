@@ -58,6 +58,8 @@ export class CaseController {
   @Get()
   findAll(
     @CurrentUser("tenantId") tenantId: string,
+    // F02 P3-D1: aktör kimliği — görünüm kapsamı (bayrak açıkken) data + total + sayfalamaya birlikte uygulanır.
+    @CurrentUser("id") userId: string,
     @Query("status") status?: string,
     @Query("expenseRequestStatus") expenseRequestStatus?: string,
     @Query("clientId") clientId?: string,
@@ -82,7 +84,7 @@ export class CaseController {
       includeArchived: includeArchived === "1" || includeArchived === "true",
       page: page ? parseInt(page) : undefined,
       limit: limit ? parseInt(limit) : undefined,
-    });
+    }, userId);
   }
 
   @Get("stats")
@@ -224,8 +226,9 @@ export class CaseController {
   }
 
   @Get(":id")
-  findOne(@CurrentUser("tenantId") tenantId: string, @Param("id") id: string) {
-    return this.caseService.findOne(tenantId, id);
+  findOne(@CurrentUser("tenantId") tenantId: string, @CurrentUser("id") userId: string, @Param("id") id: string) {
+    // F02 P3-D1: bayrak açıkken kapsam dışı dosya 404 (varlık sızmaz); kapalıyken bugünkü davranış.
+    return this.caseService.findOneVisible(tenantId, id, userId);
   }
 
   // OWN-13 I02-R1: `role` de taşınır — POST /cases inline-yeni müvekkil OLUŞTURABİLDİĞİ için

@@ -9,8 +9,11 @@
  *    dosyasız kayıt = yalnız atanan/oluşturan (+ masrafta onaycı). ReportingLine erişim ÜRETMEZ.
  *  - Bu izinler MÜVEKKİL okuma ya da dosyaya bağlama yetkisi VERMEZ (K16 kapsamı ayrıdır).
  *  - Otomatik toplu grant YOK; canlı grant yazımı ve kapsam etkinleştirmesi ayrı yayın yetkisi (G3: önce masraf, sonra görev).
+ *  - F02 P3-D1 (owner 07.11.2026): dosya liste + detay için AYRI üçüncü anahtar `office.cases.view_all`; varsayılan dosya
+ *    görünümü = aktif Dosya Sorumlusu ∪ oluşturan ∪ CaseLawyer ∪ CaseStaff canView (case/case-view-scope.ts). DENY yalnız
+ *    büro geneli genişlemeyi engeller; görev / masraf sözleşmesi değişmez.
  */
-export const WORK_SCOPE_VIEW_ALL_KEYS = ['office.tasks.view_all', 'office.expenses.view_all'] as const;
+export const WORK_SCOPE_VIEW_ALL_KEYS = ['office.tasks.view_all', 'office.expenses.view_all', 'office.cases.view_all'] as const;
 export type WorkScopeViewAllKey = (typeof WORK_SCOPE_VIEW_ALL_KEYS)[number];
 
 export const WORK_SCOPE_PERSON_TYPES = ['lawyer', 'staff'] as const;

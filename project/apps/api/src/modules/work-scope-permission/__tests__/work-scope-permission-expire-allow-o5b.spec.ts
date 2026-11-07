@@ -37,14 +37,14 @@ const input = (grantIds: string[]) => ({
 });
 
 describe('O-5b WorkScopePermissionService.expireAllowGrantsInTx', () => {
-  it('çağıranın transactionında çalışır; yalnız GLOBAL + ALLOW + iki F02 anahtarı + verilen kimlikler + bitmemiş', async () => {
+  it('çağıranın transactionında çalışır; yalnız GLOBAL + ALLOW + F02 anahtarları (P3-D1 dahil) + verilen kimlikler + bitmemiş', async () => {
     const { svc, tx, prisma } = build();
     await expect(svc.expireAllowGrantsInTx(tx, input(['g1', 'g2']))).resolves.toBe(2);
     expect(prisma.$transaction).not.toHaveBeenCalled();
     const { where, data } = tx.permissionGrant.updateMany.mock.calls[0][0];
     expect(where).toEqual({
       id: { in: ['g1', 'g2'] }, tenantId: 't1', subjectUserId: 'u1',
-      permissionKey: { in: ['office.tasks.view_all', 'office.expenses.view_all'] },
+      permissionKey: { in: ['office.tasks.view_all', 'office.expenses.view_all', 'office.cases.view_all'] },
       scope: 'GLOBAL', effect: 'ALLOW', OR: [{ validUntil: null }, { validUntil: { gt: NOW } }],
     });
     expect(data).toEqual({ validUntil: NOW });

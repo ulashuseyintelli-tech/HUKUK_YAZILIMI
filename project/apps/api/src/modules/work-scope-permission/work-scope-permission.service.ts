@@ -7,6 +7,7 @@ import { AuditService } from '../audit/audit.service';
 // F02-B görünürlük: liste servisleriyle AYNI bayrak okuyucuları (saf fonksiyonlar; Nest modülü bağımlılığı değil)
 import { EXPENSE_VIEW_ALL_KEY, isExpenseViewScopeEnabled } from '../expense-request/expense-view-scope';
 import { TASK_VIEW_ALL_KEY, isTaskViewScopeEnabled } from '../task/task-view-scope';
+import { CASE_VIEW_ALL_KEY, isCaseViewScopeEnabled } from '../case/case-view-scope';
 import { isApprovalIdentityProofRequired } from '../../common/approval-identity';
 import {
   WORK_SCOPE_EFFECTS,
@@ -38,7 +39,13 @@ type Db = Prisma.TransactionClient | PrismaService;
 export type WorkScopeViewMode = 'OFF' | 'TENANT' | 'BOUND';
 export interface WorkScopeAreaView { flagEnabled: boolean; resolution: WorkScopeResolution; mode: WorkScopeViewMode }
 /** F02 yayın ölçümü (owner 31.10.2026 madde 3): süreç içi ETKİN bayrak değeri — K-A1 kimlik bayrağı da aynı salt okuma uçtan (yalnız boolean). */
-export interface WorkScopeViewState { expenses: WorkScopeAreaView; tasks: WorkScopeAreaView; approvalIdentity: { flagEnabled: boolean } }
+export interface WorkScopeViewState {
+  expenses: WorkScopeAreaView;
+  tasks: WorkScopeAreaView;
+  /** F02 P3-D1 (owner 07.11.2026): dosya liste + detay kapsamı (GET /cases, GET /cases/:id). */
+  cases: WorkScopeAreaView;
+  approvalIdentity: { flagEnabled: boolean };
+}
 
 /**
  * F02-B-1 — görev / masraf "büro geneli görünüm" izinleri (PermissionGrant GLOBAL). Bildirim geçmişi izni servisiyle AYNI
@@ -86,12 +93,14 @@ export class WorkScopePermissionService {
       const mode: WorkScopeViewMode = !flagEnabled ? 'OFF' : resolution === 'ALLOW' ? 'TENANT' : 'BOUND';
       return { flagEnabled, resolution, mode };
     };
-    const [expenses, tasks] = await Promise.all([
+    const [expenses, tasks, cases] = await Promise.all([
       area(isExpenseViewScopeEnabled(env), EXPENSE_VIEW_ALL_KEY),
       area(isTaskViewScopeEnabled(env), TASK_VIEW_ALL_KEY),
+      // F02 P3-D1: dosya servisiyle AYNI bayrak okuyucusu + AYNI anahtar (BOUND = Dosya Sorumlusu ∪ oluşturan ∪ dosya bağı).
+      area(isCaseViewScopeEnabled(env), CASE_VIEW_ALL_KEY),
     ]);
     // Kimlik bayrağı: onay motorunun kullandığı AYNI okuyucu (common/approval-identity) → ekran/ölçüm ↔ yürütme yolu tutarlı; env değeri dökülmez.
-    return { expenses, tasks, approvalIdentity: { flagEnabled: isApprovalIdentityProofRequired(env) } };
+    return { expenses, tasks, cases, approvalIdentity: { flagEnabled: isApprovalIdentityProofRequired(env) } };
   }
 
   /** Caller: controller GET — ADMIN (güncel DB rolü); kişi kartı → bağlı hesap → anahtar başına etkin durum. */
@@ -194,8 +203,9 @@ export class WorkScopePermissionService {
   }
 
   /**
-   * O-5b — verilen GLOBAL ALLOW kayıtlarını ÇAĞIRANIN transaction'ında sona erdirir (validUntil = now). Yalnız iki F02 anahtarı
-   * (office.tasks.view_all / office.expenses.view_all) ve yalnız ALLOW: DENY ve F02 dışı izinler kapsam dışıdır, dokunulmaz.
+   * O-5b — verilen GLOBAL ALLOW kayıtlarını ÇAĞIRANIN transaction'ında sona erdirir (validUntil = now). Yalnız F02 anahtarları
+   * (WORK_SCOPE_VIEW_ALL_KEYS: office.tasks.view_all / office.expenses.view_all / P3-D1 office.cases.view_all) ve yalnız ALLOW:
+   * DENY ve F02 dışı izinler kapsam dışıdır, dokunulmaz.
    * Mevcut `revoke()` kendi transaction'ını açtığı ve anahtarın DENY kaydını da bitirdiği için hesap açmada kullanılamaz
    * (O5B-ANALIZ-R01 ölçümü); bu yöntem onun yerine geçer, `grant()` / `revoke()` davranışı DEĞİŞMEZ.
    * Yetki ve kilit ÇAĞIRANIN sorumluluğundadır (lockPersonInTx + güncel DB rolü ADMIN aynı tx'te). Beklenen kayıtlardan biri

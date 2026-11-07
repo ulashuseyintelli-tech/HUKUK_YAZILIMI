@@ -93,6 +93,7 @@ export function buildStaffAccountReopenPayload(review: StaffAccountReopenReview,
 const KEY_LABEL: Record<string, string> = {
   'office.tasks.view_all': 'Görevler — büro geneli görünüm',
   'office.expenses.view_all': 'Masraflar — büro geneli görünüm',
+  'office.cases.view_all': 'Dosyalar — büro geneli görünüm', // F02 P3-D1: hesap açma incelemesinde aynı F02 ALLOW listesi
 };
 export const grantLabel = (key: string): string => KEY_LABEL[key] ?? key;
 
