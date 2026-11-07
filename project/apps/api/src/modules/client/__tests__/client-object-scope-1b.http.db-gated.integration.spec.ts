@@ -140,11 +140,11 @@ dbDescribe('1b canonical Client object boundary — real Nest HTTP and PostgreSQ
     for (const id of [tenant, foreignTenant]) await db.tenant.delete({ where: { id } });
   });
   afterAll(async () => { await app?.close(); await db?.$disconnect(); });
-  const req = (method: 'get' | 'post' | 'put' | 'delete', path: string, who = admin, body?: unknown) => {
+  const req = (method: 'get' | 'post' | 'put' | 'delete', path: string, who = admin, body?: object) => {
     const r = http(app.getHttpServer())[method](path).set('x-test-user-id', who);
     return body === undefined ? r : r.send(body);
   };
-  const update = (body: unknown, who = admin, id = clientId) => req('put', `/clients/${id}`, who, body);
+  const update = (body: object, who = admin, id = clientId) => req('put', `/clients/${id}`, who, body);
   async function snapshot() {
     const where = { tenantId: tenant }; const child = { client: { tenantId: tenant } };
     const models: [string, any][] = [
