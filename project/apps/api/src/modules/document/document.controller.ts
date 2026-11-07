@@ -15,6 +15,7 @@ import { DocumentTemplateService } from "./document-template.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
+import { CaseViewScopeGuard } from "../case/case-view-scope.guard";
 
 @Controller("documents")
 // F02-D / J-27: VIEWER belge ÜRETEMEZ (haciz ihbarnamesi, satış talebi, 89/1-2-3, alacak haczi); şablon önizleme saf POST olarak açık.
@@ -36,6 +37,7 @@ export class DocumentController {
   /// Çağrıldığı yerler:
   /// - DocumentController.getPaymentOrder() → GET /documents/case/:caseId/payment-order (ödeme emri PDF üretimi)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get("case/:caseId/payment-order")
   @Header("Content-Type", "application/pdf")
   async getPaymentOrder(
@@ -56,6 +58,7 @@ export class DocumentController {
   /// Çağrıldığı yerler:
   /// - DocumentController.getSeizureNotice() → POST /documents/case/:caseId/seizure-notice (haciz müzekkeresi PDF üretimi)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Post("case/:caseId/seizure-notice")
   @Header("Content-Type", "application/pdf")
   async getSeizureNotice(
@@ -82,6 +85,7 @@ export class DocumentController {
   /// Çağrıldığı yerler:
   /// - DocumentController.getSaleRequest() → POST /documents/case/:caseId/sale-request (satış talebi PDF üretimi)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Post("case/:caseId/sale-request")
   @Header("Content-Type", "application/pdf")
   async getSaleRequest(
@@ -107,6 +111,7 @@ export class DocumentController {
   /// Çağrıldığı yerler:
   /// - DocumentController.getUyapXml() → GET /documents/case/:caseId/uyap-xml (UYAP XML üretimi)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get("case/:caseId/uyap-xml")
   @Header("Content-Type", "application/xml")
   async getUyapXml(
@@ -127,6 +132,7 @@ export class DocumentController {
   /// Çağrıldığı yerler:
   /// - DocumentController.getPreviewData() → GET /documents/case/:caseId/preview-data (belge veri önizleme)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get("case/:caseId/preview-data")
   async getPreviewData(
     @Param("caseId") caseId: string,
@@ -157,6 +163,7 @@ export class DocumentController {
   /// Çağrıldığı yerler:
   /// - DocumentController.getAvailableTemplates() → GET /documents/case/:caseId/available-templates (case için şablon önerileri)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get("case/:caseId/available-templates")
   async getAvailableTemplates(
     @Param("caseId") caseId: string,
@@ -184,6 +191,7 @@ export class DocumentController {
   /// Çağrıldığı yerler:
   /// - DocumentController.generateFromTemplate() → GET /documents/case/:caseId/generate/:templateCode (şablondan belge üretimi)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get("case/:caseId/generate/:templateCode")
   async generateFromTemplate(
     @Param("caseId") caseId: string,
@@ -234,6 +242,7 @@ export class DocumentController {
   /// Çağrıldığı yerler:
   /// - DocumentController.getIhbarname89_1() → POST /documents/case/:caseId/ihbarname-89-1 (89/1 haciz ihbarnamesi PDF üretimi)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Post("case/:caseId/ihbarname-89-1")
   @Header("Content-Type", "application/pdf")
   async getIhbarname89_1(
@@ -260,6 +269,7 @@ export class DocumentController {
   /// Çağrıldığı yerler:
   /// - DocumentController.getIhbarname89_2() → POST /documents/case/:caseId/ihbarname-89-2 (89/2 haciz ihbarnamesi PDF üretimi)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Post("case/:caseId/ihbarname-89-2")
   @Header("Content-Type", "application/pdf")
   async getIhbarname89_2(
@@ -287,6 +297,7 @@ export class DocumentController {
   /// Çağrıldığı yerler:
   /// - DocumentController.getIhbarname89_3() → POST /documents/case/:caseId/ihbarname-89-3 (89/3 haciz ihbarnamesi PDF üretimi)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Post("case/:caseId/ihbarname-89-3")
   @Header("Content-Type", "application/pdf")
   async getIhbarname89_3(
@@ -315,6 +326,7 @@ export class DocumentController {
   /// Çağrıldığı yerler:
   /// - DocumentController.getAlacakHacziTalebi() → POST /documents/case/:caseId/alacak-haczi-talebi (alacak haczi talebi PDF üretimi)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Post("case/:caseId/alacak-haczi-talebi")
   @Header("Content-Type", "application/pdf")
   async getAlacakHacziTalebi(

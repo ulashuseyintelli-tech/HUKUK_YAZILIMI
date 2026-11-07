@@ -346,3 +346,5 @@ src/modules/expense-request/__tests__/expense-send-approval.http.db-gated.integr
 src/modules/expense-request/__tests__/expense-canonical-target.http.db-gated.integration.spec.ts
 # F02 P3-D1 (owner 07.11.2026): GET /cases + GET /cases/:id gorunum kapsami - gercek HTTP (CaseModule) + disposable PostgreSQL.
 src/modules/case/__tests__/case-view-scope.http.db-gated.integration.spec.ts
+# F02 P3-D2 (owner 08.11.2026): dosyaya bagli belge okuma yollari (documents / template-engine / pdf) - gercek HTTP + disposable PostgreSQL.
+src/modules/case/__tests__/case-view-scope-documents.http.db-gated.integration.spec.ts

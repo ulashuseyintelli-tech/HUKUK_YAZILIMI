@@ -1,10 +1,13 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Res, Query, HttpException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards, Res, Query, HttpException, ForbiddenException, Optional } from '@nestjs/common';
 import { Response } from 'express';
 import { IsString, IsOptional, IsArray, IsObject, ValidateNested, IsNumber, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { CaseViewScopeGuard } from '../case/case-view-scope.guard';
+import { CaseViewScopeService } from '../case/case-view-scope.service';
+import { isCaseViewScopeEnabled } from '../case/case-view-scope';
 import { TemplateEngineService, TemplateData, GeneratedDocument, UdfDocument } from './template-engine.service';
 import { CekFormationPreviewDto } from '../claim-item/dto/claim-item.dto';
 
@@ -269,7 +272,11 @@ export class GenerateTakipTalebiDto {
 @Controller('template-engine')
 @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class TemplateEngineController {
-  constructor(private readonly templateEngineService: TemplateEngineService) {}
+  constructor(
+    private readonly templateEngineService: TemplateEngineService,
+    // F02 P3-D2: belge → dosya → kiracı eşleşmesi ve dosya görünüm kapsamı (artefakt indirme). Bayrak açıkken yoksa FAIL-CLOSED.
+    @Optional() private readonly caseViewScope?: CaseViewScopeService,
+  ) {}
 
   /**
    * Takip Talebi (Örnek 1) belgesi oluştur - JSON data ile
@@ -287,6 +294,7 @@ export class TemplateEngineController {
   /// Çağrıldığı yerler:
   /// - TemplateEngineController.generateTakipTalebiFromCase() → GET /template-engine/takip-talebi/case/:caseId (case bazlı takip talebi üretimi)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get('takip-talebi/case/:caseId')
   async generateTakipTalebiFromCase(
     @Param('caseId') caseId: string,
@@ -348,6 +356,7 @@ export class TemplateEngineController {
   /// Çağrıldığı yerler:
   /// - TemplateEngineController.generateOdemeEmriFromCase() → GET /template-engine/odeme-emri/case/:caseId (case bazlı ödeme emri üretimi)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get('odeme-emri/case/:caseId')
   async generateOdemeEmriFromCase(
     @Param('caseId') caseId: string,
@@ -372,6 +381,7 @@ export class TemplateEngineController {
   /// Çağrıldığı yerler:
   /// - TemplateEngineController.generateIcraEmriFromCase() → GET /template-engine/icra-emri/case/:caseId (case bazlı icra emri üretimi)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get('icra-emri/case/:caseId')
   async generateIcraEmriFromCase(
     @Param('caseId') caseId: string,
@@ -419,6 +429,7 @@ export class TemplateEngineController {
   /// Çağrıldığı yerler:
   /// - TemplateEngineController.downloadPdfFromCase() → GET /template-engine/case/:caseId/pdf (case bazlı PDF indirme)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get('case/:caseId/pdf')
   async downloadPdfFromCase(
     @Param('caseId') caseId: string,
@@ -463,6 +474,7 @@ export class TemplateEngineController {
   /// Çağrıldığı yerler:
   /// - TemplateEngineController.downloadWordFromCase() → GET /template-engine/case/:caseId/word (case bazlı Word indirme)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get('case/:caseId/word')
   async downloadWordFromCase(
     @Param('caseId') caseId: string,
@@ -497,6 +509,7 @@ export class TemplateEngineController {
   /// Çağrıldığı yerler:
   /// - TemplateEngineController.generateUdfFromCase() → GET /template-engine/case/:caseId/udf (case bazlı UDF üretimi)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get('case/:caseId/udf')
   async generateUdfFromCase(
     @Param('caseId') caseId: string,
@@ -513,6 +526,7 @@ export class TemplateEngineController {
   /// Çağrıldığı yerler:
   /// - TemplateEngineController.downloadUdfFromCase() → GET /template-engine/case/:caseId/udf/download (case bazlı UDF indirme)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get('case/:caseId/udf/download')
   async downloadUdfFromCase(
     @Param('caseId') caseId: string,
@@ -557,6 +571,7 @@ export class TemplateEngineController {
   /// Çağrıldığı yerler:
   /// - TemplateEngineController.downloadXmlFromCase() → GET /template-engine/case/:caseId/xml (case bazlı XML indirme)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get('case/:caseId/xml')
   async downloadXmlFromCase(
     @Param('caseId') caseId: string,
@@ -582,6 +597,7 @@ export class TemplateEngineController {
   /// Çağrıldığı yerler:
   /// - TemplateEngineController.generateKarsiliksizCekSikayetFromCase() → GET /template-engine/karsiliksiz-cek/case/:caseId (karşılıksız çek şikayet üretimi)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get('karsiliksiz-cek/case/:caseId')
   async generateKarsiliksizCekSikayetFromCase(
     @Param('caseId') caseId: string,
@@ -597,6 +613,7 @@ export class TemplateEngineController {
   /// Çağrıldığı yerler:
   /// - TemplateEngineController.previewKarsiliksizCekSikayet() → GET /template-engine/karsiliksiz-cek/case/:caseId/preview (karşılıksız çek şikayet önizleme)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get('karsiliksiz-cek/case/:caseId/preview')
   async previewKarsiliksizCekSikayet(
     @Param('caseId') caseId: string,
@@ -618,6 +635,7 @@ export class TemplateEngineController {
   /// Çağrıldığı yerler:
   /// - TemplateEngineController.downloadKarsiliksizCekSikayetWord() → GET /template-engine/karsiliksiz-cek/case/:caseId/word (karşılıksız çek şikayet Word indirme)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get('karsiliksiz-cek/case/:caseId/word')
   async downloadKarsiliksizCekSikayetWord(
     @Param('caseId') caseId: string,
@@ -638,6 +656,7 @@ export class TemplateEngineController {
   /// Çağrıldığı yerler:
   /// - TemplateEngineController.downloadKarsiliksizCekSikayet() → GET /template-engine/karsiliksiz-cek/case/:caseId/download (karşılıksız çek şikayet metin indirme)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get('karsiliksiz-cek/case/:caseId/download')
   async downloadKarsiliksizCekSikayet(
     @Param('caseId') caseId: string,
@@ -662,6 +681,7 @@ export class TemplateEngineController {
   /// Çağrıldığı yerler:
   /// - TemplateEngineController.generateItirazinIptaliFromCase() → GET /template-engine/itirazin-iptali/case/:caseId (itirazın iptali dilekçe üretimi)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get('itirazin-iptali/case/:caseId')
   async generateItirazinIptaliFromCase(
     @Param('caseId') caseId: string,
@@ -677,6 +697,7 @@ export class TemplateEngineController {
   /// Çağrıldığı yerler:
   /// - TemplateEngineController.previewItirazinIptali() → GET /template-engine/itirazin-iptali/case/:caseId/preview (itirazın iptali önizleme)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get('itirazin-iptali/case/:caseId/preview')
   async previewItirazinIptali(
     @Param('caseId') caseId: string,
@@ -698,6 +719,7 @@ export class TemplateEngineController {
   /// Çağrıldığı yerler:
   /// - TemplateEngineController.downloadItirazinIptaliWord() → GET /template-engine/itirazin-iptali/case/:caseId/word (itirazın iptali Word indirme)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get('itirazin-iptali/case/:caseId/word')
   async downloadItirazinIptaliWord(
     @Param('caseId') caseId: string,
@@ -722,6 +744,7 @@ export class TemplateEngineController {
   /// Çağrıldığı yerler:
   /// - TemplateEngineController.generateTasarrufunIptaliFromCase() → GET /template-engine/tasarrufun-iptali/case/:caseId (tasarrufun iptali dilekçe üretimi)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get('tasarrufun-iptali/case/:caseId')
   async generateTasarrufunIptaliFromCase(
     @Param('caseId') caseId: string,
@@ -737,6 +760,7 @@ export class TemplateEngineController {
   /// Çağrıldığı yerler:
   /// - TemplateEngineController.previewTasarrufunIptali() → GET /template-engine/tasarrufun-iptali/case/:caseId/preview (tasarrufun iptali önizleme)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get('tasarrufun-iptali/case/:caseId/preview')
   async previewTasarrufunIptali(
     @Param('caseId') caseId: string,
@@ -758,6 +782,7 @@ export class TemplateEngineController {
   /// Çağrıldığı yerler:
   /// - TemplateEngineController.downloadTasarrufunIptaliWord() → GET /template-engine/tasarrufun-iptali/case/:caseId/word (tasarrufun iptali Word indirme)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get('tasarrufun-iptali/case/:caseId/word')
   async downloadTasarrufunIptaliWord(
     @Param('caseId') caseId: string,
@@ -782,6 +807,7 @@ export class TemplateEngineController {
   /// Çağrıldığı yerler:
   /// - TemplateEngineController.generateDolandiricilikFromCase() → GET /template-engine/dolandiricilik/case/:caseId (dolandırıcılık suç duyurusu üretimi)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get('dolandiricilik/case/:caseId')
   async generateDolandiricilikFromCase(
     @Param('caseId') caseId: string,
@@ -797,6 +823,7 @@ export class TemplateEngineController {
   /// Çağrıldığı yerler:
   /// - TemplateEngineController.previewDolandiricilik() → GET /template-engine/dolandiricilik/case/:caseId/preview (dolandırıcılık suç duyurusu önizleme)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get('dolandiricilik/case/:caseId/preview')
   async previewDolandiricilik(
     @Param('caseId') caseId: string,
@@ -818,6 +845,7 @@ export class TemplateEngineController {
   /// Çağrıldığı yerler:
   /// - TemplateEngineController.downloadDolandiricilikWord() → GET /template-engine/dolandiricilik/case/:caseId/word (dolandırıcılık suç duyurusu Word indirme)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get('dolandiricilik/case/:caseId/word')
   async downloadDolandiricilikWord(
     @Param('caseId') caseId: string,
@@ -899,6 +927,7 @@ export class TemplateEngineController {
    * Case'e ait mevcut doküman artifact'larını listele
    * GET /template-engine/cases/:caseId/documents
    */
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get('cases/:caseId/documents')
   async listDocumentArtifacts(
     @Param('caseId') caseId: string,
@@ -915,8 +944,20 @@ export class TemplateEngineController {
   async downloadArtifact(
     @Param('artifactId') artifactId: string,
     @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') userId: string,
     @Res() res: Response
   ): Promise<void> {
+    // F02 P3-D2: artefaktın bağlı olduğu dosya istemciden DEĞİL, artefakt satırından çözülür (aynı kiracı + dosya kapsamı);
+    // dosya okunmadan ÖNCE. Kapsam dışı / uyuşmaz / var olmayan belge AYNI 404 gövdesini alır (varlık sızmaz).
+    if (isCaseViewScopeEnabled()) {
+      if (!this.caseViewScope) {
+        throw new ForbiddenException({ code: 'CASE_VIEW_SCOPE_UNRESOLVED', message: 'Dosya görünüm kapsamı çözümlenemedi' });
+      }
+      if (!(await this.caseViewScope.isArtifactVisible(tenantId, userId, artifactId))) {
+        res.status(404).json({ message: 'Doküman bulunamadı' });
+        return;
+      }
+    }
     const result = await this.templateEngineService.downloadArtifact(artifactId, tenantId);
     
     if (!result) {

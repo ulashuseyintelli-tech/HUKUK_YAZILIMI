@@ -53,8 +53,8 @@ import { resolveInitialPolicy } from "../interest-engine/interest-strategy.confi
 import { mapDtoCaseTypeToInterestCaseType } from "./case-type-mapping";
 import { validateResponsibleSelection } from "./responsible-candidates.service"; // M2-A3a: create'te ortak Dosya Sorumlusu validator
 // F02 P3-D1: dosya liste + detay görünüm kapsamı (saf sözleşme) ve büro geneli izin çözümü (DENY > ALLOW > NONE).
-import { CASE_VIEW_ALL_KEY, caseViewWhereFor, isCaseViewScopeEnabled } from "./case-view-scope";
-import { WorkScopePermissionService } from "../work-scope-permission/work-scope-permission.service";
+import { isCaseViewScopeEnabled } from "./case-view-scope";
+import { CaseViewScopeService } from "./case-view-scope.service";
 import { ExpenseRequestService } from "../expense-request/expense-request.service";
 import { loadExpenseTargetStatus, EXPENSE_TARGET_MISSING, EXPENSE_TARGET_REQUIRED } from '../expense-request/expense-target';
 import type { ExpenseSendApprovalOutcome } from '../client-notification/expense-send-approval.service';
@@ -624,9 +624,10 @@ export class CaseService {
     // K3-L Faz 2b: dosya açılışında (commit sonrası) çek tazminatı K3 onay talebi. Yoksa talep açılmaz, yanıtta raporlanır.
     @Optional()
     private cekFormation?: CekAutoGenerateFormationService,
-    // F02 P3-D1: dosya liste + detay görünüm kapsamı (`office.cases.view_all` çözümü). Bayrak açıkken yoksa FAIL-CLOSED.
+    // F02 P3-D1 / P3-D2: dosya görünüm kapsamının TEK uygulama noktası (`office.cases.view_all` çözümü; belge uçlarıyla
+    // ortak). Bayrak açıkken yoksa FAIL-CLOSED.
     @Optional()
-    private workScope?: WorkScopePermissionService,
+    private caseViewScopeService?: CaseViewScopeService,
   ) {}
 
   /**
@@ -638,14 +639,14 @@ export class CaseService {
    *
    * @remarks Çağrıldığı yerler: findAll() → GET /cases; findOneVisible() → GET /cases/:id. İç `findOne` çağrıları
    * (güncelleme / sayaç yolları) kapsam DIŞIDIR — bu dilim yalnız liste ve detay okumasını daraltır.
+   * P3-D2: kural CaseViewScopeService.scopeWhere'e taşındı (belge uçlarıyla AYNI uygulama; davranış değişmedi).
    */
   private async caseViewScope(tenantId: string, actorUserId?: string): Promise<Prisma.CaseWhereInput | null> {
     if (!isCaseViewScopeEnabled()) return null;
-    if (!actorUserId || !this.workScope) {
+    if (!this.caseViewScopeService) {
       throw new ForbiddenException({ code: "CASE_VIEW_SCOPE_UNRESOLVED", message: "Dosya görünüm kapsamı çözümlenemedi" });
     }
-    const resolution = await this.workScope.resolve(this.prisma, tenantId, actorUserId, CASE_VIEW_ALL_KEY);
-    return caseViewWhereFor(resolution, tenantId, actorUserId);
+    return this.caseViewScopeService.scopeWhere(tenantId, actorUserId, this.prisma);
   }
 
   /**

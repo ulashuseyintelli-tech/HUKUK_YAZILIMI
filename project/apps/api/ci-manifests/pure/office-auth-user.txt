@@ -496,3 +496,6 @@ src/modules/case/__tests__/case-responsibility-at.spec.ts
 src/modules/case/__tests__/responsibility-history.controller.spec.ts
 # F02 P3-D1 (owner 07.11.2026): dosya liste + detay gorunum kapsami saf sozlesmesi (office.cases.view_all; OFFICE_CASE_VIEW_SCOPE_ENABLED).
 src/modules/case/__tests__/case-view-scope.spec.ts
+# F02 P3-D2 (owner 08.11.2026): belge okuma yollari dosya gorunum kapsami - servis/kapi sozlesmesi + fail-closed rota envanteri.
+src/modules/case/__tests__/case-view-scope.service.spec.ts
+src/modules/case/__tests__/case-view-scope-document-routes.static.spec.ts

@@ -4,6 +4,7 @@ import { PdfService } from './pdf.service';
 import { TemplateEngineService } from '../template-engine/template-engine.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { CaseViewScopeGuard } from '../case/case-view-scope.guard';
 
 // CLIENT-SEC-H1 (S2): authentication + tenant-scope enforcement. JwtAuthGuard (sınıf-seviyesi;
 // 3 endpoint) + authenticated principal'dan tenantId ile fail-closed case yükleme
@@ -17,6 +18,7 @@ export class PdfController {
   ) {}
 
   // Takip Talebi PDF indir
+  @UseGuards(CaseViewScopeGuard) // F02 P3-D2: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get('takip-talebi/:caseId')
   async downloadTakipTalebi(
     @Param('caseId') caseId: string,
