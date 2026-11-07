@@ -13,6 +13,7 @@ import { AddDebtorToCaseDto, UpdateCaseDebtorDto } from "./dto/case-debtor.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
+import { CaseViewScoped } from "../case/case-view-scope.guard";
 import { GuidedOpenObserveService } from "../permission-diagnostics/guided-open-observe.service";
 import { ActionCode } from "../policy-engine/types/action-code.enum";
 
@@ -27,6 +28,7 @@ export class CaseDebtorController {
 
   // ==================== CASE DEBTORS ====================
 
+  @CaseViewScoped() // F02 P3-D3: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get("cases/:caseId/debtors")
   getCaseDebtors(
     @CurrentUser("tenantId") tenantId: string,
@@ -35,6 +37,7 @@ export class CaseDebtorController {
     return this.caseDebtorService.getCaseDebtors(tenantId, caseId);
   }
 
+  @CaseViewScoped() // F02 P3-D3: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get("cases/:caseId/debtors/statistics")
   getCaseDebtorStatistics(
     @CurrentUser("tenantId") tenantId: string,

@@ -1,6 +1,7 @@
 import { ExecutionContext, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { CASE_VIEW_ALL_KEY, CASE_VIEW_SCOPE_FLAG, caseViewScopeWhere } from "../case-view-scope";
-import { CaseViewScopeGuard } from "../case-view-scope.guard";
+import { Reflector } from "@nestjs/core";
+import { CASE_VIEW_SCOPE_PARAM, CaseViewScopeGuard, CaseViewScoped } from "../case-view-scope.guard";
 import { CaseViewScopeService } from "../case-view-scope.service";
 
 /**
@@ -63,6 +64,22 @@ describe("F02 P3-D2 — CaseViewScopeService / CaseViewScopeGuard (saf)", () => 
       const { prisma, svc } = build();
       await expect(new CaseViewScopeGuard(svc).canActivate(ctx({ id: "u1", tenantId: "t1" }, { caseId: "c1" }))).resolves.toBe(true);
       expect(prisma.case.findFirst).toHaveBeenCalledWith({ where: { id: "c1", tenantId: "t1", AND: [caseViewScopeWhere("t1", "u1")] }, select: { id: true } });
+    });
+
+    it("P3-D3: kapı dosya kimliğini meta verideki parametre adından okur (CaseViewScoped('id')); varsayılan caseId", async () => {
+      class Probe {
+        @CaseViewScoped("id") byId() {}
+        @CaseViewScoped() byCaseId() {}
+      }
+      expect(Reflect.getMetadata(CASE_VIEW_SCOPE_PARAM, Probe.prototype.byId)).toBe("id");
+      const { prisma, svc } = build();
+      const guard = new CaseViewScopeGuard(svc, new Reflector());
+      const withHandler = (handler: unknown, params: Record<string, unknown>) =>
+        ({ getHandler: () => handler, switchToHttp: () => ({ getRequest: () => ({ user: { id: "u1", tenantId: "t1" }, params }) }) }) as unknown as ExecutionContext;
+      await guard.canActivate(withHandler(Probe.prototype.byId, { id: "c-id", caseId: "c-other" }));
+      expect(prisma.case.findFirst).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: expect.objectContaining({ id: "c-id", tenantId: "t1" }) }));
+      await guard.canActivate(withHandler(Probe.prototype.byCaseId, { id: "x", caseId: "c-case" }));
+      expect(prisma.case.findFirst).toHaveBeenNthCalledWith(2, expect.objectContaining({ where: expect.objectContaining({ id: "c-case", tenantId: "t1" }) }));
     });
 
     it("DENY / NONE → varsayılan kapsam AND katmanında; ALLOW → yalnız kiracı (D1 anahtarı)", async () => {

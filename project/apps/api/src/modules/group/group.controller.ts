@@ -3,6 +3,7 @@ import { GroupService } from './group.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { CaseViewScoped } from '../case/case-view-scope.guard';
 
 // F02-D-2 dilim 5 (owner ek talimatı 30.10.2026): VIEWER grup oluşturamaz / güncelleyemez / silemez (3 yazma). Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`; okuma uçları DEĞİŞMEZ.
 @Controller('groups')
@@ -71,6 +72,7 @@ export class CaseGroupController {
   constructor(private readonly service: GroupService) {}
 
   // Dosyanın gruplarını getir
+  @CaseViewScoped() // F02 P3-D3: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get()
   async getCaseGroups(@CurrentUser('tenantId') tenantId: string, @Param('caseId') caseId: string) {
     const data = await this.service.getCaseGroups(tenantId, caseId);

@@ -2,13 +2,15 @@ import { Module } from '@nestjs/common';
 import { CaseBalanceService } from './case-balance.service';
 import { CaseBalanceController } from './case-balance.controller';
 import { PrismaModule } from '@/prisma/prisma.module';
+// F02 P3-D3: dosya alt kaynağı okuma kapısı (CaseViewScopeGuard → CaseViewScopeService).
+import { CaseViewScopeModule } from '@/modules/case/case-view-scope.module';
 import { AccountingJournalWriterService } from '../accounting-journal';
 // C1-B05-B: typed EXPENSE_ACTUAL posting → QUEUED delivery-intent + commit-sonrası dispatch.
 // ClientNotificationModule bu modülü import ETMEZ (döngü yok; doğrulandı).
 import { ClientNotificationModule } from '@/modules/client-notification/client-notification.module';
 
 @Module({
-  imports: [PrismaModule, ClientNotificationModule],
+  imports: [PrismaModule, ClientNotificationModule, CaseViewScopeModule],
   controllers: [CaseBalanceController],
   providers: [CaseBalanceService, AccountingJournalWriterService],
   exports: [CaseBalanceService],

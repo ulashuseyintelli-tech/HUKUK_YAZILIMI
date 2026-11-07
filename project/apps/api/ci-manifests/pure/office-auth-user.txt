@@ -499,3 +499,5 @@ src/modules/case/__tests__/case-view-scope.spec.ts
 # F02 P3-D2 (owner 08.11.2026): belge okuma yollari dosya gorunum kapsami - servis/kapi sozlesmesi + fail-closed rota envanteri.
 src/modules/case/__tests__/case-view-scope.service.spec.ts
 src/modules/case/__tests__/case-view-scope-document-routes.static.spec.ts
+# F02 P3-D3 (owner 08.11.2026): dosya alt kaynagi okuma yollari - fail-closed rota envanteri (cases :id, balance, groups, case-debtor).
+src/modules/case/__tests__/case-view-scope-subresource-routes.static.spec.ts
