@@ -1,5 +1,8 @@
 import { Test, type TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
+import { ForbiddenException, ValidationPipe } from '@nestjs/common';
+import request = require('supertest');
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { PrismaClient } from '@prisma/client';
 import { describeDb } from '../../../../test/describe-db';
 import { EmailProviderService } from '../../notification/email-provider.service';
@@ -10,6 +13,7 @@ import { ClientFinancialDisclosureWriterService } from '../client-financial-disc
 import { ClientFinancialDisclosureModule } from '../client-financial-disclosure.module';
 import {
   CLIENT_FINANCIAL_DISCLOSURE_PUBLICATION_FLAG,
+  CLIENT_FINANCIAL_DISCLOSURE_WRITE_FLAG,
 } from '../client-financial-disclosure-activation';
 import { PrismaService } from '../../../prisma/prisma.service';
 
@@ -51,6 +55,7 @@ describeDb('CLIENT-FD-ACT-R01-I06 — uçtan uca kabul (gerçek Nest composition
   const bootInstance = async (
     name: string,
     reply: (n: number) => unknown,
+    httpIdentityFixture = false,
   ): Promise<{ app: TestingModule; client: PrismaClient; close: () => Promise<void> }> => {
     const client = new PrismaClient();
     const email = new EmailProviderService({
@@ -60,12 +65,24 @@ describeDb('CLIENT-FD-ACT-R01-I06 — uçtan uca kabul (gerçek Nest composition
       providerCalls.push({ instance: name, to: o.to });
       return reply(providerCalls.length) as never;
     });
-    const app = await Test.createTestingModule({ imports: [ClientFinancialDisclosureModule] })
+    const builder = Test.createTestingModule({ imports: [ClientFinancialDisclosureModule] })
       .overrideProvider(PrismaService)
       .useValue(client)
       .overrideProvider(EmailProviderService)
-      .useValue(email)
-      .compile();
+      .useValue(email);
+    // Only the added HTTP acceptance uses a synthetic identity adapter. It resolves
+    // actual disposable-DB users; JWT signing/verification is not claimed by this test.
+    if (httpIdentityFixture) builder.overrideGuard(JwtAuthGuard).useValue({
+      canActivate: async (context: { switchToHttp: () => { getRequest: () => any } }) => {
+        const req = context.switchToHttp().getRequest();
+        const id = req.headers['x-test-user'];
+        const user = typeof id === 'string' ? await client.user.findUnique({ where: { id } }) : null;
+        if (!user?.isActive) throw new ForbiddenException();
+        req.user = user;
+        return true;
+      },
+    });
+    const app = await builder.compile();
     return {
       app,
       client,
@@ -77,6 +94,7 @@ describeDb('CLIENT-FD-ACT-R01-I06 — uçtan uca kabul (gerçek Nest composition
   };
 
   const seedSource = async (key: string) => {
+    await prisma.clientContact.create({ data: { clientId: clA, type: 'EMAIL', value: `client-${key}@example.test` } });
     await sql(`INSERT INTO "Collection"("id","tenantId","caseId","amount","currency","type","date","status","idempotencyKey","updatedAt")
       VALUES ('e2e-col-${key}','${tA}','${caseA}',2500.75,'TRY','TAHSILAT'::"CollectionType",'2026-07-01T09:30:00Z','CONFIRMED'::"CollectionStatus",'e2e-idem-${key}',now())`);
     await sql(`INSERT INTO "CollectionDisposition"("id","tenantId","caseId","collectionId","beneficiaryScope","caseClientId","status","totalAmount","currency","postedAt","createdAt","updatedAt")
@@ -128,7 +146,7 @@ describeDb('CLIENT-FD-ACT-R01-I06 — uçtan uca kabul (gerçek Nest composition
   beforeAll(async () => {
     process.env[CLIENT_FINANCIAL_DISCLOSURE_PUBLICATION_FLAG] = 'true';
     await sql(`INSERT INTO "Tenant"("id","name","slug","createdAt","updatedAt") VALUES ('${tA}','T-${S}','e2e-t-${S}',now(),now())`);
-    await sql(`INSERT INTO "Client"("id","tenantId","type","updatedAt") VALUES ('${clA}','${tA}','PERSON'::"ClientType",now())`);
+    await sql(`INSERT INTO "Client"("id","tenantId","type","email","updatedAt") VALUES ('${clA}','${tA}','PERSON'::"ClientType",'hp-${S}@example.test',now())`);
     await sql(`INSERT INTO "Case"("id","tenantId","fileNumber","type","updatedAt") VALUES ('${caseA}','${tA}','2026/E2E-${S}','GENERAL_EXECUTION'::"CaseType",now())`);
     await sql(`INSERT INTO "CaseClient"("id","caseId","clientId","updatedAt") VALUES ('${ccA}','${caseA}','${clA}',now())`);
     await sql(`INSERT INTO "ClientPortalUser"("id","clientId","email","passwordHash","isActive","updatedAt") VALUES ('${puA}','${clA}','pu-${S}@example.test','x',true,now())`);
@@ -162,6 +180,55 @@ describeDb('CLIENT-FD-ACT-R01-I06 — uçtan uca kabul (gerçek Nest composition
 
   beforeEach(() => {
     providerCalls.length = 0;
+  });
+
+  it('5a real HTTP/DB recipient selection and rejection leave provider and persisted records unchanged', async () => {
+    const inst = await bootInstance('5a-http', OK, true);
+    const app = inst.app.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
+    const previousWrite = process.env[CLIENT_FINANCIAL_DISCLOSURE_WRITE_FLAG];
+    process.env[CLIENT_FINANCIAL_DISCLOSURE_WRITE_FLAG] = 'true';
+    try {
+      await app.init();
+      const key = `5a-http-${S}`;
+      const source = await seedSource(key);
+      const version = await inst.app.get(ClientFinancialDisclosureWriterService).createDisclosureVersion({ tenantId: tA, caseId: caseA, caseClientId: ccA, collectionDispositionId: source, sendIdempotencyKey: `5a-http-${S}` });
+      const approval = inst.app.get(ClientFinancialDisclosureApprovalService);
+      const pending = await approval.requestOfficeApproval({ tenantId: tA, disclosureVersionId: version.versionId, requesterUserId: uReq });
+      await approval.completeOfficeApproval({ tenantId: tA, disclosureVersionId: version.versionId, approvalRequestId: pending.approvalRequestId!, approverUserId: uP1 });
+      const path = `/client-financial-disclosures/office/clients/${clA}/versions/${version.versionId}/recipients`;
+      const command = `/client-financial-disclosures/${version.versionId}/request-content-approval`;
+      const state = async () => ({
+        version: await prisma.clientFinancialDisclosureVersion.findUniqueOrThrow({ where: { id: version.versionId } }),
+        audits: await prisma.auditLog.findMany({ where: { tenantId: tA }, orderBy: { id: 'asc' } }),
+        requests: await prisma.officeApprovalRequest.findMany({ where: { tenantId: tA }, orderBy: { id: 'asc' } }),
+      });
+      const before = await state();
+      const result = await request(app.getHttpServer()).get(path).set('x-test-user', uReq).expect(200);
+      expect(Object.keys(result.body).sort()).toEqual(['options', 'selectedRecipient', 'surface']);
+      expect(result.body.options).toContainEqual(expect.objectContaining({ email: `client-${key}@example.test` }));
+      expect(result.body.selectedRecipient).toBeNull();
+      await request(app.getHttpServer()).get(path.replace(`/clients/${clA}/`, '/clients/wrong-parent/')).set('x-test-user', uReq).expect(404);
+      await request(app.getHttpServer()).get(path).expect(403);
+      await request(app.getHttpServer()).post(command).set('x-test-user', uReq).send({ approvedRecipientEmail: 'outside@example.test' }).expect(409).expect(res => expect(res.body.code).toBe('DISCLOSURE_RECIPIENT_NOT_LINKED'));
+      await request(app.getHttpServer()).post(command).set('x-test-user', uReq).send({ approvedRecipientEmail: { set: `client-${key}@example.test` } }).expect(400);
+      await prisma.user.update({ where: { id: uReq }, data: { role: 'VIEWER' } });
+      try {
+        await request(app.getHttpServer()).post(command).set('x-test-user', uReq).send({ approvedRecipientEmail: `client-${key}@example.test` }).expect(403);
+      } finally { await prisma.user.update({ where: { id: uReq }, data: { role: 'USER' } }); }
+      expect(await state()).toEqual(before);
+      expect(providerCalls).toHaveLength(0);
+      await request(app.getHttpServer()).post(command).set('x-test-user', uReq).send({ approvedRecipientEmail: `client-${key}@example.test` }).expect(201);
+      const selected = await request(app.getHttpServer()).get(path).set('x-test-user', uP2).expect(200);
+      expect(selected.body.selectedRecipient).toEqual({ email: `client-${key}@example.test` });
+      expect((await read(version.versionId)).status).toBe('CONTENT_APPROVAL_PENDING');
+      expect(providerCalls).toHaveLength(0);
+    } finally {
+      if (previousWrite === undefined) delete process.env[CLIENT_FINANCIAL_DISCLOSURE_WRITE_FLAG];
+      else process.env[CLIENT_FINANCIAL_DISCLOSURE_WRITE_FLAG] = previousWrite;
+      await app.close();
+      await inst.close();
+    }
   });
 
   // ── HAPPY PATH — her asama DB'den dogrulanir ─────────────────────────────────

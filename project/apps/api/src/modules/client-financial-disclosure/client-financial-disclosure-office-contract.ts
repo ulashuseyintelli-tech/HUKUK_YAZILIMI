@@ -167,6 +167,13 @@ export interface OfficeDisclosureReadScope {
   readonly caseId?: string;
 }
 
+/** Purpose-bound selection for the existing content approval/send actions; not a generic read DTO. */
+export interface OfficeDisclosureRecipientSelection {
+  readonly surface: 'OFFICE_RECIPIENT_SELECTION';
+  readonly options: readonly { readonly email: string; readonly label: string }[];
+  readonly selectedRecipient: { readonly email: string } | null;
+}
+
 export const OFFICE_DISCLOSURE_FORBIDDEN_FIELDS = [
   'tenantId',
   'clientId',

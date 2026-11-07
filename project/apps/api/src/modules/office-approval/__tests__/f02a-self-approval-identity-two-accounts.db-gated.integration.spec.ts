@@ -350,13 +350,14 @@ describeWithDatabase('F02-A: öz-onay kimlik düzeyi — aynı kişinin iki hesa
 
   // ── F: FD (Client Financial Disclosure) ayrılık kontrolleri ────────────────────────────────────
   const sqlx = (q: string) => prisma.$executeRawUnsafe(q);
+  const fdRecipient = 'f02a-client@example.test';
 
   /** FD gerçek yazıcısıyla DRAFT sürüm: Client/Case/CaseClient + POSTED CollectionDisposition (FD spec emsali). */
   async function fdDraft(tenantId: string): Promise<string> {
     const k = randomUUID().slice(0, 8);
     const clId = `f02a-cl-${k}`; const caseId = `f02a-case-${k}`; const ccId = `f02a-cc-${k}`;
     const colId = `f02a-col-${k}`; const dispId = `f02a-disp-${k}`;
-    await sqlx(`INSERT INTO "Client"("id","tenantId","type","updatedAt") VALUES ('${clId}','${tenantId}','PERSON'::"ClientType",now())`);
+    await sqlx(`INSERT INTO "Client"("id","tenantId","type","email","updatedAt") VALUES ('${clId}','${tenantId}','PERSON'::"ClientType",'${fdRecipient}',now())`);
     await sqlx(`INSERT INTO "Case"("id","tenantId","fileNumber","type","updatedAt") VALUES ('${caseId}','${tenantId}','2026/F02A-${k}','GENERAL_EXECUTION'::"CaseType",now())`);
     await sqlx(`INSERT INTO "CaseClient"("id","caseId","clientId","updatedAt") VALUES ('${ccId}','${caseId}','${clId}',now())`);
     await sqlx(`INSERT INTO "Collection"("id","tenantId","caseId","amount","currency","type","date","status","idempotencyKey","updatedAt")
@@ -402,7 +403,7 @@ describeWithDatabase('F02-A: öz-onay kimlik düzeyi — aynı kişinin iki hesa
       tenantId: f.tenantId, disclosureVersionId: versionId, approvalRequestId: r.approvalRequestId as string, approverUserId: f.Y.id,
     });
     await fdSvc.requestContentApproval({
-      tenantId: f.tenantId, disclosureVersionId: versionId, requesterUserId: f.W.id, approvedRecipientEmail: `client-${randomUUID().slice(0, 6)}@example.test`,
+      tenantId: f.tenantId, disclosureVersionId: versionId, requesterUserId: f.W.id, approvedRecipientEmail: fdRecipient,
     });
     const code = await fdCode(fdSvc.completeContentApproval({
       tenantId: f.tenantId, disclosureVersionId: versionId, contentApproverUserId: f.Y2.id,
@@ -419,7 +420,7 @@ describeWithDatabase('F02-A: öz-onay kimlik düzeyi — aynı kişinin iki hesa
       tenantId: f.tenantId, disclosureVersionId: versionId, approvalRequestId: r.approvalRequestId as string, approverUserId: f.Y.id,
     });
     await fdSvc.requestContentApproval({
-      tenantId: f.tenantId, disclosureVersionId: versionId, requesterUserId: f.W.id, approvedRecipientEmail: `client-${randomUUID().slice(0, 6)}@example.test`,
+      tenantId: f.tenantId, disclosureVersionId: versionId, requesterUserId: f.W.id, approvedRecipientEmail: fdRecipient,
     });
     const code = await fdCode(fdSvc.completeContentApproval({
       tenantId: f.tenantId, disclosureVersionId: versionId, contentApproverUserId: f.Z.id,
@@ -436,7 +437,7 @@ describeWithDatabase('F02-A: öz-onay kimlik düzeyi — aynı kişinin iki hesa
       tenantId: f.tenantId, disclosureVersionId: versionId, approvalRequestId: r.approvalRequestId as string, approverUserId: f.Y.id,
     });
     await fdSvc.requestContentApproval({
-      tenantId: f.tenantId, disclosureVersionId: versionId, requesterUserId: f.W.id, approvedRecipientEmail: `client-${randomUUID().slice(0, 6)}@example.test`,
+      tenantId: f.tenantId, disclosureVersionId: versionId, requesterUserId: f.W.id, approvedRecipientEmail: fdRecipient,
     });
     const code = await fdCode(fdSvc.completeContentApproval({
       tenantId: f.tenantId, disclosureVersionId: versionId, contentApproverUserId: f.Y.id,
@@ -465,7 +466,7 @@ describeWithDatabase('F02-A: öz-onay kimlik düzeyi — aynı kişinin iki hesa
       tenantId: f.tenantId, disclosureVersionId: versionId, approvalRequestId: r.approvalRequestId as string, approverUserId: f.Z.id,
     });
     await fdSvc.requestContentApproval({
-      tenantId: f.tenantId, disclosureVersionId: versionId, requesterUserId: f.Y.id, approvedRecipientEmail: `client-${randomUUID().slice(0, 6)}@example.test`,
+      tenantId: f.tenantId, disclosureVersionId: versionId, requesterUserId: f.Y.id, approvedRecipientEmail: fdRecipient,
     });
     const code = await fdCode(fdSvc.completeContentApproval({
       tenantId: f.tenantId, disclosureVersionId: versionId, contentApproverUserId: f.Y2.id,
@@ -550,7 +551,7 @@ describeWithDatabase('F02-A: öz-onay kimlik düzeyi — aynı kişinin iki hesa
       const v2 = await fdDraft(f.tenantId);
       const r2 = await fdSvc.requestOfficeApproval({ tenantId: f.tenantId, disclosureVersionId: v2, requesterUserId: f.Y.id });
       await fdSvc.completeOfficeApproval({ tenantId: f.tenantId, disclosureVersionId: v2, approvalRequestId: r2.approvalRequestId as string, approverUserId: f.Z.id });
-      await fdSvc.requestContentApproval({ tenantId: f.tenantId, disclosureVersionId: v2, requesterUserId: f.Y.id, approvedRecipientEmail: `client-${randomUUID().slice(0, 6)}@example.test` });
+      await fdSvc.requestContentApproval({ tenantId: f.tenantId, disclosureVersionId: v2, requesterUserId: f.Y.id, approvedRecipientEmail: fdRecipient });
       expect(await fdCode(fdSvc.completeContentApproval({ tenantId: f.tenantId, disclosureVersionId: v2, contentApproverUserId: f.Y2.id }))).toBe('DISCLOSURE_APPROVAL_SELF_APPROVAL_FORBIDDEN');
     });
 

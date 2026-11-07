@@ -63,6 +63,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
     new ClientFinancialDisclosurePublicationService(client, d);
 
   const seedSource = async (key: string) => {
+    await prisma.clientContact.create({ data: { clientId: clA, type: 'EMAIL', value: `client-${key}@example.test` } });
     const colId = `i04-col-${key}`;
     const dispId = `i04-disp-${key}`;
     await sql(`INSERT INTO "Collection"("id","tenantId","caseId","amount","currency","type","date","status","idempotencyKey","updatedAt")
@@ -408,6 +409,8 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
       const { CLIENT_FINANCIAL_DISCLOSURE_NOTIFICATION_CONTENT_CONTRACT_VERSION } =
         await import('../client-financial-disclosure-approval.contract');
       const email = 'hijacked@example.test';
+      // A second linked address still cannot replace the sealed in-flight recipient.
+      await prisma.clientContact.create({ data: { clientId: clA, type: 'EMAIL', value: email } });
       const h = domainSeparatedHash(CLIENT_FINANCIAL_DISCLOSURE_NOTIFICATION_CONTENT_CONTRACT_VERSION, {
         contractVersion: CLIENT_FINANCIAL_DISCLOSURE_NOTIFICATION_CONTENT_CONTRACT_VERSION,
         tenantId: tA, disclosureVersionId: versionId, snapshotHash: v.snapshotHash,
@@ -642,6 +645,28 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
       await c1.$disconnect();
       await c2.$disconnect();
     }
+  });
+
+  it.each(['begin', 'dispatch', 'retry'])('5a %s öncesinde kaldırılan alıcı yazma/gönderim/başarı audit üretmez', async stage => {
+    const key = `5a-${stage}-${S}`;
+    const dispatcher = new FakeDispatcher('smtp', ok);
+    const service = svcWith(dispatcher);
+    const versionId = stage === 'begin' ? await contentApproved(key) : await sendPending(key);
+    if (stage === 'retry') {
+      const failed = svcWith(new FakeDispatcher('smtp', () => ({ success: false, provider: 'smtp', errorCode: '503' })));
+      expect((await failed.dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1 })).status).toBe('SEND_FAILED');
+    }
+    await prisma.clientContact.deleteMany({ where: { clientId: clA, value: `client-${key}@example.test` } });
+    const state = async () => ({
+      version: await prisma.clientFinancialDisclosureVersion.findUniqueOrThrow({ where: { id: versionId } }),
+      audits: await prisma.auditLog.findMany({ where: { tenantId: tA }, orderBy: { id: 'asc' } }),
+    });
+    const before = await state();
+    const input = { tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1 };
+    const operation = stage === 'begin' ? service.beginSend(input) : stage === 'retry' ? service.retrySend(input) : service.dispatchAndPublish(input);
+    await expect(operation).rejects.toMatchObject({ response: { code: 'DISCLOSURE_RECIPIENT_NOT_LINKED' } });
+    expect(await state()).toEqual(before);
+    expect(dispatcher.calls).toHaveLength(0);
   });
 
   it('[23] hata gövdeleri ham Prisma kodu / finansal payload / alıcı SIZDIRMAZ', async () => {

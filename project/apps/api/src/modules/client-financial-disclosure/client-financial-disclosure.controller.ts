@@ -77,8 +77,19 @@ export class ClientFinancialDisclosureController {
 
   /**
    * Cagrildigi yerler:
-   * - Office FD workspace detail -> GET /client-financial-disclosures/office/clients/:clientId/versions/:disclosureVersionId
+   * - Office FD approval panel -> GET /client-financial-disclosures/office/clients/:clientId/versions/:disclosureVersionId/recipients
    */
+  @Get('office/clients/:clientId/versions/:disclosureVersionId/recipients')
+  getOfficeRecipientSelection(
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') actorUserId: string,
+    @Param('clientId') clientId: string,
+    @Param('disclosureVersionId') disclosureVersionId: string,
+  ) {
+    return this.office.getRecipientSelection({ tenantId, actorUserId, clientId }, disclosureVersionId);
+  }
+
+  /** Office FD workspace detail -> curated version detail. */
   @Get('office/clients/:clientId/versions/:disclosureVersionId')
   getOfficeDetail(
     @CurrentUser('tenantId') tenantId: string,

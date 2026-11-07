@@ -30,6 +30,7 @@ function buildController() {
     supersedePublishedVersion: jest.fn().mockResolvedValue({ status: 'SUPERSEDED' }),
   };
   const office = {
+    getRecipientSelection: jest.fn().mockResolvedValue({ surface: 'OFFICE_RECIPIENT_SELECTION', options: [], selectedRecipient: null }),
     getList: jest.fn().mockResolvedValue({ surface: 'OFFICE_LIST', items: [] }),
     getPreparationSources: jest
       .fn()
@@ -109,6 +110,16 @@ describe('CODEX-CLIENT-X2-B05 — Financial Disclosure HTTP adapter', () => {
       'disclosure-1',
     );
     expect(office.getTimeline).toHaveBeenCalledWith(scope, VERSION_ID);
+  });
+
+  it('5a alıcı seçimi JWT aktörünü ve gerçek parent/sürüm bağlamını purpose-bound servise taşır', async () => {
+    const { controller, office } = buildController();
+    await controller.getOfficeRecipientSelection(TENANT_ID, ACTOR_ID, 'client-scope', VERSION_ID);
+    expect(office.getRecipientSelection).toHaveBeenCalledWith(
+      { tenantId: TENANT_ID, actorUserId: ACTOR_ID, clientId: 'client-scope' }, VERSION_ID,
+    );
+    expect(Reflect.getMetadata(PATH_METADATA, controller.getOfficeRecipientSelection))
+      .toBe('office/clients/:clientId/versions/:disclosureVersionId/recipients');
   });
 
   it('approval actionları JWT tenant/actor bağlamını mevcut servise aynen taşır', async () => {
