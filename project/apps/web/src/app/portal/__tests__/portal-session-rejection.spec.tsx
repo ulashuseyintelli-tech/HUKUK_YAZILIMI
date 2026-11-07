@@ -440,8 +440,10 @@ describe("Mesajlar — oturum reddi", () => {
 
   it("[M8] okundu çağrısı — GECİKMİŞ RET: yazma isteği yinelenmez; yeni oturum korunur", async () => {
     const pending = deferred();
-    primeFetch({ markRead: () => pending.promise });
+    primeFetch({ messages: () => ({ status: 200, body: [{ id: 'm-open-4d', content: 'OPEN-MESSAGE-4D', senderType: 'OFFICE', senderName: 'Synthetic', isRead: false, createdAt: '2026-01-01' }] }), markRead: () => pending.promise });
     render(<PortalMessagesPage />);
+    const details = (await screen.findByText('OPEN-MESSAGE-4D')).closest('details')!;
+    details.open = true; fireEvent(details, new Event("toggle"));
     await waitFor(() => expect(callsTo("/api/portal/messages/mark-read", "POST")).toBe(1));
     openSession("T2");
     await act(async () => { pending.resolve({ status: 401 }); await pending.promise; });
@@ -633,7 +635,7 @@ describe("Belgelerim — oturum reddi", () => {
 });
 
 describe("çerçeve + sayfa birlikte — eşzamanlı retler", () => {
-  it("[C1] bildirim sayacı + mesaj listesi + okundu çağrısı aynı anda 401 → girişe TAM BİR yönlendirme", async () => {
+  it("[C1] bildirim sayacı + mesaj listesi 401 → tek yönlendirme; 4d listeleme okundu yazmaz", async () => {
     primeFetch({
       unreadCount: () => ({ status: 401 }),
       messages: () => ({ status: 401 }),
@@ -646,7 +648,8 @@ describe("çerçeve + sayfa birlikte — eşzamanlı retler", () => {
     expect(pushMock).toHaveBeenCalledWith("/portal/login");
     expect(rejectedEvents).toHaveBeenCalledTimes(1);
     expect(localStorage.getItem("portal_token")).toBeNull();
-    expect(fetchMock.mock.calls.length).toBe(3);
+    expect(fetchMock.mock.calls.length).toBe(2);
+    expect(callsTo('/api/portal/messages/mark-read', 'POST')).toBe(0);
     expect(screen.queryByText(/Mesajlar yüklenemedi/)).toBeNull();
   });
 

@@ -35,10 +35,11 @@ dbDescribe('Portal document review/delete — single winner and normal-error com
   let target: string;
   let caseId: string;
   let holdActorId: string;
+  let portalAccountId: string | undefined;
   let app: INestApplication;
   const originalRoot = process.env.HUKUK_DATA_ROOT;
   const bytes = Buffer.from('synthetic portal document, no production data');
-  const service = (db = a) => new PortalService(db, {} as any, {} as any, {} as any, {} as any, {} as any);
+  const service = (db = a) => new PortalService(db, {} as any, new AuditService(db), {} as any, {} as any, {} as any);
   const holdService = (db = a) => new ClientLegalHoldService(db, new AuditService(db), {} as any);
   const placeHold = (db = a) => holdService(db).placeHold({ tenantId, clientId, scopeType: 'CLIENT', reason: 'Synthetic preservation', actor: { userId: holdActorId, role: 'ADMIN', tenantId } as any });
   const rawHold = (data: any = {}) => a.clientLegalHold.create({ data: { tenantId, clientId, scopeType: 'CLIENT', status: 'ACTIVE', reason: 'Synthetic preservation', placedByUserId: holdActorId, placedAt: new Date(), ...data } });
@@ -49,7 +50,10 @@ dbDescribe('Portal document review/delete — single winner and normal-error com
     // Identity fixtures replace crypto/login transports only. Existing controller route guards remain declared.
     const identity = { canActivate(context: any) {
       const req = context.switchToHttp().getRequest(); const principal = req.headers['x-test-principal'];
-      if (principal === 'portal' || principal === 'foreign') req.portalUser = { clientId, tenantId: principal === 'portal' ? tenantId : 'foreign-tenant' };
+      if (principal === 'portal' || principal === 'foreign') req.portalUser = { id: portalAccountId, clientId, tenantId: principal === 'portal' ? tenantId : 'foreign-tenant' };
+      else if (principal === 'staff-read' || principal === 'viewer-read') req.user = {
+        tenantId, id: req.headers['x-test-reader-id'] ?? holdActorId, role: principal === 'viewer-read' ? 'VIEWER' : 'ADMIN',
+      };
       else if (principal === 'staff' || principal === 'viewer' || principal === 'foreign-staff') req.user = {
         tenantId: principal === 'foreign-staff' ? 'foreign-tenant' : tenantId,
         id: 'synthetic-reviewer', role: principal === 'viewer' ? 'VIEWER' : 'ADMIN',
@@ -60,6 +64,10 @@ dbDescribe('Portal document review/delete — single winner and normal-error com
       deleteDocument: (...args: Parameters<PortalService['deleteDocument']>) => service().deleteDocument(...args),
       reviewDocument: (...args: Parameters<PortalService['reviewDocument']>) => service().reviewDocument(...args),
       getNotifications: (...args: Parameters<PortalService['getNotifications']>) => service().getNotifications(...args),
+      getMessages: (...args: Parameters<PortalService['getMessages']>) => service().getMessages(...args),
+      getClientMessages: (...args: Parameters<PortalService['getClientMessages']>) => service().getClientMessages(...args),
+      markMessagesAsRead: (...args: Parameters<PortalService['markMessagesAsRead']>) => service().markMessagesAsRead(...args),
+      markClientMessageAsRead: (...args: Parameters<PortalService['markClientMessageAsRead']>) => service().markClientMessageAsRead(...args),
     };
     const module = await Test.createTestingModule({ controllers: [PortalController], providers: [
       { provide: PortalService, useValue: commands }, { provide: ClientFinancialDisclosurePortalService, useValue: {} },
@@ -69,6 +77,7 @@ dbDescribe('Portal document review/delete — single winner and normal-error com
     app = module.createNestApplication(); await app.init(); await app.listen(0, '127.0.0.1');
   });
   beforeEach(async () => {
+    portalAccountId = undefined;
     tenantId = `portal-doc-test-${randomUUID()}`; clientId = `client-${randomUUID()}`;
     await a.tenant.create({ data: { id: tenantId, slug: tenantId, name: 'Synthetic portal document' } });
     await a.client.create({ data: { id: clientId, tenantId, type: 'INDIVIDUAL', firstName: 'Synthetic', lastName: 'Document' } });
@@ -85,6 +94,7 @@ dbDescribe('Portal document review/delete — single winner and normal-error com
   });
   afterEach(async () => {
     jest.restoreAllMocks();
+    await a.portalMessage.deleteMany({ where: { tenantId } });
     await a.portalNotification.deleteMany({ where: { clientId } }); await a.portalDocument.deleteMany({ where: { tenantId } });
     await a.auditLog.deleteMany({ where: { tenantId } }); await a.clientLegalHold.deleteMany({ where: { tenantId } });
     await a.caseLawyer.deleteMany({ where: { caseId } }); await a.caseClient.deleteMany({ where: { caseId } });
@@ -105,7 +115,7 @@ dbDescribe('Portal document review/delete — single winner and normal-error com
       files: fs.readdirSync(bucket).sort().map(name => ({ name, bytes: fs.lstatSync(join(bucket, name)).isFile() ? fs.readFileSync(join(bucket, name)).toString('hex') : 'directory' })),
     };
   }
-  function failAfterWrite(model: 'portalDocument' | 'portalNotification', action: 'delete' | 'create') {
+  function failAfterWrite(model: 'portalDocument' | 'portalNotification' | 'auditLog', action: 'delete' | 'create') {
     return new Proxy(a, { get(target, key) {
       if (key === '$transaction') return (fn: any, options: any) => target.$transaction(tx => fn(new Proxy(tx, { get(inner, name) {
         const delegate = (inner as any)[name];
@@ -451,5 +461,110 @@ dbDescribe('Portal document review/delete — single winner and normal-error com
       throw new Error('migration-fixture-rollback');
     })).rejects.toThrow('migration-fixture-rollback');
     expect(await a.$queryRaw<Array<{ count: bigint }>>`SELECT count(*) FROM pg_namespace WHERE nspname = ${schema}`).toEqual([{ count: 0n }]);
+  });
+
+  describe('4d — explicit recipient open', () => {
+    let incoming: string;
+    let unopened: string;
+    let outgoing: string;
+    beforeEach(async () => {
+      portalAccountId = (await a.clientPortalUser.create({ data: { clientId, email: `${randomUUID()}@example.test`, passwordHash: 'synthetic-no-login' } })).id;
+      const create = (senderType: string) => a.portalMessage.create({ data: { clientId, tenantId, caseId, senderType, senderId: senderType === 'CLIENT' ? clientId : holdActorId, senderName: 'Synthetic', content: 'PRIVATE-MESSAGE-4D' } });
+      incoming = (await create('OFFICE')).id;
+      unopened = (await create('OFFICE')).id;
+      outgoing = (await create('CLIENT')).id;
+    });
+    const state = async () => ({
+      messages: await a.portalMessage.findMany({ where: { tenantId }, orderBy: { id: 'asc' } }),
+      audits: await a.auditLog.findMany({ where: { tenantId }, orderBy: { id: 'asc' } }),
+    });
+    const portal = (id: unknown = incoming) => http(app.getHttpServer()).post('/portal/messages/mark-read').set('x-test-principal', 'portal').send({ messageId: id });
+    const staff = (id = outgoing, parent = clientId, reader = holdActorId, principal = 'staff-read') => http(app.getHttpServer()).post(`/portal/admin/messages/${parent}/${id}/read`).set('x-test-principal', principal).set('x-test-reader-id', reader).send({});
+
+    it('4d portal and staff GET lists leave every message and audit unchanged', async () => {
+      const before = await state();
+      await http(app.getHttpServer()).get('/portal/messages').set('x-test-principal', 'portal').expect(200);
+      await http(app.getHttpServer()).get(`/portal/admin/messages/${clientId}`).set('x-test-principal', 'staff-read').expect(200);
+      expect(await state()).toEqual(before);
+    });
+    it.each([undefined, null, '', ' ', 42, ['id'], { id: 'id' }])('4d invalid/empty legacy bulk input %p changes nothing', async id => {
+      const before = await state();
+      await http(app.getHttpServer()).post('/portal/messages/mark-read').set('x-test-principal', 'portal').send({ messageId: id }).expect(400);
+      expect(await state()).toEqual(before);
+    });
+    it('4d portal open acknowledges only the identified incoming message and records the account without content', async () => {
+      await portal().expect(201);
+      const current = await state();
+      expect(current.messages.filter(m => m.isRead).map(m => m.id)).toEqual([incoming]);
+      expect(current.audits).toHaveLength(1);
+      expect(current.audits[0]).toMatchObject({ action: 'READ', entityType: 'PortalMessage', entityId: incoming, actorType: 'EXTERNAL', metadata: { readerType: 'CLIENT', portalUserId: portalAccountId } });
+      expect(JSON.stringify(current.audits)).not.toContain('PRIVATE-MESSAGE-4D');
+      expect(current.messages.find(m => m.id === unopened)?.readAt).toBeNull();
+    });
+    it('4d replay preserves the first timestamp and creates no second audit', async () => {
+      await portal().expect(201); const first = await state(); await portal().expect(201); expect(await state()).toEqual(first);
+    });
+    it('4d existing historical first-read timestamps remain unchanged', async () => {
+      await a.portalMessage.update({ where: { id: incoming }, data: { isRead: true, readAt: new Date('2000-01-01') } });
+      const before = await state(); await portal().expect(201); expect(await state()).toEqual(before);
+    });
+    it('4d portal cannot mark its own sent message', async () => {
+      const before = await state(); await portal(outgoing).expect(404); expect(await state()).toEqual(before);
+    });
+    it('4d wrong client and tenant cannot acknowledge a message', async () => {
+      const other = await a.client.create({ data: { tenantId, type: 'INDIVIDUAL', firstName: 'Other', lastName: 'Synthetic' } });
+      const foreign = await a.portalMessage.create({ data: { clientId: other.id, tenantId, senderType: 'OFFICE', senderId: holdActorId, senderName: 'Synthetic', content: 'OTHER' } });
+      const before = await state(); await portal(foreign.id).expect(404);
+      await http(app.getHttpServer()).post('/portal/messages/mark-read').set('x-test-principal', 'foreign').send({ messageId: incoming }).expect(404);
+      expect(await state()).toEqual(before);
+    });
+    it.each(['disabled', 'missing'] as const)('4d %s portal account is denied before any write', async kind => {
+      if (kind === 'disabled') await a.clientPortalUser.update({ where: { id: portalAccountId }, data: { isActive: false } });
+      else portalAccountId = 'missing-portal-account';
+      const before = await state(); await portal().expect(403); expect(await state()).toEqual(before);
+    });
+    it('4d staff open records the actual authorized recipient actor', async () => {
+      await staff().expect(201); const current = await state();
+      expect(current.messages.filter(m => m.isRead).map(m => m.id)).toEqual([outgoing]);
+      expect(current.audits).toHaveLength(1); expect(current.audits[0]).toMatchObject({ userId: holdActorId, actorType: 'USER', entityId: outgoing, action: 'READ' });
+    });
+    it('4d office cannot mark its own sent message or a wrong parent', async () => {
+      const before = await state(); await staff(incoming).expect(404); await staff(outgoing, 'wrong-parent').expect(404); expect(await state()).toEqual(before);
+    });
+    it('4d VIEWER and absent actor are denied without writes', async () => {
+      const before = await state(); await staff(outgoing, clientId, holdActorId, 'viewer-read').expect(403); await staff(outgoing, clientId, 'missing-user').expect(403); expect(await state()).toEqual(before);
+    });
+    it('4d unrelated ADMIN has no shortcut', async () => {
+      const actor = await a.user.create({ data: { tenantId, role: 'ADMIN', name: 'Unrelated', surname: 'Synthetic', email: `${randomUUID()}@example.test` } });
+      const before = await state(); await staff(outgoing, clientId, actor.id).expect(404); expect(await state()).toEqual(before);
+    });
+    it.each(['profile', 'account'] as const)('4d inactive staff %s cannot acknowledge', async kind => {
+      if (kind === 'profile') await a.lawyer.updateMany({ where: { userId: holdActorId }, data: { isActive: false } });
+      else await a.user.update({ where: { id: holdActorId }, data: { isActive: false } });
+      const before = await state(); await staff().expect(kind === 'profile' ? 404 : 403); expect(await state()).toEqual(before);
+    });
+    it('4d message-specific case scope cannot fall back to another related case', async () => {
+      await a.portalMessage.update({ where: { id: outgoing }, data: { caseId: 'unrelated-case' } });
+      const before = await state(); await staff().expect(404); expect(await state()).toEqual(before);
+    });
+    it('4d an audit insert failure rolls back the read flag and timestamp', async () => {
+      const before = await state();
+      await expect(service(failAfterWrite('auditLog', 'create')).markMessagesAsRead(clientId, tenantId, incoming, portalAccountId)).rejects.toThrow('injected-db-failure');
+      expect(await state()).toEqual(before);
+    });
+    it('4d concurrent opens commit exactly one first-read audit', async () => {
+      await Promise.all([service(a).markMessagesAsRead(clientId, tenantId, incoming, portalAccountId), service(b).markMessagesAsRead(clientId, tenantId, incoming, portalAccountId)]);
+      const current = await state(); expect(current.audits).toHaveLength(1); expect(current.messages.filter(m => m.isRead).map(m => m.id)).toEqual([incoming]);
+    });
+    it('4d anonymous callers cannot record an open', async () => {
+      const before = await state(); await http(app.getHttpServer()).post('/portal/messages/mark-read').send({ messageId: incoming }).expect(401); expect(await state()).toEqual(before);
+    });
+    it('4d missing or ORM-shaped service context cannot widen the recipient filter', async () => {
+      const before = await state();
+      for (const [client, tenant] of [[undefined, tenantId], [{ not: 'other' }, tenantId], [clientId, { not: 'other' }]]) {
+        await expect(service().markMessagesAsRead(client as any, tenant as any, incoming, portalAccountId)).rejects.toMatchObject({ status: 403 });
+      }
+      expect(await state()).toEqual(before);
+    });
   });
 });

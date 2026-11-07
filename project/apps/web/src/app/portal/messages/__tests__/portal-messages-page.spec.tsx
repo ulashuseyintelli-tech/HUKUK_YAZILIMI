@@ -106,7 +106,7 @@ describe("Portal messages page — CLIENT-P2-U03-I03 explicit projection", () =>
     expect(clientOuter?.className).toContain("justify-end");
     expect(clientBubble?.className).toContain("bg-blue-600");
 
-    const officeBubble = screen.getByText(OFFICE_MSG.content).parentElement;
+    const officeBubble = screen.getByText(OFFICE_MSG.content).closest('.rounded-lg');
     const officeOuter = officeBubble?.parentElement;
     expect(officeOuter?.className).toContain("justify-start");
     expect(officeBubble?.className).toContain("bg-gray-100");
@@ -170,7 +170,7 @@ describe("Portal messages page — CLIENT-P2-U03-I03 explicit projection", () =>
     const textarea = screen.getByPlaceholderText("Mesajınızı yazın...") as HTMLTextAreaElement;
 
     fireEvent.change(textarea, { target: { value: "Shift enter denemesi" } });
-    fireEvent.keyPress(textarea, { key: "Enter", code: "Enter", shiftKey: true });
+    fireEvent.keyPress(textarea, { key: "Enter", code: "Enter", charCode: 13, keyCode: 13, shiftKey: true });
     await new Promise((r) => setTimeout(r, 10));
     expect(
       fetchMock.mock.calls.some(
@@ -178,7 +178,7 @@ describe("Portal messages page — CLIENT-P2-U03-I03 explicit projection", () =>
       )
     ).toBe(false);
 
-    fireEvent.keyPress(textarea, { key: "Enter", code: "Enter", shiftKey: false });
+    fireEvent.keyPress(textarea, { key: "Enter", code: "Enter", charCode: 13, keyCode: 13, shiftKey: false });
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         expect.stringContaining("/api/portal/messages"),
@@ -187,14 +187,18 @@ describe("Portal messages page — CLIENT-P2-U03-I03 explicit projection", () =>
     );
   });
 
-  it("[12] mark-as-read isteği mount'ta çağrılır", async () => {
-    const fetchMock = buildFetchRouter({ list: [CLIENT_MSG] });
+  it("[12] 4d listing does not acknowledge; only the opened incoming ID is sent", async () => {
+    const fetchMock = buildFetchRouter({ list: [{ ...OFFICE_MSG, isRead: false }, CLIENT_MSG] });
     vi.stubGlobal("fetch", fetchMock);
     render(<PortalMessagesPage />);
+    await screen.findByText(OFFICE_MSG.content);
+    expect(fetchMock.mock.calls.filter(([url]: any) => url.includes('/mark-read'))).toHaveLength(0);
+    const details = screen.getByText(OFFICE_MSG.content).closest('details')!;
+    expect(details.open).toBe(false); details.open = true; fireEvent(details, new Event("toggle"));
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         expect.stringContaining("/api/portal/messages/mark-read"),
-        expect.objectContaining({ method: "POST" })
+        expect.objectContaining({ method: "POST", body: JSON.stringify({ messageId: OFFICE_MSG.id }) })
       )
     );
   });

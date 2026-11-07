@@ -14,6 +14,7 @@ import { PORTAL_PASSWORD_MIN_LENGTH } from "./dto/portal-password.dto";
 import { buildClientFieldDiff, PORTAL_ACCESS_FIELDS } from "../client/client-audit.util";
 import { disableClientPortalAccessInTx, lockClientPortalState } from "../client/client-portal-access-state";
 import { hasActiveClientLegalHold, lockClientLegalHoldState } from "../client/client-legal-hold-state";
+import { assertClientObjectScope } from "../client/client-object-scope";
 import type { AuditActor } from "../client/client.service";
 import { generateRawInviteToken, hashInviteToken } from "../auth/invite/user-invite-token.util";
 import * as bcrypt from "bcrypt";
@@ -1370,12 +1371,53 @@ export class PortalService {
   /**
    * Mesajları okundu işaretle (müvekkil için)
    */
-  async markMessagesAsRead(clientId: string, tenantId: string) {
-    await this.prisma.portalMessage.updateMany({
-      where: { clientId, tenantId, senderType: "OFFICE", isRead: false },
-      data: { isRead: true, readAt: new Date() },
+  async markMessagesAsRead(clientId: string, tenantId: string, messageId?: unknown, portalUserId?: string) {
+    return this.markReceivedMessageAsRead(clientId, tenantId, messageId, { type: "CLIENT", id: portalUserId });
+  }
+
+  async markClientMessageAsRead(clientId: string, tenantId: string, messageId: unknown, userId: string) {
+    return this.markReceivedMessageAsRead(clientId, tenantId, messageId, { type: "OFFICE", id: userId });
+  }
+
+  private async markReceivedMessageAsRead(
+    clientId: string, tenantId: string, messageId: unknown,
+    reader: { type: "CLIENT" | "OFFICE"; id?: string },
+  ) {
+    // An old empty bulk request cannot acknowledge messages that were never opened.
+    if (typeof messageId !== "string" || !messageId.trim() || messageId.length > 200) {
+      throw new BadRequestException("Açılan mesaj belirtilmelidir");
+    }
+    if (typeof clientId !== "string" || !clientId || typeof tenantId !== "string" || !tenantId || typeof reader.id !== "string" || !reader.id) {
+      throw new ForbiddenException("Mesaj erişimi reddedildi");
+    }
+    const readerId = reader.id;
+    const senderType = reader.type === "CLIENT" ? "OFFICE" : "CLIENT";
+    return this.prisma.$transaction(async tx => {
+      const where = { id: messageId, clientId, tenantId, senderType };
+      const message = await tx.portalMessage.findFirst({ where, select: { id: true, caseId: true } });
+      if (!message) throw new NotFoundException("Mesaj bulunamadı");
+      if (reader.type === "CLIENT") {
+        const account = await tx.clientPortalUser.findFirst({
+          where: { id: readerId, clientId, isActive: true, client: { tenantId } }, select: { id: true },
+        });
+        if (!account) throw new ForbiddenException("Mesaj erişimi reddedildi");
+      } else {
+        await assertClientObjectScope(tx, tenantId, readerId, clientId, message.caseId ?? undefined);
+      }
+      // Compare-and-set preserves the first timestamp and emits one actor trace even on concurrent opens.
+      const changed = await tx.portalMessage.updateMany({
+        where: { ...where, isRead: false }, data: { isRead: true, readAt: new Date() },
+      });
+      if (changed.count) await this.audit.logInTransaction(tx, {
+        tenantId, entityType: "PortalMessage", entityId: message.id, action: "READ",
+        userId: reader.type === "OFFICE" ? readerId : undefined,
+        actorType: reader.type === "OFFICE" ? "USER" : "EXTERNAL", decisionResult: "SUCCESS",
+        description: "Alıcı mesajı açtı",
+        metadata: { readerType: reader.type, ...(reader.type === "CLIENT" ? { portalUserId: readerId } : {}) },
+        oldValues: { isRead: false }, newValues: { isRead: true },
+      });
+      return { success: true };
     });
-    return { success: true };
   }
 
   /**
@@ -1429,12 +1471,6 @@ export class PortalService {
       where: { clientId, tenantId },
       orderBy: { createdAt: "asc" },
       take: limit,
-    });
-
-    // Müvekkil mesajlarını okundu işaretle
-    await this.prisma.portalMessage.updateMany({
-      where: { clientId, tenantId, senderType: "CLIENT", isRead: false },
-      data: { isRead: true, readAt: new Date() },
     });
 
     return { client, messages };

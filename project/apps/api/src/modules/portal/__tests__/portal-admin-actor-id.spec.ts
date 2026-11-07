@@ -24,6 +24,8 @@ function setup() {
     disablePortalUser: jest.fn().mockResolvedValue({ success: true }),
     reviewDocument: jest.fn().mockResolvedValue({ success: true }),
     sendMessageFromOffice: jest.fn().mockResolvedValue({ success: true }),
+    markMessagesAsRead: jest.fn().mockResolvedValue({ success: true }),
+    markClientMessageAsRead: jest.fn().mockResolvedValue({ success: true }),
   };
   // CLIENT-P2-U03-TRACK-B-I06: controller artik disclosure projeksiyon adaptorunu de alir.
   // Bu suite yalniz admin uclarini test eder; adaptor cagrilmaz, bos stub yeterlidir.
@@ -37,6 +39,16 @@ function setup() {
 }
 
 describe('CBND-7 (H4) PortalController — admin uçları req.user.id kullanır (sub DEĞİL)', () => {
+  it('4d open forwards the exact message and verified portal account', async () => {
+    const { controller, portalService } = setup();
+    await controller.markMessagesAsRead({ portalUser: { id: 'portal-account', clientId: 'c1', tenantId: 'tenant-1' } }, { messageId: 'm1' });
+    expect(portalService.markMessagesAsRead).toHaveBeenCalledWith('c1', 'tenant-1', 'm1', 'portal-account');
+  });
+  it('4d office open forwards resolved user.id and route parent/message', async () => {
+    const { controller, portalService } = setup();
+    await controller.markClientMessageAsRead('c1', 'm1', { user: REQ_USER });
+    expect(portalService.markClientMessageAsRead).toHaveBeenCalledWith('c1', 'tenant-1', 'm1', 'user-real-1');
+  });
   it('createPortalUser: actor.userId = req.user.id, undefined DEĞİL', async () => {
     const { controller, portalService } = setup();
     await controller.createPortalUser({ user: REQ_USER } as any, { clientId: 'c1', email: 'e@x.com', password: 'pw' });

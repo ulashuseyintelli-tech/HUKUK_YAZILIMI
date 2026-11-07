@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { api } from "@/lib/api";
 import { toActionErrorMessage } from "@/lib/action-error";
 import { Globe, FileText, MessageCircle, CheckCircle, XCircle, Clock, Send, User } from "lucide-react";
@@ -29,6 +29,7 @@ interface Message {
   senderType: string;
   senderName: string;
   createdAt: string;
+  isRead?: boolean;
 }
 
 const DOC_TYPES: Record<string, string> = {
@@ -53,6 +54,10 @@ export default function PortalManagementPage() {
   const [clientsError, setClientsError] = useState<string | null>(null);
   const [messagesError, setMessagesError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
+  const messageContextRef = useRef(0);
+  const readInFlightRef = useRef(new Set<string>());
+  const [readErrors, setReadErrors] = useState<Record<string, string>>({});
+  useEffect(() => () => { messageContextRef.current += 1; }, []);
   const [rejectionDocument, setRejectionDocument] = useState<PendingDocument | null>(null);
   const [clientRejectionReason, setClientRejectionReason] = useState("");
   const [internalReviewNote, setInternalReviewNote] = useState("");
@@ -148,24 +153,44 @@ export default function PortalManagementPage() {
     }
   };
 
-  /**
-   * WSMR-A4m · Mesaj okuma başarısız olduğunda okunmamış rozeti YİNE DE
-   * sıfırlanıyordu (kod BAŞARI beklemeden sıfırlıyordu) — admin gerçekte
-   * hâlâ okunmamış duran bir mesajı görmüş sanabilirdi. Rozet artık YALNIZ
-   * mesajlar DOĞRULANMIŞ biçimde okunduktan sonra sıfırlanır.
-   */
+  /** Listing a conversation is read-only; only an explicit message open acknowledges it. */
   const selectClient = async (client: ClientWithMessages) => {
+    const context = ++messageContextRef.current;
     setSelectedClient(client);
+    setMessages([]);
+    setReadErrors({});
+    setSending(false);
+    setSendError(null);
     setMessagesError(null);
     try {
       const res = await api.get<{ messages: any[] }>(`/portal/admin/messages/${client.id}`);
       const rows = res.data?.messages;
       if (!Array.isArray(rows)) throw new Error("MALFORMED_MESSAGE_LIST");
+      if (context !== messageContextRef.current) return;
       setMessages(rows);
-      setClients(prev => prev.map(c => c.id === client.id ? { ...c, unreadCount: 0 } : c));
     } catch (e) {
+      if (context !== messageContextRef.current) return;
       setMessages([]);
       setMessagesError(toActionErrorMessage(e, "Mesajlar yüklenemedi."));
+    }
+  };
+
+  const openMessage = async (message: Message) => {
+    if (!selectedClient || message.senderType !== "CLIENT" || message.isRead || readInFlightRef.current.has(message.id)) return;
+    const context = messageContextRef.current;
+    const clientId = selectedClient.id;
+    readInFlightRef.current.add(message.id);
+    try {
+      const result = await api.post<{ success: boolean }>(`/portal/admin/messages/${clientId}/${message.id}/read`, {});
+      if (result.data?.success !== true) throw new Error("MALFORMED_READ_RESULT");
+      if (context !== messageContextRef.current) return;
+      setMessages(prev => prev.map(row => row.id === message.id ? { ...row, isRead: true } : row));
+      setReadErrors(prev => { const next = { ...prev }; delete next[message.id]; return next; });
+      void fetchClients();
+    } catch (error) {
+      if (context === messageContextRef.current) setReadErrors(prev => ({ ...prev, [message.id]: toActionErrorMessage(error, "Okunma kaydı kaydedilemedi.") }));
+    } finally {
+      readInFlightRef.current.delete(message.id);
     }
   };
 
@@ -176,19 +201,24 @@ export default function PortalManagementPage() {
    */
   const sendMessage = async () => {
     if (!newMessage.trim() || !selectedClient) return;
+    const context = messageContextRef.current;
+    const clientId = selectedClient.id;
     setSending(true);
     setSendError(null);
     try {
-      await api.post(`/portal/admin/messages/${selectedClient.id}`, { content: newMessage });
+      await api.post(`/portal/admin/messages/${clientId}`, { content: newMessage });
+      if (context !== messageContextRef.current) return;
       setNewMessage("");
       // Mesajları yenile
-      const res = await api.get<{ messages: any[] }>(`/portal/admin/messages/${selectedClient.id}`);
+      const res = await api.get<{ messages: any[] }>(`/portal/admin/messages/${clientId}`);
+      if (context !== messageContextRef.current) return;
       const rows = res.data?.messages;
       if (Array.isArray(rows)) setMessages(rows);
     } catch (e) {
+      if (context !== messageContextRef.current) return;
       setSendError(toActionErrorMessage(e, "Mesaj gönderilemedi."));
     } finally {
-      setSending(false);
+      if (context === messageContextRef.current) setSending(false);
     }
   };
 
@@ -366,7 +396,13 @@ export default function PortalManagementPage() {
                   {messages.map(msg => (
                     <div key={msg.id} className={`flex ${msg.senderType === "OFFICE" ? "justify-end" : "justify-start"}`}>
                       <div className={`max-w-[70%] rounded-lg p-3 ${msg.senderType === "OFFICE" ? "bg-blue-600 text-white" : "bg-gray-100"}`}>
-                        <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                        {msg.senderType === "CLIENT" ? <details onToggle={event => { if (event.currentTarget.open) void openMessage(msg); }}>
+                          <summary className="cursor-pointer text-sm">Mesajı aç</summary>
+                          <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                          {readErrors[msg.id] && <div role="alert" className="text-xs text-red-700">
+                            {readErrors[msg.id]} <button type="button" className="underline" onClick={() => void openMessage(msg)}>Okunmayı yeniden kaydet</button>
+                          </div>}
+                        </details> : <p className="text-sm whitespace-pre-wrap">{msg.content}</p>}
                         <p className={`text-xs mt-1 ${msg.senderType === "OFFICE" ? "text-blue-200" : "text-gray-400"}`}>
                           {new Date(msg.createdAt).toLocaleString("tr-TR")}
                         </p>
