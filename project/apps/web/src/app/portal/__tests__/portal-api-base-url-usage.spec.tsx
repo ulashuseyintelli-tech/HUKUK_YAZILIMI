@@ -109,13 +109,30 @@ describe("PortalLayout notifications — configured base URL (CLIENT-CONFIG-P01)
 });
 
 describe("PortalMessagesPage — configured base URL (CLIENT-CONFIG-P01)", () => {
-  it("[4] listeleme + mark-read configured base URL kullanır", async () => {
-    fetchMock.mockResolvedValue({ ok: true, json: async () => [] });
+  it("[4] listeleme ve alıcının açtığı mesajın mark-read isteği configured base URL kullanır", async () => {
+    fetchMock.mockImplementation(async (url: string) => ({
+      ok: true,
+      json: async () => String(url).endsWith("/mark-read") ? { success: true } : [{
+        id: "m-configured", content: "Bürodan gelen mesaj", senderType: "OFFICE",
+        senderName: "Büro", isRead: false, createdAt: "2026-01-01T00:00:00.000Z",
+      }],
+    }));
     render(<PortalMessagesPage />);
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const details = (await screen.findByText("Bürodan gelen mesaj")).closest("details")!;
     expect(calledUrls()).toContain(`${CONFIGURED_BASE}/api/portal/messages`);
-    expect(calledUrls()).toContain(`${CONFIGURED_BASE}/api/portal/messages/mark-read`);
+    expect(details.open).toBe(false);
+    expect(fetchMock.mock.calls.some((c) => c[1]?.method === "POST")).toBe(false);
+    details.open = true;
+    fireEvent(details, new Event("toggle"));
+    await waitFor(() => {
+      const read = fetchMock.mock.calls.find((c) => String(c[0]).endsWith("/mark-read"));
+      expect(read).toBeTruthy();
+      expect(String(read![0])).toBe(`${CONFIGURED_BASE}/api/portal/messages/mark-read`);
+      expect(read![1].method).toBe("POST");
+      expect(read![1].headers.Authorization).toBe("Bearer tok-abc");
+      expect(JSON.parse(read![1].body)).toEqual({ messageId: "m-configured" });
+    });
     expect(calledUrls().some((u) => u.includes("localhost:8080"))).toBe(false);
   });
 
