@@ -13,6 +13,7 @@ import { EmailProviderService } from "../notification/email-provider.service";
 import { PORTAL_PASSWORD_MIN_LENGTH } from "./dto/portal-password.dto";
 import { buildClientFieldDiff, PORTAL_ACCESS_FIELDS } from "../client/client-audit.util";
 import { disableClientPortalAccessInTx, lockClientPortalState } from "../client/client-portal-access-state";
+import { hasActiveClientLegalHold, lockClientLegalHoldState } from "../client/client-legal-hold-state";
 import type { AuditActor } from "../client/client.service";
 import { generateRawInviteToken, hashInviteToken } from "../auth/invite/user-invite-token.util";
 import * as bcrypt from "bcrypt";
@@ -1102,10 +1103,12 @@ export class PortalService {
     let deleted: Prisma.PortalDocumentGetPayload<object>;
     try {
       deleted = await this.prisma.$transaction(async tx => {
+        await lockClientLegalHoldState(tx, tenantId);
         await this.lockDocument(tx, tenantId, documentId);
         const doc = await tx.portalDocument.findFirst({ where: { id: documentId, clientId, tenantId } });
         if (!doc) throw new NotFoundException("Belge bulunamadı");
         if (doc.status !== "PENDING") throw new ConflictException("Yalnız bekleyen belge silinebilir");
+        await this.assertDocumentNotHeld(tx, doc);
         // Validate before either DB deletion or file rename. The existing reparse/tenant boundary remains authoritative.
         const paths = runtimeStoragePaths();
         const target = paths.assertContained("PORTAL_DOCUMENTS", doc.filePath, tenantId);
@@ -1125,25 +1128,65 @@ export class PortalService {
       throw error;
     }
     if (staged) {
-      try { fs.unlinkSync(staged.temporary); }
-      catch (error) {
-        // Normal final-unlink failure: restore the exact row and rename the original file (including its metadata).
-        // This is compensation, not a distributed transaction or durable recovery after a process crash.
+      let physicallyRemoved = false;
+      let failure: unknown;
+      try {
+        // A hold may have committed after the metadata transaction. Keep its writers
+        // excluded through the final unlink, without nesting transactions or pools.
+        failure = await this.prisma.$transaction(async tx => {
+          await lockClientLegalHoldState(tx, tenantId);
+          await this.lockDocument(tx, tenantId, documentId);
+          if (await hasActiveClientLegalHold(tx, tenantId, { clientId: deleted.clientId, caseId: deleted.caseId ?? undefined, recordFamily: "PortalDocument" })) {
+            await this.restoreDeletedDocument(tx, staged!);
+            return this.documentHoldConflict();
+          }
+          try {
+            fs.unlinkSync(staged!.temporary);
+            physicallyRemoved = true;
+          } catch (error) {
+            await this.restoreDeletedDocument(tx, staged!);
+            return error;
+          }
+        }, PORTAL_ACCESS_WRITE_TX);
+      } catch (error) {
+        if (physicallyRemoved) {
+          // Successful removal has no DB writes in this second transaction. The
+          // original DB delete already committed and unlink returned successfully;
+          // failure to close this gate-only transaction cannot undo either fact.
+          this.logger.warn("Portal document removal completed before read-only hold gate closed");
+          return { success: true, filePath: deleted.filePath };
+        }
         try {
           await this.prisma.$transaction(async tx => {
+            await lockClientLegalHoldState(tx, tenantId);
             await this.lockDocument(tx, tenantId, documentId);
-            const existing = await tx.portalDocument.findUnique({ where: { id: documentId } });
-            if (existing) throw new ConflictException("Silme telafisinde belge kimliği değişti");
-            await tx.portalDocument.create({ data: staged!.doc });
-            this.restoreStagedDocument(staged!);
+            await this.restoreDeletedDocument(tx, staged!);
           }, PORTAL_ACCESS_WRITE_TX);
         } catch {
           throw new InternalServerErrorException({ code: "PORTAL_DOCUMENT_RECOVERY_REQUIRED", message: "Belge silme işlemi tamamlanamadı" });
         }
         throw error;
       }
+      if (failure) throw failure;
     }
     return { success: true, filePath: deleted.filePath };
+  }
+
+  private documentHoldConflict() {
+    return new ConflictException({ code: "PORTAL_DOCUMENT_LEGAL_HOLD", message: "Belge hukuki saklama nedeniyle silinemiyor" });
+  }
+
+  private async assertDocumentNotHeld(tx: Prisma.TransactionClient, doc: Prisma.PortalDocumentGetPayload<object>) {
+    if (await hasActiveClientLegalHold(tx, doc.tenantId, { clientId: doc.clientId, caseId: doc.caseId ?? undefined, recordFamily: "PortalDocument" })) {
+      throw this.documentHoldConflict();
+    }
+  }
+
+  private async restoreDeletedDocument(tx: Prisma.TransactionClient, staged: { doc: Prisma.PortalDocumentGetPayload<object>; target: string; temporary: string }) {
+    const existing = await tx.portalDocument.findUnique({ where: { id: staged.doc.id } });
+    if (existing) throw new ConflictException("Silme telafisinde belge kimliği değişti");
+    await tx.portalDocument.create({ data: staged.doc });
+    this.restoreStagedDocument(staged);
   }
 
   /** Callers: deleteDocument, its normal-error compensation, and reviewDocument. */

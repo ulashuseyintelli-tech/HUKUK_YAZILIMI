@@ -78,6 +78,7 @@ const UPLOAD_INPUT = {
 
 function buildService(over: any = {}) {
   const prisma = {
+    clientLegalHold: { findFirst: jest.fn().mockResolvedValue(null) },
     // CLIENT-K1: caseId referansı artık sunucuda doğrulanır; bu spec write-contract'ı ölçer → geçerli ilişki döner.
     case: { findFirst: jest.fn(async ({ where }: any) => ({ id: where.id })) },
     portalDocument: {

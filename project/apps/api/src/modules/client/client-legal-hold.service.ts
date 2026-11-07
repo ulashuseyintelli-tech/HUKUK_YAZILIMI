@@ -1,4 +1,5 @@
 import { assertClientObjectScope, clientObjectScope } from './client-object-scope';
+import { hasActiveClientLegalHold, lockClientLegalHoldState } from './client-legal-hold-state';
 import {
   BadRequestException,
   ConflictException,
@@ -62,20 +63,7 @@ export class ClientLegalHoldService {
     tenantId: string,
     scope: { clientId?: string; caseId?: string; recordFamily?: string },
   ): Promise<boolean> {
-    const or: any[] = [];
-    if (scope.clientId) or.push({ scopeType: 'CLIENT', clientId: scope.clientId });
-    if (scope.caseId) or.push({ scopeType: 'CASE', caseId: scope.caseId });
-    if (scope.recordFamily) or.push({ scopeType: 'RECORD_FAMILY', recordFamily: scope.recordFamily });
-    if (scope.clientId) {
-      // Müvekkil-kapsamlı hold, o müvekkilin dava/aile taleplerini de kapsar (fail-closed).
-      or.push({ scopeType: 'CLIENT', clientId: scope.clientId });
-    }
-    if (or.length === 0) return false;
-    const row = await this.delegate().findFirst({
-      // RELEASE_REQUESTED da AKTİF sayılır: onay tamamlanmadan hold düşmez (fail-closed).
-      where: { tenantId, status: { in: ['ACTIVE', 'RELEASE_REQUESTED'] }, OR: or },
-    });
-    return !!row;
+    return hasActiveClientLegalHold(this.prisma, tenantId, scope);
   }
 
   /** Hold koyma (K8.4): yükseltilmiş yetki + zorunlu gerekçe + audit. */
@@ -105,6 +93,7 @@ export class ClientLegalHoldService {
 
     const now = new Date();
     return this.prisma.$transaction(async (tx: any) => {
+      await lockClientLegalHoldState(tx, tenantId);
       await assertClientObjectScope(tx, tenantId, actor?.userId, clientId, caseId ?? undefined);
       const created = await this.delegate(tx).create({
         data: {
@@ -150,7 +139,11 @@ export class ClientLegalHoldService {
 
     const now = new Date();
     return this.prisma.$transaction(async (tx: any) => {
-      await this.requireHold(tenantId, holdId, actor?.userId, tx);
+      await lockClientLegalHoldState(tx, tenantId);
+      const current = await this.requireHold(tenantId, holdId, actor?.userId, tx);
+      if (current.status !== 'ACTIVE') {
+        throw new ConflictException(`Hold ${current.status} durumunda — kaldırma talebi yalnız ACTIVE hold için`);
+      }
       const updated = await this.delegate(tx).update({
         where: { id: holdId },
         data: {
@@ -192,7 +185,14 @@ export class ClientLegalHoldService {
 
     const now = new Date();
     return this.prisma.$transaction(async (tx: any) => {
-      await this.requireHold(tenantId, holdId, actor?.userId, tx);
+      await lockClientLegalHoldState(tx, tenantId);
+      const current = await this.requireHold(tenantId, holdId, actor?.userId, tx);
+      if (current.status !== 'RELEASE_REQUESTED') {
+        throw new ConflictException('Onaylanacak bekleyen kaldırma talebi yok');
+      }
+      if (current.releaseRequestedByUserId && current.releaseRequestedByUserId === actor.userId) {
+        throw new ForbiddenException({ code: 'LEGAL_HOLD_MAKER_CHECKER_VIOLATION', message: 'Kaldırma onayı, talebi yapan yetkiliden FARKLI ikinci bir yetkili ister (K8.4)' });
+      }
       const updated = await this.delegate(tx).update({
         where: { id: holdId },
         data: { status: 'RELEASED', releasedByUserId: actor.userId, releasedAt: now },
@@ -204,9 +204,9 @@ export class ClientLegalHoldService {
         entityId: holdId,
         userId: actor.userId ?? undefined,
         metadata: {
-          requestedByUserId: hold.releaseRequestedByUserId,
+          requestedByUserId: current.releaseRequestedByUserId,
           approvedByUserId: actor.userId,
-          releaseReason: hold.releaseReason,
+          releaseReason: current.releaseReason,
         },
       });
       return updated;

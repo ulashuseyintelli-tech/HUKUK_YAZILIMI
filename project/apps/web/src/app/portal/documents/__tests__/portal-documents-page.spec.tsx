@@ -37,6 +37,7 @@ function buildFetchRouter(opts: {
   uploadResponse?: any;
   downloadOk?: boolean;
   deleteOk?: boolean;
+  deleteResponse?: any;
 }) {
   let listCallCount = 0;
   return vi.fn((url: string, init?: any) => {
@@ -53,7 +54,7 @@ function buildFetchRouter(opts: {
       return Promise.resolve({ ok: opts.downloadOk !== false, blob: async () => new Blob(["x"]) });
     }
     if (method === "DELETE") {
-      return Promise.resolve({ ok: opts.deleteOk !== false });
+      return Promise.resolve(opts.deleteResponse ?? { ok: opts.deleteOk !== false });
     }
     return Promise.reject(new Error(`Unhandled fetch: ${method} ${url}`));
   });
@@ -161,6 +162,21 @@ describe("Portal documents page — CLIENT-P2-U03-I02 explicit projection", () =
     expect(within(approvedRow).queryByTitle("Sil")).toBeNull();
     expect(within(pendingRow).queryByTitle("İndir")).toBeTruthy();
     expect(within(approvedRow).queryByTitle("İndir")).toBeTruthy();
+  });
+
+  it("4b legal-hold rejection stays visible, retains the document and does not refresh as success", async () => {
+    const message = "Belge hukuki saklama nedeniyle silinemiyor";
+    const fetcher = buildFetchRouter({ list: APPROVED_DOCUMENTS, deleteResponse: {
+      ok: false, status: 409, json: async () => ({ code: "PORTAL_DOCUMENT_LEGAL_HOLD", message }),
+      text: async () => JSON.stringify({ code: "PORTAL_DOCUMENT_LEGAL_HOLD", message }),
+    } });
+    vi.stubGlobal("fetch", fetcher); render(<PortalDocumentsPage />);
+    await waitFor(() => expect(screen.getByText(DOC_1.title)).toBeTruthy());
+    fireEvent.click(screen.getAllByTitle("Sil")[0]);
+    await waitFor(() => expect(screen.getByText(message)).toBeTruthy());
+    expect(screen.getByText(DOC_1.title)).toBeTruthy();
+    expect(fetcher.mock.calls.filter(([url, init]) => url.endsWith("/api/portal/documents") && !init?.method)).toHaveLength(1);
+    expect(fetcher.mock.calls.filter(([, init]) => init?.method === "DELETE")).toHaveLength(1);
   });
 
   it("[11] reviewNote fixture'da olsa bile render edilmez (legacy alan)", async () => {
