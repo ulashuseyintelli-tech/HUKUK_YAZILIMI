@@ -34,7 +34,7 @@ const ref = toClientSafeFileReference('2026/9501')!;
 
 // Gerçek STATEMENT_READY seed'ini KAYNAKTAN çıkar (replikasyon-drift yok).
 const statementReadyTemplate = (() => {
-  const src = readFileSync(join(__dirname, '..', '..', 'message-template', 'message-template.service.ts'), 'utf8');
+  const src = readFileSync(join(__dirname, '..', '..', 'message-template', 'message-template-defaults.ts'), 'utf8');
   const block = src.slice(src.indexOf("code: 'STATEMENT_READY'"), src.indexOf("code: 'INTAKE_LINK'"));
   const subject = block.match(/subject:\s*'([^']*)'/)![1];
   const body = block.match(/body:\s*`([\s\S]*?)`/)![1];

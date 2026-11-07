@@ -29,6 +29,7 @@ describeDb("AuthService.register → yeni tenant kanonik lookup (integration)", 
 
   afterAll(async () => {
     for (const tid of createdTenantIds) {
+      await prisma.messageTemplate.deleteMany({ where: { tenantId: tid } });
       await prisma.lookupTakipTuru.deleteMany({ where: { tenantId: tid } });
       await prisma.lookupMahiyetTipi.deleteMany({ where: { tenantId: tid } });
       await prisma.lookupAsama.deleteMany({ where: { tenantId: tid } });

@@ -11,6 +11,7 @@ import { AuthController } from '../auth.controller';
 import { AuthService } from '../auth.service';
 import { LoginRateLimitGuard } from '../guards/login-rate-limit.guard';
 import { OFFICE_PUBLIC_REGISTRATION_FLAG } from '../guards/public-registration-enabled.guard';
+import { MessageTemplateService } from '../../message-template/message-template.service';
 import { PasswordResetService } from '../password-reset/password-reset.service';
 
 /**
@@ -91,6 +92,7 @@ describeWithDisposableDb('OK-02 — POST /api/auth/register varsayılan KAPALI (
     });
     for (const { id } of leaked) if (!createdTenantIds.includes(id)) createdTenantIds.push(id);
     for (const tid of createdTenantIds) {
+      await prisma.messageTemplate.deleteMany({ where: { tenantId: tid } });
       await prisma.lookupTakipTuru.deleteMany({ where: { tenantId: tid } });
       await prisma.lookupMahiyetTipi.deleteMany({ where: { tenantId: tid } });
       await prisma.lookupAsama.deleteMany({ where: { tenantId: tid } });
@@ -140,5 +142,65 @@ describeWithDisposableDb('OK-02 — POST /api/auth/register varsayılan KAPALI (
     expect(staff[0]).toMatchObject({ userId: users[0].id, tckn: dto.tckn, staffType: 'SEKRETER' });
     expect(await prisma.lawyer.count({ where: { tenantId } })).toBe(0);
     expect(await prisma.lookupTakipTuru.count({ where: { tenantId, isActive: true } })).toBe(11);
+    const templates = await prisma.messageTemplate.findMany({ where: { tenantId }, orderBy: { code: 'asc' } });
+    expect(templates.map(row => row.code)).toEqual([
+      'APPROVAL_REQUEST', 'APPROVAL_RESULT', 'CASE_OPENED', 'COLLECTION_INFO', 'EXPENSE_ACTUAL_POSTED',
+      'EXPENSE_REMINDER', 'EXPENSE_REQUEST', 'EXPENSE_REQUEST_SMS', 'INTAKE_LINK', 'PARTIAL_PAYMENT_BALANCE', 'PAYMENT_RECEIVED', 'STATEMENT_READY',
+    ]);
+    expect(templates.every(row => row.tenantId === tenantId && row.isSystem && row.isActive)).toBe(true);
+    expect(templates.find(row => row.code === 'EXPENSE_REQUEST')?.body).toContain('{{paymentReference}}');
+    expect(templates.find(row => row.code === 'STATEMENT_READY')?.body).toContain('Ayrıntılı bilgi için büromuzla iletişime geçebilirsiniz.');
+  });
+
+  it('5b büroların kopyaları ayrıdır; eşzamanlı açık seed özelleştirilmiş/pasif satırı ezmez', async () => {
+    process.env[OFFICE_PUBLIC_REGISTRATION_FLAG] = 'true';
+    const first = await request(app.getHttpServer()).post('/api/auth/register').send(body('5b-a')).expect(201);
+    const second = await request(app.getHttpServer()).post('/api/auth/register').send(body('5b-b')).expect(201);
+    const a = first.body.tenant.id as string, b = second.body.tenant.id as string;
+    createdTenantIds.push(a, b);
+    const original = await prisma.messageTemplate.findUniqueOrThrow({ where: { tenantId_code: { tenantId: a, code: 'EXPENSE_REQUEST' } } });
+    await prisma.messageTemplate.update({ where: { id: original.id }, data: { body: '5b tenant custom copy', isActive: false } });
+    const before = await prisma.messageTemplate.findMany({ where: { tenantId: a }, orderBy: { code: 'asc' } });
+    const templates = new MessageTemplateService(prisma);
+    await Promise.all([templates.seedDefaultTemplates(a), templates.seedDefaultTemplates(a)]);
+    expect(await prisma.messageTemplate.findMany({ where: { tenantId: a }, orderBy: { code: 'asc' } })).toEqual(before);
+    const other = await prisma.messageTemplate.findMany({ where: { tenantId: b }, orderBy: { code: 'asc' } });
+    expect(other).toHaveLength(12);
+    expect(other.every(row => row.tenantId === b && !before.some(old => old.id === row.id))).toBe(true);
+    expect(other.find(row => row.code === 'EXPENSE_REQUEST')).toMatchObject({ isActive: true });
+    expect(other.find(row => row.code === 'EXPENSE_REQUEST')?.body).not.toBe('5b tenant custom copy');
+  });
+
+  it('5b şablon SQL yazımından sonraki hata tüm yeni büro/kullanıcı/kart/lookup/şablon kayıtlarını geri alır (HTTP + gerçek transaction)', async () => {
+    process.env[OFFICE_PUBLIC_REGISTRATION_FLAG] = 'true';
+    const allCounts = async () => ({
+      tenants: await prisma.tenant.count(), users: await prisma.user.count(), staff: await prisma.staffMember.count(), lawyers: await prisma.lawyer.count(),
+      templates: await prisma.messageTemplate.count(), takip: await prisma.lookupTakipTuru.count(), mahiyet: await prisma.lookupMahiyetTipi.count(),
+      asama: await prisma.lookupAsama.count(), risk: await prisma.lookupRisk.count(), durum: await prisma.lookupDurumEtiketi.count(),
+    });
+    const before = await allCounts();
+    const actualTransaction = prisma.$transaction.bind(prisma);
+    let inserted = 0;
+    const transactionSpy = jest.spyOn(prisma, '$transaction').mockImplementationOnce((async (callback: any) =>
+      actualTransaction(async tx => callback(new Proxy(tx, {
+        get(target, key) {
+          if (key !== 'messageTemplate') return Reflect.get(target, key);
+          return new Proxy(target.messageTemplate, { get(delegate, method) {
+            if (method !== 'createMany') return Reflect.get(delegate, method);
+            return async (args: any) => {
+              const result = await delegate.createMany(args);
+              inserted = result.count;
+              throw new Error('5B_TEMPLATE_INSERT_FAULT');
+            };
+          } });
+        },
+      })))) as never);
+    try {
+      const response = await request(app.getHttpServer()).post('/api/auth/register').send(body('5b-fault')).expect(500);
+      expect(inserted).toBe(12); // fault reaches actual SQL write, not an earlier mock/fixture error
+      expect(response.body).not.toHaveProperty('token');
+    } finally { transactionSpy.mockRestore(); }
+    expect(await allCounts()).toEqual(before);
+    expect(await prisma.tenant.count({ where: { name: body('5b-fault').firmName } })).toBe(0);
   });
 });

@@ -48,6 +48,7 @@ describe('OK-02 — POST /api/auth/register varsayılan KAPALI (gerçek HTTP)', 
   let flag: string | undefined;
   const prismaCalls: string[] = [];
   const tx = {
+    messageTemplate: { createMany: jest.fn().mockResolvedValue({ count: 12 }) },
     tenant: { create: jest.fn() },
     user: { create: jest.fn() },
     lawyer: { create: jest.fn().mockResolvedValue({ id: 'l-ok02' }) },
