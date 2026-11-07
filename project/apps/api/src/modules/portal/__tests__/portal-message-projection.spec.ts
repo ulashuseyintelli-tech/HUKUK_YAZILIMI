@@ -211,6 +211,7 @@ describe("PortalService.getMessages/sendMessageFromClient — CLIENT-P2-U03-I03 
     expect(call.select).toBeUndefined();
     expect(result.messages[0]).toHaveProperty("senderId");
     expect(result.messages[0]).toHaveProperty("clientId");
+    expect(prisma.portalMessage.updateMany).not.toHaveBeenCalled();
   });
 
   it("[18] getUnreadMessageCount() davranışı DEĞİŞMEDİ", async () => {
@@ -221,12 +222,9 @@ describe("PortalService.getMessages/sendMessageFromClient — CLIENT-P2-U03-I03 
     expect(result).toEqual({ count: 3 });
   });
 
-  it("[19] markMessagesAsRead() davranışı DEĞİŞMEDİ", async () => {
+  it("[19] 4d legacy bodyless bulk mark fails closed", async () => {
     const { svc, prisma } = buildService();
-    const result = await svc.markMessagesAsRead(CLIENT_ID, TENANT_ID);
-    const call = prisma.portalMessage.updateMany.mock.calls[0][0];
-    expect(call.where).toEqual({ clientId: CLIENT_ID, tenantId: TENANT_ID, senderType: "OFFICE", isRead: false });
-    expect(call.data).toEqual(expect.objectContaining({ isRead: true }));
-    expect(result).toEqual({ success: true });
+    await expect(svc.markMessagesAsRead(CLIENT_ID, TENANT_ID)).rejects.toMatchObject({ status: 400 });
+    expect(prisma.portalMessage.updateMany).not.toHaveBeenCalled();
   });
 });

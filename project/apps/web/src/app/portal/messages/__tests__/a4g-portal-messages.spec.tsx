@@ -16,9 +16,8 @@ import PortalMessagesPage from '../page';
  *    "Henüz mesaj yok" yazıyordu. Yani bürodan gelmiş bir mesaj varken yazışma
  *    boş görünüyordu.
  *
- * 3. `markAsRead` — kasıtlı sessiz. Terminal sınıf FALSE_POSITIVE_WITH_TESTED_RULE_REASON:
- *    yerel state'e hiç yazmaz, dolayısıyla başarısızlığı yalan bir UI iddiası
- *    üretemez. Aşağıdaki test bu kuralı davranışsal olarak doğrular.
+ * 3. 4d supersedes the old mount-time background acknowledgement:
+ *    an explicit message open is now a user action; failure is visible and cannot claim read.
  */
 
 const TOKEN = 'portal-test-token';
@@ -59,7 +58,7 @@ function routeFetch(handlers: {
   fetchMock.mockImplementation((url: string, init?: RequestInit) => {
     const u = String(url);
     if (u.includes('/messages/mark-read')) {
-      return Promise.resolve(handlers.markRead?.() ?? { ok: true });
+      return Promise.resolve(handlers.markRead?.() ?? { ok: true, json: async () => ({ success: true }) });
     }
     if (init?.method === 'POST') {
       return Promise.resolve(handlers.send?.() ?? { ok: true });
@@ -155,25 +154,52 @@ describe('Portal mesajlar — gonderme', () => {
   });
 });
 
-describe('Portal mesajlar — mark-read (kasitli sessiz kural)', () => {
-  it('mark-read basarisiz olsa da hata bandi BASILMAZ ve liste bozulmaz', async () => {
+describe('Portal mesajlar — 4d explicit recipient open', () => {
+  it('explicit open failure is visible and keeps the message available', async () => {
     routeFetch({ markRead: () => ({ ok: false, status: 500 }) });
     render(<PortalMessagesPage />);
 
-    // Liste normal sekilde gorunur...
     expect(await screen.findByText('Duruşma tarihi belli oldu.')).toBeTruthy();
-    // ...ve kullanicinin BASLATMADIGI bu yan etki icin band basilmaz.
-    await vi.waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    expect(screen.queryByRole('alert')).toBeNull();
+    const details = screen.getByText('Duruşma tarihi belli oldu.').closest('details')!;
+    details.open = true; fireEvent(details, new Event("toggle"));
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(screen.getByText('Duruşma tarihi belli oldu.')).toBeTruthy();
   });
 
-  it('mark-read cagrisi gercekten yapiliyor (olu kod degil)', async () => {
+  it('mount and successful list cause no write; explicit open sends the exact ID', async () => {
     routeFetch({});
     render(<PortalMessagesPage />);
     await screen.findByText('Duruşma tarihi belli oldu.');
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/messages/mark-read'))).toHaveLength(0);
+    const details = screen.getByText('Duruşma tarihi belli oldu.').closest('details')!;
+    details.open = true; fireEvent(details, new Event("toggle"));
+    await vi.waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/messages/mark-read'))).toHaveLength(1));
 
     const markReadCalls = fetchMock.mock.calls.filter((c) =>
       String(c[0]).includes('/messages/mark-read'),
     );
     expect(markReadCalls.length).toBeGreaterThan(0);
+    expect(markReadCalls[0][1]).toMatchObject({ body: JSON.stringify({ messageId: 'm1' }) });
+  });
+
+  it('a failed/malformed list never acknowledges any message', async () => {
+    routeFetch({ list: () => okList({ messages: REAL_MESSAGES }) }); render(<PortalMessagesPage />);
+    await screen.findByRole('alert'); expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/mark-read'))).toHaveLength(0);
+  });
+  it('repeated opens while the first request is pending do not duplicate it', async () => {
+    let complete!: (value: unknown) => void;
+    routeFetch({ markRead: () => new Promise(resolve => { complete = resolve; }) }); render(<PortalMessagesPage />);
+    const details = (await screen.findByText(REAL_MESSAGES[0].content)).closest('details')!;
+    details.open = true; fireEvent(details, new Event("toggle")); fireEvent(details, new Event("toggle"));
+    await vi.waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/mark-read'))).toHaveLength(1));
+    complete({ ok: true, json: async () => ({ success: true }) });
+  });
+  it('an old conversation cannot acknowledge with a newly substituted token', async () => {
+    routeFetch({}); render(<PortalMessagesPage />);
+    const details = (await screen.findByText(REAL_MESSAGES[0].content)).closest('details')!;
+    localStorage.setItem('portal_token', 'OTHER-ACCOUNT'); details.open = true; fireEvent(details, new Event("toggle"));
+    await vi.waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => !String(url).includes('/mark-read'))).toHaveLength(2));
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/mark-read'))).toHaveLength(0);
   });
 });

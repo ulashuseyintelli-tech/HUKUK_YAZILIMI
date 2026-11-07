@@ -31,6 +31,10 @@ export default function PortalMessagesPage() {
   const [sessionRejected, setSessionRejected] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const mountedRef = useRef(true);
+  const messagesTokenRef = useRef<string | null>(null);
+  const readInFlightRef = useRef(new Set<string>());
+  const [readErrors, setReadErrors] = useState<Record<string, string>>({});
 
   /** Oturum reddini işler; "REJECTED" ise yoklama durur ve sayfa içeriği gizlenir. */
   const checkSessionRejection = (res: Response, sentToken: string) => {
@@ -46,12 +50,13 @@ export default function PortalMessagesPage() {
   };
 
   useEffect(() => {
+    mountedRef.current = true;
     fetchMessages();
-    markAsRead();
     // Her 10 saniyede bir mesajları güncelle
     const interval = setInterval(() => fetchMessages(), 10000);
     pollRef.current = interval;
     return () => {
+      mountedRef.current = false;
       clearInterval(interval);
       pollRef.current = null;
     };
@@ -93,6 +98,8 @@ export default function PortalMessagesPage() {
       const data = await res.json();
       // Govde SOZLESMEYE karsi dogrulanir: dizi degilse basari sayilmaz.
       if (!Array.isArray(data)) throw new Error("MALFORMED_MESSAGE_LIST");
+      if (!mountedRef.current || localStorage.getItem("portal_token") !== token) return;
+      messagesTokenRef.current = token;
       setMessages(data);
     } catch (e) {
       // WSMR-A4g: okuma hatasi "Henuz mesaj yok" ile AYNI gorunemez. Muvekkil,
@@ -104,26 +111,35 @@ export default function PortalMessagesPage() {
     }
   };
 
-  const markAsRead = async () => {
+  const markAsRead = async (message: Message) => {
     const token = localStorage.getItem("portal_token");
-    if (!token) return;
+    if (!token || !mountedRef.current || readInFlightRef.current.has(message.id)) return;
+    if (messagesTokenRef.current !== token) {
+      setMessages([]);
+      void fetchMessages();
+      return;
+    }
+    if (message.senderType !== "OFFICE" || message.isRead) return;
+    readInFlightRef.current.add(message.id);
     try {
       const res = await fetch(portalApiUrl("/api/portal/messages/mark-read"), {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ messageId: message.id }),
       });
       if (checkSessionRejection(res, token) !== "NOT_REJECTED") return;
       if (!res.ok) throw new Error(`MARK_READ_HTTP_${res.status}`);
+      const result = await res.json();
+      if (result?.success !== true) throw new Error("MALFORMED_READ_RESULT");
+      if (!mountedRef.current || localStorage.getItem("portal_token") !== token) return;
+      setMessages(prev => prev.map(row => row.id === message.id ? { ...row, isRead: true } : row));
+      setReadErrors(prev => { const next = { ...prev }; delete next[message.id]; return next; });
     } catch {
-      // WSMR-A4g · KASITLI SESSIZ — terminal sinif: FALSE_POSITIVE_WITH_TESTED_RULE_REASON.
-      //
-      // Kural: bu handler YEREL STATE'E HIC YAZMAZ. Basarisi bir UI iddiasina
-      // donusmedigi icin basarisizligi da YALAN bir UI iddiasi uretemez; okundu
-      // bilgisinin tek kaynagi sunucudur ve bir sonraki yuklemede dogru yansir.
-      // Kullanicinin BASLATMADIGI bir arka plan yan etkisi icin hata bandi basmak
-      // yaniltici olurdu. `res.ok` kontrolu yine de eklendi ki bu kural ileride
-      // biri buraya yerel bir "okundu" yazarsa testle kirilsin.
-      // Davranis kaniti: a4g-portal-messages.spec.tsx > "mark-read"
+      if (mountedRef.current && localStorage.getItem("portal_token") === token) {
+        setReadErrors(prev => ({ ...prev, [message.id]: "Mesaj açıldı; okunma kaydı kaydedilemedi." }));
+      }
+    } finally {
+      readInFlightRef.current.delete(message.id);
     }
   };
 
@@ -213,7 +229,15 @@ export default function PortalMessagesPage() {
                     )}
                     <span className="text-xs opacity-75">{msg.senderName}</span>
                   </div>
-                  <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                  {msg.senderType === "OFFICE" ? (
+                    <details onToggle={event => { if (event.currentTarget.open) void markAsRead(msg); }}>
+                      <summary className="cursor-pointer text-sm">Mesajı aç</summary>
+                      <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                      {readErrors[msg.id] && <div role="alert" className="text-xs text-red-700">
+                        {readErrors[msg.id]} <button type="button" onClick={() => void markAsRead(msg)} className="underline">Okunmayı yeniden kaydet</button>
+                      </div>}
+                    </details>
+                  ) : <p className="text-sm whitespace-pre-wrap">{msg.content}</p>}
                   <p className={`text-xs mt-1 ${msg.senderType === "CLIENT" ? "text-blue-200" : "text-gray-400"}`}>
                     {new Date(msg.createdAt).toLocaleString("tr-TR")}
                   </p>

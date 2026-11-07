@@ -32,6 +32,7 @@ type Overrides = Partial<{
   clients: () => unknown;
   messages: () => unknown;
   send: () => unknown;
+  read: () => unknown;
 }>;
 
 function routeApi(o: Overrides = {}) {
@@ -43,6 +44,7 @@ function routeApi(o: Overrides = {}) {
     return Promise.resolve({ data: [] });
   });
   mocked.post.mockImplementation((url: string) => {
+    if (String(url).endsWith('/read')) return o.read?.() ?? Promise.resolve({ data: { success: true } });
     if (String(url).includes('/messages/')) return o.send?.() ?? Promise.resolve({ data: {} });
     return Promise.resolve({ data: {} });
   });
@@ -162,14 +164,45 @@ describe('Mesajlar — mesaj okuma hatası (unread rozeti)', () => {
     expect(screen.getAllByText('2').length).toBeGreaterThan(0);
   });
 
-  it('okuma BASARILI: unread rozeti sifirlanir', async () => {
+  it('4d successful listing does not clear the unread badge or write a receipt', async () => {
     routeApi({});
     render(<PortalManagementPage />);
     fireEvent.click(await screen.findByRole('button', { name: /Mesajlar/ }));
     fireEvent.click(await screen.findByText('Ayşe Yılmaz'));
 
     await screen.findByText('Merhaba');
-    await vi.waitFor(() => expect(screen.queryByText('2')).toBeNull());
+    expect(screen.getAllByText('2').length).toBeGreaterThan(0);
+    expect(mocked.post).not.toHaveBeenCalled();
+  });
+
+  it('4d opening one received message refreshes the real remaining count, not zero', async () => {
+    let reads = 0;
+    routeApi({ clients: () => ({ data: [{ ...CLIENTS[0], unreadCount: ++reads === 1 ? 2 : 1 }] }) });
+    render(<PortalManagementPage />); fireEvent.click(await screen.findByRole('button', { name: /Mesajlar/ }));
+    fireEvent.click(await screen.findByText('Ayşe Yılmaz'));
+    const details = (await screen.findByText('Merhaba')).closest('details')!;
+    expect(details.open).toBe(false); details.open = true; fireEvent(details, new Event("toggle"));
+    await vi.waitFor(() => expect(mocked.post).toHaveBeenCalledWith('/portal/admin/messages/c1/m1/read', {}));
+    expect(await screen.findAllByText('1')).not.toHaveLength(0);
+  });
+  it('4d failed open receipt is visible and does not refresh/clear the badge', async () => {
+    routeApi({ read: fail }); render(<PortalManagementPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /Mesajlar/ })); fireEvent.click(await screen.findByText('Ayşe Yılmaz'));
+    const details = (await screen.findByText('Merhaba')).closest('details')!;
+    const clientReads = mocked.get.mock.calls.filter(([url]) => String(url).endsWith('/messages/clients')).length;
+    details.open = true; fireEvent(details, new Event("toggle"));
+    await screen.findByRole('alert'); expect(screen.getAllByText('2').length).toBeGreaterThan(0);
+    expect(mocked.get.mock.calls.filter(([url]) => String(url).endsWith('/messages/clients'))).toHaveLength(clientReads);
+  });
+  it('4d stale conversation response cannot replace the selected client or emit a read', async () => {
+    let release!: (value: unknown) => void;
+    routeApi({ clients: () => ({ data: [...CLIENTS, { id: 'c2', displayName: 'Other Client', type: 'PERSON', unreadCount: 1 }] }) });
+    const original = mocked.get.getMockImplementation()!;
+    mocked.get.mockImplementation((url: string) => url.endsWith('/messages/c1') ? new Promise(resolve => { release = resolve; }) : url.endsWith('/messages/c2') ? Promise.resolve({ data: { messages: [{ ...MESSAGES.messages[0], id: 'm2', content: 'OTHER-MESSAGE' }] } }) : original(url));
+    render(<PortalManagementPage />); fireEvent.click(await screen.findByRole('button', { name: /Mesajlar/ }));
+    fireEvent.click(await screen.findByText('Ayşe Yılmaz')); fireEvent.click(screen.getByText('Other Client'));
+    await screen.findByText('OTHER-MESSAGE'); release({ data: MESSAGES });
+    await vi.waitFor(() => expect(screen.queryByText('Merhaba')).toBeNull()); expect(mocked.post).not.toHaveBeenCalled();
   });
 });
 

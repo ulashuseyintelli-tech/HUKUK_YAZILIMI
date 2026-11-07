@@ -467,13 +467,13 @@ export class PortalController {
   }
 
   /**
-   * Mesajları okundu işaretle (müvekkil)
+   * Açılan tek mesajı okundu işaretle (müvekkil)
    * POST /api/portal/messages/mark-read
    */
   @Post("messages/mark-read")
   @UseGuards(PortalAuthGuard)
-  async markMessagesAsRead(@Request() req: any) {
-    return this.portalService.markMessagesAsRead(req.portalUser.clientId, req.portalUser.tenantId);
+  async markMessagesAsRead(@Request() req: any, @Body() body: { messageId?: unknown }) {
+    return this.portalService.markMessagesAsRead(req.portalUser.clientId, req.portalUser.tenantId, body?.messageId, req.portalUser.id);
   }
 
   // ==================== ADMIN - MESAJLAŞMA ====================
@@ -496,6 +496,13 @@ export class PortalController {
   @UseGuards(JwtAuthGuard)
   async getClientMessages(@Param("clientId") clientId: string, @Request() req: any) {
     return this.portalService.getClientMessages(clientId, req.user.tenantId);
+  }
+
+  /** Explicit recipient open; listing the conversation does not acknowledge it. */
+  @Post("admin/messages/:clientId/:messageId/read")
+  @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
+  async markClientMessageAsRead(@Param("clientId") clientId: string, @Param("messageId") messageId: string, @Request() req: any) {
+    return this.portalService.markClientMessageAsRead(clientId, req.user.tenantId, messageId, req.user.id);
   }
 
   /**
