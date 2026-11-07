@@ -294,7 +294,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                             <div className={`mt-1 h-2 w-2 rounded-full flex-shrink-0 ${!n.isRead ? "bg-blue-500" : "bg-transparent"}`} />
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium text-gray-900 truncate">{n.title}</p>
-                              <p className="text-xs text-gray-600 line-clamp-2">{n.message}</p>
+                              <p className={`text-xs text-gray-600 ${n.type === "BELGE" && n.title === "Belgeniz Reddedildi" ? "whitespace-pre-wrap break-words" : "line-clamp-2"}`}>{n.message}</p>
                               <p className="text-xs text-gray-400 mt-1">{new Date(n.createdAt).toLocaleDateString("tr-TR")}</p>
                             </div>
                           </div>

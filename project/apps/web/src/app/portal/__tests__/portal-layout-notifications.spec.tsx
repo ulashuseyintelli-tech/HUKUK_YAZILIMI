@@ -4,9 +4,8 @@ import PortalLayout from "@/app/portal/layout";
 
 /**
  * CLIENT-P2-U03-I05 — portal layout'un bildirim dropdown'ının, backend'in artık explicit-select
- * ile döndüğü daraltılmış response şekline uyumunu doğrular. Production layout.tsx DEĞİŞTİRİLMEDİ
- * — zaten yalnız approved 7 alanı (kendi `interface Notification`'ı) tüketiyordu. Bu spec yalnız
- * yeni bounded contract'la mevcut davranışın DEĞİŞMEDİĞİNİ kanıtlar.
+ * ile döndüğü daraltılmış response şekline uyumunu doğrular. 4c yalnız belge ret gerekçesinin
+ * tamamını aynı yüzeyde okunabilir tutar; yedi alanlı contract ve okundu/link davranışı korunur.
  *
  * Stable routerMock referansı ZORUNLU (bkz. portal-layout-route-boundary.spec.tsx) — her
  * render'da yeni bir router objesi dönerse token-check effect'i ile birleşip sonsuz render
@@ -86,6 +85,16 @@ describe("PortalLayout notification dropdown — CLIENT-P2-U03-I05 explicit proj
     clickBell(container);
     await waitFor(() => expect(screen.getByText("Yeni Mesaj")).toBeTruthy());
     expect(screen.getByText("Av. Test size bir mesaj gönderdi.")).toBeTruthy();
+  });
+
+  it('4c client-facing reason is complete plain text, never interpreted as markup', async () => {
+    const reason = 'Belgeniz reddedildi. Sebep: İmza sayfası eksik. <img data-portal-reason="unsafe" src="x" />';
+    vi.stubGlobal('fetch', buildFetchRouter({ unreadCount: 1, list: [{ ...NOTIF_1, type: 'BELGE', title: 'Belgeniz Reddedildi', message: reason, linkUrl: null }] }));
+    const { container } = render(<PortalLayout><div>content</div></PortalLayout>);
+    await waitFor(() => expect(container.querySelectorAll('button').length).toBeGreaterThan(0));
+    clickBell(container);
+    expect(await screen.findByText(reason)).toBeTruthy();
+    expect(container.querySelector('img[data-portal-reason]')).toBeNull();
   });
 
   it("[2] unread count badge doğru sayıyı gösterir", async () => {
