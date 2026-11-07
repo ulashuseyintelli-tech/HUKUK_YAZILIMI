@@ -53,6 +53,8 @@ const buildPrisma = (
   existing: any = { id: 'c1', tenantId: 't1', isActive: true, tckn: SYNTHETIC_TCKN, contacts: [] },
 ) => {
   const tx = {
+    $queryRaw: jest.fn(async (_sql: unknown, clientId: unknown) => [{ id: clientId, isActive: true, hasPortalAccess: false, portalUserId: null }]),
+    clientPortalUser: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
     client: {
       update: jest.fn().mockResolvedValue({ id: 'c1' }),
       // P0.5 tenant-scoped write: update() gerçekte updateMany({id,tenantId}) kullanır.

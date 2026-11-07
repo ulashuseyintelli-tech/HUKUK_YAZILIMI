@@ -21,6 +21,8 @@ function buildHarness(
   opts: { existing?: any; updateCount?: number; updated?: any; officeApprovalEligible?: boolean } = {},
 ) {
   const tx = {
+    $queryRaw: jest.fn(async (_sql: unknown, clientId: unknown) => [{ id: clientId, isActive: true, hasPortalAccess: false, portalUserId: null }]),
+    clientPortalUser: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
     client: {
       create: jest.fn().mockResolvedValue({ id: "c1" }),
       updateMany: jest.fn().mockResolvedValue({ count: opts.updateCount ?? 1 }),

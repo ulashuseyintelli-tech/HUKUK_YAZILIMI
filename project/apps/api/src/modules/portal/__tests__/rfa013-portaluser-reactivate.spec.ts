@@ -17,7 +17,7 @@ function build(over: any = {}) {
   const tx = {
     // D5-DIAG-R01: yazımdan önce transaction içinde adres kilidi + çakışma ölçümü (bu dosyada çakışma yok).
     $executeRaw: jest.fn().mockResolvedValue(0),
-    $queryRaw: jest.fn().mockResolvedValue([]),
+    $queryRaw: jest.fn(async (sql: any) => Array.isArray(sql) ? [{ id: 'c1', isActive: true, hasPortalAccess: false, portalUserId: null }] : []),
     client: {
       findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'c1', hasPortalAccess: false, portalUserId: null }),
       update: jest.fn().mockImplementation((a: any) => Promise.resolve({ id: a.where.id, ...a.data })),
@@ -29,7 +29,7 @@ function build(over: any = {}) {
     },
   };
   const prisma = {
-    client: { findFirst: jest.fn().mockResolvedValue({ id: 'c1', tenantId: 't1', hasPortalAccess: false, portalUserId: null }) },
+    client: { findFirst: jest.fn().mockResolvedValue({ id: 'c1', tenantId: 't1', isActive: true, hasPortalAccess: false, portalUserId: null }) },
     clientPortalUser: {
       findFirst: jest.fn().mockResolvedValue(null), // email collision check
       findUnique: jest.fn().mockResolvedValue(null), // by clientId

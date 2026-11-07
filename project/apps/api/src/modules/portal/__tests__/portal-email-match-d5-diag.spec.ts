@@ -73,7 +73,10 @@ function buildService(users: FakeUser[], over: any = {}) {
       throw new Error('sahte depo yalnız metin e-posta koşulunu tanır: ' + JSON.stringify(where));
     });
   let rawCalls = 0;
-  const queryRaw = jest.fn(async (query: any) => {
+  const queryRaw = jest.fn(async (query: any, ...valuesForTag: unknown[]) => {
+    if (Array.isArray(query) && query.join('').includes('FROM "Client"')) {
+      return [{ id: valuesForTag[0], isActive: true, hasPortalAccess: false, portalUserId: null }];
+    }
     rawCalls++;
     if (over.rawRowsByCall) return over.rawRowsByCall[rawCalls - 1] ?? [];
     if (over.rawRows) return over.rawRows;
@@ -91,7 +94,7 @@ function buildService(users: FakeUser[], over: any = {}) {
     $queryRaw: queryRaw,
     $executeRaw: jest.fn().mockResolvedValue(0),
     client: {
-      findFirst: jest.fn(async ({ where }: any) => ({ id: where.id, tenantId: where.tenantId })),
+      findFirst: jest.fn(async ({ where }: any) => ({ id: where.id, tenantId: where.tenantId, isActive: true })),
       findUniqueOrThrow: jest.fn(async () => ({ id: 'C-NEW', hasPortalAccess: false, portalUserId: null })),
       update: jest.fn(async () => ({ id: 'C-NEW', hasPortalAccess: true, portalUserId: 'PU-NEW' })),
     },
@@ -589,8 +592,9 @@ describe('D5-DIAG-R01 createPortalUser — çakışma kapısı giriş/sıfırlam
       const lock = prisma.$executeRaw.mock.calls[0];
       expect(String(lock[0].join('?')).replace(/\s+/g, ' ')).toContain('pg_advisory_xact_lock(hashtextextended(?, 0))');
       expect(lock[1]).toBe('portal-email:yeni.kisi@example.com'); // kilit anahtarı = adresin karşılaştırma biçimi
-      expect(prisma.$queryRaw).toHaveBeenCalledTimes(2); // erken ölçüm + transaction içi ölçüm
-      expect(prisma.$queryRaw.mock.calls[1][0].values).toEqual([
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(3); // erken ölçüm + Client kilidi + transaction içi ölçüm
+      expect((prisma.$queryRaw.mock.calls[1][0] as unknown as TemplateStringsArray).join('')).toContain('FOR UPDATE');
+      expect(prisma.$queryRaw.mock.calls[2][0].values).toEqual([
         PORTAL_EMAIL_TRIM_CHARS,
         'yeni.kisi@example.com',
         'C-NEW',
@@ -598,9 +602,10 @@ describe('D5-DIAG-R01 createPortalUser — çakışma kapısı giriş/sıfırlam
       ]);
       const order = (m: jest.Mock, i = 0) => m.mock.invocationCallOrder[i];
       const write = existingForClient ? prisma.clientPortalUser.update : prisma.clientPortalUser.create;
-      expect(order(officeApproval.isApproverEligibleInTx)).toBeLessThan(order(prisma.$executeRaw));
-      expect(order(prisma.$executeRaw)).toBeLessThan(order(prisma.$queryRaw, 1));
-      expect(order(prisma.$queryRaw, 1)).toBeLessThan(order(write));
+      expect(order(officeApproval.isApproverEligibleInTx)).toBeLessThan(order(prisma.$queryRaw, 1));
+      expect(order(prisma.$queryRaw, 1)).toBeLessThan(order(prisma.$executeRaw));
+      expect(order(prisma.$executeRaw)).toBeLessThan(order(prisma.$queryRaw, 2));
+      expect(order(prisma.$queryRaw, 2)).toBeLessThan(order(write));
       // kilitten sonraki ölçüm önceki isteğin commit'ini görmeli: yalıtım düzeyi sabit
       expect(prisma.$transaction.mock.calls[0][1]).toEqual({ isolationLevel: 'ReadCommitted' });
     }
@@ -636,16 +641,16 @@ describe('D5-DIAG-R01 createPortalUser — çakışma kapısı giriş/sıfırlam
     const tx: any = {
       ...prisma,
       $executeRaw: jest.fn().mockResolvedValue(0),
-      $queryRaw: jest.fn(async (q: any) => outerQueryRaw(q)),
+      $queryRaw: jest.fn(async (q: any, ...values: unknown[]) => outerQueryRaw(q, ...values)),
     };
     prisma.$transaction = jest.fn(async (fn: any, _options?: any) => fn(tx));
     const before = outerQueryRaw.mock.calls.length;
     await svc.createPortalUser('C-NEW', 'yeni@example.com', 'Parola12345', 'T1', actor);
     expect(tx.$executeRaw).toHaveBeenCalledTimes(1); // kilit transaction bağlantısında
     expect(prisma.$executeRaw).not.toHaveBeenCalled();
-    expect(tx.$queryRaw).toHaveBeenCalledTimes(1); // yeniden ölçüm transaction bağlantısında
-    // dış istemci: yalnız işlem öncesi kapı (1) + tx sarmalayıcısının iletimi (1)
-    expect(outerQueryRaw.mock.calls.length - before).toBe(2);
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(2); // Client kilidi + yeniden ölçüm transaction bağlantısında
+    // dış istemci: işlem öncesi kapı (1) + tx sarmalayıcısının iki iletimi
+    expect(outerQueryRaw.mock.calls.length - before).toBe(3);
     expect(prisma.clientPortalUser.create).toHaveBeenCalledTimes(1);
   });
 });

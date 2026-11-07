@@ -12,6 +12,7 @@ import { OfficeApprovalService } from "../office-approval/office-approval.servic
 import { EmailProviderService } from "../notification/email-provider.service";
 import { PORTAL_PASSWORD_MIN_LENGTH } from "./dto/portal-password.dto";
 import { buildClientFieldDiff, PORTAL_ACCESS_FIELDS } from "../client/client-audit.util";
+import { disableClientPortalAccessInTx, lockClientPortalState } from "../client/client-portal-access-state";
 import type { AuditActor } from "../client/client.service";
 import { generateRawInviteToken, hashInviteToken } from "../auth/invite/user-invite-token.util";
 import * as bcrypt from "bcrypt";
@@ -323,6 +324,10 @@ export class PortalService {
     // Task 10-S: yetkisiz aktör hiçbir yazma yapmaz (mutasyondan/audit'ten ÖNCE).
     await this.assertCanManagePortalAccess(actor?.userId, tenantId);
 
+    if (!client.isActive) {
+      throw new ConflictException("Pasif müvekkile portal erişimi açılamaz; önce müvekkili etkinleştirin");
+    }
+
     // RFA-013: email collision guard — GLOBAL (login email-global çalışıyor; iki aktif kullanıcı
     // aynı email'de olursa login belirsizleşir = güvenlik kokusu). Başka AKTİF user aynı email → 409.
     const emailDup = await this.prisma.clientPortalUser.findFirst({
@@ -359,11 +364,11 @@ export class PortalService {
       // yazılamazsa rollback → audit'siz erişim açma kalmaz (C0-a deseni).
       await this.prisma.$transaction(async (tx) => {
         await this.assertCanManagePortalAccessInTx(tx, actor?.userId, tenantId); // K4-3: ilk yazmadan ÖNCE
+        const before = await lockClientPortalState(tx, tenantId, clientId);
+        if (!before.isActive) {
+          throw new ConflictException("Pasif müvekkile portal erişimi açılamaz; önce müvekkili etkinleştirin");
+        }
         await this.assertNoPortalEmailConflictInTx(tx, email, clientId);
-        const before = await tx.client.findUniqueOrThrow({
-          where: { id: clientId },
-          select: { id: true, hasPortalAccess: true, portalUserId: true },
-        });
         // CLIENT-P2-U02: reaktivasyon öncesi (disable-öncesi) JWT'ler yeniden canlanmasın —
         // aynı update içinde tokenVersion artışı.
         await tx.clientPortalUser.update({
@@ -401,11 +406,11 @@ export class PortalService {
     // C0 bypass fix: portalUser create + client erişim-bayrağı + audit AYNI transaction.
     const portalUserId = await this.prisma.$transaction(async (tx) => {
       await this.assertCanManagePortalAccessInTx(tx, actor?.userId, tenantId); // K4-3: ilk yazmadan ÖNCE
+      const before = await lockClientPortalState(tx, tenantId, clientId);
+      if (!before.isActive) {
+        throw new ConflictException("Pasif müvekkile portal erişimi açılamaz; önce müvekkili etkinleştirin");
+      }
       await this.assertNoPortalEmailConflictInTx(tx, email, clientId);
-      const before = await tx.client.findUniqueOrThrow({
-        where: { id: clientId },
-        select: { id: true, hasPortalAccess: true, portalUserId: true },
-      });
       const portalUser = await tx.clientPortalUser.create({
         data: {
           clientId,
@@ -952,33 +957,7 @@ export class PortalService {
     // C0 bypass fix: portal kullanıcıları pasifle + client erişim-bayrağı kapat + audit AYNI transaction.
     await this.prisma.$transaction(async (tx) => {
       await this.assertCanManagePortalAccessInTx(tx, actor?.userId, tenantId); // K4-3: ilk yazmadan ÖNCE
-      const before = await tx.client.findUniqueOrThrow({
-        where: { id: clientId },
-        select: { id: true, hasPortalAccess: true, portalUserId: true },
-      });
-      // CLIENT-P2-U02: isActive:false ile AYNI update içinde tokenVersion artışı —
-      // guard'ın stale-version kontrolü da devre dışı bırakmayı bağımsız olarak kapsar.
-      await tx.clientPortalUser.updateMany({
-        where: { clientId },
-        // D5-SEC-R01: bekleyen sıfırlama token'ı AYNI update'te geçersizleştirilir — kapatılan hesaba
-        // kapatmadan önce gönderilmiş bağlantı artık tüketilemez (reset WHERE'i ayrıca isActive:true ister).
-        data: { isActive: false, tokenVersion: { increment: 1 }, resetToken: null, resetTokenExp: null },
-      });
-      const after = await tx.client.update({
-        where: { id: clientId },
-        data: { hasPortalAccess: false },
-      });
-      await this.audit.logInTransaction(tx, {
-        tenantId,
-        action: "CLIENT_PORTAL_ACCESS_DISABLE",
-        entityType: "CLIENT",
-        entityId: clientId,
-        userId: actor?.userId,
-        metadata: {
-          portalAction: "DISABLE",
-          fieldDiff: buildClientFieldDiff(before, after, PORTAL_ACCESS_FIELDS),
-        },
-      });
+      await disableClientPortalAccessInTx(tx, this.audit, tenantId, clientId, actor?.userId, 'PORTAL_DISABLE');
     });
 
     return { success: true };

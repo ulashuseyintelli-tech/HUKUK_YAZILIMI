@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, within, waitFor } from '@testing-library/react';
 import ClientsSettingsPage from '../page';
 import { api } from '@/lib/api';
 
@@ -50,6 +50,44 @@ beforeEach(() => {
   });
 });
 afterEach(() => cleanup());
+
+describe('4a existing deactivation confirmation', () => {
+  function eligible() {
+    mockedApi.get.mockImplementation((url: string) => Promise.resolve({ data: { data:
+      url.includes('lifecycle-eligibility') ? { eligible: true } : url.startsWith('/clients') ? [CLIENT] : [] } }));
+  }
+  it('warns about portal closure and separate reopening before any request; cancel leaves data untouched', async () => {
+    eligible(); const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    try {
+      render(<ClientsSettingsPage />); fireEvent.click(await screen.findByTitle('Pasifleştir'));
+      expect(confirm).toHaveBeenCalledWith(expect.stringContaining('portal erişimi de kapatılır'));
+      expect(confirm).toHaveBeenCalledWith(expect.stringContaining('portalı kendiliğinden açmaz'));
+      expect(api.delete).not.toHaveBeenCalled(); expect(screen.getByText('Ayşe Yılmaz')).toBeInTheDocument();
+    } finally { confirm.mockRestore(); }
+  });
+  it('keeps a rejected deactivation visible and does not turn it into success', async () => {
+    eligible(); const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    vi.mocked(api.delete).mockRejectedValue(new Error('Pasifleştirme reddedildi'));
+    try {
+      render(<ClientsSettingsPage />); fireEvent.click(await screen.findByTitle('Pasifleştir'));
+      await waitFor(() => expect(alert).toHaveBeenCalledWith('Pasifleştirme reddedildi'));
+      expect(api.delete).toHaveBeenCalledWith('/clients/cli-1');
+      expect(screen.getByText('Ayşe Yılmaz')).toBeInTheDocument();
+    } finally { confirm.mockRestore(); alert.mockRestore(); }
+  });
+  it('refreshes the existing list only after confirmed server success', async () => {
+    eligible(); const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.mocked(api.delete).mockImplementation(async () => {
+      mockedApi.get.mockResolvedValue({ data: { data: [] } }); return { data: { success: true } } as any;
+    });
+    try {
+      render(<ClientsSettingsPage />); fireEvent.click(await screen.findByTitle('Pasifleştir'));
+      await waitFor(() => expect(screen.queryByText('Ayşe Yılmaz')).not.toBeInTheDocument());
+      expect(api.delete).toHaveBeenCalledTimes(1);
+    } finally { confirm.mockRestore(); }
+  });
+});
 
 describe('ClientsSettingsPage — capabilities okuma hatası → kilitlenmiyor → backend reddi görünür mü', () => {
   it('capabilities undefined iken "Manuel Ekle" butonu KİLİTLİ DEĞİL', async () => {
