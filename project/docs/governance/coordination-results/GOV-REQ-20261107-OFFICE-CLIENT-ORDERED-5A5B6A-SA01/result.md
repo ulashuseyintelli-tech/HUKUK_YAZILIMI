@@ -12,7 +12,7 @@ Only the registered single-target execution and its exact-main acceptance are re
   "status": "SUCCEEDED",
   "executionPrNumber": 3137,
   "executionMergeSha": "d98ac3817c536b80c3088501674228f54033ba89",
-  "effectiveMainSha": "82ad19cd20dc93f4c029fa50ab9fe9e9da15ec50",
+  "effectiveMainSha": "913df53aff56d64b8430dc1240ea96297e73fd95",
   "completedAt": "2026-11-07T21:41:10Z",
   "validationEvidence": [
     {
