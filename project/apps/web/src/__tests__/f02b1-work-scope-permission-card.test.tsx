@@ -53,6 +53,22 @@ describe('F02-B-1 — WorkScopePermissionCard', () => {
     expect(tasks.disabled).toBe(false);
   });
 
+  it('P3-D1: üçüncü AYRI anahtar "Dosyalar" (office.cases.view_all) kendi durumunu gösterir ve kendi anahtarıyla yazar', async () => {
+    mocked.getWorkScopePermissions.mockResolvedValue({
+      ...STATE(),
+      permissions: [...STATE().permissions, { key: 'office.cases.view_all', effect: 'DENY', validUntil: null }],
+    });
+    render(<WorkScopePermissionCard personType="staff" personId="s1" formDirty={false} />);
+    const cases = (await screen.findByTestId('work-scope-select-office.cases.view_all')) as HTMLSelectElement;
+    await waitFor(() => expect(cases.value).toBe('DENY'));
+    expect(screen.getByText('Dosyalar')).toBeTruthy();
+    expect(screen.getByText(/Dosya Sorumlusu olduğu, oluşturduğu ve görevli olduğu dosyalar/)).toBeTruthy();
+    expect((screen.getByTestId('work-scope-select-office.tasks.view_all') as HTMLSelectElement).value).toBe('NONE');
+    fireEvent.change(cases, { target: { value: 'ALLOW' } });
+    await waitFor(() => expect(mocked.setWorkScopePermission).toHaveBeenCalledWith({ personType: 'staff', personId: 's1', key: 'office.cases.view_all', effect: 'ALLOW' }));
+    expect(mocked.setWorkScopePermission).toHaveBeenCalledTimes(1);
+  });
+
   it('seçim ALLOW → setWorkScopePermission doğru gövdeyle; sonra yeniden okunur', async () => {
     render(<WorkScopePermissionCard personType="staff" personId="s1" formDirty={false} />);
     const tasks = (await screen.findByTestId('work-scope-select-office.tasks.view_all')) as HTMLSelectElement;

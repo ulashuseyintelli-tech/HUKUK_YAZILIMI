@@ -344,3 +344,5 @@ src/modules/case/__tests__/legal-responsible-lawyer-admin-staff.http.db-gated.in
 src/modules/expense-request/__tests__/expense-send-approval.http.db-gated.integration.spec.ts
 # 3b/KI-221–MK-13: canonical expense target, real HTTP and disposable DB with transaction race/rollback acceptance.
 src/modules/expense-request/__tests__/expense-canonical-target.http.db-gated.integration.spec.ts
+# F02 P3-D1 (owner 07.11.2026): GET /cases + GET /cases/:id gorunum kapsami - gercek HTTP (CaseModule) + disposable PostgreSQL.
+src/modules/case/__tests__/case-view-scope.http.db-gated.integration.spec.ts

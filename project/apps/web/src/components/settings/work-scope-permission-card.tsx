@@ -7,6 +7,8 @@
 // Bu izinler MÜVEKKİL okuma ya da dosyaya bağlama yetkisi VERMEZ ve liste kapsamını henüz GENİŞLETMEZ: kapsam daraltması /
 // etkinleştirme ayrı dilim ve ayrı yayın yetkisidir (G3: önce masraf, sonra görev). Otomatik toplu grant YOK — izin kişi
 // başına bu ekrandan tanımlanır. Backend: GET/POST /office/view-all-permissions (+/revoke). Yeni endpoint dışında şema YOK.
+// F02 P3-D1 (owner 07.11.2026): AYRI üçüncü anahtar office.cases.view_all (dosya listesi + detayı). Varsayılan dosya görünümü =
+// Dosya Sorumlusu olduğu ∪ oluşturduğu ∪ görevli olduğu (CaseLawyer / CaseStaff görüntüleme) dosyalar; DENY varsayılanı kaldırmaz.
 
 import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
@@ -16,6 +18,7 @@ import { api, type WorkScopePermissionState, type WorkScopeResolution, type Work
 const KEYS: Array<{ key: WorkScopeViewAllKey; label: string; hint: string }> = [
   { key: "office.tasks.view_all", label: "Görevler", hint: "Varsayılan: kendisine atanan / oluşturduğu görevler ve görevli olduğu dosyaların görevleri." },
   { key: "office.expenses.view_all", label: "Masraflar", hint: "Varsayılan: oluşturduğu / onayladığı masraflar ve görevli olduğu dosyaların masrafları." },
+  { key: "office.cases.view_all", label: "Dosyalar", hint: "Varsayılan: Dosya Sorumlusu olduğu, oluşturduğu ve görevli olduğu dosyalar." },
 ];
 
 const EFFECT_LABEL: Record<WorkScopeResolution, string> = {

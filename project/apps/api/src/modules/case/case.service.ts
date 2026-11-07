@@ -52,6 +52,9 @@ import { buildCalculationSummaryCurrencyStatus } from "./case-calculation-summar
 import { resolveInitialPolicy } from "../interest-engine/interest-strategy.config";
 import { mapDtoCaseTypeToInterestCaseType } from "./case-type-mapping";
 import { validateResponsibleSelection } from "./responsible-candidates.service"; // M2-A3a: create'te ortak Dosya Sorumlusu validator
+// F02 P3-D1: dosya liste + detay görünüm kapsamı (saf sözleşme) ve büro geneli izin çözümü (DENY > ALLOW > NONE).
+import { CASE_VIEW_ALL_KEY, caseViewWhereFor, isCaseViewScopeEnabled } from "./case-view-scope";
+import { WorkScopePermissionService } from "../work-scope-permission/work-scope-permission.service";
 import { ExpenseRequestService } from "../expense-request/expense-request.service";
 import { loadExpenseTargetStatus, EXPENSE_TARGET_MISSING, EXPENSE_TARGET_REQUIRED } from '../expense-request/expense-target';
 import type { ExpenseSendApprovalOutcome } from '../client-notification/expense-send-approval.service';
@@ -621,7 +624,29 @@ export class CaseService {
     // K3-L Faz 2b: dosya açılışında (commit sonrası) çek tazminatı K3 onay talebi. Yoksa talep açılmaz, yanıtta raporlanır.
     @Optional()
     private cekFormation?: CekAutoGenerateFormationService,
+    // F02 P3-D1: dosya liste + detay görünüm kapsamı (`office.cases.view_all` çözümü). Bayrak açıkken yoksa FAIL-CLOSED.
+    @Optional()
+    private workScope?: WorkScopePermissionService,
   ) {}
+
+  /**
+   * F02 P3-D1 (owner kararı 07.11.2026; OFP-09 ikinci dilimi / E-2) — dosya LİSTE + DETAY görünüm kapsamı.
+   * Bayrak (OFFICE_CASE_VIEW_SCOPE_ENABLED) KAPALI → null = bugünkü davranış (büro geneli).
+   * AÇIK → `office.cases.view_all` çözümü: ALLOW (DENY yoksa) → büro geneli; DENY / NONE → varsayılan kapsam
+   * (aktif Dosya Sorumlusu ∪ oluşturan ∪ CaseLawyer ∪ CaseStaff canView — caseViewScopeWhere). DENY yalnız büro geneli
+   * genişlemeyi engeller, varsayılan dosya ilişkilerini kaldırmaz. Aktör kimliği ya da izin servisi yoksa FAIL-CLOSED 403.
+   *
+   * @remarks Çağrıldığı yerler: findAll() → GET /cases; findOneVisible() → GET /cases/:id. İç `findOne` çağrıları
+   * (güncelleme / sayaç yolları) kapsam DIŞIDIR — bu dilim yalnız liste ve detay okumasını daraltır.
+   */
+  private async caseViewScope(tenantId: string, actorUserId?: string): Promise<Prisma.CaseWhereInput | null> {
+    if (!isCaseViewScopeEnabled()) return null;
+    if (!actorUserId || !this.workScope) {
+      throw new ForbiddenException({ code: "CASE_VIEW_SCOPE_UNRESOLVED", message: "Dosya görünüm kapsamı çözümlenemedi" });
+    }
+    const resolution = await this.workScope.resolve(this.prisma, tenantId, actorUserId, CASE_VIEW_ALL_KEY);
+    return caseViewWhereFor(resolution, tenantId, actorUserId);
+  }
 
   /**
    * K2 (owner kararı 2026-09-28) — dosya düzeyinde YETKİ verme/değiştirme (CaseLawyer.casePermissions,
@@ -1301,8 +1326,10 @@ export class CaseService {
     }
   }
 
-  async findAll(tenantId: string, params?: { status?: string; expenseRequestStatus?: string; clientId?: string; noOwner?: boolean; legalResponsibleMissing?: boolean; responsibleLawyerId?: string; responsibleStaffId?: string; includeArchived?: boolean; page?: number; limit?: number }) {
+  async findAll(tenantId: string, params?: { status?: string; expenseRequestStatus?: string; clientId?: string; noOwner?: boolean; legalResponsibleMissing?: boolean; responsibleLawyerId?: string; responsibleStaffId?: string; includeArchived?: boolean; page?: number; limit?: number }, actorUserId?: string) {
     const { status, expenseRequestStatus, clientId, noOwner, legalResponsibleMissing, responsibleLawyerId, responsibleStaffId, includeArchived, page = 1, limit = 20 } = params || {};
+    // F02 P3-D1: görünüm kapsamı süzgeçlerden ÖNCE çözülür (bayrak açık + aktör yok → 403; sorgu hiç kurulmaz).
+    const viewScope = await this.caseViewScope(tenantId, actorUserId);
 
     const where: any = { tenantId };
     // CS4: "Arşiv dahil" checkbox'ı önceden uçtan uca no-op'tu (FE api.ts hiç göndermiyordu, controller
@@ -1336,6 +1363,9 @@ export class CaseService {
         },
       };
     }
+    // F02 P3-D1: kapsam AND katmanında → bütün süzgeçlerle KESİŞİR; data, total ve sayfalama aynı `where`'i kullanır.
+    // (`where.lawyers` gibi süzgeç anahtarları ezilmez.)
+    if (viewScope) where.AND = [viewScope];
 
     const [cases, total] = await Promise.all([
       this.prisma.case.findMany({
@@ -1506,9 +1536,21 @@ export class CaseService {
     return { ...lawyer, iban: v == null || v === "" ? v : maskIban(v) };
   }
 
-  async findOne(tenantId: string, id: string) {
+  /**
+   * F02 P3-D1 — GET /cases/:id: aktörün görünüm kapsamıyla detay. Kapsam dışı dosya `findOne` ile AYNI 404'ü alır
+   * (varlık sızmaz). Bayrak kapalıyken davranış `findOne(tenantId, id)` ile birebir aynıdır.
+   *
+   * @remarks Çağrıldığı yer: CaseController.findOne → GET /cases/:id.
+   */
+  async findOneVisible(tenantId: string, id: string, actorUserId?: string) {
+    const viewScope = await this.caseViewScope(tenantId, actorUserId);
+    return this.findOne(tenantId, id, viewScope);
+  }
+
+  /** `viewScope` yalnız findOneVisible'dan gelir; iç çağıranlar (güncelleme / sayaç yolları) kapsamsız okur. */
+  async findOne(tenantId: string, id: string, viewScope: Prisma.CaseWhereInput | null = null) {
     const caseItem = await this.prisma.case.findFirst({
-      where: { id, tenantId },
+      where: { id, tenantId, ...(viewScope ? { AND: [viewScope] } : {}) },
       include: {
         client: true,
         court: true,

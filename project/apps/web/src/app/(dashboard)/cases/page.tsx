@@ -18,6 +18,7 @@ import { toActionErrorMessage } from "@/lib/action-error";
 import { bulkAssignResponsible, type BulkAssignResult } from "@/lib/bulk-assign-responsible";
 import { BulkDocumentGenerator } from "@/components/case";
 import { ResponsibleCandidateSelect, type ResponsibleSelection } from "@/components/case/responsible-candidate-select";
+import { ViewScopeBadge } from "@/components/scope/ViewScopeBadge";
 import { MultiSelectDropdown, QuickFilterChip, ActiveFilterPill, QuickFilterHelpBanner, MissingBadge } from "@/components/ui";
 
 interface CaseItem {
@@ -1756,6 +1757,8 @@ export default function CasesPage() {
           <p className="text-xs text-muted-foreground">
             {filteredCases.length} takip {selectedCases.length > 0 && `• ${selectedCases.length} seçili`}
           </p>
+          {/* F02 P3-D1: sunucunun dosya listesine UYGULADIĞI kapsam (GET /office/view-scope; liste ile aynı kaynak) */}
+          <ViewScopeBadge area="cases" className="mt-1" />
         </div>
         <div className="flex items-center gap-2">
           <button
