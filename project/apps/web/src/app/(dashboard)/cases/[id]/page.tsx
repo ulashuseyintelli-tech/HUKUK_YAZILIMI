@@ -70,6 +70,7 @@ import { FaizDokumuPanel } from "@/components/interest";
 import { OperationDeck } from "@/components/case-detail";
 import IntakeLinksCard from "@/components/case/IntakeLinksCard";
 import { IntelStatementSection } from "@/components/case/IntelStatementSection";
+import { ClientApprovalLedgerCard } from "@/components/case/ClientApprovalLedgerCard";
 import { ClaimItemPanel } from "@/components/claim-item";
 import { HacizHistoryCard } from "@/components/case/HacizHistoryCard";
 import { TebligatCard } from "@/components/case/TebligatCard";
@@ -2883,6 +2884,14 @@ export default function CaseDetailPage() {
             caseClients={caseData.caseClients}
           />
         </div>
+
+        {caseData.id === params.id && <div className="px-3 pt-3">
+          <ClientApprovalLedgerCard
+            key={caseData.id}
+            caseId={caseData.id}
+            clients={(caseData.caseClients || []).map(link => ({ id: link.client.id, name: link.client.displayName || link.client.name }))}
+          />
+        </div>}
 
         {/* Müvekkil İstihbaratı (Client Intake 4.7d-1) — promote edilen ClientIntelStatement +
             lifecycle mutasyonları (4.7d-2). CLIENT-INTEL-4.7D-2B: create hedefi yalnız dosyada
