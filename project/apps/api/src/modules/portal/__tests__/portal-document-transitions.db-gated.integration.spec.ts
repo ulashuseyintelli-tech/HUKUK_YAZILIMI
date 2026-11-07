@@ -387,6 +387,15 @@ dbDescribe('Portal document review/delete — single winner and normal-error com
     expect(await service().getNotifications('different-client')).toEqual([]);
   });
 
+  it('4c HTTP cannot expose or invent a decision from an unclassified historical document notice', async () => {
+    await a.portalNotification.create({ data: { clientId, type: 'BELGE', title: 'OLD-PRIVATE-TITLE', message: 'UNKNOWN-PRIVATE-BODY' } });
+    const before = await snapshot();
+    const response = await http(app.getHttpServer()).get('/portal/notifications').set('x-test-principal', 'portal').expect(200);
+    expect(response.body[0]).toMatchObject({ title: 'Belge Bildirimi', message: 'Belge incelemesiyle ilgili bilgi için büronuzla iletişime geçiniz.' });
+    expect(JSON.stringify(response.body)).not.toContain('PRIVATE');
+    expect(await snapshot()).toEqual(before);
+  });
+
   it.each([null, 1, [], {}, '', '   ', 'x'.repeat(501)])('4c invalid HTTP public reason %p has zero row, audit and file side effects', async reason => {
     const before = await snapshot();
     await http(app.getHttpServer()).post(`/portal/admin/documents/${documentId}/reject`).set('x-test-principal', 'staff')

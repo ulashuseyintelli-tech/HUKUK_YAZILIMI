@@ -87,6 +87,14 @@ describe("PortalService.getNotifications — CLIENT-P2-U03-I05 explicit projecti
     expect(await svc.getNotifications(CLIENT_ID)).toEqual([BOUNDED_NOTIFICATION_ROW]);
   });
 
+  it.each(['OLD-PRIVATE-TITLE', null])('4c unclassified historical BELGE label %p has neutral presentation without invented decision', async title => {
+    const { svc } = buildService({ findManyResult: [{ ...BOUNDED_NOTIFICATION_ROW, type: 'BELGE', title, message: 'UNKNOWN-PRIVATE-BODY', clientRejectionReason: null }] });
+    const [result] = await svc.getNotifications(CLIENT_ID);
+    expect(result.title).toBe('Belge Bildirimi');
+    expect(result.message).toBe('Belge incelemesiyle ilgili bilgi için büronuzla iletişime geçiniz.');
+    expect(JSON.stringify(result)).not.toContain('PRIVATE');
+  });
+
   it.each([null, 123, [], {}, '', '   ', 'x'.repeat(501)])('4c rejects invalid explicit public input %p before a transaction or notification', async reason => {
     const { svc, prisma } = buildService();
     await expect(svc.reviewDocument('doc', 'tenant', 'actor', false, 'INTERNAL', reason as any)).rejects.toMatchObject({ status: 400 });

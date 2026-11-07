@@ -986,12 +986,17 @@ export class PortalService {
       take: limit,
       select: PORTAL_NOTIFICATION_CLIENT_SELECT,
     });
-    return rows.map(row => ({
-      id: row.id, type: row.type, title: row.title,
-      message: row.type === "BELGE" && row.title === DOCUMENT_REJECTION_TITLE
-        ? clientDocumentRejectionMessage(row.clientRejectionReason) : row.message,
-      linkUrl: row.linkUrl, isRead: row.isRead, createdAt: row.createdAt,
-    }));
+    return rows.map(row => {
+      // An unclassified historical BELGE row is not evidence of either approval or rejection.
+      const unknownDocumentNotice = row.type === "BELGE" && row.title !== DOCUMENT_REJECTION_TITLE && row.title !== "Belgeniz Onaylandı";
+      return {
+        id: row.id, type: row.type, title: unknownDocumentNotice ? "Belge Bildirimi" : row.title,
+        message: unknownDocumentNotice ? "Belge incelemesiyle ilgili bilgi için büronuzla iletişime geçiniz."
+          : row.type === "BELGE" && row.title === DOCUMENT_REJECTION_TITLE
+            ? clientDocumentRejectionMessage(row.clientRejectionReason) : row.message,
+        linkUrl: row.linkUrl, isRead: row.isRead, createdAt: row.createdAt,
+      };
+    });
   }
 
   /**
