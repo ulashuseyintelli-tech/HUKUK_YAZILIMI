@@ -20,7 +20,8 @@ type Db = Prisma.TransactionClient | PrismaService;
  * @remarks Çağıranlar:
  *  - CaseService.findAll / findOneVisible (D1: GET /cases, GET /cases/:id) → scopeWhere();
  *  - CaseViewScopeGuard (D2: dosya kimliği yolda olan belge okuma uçları) → assertCaseVisible();
- *  - TemplateEngineController.downloadArtifact (D2) → isArtifactVisible().
+ *  - TemplateEngineController.downloadArtifact (D2) → isArtifactVisible();
+ *  - CaseObjectViewScopeGuard (D3b-2: kendi kimlikli kayıt / ücret sözleşmesi okuma uçları) → isCaseObjectVisible().
  */
 @Injectable()
 export class CaseViewScopeService {
@@ -69,4 +70,56 @@ export class CaseViewScopeService {
     });
     return !!found;
   }
+
+  /**
+   * P3-D3b-2 (D2 artefakt emsali) — KENDİ kimliğiyle okunan dosya nesnesi (teminat / çek-senet / ilam / kira kaydı, ücret
+   * sözleşmesi, dosya–müvekkil bağı) → dosya sunucudaki satırdan çözülür; nesne aktörün kiracısında, çözülen dosya da aynı
+   * kiracıda ve aktörün kapsamında olmalı. Teminat / ilam / kira `caseId`'si ve sözleşmenin `caseClientId`'si için FK YOK:
+   * başka kiracıya ya da var olmayan dosyaya işaret eden satır false alır. Bayrak kapalı → true (ek sorgu yok).
+   * false → çağıran, var olmayan nesneyle AYNI 404 gövdesini döner (varlık sızmaz).
+   */
+  async isCaseObjectVisible(
+    tenantId: string,
+    actorUserId: string | null | undefined,
+    kind: CaseScopedObjectKind,
+    objectId: unknown,
+  ): Promise<boolean> {
+    if (!isCaseViewScopeEnabled()) return true;
+    const scope = await this.scopeWhere(tenantId, actorUserId);
+    if (typeof objectId !== "string" || !objectId) return false;
+    const caseId = await this.caseIdOf(tenantId, kind, objectId);
+    if (!caseId) return false;
+    const found = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId, ...(scope ? { AND: [scope] } : {}) },
+      select: { id: true },
+    });
+    return !!found;
+  }
+
+  /** Nesnenin dosya kimliği — yalnız aktör kiracısındaki satırdan (bulunamazsa null). */
+  private async caseIdOf(tenantId: string, kind: CaseScopedObjectKind, id: string): Promise<string | null> {
+    const where = { id, tenantId };
+    const select = { caseId: true } as const;
+    switch (kind) {
+      case "caseCollateral":
+        return (await this.prisma.caseCollateral.findFirst({ where, select }))?.caseId ?? null;
+      case "caseInstrument":
+        return (await this.prisma.caseInstrument.findFirst({ where, select }))?.caseId ?? null;
+      case "caseJudgment":
+        return (await this.prisma.caseJudgment.findFirst({ where, select }))?.caseId ?? null;
+      case "caseLease":
+        return (await this.prisma.caseLease.findFirst({ where, select }))?.caseId ?? null;
+      case "caseFeeAgreement": {
+        const agreement = await this.prisma.caseFeeAgreement.findFirst({ where, select: { caseClientId: true } });
+        return agreement ? this.caseIdOf(tenantId, "caseClient", agreement.caseClientId) : null;
+      }
+      case "caseClient": // CaseClient'ta tenantId yok: kiracı bağlı dosyadan
+        return (await this.prisma.caseClient.findFirst({ where: { id, case: { tenantId } }, select }))?.caseId ?? null;
+      default:
+        return null;
+    }
+  }
 }
+
+/** P3-D3b-2: kendi kimliğiyle okunan, dosyaya bağlı nesne türleri (yeni kural değildir; dosya bu satırlardan çözülür). */
+export type CaseScopedObjectKind = "caseCollateral" | "caseInstrument" | "caseJudgment" | "caseLease" | "caseFeeAgreement" | "caseClient";
