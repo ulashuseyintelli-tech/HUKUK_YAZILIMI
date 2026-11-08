@@ -23,6 +23,7 @@ import { ClientSettlementModule } from "../../client-settlement/client-settlemen
 import { ErrorLogModule } from "../../error-log/error-log.module";
 import { MetricsRegistryModule } from "../../metrics-registry/metrics-registry.module";
 import { CASE_VIEW_ALL_KEY, CASE_VIEW_SCOPE_FLAG } from "../case-view-scope";
+import { CaseViewScopeService } from "../case-view-scope.service";
 
 /**
  * F02 P3-D3b-2 (owner kararı 08.11.2026; D2 artefakt emsali) — KENDİ kimliğiyle okunan dosya nesneleri (teminat / çek-senet /
@@ -322,6 +323,16 @@ describeDb("F02 P3-D3b-2 — kendi kimliğiyle okunan dosya nesneleri dosya gör
       expectDenied(await get(v.allow, `/case-fee-agreements/${ids.fa.crossB}`), "Ücret sözleşmesi bulunamadı", "c4", ["crossB", "c4"]);
       expectDenied(await get(v.allow, `/case-fee-agreements/case-client/${ids.cc.c4}`), "Dosya bulunamadı", "c4", ["crossB", "c4"]);
       expectDenied(await get(v.allow, `/case-fee-agreements/case-client/${ids.cc.c4}/active`), "Dosya bulunamadı", "c4", ["crossB", "c4"]);
+    });
+
+    it("servis düzeyi: nesne aktörün kiracısında değilse dosya görünür olsa bile false (handler'ın kendi kiracı süzgecine dayanılmaz)", async () => {
+      const scope = app.get(CaseViewScopeService, { strict: false });
+      // büro A'daki link C4'ü görür; büro B'nin C4'e işaret eden satırları büro A aktörüne görünür SAYILMAZ.
+      expect(await scope.isCaseObjectVisible(tA, u.link, "caseCollateral", ids.col.c4)).toBe(true);
+      expect(await scope.isCaseObjectVisible(tA, u.link, "caseCollateral", ids.col.crossB)).toBe(false);
+      expect(await scope.isCaseObjectVisible(tA, u.link, "caseFeeAgreement", ids.fa.c4)).toBe(true);
+      expect(await scope.isCaseObjectVisible(tA, u.link, "caseFeeAgreement", ids.fa.crossB)).toBe(false);
+      expect(await scope.isCaseObjectVisible(tB, v.allow, "caseClient", ids.cc.c4)).toBe(false);
     });
 
     it("kayıt–dosya uyuşmazlığı: var olmayan dosyayı / bağı gösteren büro A satırları ALLOW'lu kişiye de açılmaz", async () => {
