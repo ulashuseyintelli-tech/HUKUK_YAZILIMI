@@ -660,7 +660,7 @@ describeWithDisposableDb('Açılış masrafı şartı — belirlenemeyen masraf 
     });
 
     const credit = async (caseId: string, amount: number) => {
-      const res = await post(`/cases/${caseId}/balance/credit`, { amount, source: 'manual', description: 'masraf avansı' });
+      const res = await post(`/cases/${caseId}/balance/credit`, { amount, currency: 'TRY', source: 'manual', description: 'masraf avansı' });
       expect(res.status).toBe(201);
     };
 
