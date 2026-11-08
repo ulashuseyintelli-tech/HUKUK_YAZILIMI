@@ -22,6 +22,14 @@ export interface ExpensePaymentCommand {
   notes?: string;
 }
 
+export interface ActualExpenseSummary {
+  caseId: string;
+  basis: 'TYPED_EXPENSE_ACTUAL';
+  scope: 'CASE';
+  exists: boolean;
+  totals: Array<{ currency: string; amount: string; count: number }>;
+}
+
 export type ExpenseReceiptPaymentCommand = Omit<ExpensePaymentCommand, 'amount'> & {
   paidAmount: number;
   receiptDocId?: string;
@@ -2572,6 +2580,10 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify(payment),
     });
+  }
+
+  async getActualExpenseSummary(caseId: string) {
+    return this.request<ActualExpenseSummary>(`/cases/${encodeURIComponent(caseId)}/balance/expense-actual-summary`);
   }
 
   /**

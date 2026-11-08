@@ -67,13 +67,13 @@ function buildEngine(options: { facts?: Record<string, unknown>; gatesBlocked?: 
 describe('Aşamadan bağımsız eylem — karar motoru kilidi (gerçek motor + gerçek durum makinesi)', () => {
   it('matriste aşamadan bağımsız işaretli eylemler TAM olarak owner kararlarıyla adı anılıp açılanlar: APPROVE_EXPENSE + P1 UYAP gönderim kodları', () => {
     const flagged = ACTION_MATRIX.filter((entry) => entry.stageIndependent === true).map((entry) => entry.actionCode);
-    expect([...flagged].sort()).toEqual([ActionCode.APPROVE_EXPENSE, ActionCode.UYAP_DOCUMENT_SUBMIT, ActionCode.UYAP_LAWSUIT_FILE].sort());
+    expect([...flagged].sort()).toEqual([ActionCode.APPROVE_EXPENSE, ActionCode.RECORD_EXPENSE_PAYMENT, ActionCode.UYAP_DOCUMENT_SUBMIT, ActionCode.UYAP_LAWSUIT_FILE].sort());
     // UYAP_SEND (xml/submit) aşamaya BAĞLI kalır (owner Ek 91 B2-a: mevcut aşama kısıtı korunur)
     expect(isStageIndependent(ActionCode.UYAP_SEND)).toBe(false);
     expect(isStageIndependent(ActionCode.APPROVE_EXPENSE)).toBe(true);
     // Masraf ödeme kaydı eylemleri (karar maddesi bekliyor) ve borçlu tahsilatı AÇILMADI
     expect(isStageIndependent(ActionCode.RECORD_COLLECTION)).toBe(false);
-    expect(isStageIndependent(ActionCode.RECORD_EXPENSE_PAYMENT)).toBe(false);
+    expect(isStageIndependent(ActionCode.RECORD_EXPENSE_PAYMENT)).toBe(true);
   });
 
   it('50 eylem × 13 aşama: izinli küme TAM olarak beklenen (APPROVE_EXPENSE + P1 UYAP gönderim kodları)', async () => {
@@ -93,6 +93,7 @@ describe('Aşamadan bağımsız eylem — karar motoru kilidi (gerçek motor + g
     expect(inspected).toBe(50 * 13); // 0 = kör
     const expected: Record<string, string[]> = {};
     for (const [action, stages] of Object.entries(EXPECTED_ALLOWED_STAGES)) expected[action] = [...(stages as readonly string[])];
+    expected[ActionCode.RECORD_EXPENSE_PAYMENT] = [...DB_STAGES];
     expect(actual).toEqual(expected);
   });
 
@@ -215,7 +216,6 @@ describe('Aşamadan bağımsız eylem — karar motoru kilidi (gerçek motor + g
   describe('diğer eylemlerin aşama sözlüğü DEĞİŞMEDİ (aşamadan bağımsızlık başka eyleme sızarsa test düşer)', () => {
     it.each([
       ActionCode.RECORD_COLLECTION,
-      ActionCode.RECORD_EXPENSE_PAYMENT,
       ActionCode.REQUEST_EXPENSE,
       ActionCode.TRIGGER_HACIZ,
       ActionCode.REQUEST_SALE,

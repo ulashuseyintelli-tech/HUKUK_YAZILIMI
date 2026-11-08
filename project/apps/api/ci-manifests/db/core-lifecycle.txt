@@ -351,3 +351,4 @@ src/modules/case/__tests__/case-view-scope-documents.http.db-gated.integration.s
 # F02 P3-D3 (owner 08.11.2026): dosya alt kaynagi okuma yollari (18 GET) - gercek HTTP + disposable PostgreSQL.
 src/modules/case/__tests__/case-view-scope-subresources.http.db-gated.integration.spec.ts
 src/modules/expense-request/__tests__/expense-payment-reversal.http.db-gated.integration.spec.ts
+src/modules/case-balance/__tests__/finance-cards-payment.http.db-gated.integration.spec.ts

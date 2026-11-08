@@ -42,6 +42,12 @@ export class CaseBalanceController {
     return this.caseBalanceService.getLedger(req.user.tenantId, caseId);
   }
 
+  @CaseViewScoped()
+  @Get('expense-actual-summary')
+  async getActualExpenseSummary(@Param('caseId') caseId: string, @Req() req: AuthRequest) {
+    return this.caseBalanceService.getActualExpenseSummary(req.user.tenantId, caseId);
+  }
+
   /**
    * Bakiyeye kredi ekle (ödeme geldi)
    * POST /cases/:caseId/balance/credit

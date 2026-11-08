@@ -238,6 +238,35 @@ export class CaseBalanceService {
   /**
    * Bakiye hareketlerini listele
    */
+  /** Y3 read projection only: the controller/case Finance card consumes typed records, not a new balance SoT. */
+  async getActualExpenseSummary(tenantId: string, caseId: string) {
+    const balance = await this.findExistingBalance(tenantId, caseId);
+    const basis = 'TYPED_EXPENSE_ACTUAL' as const;
+    if (!balance) return { caseId, basis, scope: 'CASE' as const, exists: false, totals: [] };
+    const rows = await this.prisma.balanceLedger.findMany({
+      where: { tenantId, caseBalanceId: balance.id, entryKind: 'EXPENSE_ACTUAL' },
+      select: { type: true, amount: true, currency: true, source: true, sourceId: true, postingKey: true },
+    });
+    const totals = new Map<string, { amount: Prisma.Decimal; count: number }>();
+    for (const row of rows) {
+      const amount = new Prisma.Decimal(row.amount);
+      if (row.type !== 'DEBIT' || !amount.isFinite() || !amount.isNegative()
+        || !/^[A-Z]{3}$/.test(row.currency) || !row.postingKey
+        || row.source !== `expense_actual:${row.postingKey}` || row.sourceId !== row.postingKey) {
+        throw new ConflictException({ code: 'EXPENSE_ACTUAL_SOURCE_INCONSISTENT', message: 'Gerçekleşen masraf kaynağı doğrulanamadı' });
+      }
+      const previous = totals.get(row.currency) ?? { amount: new Prisma.Decimal(0), count: 0 };
+      totals.set(row.currency, { amount: previous.amount.minus(amount), count: previous.count + 1 });
+    }
+    if (!rows.length) {
+      if (!/^[A-Z]{3}$/.test(balance.currency)) throw new ConflictException('Masraf hesabının para birimi doğrulanamadı');
+      totals.set(balance.currency, { amount: new Prisma.Decimal(0), count: 0 });
+    }
+    return { caseId, basis, scope: 'CASE' as const, exists: true,
+      totals: [...totals].sort(([a], [b]) => a.localeCompare(b))
+        .map(([currency, row]) => ({ currency, amount: row.amount.toFixed(2), count: row.count })) };
+  }
+
   async getLedger(tenantId: string, caseId: string) {
     // Okuma satır oluşturmaz: avans kaydı yoksa hareket de yoktur (var olan satırın boş listesiyle aynı yanıt).
     const balance = await this.findExistingBalance(tenantId, caseId);

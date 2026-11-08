@@ -225,7 +225,7 @@ export const ACTION_MATRIX: ActionMatrixEntry[] = [
     scope: Scope.EXPENSE,
     // Owner kararı 8 (2026-10-05): masraf kesinleştirme / onaylama / reddetme dosya aşamasından bağımsızdır
     // (POST /expense-requests/:id/{finalize,approve,reject}). Masraf ÖDEME KAYDI bu karara girer ama o uç ayrı karar
-    // maddesidir (RECORD_COLLECTION'a bağlı kalır; bu alan ona verilmedi).
+    // maddesiydi; owner M3b/Y3 tesliminde RECORD_EXPENSE_PAYMENT altında ayrıca açıldı.
     stageIndependent: true,
     notes: 'Masraf onaylama, müvekkile maliyet oluşturur',
   },
@@ -383,15 +383,16 @@ export const ACTION_MATRIX: ActionMatrixEntry[] = [
   },
   {
     actionCode: ActionCode.RECORD_EXPENSE_PAYMENT,
-    riskLevel: RiskLevel.LOW,
-    failMode: 'OPEN',
-    resolverFailureMode: 'FAIL_OPEN',
+    riskLevel: RiskLevel.MEDIUM,
+    failMode: 'CLOSED',
+    resolverFailureMode: 'FAIL_CLOSED',
     lockRequired: false,
     lockScope: 'NONE',
-    gateSeverity: 'SOFT',
-    cpeRequiredMandatory: false,
+    gateSeverity: 'HARD',
+    cpeRequiredMandatory: true,
     scope: Scope.EXPENSE,
-    notes: 'Ödeme kaydı, düzeltilebilir',
+    stageIndependent: true,
+    notes: 'Owner M3b/Y3: atomik masraf ödeme kaydı; aşamadan bağımsız, diğer kapılar korunur',
   },
   {
     actionCode: ActionCode.ADD_NAFAKA_PERIOD,

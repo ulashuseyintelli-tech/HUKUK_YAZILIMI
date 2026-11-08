@@ -325,7 +325,7 @@ export const ACTION_RISK_LEVELS: Record<ActionCode, RiskLevel> = {
   [ActionCode.QUERY_ASSETS]: RiskLevel.LOW,
   [ActionCode.QUERY_BANK_ACCOUNTS]: RiskLevel.LOW,
   [ActionCode.QUERY_VEHICLES]: RiskLevel.LOW,
-  [ActionCode.RECORD_EXPENSE_PAYMENT]: RiskLevel.LOW,
+  [ActionCode.RECORD_EXPENSE_PAYMENT]: RiskLevel.MEDIUM,
   [ActionCode.ADD_NAFAKA_PERIOD]: RiskLevel.LOW,
   [ActionCode.UPDATE_EXCHANGE_RATE]: RiskLevel.LOW,
   [ActionCode.RECORD_PAYMENT]: RiskLevel.LOW,
