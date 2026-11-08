@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, Request } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
+import { CaseViewScoped } from '../case/case-view-scope.guard';
 import { CaseCollateralService, CreateCollateralDto, UpdateCollateralDto } from './case-collateral.service';
 
 @Controller('case-collaterals')
@@ -22,6 +23,7 @@ export class CaseCollateralController {
    * Dosyaya ait tum teminatlari getir
    * GET /api/case-collaterals/case/:caseId
    */
+  @CaseViewScoped() // F02 P3-D3b-1: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   @Get('case/:caseId')
   async findAllByCase(@Request() req: any, @Param('caseId') caseId: string) {
     return this.service.findAllByCase(req.user.tenantId, caseId);
@@ -58,6 +60,7 @@ export class CaseCollateralController {
    * Toplam teminat degeri
    * GET /api/case-collaterals/case/:caseId/total
    */
+  @CaseViewScoped() // F02 P3-D3b-1: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   @Get('case/:caseId/total')
   async getTotalValue(@Request() req: any, @Param('caseId') caseId: string) {
     return this.service.getTotalValue(req.user.tenantId, caseId);

@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, Request } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
+import { CaseViewScoped } from '../case/case-view-scope.guard';
 import { CaseJudgmentService, CreateJudgmentDto, UpdateJudgmentDto } from './case-judgment.service';
 
 @Controller('case-judgments')
@@ -22,6 +23,7 @@ export class CaseJudgmentController {
    * Dosyaya ait ilami getir
    * GET /api/case-judgments/case/:caseId
    */
+  @CaseViewScoped() // F02 P3-D3b-1: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   @Get('case/:caseId')
   async findByCase(@Request() req: any, @Param('caseId') caseId: string) {
     return this.service.findByCase(req.user.tenantId, caseId);
@@ -58,6 +60,7 @@ export class CaseJudgmentController {
    * Toplam ilam tutari
    * GET /api/case-judgments/case/:caseId/total
    */
+  @CaseViewScoped() // F02 P3-D3b-1: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   @Get('case/:caseId/total')
   async calculateTotalAmount(@Request() req: any, @Param('caseId') caseId: string) {
     return this.service.calculateTotalAmount(req.user.tenantId, caseId);

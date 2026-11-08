@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, Request } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
+import { CaseViewScoped } from '../case/case-view-scope.guard';
 import { CaseInstrumentService, CreateInstrumentDto, UpdateInstrumentDto } from './case-instrument.service';
 import { AnalyzeChainDto } from './dto/analyze-chain.dto';
 
@@ -37,6 +38,7 @@ export class CaseInstrumentController {
    * Dosyaya ait tum cek/senetleri getir
    * GET /api/case-instruments/case/:caseId
    */
+  @CaseViewScoped() // F02 P3-D3b-1: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   @Get('case/:caseId')
   async findAllByCase(@Request() req: any, @Param('caseId') caseId: string) {
     return this.service.findAllByCase(req.user.tenantId, caseId);
@@ -73,6 +75,7 @@ export class CaseInstrumentController {
    * Dosyadaki toplam tutar
    * GET /api/case-instruments/case/:caseId/total
    */
+  @CaseViewScoped() // F02 P3-D3b-1: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   @Get('case/:caseId/total')
   async getTotalAmount(@Request() req: any, @Param('caseId') caseId: string) {
     const total = await this.service.getTotalAmount(req.user.tenantId, caseId);
