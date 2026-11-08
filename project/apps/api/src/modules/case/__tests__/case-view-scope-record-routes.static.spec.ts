@@ -89,7 +89,7 @@ describe("F02 P3-D3b-1 — dosya kayıtlarının dosya kimlikli okuma rota envan
     expect(ALL.some((r) => r.method === "POST" && r.full === "case-instruments/chain/analyze" && !r.guarded)).toBe(true);
     // D3b-2 (owner 08.11.2026): `:id` uçlarının ayrıntılı envanteri case-view-scope-own-record-routes.static.spec.ts'te.
     for (const ctrl of [CaseCollateralController, CaseInstrumentController, CaseJudgmentController, CaseLeaseController]) {
-      const guards: unknown[] = Reflect.getMetadata(GUARDS_METADATA, (ctrl.prototype as Record<string, object>).findOne) ?? [];
+      const guards: unknown[] = Reflect.getMetadata(GUARDS_METADATA, (ctrl.prototype as unknown as Record<string, object>).findOne) ?? [];
       expect([ctrl.name, guards.includes(CaseObjectViewScopeGuard)]).toEqual([ctrl.name, true]);
     }
   });
