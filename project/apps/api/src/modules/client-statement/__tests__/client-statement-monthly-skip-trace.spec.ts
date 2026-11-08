@@ -121,6 +121,7 @@ function harness(opts: { clients?: any[]; withPortAndLedger?: boolean; taskCreat
     $transaction: jest.fn(async (cb: any) => cb(tx)),
   };
   const statements: any = {
+    resolveCurrencySkipTasks: jest.fn().mockResolvedValue({ outcome: 'NO_MATCH', completed: 0 }),
     createClientLevel: jest.fn().mockRejectedValue(currencyRejection()),
     findOne: jest.fn(),
   };

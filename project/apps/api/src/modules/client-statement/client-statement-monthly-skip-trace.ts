@@ -3,6 +3,8 @@ import {
   type ClientStatementCurrencyReason,
   type ClientStatementCurrencySource,
 } from './client-statement-currency-guard';
+import { Prisma } from '@prisma/client';
+import { identifyMonthlyStatementPeriod } from './client-statement-monthly-period';
 
 /**
  * AYLIK EKSTRE — ATLANAN EKSTRENİN KALICI İZİ (owner kararı 2026-10-03, "7 — ATLANAN AYLIK EKSTRE: B").
@@ -19,6 +21,63 @@ import {
  */
 
 export const MONTHLY_STATEMENT_SKIP_TRACE_PREFIX = 'MONTHLY_STATEMENT_SKIPPED';
+
+export type MonthlyStatementSkipResolution = { outcome: 'NO_MATCH' | 'RESOLVED' | 'FAILED'; completed: number };
+
+/** Called after generation commit and on monthly reuse; never generates or sends a statement. */
+export async function resolveMonthlyStatementSkipTasks(
+  prisma: { $transaction: <T>(run: (tx: Prisma.TransactionClient) => Promise<T>) => Promise<T> },
+  tenantId: string,
+  statementId: string,
+): Promise<MonthlyStatementSkipResolution> {
+  return prisma.$transaction<MonthlyStatementSkipResolution>(async (tx) => {
+    const statement = await tx.clientStatement.findFirst({
+      where: { id: statementId, tenantId, caseId: null, status: 'ACTIVE', currency: 'TRY' },
+      select: { clientId: true, periodStart: true, periodEnd: true, createdAt: true },
+    });
+    if (!statement) return { outcome: 'NO_MATCH', completed: 0 };
+    const period = identifyMonthlyStatementPeriod(statement.periodStart, statement.periodEnd);
+    if (!period) return { outcome: 'NO_MATCH', completed: 0 };
+    const tasks = await tx.task.findMany({
+      where: {
+        tenantId, clientId: statement.clientId, createdById: null,
+        status: { in: ['PENDING', 'IN_PROGRESS'] }, createdAt: { lte: statement.createdAt },
+        dedupeKey: { in: ['NON_TRY_SOURCE', 'CURRENCY_UNDETERMINED'].map(reason =>
+          buildMonthlyStatementSkipDedupeKey(tenantId, statement.clientId, period.periodKey, reason)) },
+      },
+      select: { id: true, status: true, createdAt: true, dedupeKey: true },
+    });
+    let completed = 0;
+    for (const task of tasks) {
+      // Historical snapshot presence is not generation proof. Only a committed, source-checked
+      // generation/supersession after this task and carrying the server marker qualifies.
+      const generation = await tx.auditLog.findFirst({
+        where: {
+          tenantId, entityType: 'ClientStatement', createdAt: { gte: task.createdAt },
+          AND: [{ metadata: { path: ['currencySkipResolutionEligible'], equals: true } }],
+          OR: [
+            { action: 'CLIENT_STATEMENT_GENERATED', entityId: statementId },
+            { action: 'CLIENT_STATEMENT_SUPERSEDED', metadata: { path: ['newStatementId'], equals: statementId } },
+          ],
+        }, select: { id: true },
+      });
+      if (!generation) continue;
+      const changed = await tx.task.updateMany({
+        where: { id: task.id, tenantId, clientId: statement.clientId, dedupeKey: task.dedupeKey, status: { in: ['PENDING', 'IN_PROGRESS'] } },
+        data: { status: 'COMPLETED', completedAt: new Date(), completedByUserId: null, resolutionType: 'AUTO_SYSTEM' },
+      });
+      if (changed.count !== 1) continue;
+      await tx.auditLog.create({ data: {
+        tenantId, action: 'MONTHLY_STATEMENT_SKIP_RESOLVED', entityType: 'Task', entityId: task.id,
+        userId: null, actorType: 'SYSTEM', decisionResult: 'SUCCESS', reasonCode: 'STATEMENT_GENERATED',
+        oldValues: { status: task.status }, newValues: { status: 'COMPLETED', resolutionType: 'AUTO_SYSTEM' },
+        metadata: { statementId, generationAuditId: generation.id, periodKey: period.periodKey, reasonCode: task.dedupeKey!.split(':').pop(), deliveryProven: false },
+      } });
+      completed++;
+    }
+    return { outcome: completed ? 'RESOLVED' : 'NO_MATCH', completed };
+  });
+}
 
 /** İzin yazım sonucu: yeni kayıt / bu (müvekkil, dönem, neden) için zaten kayıtlı / yazılamadı (gizlenmez). */
 export type MonthlyStatementSkipTraceResult = 'CREATED' | 'ALREADY_RECORDED' | 'WRITE_FAILED';

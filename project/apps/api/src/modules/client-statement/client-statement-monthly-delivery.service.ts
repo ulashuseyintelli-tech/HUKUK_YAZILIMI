@@ -97,6 +97,7 @@ export interface MonthlyDeliveryTargetResult {
   reason?: string;
   /** Yalnız SKIPPED_UNSUPPORTED_CURRENCY: atlamanın kalıcı izi (görev) yazıldı mı? Atlama hiçbir koşulda "gönderildi" sayılmaz. */
   skipTrace?: MonthlyStatementSkipTraceResult;
+  skipResolution?: import('./client-statement-monthly-skip-trace').MonthlyStatementSkipResolution;
 }
 
 export interface MonthlyDeliveryRunResult {
@@ -299,6 +300,8 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
       return { ...base, outcome: 'FAILED', statementSource: 'NONE', reason: 'generate-failed' };
     }
 
+    const skipResolution = await this.statements.resolveCurrencySkipTasks(client.tenantId, statementId);
+    Object.assign(base, { skipResolution });
     const statement = await this.statements.findOne(client.tenantId, statementId);
     if (!statement.lines || statement.lines.length === 0) {
       return { ...base, outcome: 'SKIPPED_EMPTY_PERIOD', statementSource };

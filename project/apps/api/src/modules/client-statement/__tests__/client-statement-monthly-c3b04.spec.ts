@@ -7,6 +7,7 @@ import {
   buildMonthlyStatementDedupeKey,
   buildMonthlyStatementLockKey,
   resolvePreviousMonthPeriod,
+  identifyMonthlyStatementPeriod,
 } from '../client-statement-monthly-period';
 import { buildClientStatementRender } from '../client-statement-render.mapper';
 import { ClientStatementPdfService } from '../client-statement-pdf.service';
@@ -100,6 +101,7 @@ function makeHarness(options: { withPort?: boolean; clients?: any[] } = {}): Har
     $transaction: jest.fn(async (cb: any) => cb(tx)),
   };
   const statements: any = {
+    resolveCurrencySkipTasks: jest.fn().mockResolvedValue({ outcome: 'NO_MATCH', completed: 0 }),
     createClientLevel: jest.fn().mockResolvedValue({ id: 'stmt-1' }),
     findOne: jest.fn().mockResolvedValue(makeStatement()),
   };
@@ -120,6 +122,13 @@ function makeHarness(options: { withPort?: boolean; clients?: any[] } = {}): Har
 }
 
 describe('CAD C3-B04 — aylık ekstre dönemi (Türkiye saat dilimi)', () => {
+  it('H07 full-month identity preserves the existing calendar and rejects UTC, missing-millisecond and invalid periods', () => {
+    const month = resolvePreviousMonthPeriod(new Date('2024-03-01T00:00:00Z'));
+    expect(identifyMonthlyStatementPeriod(month.periodStart, month.periodEnd)?.periodKey).toBe('2024-02');
+    expect(identifyMonthlyStatementPeriod(new Date('2024-02-01T00:00:00Z'), new Date('2024-02-29T23:59:59.999Z'))).toBeNull();
+    expect(identifyMonthlyStatementPeriod(month.periodStart, new Date(month.periodEnd.getTime() - 999))).toBeNull();
+    expect(identifyMonthlyStatementPeriod(new Date('invalid'), month.periodEnd)).toBeNull();
+  });
   it('[B04-1] koşu anındaki TR ayının BİR ÖNCEKİ ayını dönem olarak çözer', () => {
     // 1 Mart 2026 00:30 TR (= 2026-02-28T21:30Z) → dönem Şubat 2026
     const period = resolvePreviousMonthPeriod(new Date('2026-02-28T21:30:00.000Z'));
@@ -227,6 +236,19 @@ describe('CAD C3-B04 — üretim ve teslim akışı', () => {
   });
 
   const NOW = new Date('2026-03-01T00:30:00.000Z'); // 1 Mart 03:30 TR
+
+  it('H07 reuse repairs only task resolution, never regeneration; mail failure stays independent', async () => {
+    const h = makeHarness({ withPort: true });
+    h.tx.clientStatement.findFirst.mockResolvedValue({ id: 'stmt-existing' });
+    h.statements.findOne.mockResolvedValue(makeStatement({ id: 'stmt-existing' }));
+    h.statements.resolveCurrencySkipTasks.mockResolvedValue({ outcome: 'RESOLVED', completed: 1 });
+    h.port.send.mockResolvedValue({ success: false, errorCode: 'SYNTHETIC_MAIL_FAILURE' } as any);
+    const result = await h.service.runMonthlyDelivery(NOW);
+    expect(result.targets[0]).toMatchObject({ outcome: 'FAILED', statementSource: 'REUSED', skipResolution: { outcome: 'RESOLVED', completed: 1 } });
+    expect(h.statements.resolveCurrencySkipTasks).toHaveBeenCalledWith(TENANT, 'stmt-existing');
+    expect(h.statements.createClientLevel).not.toHaveBeenCalled();
+    expect(h.port.send).toHaveBeenCalledTimes(1);
+  });
 
   it('[B04-8] aynı dönemde ACTIVE ekstre varsa YENİDEN ÜRETİLMEZ (duplicate üretim engeli)', async () => {
     const h = makeHarness();

@@ -275,7 +275,10 @@ export class DispositionPostingService {
         // Yön CREDIT(+): borçlu tahsilatı müvekkilin avansladığı masrafı geri ödüyor → avans havuzuna para döner.
         if (l.type === CollectionDispositionLineType.OFFSET_CLIENT_ADVANCE) {
           if (!caseBalanceId) {
-            const cb = await tx.caseBalance.findFirst({ where: { caseId: disp.caseId, tenantId }, select: { id: true } });
+            const cb = await tx.caseBalance.findFirst({ where: { caseId: disp.caseId, tenantId }, select: { id: true, currency: true } });
+            if (cb && (!cb.currency || cb.currency !== disp.currency)) {
+              throw new ConflictException({ code: 'ADVANCE_CURRENCY_MISMATCH', message: 'Dağıtım ve mevcut masraf avansı para birimi aynı olmalıdır' });
+            }
             caseBalanceId = cb?.id
               ?? (await tx.caseBalance.create({ data: { tenantId, caseId: disp.caseId, currency: disp.currency }, select: { id: true } })).id;
           }

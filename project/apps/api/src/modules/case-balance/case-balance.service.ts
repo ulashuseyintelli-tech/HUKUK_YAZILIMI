@@ -39,6 +39,7 @@ const BalanceLedgerType = {
 
 export interface CreditBalanceDto {
   amount: number;
+  currency: string;
   source: string;        // "expense_request:xxx", "manual"
   sourceId?: string;
   description?: string;
@@ -51,8 +52,16 @@ export interface ExpensePaymentCreditContext {
   postingKey: string;
 }
 
+/** Server-only: paidByLawyer creation shares its request transaction and source currency. */
+export interface ExpenseRequestCreditContext {
+  tx: Prisma.TransactionClient;
+  currency: string;
+  kind: 'EXPENSE_REQUEST';
+}
+
 export interface DebitBalanceDto {
   amount: number;
+  currency: string;
   source: string;        // "operation:haciz", "operation:tebligat"
   sourceId?: string;
   description?: string;
@@ -64,6 +73,7 @@ export interface DebitBalanceDto {
  */
 export interface PostExpenseActualDto {
   amount: number;
+  currency: string;
   postingKey: string;
   description?: string;
 }
@@ -195,6 +205,41 @@ export class CaseBalanceService {
     return existing;
   }
 
+  private requireAdvanceCurrency(value: unknown): string {
+    if (typeof value !== 'string' || !/^[A-Z]{3}$/.test(value)) {
+      throw new BadRequestException({ code: 'ADVANCE_CURRENCY_REQUIRED', message: 'Kaynak para birimi açık üç harfli kod olmalıdır' });
+    }
+    return value;
+  }
+
+  private async resolveCurrencyBalance(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    caseId: string,
+    currency: string,
+    allowCreate: boolean,
+    payment = false,
+  ) {
+    // Aynı dosyadaki ilk kredi/harcama yarışı da aynı transaction içinde serileşir.
+    const lock = `advance-currency|${tenantId}|${caseId}`;
+    // Ödeme komutu hesabı zaten satır kilidiyle tutar; ters kilit sırası kurulmaz.
+    if (!payment) await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lock}, 0))`;
+    const existing = await this.findExistingBalance(tenantId, caseId, tx);
+    if (existing) {
+      if (!existing.currency || existing.currency !== currency) {
+        throw new ConflictException({
+          code: payment ? 'EXPENSE_PAYMENT_CURRENCY_MISMATCH' : 'ADVANCE_CURRENCY_MISMATCH',
+          message: 'Kaynak ve mevcut masraf avansı para birimi aynı olmalıdır',
+        });
+      }
+      return existing;
+    }
+    if (!allowCreate) {
+      throw new ConflictException({ code: payment ? 'EXPENSE_PAYMENT_ADVANCE_MISSING' : 'ADVANCE_MISSING', message: 'Mevcut masraf avansı kaydı gereklidir' });
+    }
+    return tx.caseBalance.create({ data: { tenantId, caseId, currency, balance: 0, lowThreshold: 500 } });
+  }
+
   /**
    * Dosya bakiyesini getir (SALT OKUNUR — satır oluşturmaz).
    *
@@ -288,18 +333,14 @@ export class CaseBalanceService {
   /// - ExpenseRequestService.createFromPackage() → paidByLawyer package expense_request kredi yolu
   /// - ExpenseRequestService.recordPayment() → expense_payment kredi yolu (receive aynı komuta delege eder)
   /// </remarks>
-  async credit(tenantId: string, caseId: string, dto: CreditBalanceDto, userId: string, context?: ExpensePaymentCreditContext) {
-    const balance = context
-      ? await this.findExistingBalance(tenantId, caseId, context.tx)
-      : await this.getOrCreateBalance(tenantId, caseId);
-    if (!balance) {
-      throw new ConflictException({ code: 'EXPENSE_PAYMENT_ADVANCE_MISSING', message: 'Ödeme için mevcut masraf avansı kaydı gereklidir' });
+  async credit(tenantId: string, caseId: string, dto: CreditBalanceDto, userId: string, context?: ExpensePaymentCreditContext | ExpenseRequestCreditContext) {
+    const currency = this.requireAdvanceCurrency(context?.currency ?? dto.currency);
+    if (context && dto.currency !== currency) {
+      throw new ConflictException({ code: 'EXPENSE_PAYMENT_CURRENCY_MISMATCH', message: 'Kaynak para birimleri aynı olmalıdır' });
     }
-    if (context && (!context.currency || !balance.currency || balance.currency !== context.currency)) {
-      throw new ConflictException({ code: 'EXPENSE_PAYMENT_CURRENCY_MISMATCH', message: 'Talep ve masraf avansı para birimi açıkça aynı olmalıdır' });
-    }
-
     const writeCredit = async (tx: Prisma.TransactionClient) => {
+      const payment = context && !('kind' in context);
+      const balance = await this.resolveCurrencyBalance(tx, tenantId, caseId, currency, !payment, !!payment);
       // Ledger kaydı oluştur
       const ledger = await tx.balanceLedger.create({
         data: {
@@ -307,7 +348,8 @@ export class CaseBalanceService {
           caseBalanceId: balance.id,
           type: BalanceLedgerType.CREDIT,
           amount: dto.amount,
-          ...(context ? { currency: context.currency, postingKey: context.postingKey } : {}),
+          currency,
+          ...(context && 'postingKey' in context ? { postingKey: context.postingKey } : {}),
           source: dto.source,
           sourceId: dto.sourceId,
           description: dto.description || 'Masraf avansı alındı',
@@ -345,17 +387,13 @@ export class CaseBalanceService {
   /// - CaseBalanceController.debit() → POST /cases/:caseId/balance/debit (direct masraf/avans debit)
   /// </remarks>
   async debit(tenantId: string, caseId: string, dto: DebitBalanceDto, userId: string) {
-    const balance = await this.getOrCreateBalance(tenantId, caseId);
-
-    // Bakiye yeterli mi kontrol et
-    if (Number(balance.balance) < dto.amount) {
-      throw new BadRequestException(
-        `Yetersiz bakiye. Mevcut: ${balance.balance} TL, Gerekli: ${dto.amount} TL`
-      );
-    }
-
+    const currency = this.requireAdvanceCurrency(dto.currency);
     // Transaction ile güncelle
     const result = await this.prisma.$transaction(async (tx) => {
+      const balance = await this.resolveCurrencyBalance(tx, tenantId, caseId, currency, false);
+      if (new Prisma.Decimal(balance.balance).lt(dto.amount)) {
+        throw new BadRequestException(`Yetersiz bakiye. Mevcut: ${balance.balance} ${currency}, Gerekli: ${dto.amount} ${currency}`);
+      }
       // Ledger kaydı oluştur (negatif tutar)
       const ledger = await tx.balanceLedger.create({
         data: {
@@ -363,6 +401,7 @@ export class CaseBalanceService {
           caseBalanceId: balance.id,
           type: BalanceLedgerType.DEBIT,
           amount: -dto.amount, // Negatif
+          currency,
           source: dto.source,
           sourceId: dto.sourceId,
           description: dto.description || 'Masraf harcandı',
@@ -381,14 +420,14 @@ export class CaseBalanceService {
       if (journalDraft) {
         await this.writeBalanceLedgerJournal(tx, journalDraft);
       }
-      return { balance: updatedBalance, ledger };
+      return { balance: updatedBalance, ledger, lowThreshold: balance.lowThreshold };
     });
 
     return {
       success: true,
       newBalance: Number(result.balance.balance),
       ledgerId: result.ledger.id,
-      isLow: Number(result.balance.balance) < Number(balance.lowThreshold || 500),
+      isLow: Number(result.balance.balance) < Number(result.lowThreshold || 500),
     };
   }
 
@@ -427,8 +466,7 @@ export class CaseBalanceService {
       throw new BadRequestException('Geçersiz postingKey: 1-120 karakter, [A-Za-z0-9._:-]');
     }
 
-    // Tenant fail-closed sahiplik + bakiye (debit() ile aynı tek nokta).
-    const balance = await this.getOrCreateBalance(tenantId, caseId);
+    const currency = this.requireAdvanceCurrency(dto.currency);
 
     // Dosya + KESİN creditor müvekkil çözümü (tek source-of-truth aday kümesi; belirsiz → gönderim yok).
     const caseRow = await this.prisma.case.findFirst({
@@ -462,21 +500,15 @@ export class CaseBalanceService {
         expenseDate: new Date().toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' }),
         description: dto.description || 'Gerçekleşen masraf',
         amount: dto.amount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-        currency: 'TL',
+        currency: currency === 'TRY' ? 'TL' : currency,
         officeName: office?.name ?? '',
         officePhone: office?.phone ?? '',
       };
     }
 
-    // Bakiye yeterliliği: debit() davranışı birebir (politika icat edilmez).
-    if (Number(balance.balance) < dto.amount) {
-      throw new BadRequestException(
-        `Yetersiz bakiye. Mevcut: ${balance.balance} TL, Gerekli: ${dto.amount} TL`
-      );
-    }
-
     const lockKeyText = `expense-actual-post|${tenantId}|${dto.postingKey}`;
     const txResult = await this.prisma.$transaction(async (tx) => {
+      const balance = await this.resolveCurrencyBalance(tx, tenantId, caseId, currency, false);
       // Aynı (tenant, postingKey) posting'leri serileştir; DB unique constraint son savunma hattıdır.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKeyText}, 0))`;
 
@@ -490,12 +522,17 @@ export class CaseBalanceService {
         return { alreadyPosted: true as const, ledgerId: existing.id, intentId: null, newBalance: Number(balance.balance) };
       }
 
+      if (new Prisma.Decimal(balance.balance).lt(dto.amount)) {
+        throw new BadRequestException(`Yetersiz bakiye. Mevcut: ${balance.balance} ${currency}, Gerekli: ${dto.amount} ${currency}`);
+      }
+
       const ledger = await tx.balanceLedger.create({
         data: {
           tenantId,
           caseBalanceId: balance.id,
           type: BalanceLedgerType.DEBIT,
           amount: -dto.amount, // Negatif (debit ile aynı işaret sözleşmesi)
+          currency,
           entryKind: 'EXPENSE_ACTUAL',
           postingKey: dto.postingKey,
           source: `expense_actual:${dto.postingKey}`,

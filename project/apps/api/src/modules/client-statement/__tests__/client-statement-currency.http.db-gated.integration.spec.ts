@@ -29,6 +29,7 @@ import { ClientStatementService } from '../client-statement.service';
 import { ClientStatementMonthlyDeliveryService } from '../client-statement-monthly-delivery.service';
 import { ClientStatementPdfService } from '../client-statement-pdf.service';
 import { resolvePreviousMonthPeriod } from '../client-statement-monthly-period';
+import { buildMonthlyStatementSkipTask, resolveMonthlyStatementSkipTasks } from '../client-statement-monthly-skip-trace';
 
 /**
  * E1 — müvekkil ekstresi KAYNAK PARA BİRİMİ sınırı: GERÇEK HTTP + disposable PostgreSQL kabulü.
@@ -194,6 +195,137 @@ describeWithDisposableDb('Ekstre kaynak para birimi sınırı (HTTP + disposable
   }
 
   describe('geçerli TL ekstre davranışı korunur', () => {
+    it('H07: 5000 TRY avans + 600 TRY payable kapanışı, sonraki boş dönemde aynen devreder; client-level avansı sahiplenmez', async () => {
+      const f = await setup('h07-carry');
+      await addLedgerRow(prisma, { tenantId: t1.tenantId, caseId: f.caseId, amount: 5000, currency: 'TRY', createdAt: IN_PERIOD });
+      await addPostedPayable(prisma, { tenantId: t1.tenantId, caseId: f.caseId, caseClientId: f.caseClientId, userId: t1.userId, amount: 600, currency: 'TRY', postedAt: IN_PERIOD, key: next() });
+      const first = await caseStatement(f);
+      expect(first.status).toBe(201);
+      expect(Number(first.body.closingBalance)).toBe(5600);
+      const carried = await caseStatement(f, { periodStart: '2026-07-01T00:00:00.000Z', periodEnd: '2026-07-31T23:59:59.999Z' });
+      expect(carried.status).toBe(201);
+      expect([Number(carried.body.openingBalance), Number(carried.body.closingBalance)]).toEqual([5600, 5600]);
+      expect(carried.body.lines).toHaveLength(0);
+      const general = await clientStatement(f.clientId);
+      expect(general.status).toBe(201);
+      expect(Number(general.body.closingBalance)).toBe(600);
+    });
+
+    it('H07: devirde müvekkil ödeme eksi, reimbursement artı; ofis payı sıfır ve başka alacaklı dışarıda', async () => {
+      const f = await setup('h07-signed');
+      const base = { tenantId: t1.tenantId, caseId: f.caseId, userId: t1.userId, caseClientId: f.caseClientId };
+      for (const [type, amount] of [['CLIENT_PAYABLE', 600], ['CLIENT_EXPENSE_REIMBURSEMENT', 80], ['CONTRACTUAL_FEE_WITHHELD', 40]] as const) {
+        const key = next();
+        await addPostedPayable(prisma, { ...base, amount, currency: 'TRY', postedAt: BEFORE_PERIOD, key });
+        const collection = await prisma.collection.findFirstOrThrow({ where: { tenantId: t1.tenantId, idempotencyKey: `test:ccy:${key}` } });
+        const d = await prisma.collectionDisposition.findUniqueOrThrow({ where: { collectionId: collection.id } });
+        if (type !== 'CLIENT_PAYABLE') await prisma.collectionDispositionLine.updateMany({ where: { dispositionId: d.id }, data: { type } });
+      }
+      await addPayout(prisma, { ...base, amount: 200, currency: 'TRY', paidAt: BEFORE_PERIOD, key: next() });
+      const stranger = await createClient(prisma, t1.tenantId, next());
+      const otherCc = await linkClient(prisma, f.caseId, stranger, t1.userId);
+      await addPostedPayable(prisma, { ...base, caseClientId: otherCc, amount: 900, currency: 'USD', postedAt: BEFORE_PERIOD, key: next() });
+      const result = await caseStatement(f);
+      expect(result.status).toBe(201);
+      expect(Number(result.body.openingBalance)).toBe(480);
+      expect(Number(result.body.closingBalance)).toBe(480);
+    });
+
+    it.each(['payable', 'payout'] as const)('H07: dönem öncesi %s USD kaynağı E1 ile yazmasız reddedilir', async source => {
+      const f = await setup(`h07-old-${source}`);
+      const base = { tenantId: t1.tenantId, caseId: f.caseId, userId: t1.userId, caseClientId: f.caseClientId, amount: 100, currency: 'USD', key: next() };
+      if (source === 'payable') await addPostedPayable(prisma, { ...base, postedAt: BEFORE_PERIOD });
+      else await addPayout(prisma, { ...base, paidAt: BEFORE_PERIOD });
+      await expectRejectedWithoutDocuments(() => caseStatement(f), t1, { reasonCode: 'NON_TRY_SOURCE', currencies: ['USD'] });
+    });
+
+    it('H07: açılışta payable offset APPLY eksi / REVERSAL artı; masraf bacağı ve avans offseti çift sayılmaz', async () => {
+      const f = await setup('h07-offset');
+      const base = { tenantId: t1.tenantId, caseId: f.caseId };
+      await addLedgerRow(prisma, { ...base, amount: 5000, currency: 'TRY', createdAt: BEFORE_PERIOD });
+      await addPostedPayable(prisma, { ...base, caseClientId: f.caseClientId, userId: t1.userId, amount: 600, currency: 'TRY', postedAt: BEFORE_PERIOD, key: next() });
+      let appliedId: string | null = null;
+      for (const [kind, amount] of [['APPLY', 100], ['REVERSAL', 100], ['APPLY', 70]] as const) {
+        const offset = await prisma.clientOffset.create({ data: { tenantId: t1.tenantId, clientId: f.clientId, payableCaseId: f.caseId, payableCaseClientId: f.caseClientId,
+          expenseCaseId: f.caseId, expenseRequestId: `synthetic-${next()}`, amount, currency: 'TRY', kind,
+          ...(kind === 'REVERSAL' ? { reversesOffsetId: appliedId, reason: 'Synthetic full reversal fixture' } : {}),
+          idempotencyKey: next(), createdById: t1.userId, createdAt: BEFORE_PERIOD } });
+        if (kind === 'APPLY') appliedId = offset.id;
+      }
+      const result = await caseStatement(f);
+      expect(result.status).toBe(201);
+      expect([Number(result.body.openingBalance), Number(result.body.closingBalance)]).toEqual([5530, 5530]);
+      expect(result.body.lines).toHaveLength(0);
+    });
+
+    it('H07: aynı tam ay/client/tenant için yeni client-level üretim yalnız açık para birimi izini AUTO_SYSTEM kapatır', async () => {
+      const f = await setup('h07-task');
+      const month = resolvePreviousMonthPeriod(new Date('2026-07-01T00:00:00Z'));
+      const addTask = async (clientId = f.clientId, periodKey = month.periodKey, reason = 'NON_TRY_SOURCE', status: any = 'PENDING') => prisma.task.create({ data: {
+        ...buildMonthlyStatementSkipTask({ tenantId: t1.tenantId, clientId, clientName: 'Synthetic', periodKey, reasonCode: reason, currencies: ['USD'], sources: ['CollectionDisposition'] }),
+        status, createdAt: new Date('2026-07-01T01:00:00Z'),
+      } });
+      const target = await addTask();
+      const otherMonth = await addTask(f.clientId, '2026-05');
+      const unknown = await addTask(f.clientId, month.periodKey, 'OTHER_REASON');
+      const cancelled = await addTask(f.clientId, month.periodKey, 'CURRENCY_UNDETERMINED', 'CANCELLED');
+      const caseOnly = await caseStatement(f, { periodStart: month.periodStart.toISOString(), periodEnd: month.periodEnd.toISOString() });
+      expect(caseOnly.status).toBe(201);
+      expect((await prisma.task.findUniqueOrThrow({ where: { id: target.id } })).status).toBe('PENDING');
+      const generated = await post(`/client-statements/client/${f.clientId}`, { periodStart: month.periodStart.toISOString(), periodEnd: month.periodEnd.toISOString() });
+      expect(generated.status).toBe(201);
+      expect(await prisma.task.findUniqueOrThrow({ where: { id: target.id } })).toMatchObject({ status: 'COMPLETED', completedByUserId: null, resolutionType: 'AUTO_SYSTEM' });
+      for (const task of [otherMonth, unknown, cancelled]) expect((await prisma.task.findUniqueOrThrow({ where: { id: task.id } })).status).toBe(task.status);
+      await Promise.all(Array.from({ length: 3 }, () => resolveMonthlyStatementSkipTasks(prisma as any, t1.tenantId, generated.body.id)));
+      expect(await prisma.auditLog.count({ where: { tenantId: t1.tenantId, action: 'MONTHLY_STATEMENT_SKIP_RESOLVED', entityId: target.id } })).toBe(1);
+      expect((await prisma.auditLog.findFirstOrThrow({ where: { entityId: target.id, action: 'MONTHLY_STATEMENT_SKIP_RESOLVED' } })).metadata).toMatchObject({ deliveryProven: false });
+    });
+
+    it('H07: eski snapshot veya aynı ay adı fakat farklı exact sınırlar görevi kapatmaz', async () => {
+      const f = await setup('h07-old-snapshot');
+      const month = resolvePreviousMonthPeriod(new Date('2026-07-01T00:00:00Z'));
+      const generated = await post(`/client-statements/client/${f.clientId}`, { periodStart: month.periodStart.toISOString(), periodEnd: month.periodEnd.toISOString() });
+      expect(generated.status).toBe(201);
+      const task = await prisma.task.create({ data: { ...buildMonthlyStatementSkipTask({ tenantId: t1.tenantId, clientId: f.clientId, clientName: 'Synthetic', periodKey: month.periodKey, reasonCode: 'NON_TRY_SOURCE', currencies: ['USD'], sources: [] }), createdAt: new Date(Date.now() + 1000) } });
+      expect((await resolveMonthlyStatementSkipTasks(prisma as any, t1.tenantId, generated.body.id)).outcome).toBe('NO_MATCH');
+      const inexact = await clientStatement(f.clientId);
+      expect(inexact.status).toBe(201);
+      expect((await resolveMonthlyStatementSkipTasks(prisma as any, t1.tenantId, inexact.body.id)).outcome).toBe('NO_MATCH');
+      expect((await prisma.task.findUniqueOrThrow({ where: { id: task.id } })).status).toBe('PENDING');
+    });
+
+    it('H07: kapanış audit hatası gerçek task güncellemesini geri alır; commit edilmiş ekstre kalır ve repair yeniden üretmez', async () => {
+      const f = await setup('h07-audit-rollback');
+      const month = resolvePreviousMonthPeriod(new Date('2026-07-01T00:00:00Z'));
+      const task = await prisma.task.create({ data: { ...buildMonthlyStatementSkipTask({ tenantId: t1.tenantId, clientId: f.clientId, clientName: 'Synthetic', periodKey: month.periodKey, reasonCode: 'NON_TRY_SOURCE', currencies: ['USD'], sources: [] }), createdAt: new Date('2026-07-01T01:00:00Z') } });
+      const statementService = app.get(ClientStatementService);
+      const hold = jest.spyOn(statementService, 'resolveCurrencySkipTasks').mockResolvedValueOnce({ outcome: 'FAILED', completed: 0 });
+      const generated = await post(`/client-statements/client/${f.clientId}`, { periodStart: month.periodStart.toISOString(), periodEnd: month.periodEnd.toISOString() });
+      hold.mockRestore();
+      expect(generated.status).toBe(201);
+      let reachedUpdate = false;
+      let reachedAudit = false;
+      const failing = { $transaction: (run: any) => prisma.$transaction(tx => run(new Proxy(tx, {
+        get(target, key) {
+          const value = (target as any)[key];
+          if (key !== 'task' && key !== 'auditLog') return typeof value === 'function' ? value.bind(target) : value;
+          return new Proxy(value, { get(delegate, method) {
+            const original = delegate[method];
+            if (key === 'task' && method === 'updateMany') return async (args: any) => { const result = await original.call(delegate, args); reachedUpdate = result.count === 1; return result; };
+            if (key === 'auditLog' && method === 'create') return async (args: any) => { await original.call(delegate, args); reachedAudit = true; throw new Error('h07-after-resolution-audit'); };
+            return typeof original === 'function' ? original.bind(delegate) : original;
+          } });
+        },
+      }))) };
+      await expect(resolveMonthlyStatementSkipTasks(failing, t1.tenantId, generated.body.id)).rejects.toThrow('h07-after-resolution-audit');
+      expect({ reachedUpdate, reachedAudit }).toEqual({ reachedUpdate: true, reachedAudit: true });
+      expect(await prisma.task.findUniqueOrThrow({ where: { id: task.id } })).toEqual(task);
+      expect(await prisma.auditLog.count({ where: { action: 'MONTHLY_STATEMENT_SKIP_RESOLVED', entityId: task.id } })).toBe(0);
+      const beforeRepair = await statementDocumentCounts(prisma, t1.tenantId);
+      await expect(statementService.resolveCurrencySkipTasks(t1.tenantId, generated.body.id)).resolves.toMatchObject({ outcome: 'RESOLVED', completed: 1 });
+      expect(await statementDocumentCounts(prisma, t1.tenantId)).toEqual(beforeRepair);
+      expect(await prisma.clientStatement.findUniqueOrThrow({ where: { id: generated.body.id } })).toMatchObject({ status: 'ACTIVE' });
+    });
     it('dosya ekstresi: 201; başlık TRY; devir 100, kapanış 980; 4 satır; denetim günlüğü yazılır', async () => {
       const f = await setup('tl-dosya');
       await seedTryRows(f);

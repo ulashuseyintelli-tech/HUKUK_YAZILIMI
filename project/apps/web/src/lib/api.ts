@@ -2795,6 +2795,7 @@ class ApiClient {
 
   async creditCaseBalance(caseId: string, data: {
     amount: number;
+    currency: string;
     source: string;
     sourceId?: string;
     description?: string;
@@ -2807,6 +2808,7 @@ class ApiClient {
 
   async debitCaseBalance(caseId: string, data: {
     amount: number;
+    currency: string;
     source: string;
     sourceId?: string;
     description?: string;
