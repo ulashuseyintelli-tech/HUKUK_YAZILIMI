@@ -122,6 +122,8 @@ describeDb('M-4/J-08 payout actor A, 168 hours and idempotency (HTTP + disposabl
       actors[value.name] = user.id;
       if (value.rank) await prisma.lawyer.create({ data: { tenantId, userId: user.id, name: 'M4', surname: value.name,
         lawyerRank: value.rank, canApproveOfficeActions: value.flag, tckn: testTckn(index + 3) } });
+      if (value.name === 'staff') await prisma.staffMember.create({ data: { tenantId, userId: user.id,
+        firstName: 'M4', lastName: 'Staff', staffType: 'MUHASEBE', tckn: testTckn(index + 3), canApproveFinance: true } });
     }
   });
 
@@ -132,6 +134,7 @@ describeDb('M-4/J-08 payout actor A, 168 hours and idempotency (HTTP + disposabl
     await prisma.accountingJournalEntry.deleteMany({ where: { tenantId: fixture.tenantId } });
     await prisma.officeApprovalRequest.deleteMany({ where: { tenantId: fixture.tenantId } });
     await prisma.auditLog.deleteMany({ where: { tenantId: fixture.tenantId } });
+    await prisma.staffMember.deleteMany({ where: { tenantId: fixture.tenantId } });
     await cleanupTm47dHappyPathFixture(prisma, { seedKey });
     await prisma.lawyer.deleteMany({ where: { tenantId: otherTenant } });
     await prisma.user.deleteMany({ where: { tenantId: otherTenant } });
