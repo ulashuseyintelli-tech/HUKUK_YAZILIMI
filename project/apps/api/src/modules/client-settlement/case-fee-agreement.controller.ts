@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Param, Request, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
+import { CaseViewScopedByObject } from '../case/case-view-scope.guard';
 import { CpeRequired } from '../policy-engine/decorators/cpe-required.decorator';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { CaseFeeAgreementService } from './case-fee-agreement.service';
@@ -35,6 +36,7 @@ export class CaseFeeAgreementController {
    * ///  - (FE) CaseFeeAgreement editör kartı → GET /case-fee-agreements/case-client/:caseClientId/active (ayrı PR; henüz YOK)
    * /// </remarks>
    */
+  @CaseViewScopedByObject("caseClient", "caseClientId") // F02 P3-D3b-2: dosya nesnenin satırından çözülür (bayrak açıkken; kapsam dışı / yok = aynı 404)
   @Get('case-client/:caseClientId/active')
   async active(@Request() req: AuthRequest, @Param('caseClientId') caseClientId: string) {
     return this.service.getActiveForCaseClient(req.user.tenantId, caseClientId);
@@ -48,6 +50,7 @@ export class CaseFeeAgreementController {
    * ///  - (FE) CaseFeeAgreement geçmiş listesi → GET /case-fee-agreements/case-client/:caseClientId (ayrı PR; henüz YOK)
    * /// </remarks>
    */
+  @CaseViewScopedByObject("caseClient", "caseClientId") // F02 P3-D3b-2: dosya nesnenin satırından çözülür (bayrak açıkken; kapsam dışı / yok = aynı 404)
   @Get('case-client/:caseClientId')
   async listForCaseClient(@Request() req: AuthRequest, @Param('caseClientId') caseClientId: string) {
     return this.service.listForCaseClient(req.user.tenantId, caseClientId);
@@ -61,6 +64,7 @@ export class CaseFeeAgreementController {
    * ///  - (FE) geçmiş satır detayı → GET /case-fee-agreements/:agreementId (ayrı PR; henüz YOK)
    * /// </remarks>
    */
+  @CaseViewScopedByObject("caseFeeAgreement", "agreementId") // F02 P3-D3b-2: dosya nesnenin satırından çözülür (bayrak açıkken; kapsam dışı / yok = aynı 404)
   @Get(':agreementId')
   async getById(@Request() req: AuthRequest, @Param('agreementId') agreementId: string) {
     return this.service.getById(req.user.tenantId, agreementId);
