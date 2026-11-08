@@ -362,14 +362,14 @@ describeWithDisposableDb('Masraf finalize / approve / reject aşamadan bağıms�
   });
 
   describe('aşamadan bağımsızlık başka uca SIZMAZ', () => {
-    it('masraf ödeme kaydı ucu (karar maddesi bekliyor) bu teslimde AÇILMADI: SEIZURE\'da hâlâ aşama denetimi (403 INVALID_TRANSITION)', async () => {
+    it('M3b/Y3: ödeme SEIZURE aşamasını geçer; zorunlu komut anahtarı yoksa 400 ve sıfır finansal yazım korunur', async () => {
       const caseId = await openCase('odeme');
       await prisma.case.update({ where: { id: caseId }, data: { workflowStage: 'SEIZURE' } });
       const id = await makeRequestRow(caseId);
       const before = await snapshot(id);
       const res = await postAs(adminId, `/expense-requests/${id}/payment`, { amount: 100, paymentDate: '2026-10-05', method: 'BANK_TRANSFER' });
-      expect(res.status).toBe(403);
-      expect(res.body).toMatchObject({ code: 'INVALID_TRANSITION' });
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ code: 'IDEMPOTENCY_KEY_REQUIRED' });
       expect(await snapshot(id)).toEqual(before);
       expect(await prisma.expensePayment.count({ where: { expenseRequestId: id } })).toBe(0);
     });
