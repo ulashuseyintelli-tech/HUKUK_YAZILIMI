@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, Request } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
-import { CaseViewScoped } from '../case/case-view-scope.guard';
+import { CaseViewScoped, CaseViewScopedByObject } from '../case/case-view-scope.guard';
 import { CaseInstrumentService, CreateInstrumentDto, UpdateInstrumentDto } from './case-instrument.service';
 import { AnalyzeChainDto } from './dto/analyze-chain.dto';
 
@@ -48,6 +48,7 @@ export class CaseInstrumentController {
    * Tek cek/senet getir
    * GET /api/case-instruments/:id
    */
+  @CaseViewScopedByObject("caseInstrument", "id") // F02 P3-D3b-2: dosya nesnenin satırından çözülür (bayrak açıkken; kapsam dışı / yok = aynı 404)
   @Get(':id')
   async findOne(@Request() req: any, @Param('id') id: string) {
     return this.service.findOne(req.user.tenantId, id);

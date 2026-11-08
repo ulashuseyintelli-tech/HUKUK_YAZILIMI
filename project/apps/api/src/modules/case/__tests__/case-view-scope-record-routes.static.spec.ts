@@ -14,7 +14,7 @@ import { CaseJudgmentController } from "../../case-judgment/case-judgment.contro
 import { CaseJudgmentModule } from "../../case-judgment/case-judgment.module";
 import { CaseLeaseController } from "../../case-lease/case-lease.controller";
 import { CaseLeaseModule } from "../../case-lease/case-lease.module";
-import { CASE_VIEW_SCOPE_PARAM, CaseViewScopeGuard } from "../case-view-scope.guard";
+import { CASE_VIEW_SCOPE_PARAM, CaseObjectViewScopeGuard, CaseViewScopeGuard } from "../case-view-scope.guard";
 import { CaseViewScopeModule } from "../case-view-scope.module";
 
 /**
@@ -81,12 +81,17 @@ describe("F02 P3-D3b-1 — dosya kayıtlarının dosya kimlikli okuma rota envan
     }
   });
 
-  it("yazım uçları ve kendi kimlikli `:id` okumaları kapı taşımaz (D3b-1 dışı; D3b-2 AÇIK)", () => {
+  it("yazım uçları D3 kapısını taşımaz; kendi kimlikli `:id` okumaları D3 kapısını değil D3b-2 nesne kapısını taşır", () => {
     expect(ALL.filter((r) => r.guarded && r.method !== "GET").map(key)).toEqual([]);
     expect(ALL.filter((r) => r.method === "GET" && !r.guarded).map(key).sort()).toEqual(
       ["GET case-collaterals/:id", "GET case-instruments/:id", "GET case-judgments/:id", "GET case-leases/:id"].sort(),
     );
     expect(ALL.some((r) => r.method === "POST" && r.full === "case-instruments/chain/analyze" && !r.guarded)).toBe(true);
+    // D3b-2 (owner 08.11.2026): `:id` uçlarının ayrıntılı envanteri case-view-scope-own-record-routes.static.spec.ts'te.
+    for (const ctrl of [CaseCollateralController, CaseInstrumentController, CaseJudgmentController, CaseLeaseController]) {
+      const guards: unknown[] = Reflect.getMetadata(GUARDS_METADATA, (ctrl.prototype as Record<string, object>).findOne) ?? [];
+      expect([ctrl.name, guards.includes(CaseObjectViewScopeGuard)]).toEqual([ctrl.name, true]);
+    }
   });
 
   it("dört modül de CaseViewScopeModule'ü içe aktarır (kapının servisi; yoksa kapı 403 ile kapanır)", () => {

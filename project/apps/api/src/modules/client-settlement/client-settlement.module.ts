@@ -33,6 +33,7 @@ import { FinanceApprovalIntentBuilder } from './finance-approval-intent.builder'
 import { FinanceRiskEngine } from './finance-risk.engine';
 import { CaseFeeAgreementService } from './case-fee-agreement.service';
 import { CaseFeeAgreementController } from './case-fee-agreement.controller';
+import { CaseViewScopeModule } from '../case/case-view-scope.module';
 
 /**
  * TM3 M1/M2/M3/M1R - Muvekkil Settlement Bridge (Claude domaini).
@@ -44,7 +45,7 @@ import { CaseFeeAgreementController } from './case-fee-agreement.controller';
  *      manuel-reversal-required olarak consume eder (ayri exact key; M1 handler'ina dokunmaz).
  */
 @Module({
-  imports: [PrismaModule, V28EngineModule, OfficeApprovalModule, AuditModule, AccountingJournalTrialBalanceModule, ClientFinancialDisclosureModule],
+  imports: [PrismaModule, V28EngineModule, OfficeApprovalModule, AuditModule, AccountingJournalTrialBalanceModule, ClientFinancialDisclosureModule, CaseViewScopeModule], // F02 P3-D3b-2: CaseObjectViewScopeGuard servisi (yoksa kapı 403 ile kapanır)
   controllers: [
     DispositionController,
     ClientPayoutController,
