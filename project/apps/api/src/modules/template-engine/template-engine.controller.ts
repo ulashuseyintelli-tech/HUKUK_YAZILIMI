@@ -871,6 +871,10 @@ export class TemplateEngineController {
   /// Çağrıldığı yerler:
   /// - TemplateEngineController.generateDocumentFromCase() → POST /template-engine/cases/:caseId/documents/:format (case bazlı belge artifact üretimi)
   /// </remarks>
+  // F02 P3-D2b (owner kararı 08.11.2026): dosya görünüm kapsamı (bayrak açıkken) mevcut işlem yetkilerine EK koşuldur — sınıf
+  // düzeyindeki kimlik + VIEWER yazım reddinden SONRA, render / dosya yazımı / DocumentArtifact + denetim kaydından ÖNCE çalışır;
+  // kapsam dışı istek kalıcı çıktı üretmez (404). Tek başına belge üretme yetkisi VERMEZ.
+  @UseGuards(CaseViewScopeGuard)
   @Post('cases/:caseId/documents/:format')
   async generateDocumentFromCase(
     @Param('caseId') caseId: string,

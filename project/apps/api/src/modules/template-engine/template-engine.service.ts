@@ -3409,9 +3409,12 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
     
     // 3. Cache'de var mı kontrol et (tablo yoksa atla)
     try {
+      // F02 P3 (owner kararı 08.11.2026): artefakt ↔ bağlı dosya ↔ aktör kiracı eşleşmesi bayraktan BAĞIMSIZ zorunlu. Önbellek
+      // anahtarında kiracı yok (@@unique caseId…dataHash); başka kiracıya yazılmış satırın dosyası bu dosyanın aktörüne dönmez.
       const existingArtifact = await (this.prisma as any).documentArtifact?.findFirst({
         where: {
           caseId,
+          ...artifactTenantMatch(tenantId),
           documentType: documentType.toUpperCase().replace(/-/g, '_'),
           format,
           templateVersion,
@@ -3605,8 +3608,9 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
    */
   async listDocumentArtifacts(caseId: string, tenantId: string): Promise<any[]> {
     // CLIENT-SEC-H1 (S4): tenant-scoped list. caseId TEK BAŞINA sorgulanmaz.
+    // F02 P3 (owner 08.11.2026): bağlı dosya da aktör kiracısında olmalı (bayraktan bağımsız) — uyuşmaz satır listelenmez.
     return (this.prisma as any).documentArtifact.findMany({
-      where: { caseId, tenantId },
+      where: { caseId, ...artifactTenantMatch(tenantId) },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -3617,8 +3621,11 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
   async downloadArtifact(artifactId: string, tenantId: string): Promise<{ buffer: Buffer; fileName: string; mimeType: string } | null> {
     // CLIENT-SEC-H1 (S4): tenant-scoped ownership. artifactId TEK BAŞINA sorgulanmaz; başka tenant'ın
     // artifact'ı findFirst'te eşleşmez → null → 404 (metadata/varlık ifşası yok).
+    // F02 P3 (owner kararı 08.11.2026): aktör ↔ artefakt ↔ BAĞLI DOSYA kiracı eşleşmesi bayraktan BAĞIMSIZ zorunlu; eksik ya da
+    // uyuşmaz ilişkide dosya okunmaz, içerik / indirme başlığı verilmez → çağıran aynı "Doküman bulunamadı" 404'ünü döner.
+    // (Kişi kapsamı ayrı ve bayrağa bağlıdır: TemplateEngineController.downloadArtifact → CaseViewScopeService.isArtifactVisible.)
     const artifact = await (this.prisma as any).documentArtifact.findFirst({
-      where: { id: artifactId, tenantId },
+      where: { id: artifactId, ...artifactTenantMatch(tenantId) },
     });
     
     if (!artifact || artifact.status !== 'READY' || !artifact.filePath) {
@@ -3647,4 +3654,15 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
       return null;
     }
   }
+}
+
+/**
+ * F02 P3 (owner kararı 08.11.2026) — aktör ↔ DocumentArtifact ↔ bağlı dosya KİRACI eşleşmesi; dosya görünüm bayrağından BAĞIMSIZ
+ * zorunludur (bayrak kapalı eşitliği, uyuşmazlıktaki eski hatalı davranışı korumak için kullanılmaz). Artefakt satırının
+ * `tenantId`'si ile `caseId` ayrı alanlardır ve önbellek benzersiz anahtarında kiracı yoktur: başka kiracının dosyasına bağlanmış
+ * satır eşleşmez. Kiracı bağlamı yoksa HİÇBİR satır eşleşmez (Prisma `tenantId: undefined` süzgeci sessizce düşürür → fail-open olurdu).
+ */
+export function artifactTenantMatch(tenantId: string | undefined): Record<string, unknown> {
+  if (typeof tenantId !== 'string' || !tenantId) return { AND: [{ id: { in: [] as string[] } }] };
+  return { tenantId, case: { tenantId } };
 }

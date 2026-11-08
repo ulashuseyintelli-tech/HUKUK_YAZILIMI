@@ -206,15 +206,17 @@ describeDb("F02 P3-D2 — dosyaya bağlı belge okuma yolları dosya görünüm 
       flagOff[name] = { status: res.status, body: name.includes("/documents") ? JSON.stringify(res.body) : "" };
     });
 
-    it("artefakt listesi ve indirme ilişkisiz kişiye açık; uyuşmaz artefakt da bugünkü gibi iner (yalnız kiracı denetimi)", async () => {
+    it("artefakt listesi ve indirme ilişkisiz kişiye açık (kişi kapsamı bayrağa bağlı); uyuşmaz artefakt bayrak kapalıyken de İNMEZ (P3 kiracı eşleşmesi)", async () => {
       const list = await get(u.nobody, `/template-engine/cases/${c.c6}/documents`);
       expect(list.status).toBe(200);
       expect(list.body.map((x: { id: string }) => x.id)).toEqual([a.c6]);
       const dl = await get(u.nobody, `/template-engine/documents/${a.c6}/download`);
       expect(dl.status).toBe(200);
       expect(dl.text ?? dl.body.toString()).toContain(SECRET.c6);
+      // P3 (owner kararı 08.11.2026): aktör ↔ artefakt ↔ bağlı dosya kiracı eşleşmesi bayraktan BAĞIMSIZ zorunlu (eski 200 kaldırıldı).
       const mm = await get(u.nobody, `/template-engine/documents/${a.mismatch}/download`);
-      expect(mm.status).toBe(200); // bayrak kapalıyken davranış değişmez (bilinen veri-tutarlılığı sınırı; kayıtta)
+      expect([mm.status, mm.body, mm.headers["content-disposition"]]).toEqual([404, { message: "Doküman bulunamadı" }, undefined]);
+      expect(JSON.stringify(mm.body)).not.toContain(SECRET.mismatch);
     });
 
     it("bayrak kapalıyken kapsam servisi DB'ye hiç sorgu atmaz (ek yük ve davranış farkı yok)", async () => {
