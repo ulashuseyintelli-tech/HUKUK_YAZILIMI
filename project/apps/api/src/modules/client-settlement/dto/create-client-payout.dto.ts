@@ -1,4 +1,4 @@
-/** TM3 M3 — müvekkile ödeme kaydı (payout). Banka/dekont/IBAN/onay-workflow YOK. */
+/** Payout request/finalize payload. Bank/provider execution is outside this recording contract. */
 export interface CreateClientPayoutDto {
   caseId: string;
   caseClientId: string;
@@ -6,4 +6,6 @@ export interface CreateClientPayoutDto {
   currency?: string;
   idempotencyKey: string; // zorunlu (tenant-scoped duplicate guard)
   note?: string;
+  /** Explicit renewal only; never part of the financial idempotency identity or saved intent. */
+  renewApprovalRequestId?: string;
 }

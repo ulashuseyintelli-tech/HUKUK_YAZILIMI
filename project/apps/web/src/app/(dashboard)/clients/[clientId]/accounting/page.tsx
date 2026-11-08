@@ -393,14 +393,16 @@ export default function ClientAccountingPage() {
           outstanding={outstandingQ.data?.outstanding ?? null}
           caseLabel={`${selected.caseNumber}${selected.executionFileNumber ? ` — İcra: ${selected.executionFileNumber}` : ''}`}
           onClose={() => setShowPayoutModal(false)}
-          onSuccess={() => {
+          onSuccess={(result) => {
             setShowPayoutModal(false);
             // PAYOUT-APPROVAL-2 PR-2b: artık payout HENÜZ RECORDED değil — yalnız onay talebi
             // oluştu. "Onay Bekleyen Ödeme Talepleri" listesini tazele (yeni talep hemen görünsün);
             // outstanding/payouts/statement finalize'da GERÇEKTEN değiştiği için o tazeleme finalize
             // başarısında yapılır (bkz. PendingPayoutRequests.tsx).
             queryClient.invalidateQueries({ queryKey: ['client-payout-approval-requests'] });
-            alert('Ödeme onay talebi oluşturuldu. Onaylandıktan sonra "Onay Bekleyen Ödeme Talepleri" listesinden kesinleştirebilirsiniz.');
+            alert(result.status === 'APPROVED'
+              ? 'Mevcut onay talebi getirildi. Geçerlilik ve ödeme kaydını "Onay Bekleyen Ödeme Talepleri" listesinden kontrol edin.'
+              : 'Ödeme onay talebi oluşturuldu. Onaylandıktan sonra "Onay Bekleyen Ödeme Talepleri" listesinden kesinleştirebilirsiniz.');
           }}
         />
       )}

@@ -506,3 +506,4 @@ src/modules/client-intake-review/client-intake-review-permission.http.db-gated.i
 src/modules/client/__tests__/client-object-scope-1b.http.db-gated.integration.spec.ts
 src/modules/client/__tests__/client-deactivation-portal.http.db-gated.integration.spec.ts
 src/modules/client-approval/__tests__/client-approval-ledger-read.http.db-gated.integration.spec.ts
+src/modules/client-settlement/__tests__/client-payout-approval-window.http.db-gated.integration.spec.ts

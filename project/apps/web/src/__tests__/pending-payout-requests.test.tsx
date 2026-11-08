@@ -70,6 +70,7 @@ const detailRow = (over: Partial<Record<string, unknown>> = {}) => ({
   replacementPayloadHash: null,
   decisionNote: null,
   executedAt: null,
+  payoutExecution: { validUntil: '2030-01-08T01:00:00Z', approvalExpired: false, canFinalize: true, canRequestRenewal: false, recordedPayoutId: null },
   ...over,
 });
 
@@ -117,7 +118,7 @@ describe('PendingPayoutRequests', () => {
     finalizePayoutMock.mockResolvedValue({ created: true, payoutId: 'p1' });
 
     renderWidget();
-    await waitFor(() => expect(screen.getByText(/Kesinleştir/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Kesinleştir' })).toBeTruthy());
 
     fireEvent.click(screen.getByRole('button', { name: /Kesinleştir/ }));
 

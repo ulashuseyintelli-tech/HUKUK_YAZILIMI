@@ -3,9 +3,8 @@
 /**
  * PAYOUT-APPROVAL-2 PR-2b — Onay bekleyen/onaylanmış müvekkile ödeme talepleri (CLIENT_PAYOUT_POST).
  *
- * Approval Inbox genel amaçlıdır (bkz. office-approvals sayfası) — actionCode-özel "sonraki aksiyon"
- * mekanizması YOK; onaylandıktan sonra hiçbir "Kesinleştir" butonu göstermez (OfficeApprovalDecisionActions
- * yalnız PENDING_APPROVAL'da render olur). Bu component o boşluğu TALEP SAHİBİ tarafında kapatır:
+ * Onay kutusu ve bu talep-sahibi kartı aynı PayoutFinalizeAction bileşenini kullanır.
+ * Güncel aktör uygunluğu, 168 saat ve kayıtlı ödeme tekrarı bilgisi sunucudan gelir.
  * officeApprovalApi.getMine() ile kendi CLIENT_PAYOUT_POST taleplerini (tüm dosyalar) çeker, bu
  * case/caseClient'a ait olanları savedIntent üzerinden filtreler, PENDING_APPROVAL olanlar için DBIND §5
  * self-approval "Onayla" aksiyonu ve talep sahibinin kendi bekleyen talebi için "Geri Çek" (cancel) aksiyonu, APPROVED olanlar için
@@ -15,14 +14,15 @@
  *
  * Yetki UI'da TAKLİT EDİLMEZ: backend zaten defense-in-depth uyguluyor (payload-drift guard +
  * PayoutApprovalPolicy re-check) — bu component yalnız görünürlük/tetikleme sağlar, otorite DEĞİLDİR.
- * Eligible olmayan bir requester "Kesinleştir"e tıklarsa backend'in 403 mesajı olduğu gibi gösterilir.
+ * Uygunluk doğrulanamazsa yürütme kapalıdır; sunucunun reddi olduğu gibi gösterilir.
  */
 import { useMemo, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card, Badge, Spinner, Button } from '@hukuk/ui';
 import { AlertCircle, ClipboardCheck } from 'lucide-react';
 import { officeApprovalApi, type OfficeApprovalDetail, type OfficeApprovalSummary } from '@/lib/api/office-approval';
-import { clientAccountingApi, formatMoneyString } from '@/lib/api/client-accounting';
+import { formatMoneyString } from '@/lib/api/client-accounting';
+import { PayoutFinalizeAction } from '@/components/office-approval/PayoutFinalizeAction';
 import { STATUS_LABELS } from '@/components/office-approval/status-labels';
 import { isPayoutIntent, type PayoutIntent } from './payout-intent';
 
@@ -38,16 +38,6 @@ const CLIENT_PAYOUT_POST = 'CLIENT_PAYOUT_POST';
  */
 function isFinalized(request: Pick<OfficeApprovalSummary, 'status' | 'executionStatus'>): boolean {
   return request.status === 'APPROVED' && request.executionStatus === 'SUCCEEDED';
-}
-
-/** Backend hata mesajını kullanıcı diline çevirir (mesaj backend otoritesini değiştirmez). */
-function friendlyFinalizeError(message: string): string {
-  const m = message || '';
-  if (/aşamaz|outstanding/i.test(m)) return `Tutar, müvekkile borcunu (net) aşıyor. ${m}`;
-  if (/eşleşmiyor|drift/i.test(m)) {
-    return 'Onaylanan talep ile kesinleştirme tutarı eşleşmiyor (drift). Talebi iptal edip yeniden oluşturun.';
-  }
-  return m || 'Kesinleştirme başarısız oldu.';
 }
 
 interface PendingPayoutRequestsProps {
@@ -103,32 +93,6 @@ export function PendingPayoutRequests({ caseId, caseClientId }: PendingPayoutReq
       );
   }, [detailsQ.data, payoutRequestIds, caseId, caseClientId]);
 
-  const finalizeMutation = useMutation({
-    mutationFn: ({ approvalRequestId, intent }: { approvalRequestId: string; intent: PayoutIntent }) =>
-      clientAccountingApi.finalizePayout(approvalRequestId, {
-        caseId: intent.caseId,
-        caseClientId: intent.caseClientId,
-        amount: intent.amount,
-        currency: intent.currency,
-        note: intent.note ?? undefined,
-        idempotencyKey: intent.idempotencyKey,
-      }),
-    onSuccess: () => {
-      setPayoutActionError(null);
-      queryClient.invalidateQueries({ queryKey: ['client-accounting-outstanding'] });
-      queryClient.invalidateQueries({ queryKey: ['client-accounting-payouts'] });
-      queryClient.invalidateQueries({ queryKey: ['client-statement'] });
-      // Muhasebe Defteri (FinancialStatementPanel) ödemeyi günlükten okur; kesinleştirme yeni günlük satırı
-      // yazdığı için panel de yenilenir — yoksa "Müvekkile Borç (Net)" güncel, panel kapanışı eski kalır.
-      queryClient.invalidateQueries({ queryKey: ['financial-statement'] });
-      queryClient.invalidateQueries({ queryKey: ['client-payout-approval-requests'] });
-      queryClient.invalidateQueries({ queryKey: ['client-payout-approval-request-details'] });
-    },
-    onError: (e: unknown) => {
-      setPayoutActionError(friendlyFinalizeError((e as Error)?.message));
-    },
-  });
-
   const approveMutation = useMutation({
     mutationFn: (approvalRequestId: string) => officeApprovalApi.approve(approvalRequestId),
     onSuccess: () => {
@@ -181,10 +145,9 @@ export function PendingPayoutRequests({ caseId, caseClientId }: PendingPayoutReq
 
       <div className="space-y-2">
         {scoped.map(({ detail, intent }) => {
-          const isFinalizingThis = finalizeMutation.isPending && finalizeMutation.variables?.approvalRequestId === detail.id;
           const isApprovingThis = approveMutation.isPending && approveMutation.variables === detail.id;
           const isCancellingThis = cancelMutation.isPending && cancelMutation.variables === detail.id;
-          const anyPending = approveMutation.isPending || finalizeMutation.isPending || cancelMutation.isPending;
+          const anyPending = approveMutation.isPending || cancelMutation.isPending;
           return (
             <div key={detail.id} className="flex items-center justify-between border rounded-lg p-3 text-sm">
               <div>
@@ -237,18 +200,14 @@ export function PendingPayoutRequests({ caseId, caseClientId }: PendingPayoutReq
                     {isApprovingThis ? <Spinner className="w-4 h-4" /> : 'Onayla'}
                   </Button>
                 )}
-                {detail.status === 'APPROVED' && (
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      setPayoutActionError(null);
-                      finalizeMutation.mutate({ approvalRequestId: detail.id, intent });
-                    }}
-                    disabled={anyPending}
-                  >
-                    {isFinalizingThis ? <Spinner className="w-4 h-4" /> : 'Kesinleştir'}
-                  </Button>
-                )}
+                {detail.status === 'APPROVED' && <PayoutFinalizeAction
+                  detail={detail}
+                  currentUserId={detail.requesterUserId}
+                  onFinalized={() => {
+                    queryClient.invalidateQueries({ queryKey: ['client-payout-approval-requests'] });
+                    queryClient.invalidateQueries({ queryKey: ['client-payout-approval-request-details'] });
+                  }}
+                />}
               </div>
             </div>
           );

@@ -43,6 +43,13 @@ export interface OfficeApprovalDetail extends OfficeApprovalSummary {
   replacementPayloadHash: string | null;
   decisionNote: string | null;
   executedAt: string | null;
+  payoutExecution?: {
+    validUntil: string | null;
+    approvalExpired: boolean;
+    canFinalize: boolean;
+    canRequestRenewal: boolean;
+    recordedPayoutId: string | null;
+  };
   financeVisibility?: {
     applied: boolean;
     level: "LEGACY_FULL" | "CONTROLLED_FULL" | "MASKED";

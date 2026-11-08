@@ -12,7 +12,7 @@ vi.mock("@/lib/api/office-approval", () => ({
   officeApprovalApi: { getDetail: vi.fn() },
 }));
 vi.mock("@/lib/api/client-accounting", () => ({
-  clientAccountingApi: { finalizePayout: vi.fn() },
+  clientAccountingApi: { finalizePayout: vi.fn(), requestPayout: vi.fn() },
 }));
 import { officeApprovalApi } from "@/lib/api/office-approval";
 import { clientAccountingApi } from "@/lib/api/client-accounting";
@@ -39,6 +39,7 @@ const DETAIL = {
   replacementPayloadHash: null,
   decisionNote: null,
   executedAt: null,
+  payoutExecution: { validUntil: '2030-01-08T01:00:00Z', approvalExpired: false, canFinalize: true, canRequestRenewal: false, recordedPayoutId: null as string | null },
 };
 
 const getDetail = officeApprovalApi.getDetail as any;
@@ -57,7 +58,6 @@ describe("PayoutFinalizeAction — görünürlük", () => {
   });
 
   it.each([
-    ["karar sahibi olmayan kullanıcı", { detail: DETAIL, uid: "baska-kullanici" }],
     ["oturum yok", { detail: DETAIL, uid: null }],
     ["PENDING_APPROVAL (henüz onaylanmadı)", { detail: { ...DETAIL, status: "PENDING_APPROVAL" as const, approverUserId: null }, uid: "approver-9" }],
     ["REJECTED", { detail: { ...DETAIL, status: "REJECTED" as const }, uid: "approver-9" }],
@@ -67,6 +67,42 @@ describe("PayoutFinalizeAction — görünürlük", () => {
   ])("%s → GÖRÜNMEZ", (_ad, c) => {
     const { container } = render(<PayoutFinalizeAction detail={c.detail as any} currentUserId={c.uid} onFinalized={vi.fn()} />);
     expect(container.firstChild).toBeNull();
+  });
+});
+
+describe('M-4/J-08 actor A and approval window UI', () => {
+  it('a different eligible finalizer sees the action; requester/approver identity does not grant it', () => {
+    render(<PayoutFinalizeAction detail={DETAIL} currentUserId="different-manager" onFinalized={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Kesinleştir' })).toBeInTheDocument();
+  });
+
+  it('missing server eligibility fails closed', () => {
+    render(<PayoutFinalizeAction detail={{ ...DETAIL, payoutExecution: undefined }} currentUserId="approver-9" onFinalized={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Kesinleştir' })).toBeNull();
+    expect(screen.getByRole('status')).toHaveTextContent('doğrulanamadı');
+  });
+
+  it('an expired unrecorded payout renews explicitly with the original key and saved intent', async () => {
+    const request = clientAccountingApi.requestPayout as any;
+    request.mockResolvedValue({ requested: true, approvalRequestId: 'fresh-approval', status: 'PENDING_APPROVAL' });
+    getDetail.mockResolvedValue({ ...DETAIL, id: 'fresh-approval', status: 'PENDING_APPROVAL' });
+    const onFinalized = vi.fn();
+    render(<PayoutFinalizeAction detail={{ ...DETAIL, payoutExecution: { ...DETAIL.payoutExecution, approvalExpired: true, canFinalize: false, canRequestRenewal: true } }} currentUserId="different-manager" onFinalized={onFinalized} />);
+    expect(screen.queryByRole('button', { name: 'Kesinleştir' })).toBeNull();
+    expect(request).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Yeni onay iste' }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ ...INTENT, renewApprovalRequestId: 'req1' }));
+    expect(finalizePayout).not.toHaveBeenCalled();
+    await waitFor(() => expect(onFinalized).toHaveBeenCalledWith(expect.objectContaining({ id: 'fresh-approval', status: 'PENDING_APPROVAL' })));
+  });
+
+  it('recorded payout replay remains available after expiry without a new approval', async () => {
+    finalizePayout.mockResolvedValue({ created: false, payoutId: 'existing', idempotentReplay: true });
+    getDetail.mockResolvedValue({ ...DETAIL, executionStatus: 'SUCCEEDED' });
+    render(<PayoutFinalizeAction detail={{ ...DETAIL, payoutExecution: { ...DETAIL.payoutExecution, approvalExpired: true, recordedPayoutId: 'existing' } }} currentUserId="different-partner" onFinalized={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Yeni onay iste' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Kaydı doğrula' }));
+    await waitFor(() => expect(finalizePayout).toHaveBeenCalledWith('req1', expect.objectContaining({ idempotencyKey: 'k1' })));
   });
 });
 

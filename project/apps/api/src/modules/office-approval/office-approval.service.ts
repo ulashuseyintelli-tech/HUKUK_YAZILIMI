@@ -42,7 +42,8 @@ import { AuditService } from '../audit/audit.service';
 import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-json';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { OfficeApprovalDomainSyncService } from './office-approval-domain-sync.service';
-import { PayoutApprovalPolicy } from './client-payout-approval.policy';
+import { PayoutApprovalPolicy, payoutApprovalWindow } from './client-payout-approval.policy';
+import type { OfficeApprovalDetailDto } from './dto/office-approval.dto';
 import { ClientFinancialDisclosureApprovalPolicy } from './client-financial-disclosure-approval.policy';
 import {
   APPROVAL_IDENTITY_PROOF_SENSITIVE_ACTION_CODES,
@@ -367,9 +368,10 @@ export class OfficeApprovalService {
    */
   async listForTenant(
     tenantId: string,
-    opts: { view: 'inbox' | 'mine'; callerUserId: string; status?: OfficeApprovalStatus },
+    opts: { view: 'inbox' | 'mine'; callerUserId: string; status?: OfficeApprovalStatus; actionCode?: ActionCode },
   ): Promise<OfficeApprovalRequest[]> {
     const where: Prisma.OfficeApprovalRequestWhereInput = { tenantId };
+    if (opts.actionCode) where.actionCode = opts.actionCode;
     if (opts.view === 'inbox') {
       where.status = opts.status ?? OfficeApprovalStatus.PENDING_APPROVAL; // default: bekleyenler
       where.requesterUserId = { not: opts.callerUserId }; // KENDİ talebini onaylama paritesi → inbox'ta gösterme
@@ -378,6 +380,42 @@ export class OfficeApprovalService {
       if (opts.status) where.status = opts.status;
     }
     return this.prisma.officeApprovalRequest.findMany({ where, orderBy: { createdAt: 'desc' } });
+  }
+
+  /**
+   * Payout-only read eligibility; never widens the generic approver set.
+   * Callers: OfficeApprovalController.inbox/detail and payoutExecutionState below.
+   */
+  async isPayoutApproverEligible(userId: string, tenantId: string): Promise<boolean> {
+    return this.payoutApprovalPolicy.isEligible(userId, tenantId);
+  }
+
+  /** Caller: payout detail projection. This is advisory UI state, not execution authority. */
+  async payoutExecutionState(req: OfficeApprovalRequest, actorUserId: string): Promise<OfficeApprovalDetailDto['payoutExecution']> {
+    const window = payoutApprovalWindow(req.decidedAt);
+    const actor = await this.prisma.user.findUnique({ where: { id: actorUserId }, select: { role: true, isActive: true, tenantId: true } });
+    const canWrite = !!actor && actor.isActive && actor.tenantId === req.tenantId && !isOfficeWriteDeniedForRole(actor.role);
+    const intent = req.savedIntent as Record<string, unknown> | null;
+    const validIntent = !!intent && typeof intent.idempotencyKey === 'string' && typeof intent.caseId === 'string' &&
+      typeof intent.caseClientId === 'string' && typeof intent.amount === 'string' && typeof intent.currency === 'string';
+    const recorded = validIntent ? await this.prisma.clientPayout.findUnique({
+      where: { tenantId_idempotencyKey: { tenantId: req.tenantId, idempotencyKey: intent.idempotencyKey as string } },
+      select: { id: true, caseId: true, caseClientId: true, amount: true, currency: true },
+    }) : null;
+    let matches = false;
+    try {
+      matches = !!recorded && recorded.caseId === intent?.caseId && recorded.caseClientId === intent?.caseClientId &&
+        recorded.currency === intent?.currency && recorded.amount.eq(new Prisma.Decimal(intent?.amount as string));
+    } catch { /* An unprovable intent cannot authorize a replay projection. */ }
+    const approved = req.actionCode === ActionCode.CLIENT_PAYOUT_POST && req.status === OfficeApprovalStatus.APPROVED;
+    return {
+      validUntil: window.validUntil,
+      approvalExpired: window.expired,
+      canFinalize: approved && validIntent && canWrite && await this.isPayoutApproverEligible(actorUserId, req.tenantId) &&
+        (matches || (!recorded && !window.expired)),
+      canRequestRenewal: approved && validIntent && canWrite && window.expired && !recorded,
+      recordedPayoutId: matches ? recorded!.id : null,
+    };
   }
 
   /**

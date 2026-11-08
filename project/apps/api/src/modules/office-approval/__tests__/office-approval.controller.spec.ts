@@ -21,6 +21,8 @@ const mkReq = (over: Record<string, unknown> = {}) => ({
 const mk = (over: Record<string, unknown> = {}) => {
   const service: any = {
     isApproverEligible: jest.fn().mockResolvedValue(false),
+    isPayoutApproverEligible: jest.fn().mockResolvedValue(false),
+    payoutExecutionState: jest.fn().mockResolvedValue({ validUntil: null, approvalExpired: true, canFinalize: false, canRequestRenewal: false, recordedPayoutId: null }),
     listForTenant: jest.fn().mockResolvedValue([mkReq()]),
     getByIdForTenant: jest.fn().mockResolvedValue(mkReq()),
     approve: jest.fn().mockResolvedValue(mkReq({ status: 'APPROVED', approverUserId: 'appr' })),
@@ -64,6 +66,31 @@ describe('P4-4 OfficeApprovalController — inbox / mine', () => {
 });
 
 describe('P4-4 OfficeApprovalController — detail (tenant + visibility)', () => {
+  it('M4: a payout-only approver inbox is filtered to CLIENT_PAYOUT_POST, never other actions', async () => {
+    const { ctrl, service } = mk({ isPayoutApproverEligible: jest.fn().mockResolvedValue(true), listForTenant: jest.fn().mockResolvedValue([]) });
+    await ctrl.inbox('manager', 't1', 'APPROVED');
+    expect(service.listForTenant).toHaveBeenCalledWith('t1', { view: 'inbox', callerUserId: 'manager', status: 'APPROVED', actionCode: 'CLIENT_PAYOUT_POST' });
+  });
+
+  it('M4: a payout-only approver may read payout detail but not a different action', async () => {
+    const row = mkReq({ actionCode: 'CLIENT_PAYOUT_POST' });
+    const { ctrl, service } = mk({ isPayoutApproverEligible: jest.fn().mockResolvedValue(true), getByIdForTenant: jest.fn().mockResolvedValue(row) });
+    const response = await ctrl.detail('manager', 't1', 'r1');
+    expect(response.data).toHaveProperty('payoutExecution');
+    expect(service.payoutExecutionState).toHaveBeenCalledWith(row, 'manager');
+    service.getByIdForTenant.mockResolvedValue(mkReq());
+    await expect(ctrl.detail('manager', 't1', 'r1')).rejects.toThrow(NotFoundException);
+  });
+
+  it('M4: an advisory read failure does not misreport a committed approval as failed', async () => {
+    const row = mkReq({ actionCode: 'CLIENT_PAYOUT_POST', status: 'APPROVED', approverUserId: 'appr' });
+    const { ctrl, service } = mk({ approve: jest.fn().mockResolvedValue(row), payoutExecutionState: jest.fn().mockRejectedValue(new Error('read unavailable')) });
+    const response = await ctrl.approve('appr', 'r1', {});
+    expect(service.approve).toHaveBeenCalledWith('r1', 'appr', undefined);
+    expect(response.data.status).toBe('APPROVED');
+    expect(response.data).not.toHaveProperty('payoutExecution');
+  });
+
   it('tenant mismatch → getByIdForTenant 404 propagate', async () => {
     const { ctrl } = mk({ getByIdForTenant: jest.fn().mockRejectedValue(new NotFoundException()) });
     await expect(ctrl.detail('u1', 't-OTHER', 'r1')).rejects.toThrow(NotFoundException);

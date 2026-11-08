@@ -4,6 +4,18 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { lockAndAssertExecutionRole } from './office-approval-execution-authority';
 import { Capacity } from '../policy-engine/types/effective-permission.types';
 
+const PAYOUT_APPROVAL_VALIDITY_MS = 168 * 60 * 60 * 1000;
+
+/** M-4/J-08: payout-only read projection; enforcement uses fresh server time inside the financial transaction. */
+export function payoutApprovalWindow(decidedAt: Date | null, now = new Date()): { validUntil: Date | null; expired: boolean } {
+  const decided = decidedAt instanceof Date ? decidedAt.getTime() : NaN;
+  const validUntil = new Date(decided + PAYOUT_APPROVAL_VALIDITY_MS);
+  if (!Number.isFinite(decided) || decided > now.getTime() || !Number.isFinite(validUntil.getTime())) {
+    return { validUntil: null, expired: true };
+  }
+  return { validUntil, expired: now.getTime() >= validUntil.getTime() };
+}
+
 /**
  * PAYOUT-APPROVAL-2 (2026-07-04, owner kararı) — CLIENT_PAYOUT_POST için İZOLE approver yeterlilik
  * politikası. Paylaşılan OfficeApprovalService.isApproverEligible() KASITLI OLARAK DEĞİŞTİRİLMEDİ:

@@ -305,11 +305,12 @@ describeDb('RC-COL / W1.3 ClientPayout replay characterization', () => {
     const idempotencyKey = `${seedKey}-concurrent`;
     const concurrencyPrisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL } } });
     const latch = createAdvisoryLockLatch();
+    let finalizing = false;
 
     concurrencyPrisma.$use(async (params, next) => {
       const rawQuery = (params.args as any)?.[0];
       const queryText = String(rawQuery?.sql ?? rawQuery?.text ?? rawQuery ?? '');
-      if (params.action === 'executeRaw' && queryText.includes('pg_advisory_xact_lock')) {
+      if (finalizing && params.action === 'executeRaw' && queryText.includes('pg_advisory_xact_lock')) {
         await latch.intercept();
       }
       return next(params);
@@ -318,6 +319,7 @@ describeDb('RC-COL / W1.3 ClientPayout replay characterization', () => {
     await concurrencyPrisma.$connect();
     const services = buildServices(concurrencyPrisma);
     const approved = await approvePayout(services, currentFixture, idempotencyKey);
+    finalizing = true;
     const calls = [
       services.payout.finalize(
         currentFixture.tenantId,
