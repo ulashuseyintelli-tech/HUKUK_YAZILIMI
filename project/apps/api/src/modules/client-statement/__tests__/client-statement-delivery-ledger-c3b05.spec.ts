@@ -150,6 +150,7 @@ function makeHarness(options: { withLedger?: boolean; claimResult?: ClientStatem
     $transaction: jest.fn(async (cb: any) => cb(tx)),
   };
   const statements: any = {
+    resolveCurrencySkipTasks: jest.fn().mockResolvedValue({ outcome: 'NO_MATCH', completed: 0 }),
     createClientLevel: jest.fn().mockResolvedValue({ id: 'stmt-1' }),
     findOne: jest.fn().mockResolvedValue(makeStatement()),
   };
