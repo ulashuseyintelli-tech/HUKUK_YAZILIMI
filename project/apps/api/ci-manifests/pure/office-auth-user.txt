@@ -501,3 +501,5 @@ src/modules/case/__tests__/case-view-scope.service.spec.ts
 src/modules/case/__tests__/case-view-scope-document-routes.static.spec.ts
 # F02 P3-D3 (owner 08.11.2026): dosya alt kaynagi okuma yollari - fail-closed rota envanteri (cases :id, balance, groups, case-debtor).
 src/modules/case/__tests__/case-view-scope-subresource-routes.static.spec.ts
+# F02 P3-D3b-1 (owner 08.11.2026): dosya kayitlarinin dosya kimlikli okuma yollari - fail-closed rota envanteri (4 controller, 8 GET).
+src/modules/case/__tests__/case-view-scope-record-routes.static.spec.ts

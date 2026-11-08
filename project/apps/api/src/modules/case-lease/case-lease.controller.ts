@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, Request } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
+import { CaseViewScoped } from '../case/case-view-scope.guard';
 import { CaseLeaseService, CreateLeaseDto, UpdateLeaseDto } from './case-lease.service';
 
 @Controller('case-leases')
@@ -22,6 +23,7 @@ export class CaseLeaseController {
    * Dosyaya ait kira sozlesmesini getir
    * GET /api/case-leases/case/:caseId
    */
+  @CaseViewScoped() // F02 P3-D3b-1: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   @Get('case/:caseId')
   async findByCase(@Request() req: any, @Param('caseId') caseId: string) {
     return this.service.findByCase(req.user.tenantId, caseId);
@@ -58,6 +60,7 @@ export class CaseLeaseController {
    * Toplam kira borcu
    * GET /api/case-leases/case/:caseId/debt
    */
+  @CaseViewScoped() // F02 P3-D3b-1: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   @Get('case/:caseId/debt')
   async calculateTotalDebt(@Request() req: any, @Param('caseId') caseId: string) {
     return this.service.calculateTotalDebt(req.user.tenantId, caseId);
