@@ -12,6 +12,7 @@ import { Request } from 'express';
 // CPE Integration - Phase 3
 import { CpeRequired, CpeRequiredGuard } from '@/modules/policy-engine';
 import { ActionCode } from '@/modules/policy-engine/types/action-code.enum';
+import { expensePaymentReversalReason } from './expense-payment-reversal-http.dto';
 
 interface AuthRequest extends Request {
   user: { id: string; tenantId: string };
@@ -60,6 +61,19 @@ export class ExpenseRequestController {
   @Get(':id')
   async findOne(@Req() req: AuthRequest, @Param('id') id: string) {
     return this.service.findOne(req.user.tenantId, id);
+  }
+
+  @Get(':id/payments/reversal-options')
+  getPaymentReversalOptions(@Req() req: AuthRequest, @Param('id') id: string) {
+    return this.service.getPaymentReversalOptions(req.user.tenantId, id, req.user.id);
+  }
+
+  // No generic collection/approval action substitutes for the POL-A expense-reversal gate in the service.
+  @Post(':id/payments/:paymentId/reverse')
+  reversePayment(@Req() req: AuthRequest, @Param('id') id: string,
+    @Param('paymentId') paymentId: string, @Body() body: unknown) {
+    return this.service.reversePaymentForActor(req.user.tenantId, id, paymentId,
+      expensePaymentReversalReason(body), req.user.id);
   }
 
   @Post()

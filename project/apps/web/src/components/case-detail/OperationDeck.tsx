@@ -9,6 +9,7 @@ import { FinanceSourceListNotice, FinanceSourceRefreshNote } from "./FinanceSour
 import { ExpenseDistributionDecisionRow, useExpenseDistributionDecisions } from "@/components/expense/ExpenseDistributionDecision";
 import { ExpenseSendAction } from '@/components/expense/ExpenseSendAction';
 import { ExpenseCancelAction } from '@/components/expense/ExpenseCancelAction';
+import { ExpensePaymentReversalAction } from '@/components/expense/ExpensePaymentReversalAction';
 import {
   FileText, ListTodo, Receipt, Database, FolderOpen, MessageSquare,
   ChevronDown, Plus, AlertTriangle, Clock, Zap, User, Check, X,
@@ -1373,6 +1374,7 @@ export function OperationDeck({
                           <ExpenseDistributionDecisionRow expenseId={item.id} decisions={expenseDistributionDecisions} />
                         )}
                         {caseId && <ExpenseSendAction expenseId={item.id} status={rowStatus} />}
+                        {caseId && item.hasPaymentHistory === true && <ExpensePaymentReversalAction expenseId={item.id} caseId={caseId} onReversed={onRetryExpenseRequests} />}
                         {caseId && canCancelExpenseRequests && <ExpenseCancelAction expenseId={item.id} status={rowStatus}
                           paidAmount={item.paidAmount} hasPaymentHistory={item.hasPaymentHistory} onCancelled={() => {
                             setConfirmedExpenseCancellations(previous => ({ caseId, ids: previous.caseId === caseId ? [...new Set([...previous.ids, item.id])] : [item.id] }));

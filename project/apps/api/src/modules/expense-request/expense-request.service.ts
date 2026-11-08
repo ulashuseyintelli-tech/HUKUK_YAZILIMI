@@ -10,6 +10,9 @@ import { ExpenseCalculatorService, CaseData, EXPENSE_SET_TEMPLATES } from './exp
 import { ExpenseNotificationService } from './expense-notification.service';
 import { ExpensePaymentReversalContractService, ExpensePaymentReversalRequestKind } from './expense-payment-reversal-contract.service';
 import { lockExpenseRequest } from './expense-request-lock';
+import { assertClientObjectScope } from '../client/client-object-scope';
+import { capacityFromUser, isOfficeAdminCapacity } from '../policy-engine/effective-permission-mapping';
+import { expensePaymentReversalReason } from './expense-payment-reversal-http.dto';
 import { isOfficeWriteDeniedForRole } from '../office-approval/office-write-role.policy';
 import { normalizeExpensePayment, type PaymentInput } from './expense-payment-command';
 import { OfficeApprovalService } from '@/modules/office-approval/office-approval.service';
@@ -1560,6 +1563,124 @@ export class ExpenseRequestService {
     return { ...result.updated, idempotentReplay: result.replayed };
   }
 
+
+  /** Actor-facing correction reader only. No financial mutation or broader payment-history access. */
+  async getPaymentReversalOptions(tenantId: string, requestId: string, actorUserId: string) {
+    return this.prisma.$transaction(async tx => {
+      const parent = await this.reversalParentForActor(tx, tenantId, requestId, actorUserId);
+      const payments = await tx.expensePayment.findMany({ where: { expenseRequestId: parent.id }, orderBy: [{ paymentDate: 'asc' }, { id: 'asc' }] });
+      const options = [];
+      for (const payment of payments) {
+        let completedAt: string | null = null, blockedReason: string | null = null;
+        try {
+          const source = await this.publicReversalSource(tx, parent, payment);
+          if (source.reversal) completedAt = source.reversal.completedAt!.toISOString();
+          else if (parent.status === 'CANCELLED') blockedReason = 'EXPENSE_PAYMENT_PARENT_CANCELLED_BLOCKED';
+          else if (source.balance.balance.lt(payment.amount)) blockedReason = 'EXPENSE_PAYMENT_REVERSAL_INSUFFICIENT_BALANCE';
+        } catch (error) {
+          if (!(error instanceof ConflictException)) throw error;
+          blockedReason = 'EXPENSE_PAYMENT_REVERSAL_SOURCE_INCONSISTENT';
+        }
+        options.push({ expensePaymentId: payment.id, originalAmount: payment.amount.toFixed(2), currency: parent.currency,
+          paymentDate: payment.paymentDate.toISOString(), completedAt, eligible: !blockedReason && !completedAt, blockedReason });
+      }
+      return { expenseRequestId: parent.id, caseId: parent.caseId, payments: options };
+    });
+  }
+
+  /** HTTP correction: authorization precedes replay; every check and write shares the same transaction. */
+  async reversePaymentForActor(tenantId: string, requestId: string, paymentId: string, reason: string, actorUserId: string) {
+    const normalizedReason = expensePaymentReversalReason({ reason });
+    return this.prisma.$transaction(async tx => {
+      await lockExpenseRequest(tx, tenantId, requestId);
+      const parent = await this.reversalParentForActor(tx, tenantId, requestId, actorUserId);
+      const payment = await tx.expensePayment.findFirst({ where: { id: paymentId, expenseRequestId: parent.id } });
+      if (!payment) throw new NotFoundException('Masraf ödemesi bulunamadı');
+      const source = await this.publicReversalSource(tx, parent, payment);
+      if (source.reversal) return this.publicReversalResult(source.reversal, 'REPLAYED');
+      if (parent.status === 'CANCELLED') throw new ConflictException({ code: 'EXPENSE_PAYMENT_PARENT_CANCELLED_BLOCKED' });
+      // All new corrections sharing this account serialize, including different expense parents.
+      await tx.$queryRaw`SELECT "id" FROM "CaseBalance" WHERE "id" = ${source.balance.id}
+        AND "tenantId" = ${tenantId} AND "caseId" = ${parent.caseId} FOR UPDATE`;
+      const locked = await tx.caseBalance.findFirst({ where: { id: source.balance.id, tenantId, caseId: parent.caseId } });
+      if (!locked || locked.currency !== source.credit.currency) throw new ConflictException({ code: 'EXPENSE_PAYMENT_REVERSAL_SOURCE_INCONSISTENT' });
+      if (locked.balance.lt(payment.amount)) throw new ConflictException({ code: 'EXPENSE_PAYMENT_REVERSAL_INSUFFICIENT_BALANCE', message: 'Kaynak dosya avans bakiyesi tam ters kayıt için yetersiz' });
+      await this.reversePaymentInTransaction(tx, tenantId, payment.id, { reason: normalizedReason }, actorUserId, true);
+      const completed = await this.publicReversalSource(tx, parent, payment);
+      if (!completed.reversal) throw new ConflictException({ code: 'EXPENSE_PAYMENT_REVERSAL_SOURCE_INCONSISTENT' });
+      return this.publicReversalResult(completed.reversal, 'CREATED');
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+  }
+
+  private publicReversalResult(row: Prisma.ExpensePaymentReversalGetPayload<{}>, status: 'CREATED' | 'REPLAYED') {
+    // Replay metadata contains historical parent totals, never a current financial balance.
+    return { status, expensePaymentReversalId: row.id, expensePaymentId: row.expensePaymentId,
+      expenseRequestId: row.expenseRequestId, originalAmount: row.amount.toFixed(2), currency: row.currency,
+      completedAt: row.completedAt!.toISOString() };
+  }
+
+  private async reversalParentForActor(tx: Prisma.TransactionClient, tenantId: string, requestId: string, actorUserId: string) {
+    if (!tenantId || !actorUserId) throw new ForbiddenException({ code: 'EXPENSE_PAYMENT_REVERSAL_FORBIDDEN' });
+    const actor = await tx.user.findFirst({ where: { id: actorUserId, tenantId, isActive: true, role: { in: ['USER', 'ADMIN'] } },
+      include: { lawyer: true, staffMember: true } });
+    const profile = actor?.lawyer ?? actor?.staffMember;
+    if (!actor || !profile || profile.tenantId !== tenantId || !profile.isActive || !isOfficeAdminCapacity(capacityFromUser(actor))) {
+      throw new ForbiddenException({ code: 'EXPENSE_PAYMENT_REVERSAL_FORBIDDEN' });
+    }
+    let scope: Prisma.ExpenseRequestWhereInput | null = null;
+    if (isExpenseViewScopeEnabled()) {
+      if (!this.workScope) throw new ForbiddenException({ code: 'EXPENSE_VIEW_SCOPE_UNRESOLVED' });
+      scope = expenseViewWhereFor(await this.workScope.resolve(tx, tenantId, actorUserId, EXPENSE_VIEW_ALL_KEY), tenantId, actorUserId);
+    }
+    const parent = await tx.expenseRequest.findFirst({ where: { id: requestId, tenantId, ...(scope ? { AND: [scope] } : {}) } });
+    if (!parent) throw new NotFoundException('Masraf talebi bulunamadı');
+    await assertClientObjectScope(tx, tenantId, actorUserId, parent.clientId, parent.caseId);
+    return parent;
+  }
+
+  /** Require the original complete bridge; ambiguous/partial legacy rows are not repaired here. */
+  private async publicReversalSource(tx: Prisma.TransactionClient, parent: Prisma.ExpenseRequestGetPayload<{}>, payment: Prisma.ExpensePaymentGetPayload<{}>) {
+    const fail = () => { throw new ConflictException({ code: 'EXPENSE_PAYMENT_REVERSAL_SOURCE_INCONSISTENT' }); };
+    if (!parent.currency?.trim() || parent.currency !== parent.currency.trim() || payment.expenseRequestId !== parent.id || payment.amount.lte(0)) fail();
+    const journals = await tx.accountingJournalEntry.findMany({ where: { tenantId: parent.tenantId, sourceType: 'EXPENSE_PAYMENT', sourceId: payment.id,
+      sourceAction: 'recorded', entryType: 'EXPENSE_PAYMENT_RECORDED' }, include: { lines: true, reversedByEntry: { include: { lines: true } } }, take: 2 });
+    const credits = await tx.balanceLedger.findMany({ where: { tenantId: parent.tenantId, source: `expense_payment:${payment.id}`, sourceId: payment.id, type: 'CREDIT' }, take: 2 });
+    if (journals.length !== 1 || credits.length !== 1) fail();
+    const journal = journals[0], credit = credits[0];
+    const balance = await tx.caseBalance.findFirst({ where: { id: credit.caseBalanceId, tenantId: parent.tenantId, caseId: parent.caseId } });
+    if (!balance || balance.currency !== parent.currency || credit.currency !== parent.currency || !credit.amount.eq(payment.amount)
+      || journal.caseId !== parent.caseId || journal.currency !== parent.currency || journal.reversalOfEntryId) fail();
+    const expected = this.buildExpensePaymentRecordedJournalDraft(parent.tenantId, payment.matchedById ?? '', parent, payment);
+    const coordinates = ['lineNo', 'accountCode', 'direction', 'currency', 'tenantId', 'caseId', 'clientId', 'caseClientId', 'collectionId',
+      'dispositionLineId', 'payoutId', 'offsetId', 'expenseRequestId', 'expensePaymentId', 'expenseApplicationId', 'balanceLedgerId'] as const;
+    if (journal.lines.length !== expected.lines.length || expected.lines.some(want => !journal.lines.some(got =>
+      coordinates.every(key => (got[key] ?? null) === (want[key] ?? null)) && got.amount.eq(want.amount)))) fail();
+    const reversals = await tx.expensePaymentReversal.findMany({ where: { tenantId: parent.tenantId, expensePaymentId: payment.id, kind: 'REVERSAL' }, take: 2 });
+    const debits = await tx.balanceLedger.findMany({ where: { tenantId: parent.tenantId, source: `expense_payment:${payment.id}:reversal`, sourceId: payment.id }, take: 2 });
+    if (reversals.length > 1) fail();
+    const reversal = reversals[0] ?? null;
+    if (!reversal) { if (journal.reversedByEntry || debits.length) fail(); }
+    else {
+      const mirror = journal.reversedByEntry, debit = debits[0];
+      if (reversal.status !== 'COMPLETED' || !reversal.completedAt || reversal.expenseRequestId !== parent.id || reversal.originalJournalEntryId !== journal.id
+        || reversal.originalBalanceLedgerId !== credit.id || reversal.reversalJournalEntryId !== mirror?.id || reversal.reversalBalanceLedgerId !== debit?.id
+        || reversal.currency !== parent.currency || !reversal.amount.eq(payment.amount) || !mirror || debits.length !== 1 || debit.type !== 'DEBIT'
+        || debit.caseBalanceId !== credit.caseBalanceId || debit.currency !== credit.currency || !debit.amount.eq(payment.amount.negated())
+        || mirror.tenantId !== parent.tenantId || mirror.caseId !== parent.caseId || mirror.currency !== parent.currency
+        || mirror.entryType !== 'ACCOUNTING_JOURNAL_REVERSAL' || mirror.sourceId !== journal.id || mirror.sourceType !== 'ACCOUNTING_JOURNAL_ENTRY'
+        || mirror.sourceAction !== 'reversal' || mirror.lines.length !== journal.lines.length
+        || journal.lines.some(original => !mirror.lines.some(line => coordinates.every(key => key === 'direction'
+          ? line.direction === (original.direction === 'DEBIT' ? 'CREDIT' : 'DEBIT') : (line[key] ?? null) === (original[key] ?? null)) && line.amount.eq(original.amount)))) fail();
+      const audits = await tx.expenseAuditLog.findMany({ where: { expenseRequestId: parent.id, action: 'PAYMENT_REVERSED',
+        details: { path: ['expensePaymentReversalId'], equals: reversal.id } }, take: 2 });
+      const auditDetails = audits.length === 1 && isJsonObject(audits[0].details) ? audits[0].details as Record<string, unknown> : null;
+      if (!auditDetails || auditDetails.expensePaymentId !== payment.id || auditDetails.originalJournalEntryId !== journal.id
+        || auditDetails.reversalJournalEntryId !== mirror?.id || auditDetails.originalBalanceLedgerId !== credit.id
+        || auditDetails.reversalBalanceLedgerId !== debit?.id) fail();
+    }
+    return { journal, credit, balance: balance!, reversal };
+  }
+
   async reversePayment(
     tenantId: string,
     expensePaymentId: string,
@@ -1573,202 +1694,213 @@ export class ExpenseRequestService {
       });
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const existingReversal = await tx.expensePaymentReversal.findFirst({
-        where: { tenantId, expensePaymentId, kind: 'REVERSAL' },
-      });
-      if (existingReversal) {
-        return toExpensePaymentReversalResult(existingReversal, 'REPLAYED');
-      }
+    return this.prisma.$transaction(tx => this.reversePaymentInTransaction(tx, tenantId, expensePaymentId, input, userId));
+  }
 
-      const payment = await tx.expensePayment.findFirst({
-        where: { id: expensePaymentId, expenseRequest: { is: { tenantId } } },
-        include: { expenseRequest: true },
-      });
-      if (!payment) {
-        throw new NotFoundException({
-          code: 'EXPENSE_PAYMENT_REVERSAL_PAYMENT_NOT_FOUND',
-          message: 'ExpensePayment not found for tenant.',
-        });
-      }
+  /** Shared transaction body; the legacy internal entry retains its existing optional-credit/replay contract. */
+  private async reversePaymentInTransaction(
+    tx: Prisma.TransactionClient, tenantId: string, expensePaymentId: string, input: ReversePaymentInput,
+    userId: string, strictSource = false,
+  ): Promise<ReversePaymentResult> {
+    const existingReversal = await tx.expensePaymentReversal.findFirst({
+      where: { tenantId, expensePaymentId, kind: 'REVERSAL' },
+    });
+    if (existingReversal) {
+      return toExpensePaymentReversalResult(existingReversal, 'REPLAYED');
+    }
 
-      // recordPayment and reversal both change paidTotal; use the fresh parent after the same row lock.
-      await lockExpenseRequest(tx, tenantId, payment.expenseRequestId);
-      const racedReversal = await tx.expensePaymentReversal.findFirst({
-        where: { tenantId, expensePaymentId, kind: 'REVERSAL' },
+    const payment = await tx.expensePayment.findFirst({
+      where: { id: expensePaymentId, expenseRequest: { is: { tenantId } } },
+      include: { expenseRequest: true },
+    });
+    if (!payment) {
+      throw new NotFoundException({
+        code: 'EXPENSE_PAYMENT_REVERSAL_PAYMENT_NOT_FOUND',
+        message: 'ExpensePayment not found for tenant.',
       });
-      if (racedReversal) return toExpensePaymentReversalResult(racedReversal, 'REPLAYED');
-      const parent = await tx.expenseRequest.findFirst({ where: { id: payment.expenseRequestId, tenantId } });
-      if (!parent) throw new NotFoundException('Masraf talebi bulunamadı');
-      if (parent.status === 'CANCELLED') {
-        throw new ConflictException({
-          code: 'EXPENSE_PAYMENT_PARENT_CANCELLED_BLOCKED',
-          message: 'ExpensePayment reversal for a CANCELLED parent ExpenseRequest is not mapped.',
-          expensePaymentId: payment.id,
-          expenseRequestId: parent.id,
-        });
-      }
+    }
 
-      const originalJournal = await tx.accountingJournalEntry.findFirst({
-        where: {
-          tenantId,
-          sourceType: 'EXPENSE_PAYMENT',
-          sourceId: payment.id,
-          sourceAction: 'recorded',
-          entryType: 'EXPENSE_PAYMENT_RECORDED',
-        },
-        select: { id: true },
-      });
-      if (!originalJournal) {
-        throw new ConflictException({
-          code: 'EXPENSE_PAYMENT_REVERSAL_ORIGINAL_JOURNAL_MISSING',
-          message: 'ExpensePayment recorded journal entry is required before reversal.',
-          expensePaymentId: payment.id,
-          expenseRequestId: parent.id,
-        });
-      }
-
-      const originalBalanceLedger = await tx.balanceLedger.findFirst({
-        where: {
-          tenantId,
-          source: `expense_payment:${payment.id}`,
-          sourceId: payment.id,
-          type: BalanceLedgerType.CREDIT,
-        },
-        select: { id: true, caseBalanceId: true, amount: true, currency: true },
-      });
-
-      const contract = this.paymentReversalContract.buildContract({
-        tenantId,
+    // recordPayment and reversal both change paidTotal; use the fresh parent after the same row lock.
+    await lockExpenseRequest(tx, tenantId, payment.expenseRequestId);
+    const racedReversal = await tx.expensePaymentReversal.findFirst({
+      where: { tenantId, expensePaymentId, kind: 'REVERSAL' },
+    });
+    if (racedReversal) return toExpensePaymentReversalResult(racedReversal, 'REPLAYED');
+    const parent = await tx.expenseRequest.findFirst({ where: { id: payment.expenseRequestId, tenantId } });
+    if (!parent) throw new NotFoundException('Masraf talebi bulunamadı');
+    if (parent.status === 'CANCELLED') {
+      throw new ConflictException({
+        code: 'EXPENSE_PAYMENT_PARENT_CANCELLED_BLOCKED',
+        message: 'ExpensePayment reversal for a CANCELLED parent ExpenseRequest is not mapped.',
         expensePaymentId: payment.id,
         expenseRequestId: parent.id,
-        originalJournalEntryId: originalJournal.id,
-        originalBalanceLedgerId: originalBalanceLedger?.id ?? null,
-        amount: payment.amount.toString(),
-        currency: parent.currency,
-        parentPaidTotal: parent.paidTotal.toString(),
-        reason: input.reason,
-        requestedById: userId,
-        requestKind: 'REVERSAL',
       });
-      const paidAfter = new Prisma.Decimal(contract.parentAfterReversal.paidTotal);
-      const nextStatus = recomputeExpenseRequestStatusAfterPaymentReversal(parent, paidAfter);
+    }
 
-      const pendingReversal = await tx.expensePaymentReversal.create({
-        data: {
-          tenantId: contract.tenantId,
-          expensePaymentId: contract.expensePaymentId,
-          expenseRequestId: contract.expenseRequestId,
-          kind: contract.kind,
-          status: contract.initialStatus,
-          amount: contract.amount,
-          currency: contract.currency,
-          originalJournalEntryId: contract.originalJournalEntryId,
-          originalBalanceLedgerId: contract.originalBalanceLedgerId,
-          idempotencyKey: contract.idempotencyKey,
-          reason: contract.reason,
-          requestedById: contract.requestedById,
-          requestedAt: new Date(contract.requestedAtIso),
-          metadata: {
-            sourceName: 'expense-payment-reversal-runtime',
-            parentPaidTotalBefore: parent.paidTotal.toString(),
-            parentPaidTotalAfter: contract.parentAfterReversal.paidTotal,
-            expenseRequestStatusBefore: parent.status,
-            expenseRequestStatusAfter: nextStatus,
-          },
-        },
-      });
-
-      const journalReversal = await reverseAccountingJournalEntryInTransaction(
-        tx,
-        this.journalWriter,
+    const originalJournal = await tx.accountingJournalEntry.findFirst({
+      where: {
         tenantId,
-        userId,
-        originalJournal.id,
-        { reason: contract.reason, evidenceRef: input.evidenceRef ?? null },
-      );
-
-      const ledgerReversal = originalBalanceLedger
-        ? await this.caseBalanceService.reverseExpensePaymentCreditInTransaction(
-            tx,
-            tenantId,
-            parent.caseId,
-            {
-              expensePaymentId: payment.id,
-              originalBalanceLedgerId: originalBalanceLedger.id,
-              caseBalanceId: originalBalanceLedger.caseBalanceId,
-              amount: contract.amount,
-              currency: originalBalanceLedger.currency ?? contract.currency,
-              description: `Masraf odeme reversal - ${payment.reference ?? 'Manuel'}`,
-            },
-            userId,
-          )
-        : null;
-
-      const updateData: Prisma.ExpenseRequestUpdateInput = {
-        paidTotal: paidAfter,
-        status: nextStatus,
-      };
-      if (nextStatus !== 'PAID') {
-        updateData.paidAt = null;
-        updateData.paidAmount = null;
-      }
-
-      await tx.expenseRequest.update({
-        where: { id: parent.id },
-        data: updateData,
+        sourceType: 'EXPENSE_PAYMENT',
+        sourceId: payment.id,
+        sourceAction: 'recorded',
+        entryType: 'EXPENSE_PAYMENT_RECORDED',
+      },
+      select: { id: true },
+    });
+    if (!originalJournal) {
+      throw new ConflictException({
+        code: 'EXPENSE_PAYMENT_REVERSAL_ORIGINAL_JOURNAL_MISSING',
+        message: 'ExpensePayment recorded journal entry is required before reversal.',
+        expensePaymentId: payment.id,
+        expenseRequestId: parent.id,
       });
+    }
 
-      const completedReversal = await tx.expensePaymentReversal.update({
-        where: { id: pendingReversal.id },
-        data: {
-          status: 'COMPLETED',
-          reversalJournalEntryId: journalReversal.reversalJournalEntryId,
-          reversalBalanceLedgerId: ledgerReversal?.ledgerId ?? null,
-          completedAt: new Date(),
-          metadata: {
-            sourceName: 'expense-payment-reversal-runtime',
-            originalJournalEntryId: originalJournal.id,
-            reversalJournalEntryId: journalReversal.reversalJournalEntryId,
-            originalBalanceLedgerId: originalBalanceLedger?.id ?? null,
-            reversalBalanceLedgerId: ledgerReversal?.ledgerId ?? null,
-            parentPaidTotalBefore: parent.paidTotal.toString(),
-            parentPaidTotalAfter: contract.parentAfterReversal.paidTotal,
-            expenseRequestStatusBefore: parent.status,
-            expenseRequestStatusAfter: nextStatus,
-            journalStatus: journalReversal.status,
-          },
+    const originalBalanceLedger = await tx.balanceLedger.findFirst({
+      where: {
+        tenantId,
+        source: `expense_payment:${payment.id}`,
+        sourceId: payment.id,
+        type: BalanceLedgerType.CREDIT,
+      },
+      select: { id: true, caseBalanceId: true, amount: true, currency: true },
+    });
+
+    const contract = this.paymentReversalContract.buildContract({
+      tenantId,
+      expensePaymentId: payment.id,
+      expenseRequestId: parent.id,
+      originalJournalEntryId: originalJournal.id,
+      originalBalanceLedgerId: originalBalanceLedger?.id ?? null,
+      amount: payment.amount.toString(),
+      currency: parent.currency,
+      parentPaidTotal: parent.paidTotal.toString(),
+      reason: input.reason,
+      requestedById: userId,
+      requestKind: 'REVERSAL',
+    });
+    const paidAfter = new Prisma.Decimal(contract.parentAfterReversal.paidTotal);
+    const nextStatus = recomputeExpenseRequestStatusAfterPaymentReversal(parent, paidAfter);
+
+    const pendingReversal = await tx.expensePaymentReversal.create({
+      data: {
+        tenantId: contract.tenantId,
+        expensePaymentId: contract.expensePaymentId,
+        expenseRequestId: contract.expenseRequestId,
+        kind: contract.kind,
+        status: contract.initialStatus,
+        amount: contract.amount,
+        currency: contract.currency,
+        originalJournalEntryId: contract.originalJournalEntryId,
+        originalBalanceLedgerId: contract.originalBalanceLedgerId,
+        idempotencyKey: contract.idempotencyKey,
+        reason: contract.reason,
+        requestedById: contract.requestedById,
+        requestedAt: new Date(contract.requestedAtIso),
+        metadata: {
+          sourceName: 'expense-payment-reversal-runtime',
+          parentPaidTotalBefore: parent.paidTotal.toString(),
+          parentPaidTotalAfter: contract.parentAfterReversal.paidTotal,
+          expenseRequestStatusBefore: parent.status,
+          expenseRequestStatusAfter: nextStatus,
         },
-      });
+      },
+    });
 
-      await tx.expenseAuditLog.create({
-        data: {
-          expenseRequestId: parent.id,
-          action: 'PAYMENT_REVERSED',
-          details: {
+    const journalReversal = await reverseAccountingJournalEntryInTransaction(
+      tx,
+      this.journalWriter,
+      tenantId,
+      userId,
+      originalJournal.id,
+      { reason: contract.reason, evidenceRef: input.evidenceRef ?? null },
+    );
+    if (strictSource && journalReversal.status !== 'CREATED') {
+      throw new ConflictException({ code: 'EXPENSE_PAYMENT_REVERSAL_SOURCE_INCONSISTENT' });
+    }
+
+    const ledgerReversal = originalBalanceLedger
+      ? await this.caseBalanceService.reverseExpensePaymentCreditInTransaction(
+          tx,
+          tenantId,
+          parent.caseId,
+          {
             expensePaymentId: payment.id,
-            expensePaymentReversalId: completedReversal.id,
-            originalJournalEntryId: originalJournal.id,
-            reversalJournalEntryId: journalReversal.reversalJournalEntryId,
-            originalBalanceLedgerId: originalBalanceLedger?.id ?? null,
-            reversalBalanceLedgerId: ledgerReversal?.ledgerId ?? null,
-            paidTotalBefore: parent.paidTotal.toString(),
-            paidTotalAfter: contract.parentAfterReversal.paidTotal,
-            statusBefore: parent.status,
-            statusAfter: nextStatus,
+            originalBalanceLedgerId: originalBalanceLedger.id,
+            caseBalanceId: originalBalanceLedger.caseBalanceId,
+            amount: contract.amount,
+            currency: originalBalanceLedger.currency ?? contract.currency,
+            description: `Masraf odeme reversal - ${payment.reference ?? 'Manuel'}`,
           },
           userId,
-        },
-      });
+        )
+      : null;
 
-      return toExpensePaymentReversalResult(
-        completedReversal,
-        'CREATED',
-        contract.parentAfterReversal.paidTotal,
-        nextStatus,
-      );
+    const updateData: Prisma.ExpenseRequestUpdateInput = {
+      paidTotal: paidAfter,
+      status: nextStatus,
+    };
+    if (nextStatus !== 'PAID') {
+      updateData.paidAt = null;
+      updateData.paidAmount = null;
+    }
+
+    await tx.expenseRequest.update({
+      where: { id: parent.id },
+      data: updateData,
     });
+
+    const completedReversal = await tx.expensePaymentReversal.update({
+      where: { id: pendingReversal.id },
+      data: {
+        status: 'COMPLETED',
+        reversalJournalEntryId: journalReversal.reversalJournalEntryId,
+        reversalBalanceLedgerId: ledgerReversal?.ledgerId ?? null,
+        completedAt: new Date(),
+        metadata: {
+          sourceName: 'expense-payment-reversal-runtime',
+          originalJournalEntryId: originalJournal.id,
+          reversalJournalEntryId: journalReversal.reversalJournalEntryId,
+          originalBalanceLedgerId: originalBalanceLedger?.id ?? null,
+          reversalBalanceLedgerId: ledgerReversal?.ledgerId ?? null,
+          parentPaidTotalBefore: parent.paidTotal.toString(),
+          parentPaidTotalAfter: contract.parentAfterReversal.paidTotal,
+          expenseRequestStatusBefore: parent.status,
+          expenseRequestStatusAfter: nextStatus,
+          journalStatus: journalReversal.status,
+        },
+      },
+    });
+
+    await tx.expenseAuditLog.create({
+      data: {
+        expenseRequestId: parent.id,
+        action: 'PAYMENT_REVERSED',
+        details: {
+          expensePaymentId: payment.id,
+          expensePaymentReversalId: completedReversal.id,
+          originalJournalEntryId: originalJournal.id,
+          reversalJournalEntryId: journalReversal.reversalJournalEntryId,
+          originalBalanceLedgerId: originalBalanceLedger?.id ?? null,
+          reversalBalanceLedgerId: ledgerReversal?.ledgerId ?? null,
+          paidTotalBefore: parent.paidTotal.toString(),
+          paidTotalAfter: contract.parentAfterReversal.paidTotal,
+          statusBefore: parent.status,
+          statusAfter: nextStatus,
+        },
+        userId,
+      },
+    });
+
+    return toExpensePaymentReversalResult(
+      completedReversal,
+      'CREATED',
+      contract.parentAfterReversal.paidTotal,
+      nextStatus,
+    );
+
   }
+
   /**
    * Ödeme bildirimi maili — BEST-EFFORT. Token derleme + dispatch tamamen try/catch içinde:
    * mail (veya okuma) başarısız olsa bile commit'li ödeme DEĞİŞMEZ, throw etmez.
