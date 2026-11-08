@@ -382,7 +382,10 @@ export class OfficeApprovalService {
     return this.prisma.officeApprovalRequest.findMany({ where, orderBy: { createdAt: 'desc' } });
   }
 
-  /** Payout-only read eligibility; never widens the generic approver set. */
+  /**
+   * Payout-only read eligibility; never widens the generic approver set.
+   * Callers: OfficeApprovalController.inbox/detail and payoutExecutionState below.
+   */
   async isPayoutApproverEligible(userId: string, tenantId: string): Promise<boolean> {
     return this.payoutApprovalPolicy.isEligible(userId, tenantId);
   }
