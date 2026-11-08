@@ -229,8 +229,9 @@ describe("OfficeApprovalDetailDrawer — müvekkile ödeme talebi (satır 8)", (
   });
 
   it("APPROVED + kayıtlı karar sahibi: çekmecede 'Kesinleştir' görünür; tıklama finalize'ı onaylanan niyetle çağırır, çekmece güncel durumu gösterir ve onDecided tetiklenir", async () => {
+    const execution = { validUntil: '2030-01-08T01:00:00Z', approvalExpired: false, canFinalize: true, canRequestRenewal: false, recordedPayoutId: null };
     (officeApprovalApi.getDetail as any)
-      .mockResolvedValueOnce(PAYOUT_APPROVED)
+      .mockResolvedValueOnce({ ...PAYOUT_APPROVED, payoutExecution: execution })
       .mockResolvedValueOnce({ ...PAYOUT_APPROVED, executionStatus: "SUCCEEDED" });
     (clientAccountingApi.finalizePayout as any).mockResolvedValue({ created: true });
     const onDecided = vi.fn();
@@ -253,9 +254,9 @@ describe("OfficeApprovalDetailDrawer — müvekkile ödeme talebi (satır 8)", (
     await waitFor(() => expect(screen.queryByRole("button", { name: "Kesinleştir" })).toBeNull());
   });
 
-  it("APPROVED ama karar sahibi BAŞKASI → çekmecede 'Kesinleştir' YOK", async () => {
+  it("APPROVED ama güncel payout yetkisi YOK → çekmecede 'Kesinleştir' YOK", async () => {
     authState.user = { id: "baska-kullanici" };
-    (officeApprovalApi.getDetail as any).mockResolvedValue(PAYOUT_APPROVED);
+    (officeApprovalApi.getDetail as any).mockResolvedValue({ ...PAYOUT_APPROVED, payoutExecution: { validUntil: null, approvalExpired: false, canFinalize: false, canRequestRenewal: false, recordedPayoutId: null } });
     render(<OfficeApprovalDetailDrawer requestId="req1" onClose={vi.fn()} />);
     await waitFor(() => expect(screen.getByText("CLIENT_PAYOUT_POST")).toBeInTheDocument());
     expect(screen.queryByRole("button", { name: "Kesinleştir" })).toBeNull();

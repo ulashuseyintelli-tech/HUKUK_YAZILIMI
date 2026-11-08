@@ -8,11 +8,13 @@ import {
   UseGuards,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { OfficeApprovalService } from './office-approval.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { OfficeApprovalStatus } from '@prisma/client';
+import { OfficeApprovalStatus, type OfficeApprovalRequest } from '@prisma/client';
+import { ActionCode } from '../policy-engine/types/action-code.enum';
 import {
   ApproveOfficeApprovalDto,
   RejectOfficeApprovalDto,
@@ -20,7 +22,7 @@ import {
   ApproveWithChangesOfficeApprovalDto,
   toSummaryDto,
 } from './dto/office-approval.dto';
-import { toDetailDtoForViewer } from './office-approval-detail.presenter';
+import { toDetailDtoForViewer, type OfficeApprovalDetailViewerContext } from './office-approval-detail.presenter';
 
 // P4-4 — OfficeApprovalController (Inbox / Approve API). KESİN (Ulaş kilidi):
 //  - DECISION-ONLY: approve/reject/revision/approve-with-changes/cancel yalnız STATUS GEÇİŞİ yapar; EXECUTION TETİKLEMEZ
@@ -47,6 +49,7 @@ function parseStatus(raw?: string): OfficeApprovalStatus | undefined {
 @Controller('office-approvals')
 @UseGuards(JwtAuthGuard)
 export class OfficeApprovalController {
+  private readonly logger = new Logger(OfficeApprovalController.name);
   constructor(private readonly service: OfficeApprovalService) {}
 
   // Inbox — approver'ın eyleme geçebileceği bekleyenler (KENDİ talepleri hariç). Yetkisiz → boş liste (403 DEĞİL).
@@ -56,13 +59,15 @@ export class OfficeApprovalController {
     @CurrentUser('tenantId') tenantId: string,
     @Query('status') status?: string,
   ) {
-    if (!(await this.service.isApproverEligible(actorUserId, tenantId))) {
+    const genericEligible = await this.service.isApproverEligible(actorUserId, tenantId);
+    if (!genericEligible && !(await this.service.isPayoutApproverEligible(actorUserId, tenantId))) {
       return { success: true, data: [] }; // yetki yok → boş liste; sınır = tenant + eligibility (ifşa yok)
     }
     const rows = await this.service.listForTenant(tenantId, {
       view: 'inbox',
       callerUserId: actorUserId,
       status: parseStatus(status),
+      ...(!genericEligible ? { actionCode: ActionCode.CLIENT_PAYOUT_POST } : {}),
     });
     return { success: true, data: rows.map(toSummaryDto) };
   }
@@ -91,13 +96,16 @@ export class OfficeApprovalController {
   ) {
     const req = await this.service.getByIdForTenant(id, tenantId); // çapraz-tenant → 404
     const isRequester = req.requesterUserId === actorUserId;
-    if (!isRequester && !(await this.service.isApproverEligible(actorUserId, tenantId))) {
+    const eligible = isRequester ? false : req.actionCode === ActionCode.CLIENT_PAYOUT_POST
+      ? await this.service.isPayoutApproverEligible(actorUserId, tenantId)
+      : await this.service.isApproverEligible(actorUserId, tenantId);
+    if (!isRequester && !eligible) {
       throw new NotFoundException('Onay talebi bulunamadı.'); // ilgisiz aynı-tenant kullanıcı → 404
     }
     // Finance approval detail payloads are masked server-side when the savedIntent contract requires it.
     return {
       success: true,
-      data: toDetailDtoForViewer(req, { actorUserId, tenantId, isRequester, isEligibleApprover: !isRequester }),
+      data: await this.presentDetail(req, { actorUserId, tenantId, isRequester, isEligibleApprover: eligible }),
     };
   }
 
@@ -109,7 +117,7 @@ export class OfficeApprovalController {
     @Body() dto: ApproveOfficeApprovalDto,
   ) {
     const r = await this.service.approve(id, actorUserId, dto.note);
-    return { success: true, data: toDetailDtoForViewer(r, {
+    return { success: true, data: await this.presentDetail(r, {
         actorUserId,
         tenantId: r.tenantId,
         isRequester: r.requesterUserId === actorUserId,
@@ -125,7 +133,7 @@ export class OfficeApprovalController {
     @Body() dto: RejectOfficeApprovalDto,
   ) {
     const r = await this.service.reject(id, actorUserId, dto.note);
-    return { success: true, data: toDetailDtoForViewer(r, {
+    return { success: true, data: await this.presentDetail(r, {
         actorUserId,
         tenantId: r.tenantId,
         isRequester: r.requesterUserId === actorUserId,
@@ -141,7 +149,7 @@ export class OfficeApprovalController {
     @Body() dto: RequestRevisionOfficeApprovalDto,
   ) {
     const r = await this.service.requestRevision(id, actorUserId, dto.note);
-    return { success: true, data: toDetailDtoForViewer(r, {
+    return { success: true, data: await this.presentDetail(r, {
         actorUserId,
         tenantId: r.tenantId,
         isRequester: r.requesterUserId === actorUserId,
@@ -157,7 +165,7 @@ export class OfficeApprovalController {
     @Body() dto: ApproveWithChangesOfficeApprovalDto,
   ) {
     const r = await this.service.approveWithChanges(id, actorUserId, dto.replacementSavedIntent, dto.note);
-    return { success: true, data: toDetailDtoForViewer(r, {
+    return { success: true, data: await this.presentDetail(r, {
         actorUserId,
         tenantId: r.tenantId,
         isRequester: r.requesterUserId === actorUserId,
@@ -171,12 +179,25 @@ export class OfficeApprovalController {
     const r = await this.service.cancel(id, actorUserId);
     return {
       success: true,
-      data: toDetailDtoForViewer(r, {
+      data: await this.presentDetail(r, {
         actorUserId,
         tenantId: r.tenantId,
         isRequester: r.requesterUserId === actorUserId,
         isEligibleApprover: false,
       }),
     };
+  }
+
+  private async presentDetail(request: OfficeApprovalRequest, context: OfficeApprovalDetailViewerContext) {
+    const detail = toDetailDtoForViewer(request, context);
+    if (request.actionCode === ActionCode.CLIENT_PAYOUT_POST) {
+      try {
+        detail.payoutExecution = await this.service.payoutExecutionState(request, context.actorUserId);
+      } catch {
+        // A failed advisory read must not turn a committed decision into a false failure; missing metadata closes the UI action.
+        this.logger.warn('Payout execution projection unavailable; refresh detail before execution.');
+      }
+    }
+    return detail;
   }
 }

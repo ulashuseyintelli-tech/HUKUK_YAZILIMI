@@ -78,6 +78,13 @@ export interface OfficeApprovalDetailDto extends OfficeApprovalSummaryDto {
   replacementPayloadHash: string | null;
   decisionNote: string | null;
   executedAt: Date | null;
+  payoutExecution?: {
+    validUntil: Date | null;
+    approvalExpired: boolean;
+    canFinalize: boolean;
+    canRequestRenewal: boolean;
+    recordedPayoutId: string | null;
+  };
 }
 
 /** Özet projeksiyon (LIST). Raw Prisma entity DÖNMEZ; ham niyet alanları DIŞARIDA. */

@@ -79,6 +79,8 @@ export interface CreatePayoutInput {
   note?: string;
   /** Tenant-scoped duplicate guard; client-side üretilir (her gönderim oturumu için tek). */
   idempotencyKey: string;
+  /** Explicit renewal of an expired approval; the original financial key is retained. */
+  renewApprovalRequestId?: string;
 }
 
 /** finalize() sonucu — payout gerçekten RECORDED olduğunda döner. */

@@ -13,7 +13,7 @@ import { Capacity } from '../policy-engine/types/effective-permission.types';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { AuditService } from '../audit/audit.service';
 import { OfficeApprovalService } from '../office-approval/office-approval.service';
-import { PayoutApprovalPolicy } from '../office-approval/client-payout-approval.policy';
+import { PayoutApprovalPolicy, payoutApprovalWindow } from '../office-approval/client-payout-approval.policy';
 import { lockAndAssertExecutionRole } from '../office-approval/office-approval-execution-authority';
 import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-json';
 import { CreateClientPayoutDto } from './dto/create-client-payout.dto';
@@ -229,7 +229,7 @@ export class ClientPayoutService {
     await this.readService.assertEligibleCaseClient(tenantId, dto.caseId, dto.caseClientId);
 
     const savedIntent = this.buildPayoutIntent(dto, amount, currency);
-    const approval = await this.officeApproval.createPendingRequest({
+    const input = {
       tenantId,
       actionCode: ActionCode.CLIENT_PAYOUT_POST,
       targetType: PAYOUT_REQUEST_TARGET_TYPE,
@@ -237,6 +237,46 @@ export class ClientPayoutService {
       requesterUserId: userId,
       savedIntent,
       idempotencyKey: `client-payout-request:${dto.idempotencyKey}`,
+    };
+    const approval = await this.prisma.$transaction(async (tx) => {
+      const lockKey = payoutLockKey(tenantId, dto.caseId, dto.caseClientId, currency);
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+      if (dto.renewApprovalRequestId === undefined) {
+        const existing = await tx.officeApprovalRequest.findUnique({ where: { tenantId_idempotencyKey: { tenantId, idempotencyKey: input.idempotencyKey } } });
+        // A transport retry must not renew an already approved intent, even after its deadline.
+        if (existing?.status === 'APPROVED') {
+          if (existing.payloadHash !== stableJsonHash(savedIntent)) {
+            throw new ConflictException({ code: 'PAYOUT_APPROVAL_RENEWAL_CONFLICT', message: 'Aynı anahtar farklı payout niyetiyle kullanılamaz.' });
+          }
+          return existing;
+        }
+        return this.officeApproval.createPendingRequestInTransaction(input, tx);
+      }
+      if (typeof dto.renewApprovalRequestId !== 'string' || !dto.renewApprovalRequestId.trim()) {
+        throw new BadRequestException('Yenilenecek onay talebi kimliği zorunludur.');
+      }
+      const original = await tx.officeApprovalRequest.findFirst({ where: { id: dto.renewApprovalRequestId, tenantId } });
+      if (!original || original.actionCode !== ActionCode.CLIENT_PAYOUT_POST || original.targetType !== PAYOUT_REQUEST_TARGET_TYPE ||
+          original.status !== 'APPROVED' || original.payloadHash !== stableJsonHash(savedIntent)) {
+        throw new ConflictException({ code: 'PAYOUT_APPROVAL_RENEWAL_CONFLICT', message: 'Yenileme, özgün onaylı payout niyeti ve aynı anahtarla yapılmalıdır.' });
+      }
+      if (!payoutApprovalWindow(original.decidedAt).expired) {
+        throw new ConflictException({ code: 'PAYOUT_APPROVAL_STILL_VALID', message: 'Onay hâlâ geçerli; yeniden onay gerekmiyor.' });
+      }
+      const recorded = await tx.clientPayout.findUnique({ where: { tenantId_idempotencyKey: { tenantId, idempotencyKey: dto.idempotencyKey } } });
+      if (recorded) {
+        throw new ConflictException({ code: 'PAYOUT_ALREADY_RECORDED', message: 'Ödeme kaydı zaten mevcut; yeni onay istemeyin, mevcut kaydı doğrulayın.' });
+      }
+      const current = await tx.officeApprovalRequest.findUnique({ where: { tenantId_idempotencyKey: { tenantId, idempotencyKey: input.idempotencyKey } } });
+      if (current && current.id !== original.id) {
+        if (current.payloadHash !== original.payloadHash) {
+          throw new ConflictException({ code: 'PAYOUT_APPROVAL_RENEWAL_CONFLICT', message: 'Güncel onay talebi özgün payout niyetiyle eşleşmiyor.' });
+        }
+        if (current.status === 'PENDING_APPROVAL' || (current.status === 'APPROVED' && !payoutApprovalWindow(current.decidedAt).expired)) {
+          return current;
+        }
+      }
+      return this.officeApproval.createPendingRequestInTransaction(input, tx);
     });
     return { requested: true, approvalRequestId: approval.id, status: approval.status };
   }
@@ -373,6 +413,19 @@ export class ClientPayoutService {
           select: { id: true, caseId: true, caseClientId: true, amount: true, currency: true },
         });
         if (dup) return this.replayOrConflict(dup, dto, amount, currency);
+
+        // Existing financial replay is settled above. Only a NEW payout needs a fresh, locked approval window.
+        if (approvalRequestId) {
+          await tx.$queryRaw`SELECT "id" FROM "OfficeApprovalRequest" WHERE "id" = ${approvalRequestId} AND "tenantId" = ${tenantId} FOR SHARE`;
+          const approval = await tx.officeApprovalRequest.findFirst({ where: { id: approvalRequestId, tenantId } });
+          if (!approval || approval.actionCode !== ActionCode.CLIENT_PAYOUT_POST || approval.targetType !== PAYOUT_REQUEST_TARGET_TYPE ||
+              approval.status !== 'APPROVED' || approval.payloadHash !== stableJsonHash(this.buildPayoutIntent(dto, amount, currency))) {
+            throw new ConflictException({ code: 'PAYOUT_APPROVAL_CHANGED', message: 'Payout onayı artık yürütülebilir durumda değil veya niyet eşleşmiyor.' });
+          }
+          if (payoutApprovalWindow(approval.decidedAt).expired) {
+            throw new ConflictException({ code: 'PAYOUT_APPROVAL_EXPIRED', message: 'Payout onayının 168 saatlik geçerliliği dolmuş veya karar zamanı doğrulanamıyor. Yeni onay isteyin.' });
+          }
+        }
 
         const outstanding = await this.readService.computeOutstanding(tx, tenantId, dto.caseId, dto.caseClientId, currency);
         if (amount.gt(outstanding)) {

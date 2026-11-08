@@ -117,7 +117,7 @@ export function OfficeApprovalDetailDrawer({ requestId, onClose, onDecided }: Pr
             <TimeField label="Oluşturulma" value={detail.createdAt} />
             <TimeField label="Karar Zamanı" value={detail.decidedAt} />
             <TimeField label="Yürütme Zamanı" value={detail.executedAt} />
-            <TimeField label="Son Geçerlilik" value={detail.expiresAt} />
+            <TimeField label="Son Geçerlilik" value={detail.payoutExecution ? detail.payoutExecution.validUntil : detail.expiresAt} />
 
             {detail.financeVisibility?.applied && (
               <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">

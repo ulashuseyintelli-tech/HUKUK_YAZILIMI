@@ -108,6 +108,7 @@ const approvalDetail = {
   replacementPayloadHash: null,
   decisionNote: null,
   executedAt: null,
+  payoutExecution: { validUntil: '2030-01-08T01:00:00Z', approvalExpired: false, canFinalize: true, canRequestRenewal: false, recordedPayoutId: null },
 };
 
 function renderBoth() {
