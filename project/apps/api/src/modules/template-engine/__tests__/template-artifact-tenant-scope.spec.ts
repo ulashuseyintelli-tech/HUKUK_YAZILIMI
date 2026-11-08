@@ -7,6 +7,8 @@ import { TemplateEngineService } from '../template-engine.service';
  * - (T-03/T-06) listDocumentArtifacts tenant-scoped: findMany {caseId, tenantId} (caseId tek başına DEĞİL).
  * - (T-03/T-06) downloadArtifact tenant-scoped ownership: findFirst {id, tenantId} (findUnique {id} DEĞİL);
  *   cross-tenant artifactId eşleşmez → null → controller 404 (metadata/varlık ifşası yok).
+ * - F02 P3 (owner kararı 08.11.2026): ayrıca BAĞLI DOSYA da aktör kiracısında olmalı (`case: { tenantId }`; bayraktan bağımsız).
+ *   CLIENT-SEC-H1 koşulları aynen korunur (daha sıkı, gevşek değil).
  */
 describe('CLIENT-SEC-H1 (S4) — Template artifact tenant/ownership scoping', () => {
   const build = () => {
@@ -21,22 +23,22 @@ describe('CLIENT-SEC-H1 (S4) — Template artifact tenant/ownership scoping', ()
     return { svc, prisma };
   };
 
-  it('listDocumentArtifacts: tenant-scoped findMany {caseId, tenantId} (T-06)', async () => {
+  it('listDocumentArtifacts: tenant-scoped findMany {caseId, tenantId} + bağlı dosya kiracısı (T-06; F02 P3)', async () => {
     const { svc, prisma } = build();
     await svc.listDocumentArtifacts('case-1', 'tenant-A');
     expect(prisma.documentArtifact.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { caseId: 'case-1', tenantId: 'tenant-A' } }),
+      expect.objectContaining({ where: { caseId: 'case-1', tenantId: 'tenant-A', case: { tenantId: 'tenant-A' } } }),
     );
   });
 
-  it('downloadArtifact: tenant-scoped findFirst {id, tenantId}; findUnique KULLANILMAZ; cross-tenant → null (T-03)', async () => {
+  it('downloadArtifact: tenant-scoped findFirst {id, tenantId} + bağlı dosya kiracısı; findUnique KULLANILMAZ; cross-tenant → null (T-03; F02 P3)', async () => {
     const { svc, prisma } = build();
     prisma.documentArtifact.findFirst.mockResolvedValue(null); // cross-tenant artifact eşleşmez
 
     const res = await svc.downloadArtifact('artifact-B', 'tenant-A');
 
     expect(prisma.documentArtifact.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'artifact-B', tenantId: 'tenant-A' } }),
+      expect.objectContaining({ where: { id: 'artifact-B', tenantId: 'tenant-A', case: { tenantId: 'tenant-A' } } }),
     );
     expect(prisma.documentArtifact.findUnique).not.toHaveBeenCalled();
     // cross-tenant/eksik → null → controller 404 (metadata ifşası yok):
