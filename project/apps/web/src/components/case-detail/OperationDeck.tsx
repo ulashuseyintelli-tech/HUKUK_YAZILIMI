@@ -10,6 +10,8 @@ import { ExpenseDistributionDecisionRow, useExpenseDistributionDecisions } from 
 import { ExpenseSendAction } from '@/components/expense/ExpenseSendAction';
 import { ExpenseCancelAction } from '@/components/expense/ExpenseCancelAction';
 import { ExpensePaymentReversalAction } from '@/components/expense/ExpensePaymentReversalAction';
+import { ExpensePaymentAction } from '@/components/expense/ExpensePaymentAction';
+import { CaseFinanceCard, type CaseFinanceCardsContext } from '@/components/expense/CaseFinanceCard';
 import {
   FileText, ListTodo, Receipt, Database, FolderOpen, MessageSquare,
   ChevronDown, Plus, AlertTriangle, Clock, Zap, User, Check, X,
@@ -259,6 +261,7 @@ interface OperationDeckProps {
   onRetryCollections?: () => void;
   onRetryExpenseRequests?: () => void;
   canCancelExpenseRequests?: boolean;
+  financeCardsContext?: CaseFinanceCardsContext;
   // Aşağıdaki dört alanın veri kaynağı durumu (OperationDeckSourceStatus). Verilmezse NOT_CONNECTED sayılır ve
   // alan sayı / "kayıt yok" yerine "henüz bağlanmadı" yazar. Değer yalnız durum READY iken okunur.
   /** "Yapılan Masraf" kartı ve "Son İşlemler"deki MASRAF_YAPILAN satırları (satırlar financeItems içinde gelir). */
@@ -465,6 +468,7 @@ export function OperationDeck({
   onRetryCollections,
   onRetryExpenseRequests,
   canCancelExpenseRequests = false,
+  financeCardsContext,
   actualExpenseSource = "NOT_CONNECTED",
   uyapQueriesSource = "NOT_CONNECTED",
   uyapQueries,
@@ -1254,7 +1258,7 @@ export function OperationDeck({
                 </div>
                 )}
                 {/* Yapılan masraf: kaynak READY değilken sayı yazılmaz (bağlanmamış alan sıfır değildir) */}
-                {actualExpenseUnavailable === null ? (
+                {financeCardsContext ? <CaseFinanceCard kind="actual" context={financeCardsContext} /> : actualExpenseUnavailable === null ? (
                   <div className="p-3 rounded-lg bg-red-50 border border-red-200">
                     <p className="text-[10px] text-red-600 uppercase tracking-wide">Yapılan Masraf</p>
                     <p className="text-lg font-bold text-red-700" data-testid="finance-actual-expense-total">
@@ -1298,7 +1302,7 @@ export function OperationDeck({
                 </div>
                 )}
                 {/* Müvekkil bakiyesi: kaynak READY değilken sayı ve olumlu / olumsuz renk yazılmaz */}
-                <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                {financeCardsContext ? <CaseFinanceCard kind="payable" context={financeCardsContext} /> : <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
                   <p className="text-[10px] text-slate-600 uppercase tracking-wide">Müvekkil Bakiye</p>
                   {clientBalanceValue !== null ? (
                     <p
@@ -1316,7 +1320,7 @@ export function OperationDeck({
                       {UNAVAILABLE_CARD_TEXT[clientBalanceUnavailable]}
                     </p>
                   )}
-                </div>
+                </div>}
               </div>
 
               {/* Masraf Talepleri (Expense Requests): kaynak okunmadıkça bölüm "talep yok" gibi gizlenmez, durumu yazılır */}
@@ -1374,6 +1378,7 @@ export function OperationDeck({
                           <ExpenseDistributionDecisionRow expenseId={item.id} decisions={expenseDistributionDecisions} />
                         )}
                         {caseId && <ExpenseSendAction expenseId={item.id} status={rowStatus} />}
+                        {caseId && financeCardsContext && <ExpensePaymentAction expenseId={item.id} caseId={caseId} status={rowStatus ?? ''} onRecorded={onRetryExpenseRequests} />}
                         {caseId && item.hasPaymentHistory === true && <ExpensePaymentReversalAction expenseId={item.id} caseId={caseId} onReversed={onRetryExpenseRequests} />}
                         {caseId && canCancelExpenseRequests && <ExpenseCancelAction expenseId={item.id} status={rowStatus}
                           paidAmount={item.paidAmount} hasPaymentHistory={item.hasPaymentHistory} onCancelled={() => {

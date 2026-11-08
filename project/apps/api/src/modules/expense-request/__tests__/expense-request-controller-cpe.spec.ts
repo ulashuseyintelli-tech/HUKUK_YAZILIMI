@@ -121,8 +121,8 @@ describe('ExpenseRequestController CPE runtime enforcement (MVR-006)', () => {
     ['finalize', '/expense-requests/exp-1/finalize', { channel: 'EMAIL' }, ActionCode.APPROVE_EXPENSE, 'finalizeAndSend'],
     ['approve', '/expense-requests/exp-1/approve', {}, ActionCode.APPROVE_EXPENSE, 'approveForDistribution'],
     ['reject', '/expense-requests/exp-1/reject', { note: 'no' }, ActionCode.APPROVE_EXPENSE, 'rejectForDistribution'],
-    ['payment', '/expense-requests/exp-1/payment', { amount: 100, paymentDate: '2026-07-05', method: 'BANKA' }, ActionCode.RECORD_COLLECTION, 'recordPayment'],
-    ['receive', '/expense-requests/exp-1/receive', { idempotencyKey: 'stable-key', paidAmount: 100, paymentDate: '2026-07-05', method: 'BANKA' }, ActionCode.RECORD_COLLECTION, 'markAsReceived'],
+    ['payment', '/expense-requests/exp-1/payment', { amount: 100, paymentDate: '2026-07-05', method: 'BANKA' }, ActionCode.RECORD_EXPENSE_PAYMENT, 'recordPayment'],
+    ['receive', '/expense-requests/exp-1/receive', { idempotencyKey: 'stable-key', paidAmount: 100, paymentDate: '2026-07-05', method: 'BANKA' }, ActionCode.RECORD_EXPENSE_PAYMENT, 'markAsReceived'],
   ] as const)('%s endpoint runs CPE before service method', async (_name, url, body, actionCode, serviceMethod) => {
     await request(app.getHttpServer())
       .post(url)

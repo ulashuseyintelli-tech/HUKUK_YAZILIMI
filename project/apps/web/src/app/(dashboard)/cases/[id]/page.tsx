@@ -3375,6 +3375,13 @@ export default function CaseDetailPage() {
                 // bağlanmamış alan sıfır / "kayıt yok" değildir — bileşen "henüz bağlanmadı" yazar.
                 // Hangi bakiyenin ve hangi masraf kapsamının gösterileceği seçilmedi (owner kararı 2026-10-01);
                 // kaynak bağlandığında durum (LOADING / ERROR / READY) ve değer buradan verilir.
+                financeCardsContext={{
+                  caseId: caseData.id,
+                  clients: (caseData.caseClients || []).filter(link => ['ALACAKLI', 'ORTAK_ALACAKLI'].includes(String(link.role).toUpperCase()))
+                    .map(link => ({ id: link.id, name: link.client.displayName || link.client.name || 'Müvekkil' })),
+                  currencies: [...new Set([caseData.currency, ...collectionDispositions.map(row => row.currency)].filter((value): value is string => typeof value === 'string' && value.length > 0))],
+                  sourceStatus: dispositionsLoadError || !Array.isArray(caseData.caseClients) ? 'ERROR' : loadingFinance ? 'LOADING' : 'READY',
+                }}
                 actualExpenseSource="NOT_CONNECTED"
                 clientBalanceSource="NOT_CONNECTED"
                 uyapQueriesSource="NOT_CONNECTED"

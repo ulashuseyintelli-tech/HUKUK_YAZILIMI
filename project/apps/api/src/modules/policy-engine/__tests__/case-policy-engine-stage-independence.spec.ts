@@ -32,6 +32,7 @@ const DB_STAGES = [
 /** Düzeltme sonrası beklenen: eylem → izinli aşamalar (listede olmayan eylem hiçbir aşamada izinli DEĞİLDİR). */
 const EXPECTED_ALLOWED_STAGES: Partial<Record<ActionCode, readonly string[]>> = {
   [ActionCode.APPROVE_EXPENSE]: DB_STAGES, // owner kararı 8
+  [ActionCode.RECORD_EXPENSE_PAYMENT]: DB_STAGES, // owner M3b/Y3 ödeme teslimi
   // Güvenlik paketi 01 P1 (owner Ek 90 / Ek 91): owner'ın adıyla açtığı iki yeni UYAP gönderim kodu (kapıları UYAP_SEND ile aynı)
   [ActionCode.UYAP_DOCUMENT_SUBMIT]: DB_STAGES,
   [ActionCode.UYAP_LAWSUIT_FILE]: DB_STAGES,
@@ -67,13 +68,13 @@ function buildEngine(options: { facts?: Record<string, unknown>; gatesBlocked?: 
 describe('Aşamadan bağımsız eylem — karar motoru kilidi (gerçek motor + gerçek durum makinesi)', () => {
   it('matriste aşamadan bağımsız işaretli eylemler TAM olarak owner kararlarıyla adı anılıp açılanlar: APPROVE_EXPENSE + P1 UYAP gönderim kodları', () => {
     const flagged = ACTION_MATRIX.filter((entry) => entry.stageIndependent === true).map((entry) => entry.actionCode);
-    expect([...flagged].sort()).toEqual([ActionCode.APPROVE_EXPENSE, ActionCode.UYAP_DOCUMENT_SUBMIT, ActionCode.UYAP_LAWSUIT_FILE].sort());
+    expect([...flagged].sort()).toEqual([ActionCode.APPROVE_EXPENSE, ActionCode.RECORD_EXPENSE_PAYMENT, ActionCode.UYAP_DOCUMENT_SUBMIT, ActionCode.UYAP_LAWSUIT_FILE].sort());
     // UYAP_SEND (xml/submit) aşamaya BAĞLI kalır (owner Ek 91 B2-a: mevcut aşama kısıtı korunur)
     expect(isStageIndependent(ActionCode.UYAP_SEND)).toBe(false);
     expect(isStageIndependent(ActionCode.APPROVE_EXPENSE)).toBe(true);
-    // Masraf ödeme kaydı eylemleri (karar maddesi bekliyor) ve borçlu tahsilatı AÇILMADI
+    // Ödeme ayrı eylemle açılır; borçlu tahsilatının aşama kuralı korunur.
     expect(isStageIndependent(ActionCode.RECORD_COLLECTION)).toBe(false);
-    expect(isStageIndependent(ActionCode.RECORD_EXPENSE_PAYMENT)).toBe(false);
+    expect(isStageIndependent(ActionCode.RECORD_EXPENSE_PAYMENT)).toBe(true);
   });
 
   it('50 eylem × 13 aşama: izinli küme TAM olarak beklenen (APPROVE_EXPENSE + P1 UYAP gönderim kodları)', async () => {
@@ -215,7 +216,6 @@ describe('Aşamadan bağımsız eylem — karar motoru kilidi (gerçek motor + g
   describe('diğer eylemlerin aşama sözlüğü DEĞİŞMEDİ (aşamadan bağımsızlık başka eyleme sızarsa test düşer)', () => {
     it.each([
       ActionCode.RECORD_COLLECTION,
-      ActionCode.RECORD_EXPENSE_PAYMENT,
       ActionCode.REQUEST_EXPENSE,
       ActionCode.TRIGGER_HACIZ,
       ActionCode.REQUEST_SALE,

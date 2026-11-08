@@ -408,12 +408,19 @@ describeWithDisposableDb('UYAP hazırlığı — büro / kullanıcı bağlamı v
       expect(JSON.stringify(prepared.body)).not.toContain('Masraf karşılanmadı');
     });
 
-    it('K07: anahtarsız legacy receive CPE kapısını ve ödenmemiş açılış masrafını aşamaz', async () => {
+    it('M3b/Y3 K07: aşamadan bağımsız legacy receive anahtarsız ödeme yazamaz; ödenmemiş açılış masrafı engeli kalır', async () => {
       const caseId = await openCase('received-eksik');
       const opening = await prisma.expenseRequest.findFirstOrThrow({ where: { tenantId, caseId } });
       const before = await sideEffectsOf(caseId);
       const received = await as(adminId).post(`/expense-requests/${opening.id}/receive`, { paidAmount: 1_000 });
-      expect(received.status).toBe(403); // Existing RECORD_COLLECTION CPE decision remains authoritative at this stage.
+      expect(received.status).toBe(400);
+      expect(received.body).toMatchObject({ message: 'Ödeme tarihi metin olmalıdır' });
+      const missingKey = await as(adminId).post(`/expense-requests/${opening.id}/receive`, {
+        paidAmount: 1_000, paymentDate: '2026-10-05', method: 'BANK_TRANSFER',
+      });
+      // Stage admission bypasses neither input validation nor the unchanged atomic command's key gate.
+      expect(missingKey.status).toBe(400);
+      expect(missingKey.body).toMatchObject({ code: 'IDEMPOTENCY_KEY_REQUIRED' });
       const row = await prisma.expenseRequest.findUniqueOrThrow({ where: { id: opening.id } });
       expect(row.status).toBe(opening.status); expect(Number(row.paidTotal)).toBe(0);
       expect(await sideEffectsOf(caseId)).toEqual(before);

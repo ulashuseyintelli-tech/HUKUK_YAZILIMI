@@ -126,7 +126,7 @@ export class ExpenseRequestController {
   }
 
   @Post(':id/receive')
-  @CpeRequired(ActionCode.RECORD_COLLECTION, { caseIdFromExpenseParam: true })
+  @CpeRequired(ActionCode.RECORD_EXPENSE_PAYMENT, { caseIdFromExpenseParam: true })
   async markAsReceived(
     @Req() req: AuthRequest,
     @Param('id') id: string,
@@ -230,7 +230,7 @@ export class ExpenseRequestController {
    * @CpeRequired - Tahsilat kaydı MEDIUM risk aksiyon
    */
   @Post(':id/payment')
-  @CpeRequired(ActionCode.RECORD_COLLECTION, { caseIdFromExpenseParam: true })
+  @CpeRequired(ActionCode.RECORD_EXPENSE_PAYMENT, { caseIdFromExpenseParam: true })
   async recordPayment(
     @Req() req: AuthRequest,
     @Param('id') id: string,
