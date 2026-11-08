@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger, Optional } from '@nestjs/common';
+import { IntegrationErrorReporter } from '@/modules/error-log/integration-error-reporter';
+import { reportCronJobFailure } from '../../common/cron-failure-reporting';
+import { resolveMonthlyStatementSkipTasks, type MonthlyStatementSkipResolution } from './client-statement-monthly-skip-trace';
+import { identifyMonthlyStatementPeriod } from './client-statement-monthly-period';
 import { PrismaService } from '@/prisma/prisma.service';
 import {
   Prisma,
@@ -67,9 +71,9 @@ interface LineDraft {
  * eski ekstre ASLA değişmez. Düzeltme = yeni statement + supersededById.
  *
  * İLKELER:
- * - runningBalance TEK kanonik kaynak = BalanceLedger (işaretli amount: CREDIT +, DEBIT -).
- *   ExpenseRequest yalnız BİLGİ satırı (EXPENSE_REQUESTED, debit=credit=0) — bakiyeyi oynatmaz.
- *   Çift-sayım yok (müvekkil ödemesi zaten BalanceLedger CREDIT'e düşüyor).
+ * - Case-level sunum mevcut kaynak etkilerini toplar; yeni bakiye/SoT otoritesi üretmez.
+ *   Devir aynı parasal kaynakları ve işaretleri taşır; ExpenseRequest BİLGİ(0) kalır.
+ *   Avans offseti BalanceLedger'da olduğundan ikinci kez sayılmaz.
  * - Collection/TBK100 DAHİL DEĞİL. Tutar Decimal(15,2) (finans hattıyla aynı).
  * - Satır/başlık içeriği update edilmez; servis update/delete + PATCH/PUT/DELETE route SUNMAZ.
  * - Multitenant: tüm okuma/yazma tenantId ile filtrelenir; kaynaklar yalnız aynı tenant+case.
@@ -84,6 +88,7 @@ export class ClientStatementService {
     private office: OfficeService,
     private audit: AuditService,
     private caseBalance: CaseBalanceService,
+    @Optional() private readonly errorReporter?: IntegrationErrorReporter,
   ) {}
 
   /**
@@ -218,6 +223,7 @@ export class ClientStatementService {
         description: `Müvekkil GENEL ekstresi oluşturuldu (client-level; ${periodStart.toISOString().slice(0, 10)} – ${periodEnd.toISOString().slice(0, 10)})`,
         metadata: {
           scope: 'CLIENT_LEVEL',
+          currencySkipResolutionEligible: true,
           clientId,
           caseId: null,
           periodStart: periodStart.toISOString(),
@@ -230,6 +236,7 @@ export class ClientStatementService {
       return fresh;
     });
 
+    if (identifyMonthlyStatementPeriod(periodStart, periodEnd)) await this.resolveCurrencySkipTasks(tenantId, created.id);
     return this.findOne(tenantId, created.id);
   }
 
@@ -315,6 +322,7 @@ export class ClientStatementService {
         metadata: {
           oldStatementId: old.id,
           newStatementId: fresh.id,
+          currencySkipResolutionEligible: old.caseId === null,
           supersededById: fresh.id, // geriye-uyum (eski alan adı)
           periodStart: periodStart.toISOString(),
           periodEnd: periodEnd.toISOString(),
@@ -324,7 +332,21 @@ export class ClientStatementService {
       return fresh;
     });
 
+    if (old.caseId === null && identifyMonthlyStatementPeriod(periodStart, periodEnd)) await this.resolveCurrencySkipTasks(tenantId, created.id);
     return this.findOne(tenantId, created.id);
+  }
+
+  /** Post-commit repair is separately visible and never regenerates/resends a committed statement. */
+  async resolveCurrencySkipTasks(tenantId: string, statementId: string): Promise<MonthlyStatementSkipResolution> {
+    try {
+      return await resolveMonthlyStatementSkipTasks(this.prisma, tenantId, statementId);
+    } catch {
+      this.logger.error('STATEMENT_SKIP_RESOLUTION_FAILED: statement preserved; task resolution requires retry');
+      if (this.errorReporter) reportCronJobFailure(this.errorReporter, 'client-statement.monthlyDelivery', new Error('STATEMENT_SKIP_RESOLUTION_FAILED'), {
+        tenantId, reasonCode: 'STATEMENT_SKIP_RESOLUTION_FAILED', metadata: { statementId },
+      });
+      return { outcome: 'FAILED', completed: 0 };
+    }
   }
 
   /**
@@ -829,14 +851,43 @@ export class ClientStatementService {
     if (balance) {
       const agg = await this.prisma.balanceLedger.aggregate({
         _sum: { amount: true },
-        where: { caseBalanceId: balance.id, createdAt: { lt: periodStart } },
+        where: { tenantId, caseBalanceId: balance.id, createdAt: { lt: periodStart } },
       });
       opening = agg._sum.amount ?? ZERO;
       ledgerRows = await this.prisma.balanceLedger.findMany({
-        where: { caseBalanceId: balance.id, createdAt: { gte: periodStart, lte: periodEnd } },
+        where: { tenantId, caseBalanceId: balance.id, createdAt: { gte: periodStart, lte: periodEnd } },
         select: { id: true, amount: true, type: true, description: true, createdAt: true },
         orderBy: { createdAt: 'asc' },
       });
+    }
+
+    // H-07: devir, dönem içindeki AYNI parasal etkileri taşır. Bilgi satırları ve
+    // OFFSET_CLIENT_ADVANCE burada eklenmez (avans zaten BalanceLedger içindedir).
+    if (statementCaseClientId) {
+      const [proceeds, payouts, offsets] = await Promise.all([
+        this.prisma.collectionDispositionLine.aggregate({
+          where: {
+            caseClientId: statementCaseClientId,
+            type: { in: ['CLIENT_PAYABLE', 'CLIENT_EXPENSE_REIMBURSEMENT'] },
+            disposition: { tenantId, caseId, status: 'POSTED', manualReversalRequiredAt: null, postedAt: { lt: periodStart } },
+          },
+          _sum: { amount: true },
+        }),
+        this.prisma.clientPayout.aggregate({
+          where: { tenantId, caseId, caseClientId: statementCaseClientId, status: 'RECORDED', paidAt: { lt: periodStart } },
+          _sum: { amount: true },
+        }),
+        this.prisma.clientOffset.groupBy({
+          by: ['kind'],
+          where: { tenantId, payableCaseId: caseId, payableCaseClientId: statementCaseClientId, createdAt: { lt: periodStart } },
+          _sum: { amount: true },
+        }),
+      ]);
+      opening = opening.plus(proceeds._sum.amount ?? ZERO).minus(payouts._sum.amount ?? ZERO);
+      for (const offset of offsets) {
+        const amount = offset._sum.amount ?? ZERO;
+        opening = offset.kind === 'APPLY' ? opening.minus(amount) : opening.plus(amount);
+      }
     }
 
     let requestRows: { id: string; totalAmount: Prisma.Decimal; currency: string; status: string; createdAt: Date }[] = [];
@@ -1361,7 +1412,7 @@ export class ClientStatementService {
         'BalanceLedger',
         await this.prisma.balanceLedger.groupBy({
           by: ['currency'],
-          where: { caseBalanceId, createdAt: { lte: periodEnd } },
+          where: { tenantId, caseBalanceId, createdAt: { lte: periodEnd } },
           _count: { _all: true },
         }),
       );
@@ -1386,8 +1437,10 @@ export class ClientStatementService {
             caseId,
             status: 'POSTED',
             manualReversalRequiredAt: null,
-            postedAt: inPeriod,
-            lines: { some: { caseClientId: statementCaseClientId } },
+            OR: [
+              { postedAt: inPeriod, lines: { some: { caseClientId: statementCaseClientId } } },
+              { postedAt: { lt: periodStart }, lines: { some: { caseClientId: statementCaseClientId, type: { in: ['CLIENT_PAYABLE', 'CLIENT_EXPENSE_REIMBURSEMENT'] } } } },
+            ],
           },
           _count: { _all: true },
         }),
@@ -1396,7 +1449,7 @@ export class ClientStatementService {
         'ClientPayout',
         await this.prisma.clientPayout.groupBy({
           by: ['currency'],
-          where: { tenantId, caseId, caseClientId: statementCaseClientId, status: 'RECORDED', paidAt: inPeriod },
+          where: { tenantId, caseId, caseClientId: statementCaseClientId, status: 'RECORDED', paidAt: { lte: periodEnd } },
           _count: { _all: true },
         }),
       );
@@ -1407,10 +1460,9 @@ export class ClientStatementService {
         by: ['currency'],
         where: {
           tenantId,
-          createdAt: inPeriod,
           OR: [
-            ...(statementCaseClientId ? [{ payableCaseId: caseId, payableCaseClientId: statementCaseClientId }] : []),
-            { expenseCaseId: caseId },
+            ...(statementCaseClientId ? [{ payableCaseId: caseId, payableCaseClientId: statementCaseClientId, createdAt: { lte: periodEnd } }] : []),
+            { expenseCaseId: caseId, createdAt: inPeriod },
           ],
         },
         _count: { _all: true },

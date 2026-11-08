@@ -8,14 +8,15 @@
  * Preview YOK: kullanıcı create öncesi sayfadaki 5 kartı canlı görür; create o dönemi DONDURUR.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { turkeyCalendarDate } from '@/lib/turkey-calendar';
+import { turkeyDayStartIso, turkeyDayEndIso } from '@/lib/financial-statement-period';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, Badge, Spinner, Button } from '@hukuk/ui';
 import { FileText, Plus, AlertCircle, X, Info, ChevronDown, ChevronUp } from 'lucide-react';
 import { formatMoneyString } from '@/lib/api/client-accounting';
 import {
   clientStatementApi,
-  toDateInput,
   addDaysInput,
   STATEMENT_STATUS_LABELS,
   type ClientStatement,
@@ -34,6 +35,7 @@ export function StatementSection({ caseId, clientId, currency, caseOpenedAt }: S
   const queryClient = useQueryClient();
   const [modal, setModal] = useState<ModalState>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  useEffect(() => { setModal(null); setDetailId(null); }, [caseId, clientId]);
 
   const statementsQ = useQuery({
     queryKey: ['client-statements', caseId],
@@ -104,6 +106,7 @@ export function StatementSection({ caseId, clientId, currency, caseOpenedAt }: S
 
       {modal && (
         <StatementFormModal
+          key={`${caseId}:${clientId}:${modal.mode}:${modal.mode === 'supersede' ? modal.target.id : ''}`}
           mode={modal.mode}
           target={modal.mode === 'supersede' ? modal.target : undefined}
           caseId={caseId}
@@ -248,17 +251,17 @@ function StatementFormModal({
 }) {
   // Default period: supersede → target dönemi korunur; create → son periodEnd+1 → bugün / yoksa dosya açılışı → bugün.
   const defaults = useMemo(() => {
-    const today = toDateInput(new Date());
+    const today = turkeyCalendarDate(new Date());
     if (mode === 'supersede' && target) {
-      return { start: toDateInput(new Date(target.periodStart)), end: toDateInput(new Date(target.periodEnd)) };
+      return { start: turkeyCalendarDate(new Date(target.periodStart)), end: turkeyCalendarDate(new Date(target.periodEnd)) };
     }
     const lastEnd = statements.length
       ? statements.map((s) => s.periodEnd).sort().slice(-1)[0]
       : null;
     const start = lastEnd
-      ? addDaysInput(toDateInput(new Date(lastEnd)), 1)
+      ? addDaysInput(turkeyCalendarDate(new Date(lastEnd)), 1)
       : caseOpenedAt
-        ? toDateInput(new Date(caseOpenedAt))
+        ? turkeyCalendarDate(new Date(caseOpenedAt))
         : today;
     return { start, end: today };
   }, [mode, target, statements, caseOpenedAt]);
@@ -270,9 +273,10 @@ function StatementFormModal({
 
   const mutation = useMutation({
     mutationFn: () => {
+      const unchangedPeriod = mode === 'supersede' && target && periodStart === defaults.start && periodEnd === defaults.end;
       const payload = {
-        periodStart: new Date(`${periodStart}T00:00:00.000Z`).toISOString(),
-        periodEnd: new Date(`${periodEnd}T23:59:59.000Z`).toISOString(),
+        periodStart: unchangedPeriod ? target.periodStart : turkeyDayStartIso(periodStart),
+        periodEnd: unchangedPeriod ? target.periodEnd : turkeyDayEndIso(periodEnd),
         note: note.trim() || undefined,
       };
       if (mode === 'supersede' && target) {

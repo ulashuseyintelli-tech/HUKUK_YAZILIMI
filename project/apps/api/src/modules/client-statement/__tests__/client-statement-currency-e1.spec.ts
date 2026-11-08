@@ -71,7 +71,7 @@ function resetMocks() {
   mockPrisma.clientPayout.aggregate.mockResolvedValue({ _sum: { amount: null } });
   mockPrisma.clientPayout.groupBy.mockResolvedValue([grp('TRY')]);
   mockPrisma.clientOffset.findMany.mockResolvedValue([]);
-  mockPrisma.clientOffset.groupBy.mockResolvedValue([grp('TRY')]);
+  mockPrisma.clientOffset.groupBy.mockImplementation((args: any) => args.by.includes('kind') ? [] : [grp('TRY')]);
   mockPrisma.clientStatement.create.mockResolvedValue({ id: 'st-1' });
   mockPrisma.clientStatement.update.mockResolvedValue({});
   mockPrisma.clientStatement.findFirst.mockResolvedValue({ id: 'st-1', lines: [] });
@@ -221,7 +221,10 @@ describe('ClientStatementService — E1 kaynak para birimi sınırı', () => {
         caseId: CASE,
         status: 'POSTED',
         manualReversalRequiredAt: null,
-        lines: { some: { caseClientId: CC } },
+        OR: [
+          { postedAt: { gte: new Date(dto.periodStart), lte: new Date(dto.periodEnd) }, lines: { some: { caseClientId: CC } } },
+          { postedAt: { lt: new Date(dto.periodStart) }, lines: { some: { caseClientId: CC, type: { in: ['CLIENT_PAYABLE', 'CLIENT_EXPENSE_REIMBURSEMENT'] } } } },
+        ],
       });
       expect(mockPrisma.clientPayout.groupBy.mock.calls[0][0].where).toMatchObject({
         tenantId: TENANT,
@@ -231,8 +234,10 @@ describe('ClientStatementService — E1 kaynak para birimi sınırı', () => {
       });
       const offsetWhere = mockPrisma.clientOffset.groupBy.mock.calls[0][0].where;
       expect(offsetWhere.tenantId).toBe(TENANT);
-      expect(offsetWhere.createdAt).toEqual({ gte: new Date(dto.periodStart), lte: new Date(dto.periodEnd) }); // yalnız ekstre dönemi
-      expect(offsetWhere.OR).toEqual([{ payableCaseId: CASE, payableCaseClientId: CC }, { expenseCaseId: CASE }]);
+      expect(offsetWhere.OR).toEqual([
+        { payableCaseId: CASE, payableCaseClientId: CC, createdAt: { lte: new Date(dto.periodEnd) } },
+        { expenseCaseId: CASE, createdAt: { gte: new Date(dto.periodStart), lte: new Date(dto.periodEnd) } },
+      ]);
     });
 
     it('ret, dönem çakışma (409) denetiminden ÖNCE gelir ve aktif ekstreyi etkilemez', async () => {

@@ -135,6 +135,40 @@ dbDescribe('Expense payment command — atomicity and durable identity (disposab
     };
   }
 
+  it.each(['manual', 'package'] as const)('H07 paidByLawyer %s currency mismatch rolls back request, items, journal and advance', async mode => {
+    await a.caseClient.create({ data: { caseId, clientId, role: 'ALACAKLI', assignedById: userId } });
+    await a.caseBalance.update({ where: { caseId }, data: { currency: 'USD' } });
+    const before = await snapshot();
+    const args = { caseId, clientId, paidByLawyer: true, items: [{ type: 'TEBLIGAT_GIDERI', description: 'Synthetic posting', amount: 100 }] };
+    const run = mode === 'manual' ? service().create(tenantId, userId, args) : service().createFromPackage(tenantId, userId, {
+      caseId, clientId, paidByLawyer: true, packageCode: 'H07-SYNTHETIC', items: [{ itemCode: 'TEBLIGAT_GIDERI', label: 'Synthetic', suggestedAmount: 100, finalAmount: 100 }],
+    });
+    await expect(run).rejects.toMatchObject({ status: 409 });
+    expect(await snapshot()).toEqual(before);
+    expect(await a.expenseRequestItem.count({ where: { expenseRequest: { tenantId } } })).toBe(0);
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('H07 paidByLawyer credit failure after real writes rolls back request, items and journals', async () => {
+    await a.caseClient.create({ data: { caseId, clientId, role: 'ALACAKLI', assignedById: userId } });
+    const before = await snapshot();
+    await expect(service(a, 'credit').create(tenantId, userId, { caseId, clientId, paidByLawyer: true, items: [{ type: 'TEBLIGAT_GIDERI', description: 'Synthetic posting', amount: 100 }] })).rejects.toThrow('injected-credit');
+    expect(await snapshot()).toEqual(before);
+    expect(await a.expenseRequestItem.count({ where: { expenseRequest: { tenantId } } })).toBe(0);
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('H07 paidByLawyer same-currency request and credit commit together without changing payment semantics', async () => {
+    await a.caseClient.create({ data: { caseId, clientId, role: 'ALACAKLI', assignedById: userId } });
+    const created = await service().create(tenantId, userId, { caseId, clientId, paidByLawyer: true, items: [{ type: 'TEBLIGAT_GIDERI', description: 'Synthetic posting', amount: 100 }] });
+    expect(created.status).toBe('LAWYER_PAID');
+    expect((await a.caseBalance.findUniqueOrThrow({ where: { caseId } })).balance.toString()).toBe('100');
+    expect(await a.balanceLedger.findFirstOrThrow({ where: { tenantId, sourceId: created.id } })).toMatchObject({ currency: 'TRY', type: 'CREDIT' });
+    expect(await a.expenseRequestItem.count({ where: { expenseRequestId: created.id } })).toBe(1);
+    expect(await a.expensePayment.count({ where: { expenseRequestId: created.id } })).toBe(0);
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
   it('60 + 60 against 100: two independent pools admit one command, never 120 or partial writes', async () => {
     const results = await Promise.allSettled([pay(service(a)), pay(service(b), input({ idempotencyKey: 'another-command' }))]);
     expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);

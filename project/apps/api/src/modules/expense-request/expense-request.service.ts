@@ -313,27 +313,15 @@ export class ExpenseRequestService {
       }
 
       await this.writeExpenseRequestRecordedJournal(tx, tenantId, userId, created as JournalableExpenseRequestRow);
+      if (dto.paidByLawyer) {
+        await this.caseBalanceService.credit(tenantId, dto.caseId, {
+          amount: totalAmount, currency: created.currency,
+          source: `expense_request:${created.id}`, sourceId: created.id,
+          description: 'Avukat tarafından karşılandı - Müvekkilden tahsil edilecek',
+        }, userId, { tx, currency: created.currency, kind: 'EXPENSE_REQUEST' });
+      }
       return created;
     });
-
-    // Avukat karşıladıysa bakiyeye kredi ekle (UYAP'a gönderim açılsın)
-    if (dto.paidByLawyer) {
-      try {
-        await this.caseBalanceService.credit(
-          tenantId,
-          dto.caseId,
-          {
-            amount: totalAmount,
-            source: `expense_request:${expenseRequest.id}`,
-            sourceId: expenseRequest.id,
-            description: `Avukat tarafından karşılandı - Müvekkilden tahsil edilecek`,
-          },
-          userId,
-        );
-      } catch (error) {
-        console.error('Bakiye kredisi eklenemedi:', error);
-      }
-    }
 
     return expenseRequest;
   }
@@ -434,27 +422,15 @@ export class ExpenseRequestService {
       });
 
       await this.writeExpenseRequestRecordedJournal(tx, tenantId, userId, created as JournalableExpenseRequestRow);
+      if (dto.paidByLawyer) {
+        await this.caseBalanceService.credit(tenantId, dto.caseId, {
+          amount: totalAmount, currency: created.currency,
+          source: `expense_request:${created.id}`, sourceId: created.id,
+          description: `Avukat tarafından karşılandı (${dto.packageCode}) - Müvekkilden tahsil edilecek`,
+        }, userId, { tx, currency: created.currency, kind: 'EXPENSE_REQUEST' });
+      }
       return created;
     });
-
-    // Avukat karşıladıysa bakiyeye kredi ekle (UYAP'a gönderim açılsın)
-    if (dto.paidByLawyer) {
-      try {
-        await this.caseBalanceService.credit(
-          tenantId,
-          dto.caseId,
-          {
-            amount: totalAmount,
-            source: `expense_request:${expenseRequest.id}`,
-            sourceId: expenseRequest.id,
-            description: `Avukat tarafından karşılandı (${dto.packageCode}) - Müvekkilden tahsil edilecek`,
-          },
-          userId,
-        );
-      } catch (error) {
-        console.error('Bakiye kredisi eklenemedi:', error);
-      }
-    }
     // `dto.sendEmail` bu uçta E-POSTA GÖNDERMEZ ve talebi "gönderildi" YAPMAZ: önceden burada `markAsSent` çağrılıyordu
     // (e-posta gönderilmeden SENT / sentVia EMAIL yazılıyor, hata yutuluyordu). Paket talebi kalem SATIRI yazmaz (yalnız JSON +
     // toplam; kalem yazım sözleşmesi owner kararı bekliyor), bu yüzden e-posta kapısı ITEMS_MISSING ile reddeder: paket kipinde
@@ -1517,7 +1493,7 @@ export class ExpenseRequestService {
         createdAt: createdPayment.createdAt ?? command.paymentDate,
       });
       await this.caseBalanceService.credit(tenantId, request.caseId, {
-        amount: command.amount.toNumber(), source: `expense_payment:${createdPayment.id}`,
+        amount: command.amount.toNumber(), currency: request.currency, source: `expense_payment:${createdPayment.id}`,
         sourceId: createdPayment.id, description: `Masraf ödemesi - ${command.reference || 'Manuel'}`,
       }, userId, { tx, currency: request.currency, postingKey: command.postingKey });
       const updated = await tx.expenseRequest.update({

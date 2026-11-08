@@ -305,7 +305,7 @@ describeWithDisposableDb('UYAP hazırlığı — büro / kullanıcı bağlamı v
 
     it('avans satırı VAR ve yetersiz → gerçek tutar yazılır; yeterli → hazır', async () => {
       const caseId = await openPaidCase('avansli');
-      const credit = (amount: number) => as(adminId).post(`/cases/${caseId}/balance/credit`, { amount, source: 'manual', description: 'masraf avansı' });
+      const credit = (amount: number) => as(adminId).post(`/cases/${caseId}/balance/credit`, { amount, currency: 'TRY', source: 'manual', description: 'masraf avansı' });
 
       expect((await credit(100)).status).toBe(201);
       expect((await prepare(caseId)).body).toMatchObject({ action: 'OPEN_EXPENSE_MODAL', blockReason: 'Yetersiz bakiye. Gerekli: 957.9 TL, Mevcut: 100 TL' });
@@ -377,7 +377,7 @@ describeWithDisposableDb('UYAP hazırlığı — büro / kullanıcı bağlamı v
 
   describe('KARAR MADDESİ senaryosu ve BİLİNEN AÇIKLAR (mevcut davranış sabitlenir; ürün kararı gelince ilgili test bilinçle güncellenir)', () => {
     const credit = async (caseId: string, amount: number) => {
-      const res = await as(adminId).post(`/cases/${caseId}/balance/credit`, { amount, source: 'manual', description: 'masraf avansı' });
+      const res = await as(adminId).post(`/cases/${caseId}/balance/credit`, { amount, currency: 'TRY', source: 'manual', description: 'masraf avansı' });
       expect(res.status).toBe(201);
     };
 
@@ -453,7 +453,8 @@ describeWithDisposableDb('UYAP hazırlığı — büro / kullanıcı bağlamı v
     it('ret ve hazır yollarında UYAP isteği, muhasebe, bakiye, bildirim ya da yeni masraf kaydı YAZILMAZ (karar günlüğü hariç)', async () => {
       const unpaidId = await openCase('yan-etki-ret');
       const readyId = await openPaidCase('yan-etki-hazir');
-      await as(adminId).post(`/cases/${readyId}/balance/credit`, { amount: 1000, source: 'manual', description: 'masraf avansı' });
+      const credited = await as(adminId).post(`/cases/${readyId}/balance/credit`, { amount: 1000, currency: 'TRY', source: 'manual', description: 'masraf avansı' });
+      expect(credited.status).toBe(201);
       const beforeUnpaid = await sideEffectsOf(unpaidId);
       const beforeReady = await sideEffectsOf(readyId);
 

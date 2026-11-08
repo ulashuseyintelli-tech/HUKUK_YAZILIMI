@@ -20,6 +20,8 @@ import { ErrorLogModule } from '../../error-log/error-log.module';
 import { MetricsRegistryModule } from '../../metrics-registry/metrics-registry.module';
 import { CaseBalanceController } from '../case-balance.controller';
 import { CaseBalanceModule } from '../case-balance.module';
+import { DispositionPostingService } from '../../client-settlement/disposition-posting.service';
+import { createClient, linkClient, addPostedPayable } from '../../../../test/client-currency-fixture';
 
 /**
  * Masraf/avans bakiyesi (`cases/:caseId/balance`) — owner kararı 2026-10-05 (karar 5), DAR kapsam. GERÇEK HTTP + disposable PostgreSQL.
@@ -140,11 +142,95 @@ describeWithDisposableDb('Masraf/avans bakiyesi — VIEWER yazma sınırı ve ok
   });
 
   describe('(1) VIEWER avans yazamaz', () => {
+    it('H07: direct disposition writer reaches the real transaction/account guard and rejects USD into TRY without financial mutation', async () => {
+      const caseId = await newCase('h07-disposition');
+      await request(app.getHttpServer()).post(`/cases/${caseId}/balance/credit`).set(as(adminId)).send({ amount: 5000, currency: 'TRY', source: 'manual' }).expect(201);
+      const clientId = await createClient(prisma, tenantId, `h07-disp-${suffix}`);
+      const caseClientId = await linkClient(prisma, caseId, clientId, adminId);
+      const key = `h07-disp-${suffix}`;
+      await addPostedPayable(prisma, { tenantId, caseId, caseClientId, userId: adminId, amount: 100, currency: 'USD', postedAt: new Date(), key });
+      const collection = await prisma.collection.findFirstOrThrow({ where: { tenantId, idempotencyKey: `test:ccy:${key}` } });
+      const disp = await prisma.collectionDisposition.update({ where: { collectionId: collection.id }, data: { status: 'DISTRIBUTION_APPROVED', approvalRequestId: 'h07-synthetic-approved', postedAt: null, postedById: null } });
+      await prisma.collectionDispositionLine.updateMany({ where: { dispositionId: disp.id }, data: { type: 'OFFSET_CLIENT_ADVANCE' } });
+      // Actor/P4 and absence of an allocation hold are explicit harness preconditions;
+      // posting, authoritative Collection lock, account reads and transaction are real PostgreSQL.
+      const approval = { isApproverEligible: jest.fn().mockResolvedValue(true), assertApproverExecutionAuthorityInTx: jest.fn().mockResolvedValue(undefined), markExecutionSucceeded: jest.fn() };
+      const db = new Proxy(prisma, { get(target, key) {
+        if (key === 'officeApprovalRequest') return { findFirst: async () => ({ status: 'APPROVED' }) };
+        if (key === 'collectionAllocationHold') return { findFirst: async () => null };
+        const value = (target as any)[key]; return typeof value === 'function' ? value.bind(target) : value;
+      } });
+      const posting = new DispositionPostingService(db as any, approval as any, {} as any);
+      const snapshot = async () => ({
+        disposition: await prisma.collectionDisposition.findUniqueOrThrow({ where: { id: disp.id } }),
+        balance: await prisma.caseBalance.findUniqueOrThrow({ where: { caseId } }),
+        ledger: await prisma.balanceLedger.findMany({ where: { caseBalance: { caseId } }, orderBy: { id: 'asc' } }),
+        journals: await prisma.accountingJournalEntry.findMany({ where: { tenantId }, include: { lines: { orderBy: { lineNo: 'asc' } } }, orderBy: { id: 'asc' } }),
+      });
+      try {
+        const before = await snapshot();
+        await expect(posting.post(tenantId, disp.id, { userId: adminId })).rejects.toMatchObject({ status: 409, response: { code: 'ADVANCE_CURRENCY_MISMATCH' } });
+        expect(approval.assertApproverExecutionAuthorityInTx).toHaveBeenCalledTimes(1);
+        expect(approval.markExecutionSucceeded).not.toHaveBeenCalled();
+        expect(await snapshot()).toEqual(before);
+      } finally {
+        await prisma.collectionDispositionLine.deleteMany({ where: { dispositionId: disp.id } });
+        await prisma.collectionDisposition.delete({ where: { id: disp.id } });
+        await prisma.collection.delete({ where: { id: collection.id } });
+        await prisma.caseClient.delete({ where: { id: caseClientId } });
+        await prisma.client.delete({ where: { id: clientId } });
+      }
+    });
+    it('H07: 5000 TRY avansa 100 USD kredi, debit ve typed masraf 409; kayıtlar ve bildirimler aynen kalır', async () => {
+      const caseId = await newCase('h07-mismatch');
+      await request(app.getHttpServer()).post(`/cases/${caseId}/balance/credit`).set(as(adminId)).send({ amount: 5000, currency: 'TRY', source: 'manual' }).expect(201);
+      const snapshot = async () => ({
+        balance: await prisma.caseBalance.findUniqueOrThrow({ where: { caseId } }),
+        ledger: await prisma.balanceLedger.findMany({ where: { caseBalance: { caseId } }, orderBy: { id: 'asc' } }),
+        journal: await prisma.accountingJournalEntry.findMany({ where: { tenantId }, orderBy: { id: 'asc' }, include: { lines: { orderBy: { lineNo: 'asc' } } } }),
+        notifications: await prisma.clientNotification.findMany({ where: { tenantId }, orderBy: { id: 'asc' } }),
+        audits: await prisma.auditLog.findMany({ where: { tenantId }, orderBy: { id: 'asc' } }),
+      });
+      const before = await snapshot();
+      for (const path of ['credit', 'debit', 'expense-actual']) {
+        const result = await request(app.getHttpServer()).post(`/cases/${caseId}/balance/${path}`).set(as(adminId)).send({ amount: 100, currency: 'USD', source: 'manual', postingKey: 'h07-no-write' });
+        expect(result.status).toBe(409);
+        expect(result.body.code).toBe('ADVANCE_CURRENCY_MISMATCH');
+        expect(await snapshot()).toEqual(before);
+      }
+    });
+
+    it('H07: ilk kredi kaynak USD hesabını açar; dosya TRY olsa da çevrim/ikinci hesap olmaz', async () => {
+      const caseId = await newCase('h07-native');
+      await request(app.getHttpServer()).post(`/cases/${caseId}/balance/credit`).set(as(adminId)).send({ amount: 100, currency: 'USD', source: 'manual' }).expect(201);
+      await request(app.getHttpServer()).post(`/cases/${caseId}/balance/debit`).set(as(memberId)).send({ amount: 10, currency: 'USD', source: 'manual' }).expect(201);
+      expect(await prisma.caseBalance.findUniqueOrThrow({ where: { caseId } })).toMatchObject({ currency: 'USD' });
+      expect((await prisma.caseBalance.findUniqueOrThrow({ where: { caseId } })).balance.toString()).toBe('90');
+      expect((await prisma.balanceLedger.findMany({ where: { caseBalance: { caseId } } })).map(x => x.currency)).toEqual(['USD', 'USD']);
+      expect(await rows(caseId)).toEqual({ balances: 1, ledger: 2 });
+    });
+
+    it('H07: eşzamanlı TRY/USD ilk krediler tek hesap/tek para birimi bırakır; kaybeden 409 ve yazmasız', async () => {
+      const caseId = await newCase('h07-first-race');
+      const responses = await Promise.all(['TRY', 'USD'].map(currency => request(app.getHttpServer()).post(`/cases/${caseId}/balance/credit`).set(as(adminId)).send({ amount: 100, currency, source: 'manual' })));
+      expect(responses.map(x => x.status).sort()).toEqual([201, 409]);
+      expect(await rows(caseId)).toEqual({ balances: 1, ledger: 1 });
+      const balance = await prisma.caseBalance.findUniqueOrThrow({ where: { caseId } });
+      const ledger = await prisma.balanceLedger.findFirstOrThrow({ where: { caseBalanceId: balance.id } });
+      expect(balance.currency).toBe(ledger.currency);
+      expect(balance.balance.toString()).toBe('100');
+    });
+
+    it.each([undefined, '', 'try', ' USD ', 42])('H07: eksik/geçersiz kaynak para birimi %s satır oluşturmadan 400', async currency => {
+      const caseId = await newCase(`h07-invalid-${String(currency)}`);
+      await request(app.getHttpServer()).post(`/cases/${caseId}/balance/credit`).set(as(adminId)).send({ amount: 100, currency, source: 'manual' }).expect(400);
+      expect(await rows(caseId)).toEqual({ balances: 0, ledger: 0 });
+    });
     it('KONTROL: ADMIN ve USER kredi / düşüm yazabilir (kapı yalnız VIEWER\'ı eler)', async () => {
       const caseId = await newCase('ctl-write');
-      const credit = await request(app.getHttpServer()).post(`/cases/${caseId}/balance/credit`).set(as(adminId)).send({ amount: 100, source: 'manual' });
+      const credit = await request(app.getHttpServer()).post(`/cases/${caseId}/balance/credit`).set(as(adminId)).send({ currency: 'TRY', amount: 100, source: 'manual' });
       expect(credit.status).toBe(201);
-      const debit = await request(app.getHttpServer()).post(`/cases/${caseId}/balance/debit`).set(as(memberId)).send({ amount: 10, source: 'manual' });
+      const debit = await request(app.getHttpServer()).post(`/cases/${caseId}/balance/debit`).set(as(memberId)).send({ currency: 'TRY', amount: 10, source: 'manual' });
       expect(debit.status).toBe(201);
       expect(await rows(caseId)).toEqual({ balances: 1, ledger: 2 });
     });
@@ -163,10 +249,10 @@ describeWithDisposableDb('Masraf/avans bakiyesi — VIEWER yazma sınırı ve ok
 
     it('VIEWER kredi / düşüm → VAR OLAN satırın bakiyesi ve defteri değişmez', async () => {
       const caseId = await newCase('v-existing');
-      await request(app.getHttpServer()).post(`/cases/${caseId}/balance/credit`).set(as(adminId)).send({ amount: 500, source: 'manual' }).expect(201);
+      await request(app.getHttpServer()).post(`/cases/${caseId}/balance/credit`).set(as(adminId)).send({ currency: 'TRY', amount: 500, source: 'manual' }).expect(201);
       const before = await prisma.caseBalance.findUniqueOrThrow({ where: { caseId } });
-      await request(app.getHttpServer()).post(`/cases/${caseId}/balance/credit`).set(as(viewerId)).send({ amount: 1, source: 'manual' }).expect(403);
-      await request(app.getHttpServer()).post(`/cases/${caseId}/balance/debit`).set(as(viewerId)).send({ amount: 1, source: 'manual' }).expect(403);
+      await request(app.getHttpServer()).post(`/cases/${caseId}/balance/credit`).set(as(viewerId)).send({ currency: 'TRY', amount: 1, source: 'manual' }).expect(403);
+      await request(app.getHttpServer()).post(`/cases/${caseId}/balance/debit`).set(as(viewerId)).send({ currency: 'TRY', amount: 1, source: 'manual' }).expect(403);
       const after = await prisma.caseBalance.findUniqueOrThrow({ where: { caseId } });
       expect(after.balance.toString()).toBe(before.balance.toString());
       expect(await rows(caseId)).toEqual({ balances: 1, ledger: 1 });
@@ -189,7 +275,7 @@ describeWithDisposableDb('Masraf/avans bakiyesi — VIEWER yazma sınırı ve ok
         const res = await request(app.getHttpServer())
           .post(`/cases/${caseId}/balance/${route.path}`)
           .set(as(viewerId))
-          .send({ amount: 1, source: 'manual', postingKey: `cbws-enum-${route.path}` });
+          .send({ currency: 'TRY', amount: 1, source: 'manual', postingKey: `cbws-enum-${route.path}` });
         expect({ route: route.path, status: res.status, code: res.body.code }).toEqual({ route: route.path, status: 403, code: 'VIEWER_WRITE_DENIED' });
       }
       expect(await rows(caseId)).toEqual({ balances: 0, ledger: 0 });
@@ -197,7 +283,7 @@ describeWithDisposableDb('Masraf/avans bakiyesi — VIEWER yazma sınırı ve ok
 
     it('VIEWER OKUYABİLİR: var olan satırın GET /balance ve GET /balance/ledger yanıtı 200', async () => {
       const caseId = await newCase('v-read');
-      await request(app.getHttpServer()).post(`/cases/${caseId}/balance/credit`).set(as(adminId)).send({ amount: 700, source: 'manual' }).expect(201);
+      await request(app.getHttpServer()).post(`/cases/${caseId}/balance/credit`).set(as(adminId)).send({ currency: 'TRY', amount: 700, source: 'manual' }).expect(201);
       const bal = await request(app.getHttpServer()).get(`/cases/${caseId}/balance`).set(as(viewerId));
       expect(bal.status).toBe(200);
       expect(bal.body.balance).toBe('700');
@@ -262,7 +348,7 @@ describeWithDisposableDb('Masraf/avans bakiyesi — VIEWER yazma sınırı ve ok
 
     it('VAR OLAN satırın yanıtı DEĞİŞMEZ (yalnız `exists:true` eklenir): balance / currency / lowThreshold / isLow / recentLedger aynı', async () => {
       const caseId = await newCase('bal-existing');
-      await request(app.getHttpServer()).post(`/cases/${caseId}/balance/credit`).set(as(adminId)).send({ amount: 1250.5, source: 'manual' }).expect(201);
+      await request(app.getHttpServer()).post(`/cases/${caseId}/balance/credit`).set(as(adminId)).send({ currency: 'TRY', amount: 1250.5, source: 'manual' }).expect(201);
       const res = await request(app.getHttpServer()).get(`/cases/${caseId}/balance`).set(as(adminId));
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ exists: true, caseId, tenantId, balance: '1250.5', currency: 'TRY', lowThreshold: '500', isLow: false });
@@ -290,7 +376,7 @@ describeWithDisposableDb('Masraf/avans bakiyesi — VIEWER yazma sınırı ve ok
   describe('YAZMA YOLU bozulmaz: ilk yazma satırı oluşturur', () => {
     it('satırsız dosyada ilk kredi satırı + defter satırını birlikte yazar (okumayla oluşmasına gerek yok)', async () => {
       const caseId = await newCase('write-first');
-      const res = await request(app.getHttpServer()).post(`/cases/${caseId}/balance/credit`).set(as(adminId)).send({ amount: 300, source: 'manual' });
+      const res = await request(app.getHttpServer()).post(`/cases/${caseId}/balance/credit`).set(as(adminId)).send({ currency: 'TRY', amount: 300, source: 'manual' });
       expect(res.status).toBe(201);
       expect(res.body).toMatchObject({ success: true, newBalance: 300 });
       expect(await rows(caseId)).toEqual({ balances: 1, ledger: 1 });

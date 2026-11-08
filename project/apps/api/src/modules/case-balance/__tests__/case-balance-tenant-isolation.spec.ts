@@ -25,7 +25,7 @@ interface HarnessOptions {
 
 function buildHarness(options: HarnessOptions = {}) {
   const caseOwner = options.caseOwner ?? {};
-  const existingBalance = options.existingBalance ?? null;
+  const existingBalance = options.existingBalance ? { currency: 'TRY', ...options.existingBalance } : null;
 
   const tx = {
     balanceLedger: {
@@ -72,13 +72,15 @@ function buildHarness(options: HarnessOptions = {}) {
     }),
   };
 
+  Object.assign(tx, { case: prisma.case, $executeRaw: jest.fn().mockResolvedValue(1) });
+  Object.assign(tx.caseBalance, { findUnique: prisma.caseBalance.findUnique, create: prisma.caseBalance.create });
   const service = new CaseBalanceService(prisma as never, journalWriter as never);
   return { tx, prisma, journalWriter, service };
 }
 
 function expectNoFinancialSideEffect(h: ReturnType<typeof buildHarness>) {
   // Hiçbir bakiye/ledger/journal yan etkisi başlamamalı.
-  expect(h.prisma.$transaction).not.toHaveBeenCalled();
+  // Ownership/currency reads now share the write transaction; the denied path still writes nothing.
   expect(h.tx.balanceLedger.create).not.toHaveBeenCalled();
   expect(h.tx.caseBalance.update).not.toHaveBeenCalled();
   expect(h.journalWriter.write).not.toHaveBeenCalled();
@@ -129,7 +131,7 @@ describe('CaseBalanceService CLIENT-P0-T04-C1 tenant fail-closed containment', (
 
     it('own case missing balance can be created by a WRITE (ownership verified before create)', async () => {
       const h = buildHarness(OWNED); // sahip var, mevcut bakiye yok
-      await h.service.credit('tenant-A', 'case-A', { amount: 100, source: 'manual' }, 'user-A');
+      await h.service.credit('tenant-A', 'case-A', { currency: 'TRY', amount: 100, source: 'manual' }, 'user-A');
       expect(h.prisma.case.findFirst).toHaveBeenCalled();
       expect(h.prisma.caseBalance.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ tenantId: 'tenant-A', caseId: 'case-A', balance: 0 }) }),
@@ -138,14 +140,14 @@ describe('CaseBalanceService CLIENT-P0-T04-C1 tenant fail-closed containment', (
 
     it('own case credit succeeds', async () => {
       const h = buildHarness(OWNED_WITH_BALANCE);
-      const res = await h.service.credit('tenant-A', 'case-A', { amount: 100, source: 'manual' }, 'user-A');
+      const res = await h.service.credit('tenant-A', 'case-A', { currency: 'TRY', amount: 100, source: 'manual' }, 'user-A');
       expect(res).toEqual(expect.objectContaining({ success: true }));
       expect(h.tx.balanceLedger.create).toHaveBeenCalledTimes(1);
     });
 
     it('own case debit succeeds', async () => {
       const h = buildHarness(OWNED_WITH_BALANCE);
-      const res = await h.service.debit('tenant-A', 'case-A', { amount: 100, source: 'operation:haciz' }, 'user-A');
+      const res = await h.service.debit('tenant-A', 'case-A', { currency: 'TRY', amount: 100, source: 'operation:haciz' }, 'user-A');
       expect(res).toEqual(expect.objectContaining({ success: true }));
       expect(h.tx.caseBalance.update).toHaveBeenCalledTimes(1);
     });
@@ -171,19 +173,19 @@ describe('CaseBalanceService CLIENT-P0-T04-C1 tenant fail-closed containment', (
 
     it('foreign case credit denied — CaseBalance/BalanceLedger/AccountingJournal unchanged', async () => {
       const h = buildHarness(OWNED_WITH_BALANCE);
-      await expect(h.service.credit('tenant-B', 'case-A', { amount: 500, source: 'manual' }, 'attacker')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(h.service.credit('tenant-B', 'case-A', { currency: 'TRY', amount: 500, source: 'manual' }, 'attacker')).rejects.toBeInstanceOf(NotFoundException);
       expectNoFinancialSideEffect(h);
     });
 
     it('foreign case debit denied — CaseBalance/BalanceLedger/AccountingJournal unchanged', async () => {
       const h = buildHarness(OWNED_WITH_BALANCE);
-      await expect(h.service.debit('tenant-B', 'case-A', { amount: 500, source: 'operation:haciz' }, 'attacker')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(h.service.debit('tenant-B', 'case-A', { currency: 'TRY', amount: 500, source: 'operation:haciz' }, 'attacker')).rejects.toBeInstanceOf(NotFoundException);
       expectNoFinancialSideEffect(h);
     });
 
     it('cross-tenant credit on a case with NO existing balance does not create a foreign balance row', async () => {
       const h = buildHarness(OWNED); // case-A tenant-A'ya ait, henüz bakiye satırı yok
-      await expect(h.service.credit('tenant-B', 'case-A', { amount: 500, source: 'manual' }, 'attacker')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(h.service.credit('tenant-B', 'case-A', { currency: 'TRY', amount: 500, source: 'manual' }, 'attacker')).rejects.toBeInstanceOf(NotFoundException);
       expectNoFinancialSideEffect(h); // create() çağrılmaz → yabancı/uyumsuz satır oluşmaz
     });
   });
@@ -197,7 +199,7 @@ describe('CaseBalanceService CLIENT-P0-T04-C1 tenant fail-closed containment', (
 
     it('legit owner credit on tenant-mismatched balance row fails closed with no mutation and no auto-repair', async () => {
       const h = buildHarness(CORRUPT);
-      await expect(h.service.credit('tenant-A', 'case-A', { amount: 100, source: 'manual' }, 'user-A')).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(h.service.credit('tenant-A', 'case-A', { currency: 'TRY', amount: 100, source: 'manual' }, 'user-A')).rejects.toBeInstanceOf(ForbiddenException);
       expectNoFinancialSideEffect(h);
     });
 
@@ -218,7 +220,7 @@ describe('CaseBalanceService CLIENT-P0-T04-C1 tenant fail-closed containment', (
 
     it('unknown caseId credit denied — no financial side effect', async () => {
       const h = buildHarness({ caseOwner: {} });
-      await expect(h.service.credit('tenant-A', 'case-unknown', { amount: 100, source: 'manual' }, 'user-A')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(h.service.credit('tenant-A', 'case-unknown', { currency: 'TRY', amount: 100, source: 'manual' }, 'user-A')).rejects.toBeInstanceOf(NotFoundException);
       expectNoFinancialSideEffect(h);
     });
   });

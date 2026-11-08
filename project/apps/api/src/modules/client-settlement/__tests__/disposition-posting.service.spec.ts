@@ -49,7 +49,7 @@ function buildPrisma(opts: { disp?: any; col?: any; validCaseClients?: any[]; li
       create: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: `line-${data.type}` })),
     },
     collectionDisposition: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
-    caseBalance: { findFirst: jest.fn().mockResolvedValue({ id: 'cb-1' }), create: jest.fn().mockResolvedValue({ id: 'cb-new' }) },
+    caseBalance: { findFirst: jest.fn().mockResolvedValue({ id: 'cb-1', currency: 'TRY' }), create: jest.fn().mockResolvedValue({ id: 'cb-new' }) },
     balanceLedger: { create: jest.fn().mockResolvedValue({}) },
     // FAZ-1b reimbursement application + tx-içi expenseRequest doğrulaması
     expenseRequest: { findFirst: jest.fn().mockResolvedValue(opts.expenseRequest ?? { totalAmount: D(50), paidTotal: D(0), currency: 'TRY', status: 'SENT', expenseApprovalStatus: 'APPROVED', clientId: 'client-A' }) },
@@ -324,6 +324,20 @@ describe('DispositionPostingService.approve', () => {
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ post â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 describe('DispositionPostingService.post', () => {
+  it.each(['USD', '', undefined])('H07: advance offset rejects mismatched/unknown account currency %s after authoritative gates, without writes', async currency => {
+    const { prisma, tx } = buildPrisma({ disp: DISP_APPROVED, lines: [{ id: 'h07-offset', type: 'OFFSET_CLIENT_ADVANCE', amount: D(100), caseClientId: 'cc-A' }] });
+    tx.caseBalance.findFirst.mockResolvedValue({ id: 'cb-1', currency } as any);
+    const approval = buildApproval();
+    await expect(svc(prisma, approval).post('t1', 'd1', { userId: 'u3' })).rejects.toMatchObject({ status: 409, response: { code: 'ADVANCE_CURRENCY_MISMATCH' } });
+    expect(approval.assertApproverExecutionAuthorityInTx).toHaveBeenCalledWith(tx, 'u3', 't1');
+    expect(tx.$queryRaw).toHaveBeenCalled();
+    expect(tx.caseBalance.findFirst).toHaveBeenCalledWith({ where: { caseId: 'case1', tenantId: 't1' }, select: { id: true, currency: true } });
+    expect(tx.caseBalance.create).not.toHaveBeenCalled();
+    expect(tx.balanceLedger.create).not.toHaveBeenCalled();
+    expect(tx.accountingJournalEntry.create).not.toHaveBeenCalled();
+    expect(tx.collectionDisposition.updateMany).not.toHaveBeenCalled();
+    expect(approval.markExecutionSucceeded).not.toHaveBeenCalled();
+  });
   it('happy: DISTRIBUTION_APPROVED + APPROVED P4 → POSTED + markExecutionSucceeded', async () => {
     const { prisma, tx } = buildPrisma({ disp: DISP_APPROVED, lines: [{ id: 'l1', type: 'CLIENT_PAYABLE', amount: D(100), caseClientId: 'cc-A' }] });
     const approval = buildApproval();

@@ -12,6 +12,7 @@ const CREATED_AT = new Date('2026-08-09T10:00:00.000Z');
 
 function buildHarness(options: {
   balance?: Prisma.Decimal;
+  currency?: string;
   caseClients?: Array<{ clientId: string }>;
   caseClientId?: string | null;
   existingPosting?: { id: string } | null;
@@ -21,6 +22,7 @@ function buildHarness(options: {
     tenantId: 'tenant-1',
     caseId: 'case-1',
     balance: options.balance ?? D(1000),
+    currency: options.currency ?? 'TRY',
     lowThreshold: D(500),
   };
   const tx = {
@@ -33,7 +35,7 @@ function buildHarness(options: {
         caseBalanceId: balance.id,
         type: 'DEBIT',
         amount: D(-250),
-        currency: 'TRY',
+        currency: options.currency ?? 'TRY',
         source: 'expense_actual:pk-1',
         sourceId: 'pk-1',
         createdById: 'user-1',
@@ -66,13 +68,21 @@ function buildHarness(options: {
   const dispatcher = {
     dispatchQueuedIntent: jest.fn().mockResolvedValue({ status: 'sent', notificationId: 'intent-1', dedupeKey: 'x' }),
   };
+  Object.assign(tx, { case: prisma.case });
+  Object.assign(tx.caseBalance, { findUnique: prisma.caseBalance.findUnique, create: prisma.caseBalance.create });
   const service = new CaseBalanceService(prisma as never, journalWriter as never, clientNotification as never, dispatcher as never);
   return { balance, tx, prisma, journalWriter, clientNotification, dispatcher, service };
 }
 
-const dto = { amount: 250, postingKey: 'pk-1', description: 'Bilirkişi ücreti' };
+const dto = { currency: 'TRY', amount: 250, postingKey: 'pk-1', description: 'Bilirkişi ücreti' };
 
 describe('C1-B05-B postExpenseActual — typed posting + QUEUED intent', () => {
+  it('H07 native USD posting keeps ledger/journal and notification currency consistent without conversion', async () => {
+    const { service, tx, clientNotification } = buildHarness({ currency: 'USD' });
+    await service.postExpenseActual('tenant-1', 'case-1', { ...dto, currency: 'USD' }, 'user-1');
+    expect(tx.balanceLedger.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ currency: 'USD', amount: -250 }) }));
+    expect(clientNotification.enqueueEmailIntentInTransaction).toHaveBeenCalledWith(tx, 'tenant-1', 'user-1', expect.objectContaining({ tokens: expect.objectContaining({ currency: 'USD' }) }));
+  });
   it('happy path: ledger TYPED (entryKind+postingKey+source prefix) + intent AYNI tx + dispatch commit SONRASI', async () => {
     const { tx, clientNotification, dispatcher, journalWriter, service } = buildHarness();
 
@@ -165,9 +175,9 @@ describe('C1-B05-B postExpenseActual — typed posting + QUEUED intent', () => {
 
   it('geçersiz tutar / postingKey → reddedilir, tx AÇILMAZ', async () => {
     const { prisma, service } = buildHarness();
-    await expect(service.postExpenseActual('tenant-1', 'case-1', { amount: 0, postingKey: 'pk' }, 'u')).rejects.toThrow('Geçersiz tutar');
-    await expect(service.postExpenseActual('tenant-1', 'case-1', { amount: -5, postingKey: 'pk' }, 'u')).rejects.toThrow('Geçersiz tutar');
-    await expect(service.postExpenseActual('tenant-1', 'case-1', { amount: 10, postingKey: 'kötü anahtar!' }, 'u')).rejects.toThrow('Geçersiz postingKey');
+    await expect(service.postExpenseActual('tenant-1', 'case-1', { currency: 'TRY', amount: 0, postingKey: 'pk' }, 'u')).rejects.toThrow('Geçersiz tutar');
+    await expect(service.postExpenseActual('tenant-1', 'case-1', { currency: 'TRY', amount: -5, postingKey: 'pk' }, 'u')).rejects.toThrow('Geçersiz tutar');
+    await expect(service.postExpenseActual('tenant-1', 'case-1', { currency: 'TRY', amount: 10, postingKey: 'kötü anahtar!' }, 'u')).rejects.toThrow('Geçersiz postingKey');
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
@@ -190,7 +200,7 @@ describe('C1-B05-B — generic yollar TYPED sınıflandırma/intent ÜRETMEZ (ow
       id: 'bl-generic', tenantId: 'tenant-1', caseBalanceId: 'case-balance-1', type: 'DEBIT',
       amount: D(-40), currency: 'TRY', source: 'operation:haciz', sourceId: 'op-1', createdById: 'u', createdAt: CREATED_AT,
     });
-    await service.debit('tenant-1', 'case-1', { amount: 40, source: 'operation:haciz', sourceId: 'op-1' }, 'user-1');
+    await service.debit('tenant-1', 'case-1', { currency: 'TRY', amount: 40, source: 'operation:haciz', sourceId: 'op-1' }, 'user-1');
 
     const data = tx.balanceLedger.create.mock.calls[0][0].data;
     expect(data.entryKind).toBeUndefined();

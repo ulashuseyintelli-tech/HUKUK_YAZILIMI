@@ -136,6 +136,13 @@ export function buildMonthlyStatementLockKey(tenantId: string, clientId: string,
   return ['client-statement-monthly', tenantId, clientId, periodKey].join(':');
 }
 
+/** Only an exact full month under the existing scheduler calendar identifies a skip task. */
+export function identifyMonthlyStatementPeriod(periodStart: Date, periodEnd: Date): MonthlyStatementPeriod | null {
+  if (!Number.isFinite(periodStart.getTime()) || !Number.isFinite(periodEnd.getTime())) return null;
+  const month = resolvePreviousMonthPeriod(new Date(periodEnd.getTime() + 1));
+  return month.periodStart.getTime() === periodStart.getTime() && month.periodEnd.getTime() === periodEnd.getTime() ? month : null;
+}
+
 /**
  * Duplicate GÖNDERİM anahtarı. Biçim, mevcut dispatcher sözleşmesiyle aynıdır
  * (`{templateCode}:{refType}:{refId}:{bucket}`) — böylece aynı anahtar mevcut

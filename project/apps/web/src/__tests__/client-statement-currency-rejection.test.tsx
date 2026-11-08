@@ -64,6 +64,30 @@ describe('E1 — dosya ekstresi: sunucu reddi gösterimi', () => {
     api.create.mockRejectedValue(rejection());
   });
 
+  it('H07: yeni tarih seçimleri Türkiye günü ve son milisaniyeye bağlanır', async () => {
+    withClient(<StatementSection caseId="k1" clientId="c1" currency="TRY" caseOpenedAt={null} />);
+    await screen.findByText(/Henüz ekstre oluşturulmamış/);
+    fireEvent.click(screen.getByRole('button', { name: /Ekstre Oluştur/ }));
+    const dates = document.querySelectorAll<HTMLInputElement>('input[type="date"]');
+    fireEvent.change(dates[0], { target: { value: '2026-06-01' } });
+    fireEvent.change(dates[1], { target: { value: '2026-06-30' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Oluştur' }));
+    await waitFor(() => expect(api.create).toHaveBeenCalledTimes(1));
+    expect(api.create.mock.calls[0][1]).toMatchObject({ periodStart: '2026-05-31T21:00:00.000Z', periodEnd: '2026-06-30T20:59:59.999Z' });
+  });
+
+  it('H07: tarihleri değişmeyen yenileme eski exact ISO sınırlarını korur', async () => {
+    api.list.mockResolvedValue([ACTIVE]);
+    api.supersede.mockRejectedValue(rejection());
+    withClient(<StatementSection caseId="k1" clientId="c1" currency="TRY" caseOpenedAt={null} />);
+    await screen.findByText('Aktif');
+    fireEvent.click(screen.getByRole('button', { name: 'Yenile' }));
+    await screen.findByText('Ekstreyi Yenile (Supersede)');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Yenile' }).at(-1)!);
+    await waitFor(() => expect(api.supersede).toHaveBeenCalledTimes(1));
+    expect(api.supersede.mock.calls[0][1]).toMatchObject({ periodStart: ACTIVE.periodStart, periodEnd: ACTIVE.periodEnd });
+  });
+
   it('"Oluştur" reddedilince sunucu gerekçesi aynen yazılır, pencere açık kalır, liste yenilenmez', async () => {
     withClient(<StatementSection caseId="k1" clientId="c1" currency="TRY" caseOpenedAt={null} />);
     await screen.findByText(/Henüz ekstre oluşturulmamış/);

@@ -78,7 +78,7 @@ describeDb('C1-B05-B typed EXPENSE_ACTUAL posting (gerçek PostgreSQL + local ma
     await prisma.caseClient.create({ data: { caseId: ambiguousCaseId, clientId: clientB.id } });
     // Avans bakiyesi (iki dosyaya da yüklü kredi)
     for (const cid of [caseId, ambiguousCaseId]) {
-      await service.credit(tenantId, cid, { amount: 100000, source: 'manual', description: 'test avans' }, 'user-b05b');
+      await service.credit(tenantId, cid, { currency: 'TRY', amount: 100000, source: 'manual', description: 'test avans' }, 'user-b05b');
     }
   });
 
@@ -114,7 +114,7 @@ describeDb('C1-B05-B typed EXPENSE_ACTUAL posting (gerçek PostgreSQL + local ma
 
   it('E2E: posting → typed ledger + intent + journal AYNI commit; dispatch → SENT; içerik tr-TR + marka + raw ID YOK', async () => {
     const pk = `e2e-${suffix}`;
-    const result = await service.postExpenseActual(tenantId, caseId, { amount: 1250, postingKey: pk, description: 'Bilirkişi ücreti' }, 'user-b05b');
+    const result = await service.postExpenseActual(tenantId, caseId, { currency: 'TRY', amount: 1250, postingKey: pk, description: 'Bilirkişi ücreti' }, 'user-b05b');
 
     expect(result.success).toBe(true);
     expect(result.notification).toEqual(expect.objectContaining({ outcome: 'QUEUED_AND_DISPATCHED', dispatchStatus: 'sent' }));
@@ -163,7 +163,7 @@ describeDb('C1-B05-B typed EXPENSE_ACTUAL posting (gerçek PostgreSQL + local ma
     const before = await prisma.caseBalance.findUnique({ where: { caseId } });
 
     await expect(
-      failingService.postExpenseActual(tenantId, caseId, { amount: 500, postingKey: pk }, 'user-b05b'),
+      failingService.postExpenseActual(tenantId, caseId, { currency: 'TRY', amount: 500, postingKey: pk }, 'user-b05b'),
     ).rejects.toThrow('intent-write-failure');
 
     expect(await prisma.balanceLedger.count({ where: { tenantId, postingKey: pk } })).toBe(0);
@@ -176,8 +176,8 @@ describeDb('C1-B05-B typed EXPENSE_ACTUAL posting (gerçek PostgreSQL + local ma
   it('iki CONCURRENT posting (aynı postingKey) → ledger 1 + intent 1 + mail EN FAZLA 1', async () => {
     const pk = `conc-${suffix}`;
     const [a, b] = await Promise.all([
-      service.postExpenseActual(tenantId, caseId, { amount: 300, postingKey: pk }, 'user-b05b'),
-      service.postExpenseActual(tenantId, caseId, { amount: 300, postingKey: pk }, 'user-b05b'),
+      service.postExpenseActual(tenantId, caseId, { currency: 'TRY', amount: 300, postingKey: pk }, 'user-b05b'),
+      service.postExpenseActual(tenantId, caseId, { currency: 'TRY', amount: 300, postingKey: pk }, 'user-b05b'),
     ]);
     expect([a.alreadyPosted, b.alreadyPosted].sort()).toEqual([false, true]); // tam 1 kazanan
     expect(await prisma.balanceLedger.count({ where: { tenantId, postingKey: pk } })).toBe(1);
@@ -188,9 +188,9 @@ describeDb('C1-B05-B typed EXPENSE_ACTUAL posting (gerçek PostgreSQL + local ma
 
   it('replay (sonradan aynı postingKey) → alreadyPosted; yeni satır/intent/mail YOK', async () => {
     const pk = `replay-${suffix}`;
-    await service.postExpenseActual(tenantId, caseId, { amount: 100, postingKey: pk }, 'user-b05b');
+    await service.postExpenseActual(tenantId, caseId, { currency: 'TRY', amount: 100, postingKey: pk }, 'user-b05b');
     sendMail.mockClear();
-    const replay = await service.postExpenseActual(tenantId, caseId, { amount: 100, postingKey: pk }, 'user-b05b');
+    const replay = await service.postExpenseActual(tenantId, caseId, { currency: 'TRY', amount: 100, postingKey: pk }, 'user-b05b');
     expect(replay.alreadyPosted).toBe(true);
     expect(replay.notification).toEqual({ outcome: 'ALREADY_POSTED_NO_NEW_INTENT' });
     expect(await prisma.balanceLedger.count({ where: { tenantId, postingKey: pk } })).toBe(1);
@@ -199,7 +199,7 @@ describeDb('C1-B05-B typed EXPENSE_ACTUAL posting (gerçek PostgreSQL + local ma
 
   it('crash senaryosu: commit OK + dispatch düştü → intent QUEUED kalır → drain güvenle işler → SENT', async () => {
     const pk = `crash-${suffix}`;
-    const result = await serviceCrash.postExpenseActual(tenantId, caseId, { amount: 200, postingKey: pk, description: 'Crash sonrası' }, 'user-b05b');
+    const result = await serviceCrash.postExpenseActual(tenantId, caseId, { currency: 'TRY', amount: 200, postingKey: pk, description: 'Crash sonrası' }, 'user-b05b');
     expect(result.notification).toEqual(expect.objectContaining({ outcome: 'QUEUED' }));
     const intentId = (result.notification as any).notificationId as string;
 
@@ -216,7 +216,7 @@ describeDb('C1-B05-B typed EXPENSE_ACTUAL posting (gerçek PostgreSQL + local ma
 
   it('QUEUED concurrent claim → yalnız 1 CLAIMED; SENT/PENDING tekrar gönderilmez; FAILED yalnız explicit reclaim', async () => {
     const pk = `claim-${suffix}`;
-    const posted = await serviceCrash.postExpenseActual(tenantId, caseId, { amount: 150, postingKey: pk }, 'user-b05b');
+    const posted = await serviceCrash.postExpenseActual(tenantId, caseId, { currency: 'TRY', amount: 150, postingKey: pk }, 'user-b05b');
     const intentId = (posted.notification as any).notificationId as string;
 
     // İki eşzamanlı claim → tam 1 CLAIMED
@@ -244,7 +244,7 @@ describeDb('C1-B05-B typed EXPENSE_ACTUAL posting (gerçek PostgreSQL + local ma
 
   it('alıcı belirsiz (2 creditor CaseClient) → posting POSTED ama intent/mail YOK (broadcast yasak)', async () => {
     const pk = `amb-${suffix}`;
-    const result = await service.postExpenseActual(tenantId, ambiguousCaseId, { amount: 400, postingKey: pk }, 'user-b05b');
+    const result = await service.postExpenseActual(tenantId, ambiguousCaseId, { currency: 'TRY', amount: 400, postingKey: pk }, 'user-b05b');
     expect(result.success).toBe(true);
     expect(result.notification).toEqual({ outcome: 'RECIPIENT_SCOPE_AMBIGUOUS' });
     expect(await prisma.balanceLedger.count({ where: { tenantId, postingKey: pk } })).toBe(1); // finansal kayıt POSTED
@@ -254,7 +254,7 @@ describeDb('C1-B05-B typed EXPENSE_ACTUAL posting (gerçek PostgreSQL + local ma
 
   it('generic DEBIT + reversal → typed sınıflandırma YOK, intent/mail YOK (yanlış-pozitif kapalı)', async () => {
     const before = await prisma.clientNotification.count({ where: { tenantId } });
-    const deb = await service.debit(tenantId, caseId, { amount: 50, source: 'operation:haciz', sourceId: 'op-x' }, 'user-b05b');
+    const deb = await service.debit(tenantId, caseId, { currency: 'TRY', amount: 50, source: 'operation:haciz', sourceId: 'op-x' }, 'user-b05b');
     const debRow = await prisma.balanceLedger.findFirst({ where: { id: deb.ledgerId } });
     expect(debRow?.entryKind).toBeNull();
     expect(debRow?.postingKey).toBeNull();
@@ -280,10 +280,10 @@ describeDb('C1-B05-B typed EXPENSE_ACTUAL posting (gerçek PostgreSQL + local ma
     const caseB = await prisma.case.create({
       data: { tenantId: tenantBId, clientId: clientB.id, fileNumber: `T2-${suffix}`, type: 'GENERAL_EXECUTION', caseStatus: 'DERDEST', status: 'ACTIVE', currency: 'TRY', interestType: 'YASAL' },
     });
-    await service.credit(tenantBId, caseB.id, { amount: 5000, source: 'manual' }, 'user-t2');
+    await service.credit(tenantBId, caseB.id, { currency: 'TRY', amount: 5000, source: 'manual' }, 'user-t2');
 
-    const r1 = await service.postExpenseActual(tenantId, caseId, { amount: 60, postingKey: pk }, 'user-b05b');
-    const r2 = await service.postExpenseActual(tenantBId, caseB.id, { amount: 70, postingKey: pk }, 'user-t2');
+    const r1 = await service.postExpenseActual(tenantId, caseId, { currency: 'TRY', amount: 60, postingKey: pk }, 'user-b05b');
+    const r2 = await service.postExpenseActual(tenantBId, caseB.id, { currency: 'TRY', amount: 70, postingKey: pk }, 'user-t2');
     expect(r1.alreadyPosted).toBe(false);
     expect(r2.alreadyPosted).toBe(false); // unique (tenantId, postingKey) — tenant-başına bağımsız
     expect(await prisma.balanceLedger.count({ where: { postingKey: pk } })).toBe(2);
@@ -292,7 +292,7 @@ describeDb('C1-B05-B typed EXPENSE_ACTUAL posting (gerçek PostgreSQL + local ma
 
   it('STATEMENT tutarlılığı: aynı source TAM 1 EXPENSE_ACTUAL satırı (refType/refId=BalanceLedger); notification retry satır ÜRETMEZ', async () => {
     const pk = `stmt-${suffix}`;
-    const posted = await service.postExpenseActual(tenantId, caseId, { amount: 800, postingKey: pk, description: 'Ekspertiz' }, 'user-b05b');
+    const posted = await service.postExpenseActual(tenantId, caseId, { currency: 'TRY', amount: 800, postingKey: pk, description: 'Ekspertiz' }, 'user-b05b');
     const ledgerId = posted.ledgerId;
 
     // DİKKAT: ClientStatementService'in caseBalance parametresi interest-engine orchestration
@@ -322,7 +322,7 @@ describeDb('C1-B05-B typed EXPENSE_ACTUAL posting (gerçek PostgreSQL + local ma
   it('kesin SMTP red (5xx) → intent FAILED (sanitize); belirsiz hata → PENDING kalır (provider-outcome korunur)', async () => {
     const pk1 = `rej-${suffix}`;
     sendMail.mockRejectedValue(Object.assign(new Error('550 mailbox unavailable'), { responseCode: 550 }));
-    const rej = await service.postExpenseActual(tenantId, caseId, { amount: 90, postingKey: pk1 }, 'user-b05b');
+    const rej = await service.postExpenseActual(tenantId, caseId, { currency: 'TRY', amount: 90, postingKey: pk1 }, 'user-b05b');
     const rejLedger = await prisma.balanceLedger.findFirst({ where: { tenantId, postingKey: pk1 }, select: { id: true } });
     const rejIntent = await prisma.clientNotification.findFirst({ where: { tenantId, dedupeKey: `EXPENSE_ACTUAL_POSTED:BalanceLedger:${rejLedger!.id}:1` } });
     expect(rejIntent?.status).toBe('FAILED'); // kesin red → FAILED (yalnız explicit reclaim)
@@ -330,7 +330,7 @@ describeDb('C1-B05-B typed EXPENSE_ACTUAL posting (gerçek PostgreSQL + local ma
 
     const pk2 = `timeout-${suffix}`;
     sendMail.mockRejectedValue(Object.assign(new Error('connection timeout'), { code: 'ETIMEDOUT' }));
-    await service.postExpenseActual(tenantId, caseId, { amount: 95, postingKey: pk2 }, 'user-b05b');
+    await service.postExpenseActual(tenantId, caseId, { currency: 'TRY', amount: 95, postingKey: pk2 }, 'user-b05b');
     const toLedger = await prisma.balanceLedger.findFirst({ where: { tenantId, postingKey: pk2 }, select: { id: true } });
     const toIntent = await prisma.clientNotification.findFirst({ where: { tenantId, dedupeKey: `EXPENSE_ACTUAL_POSTED:BalanceLedger:${toLedger!.id}:1` } });
     expect(toIntent?.status).toBe('PENDING'); // belirsiz → PENDING; otomatik resend YOK

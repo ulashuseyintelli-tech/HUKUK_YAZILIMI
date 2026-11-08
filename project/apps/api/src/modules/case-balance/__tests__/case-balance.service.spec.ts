@@ -11,6 +11,7 @@ function buildHarness(options: { balance?: Prisma.Decimal } = {}) {
     tenantId: 'tenant-1',
     caseId: 'case-1',
     balance: options.balance ?? D(1000),
+    currency: 'TRY',
     lowThreshold: D(500),
   };
   const tx = {
@@ -39,12 +40,30 @@ function buildHarness(options: { balance?: Prisma.Decimal } = {}) {
       },
     }),
   };
+  Object.assign(tx, { case: prisma.case, $executeRaw: jest.fn().mockResolvedValue(1) });
+  Object.assign(tx.caseBalance, { findUnique: prisma.caseBalance.findUnique, create: prisma.caseBalance.create });
   const service = new CaseBalanceService(prisma as never, journalWriter as never);
 
   return { balance, tx, prisma, journalWriter, service };
 }
 
 describe('CaseBalanceService ACCT-1D-1 BalanceLedger journal wiring', () => {
+  it.each(['USD', '', undefined, 'try'])('H07 rejects mismatched/missing currency %s before any financial write', async currency => {
+    const { service, tx, prisma, journalWriter } = buildHarness();
+    await expect(service.credit('tenant-1', 'case-1', { amount: 100, currency: currency as any, source: 'manual' }, 'user-1')).rejects.toMatchObject({ status: currency === 'USD' ? 409 : 400 });
+    expect(tx.balanceLedger.create).not.toHaveBeenCalled();
+    expect(tx.caseBalance.update).not.toHaveBeenCalled();
+    expect(prisma.caseBalance.create).not.toHaveBeenCalled();
+    expect(journalWriter.write).not.toHaveBeenCalled();
+  });
+
+  it('H07 payment context never creates a missing account and cannot replace source currency', async () => {
+    const { service, tx, prisma } = buildHarness();
+    prisma.caseBalance.findUnique.mockResolvedValue(null as any);
+    await expect(service.credit('tenant-1', 'case-1', { amount: 100, currency: 'TRY', source: 'expense_payment:p1' }, 'user-1', { tx: tx as any, currency: 'TRY', postingKey: 'p1' })).rejects.toMatchObject({ status: 409, response: { code: 'EXPENSE_PAYMENT_ADVANCE_MISSING' } });
+    expect(prisma.caseBalance.create).not.toHaveBeenCalled();
+    expect(tx.balanceLedger.create).not.toHaveBeenCalled();
+  });
   it('credit writes direct BalanceLedger journal in the same transaction', async () => {
     const { tx, journalWriter, service } = buildHarness();
     tx.balanceLedger.create.mockResolvedValue({
@@ -62,7 +81,7 @@ describe('CaseBalanceService ACCT-1D-1 BalanceLedger journal wiring', () => {
     });
     tx.caseBalance.update.mockResolvedValue({ balance: D(1100), lowThreshold: D(500) });
 
-    const result = await service.credit('tenant-1', 'case-1', { amount: 100, source: 'expense_request:expense-1', sourceId: 'expense-1' }, 'user-1');
+    const result = await service.credit('tenant-1', 'case-1', { currency: 'TRY', amount: 100, source: 'expense_request:expense-1', sourceId: 'expense-1' }, 'user-1');
 
     expect(result).toEqual(expect.objectContaining({ success: true, newBalance: 1100, ledgerId: 'bl-credit' }));
     expect(journalWriter.write).toHaveBeenCalledTimes(1);
@@ -106,7 +125,7 @@ describe('CaseBalanceService ACCT-1D-1 BalanceLedger journal wiring', () => {
     });
     tx.caseBalance.update.mockResolvedValue({ balance: D(960), lowThreshold: D(500) });
 
-    const result = await service.debit('tenant-1', 'case-1', { amount: 40, source: 'operation:haciz', sourceId: 'operation-1' }, 'user-1');
+    const result = await service.debit('tenant-1', 'case-1', { currency: 'TRY', amount: 40, source: 'operation:haciz', sourceId: 'operation-1' }, 'user-1');
 
     expect(result).toEqual(expect.objectContaining({ success: true, newBalance: 960, ledgerId: 'bl-debit', isLow: false }));
     const draft = journalWriter.write.mock.calls[0][0].draft;
@@ -136,7 +155,7 @@ describe('CaseBalanceService ACCT-1D-1 BalanceLedger journal wiring', () => {
     });
     tx.caseBalance.update.mockResolvedValue({ balance: D(1050), lowThreshold: D(500) });
 
-    await service.credit('tenant-1', 'case-1', { amount: 50, source: 'disposition_line:line-1', sourceId: 'line-1' }, 'user-1');
+    await service.credit('tenant-1', 'case-1', { currency: 'TRY', amount: 50, source: 'disposition_line:line-1', sourceId: 'line-1' }, 'user-1');
 
     expect(journalWriter.write).not.toHaveBeenCalled();
   });
@@ -157,7 +176,7 @@ describe('CaseBalanceService ACCT-1D-1 BalanceLedger journal wiring', () => {
     });
     tx.caseBalance.update.mockResolvedValue({ balance: D(1075), lowThreshold: D(500) });
 
-    const result = await service.credit('tenant-1', 'case-1', { amount: 75, source: 'expense_payment:pay-1', sourceId: 'pay-1' }, 'user-1');
+    const result = await service.credit('tenant-1', 'case-1', { currency: 'TRY', amount: 75, source: 'expense_payment:pay-1', sourceId: 'pay-1' }, 'user-1');
 
     expect(result).toEqual(expect.objectContaining({ success: true, newBalance: 1075, ledgerId: 'bl-expense-payment' }));
     expect(tx.balanceLedger.create).toHaveBeenCalledWith(expect.objectContaining({
@@ -235,7 +254,7 @@ describe('CaseBalanceService ACCT-1D-1 BalanceLedger journal wiring', () => {
     });
     tx.caseBalance.update.mockResolvedValue({ balance: D(1050), lowThreshold: D(500) });
 
-    await service.credit('tenant-1', 'case-1', { amount: 50, source: 'manual', sourceId: 'disposition_line:line-1' }, 'user-1');
+    await service.credit('tenant-1', 'case-1', { currency: 'TRY', amount: 50, source: 'manual', sourceId: 'disposition_line:line-1' }, 'user-1');
 
     expect(journalWriter.write).not.toHaveBeenCalled();
   });
@@ -288,7 +307,7 @@ describe('CaseBalanceService ACCT-1D-1 BalanceLedger journal wiring', () => {
     });
     journalWriter.write.mockResolvedValueOnce({ ok: false, errors: [{ code: 'DB_WRITE_FAILED' }] });
 
-    await expect(service.credit('tenant-1', 'case-1', { amount: 10, source: 'manual' }, 'user-1')).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.credit('tenant-1', 'case-1', { currency: 'TRY', amount: 10, source: 'manual' }, 'user-1')).rejects.toBeInstanceOf(ConflictException);
 
     tx.balanceLedger.create.mockResolvedValue({
       id: 'bl-credit-throw',
@@ -305,6 +324,6 @@ describe('CaseBalanceService ACCT-1D-1 BalanceLedger journal wiring', () => {
     });
     journalWriter.write.mockRejectedValueOnce(new Error('journal writer down'));
 
-    await expect(service.credit('tenant-1', 'case-1', { amount: 10, source: 'manual' }, 'user-1')).rejects.toThrow('journal writer down');
+    await expect(service.credit('tenant-1', 'case-1', { currency: 'TRY', amount: 10, source: 'manual' }, 'user-1')).rejects.toThrow('journal writer down');
   });
 });
