@@ -171,6 +171,30 @@ export interface ErrorLogQuery {
   limit?: number;
 }
 
+export interface ExpensePaymentReversalOption {
+  expensePaymentId: string;
+  originalAmount: string;
+  currency: string;
+  paymentDate: string;
+  completedAt: string | null;
+  eligible: boolean;
+  blockedReason: string | null;
+}
+export interface ExpensePaymentReversalOptions {
+  expenseRequestId: string;
+  caseId: string;
+  payments: ExpensePaymentReversalOption[];
+}
+export interface ExpensePaymentReversalResult {
+  status: 'CREATED' | 'REPLAYED';
+  expensePaymentReversalId: string;
+  expensePaymentId: string;
+  expenseRequestId: string;
+  originalAmount: string;
+  currency: string;
+  completedAt: string;
+}
+
 class ApiClient {
   private token: string | null = null;
 
@@ -2453,6 +2477,34 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ reason }),
     });
+  }
+
+  async getExpensePaymentReversalOptions(id: string, caseId: string): Promise<ExpensePaymentReversalOptions> {
+    const value = await this.request<ExpensePaymentReversalOptions>(`/expense-requests/${encodeURIComponent(id)}/payments/reversal-options`);
+    if (!value || value.expenseRequestId !== id || value.caseId !== caseId || !Array.isArray(value.payments)
+      || new Set(value.payments.map(row => row?.expensePaymentId)).size !== value.payments.length
+      || value.payments.some(row => !row || typeof row.expensePaymentId !== 'string' || !row.expensePaymentId
+        || typeof row.originalAmount !== 'string' || !/^\d+\.\d{2}$/.test(row.originalAmount)
+        || typeof row.currency !== 'string' || !row.currency.trim() || typeof row.paymentDate !== 'string' || !Number.isFinite(Date.parse(row.paymentDate))
+        || typeof row.eligible !== 'boolean' || !(row.blockedReason === null || typeof row.blockedReason === 'string')
+        || !(row.completedAt === null || (typeof row.completedAt === 'string' && Number.isFinite(Date.parse(row.completedAt))))
+        || (row.eligible && (row.completedAt !== null || row.blockedReason !== null)))) {
+      throw new Error('Ödeme düzeltme kaynağı doğrulanamadı');
+    }
+    return value;
+  }
+
+  async reverseExpensePayment(id: string, paymentId: string, reason: string): Promise<ExpensePaymentReversalResult> {
+    const value = await this.request<ExpensePaymentReversalResult>(`/expense-requests/${encodeURIComponent(id)}/payments/${encodeURIComponent(paymentId)}/reverse`, {
+      method: 'POST', body: JSON.stringify({ reason }),
+    });
+    if (!value || value.expenseRequestId !== id || value.expensePaymentId !== paymentId
+      || !['CREATED', 'REPLAYED'].includes(value.status) || typeof value.expensePaymentReversalId !== 'string' || !value.expensePaymentReversalId
+      || typeof value.originalAmount !== 'string' || !/^\d+\.\d{2}$/.test(value.originalAmount)
+      || typeof value.currency !== 'string' || !value.currency.trim() || typeof value.completedAt !== 'string' || !Number.isFinite(Date.parse(value.completedAt))) {
+      throw new Error('Ters kayıt sonucu doğrulanamadı; güncel kayıtları yeniden okuyun');
+    }
+    return value;
   }
 
   async deleteExpenseRequest(id: string) {
