@@ -62,11 +62,13 @@ describe("F02 P3-D3 — dosya alt kaynağı okuma rota envanteri (fail-closed)",
     expect(ALL.filter((r) => r.guarded && r.ctrl === "cases").every((r) => r.param === "id")).toBe(true);
   });
 
-  it("kapılı uç sayıları: cases 13, balance 2, groups 1, case-debtor 2 = 18; hepsi GET", () => {
+  it("kapılı uç sayıları: cases 13, balance 3 (Y3 dahil), groups 1, case-debtor 2 = 19; hepsi GET", () => {
     const g = ALL.filter((r) => r.guarded);
     expect(g.every((r) => r.method === "GET")).toBe(true);
     const count = (ctrl: string) => g.filter((r) => r.ctrl === ctrl).length;
-    expect([count("cases"), count("cases/:caseId/balance"), count("cases/:caseId/groups"), count("(kök)")]).toEqual([13, 2, 1, 2]);
+    expect([count("cases"), count("cases/:caseId/balance"), count("cases/:caseId/groups"), count("(kök)")]).toEqual([13, 3, 1, 2]);
+    expect(ALL.find((r) => r.full === "cases/:caseId/balance/expense-actual-summary"))
+      .toMatchObject({ method: "GET", guarded: true, param: "caseId" });
   });
 
   it("yazım uçları ve dosya kimliksiz uçlar kapı taşımaz (D3 dışı; D3b kendi kimlikli kayıtlar ayrı)", () => {
