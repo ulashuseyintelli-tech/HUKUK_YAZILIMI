@@ -51,6 +51,15 @@ describe('M3b/Y3 exact server projections', () => {
     expect(screen.queryByText('999,00 TRY')).toBeNull();
   });
   it('renders exact large decimal strings without Number rounding', () => { expect(displayFinanceMoney({ amount: '9007199254740993.10', currency: 'TRY' })).toBe('9.007.199.254.740.993,10 TRY'); });
+  it('keeps the actual source independent of unrelated distribution loading and errors', async () => {
+    const view = render(<CaseFinanceCard kind="actual" context={context} />);
+    await screen.findByText('350,00 TRY');
+    view.rerender(<CaseFinanceCard kind="actual" context={{ ...context, sourceStatus: 'LOADING' }} />);
+    view.rerender(<CaseFinanceCard kind="actual" context={{ ...context, sourceStatus: 'ERROR', clients: [], currencies: [] }} />);
+    expect(screen.getByText('350,00 TRY')).toBeTruthy();
+    expect(api.getActualExpenseSummary).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
 });
 describe('Expense payment UI identity', () => {
   const open = async () => { fireEvent.click(screen.getByRole('button', { name: 'Ödeme kaydet' })); await screen.findByLabelText('Masraf ödeme tutarı'); };

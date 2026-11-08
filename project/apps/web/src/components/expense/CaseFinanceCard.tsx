@@ -26,7 +26,8 @@ export function CaseFinanceCard({ kind, context, refreshKey = 0 }: {
   kind: 'actual' | 'payable'; context: CaseFinanceCardsContext; refreshKey?: number;
 }) {
   const { user, tenant } = useAuth();
-  const key = JSON.stringify([tenant?.id ?? user?.tenantId, user?.id, kind, context, refreshKey]);
+  const key = JSON.stringify([tenant?.id ?? user?.tenantId, user?.id, kind,
+    kind === 'actual' ? context.caseId : context, refreshKey]);
   const [attempt, setAttempt] = useState(0);
   const [view, setView] = useState<{ key: string; rows?: MoneyRow[]; message?: string; error?: boolean } | null>(null);
   useEffect(() => {
@@ -72,7 +73,7 @@ export function CaseFinanceCard({ kind, context, refreshKey = 0 }: {
     };
     void run();
     return () => { cancelled = true; };
-    // key contains the full tenant/actor/case/client/currency identity and source state.
+    // Each source tracks its own identity; the actual total does not depend on distribution metadata.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, attempt]);
   const current = view?.key === key ? view : null;

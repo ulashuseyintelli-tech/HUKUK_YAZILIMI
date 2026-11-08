@@ -3,6 +3,7 @@ import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import CaseDetailPage from '../page';
 import { api } from '@/lib/api';
+import { clientAccountingApi } from '@/lib/api/client-accounting';
 
 /**
  * DOSYA ÇALIŞMA ALANI — OperationDeck'te veri kaynağına BAĞLI OLMAYAN alanlar sıfır ya da "kayıt yok" yazmaz.
@@ -18,6 +19,8 @@ import { api } from '@/lib/api';
  * yazılır. Hangi bakiyenin / hangi masraf kapsamının gösterileceği SEÇİLMEDİ — sayfa bu alanlar için yeni bir veri
  * kaynağı (ör. `GET /cases/:id/balance`) BAĞLAMAZ ve istemcide yeni toplam hesaplamaz. Gerçek kaynağa bağlı tahsilat,
  * masraf talebi ve dağıtım gösterimleri ile okuma hatası bantları aynen kalır.
+ * M3b/Y3 owner amendment: the two finance cards now use the selected read-only projections.
+ * Raw balance/ledger and UYAP/related-case sources remain outside this delivery.
  */
 
 // `importActual`: borçlu satırı (`DebtorRow`) aynı modülden `DebtorRoleLabels` alır; yalnız { api } dönen sahtede borçlulu
@@ -48,12 +51,14 @@ vi.mock('next/link', () => ({
 vi.mock('@/lib/auth-context', () => ({
   useAuth: () => ({ user: { id: 'u1', tenantId: 't1', role: 'ADMIN' }, loading: false }),
 }));
+vi.mock('@/lib/api/client-accounting', () => ({ clientAccountingApi: { getOutstanding: vi.fn() } }));
 
 const mocked = api as unknown as Record<string, ReturnType<typeof vi.fn>>;
 
 type Rec = Record<string, unknown>;
 
-const NOT_CONNECTED_CARD = 'Bu bilgi henüz bu ekrana bağlanmadı';
+const actualCardText = (amount: string) => `Kaydı doğrulanmış gerçekleşen masraf${amount} TRYDosya / para birimi bazında yalnız türü ve kaynağı doğrulanmış kayıtlar. Genel avans düşümleri dahil değildir.Yenile`;
+const payableCardText = (amount: string, currency = 'TRY') => `Müvekkile Borç (Net)Müvekkil A.Ş.: ${amount} ${currency}Yenile`;
 
 const collection = (id: string, amount: string, currency: string): Rec => ({
   id,
@@ -127,7 +132,7 @@ let fetchUrls: string[] = [];
  * `beforeRender`: sayfa çizilmeden önce bir okumanın davranışını değiştirmek için (ör. hata / hiç dönmeyen yanıt).
  */
 function mountCase(
-  input: { currency?: string; collections?: Rec[]; expenseThreeView?: Rec[]; dispositions?: Rec[] } = {},
+  input: { currency?: string; collections?: Rec[]; expenseThreeView?: Rec[]; dispositions?: Rec[]; actualAmount?: string; payableAmount?: string } = {},
   beforeRender: () => void = () => {},
 ) {
   const currency = input.currency ?? 'TRY';
@@ -142,6 +147,10 @@ function mountCase(
     claimItems: [],
   };
   mocked.getCase.mockResolvedValue(loaded);
+  mocked.getActualExpenseSummary.mockResolvedValue({ caseId: loaded.id, basis: 'TYPED_EXPENSE_ACTUAL', scope: 'CASE', exists: true,
+    totals: [{ currency: 'TRY', amount: input.actualAmount ?? '0.00', count: input.actualAmount ? 1 : 0 }] });
+  vi.mocked(clientAccountingApi.getOutstanding).mockImplementation(async (caseId, caseClientId, requestedCurrency) =>
+    ({ caseId, caseClientId, currency: requestedCurrency!, outstanding: input.payableAmount ?? '0.00' }));
   mocked.getCaseDues.mockResolvedValue([]);
   mocked.getCaseCollections.mockResolvedValue(input.collections ?? []);
   mocked.getCaseDebtors.mockResolvedValue({
@@ -195,6 +204,8 @@ const mountCaseWithFinancialActivity = (currency = 'TRY') =>
     collections: [collection('c1', '1000', currency)],
     expenseThreeView: [openingExpenseRequest],
     dispositions: [postedDisposition(currency)],
+    actualAmount: '350.00',
+    payableAmount: '600.00',
   });
 
 // Tam paralel regresyonda sayfa render'ı CPU rekabetine girer (bkz. a4w spec) — bekleme süresi geniş tutulur.
@@ -272,8 +283,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('Finans sekmesi — bağlanmamış kartlar sıfır yazmaz', () => {
-  it('VERİ BAĞLANTISI YOK: hareketli dosyada "Yapılan Masraf" ve "Müvekkil Bakiye" sayı yazmaz; bağlı kartlar aynen', async () => {
+describe('Finans sekmesi — M3b/Y3 bağlantısı ve diğer kaynak sınırları', () => {
+  it('hareketli dosyada seçilen iki projeksiyon ayrı tutarlar gösterir; diğer kartlar aynen', async () => {
     mountCaseWithFinancialActivity('TRY');
     await deckSourcesLoaded();
 
@@ -282,23 +293,19 @@ describe('Finans sekmesi — bağlanmamış kartlar sıfır yazmaz', () => {
       const finance = financeView();
       expect(finance.cards).toEqual({
         Tahsilat: 'Tahsilat1.000 ₺',
-        'Yapılan Masraf': `Yapılan Masraf${NOT_CONNECTED_CARD}`,
+        'Yapılan Masraf': actualCardText('350,00'),
         'Masraf Talebi': 'Masraf Talebi1.431,1 ₺Ödenen: 0 ₺',
-        'Müvekkil Bakiye': `Müvekkil Bakiye${NOT_CONNECTED_CARD}`,
+        'Müvekkil Bakiye': payableCardText('600,00'),
       });
     }, WAIT);
 
-    for (const testId of ['finance-actual-expense-unavailable', 'finance-client-balance-unavailable']) {
-      const notice = screen.getByTestId(testId);
-      expect(notice.getAttribute('data-source-status')).toBe('NOT_CONNECTED');
-      expect(notice.className).not.toMatch(/emerald|red|green/);
-      expect(notice.parentElement?.className).not.toMatch(/emerald|red|green/);
-    }
-    expect(screen.queryByTestId('finance-client-balance')).toBeNull();
-    expect(screen.queryByTestId('finance-actual-expense-total')).toBeNull();
+    expect(screen.queryByTestId('finance-client-balance-unavailable')).toBeNull();
+    expect(screen.queryByTestId('finance-actual-expense-unavailable')).toBeNull();
+    expect(clientAccountingApi.getOutstanding).toHaveBeenCalledWith('case-1', 'cc-1', 'TRY');
+    expect(screen.getByTestId('finance-actual-card').textContent).not.toMatch(/850|1.150/);
   });
 
-  it('GERÇEK SIFIR: hareketsiz dosyada bağlı kartlar "0 ₺" yazar; bağlanmamış kartlar yine sayı yazmaz', async () => {
+  it('GERÇEK SIFIR: başarılı kaynak yanıtı sıfırsa bağlı kartlar kendi para birimiyle sıfır gösterir', async () => {
     mountCase();
     await deckSourcesLoaded();
 
@@ -307,14 +314,14 @@ describe('Finans sekmesi — bağlanmamış kartlar sıfır yazmaz', () => {
       const finance = financeView();
       expect(finance.cards).toEqual({
         Tahsilat: 'Tahsilat0 ₺',
-        'Yapılan Masraf': `Yapılan Masraf${NOT_CONNECTED_CARD}`,
+        'Yapılan Masraf': actualCardText('0,00'),
         'Masraf Talebi': 'Masraf Talebi0 ₺Ödenen: 0 ₺',
-        'Müvekkil Bakiye': `Müvekkil Bakiye${NOT_CONNECTED_CARD}`,
+        'Müvekkil Bakiye': payableCardText('0,00'),
       });
     }, WAIT);
   });
 
-  it('USD dosya: tahsilat kendi para birimiyle yazılır (#2875); bağlanmamış kartlar "₺" ile sıfır yazmaz', async () => {
+  it('USD dosya: tahsilat ve borç USD kalır; kaynağı TRY olan gerçek masraf USD yapılmaz', async () => {
     mountCaseWithFinancialActivity('USD');
     await deckSourcesLoaded();
 
@@ -323,9 +330,9 @@ describe('Finans sekmesi — bağlanmamış kartlar sıfır yazmaz', () => {
       const finance = financeView();
       expect(finance.cards).toEqual({
         Tahsilat: 'Tahsilat1.000 USD',
-        'Yapılan Masraf': `Yapılan Masraf${NOT_CONNECTED_CARD}`,
+        'Yapılan Masraf': actualCardText('350,00'),
         'Masraf Talebi': 'Masraf Talebi1.431,1 ₺Ödenen: 0 ₺',
-        'Müvekkil Bakiye': `Müvekkil Bakiye${NOT_CONNECTED_CARD}`,
+        'Müvekkil Bakiye': payableCardText('600,00', 'USD'),
       });
       expect(finance.recent).toEqual(['Tahsilat | +1.000 USD']);
     }, WAIT);
@@ -357,8 +364,8 @@ describe('Finans sekmesi — bağlanmamış kartlar sıfır yazmaz', () => {
   });
 });
 
-describe('Yükleme / hata — bağlı kaynağın durumu bağlanmamış alanın durumuyla karışmaz', () => {
-  it('HATA: masraf talebi okunamazsa hata bandı görünür; bağlanmamış kartlar "okunamadı" değil "bağlanmadı" yazar', async () => {
+describe('Yükleme / hata — bağımsız kaynak durumları karışmaz', () => {
+  it('HATA: masraf talebi okunamazsa hata bandı görünür; bağımsız kartların doğrulanmış tutarları kalır', async () => {
     mountCase({ collections: [collection('c1', '1000', 'TRY')] }, () => {
       mocked.getExpenseThreeViewForCase.mockRejectedValue(new Error('Sunucu hatası'));
     });
@@ -370,13 +377,11 @@ describe('Yükleme / hata — bağlı kaynağın durumu bağlanmamış alanın d
     }, WAIT);
 
     fireEvent.click(deckTab('Finans'));
-    expect(screen.getByTestId('finance-actual-expense-unavailable').getAttribute('data-source-status')).toBe('NOT_CONNECTED');
-    expect(screen.getByTestId('finance-client-balance-unavailable').getAttribute('data-source-status')).toBe('NOT_CONNECTED');
-    expect(norm(screen.getByTestId('finance-actual-expense-unavailable').textContent)).toBe(NOT_CONNECTED_CARD);
-    expect(norm(screen.getByTestId('finance-client-balance-unavailable').textContent)).toBe(NOT_CONNECTED_CARD);
+    await waitFor(() => expect(norm(screen.getByTestId('finance-actual-card').textContent)).toBe(actualCardText('0,00')), WAIT);
+    await waitFor(() => expect(norm(screen.getByTestId('finance-payable-card').textContent)).toBe(payableCardText('0,00')), WAIT);
   });
 
-  it('YÜKLEME: masraf talebi okuması sürerken bağlanmamış kartlar "yükleniyor" değil "bağlanmadı" yazar', async () => {
+  it('YÜKLEME: masraf talebi okuması sürerken bağımsız kartlar kendi tamamlanmış yanıtını gösterir', async () => {
     mountCase({ collections: [collection('c1', '1000', 'TRY')] }, () => {
       mocked.getExpenseThreeViewForCase.mockReturnValue(new Promise(() => {}));
     });
@@ -384,8 +389,8 @@ describe('Yükleme / hata — bağlı kaynağın durumu bağlanmamış alanın d
     await waitFor(() => expect(mocked.getExpenseThreeViewForCase).toHaveBeenCalled(), WAIT);
 
     fireEvent.click(deckTab('Finans'));
-    expect(screen.getByTestId('finance-actual-expense-unavailable').getAttribute('data-source-status')).toBe('NOT_CONNECTED');
-    expect(screen.getByTestId('finance-client-balance-unavailable').getAttribute('data-source-status')).toBe('NOT_CONNECTED');
+    await waitFor(() => expect(norm(screen.getByTestId('finance-actual-card').textContent)).toBe(actualCardText('0,00')), WAIT);
+    await waitFor(() => expect(norm(screen.getByTestId('finance-payable-card').textContent)).toBe(payableCardText('0,00')), WAIT);
   });
 
   it('HATA: dağıtım kayıtları okunamazsa "Dağıtım & Mutabakat" sekmesi "kayıt yok" demez (mevcut davranış korunur)', async () => {
@@ -444,8 +449,8 @@ describe('"UYAP Sorgu" ve "İlişkili" sekmeleri — okunmayan kayıt için "yok
   });
 });
 
-describe('Sınır — bu düzeltme yeni veri kaynağı bağlamaz', () => {
-  it('sayfa bakiye / defter / ödenecek tutar uçlarını çağırmaz (GET /cases/:id/balance okurken yazdığı için özellikle)', async () => {
+describe('Sınır — yalnız onaylı salt-okuma projeksiyonları bağlanır', () => {
+  it('sayfa yeni masraf özeti ve mevcut borç projeksiyonunu okur; ham bakiye / defter ucunu çağırmaz', async () => {
     mountCaseWithFinancialActivity('TRY');
     await deckSourcesLoaded();
     openFinanceTab();
@@ -456,6 +461,8 @@ describe('Sınır — bu düzeltme yeni veri kaynağı bağlamaz', () => {
 
     expect(mocked.getCaseBalance).not.toHaveBeenCalled();
     expect(mocked.getCaseBalanceLedger).not.toHaveBeenCalled();
+    expect(mocked.getActualExpenseSummary).toHaveBeenCalledWith('case-1');
+    expect(clientAccountingApi.getOutstanding).toHaveBeenCalledWith('case-1', 'cc-1', 'TRY');
     // Bakıldığının kanıtı: alt bileşenlerin istekleri kaydedildi (ör. hesap özeti), ama hiçbiri bu uçlara gitmedi
     expect(fetchUrls.length).toBeGreaterThan(0);
     expect(fetchUrls.filter((url) => /\/balance(\/|\?|$)|\/outstanding|\/accounting\//.test(url))).toEqual([]);

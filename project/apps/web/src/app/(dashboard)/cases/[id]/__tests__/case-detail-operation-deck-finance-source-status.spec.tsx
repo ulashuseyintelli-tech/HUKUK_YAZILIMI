@@ -185,6 +185,7 @@ const MASRAF_750 = [masrafTalebi('exp-1', 750, 250)];
 const DOLU: Kurulum = { kalemler: [tamam([kalem()])], tahsilatlar: [tamam(TAHSILAT_1000)], masrafUclu: [tamam(MASRAF_750)] };
 
 function kur(k: Kurulum = {}) {
+  mocked.getActualExpenseSummary.mockImplementation(async (caseId: string) => ({ caseId, basis: 'TYPED_EXPENSE_ACTUAL', scope: 'CASE', exists: false, totals: [] }));
   izle('getCase', ...(k.dosyalar ?? [(id) => Promise.resolve(dosya(id as string))]));
   izle('getCaseDues', ...(k.kalemler ?? [tamam([])]));
   izle('getCaseCollections', ...(k.tahsilatlar ?? [tamam([])]));

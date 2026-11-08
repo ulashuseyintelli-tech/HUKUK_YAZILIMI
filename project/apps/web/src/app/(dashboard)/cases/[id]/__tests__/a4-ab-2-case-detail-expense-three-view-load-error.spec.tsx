@@ -110,6 +110,7 @@ const statusError = (status: number, message: string) => {
 
 function applyRealContractDefaults() {
   mocked.getCase.mockResolvedValue(REAL_CASE);
+  mocked.getActualExpenseSummary.mockResolvedValue({ caseId: REAL_CASE.id, basis: 'TYPED_EXPENSE_ACTUAL', scope: 'CASE', exists: false, totals: [] });
   mocked.getCaseDebtors.mockResolvedValue({
     summary: { total: 0, delivered: 0, pending: 0, returned: 0, danger: 0 },
     items: [],
