@@ -354,3 +354,5 @@ src/modules/expense-request/__tests__/expense-payment-reversal.http.db-gated.int
 src/modules/case-balance/__tests__/finance-cards-payment.http.db-gated.integration.spec.ts
 # F02 P3-D3b-1 (owner 08.11.2026): dosya kayitlarinin dosya kimlikli okuma yollari (teminat/cek-senet/ilam/kira, 8 GET) - gercek HTTP + disposable PostgreSQL.
 src/modules/case/__tests__/case-view-scope-records.http.db-gated.integration.spec.ts
+# F02 P3-D3b-2 (owner 08.11.2026): kendi kimlikli dosya nesneleri (kayit :id, ucret sozlesmesi, dosya-muvekkil bagi; 7 GET) - gercek HTTP + disposable PostgreSQL.
+src/modules/case/__tests__/case-view-scope-own-records.http.db-gated.integration.spec.ts

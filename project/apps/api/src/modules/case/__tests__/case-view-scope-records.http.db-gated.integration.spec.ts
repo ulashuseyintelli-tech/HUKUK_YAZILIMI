@@ -321,10 +321,10 @@ describeDb("F02 P3-D3b-1 — dosya kayıtlarının dosya kimlikli okuma yolları
       expect(await db.caseCollateral.count({ where: { tenantId: tA, description: "viewer-yazma" } })).toBe(0);
     });
 
-    it("AÇIK yol karakterizasyonu (D3b-2, bu dilimin dışında): kendi kimlikli `:id` okuması kapsam kapısı taşımaz", async () => {
+    it("D3b-2 ile kapandı: kendi kimlikli `:id` okuması da kapsam dışı kişiye kaydın kendi 404'ünü verir (ayrıntı D3b-2 spec'inde)", async () => {
       const res = await get(u.nobody, `/case-collaterals/${recordIds["col-c6"]}`);
-      expect(res.status).toBe(200);
-      expect(JSON.stringify(res.body)).toContain(mark("TEM", "c6"));
+      expect([res.status, res.body.message]).toEqual([404, "Teminat bulunamadi"]);
+      expect(JSON.stringify(res.body)).not.toContain(mark("TEM", "c6"));
     });
   });
 });
