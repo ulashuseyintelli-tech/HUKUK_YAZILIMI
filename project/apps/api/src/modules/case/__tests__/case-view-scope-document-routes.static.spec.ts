@@ -14,9 +14,9 @@ import { CaseViewScopeGuard } from "../case-view-scope.guard";
 
 /**
  * F02 P3-D2 (owner kararı 08.11.2026) — FAIL-CLOSED rota envanteri: dosya kimliği YOLDA (`:caseId`) olan her belge okuma
- * ucu CaseViewScopeGuard taşır. Dışarıda kalan TEK uç kalıcı belge yazan `POST template-engine/cases/:caseId/documents/:format`
- * (DocumentArtifact oluşturur → owner: kalıcı belge oluşturan işlemler bu dilime girmez; D2b). Artefakt indirmede dosya
- * artefakt satırından çözülür (handler içinde, servis çağrısından ÖNCE). Yeni bir `:caseId` ucu kapısız eklenirse bu spec kırmızı.
+ * ucu CaseViewScopeGuard taşır. P3-D2b (owner kararı 08.11.2026): kalıcı belge yazan `POST template-engine/cases/:caseId/documents/:format`
+ * de kapılıdır (kapsam mevcut işlem yetkilerine EK koşul; render / DocumentArtifact kaydından ÖNCE) → istisna YOK. Artefakt indirmede
+ * dosya artefakt satırından çözülür (handler içinde, servis çağrısından ÖNCE). Yeni bir `:caseId` ucu kapısız eklenirse bu spec kırmızı.
  */
 type Route = { ctrl: string; name: string; method: string; path: string; guarded: boolean };
 
@@ -38,7 +38,7 @@ function routes(ctrl: { prototype: object }): Route[] {
 
 const ALL = [...routes(DocumentController), ...routes(TemplateEngineController), ...routes(PdfController)];
 const key = (r: Route) => `${r.method} ${r.ctrl}/${r.path}`;
-const PERSISTING_EXCLUSION = "POST template-engine/cases/:caseId/documents/:format";
+const PERSISTING_ROUTE = "POST template-engine/cases/:caseId/documents/:format"; // P3-D2b: artık kapılı (istisna değil)
 
 describe("F02 P3-D2 — belge okuma rota envanteri (fail-closed)", () => {
   it("envanter boş değil: üç controller'ın rotaları okundu", () => {
@@ -46,17 +46,18 @@ describe("F02 P3-D2 — belge okuma rota envanteri (fail-closed)", () => {
     expect(new Set(ALL.map((r) => r.ctrl))).toEqual(new Set(["documents", "template-engine", "pdf"]));
   });
 
-  it("yolunda :caseId olan HER uç kapılı; tek istisna kalıcı belge yazan uç", () => {
+  it("yolunda :caseId olan HER uç kapılı; istisna yok (P3-D2b: kalıcı belge yazan uç dahil)", () => {
     const caseKeyed = ALL.filter((r) => r.path.includes(":caseId"));
     const unguarded = caseKeyed.filter((r) => !r.guarded).map(key);
-    expect(unguarded).toEqual([PERSISTING_EXCLUSION]);
+    expect(unguarded).toEqual([]);
+    expect(caseKeyed.find((r) => key(r) === PERSISTING_ROUTE)?.guarded).toBe(true);
   });
 
-  it("kapılı uç sayıları: documents 11 (5 GET + 6 yazımsız POST üretimi), template-engine 22 GET, pdf 1 GET = 34", () => {
+  it("kapılı uç sayıları: documents 11 (5 GET + 6 yazımsız POST üretimi), template-engine 22 GET + 1 kalıcı POST (D2b), pdf 1 GET = 35", () => {
     const g = ALL.filter((r) => r.guarded);
     const count = (ctrl: string) => g.filter((r) => r.ctrl === ctrl).length;
-    expect([count("documents"), count("template-engine"), count("pdf")]).toEqual([11, 22, 1]);
-    expect(g.filter((r) => r.ctrl === "template-engine").every((r) => r.method === "GET")).toBe(true);
+    expect([count("documents"), count("template-engine"), count("pdf")]).toEqual([11, 23, 1]);
+    expect(g.filter((r) => r.ctrl === "template-engine" && r.method !== "GET").map(key)).toEqual([PERSISTING_ROUTE]);
   });
 
   it("kapı :caseId taşımayan bir uca uygulanmamış (gövdeden üretim, şablon listesi vb. değişmez)", () => {
@@ -72,7 +73,9 @@ describe("F02 P3-D2 — belge okuma rota envanteri (fail-closed)", () => {
     expect(read).toBeGreaterThan(gate);
   });
 
-  it("dışarıda kalan uç gerçekten kalıcı belge yazıyor (istisnanın gerekçesi sürüyor)", () => {
+  it("P3-D2b: kalıcı belge yazan uç kapılı; üretim gerçekten DocumentArtifact yazar (kapı bu yüzden render'dan ÖNCE, yöntem düzeyinde)", () => {
     expect(TemplateEngineService.prototype.generateDocumentFromCase.toString()).toContain("recordDocumentArtifact");
+    const guards: unknown[] = Reflect.getMetadata(GUARDS_METADATA, TemplateEngineController.prototype.generateDocumentFromCase) ?? [];
+    expect(guards).toEqual([CaseViewScopeGuard]);
   });
 });

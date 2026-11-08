@@ -356,3 +356,5 @@ src/modules/case-balance/__tests__/finance-cards-payment.http.db-gated.integrati
 src/modules/case/__tests__/case-view-scope-records.http.db-gated.integration.spec.ts
 # F02 P3-D3b-2 (owner 08.11.2026): kendi kimlikli dosya nesneleri (kayit :id, ucret sozlesmesi, dosya-muvekkil bagi; 7 GET) - gercek HTTP + disposable PostgreSQL.
 src/modules/case/__tests__/case-view-scope-own-records.http.db-gated.integration.spec.ts
+# F02 P3 (owner 08.11.2026): D2b belge uretim ucu kapsami + artefakt/dosya/aktor kiraci eslesmesi (bayraktan bagimsiz) - gercek HTTP + disposable PostgreSQL.
+src/modules/case/__tests__/case-view-scope-d2b-artifacts.http.db-gated.integration.spec.ts

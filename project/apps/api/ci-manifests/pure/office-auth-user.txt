@@ -505,3 +505,5 @@ src/modules/case/__tests__/case-view-scope-subresource-routes.static.spec.ts
 src/modules/case/__tests__/case-view-scope-record-routes.static.spec.ts
 # F02 P3-D3b-2 (owner 08.11.2026): kendi kimlikli dosya nesneleri - fail-closed rota envanteri + nesne kapisi sozlesmesi.
 src/modules/case/__tests__/case-view-scope-own-record-routes.static.spec.ts
+# F02 P3 (owner 08.11.2026): artefakt/dosya/aktor kiraci eslesmesi - fail-closed okuma yolu envanteri + yardimci sozlesmesi.
+src/modules/case/__tests__/case-view-scope-artifact-tenant.static.spec.ts
