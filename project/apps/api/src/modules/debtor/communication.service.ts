@@ -2,8 +2,10 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Optional,
 } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
+import { CaseViewScopeService, requireCaseViewScope } from "@/modules/case/case-view-scope.service";
 import {
   SendSmsDto,
   SendEmailDto,
@@ -13,7 +15,11 @@ import {
 
 @Injectable()
 export class DebtorCommunicationService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    // F02 P3 tarama S4: dosyalı iletişim kayıtlarının görünürlüğü (bayrak açıkken zorunlu; yoksa 403)
+    @Optional() private readonly caseViewScope?: CaseViewScopeService,
+  ) {}
 
   // ==================== SEND OPERATIONS ====================
 
@@ -134,13 +140,31 @@ export class DebtorCommunicationService {
   async getCommunicationHistory(
     tenantId: string,
     debtorId: string,
-    params?: { caseId?: string; channel?: string; page?: number; limit?: number }
+    params?: { caseId?: string; channel?: string; page?: number; limit?: number },
+    actorUserId?: string
   ) {
     const { caseId, channel, page = 1, limit = 20 } = params || {};
 
     const where: any = { tenantId, debtorId };
     if (caseId) where.caseId = caseId;
     if (channel) where.channel = channel;
+
+    // F02 P3 tarama S4 (owner kararı 09.11.2026): borçlu kimlikli yanıtta DOSYALI kayıtlar yalnız aktöre görünen dosyalardan.
+    // `caseId` süzgeci verilirse dosya doğrulanır (kapsam dışı / yok → aynı 404). DebtorCommunication.caseId için FK yok →
+    // görünür dosya kümesi kimlikle çözülür; dosyasız kayıtlar (caseId null) değişmez. Sayım ve sayfalama aynı süzgeci kullanır.
+    const scope = requireCaseViewScope(this.caseViewScope);
+    if (scope) {
+      if (caseId) await scope.assertCaseVisible(tenantId, actorUserId, caseId);
+      else {
+        const linked = await this.prisma.debtorCommunication.findMany({
+          where: { tenantId, debtorId, caseId: { not: null } },
+          distinct: ["caseId"],
+          select: { caseId: true },
+        });
+        const visible = await scope.visibleCaseIds(tenantId, actorUserId, linked.map((row) => row.caseId));
+        if (visible) where.OR = [{ caseId: null }, { caseId: { in: [...visible] } }];
+      }
+    }
 
     const [communications, total] = await Promise.all([
       this.prisma.debtorCommunication.findMany({

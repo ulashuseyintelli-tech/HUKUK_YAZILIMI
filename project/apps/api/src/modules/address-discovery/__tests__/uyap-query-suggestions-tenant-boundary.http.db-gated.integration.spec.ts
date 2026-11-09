@@ -30,6 +30,11 @@ import { AddressDiscoveryModule } from "../address-discovery.module";
  *
  * Gerçek HTTP (AddressDiscoveryModule + ValidationPipe) + tek kullanımlık PostgreSQL; JWT yerine DB kimliği. Mock kayıt yok.
  * Düzeltme bayraktan BAĞIMSIZDIR (kiracı sınırı): `OFFICE_CASE_VIEW_SCOPE_ENABLED` kapalı ve açıkken aynı sonuç.
+ *
+ * F02 P3 tarama S4 (10.11.2026): bu uç artık dosya borçlusu nesne kapısını da taşır. Bayrak açıkken başka büronun ve var olmayan
+ * dosya borçlusu kapının gövdesini ("Dosya bulunamadı"), kapalıyken servisin gövdesini ("Borçlu bulunamadı") alır; ikisi de 404
+ * ve kendi içinde aynıdır. Kiracı sınırını yalıtmak için iki kullanıcıya da büro geneli dosya izni verilir (dosya kapsamı ayrı
+ * spec'te ölçülür: debtor-side-case-view-scope).
  */
 const TEST_DB_URL = resolveTestDatabaseUrl(process.env);
 if (process.env.CI && !TEST_DB_URL) throw new Error("UYAP query suggestions tenant boundary requires TEST_DATABASE_URL in CI.");
@@ -80,6 +85,9 @@ describeDb("UYAP sorgu önerileri — kiracı sınırı (gerçek HTTP + tek kull
       (await db.user.create({ data: { tenantId, email: `${label}-${suffix}@example.test`, name: label, surname: "UQS", role: "USER" } })).id;
     u.a = await mkUser(tA, "a");
     u.b = await mkUser(tB, "b");
+    for (const [tenantId, subjectUserId] of [[tA, u.a], [tB, u.b]]) {
+      await db.permissionGrant.create({ data: { tenantId, subjectUserId, permissionKey: "office.cases.view_all", effect: "ALLOW", scope: "GLOBAL" } });
+    }
 
     const mkCaseDebtor = async (tenantId: string, key: string, type: "COMPANY" | "INDIVIDUAL") => {
       const kase = await db.case.create({ data: { tenantId, fileNumber: `UQS-${key}-${suffix}`, type: "GENERAL_EXECUTION" } as never });
@@ -107,6 +115,7 @@ describeDb("UYAP sorgu önerileri — kiracı sınırı (gerçek HTTP + tek kull
     await db.uyapQuery.deleteMany({ where: { tenantId: { in: [tA, tB] } } }).catch(() => undefined);
     for (const tenantId of [tA, tB]) {
       await db.caseDebtor.deleteMany({ where: { case: { tenantId } } }).catch(() => undefined);
+      await db.permissionGrant.deleteMany({ where: { tenantId } }).catch(() => undefined);
       await db.debtor.deleteMany({ where: { tenantId } }).catch(() => undefined);
       await db.case.deleteMany({ where: { tenantId } }).catch(() => undefined);
       await db.auditLog.deleteMany({ where: { tenantId } }).catch(() => undefined);
@@ -119,7 +128,8 @@ describeDb("UYAP sorgu önerileri — kiracı sınırı (gerçek HTTP + tek kull
   const path = (caseDebtorId: string) => `/address-discovery/uyap-query/debtor/${caseDebtorId}/suggestions`;
   const get = (actor: string, caseDebtorId: string) => request(app.getHttpServer()).get(path(caseDebtorId)).set("x-test-user-id", actor);
   const types = (res: request.Response) => (res.body as Array<{ queryType: string }>).map((s) => s.queryType).sort();
-  const NOT_FOUND = { statusCode: 404, message: "Borçlu bulunamadı", error: "Not Found" };
+  /** Bayrak kapalı → servisin gövdesi; bayrak açık → dosya borçlusu nesne kapısının gövdesi (S4). */
+  const notFound = () => ({ statusCode: 404, message: process.env[FLAG] === "true" ? "Dosya bulunamadı" : "Borçlu bulunamadı", error: "Not Found" });
 
   describe.each([
     ["bayrak KAPALI", () => delete process.env[FLAG]],
@@ -139,18 +149,18 @@ describeDb("UYAP sorgu önerileri — kiracı sınırı (gerçek HTTP + tek kull
     it("başka büronun dosya borçlusu: var olmayanla AYNI 404; öneri / tür / sorgu geçmişi sızmaz", async () => {
       const foreign = await get(u.b, cd.aCompany);
       const missing = await get(u.b, MISSING);
-      expect([foreign.status, foreign.body]).toEqual([404, NOT_FOUND]);
-      expect([missing.status, missing.body]).toEqual([404, NOT_FOUND]);
+      expect([foreign.status, foreign.body]).toEqual([404, notFound()]);
+      expect([missing.status, missing.body]).toEqual([404, notFound()]);
       expect(Object.keys(foreign.body).sort()).toEqual(["error", "message", "statusCode"]);
       for (const leak of ["queryType", "TICARET_ODASI", "VERGI_DAIRESI", cd.aCompany]) expect(JSON.stringify(foreign.body)).not.toContain(leak);
     });
 
     it("iki yönde de geçerli: büro A kullanıcısı büro B'nin dosya borçlusunu okuyamaz; borçlu türü çıkarılamaz", async () => {
       const company = await get(u.a, cd.bCompany);
-      expect([company.status, company.body]).toEqual([404, NOT_FOUND]);
+      expect([company.status, company.body]).toEqual([404, notFound()]);
       // Şirket ve gerçek kişi borçlusu farklı öneri listesi üretir; başka büro için ikisi de aynı 404 gövdesidir.
       const person = await get(u.b, cd.aPerson);
-      expect([person.status, person.body]).toEqual([404, NOT_FOUND]);
+      expect([person.status, person.body]).toEqual([404, notFound()]);
     });
 
     it("kendi bürosunda borçlu türü ayrımı korunur (işlev değişmedi)", async () => {

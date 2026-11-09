@@ -43,6 +43,17 @@ export class CaseViewScopeService {
   }
 
   /**
+   * P3 tarama dilimleri (owner kararları 09.11.2026; tebligat emsali) — liste / gömülü satırların DOSYASI için Prisma süzgeci:
+   * dosya kiracısı belirleyici + D1 kapsamı (büro geneli izin → yalnız kiracı). Bayrak kapalı → undefined (ek sorgu yok; çağıran
+   * bugünkü sorgusunu aynen yapar). Dosyaya ilişkiyle bağlı modellerde `case: filter` olarak kullanılır; yeni kural değildir.
+   */
+  async caseRowFilter(tenantId: string, actorUserId: string | null | undefined): Promise<Prisma.CaseWhereInput | undefined> {
+    if (!isCaseViewScopeEnabled()) return undefined;
+    const scope = await this.scopeWhere(tenantId, actorUserId);
+    return { tenantId, ...(scope ? { AND: [scope] } : {}) };
+  }
+
+  /**
    * Dosya kimliği yoldan gelir ama GÜVENİLMEZ: bayrak açıkken dosya kiracı + kapsam ile DB'den doğrulanır; bulunamazsa
    * (kapsam dışı ya da yok) 404 — dosya içeriği, önizleme ya da indirme üretilmeden ÖNCE.
    */
@@ -158,6 +169,20 @@ export class CaseViewScopeService {
         return (await this.prisma.caseDebtor.findFirst({ where: { id, case: { tenantId } }, select }))?.caseId ?? null;
       case "precautionaryOrder": // P3 tarama S9: satır aktör kiracısında; dosya FK'li
         return (await this.prisma.precautionaryOrder.findFirst({ where, select }))?.caseId ?? null;
+      case "clientInfoRequest": // P3 tarama S4: satır aktör kiracısında; dosya FK'li
+        return (await this.prisma.clientInfoRequest.findFirst({ where, select }))?.caseId ?? null;
+      case "uyapQuery": { // P3 tarama S4: sorgu → dosya borçlusu → dosya (satır aktör kiracısında)
+        const row = await this.prisma.uyapQuery.findFirst({ where, select: { caseDebtorId: true } });
+        return row ? this.caseIdOf(tenantId, "caseDebtor", row.caseDebtorId) : null;
+      }
+      case "institutionLetter": { // P3 tarama S4: kurum yazısı → dosya borçlusu → dosya
+        const row = await this.prisma.institutionLetter.findFirst({ where, select: { caseDebtorId: true } });
+        return row ? this.caseIdOf(tenantId, "caseDebtor", row.caseDebtorId) : null;
+      }
+      case "assetQuery": { // P3 tarama S4: mal varlığı sorgusu → dosya borçlusu → dosya
+        const row = await this.prisma.assetQuery.findFirst({ where, select: { caseDebtorId: true } });
+        return row ? this.caseIdOf(tenantId, "caseDebtor", row.caseDebtorId) : null;
+      }
       default:
         return null;
     }
@@ -174,4 +199,19 @@ export type CaseScopedObjectKind =
   | "caseClient"
   | "tebligat" // P3 Tebligat (09.11.2026): GET /tebligat/:id
   | "caseDebtor" // P3 Tebligat (09.11.2026): GET /tebligat/case-debtor/:caseDebtorId
-  | "precautionaryOrder"; // P3 tarama S9 (10.11.2026): GET /precautionary-orders/:id, /:id/costs/total
+  | "precautionaryOrder" // P3 tarama S9 (10.11.2026): GET /precautionary-orders/:id, /:id/costs/total
+  | "clientInfoRequest" // P3 tarama S4 (10.11.2026): GET /address-discovery/client-info-request/:id
+  | "uyapQuery" // P3 tarama S4: GET /address-discovery/uyap-query/:id
+  | "institutionLetter" // P3 tarama S4: GET /address-discovery/institution-letter/:id
+  | "assetQuery"; // P3 tarama S4: GET /asset-queries/:queryId
+
+/**
+ * Handler / servis içi kapı yardımcısı: bayrak kapalı → undefined (bugünkü davranış, sorgu yok); bayrak açık + kapsam servisi
+ * enjekte edilmemiş → 403 (fail-closed; CaseViewScopeGuard ile aynı gövde). Kullanım:
+ * `await requireCaseViewScope(this.caseViewScope)?.caseRowFilter(tenantId, actorUserId)`.
+ */
+export function requireCaseViewScope(service: CaseViewScopeService | undefined): CaseViewScopeService | undefined {
+  if (!isCaseViewScopeEnabled()) return undefined;
+  if (!service) throw new ForbiddenException({ code: "CASE_VIEW_SCOPE_UNRESOLVED", message: "Dosya görünüm kapsamı çözümlenemedi" });
+  return service;
+}

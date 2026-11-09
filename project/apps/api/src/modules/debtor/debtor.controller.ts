@@ -235,9 +235,10 @@ export class DebtorController {
     return this.taskLink.createTaskForNotification(tenantId, notificationId, recipientUserId);
   }
 
+  /** F02 P3 tarama S4: borçlu kartı büro geneli ana kayıttır; gömülü dosya ayrıntıları yalnız aktöre görünen dosyalardan gelir. */
   @Get(":id")
-  findOne(@CurrentUser("tenantId") tenantId: string, @Param("id") id: string) {
-    return this.debtorService.findOne(tenantId, id);
+  findOne(@CurrentUser("tenantId") tenantId: string, @Param("id") id: string, @CurrentUser("id") actorUserId?: string) {
+    return this.debtorService.findOneForActor(tenantId, id, actorUserId);
   }
 
   @Post()
@@ -323,9 +324,11 @@ export class DebtorController {
   getCrossFileAlerts(
     @CurrentUser("tenantId") tenantId: string,
     @Param("id") debtorId: string,
-    @Query("excludeCaseId") excludeCaseId?: string
+    @Query("excludeCaseId") excludeCaseId?: string,
+    @CurrentUser("id") actorUserId?: string
   ) {
-    return this.debtorService.getCrossFileDebtorAlerts(tenantId, debtorId, excludeCaseId);
+    // F02 P3 tarama S4: görünmeyen dosyalar için yalnız sayı döner (kimlik / dosya no / sorumlu verilmez).
+    return this.debtorService.getCrossFileDebtorAlerts(tenantId, debtorId, excludeCaseId, actorUserId);
   }
 
   @Delete(":id/addresses/:addressId")

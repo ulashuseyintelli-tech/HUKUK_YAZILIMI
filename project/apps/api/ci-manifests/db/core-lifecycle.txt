@@ -367,3 +367,5 @@ src/modules/debtor/__tests__/debtor-case-view-scope.http.db-gated.integration.sp
 src/modules/case/__tests__/case-view-scope-alt-routes.http.db-gated.integration.spec.ts
 # F02 P3 tarama S10 (owner 09.11.2026): tek gorev okumasi gorev kapsami + gomulu dosya gorunurlugu (gorev / dosya kapsam farklari acikca olculur) - gercek HTTP + disposable PostgreSQL.
 src/modules/task/__tests__/task-single-read-scope.http.db-gated.integration.spec.ts
+# F02 P3 tarama S4 (owner 09.11.2026): borclu tarafi dosyaya bagli okumalar (31 GET: dosya / dosya borclusu / kendi kimlikli + borclu kimlikli yanitlarin suzulmesi) - gercek HTTP + disposable PostgreSQL.
+src/modules/debtor/__tests__/debtor-side-case-view-scope.http.db-gated.integration.spec.ts

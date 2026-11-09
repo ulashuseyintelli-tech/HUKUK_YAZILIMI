@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
+import { CaseViewScopedByObject } from '../case/case-view-scope.guard';
 import { AssetQueryService } from './asset-query.service';
 import { RunAssetQueriesDTO, UpdateAssetQueryResultDTO } from './dto/asset-query.dto';
 
@@ -46,6 +47,7 @@ export class AssetQueryController {
    * GET /asset-queries/debtor/:caseDebtorId
    * Get all asset queries for a debtor
    */
+  @CaseViewScopedByObject('caseDebtor', 'caseDebtorId') // F02 P3 tarama S4: dosya, dosya borçlusu satırından çözülür
   @Get('debtor/:caseDebtorId')
   async getQueriesForDebtor(
     @Request() req: any,
@@ -61,6 +63,7 @@ export class AssetQueryController {
    * GET /asset-queries/:queryId
    * Get a single query by ID
    */
+  @CaseViewScopedByObject('assetQuery', 'queryId') // F02 P3 tarama S4: dosya, sorgunun dosya borçlusundan çözülür
   @Get(':queryId')
   async getQueryById(
     @Request() req: any,
@@ -120,6 +123,7 @@ export class AssetQueryController {
    * GET /asset-queries/debtor/:caseDebtorId/summary
    * Get asset summary for a debtor
    */
+  @CaseViewScopedByObject('caseDebtor', 'caseDebtorId') // F02 P3 tarama S4
   @Get('debtor/:caseDebtorId/summary')
   async getAssetSummary(
     @Request() req: any,
