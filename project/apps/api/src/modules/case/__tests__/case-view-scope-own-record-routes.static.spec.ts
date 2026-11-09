@@ -95,6 +95,7 @@ describe("F02 P3-D3b-2 — kendi kimlikli dosya nesnesi okuma rota envanteri (fa
       caseClient: "Dosya bulunamadı",
       tebligat: "Tebligat bulunamadı", // P3 Tebligat (09.11.2026); envanteri tebligat-case-view-scope-routes.static.spec.ts
       caseDebtor: "Dosya bulunamadı",
+      precautionaryOrder: "İhtiyati haciz kararı bulunamadı", // P3 tarama S9 (10.11.2026); davranışı case-view-scope-alt-routes HTTP + DB spec'i ölçer
     });
   });
 

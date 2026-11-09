@@ -24,6 +24,8 @@ import { CancelTaskDto, CreateTaskDto, ListTaskCancellationsQueryDto, TASK_LIST_
 import { AuditService } from "@/modules/audit/audit.service";
 import { WorkScopePermissionService } from "@/modules/work-scope-permission/work-scope-permission.service";
 import { TASK_VIEW_ALL_KEY, isTaskViewScopeEnabled, taskViewWhereFor } from "./task-view-scope";
+import { isCaseViewScopeEnabled } from "../case/case-view-scope";
+import { CaseViewScopeService } from "../case/case-view-scope.service";
 
 /** TaskController.findAll → TaskService.findAll sorgu parametreleri (ListTasksQueryDto ile uyumlu). */
 export interface TaskListParams {
@@ -68,7 +70,26 @@ export class TaskService {
     // F02-B dilim 3: görev liste görünüm kapsamı (bayrak açıkken zorunlu; bkz. viewScopeWhere)
     @Optional() private readonly workScope?: WorkScopePermissionService,
     @Optional() private readonly audit?: AuditService,
+    // F02 P3 tarama S10: gömülü dosya nesnesinin görünürlüğü (bayrak açıkken zorunlu; bkz. maskHiddenCases)
+    @Optional() private readonly caseViewScope?: CaseViewScopeService,
   ) {}
+
+  /**
+   * F02 P3 tarama S10 (owner kararı 09.11.2026) — görev erişimi dosya erişimi ÜRETMEZ: yanıta gömülen dosya nesnesi yalnız dosya
+   * aktöre görünürse kalır (dosya görünüm kapsamı; `OFFICE_CASE_VIEW_SCOPE_ENABLED`). Görevin kendi sütunları değişmez.
+   * Bayrak kapalı ya da büro geneli dosya izni → dokunulmaz (ek sorgu yok / süzme yok). Bayrak açık + servis yok → fail-closed.
+   *
+   * @remarks Çağrıldığı yerler: findAll() → GET /tasks; findOneForActor() → GET /tasks/:id.
+   */
+  private async maskHiddenCases<T extends { caseId: string | null; case: unknown }>(tenantId: string, actorUserId: string | undefined, tasks: T[]): Promise<T[]> {
+    if (!isCaseViewScopeEnabled()) return tasks;
+    if (!this.caseViewScope) {
+      throw new ForbiddenException({ code: "CASE_VIEW_SCOPE_UNRESOLVED", message: "Dosya görünüm kapsamı çözümlenemedi" });
+    }
+    const visible = await this.caseViewScope.visibleCaseIds(tenantId, actorUserId, tasks.map((task) => task.caseId));
+    if (!visible) return tasks;
+    return tasks.map((task) => (task.caseId && !visible.has(task.caseId) ? { ...task, case: null } : task));
+  }
 
   /**
    * F02-B dilim 3 (owner 29–30.10.2026, G3) — liste görünüm kapsamı (data + total + meta.summary birlikte).
@@ -166,7 +187,7 @@ export class TaskService {
     ]);
 
     return {
-      data: tasks,
+      data: await this.maskHiddenCases(tenantId, actorUserId, tasks),
       meta: {
         total,
         page,
@@ -194,6 +215,31 @@ export class TaskService {
     }
 
     return task;
+  }
+
+  /**
+   * Çağıran: TaskController.findOne → GET /tasks/:id (F02 P3 tarama S10, owner kararı 09.11.2026).
+   * Tek görev okuması listeyle AYNI görünüm kapsamına bağlıdır (`OFFICE_TASK_VIEW_SCOPE_ENABLED`; kapalı → bugünkü davranış):
+   * kapsam dışı görev, var olmayanla aynı 404'ü alır. Gömülü dosya nesnesi yalnız dosya aktöre görünürse döner.
+   * Yazım yolları (update) iç `findOne`'ı kullanmayı sürdürür; onların yetkisi değişmez.
+   */
+  async findOneForActor(tenantId: string, id: string, actorUserId: string) {
+    const scope = await this.viewScopeWhere(tenantId, actorUserId);
+    const task = await this.prisma.task.findFirst({
+      where: { id, tenantId, OR: [{ caseId: null }, { case: { tenantId } }], ...(scope ? { AND: [scope] } : {}) },
+      include: {
+        case: true,
+        client: { select: { id: true, displayName: true, companyName: true, firstName: true, lastName: true } },
+        assignee: { select: { id: true, name: true, surname: true, email: true } },
+        createdBy: { select: { id: true, name: true, surname: true } },
+      },
+    });
+
+    if (!task) {
+      throw new NotFoundException("Görev bulunamadı");
+    }
+
+    return (await this.maskHiddenCases(tenantId, actorUserId, [task]))[0];
   }
 
   // Çağıran: TaskController.create → POST /tasks.

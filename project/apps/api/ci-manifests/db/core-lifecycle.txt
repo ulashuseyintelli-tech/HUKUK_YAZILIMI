@@ -363,3 +363,7 @@ src/modules/case/__tests__/case-view-scope-d2b-artifacts.http.db-gated.integrati
 src/modules/tebligat/__tests__/tebligat-case-view-scope.http.db-gated.integration.spec.ts
 # F02 P3 Bulgu 3 (09.11.2026): web'in kullandigi dosyaya bagli borclu okumalari (liste / detay / tebligat gecmisi / aktif surec ozeti, 4 GET) - gercek HTTP + disposable PostgreSQL.
 src/modules/debtor/__tests__/debtor-case-view-scope.http.db-gated.integration.spec.ts
+# F02 P3 tarama S8 / S9 (owner 09.11.2026): alternatif belge yolu (related-lawsuits karsiliksiz cek, 3 GET) + ihtiyati haciz okumalari (3 GET) - gercek HTTP + disposable PostgreSQL.
+src/modules/case/__tests__/case-view-scope-alt-routes.http.db-gated.integration.spec.ts
+# F02 P3 tarama S10 (owner 09.11.2026): tek gorev okumasi gorev kapsami + gomulu dosya gorunurlugu (gorev / dosya kapsam farklari acikca olculur) - gercek HTTP + disposable PostgreSQL.
+src/modules/task/__tests__/task-single-read-scope.http.db-gated.integration.spec.ts
