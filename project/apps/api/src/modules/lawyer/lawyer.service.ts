@@ -1060,7 +1060,7 @@ export class LawyerService {
     const deactivated = await this.prisma.$transaction(async (tx) => {
       if (existing.userId) {
         if (!actor?.userId) throw new ConflictException('Özel veri yetki kaldırma aktörü eksik; pasifleştirme iptal edildi.');
-        await revokeK73ForSubjectInTx(tx, tenantId, existing.userId, actor.userId, 'LAWYER_DEACTIVATED');
+        await revokeK73ForSubjectInTx(tx, tenantId, existing.userId, actor.userId, 'LAWYER_DEACTIVATED', this.audit);
       }
       const { count } = await tx.lawyer.updateMany({
         where: { id, tenantId },

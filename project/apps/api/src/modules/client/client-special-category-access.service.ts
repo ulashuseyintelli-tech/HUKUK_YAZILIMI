@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { OfficeApprovalService } from '../office-approval/office-approval.service';
+import { validateClientLegalAuditMetadata } from './client-legal-audit.contract';
 import {
   assertK73AccessInTx, assertK73ExistingAuthority, assertK73Manager, currentK73Actor,
   K73_KEYS, K73_OPERATIONS, K73Operation, k73ObjectInScope, k73Scopes,
@@ -24,6 +25,9 @@ export class ClientSpecialCategoryAccessService {
 
   private requireReason(reason: string) {
     if (typeof reason !== 'string' || !reason.trim() || reason.length > 1000) throw new BadRequestException('Gerekçe zorunludur.');
+    if (!validateClientLegalAuditMetadata('CLIENT_SPECIAL_DATA_GRANT', { reason }).safe) {
+      throw new BadRequestException('Gerekçe ham kimlik numarası deseni içeremez.');
+    }
     return reason.trim();
   }
 
@@ -163,7 +167,7 @@ export class ClientSpecialCategoryAccessService {
     return this.transaction(async tx => {
       await lockK73Subject(tx, tenantId, subjectUserId);
       await assertK73Manager(tx, tenantId, actorUserId);
-      const count = await revokeK73ForSubjectInTx(tx, tenantId, subjectUserId, actorUserId, reason.trim());
+      const count = await revokeK73ForSubjectInTx(tx, tenantId, subjectUserId, actorUserId, reason.trim(), this.audit);
       await this.audit.logInTransaction(tx, {
         tenantId, action: 'CLIENT_SPECIAL_DATA_DUTY_CHANGE', entityType: 'USER', entityId: subjectUserId,
         userId: actorUserId, metadata: { reason: reason.trim(), revokedGrantCount: count },

@@ -1,6 +1,7 @@
 import { ForbiddenException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { OfficeApprovalService } from '../office-approval/office-approval.service';
+import type { AuditService } from '../audit/audit.service';
 import { assertClientObjectScope } from './client-object-scope';
 
 export const K73_OPERATIONS = ['LIST', 'READ', 'CREATE'] as const;
@@ -12,6 +13,7 @@ export const K73_KEYS: Record<K73Operation, string> = {
 };
 export const K73_PERMISSION_KEYS = Object.values(K73_KEYS);
 export type K73Db = Prisma.TransactionClient;
+type K73Audit = Pick<AuditService, 'logInTransaction'>;
 
 export async function k73ObjectInScope(db: K73Db, tenantId: string, userId: string, clientId: string, caseId?: string) {
   try { await assertClientObjectScope(db, tenantId, userId, clientId, caseId); return true; }
@@ -107,6 +109,7 @@ export async function assertK73AccessInTx(
 async function revokeRows(
   db: K73Db, rows: any[], tenantId: string, actorUserId: string,
   reason: string, now: Date,
+  audit: K73Audit,
 ) {
   if (!rows.length) return 0;
   const ids = rows.map(row => row.id);
@@ -114,10 +117,10 @@ async function revokeRows(
     where: { id: { in: ids }, tenantId, revokedAt: null },
     data: { revokedAt: now, revokedByUserId: actorUserId, revokeReason: reason },
   });
-  if (changed.count) await db.auditLog.create({ data: {
+  if (changed.count) await audit.logInTransaction(db, {
     tenantId, action: 'CLIENT_SPECIAL_DATA_GRANTS_REVOKE', entityType: 'CLIENT_SPECIAL_DATA_ACCESS',
     userId: actorUserId, metadata: { scopeIds: ids, reason, count: changed.count },
-  } });
+  });
   return changed.count;
 }
 
@@ -125,6 +128,7 @@ async function revokeRows(
 export async function revokeK73ForSubjectInTx(
   db: K73Db, tenantId: string, subjectUserId: string | null | undefined,
   actorUserId: string, reason: string,
+  audit: K73Audit,
 ) {
   if (!subjectUserId) return 0;
   await lockK73Subject(db, tenantId, subjectUserId);
@@ -132,13 +136,14 @@ export async function revokeK73ForSubjectInTx(
     tenantId, revokedAt: null,
     permissionGrant: { tenantId, subjectUserId, permissionKey: { in: K73_PERMISSION_KEYS } },
   }, select: { id: true } });
-  return revokeRows(db, rows, tenantId, actorUserId, reason, new Date());
+  return revokeRows(db, rows, tenantId, actorUserId, reason, new Date(), audit);
 }
 
 // Call after a relation removal/canView change, in that same transaction, under the subject lock.
 // Client-wide grants survive loss of one case only if another canonical relation still exists.
 export async function revokeLostK73ScopesInTx(
   db: K73Db, tenantId: string, subjectUserId: string | null | undefined, actorUserId: string,
+  audit: K73Audit,
 ) {
   if (!subjectUserId) return 0;
   await lockK73Subject(db, tenantId, subjectUserId);
@@ -150,7 +155,7 @@ export async function revokeLostK73ScopesInTx(
   for (const row of rows) {
     if (!await k73ObjectInScope(db, tenantId, subjectUserId, row.clientId, row.caseId ?? undefined)) lost.push(row);
   }
-  return revokeRows(db, lost, tenantId, actorUserId, 'CANONICAL_RELATION_REMOVED', new Date());
+  return revokeRows(db, lost, tenantId, actorUserId, 'CANONICAL_RELATION_REMOVED', new Date(), audit);
 }
 
 export async function lockK73CaseSubjectsInTx(db: K73Db, tenantId: string, caseId: string) {

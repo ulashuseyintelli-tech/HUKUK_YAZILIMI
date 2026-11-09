@@ -3309,7 +3309,7 @@ export class CaseService {
         await tx.case.delete({
           where: { id },
         });
-        for (const subject of k73Subjects) await revokeLostK73ScopesInTx(tx, tenantId, subject, userId);
+        for (const subject of k73Subjects) await revokeLostK73ScopesInTx(tx, tenantId, subject, userId, this.auditService);
 
         // CS2: audit artık GERÇEKTEN aynı transaction'da (logInTransaction; eski log() tx-bağsızdı
         // — audit yazılamazsa silme de rollback olur, audit'siz silme kalmaz).
@@ -4272,7 +4272,7 @@ export class CaseService {
     return this.prisma.$transaction(async tx => {
       if (caseLawyer.lawyer.userId) await lockK73Subject(tx, tenantId, caseLawyer.lawyer.userId);
       await tx.caseLawyer.delete({ where: { id: caseLawyerId } });
-      await revokeLostK73ScopesInTx(tx, tenantId, caseLawyer.lawyer.userId, userId);
+      await revokeLostK73ScopesInTx(tx, tenantId, caseLawyer.lawyer.userId, userId, this.auditService);
 
       // Relation removal, K7.3 revocation and audit commit together.
       await this.auditService.logInTransaction(tx, {
@@ -4360,7 +4360,7 @@ export class CaseService {
       if (!caseStaff) throw new NotFoundException("Personel ataması bulunamadı");
       if (caseStaff.staffMember.userId) await lockK73Subject(db as Prisma.TransactionClient, tenantId, caseStaff.staffMember.userId);
       const removed = await db.caseStaff.delete({ where: { id: caseStaffId } });
-      await revokeLostK73ScopesInTx(db as Prisma.TransactionClient, tenantId, caseStaff.staffMember.userId, userId);
+      await revokeLostK73ScopesInTx(db as Prisma.TransactionClient, tenantId, caseStaff.staffMember.userId, userId, this.auditService);
       await this.auditService.logInTransaction(db as Prisma.TransactionClient, {
         tenantId, action: "DELETE", entityType: "CASE_STAFF", entityId: caseStaffId, userId,
         oldValues: { caseId, staffMemberId: removed.staffMemberId, roleOnCase: removed.roleOnCase },
@@ -4407,7 +4407,7 @@ export class CaseService {
         where: { id: caseStaffId }, data: updateData,
         include: { staffMember: { select: { id: true, firstName: true, lastName: true, staffType: true } } },
       });
-      if (data.canView === false) await revokeLostK73ScopesInTx(db as Prisma.TransactionClient, tenantId, caseStaff.staffMember.userId, userId);
+      if (data.canView === false) await revokeLostK73ScopesInTx(db as Prisma.TransactionClient, tenantId, caseStaff.staffMember.userId, userId, this.auditService);
       await this.auditService.logInTransaction(db as Prisma.TransactionClient, {
         tenantId, action: "UPDATE", entityType: "CASE_STAFF", entityId: caseStaffId, userId,
         newValues: updateData,

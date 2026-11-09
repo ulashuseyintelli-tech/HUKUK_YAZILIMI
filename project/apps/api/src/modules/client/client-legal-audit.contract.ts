@@ -8,7 +8,8 @@
  *    burada kayıtlıdır. Katalog dışı CLIENT_* hukuki action'ı drift-guard testi düşürür
  *    (client-audit-uniformity-b07.spec.ts) — yeni action eklemek katalog kaydı ister.
  * 2. KANAL KURALI: mutasyon audit'leri AYNI transaction'da (logInTransaction) yazılır;
- *    salt-değerlendirme/erişim/deny audit'leri doğrudan (log) yazılır.
+ *    salt-değerlendirme/deny audit'leri doğrudan (log) yazılır. K7.3 özel veri
+ *    erişimi, CLIENT-SPECIAL-CATEGORY-K73-SA01 gereği zorunlu audit ile aynı transaction'dadır.
  * 3. PII KURALI (md.12/3 — acceptance "ham PII sızmıyor"): metadata ham kimlik numarası
  *    (TCKN/VKN), belge/serbest içerik veya şifresiz özel-nitelik verisi TAŞIMAZ; alan
  *    ADLARI ve reason-code'lar serbesttir. K8.4 gereği legal-hold GEREKÇELERİ audit'te
@@ -49,7 +50,10 @@ export const CLIENT_LEGAL_AUDIT_ACTIONS: readonly ClientLegalAuditActionSpec[] =
   { action: 'CLIENT_DELETION_GATE_EVALUATED', entityType: 'CLIENT', channel: 'DIRECT', block: 'B03' },
   // B04 — §13/7 özel nitelikli veri
   { action: 'CLIENT_SPECIAL_DATA_CREATE', entityType: 'CLIENT_SPECIAL_DATA', channel: 'IN_TX', block: 'B04' },
-  { action: 'CLIENT_SPECIAL_DATA_ACCESS', entityType: 'CLIENT_SPECIAL_DATA', channel: 'DIRECT', block: 'B04' },
+  { action: 'CLIENT_SPECIAL_DATA_ACCESS', entityType: 'CLIENT_SPECIAL_DATA', channel: 'IN_TX', block: 'B04' },
+  { action: 'CLIENT_SPECIAL_DATA_GRANT', entityType: 'CLIENT_SPECIAL_DATA_ACCESS', channel: 'IN_TX', block: 'B04' },
+  { action: 'CLIENT_SPECIAL_DATA_GRANTS_REVOKE', entityType: 'CLIENT_SPECIAL_DATA_ACCESS', channel: 'IN_TX', block: 'B04' },
+  { action: 'CLIENT_SPECIAL_DATA_DUTY_CHANGE', entityType: 'USER', channel: 'IN_TX', block: 'B04' },
   // B05 — §13/9 efektif capability
   { action: 'CLIENT_EFFECTIVE_CAPABILITY_DENIED', entityType: 'CLIENT', channel: 'DIRECT', denyRecord: true, block: 'B05' },
   // B06 — §13/10 UYAP aktarım

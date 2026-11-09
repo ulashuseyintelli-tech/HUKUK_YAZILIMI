@@ -196,6 +196,7 @@ dbDescribe('K7.3 — real JWT/HTTP, bounded grants and atomic lifecycle on dispo
     await deniedUnchanged(() => grant('READ', { validUntil: new Date(Date.now() - 100_000).toISOString() }), [400]);
     await deniedUnchanged(() => grant('READ', { operation: 'EXPORT' }), [400]);
     await deniedUnchanged(() => grant('READ', { user: { role: 'ADMIN' } }), [400]);
+    await deniedUnchanged(() => grant('READ', { reason: 'TCKN 12345678901' }), [400]);
     await deniedUnchanged(() => grant('READ', { caseId: otherCase }), [404]);
   });
   it('unbound GLOBAL ALLOW is insufficient and existing explicit DENY prevails', async () => {
@@ -320,7 +321,7 @@ dbDescribe('K7.3 — real JWT/HTTP, bounded grants and atomic lifecycle on dispo
       const subjects = await lockK73CaseSubjectsInTx(tx, tenant, caseId);
       expect(subjects).toContain(reader); ready(); await blocked;
       await tx.case.delete({ where: { id: caseId } });
-      for (const subject of subjects) await revokeLostK73ScopesInTx(tx, tenant, subject, issuer);
+      for (const subject of subjects) await revokeLostK73ScopesInTx(tx, tenant, subject, issuer, audit);
     }, { timeout: 15_000 });
     await locked; const pending = grant().then(r => r);
     try { await waitForLock(); } finally { release(); }
@@ -341,7 +342,7 @@ dbDescribe('K7.3 — real JWT/HTTP, bounded grants and atomic lifecycle on dispo
     await db.$transaction(async tx => {
       const subjects = await lockK73CaseSubjectsInTx(tx, tenant, caseId);
       await tx.case.delete({ where: { id: caseId } });
-      for (const subject of subjects) await revokeLostK73ScopesInTx(tx, tenant, subject, issuer);
+      for (const subject of subjects) await revokeLostK73ScopesInTx(tx, tenant, subject, issuer, audit);
     });
     const rows = await scopes().findMany({ where: { id: { in: [a.id, b.id] } } });
     expect(rows).toHaveLength(2); expect(rows.every((r: any) => r.revokedAt)).toBe(true);

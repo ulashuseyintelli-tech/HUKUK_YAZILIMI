@@ -27,6 +27,8 @@ const C3_SOURCE_FILES = [
   'client-data-subject-request.service.ts',
   'client-legal-hold.service.ts',
   'client-special-category.service.ts',
+  'client-special-category-access.service.ts',
+  'client-special-category-access.ts',
   'client-poa-capability.service.ts',
   'client-uyap-transfer-gate.service.ts',
 ];
@@ -52,8 +54,8 @@ describe('1. Katalog tamlığı (iki yönlü drift-guard)', () => {
     }
   });
 
-  it('katalog 16 hukuki action içerir ve blok izlenebilirliği tam', () => {
-    expect(CLIENT_LEGAL_AUDIT_ACTIONS).toHaveLength(16);
+  it('katalog mevcut 16 action ve üç K7.3 yönetim action içerir; blok izlenebilirliği tam', () => {
+    expect(CLIENT_LEGAL_AUDIT_ACTIONS).toHaveLength(19);
     const blocks = new Set(CLIENT_LEGAL_AUDIT_ACTIONS.map((s) => s.block));
     expect([...blocks].sort()).toEqual(['B01', 'B02', 'B03', 'B04', 'B05', 'B06']);
   });

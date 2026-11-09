@@ -361,7 +361,7 @@ export class StaffService {
     return this.prisma.$transaction(async (tx) => {
       if (existing.userId) {
         if (!actor?.userId) throw new ConflictException('Özel veri yetki kaldırma aktörü eksik; pasifleştirme iptal edildi.');
-        await revokeK73ForSubjectInTx(tx, tenantId, existing.userId, actor.userId, 'STAFF_DEACTIVATED');
+        await revokeK73ForSubjectInTx(tx, tenantId, existing.userId, actor.userId, 'STAFF_DEACTIVATED', auditConsumer!);
         const userResult = await tx.user.updateMany({
           where: { id: existing.userId, tenantId },
           data: { isActive: false },
