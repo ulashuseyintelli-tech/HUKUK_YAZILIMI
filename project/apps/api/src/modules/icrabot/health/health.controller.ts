@@ -14,6 +14,7 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { CaseHealthService } from './case-health.service';
 import { UiMapValidatorService } from './uimap-validator.service';
+import { CaseViewScoped } from '../../case/case-view-scope.guard';
 
 @Controller('icrabot/case-health')
 @UseGuards(JwtAuthGuard)
@@ -25,6 +26,7 @@ export class CaseHealthController {
    * Dosya sağlık raporu
    */
   @Get(':caseId')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (modül bugün AppModule'e bağlı değil; bağlanırsa kapı hazır)
   async getCaseHealth(
     @CurrentUser() user: { tenantId: string },
     @Param('caseId') caseId: string,

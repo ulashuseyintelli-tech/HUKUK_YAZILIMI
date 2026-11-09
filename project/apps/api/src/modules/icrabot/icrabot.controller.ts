@@ -11,6 +11,7 @@ import {
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { IcrabotService } from './icrabot.service';
+import { CaseViewScoped } from '../case/case-view-scope.guard';
 
 /**
  * ICRABOT CONTROLLER
@@ -58,6 +59,7 @@ export class IcrabotController {
    * GET /api/icrabot/cases/:caseId/twin
    */
   @Get('cases/:caseId/twin')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (modül bugün AppModule'e bağlı değil; bağlanırsa kapı hazır)
   async getDigitalTwin(@Param('caseId') caseId: string, @Request() req: any) {
     return this.icrabotService.getDigitalTwin(caseId, req.user.tenantId);
   }
@@ -67,6 +69,7 @@ export class IcrabotController {
    * GET /api/icrabot/cases/:caseId/next-actions
    */
   @Get('cases/:caseId/next-actions')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (modül bugün AppModule'e bağlı değil; bağlanırsa kapı hazır)
   async getNextBestActions(@Param('caseId') caseId: string, @Request() req: any) {
     return this.icrabotService.getNextBestActions(caseId, req.user.tenantId);
   }
@@ -76,6 +79,7 @@ export class IcrabotController {
    * GET /api/icrabot/cases/:caseId/tasks
    */
   @Get('cases/:caseId/tasks')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (modül bugün AppModule'e bağlı değil; bağlanırsa kapı hazır)
   async getPendingTasks(@Param('caseId') caseId: string, @Request() req: any) {
     return this.icrabotService.getPendingTasks(caseId, req.user.tenantId);
   }
@@ -85,6 +89,7 @@ export class IcrabotController {
    * GET /api/icrabot/cases/:caseId/evidence
    */
   @Get('cases/:caseId/evidence')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (modül bugün AppModule'e bağlı değil; bağlanırsa kapı hazır)
   async getEvidenceReport(@Param('caseId') caseId: string, @Request() req: any) {
     return this.icrabotService.getEvidenceReport(caseId, req.user.tenantId);
   }
@@ -226,6 +231,7 @@ export class IcrabotController {
    * GET /api/icrabot/cases/:caseId/transitions
    */
   @Get('cases/:caseId/transitions')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (modül bugün AppModule'e bağlı değil; bağlanırsa kapı hazır)
   async getAvailableTransitions(@Param('caseId') caseId: string, @Request() req: any) {
     return this.icrabotService.getAvailableTransitions(caseId, req.user.tenantId);
   }

@@ -25,6 +25,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../../prisma/prisma.module';
 import { AggregateVersionAllocator } from '../domain-event-ingest';
+import { CaseViewScopeModule } from '../../case/case-view-scope.module';
 
 // Services
 import { FactStoreService } from './factstore.service';
@@ -58,7 +59,7 @@ import {
 } from './v28-engine.controller';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, CaseViewScopeModule], // F02 P3 tarama S11: dosya kimlikli okumaların dosya kapısı
   controllers: [
     UyapEventController,
     FactStoreController,
