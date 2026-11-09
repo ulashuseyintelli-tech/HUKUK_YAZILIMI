@@ -49,6 +49,24 @@ export class TebligatController {
   }
 
   /**
+   * Tebligat özeti getir
+   * GET /tebligat/summary
+   *
+   * R12 Kabul A (09.11.2026): Express rotaları TANIM SIRASIYLA eşler. Bu uç `:id`'den SONRA
+   * tanımlıyken `GET /tebligat/summary` → findById("summary") → 404 "Tebligat bulunamadı"
+   * dönüyordu (dosya Tebligat paneli meşru boş durumda bile hata bandı gösteriyordu).
+   * Bu yüzden `:id`'den ÖNCE durur. Kapı DEĞİŞMEDİ: sınıf düzeyi JwtAuthGuard +
+   * ViewerWriteDenyGuard, kiracı JWT'den (`@CurrentUser("tenantId")`).
+   */
+  @Get("summary")
+  getSummary(
+    @CurrentUser("tenantId") tenantId: string,
+    @Query("caseId") caseId?: string
+  ) {
+    return this.tebligatService.getSummary(tenantId, caseId);
+  }
+
+  /**
    * Tebligat detayı getir
    * GET /tebligat/:id
    */
@@ -176,22 +194,14 @@ export class TebligatController {
   }
 
   // ==================== İSTATİSTİKLER ====================
-
-  /**
-   * Tebligat özeti getir
-   * GET /tebligat/summary
-   */
-  @Get("summary")
-  getSummary(
-    @CurrentUser("tenantId") tenantId: string,
-    @Query("caseId") caseId?: string
-  ) {
-    return this.tebligatService.getSummary(tenantId, caseId);
-  }
+  // (`GET /tebligat/summary` yukarıda, `:id`'den önce tanımlı — bkz. getSummary.)
 
   /**
    * Bekleyen işlemleri getir
    * GET /tebligat/pending-actions
+   *
+   * NOT (R12 Kabul A, 09.11.2026): bu uç hâlâ `:id`'den SONRA → bugün findById'ye düşer (404).
+   * Web'de çağıranı yok; erişilebilir kılmak kiracı geneli liste açtığı için ayrı karardır, burada değiştirilmedi.
    */
   @Get("pending-actions")
   getPendingActions(@CurrentUser("tenantId") tenantId: string) {
