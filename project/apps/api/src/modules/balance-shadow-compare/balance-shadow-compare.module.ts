@@ -11,9 +11,10 @@ import { InterestEngineModule } from '../interest-engine/interest-engine.module'
 import { SummaryEngineModule } from '../summary-engine/summary-engine.module';
 import { BalanceShadowCompareService } from './balance-shadow-compare.service';
 import { BalanceShadowCompareController } from './balance-shadow-compare.controller';
+import { CaseViewScopeModule } from '../case/case-view-scope.module';
 
 @Module({
-  imports: [InterestEngineModule, SummaryEngineModule],
+  imports: [CaseViewScopeModule, InterestEngineModule, SummaryEngineModule],
   controllers: [BalanceShadowCompareController],
   providers: [BalanceShadowCompareService],
 })
