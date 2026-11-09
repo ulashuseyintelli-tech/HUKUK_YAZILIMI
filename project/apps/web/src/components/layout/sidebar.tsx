@@ -65,6 +65,7 @@ const navigation: NavItem[] = [
   { name: "Raporlama Hiyerarşisi", href: "/settings/reporting-lines", icon: Users, disabled: false, adminOnly: true },
   { name: "Bildirim Merkezi", href: "/settings/notifications", icon: Bell, disabled: false },
   { name: "Büro Ayarları", href: "/settings/office", icon: Settings, disabled: false },
+  { name: "İletişim Bilgileri", href: "/settings/office/contacts", icon: Settings, disabled: false },
 ];
 
 export function Sidebar() {

@@ -3,7 +3,7 @@
  * geçirmesiyle açma.
  *
  * Sunucu sözleşmesi (apps/api staff.service.ts):
- *  - GET /staff/:id/account-reopen-review (F01 + güncel ADMIN) → { data: inceleme }: rol, hesap durumu, iki F02 anahtarındaki
+ *  - GET /staff/:id/account-reopen-review (F01 + güncel ADMIN) → { data: inceleme }: rol, hesap durumu, üç F02 anahtarındaki
  *    GLOBAL bitmemiş ALLOW kayıtları (ileri tarihliler dahil), bilgi olarak DENY anahtarları ve içerik parmak izi.
  *  - POST /staff/:id/account-reopen { reviewFingerprint, keepGrantIds } → TEK transaction: hesap açılır, tokenVersion artar
  *    (eski oturumlar kapanır), açık parola sıfırlama bağlantıları iptal edilir, işaretlenmeyen ALLOW kayıtları sona erer,
@@ -31,6 +31,8 @@ export interface StaffAccountReopenReview {
   reason: StaffAccountReopenBlockReason | null;
   account: { role: string; isActive: boolean; hasPassword: boolean } | null;
   allowGrants: StaffAccountReopenGrant[];
+  contactAllowGrants?: StaffAccountReopenGrant[];
+  contactDenyKeys?: string[];
   denyKeys: string[];
   reviewFingerprint: string | null;
 }
@@ -38,6 +40,7 @@ export interface StaffAccountReopenReview {
 export interface StaffAccountReopenPayload {
   reviewFingerprint: string;
   keepGrantIds: string[];
+  keepContactGrantIds?: string[];
 }
 
 const REASONS: StaffAccountReopenBlockReason[] = ['STAFF_INACTIVE', 'NO_LINKED_ACCOUNT', 'ACCOUNT_ALREADY_ACTIVE', 'ACCOUNT_PENDING_INVITE'];
@@ -65,6 +68,21 @@ export function readStaffAccountReopenReview(input: unknown): StaffAccountReopen
     allowGrants.push({ id: g.id, permissionKey: g.permissionKey, validFrom: g.validFrom, validUntil: g.validUntil as string | null, startsInFuture: g.startsInFuture });
   }
   const fp = b.reviewFingerprint;
+  let contactAllowGrants: StaffAccountReopenGrant[] | undefined;
+  let contactDenyKeys: string[] | undefined;
+  if (b.contactAllowGrants !== undefined || b.contactDenyKeys !== undefined) {
+    if (!Array.isArray(b.contactAllowGrants) || !Array.isArray(b.contactDenyKeys)
+      || b.contactDenyKeys.some(k => typeof k !== 'string')) return null;
+    contactAllowGrants = [];
+    for (const raw of b.contactAllowGrants) {
+      const g = asRecord(raw);
+      if (!g || !isStr(g.id) || !['office.contact.manage', 'staff.contact.manage'].includes(String(g.permissionKey))
+        || !isStr(g.validFrom) || !(g.validUntil === null || isStr(g.validUntil)) || typeof g.startsInFuture !== 'boolean') return null;
+      contactAllowGrants.push({ id: g.id, permissionKey: g.permissionKey as string, validFrom: g.validFrom,
+        validUntil: g.validUntil as string | null, startsInFuture: g.startsInFuture });
+    }
+    contactDenyKeys = b.contactDenyKeys as string[];
+  }
   if (b.reopenable) {
     // Açılabilir inceleme TAM olmalı: parmak izi, hesap ve "neden yok".
     if (typeof fp !== 'string' || !FINGERPRINT_RE.test(fp) || !acc || reason !== null) return null;
@@ -77,23 +95,28 @@ export function readStaffAccountReopenReview(input: unknown): StaffAccountReopen
     reason,
     account: acc ? { role: acc.role as string, isActive: acc.isActive as boolean, hasPassword: acc.hasPassword as boolean } : null,
     allowGrants,
+    ...(contactAllowGrants !== undefined ? { contactAllowGrants, contactDenyKeys } : {}),
     denyKeys: b.denyKeys as string[],
     reviewFingerprint: (fp as string | null) ?? null,
   };
 }
 
 /** Gönderilecek gövde: yalnız incelemede listelenen kimlikler korunabilir (tekrarsız); boş liste = hiçbiri korunmaz. */
-export function buildStaffAccountReopenPayload(review: StaffAccountReopenReview, keep: Iterable<string>): StaffAccountReopenPayload {
+export function buildStaffAccountReopenPayload(review: StaffAccountReopenReview, keep: Iterable<string>, contactKeep: Iterable<string> = []): StaffAccountReopenPayload {
   if (!review.reopenable || !review.reviewFingerprint) throw new Error('Açılamayan inceleme için hesap açma gövdesi kurulmaz');
   const listed = new Set(review.allowGrants.map((g) => g.id));
   const keepGrantIds = [...new Set(keep)].filter((id) => listed.has(id));
-  return { reviewFingerprint: review.reviewFingerprint, keepGrantIds };
+  const contacts = new Set(review.contactAllowGrants?.map(g => g.id));
+  return { reviewFingerprint: review.reviewFingerprint, keepGrantIds,
+    ...(review.contactAllowGrants !== undefined ? { keepContactGrantIds: [...new Set(contactKeep)].filter(id => contacts.has(id)) } : {}) };
 }
 
 const KEY_LABEL: Record<string, string> = {
   'office.tasks.view_all': 'Görevler — büro geneli görünüm',
   'office.expenses.view_all': 'Masraflar — büro geneli görünüm',
   'office.cases.view_all': 'Dosyalar — büro geneli görünüm', // F02 P3-D1: hesap açma incelemesinde aynı F02 ALLOW listesi
+  'office.contact.manage': 'Büro iletişimini düzenle (G1)',
+  'staff.contact.manage': 'Personel iletişimini düzenle (G2)',
 };
 export const grantLabel = (key: string): string => KEY_LABEL[key] ?? key;
 
@@ -129,6 +152,8 @@ export function reopenConsequences(review: StaffAccountReopenReview): string[] {
   if (review.denyKeys.length > 0) {
     out.push(`Açık ret (DENY) kayıtları değişmez: ${review.denyKeys.map(grantLabel).join(', ')}.`);
   }
+  if (review.contactAllowGrants !== undefined) out.push('İletişim yazma izinleri ayrı seçilir; işaretlemedikleriniz sona erer, seçtiklerinizin özgün başlangıç ve bitişi değişmez.');
+  if (review.contactDenyKeys?.length) out.push(`İletişim açık retleri değişmez: ${review.contactDenyKeys.map(grantLabel).join(', ')}.`);
   return out;
 }
 
@@ -142,7 +167,9 @@ export function accountReopenResultMessage(input: unknown): string {
   if (!acc || acc.isActive !== true || typeof kept !== 'number' || typeof expired !== 'number' || d?.sessionsInvalidated !== true) {
     return 'İstek tamamlandı ama sonuç okunamadı. Tekrar denemeden önce personel kartını yenileyip giriş hesabının durumunu kontrol edin.';
   }
-  return `Giriş hesabı açıldı. Eski oturumlar geçersiz; personel yeniden giriş yapmalı. ${kept} büro geneli izin korundu, ${expired} izin sona erdi. Rol ve parola değişmedi.`;
+  const contact = typeof d?.keptContactGrantCount === 'number' && typeof d?.expiredContactGrantCount === 'number'
+    ? ` ${d.keptContactGrantCount} iletişim izni korundu, ${d.expiredContactGrantCount} iletişim izni sona erdi.` : '';
+  return `Giriş hesabı açıldı. Eski oturumlar geçersiz; personel yeniden giriş yapmalı. ${kept} büro geneli izin korundu, ${expired} izin sona erdi.${contact} Rol ve parola değişmedi.`;
 }
 
 /** Hata: sunucu kodları; hiçbir dalda otomatik yeniden deneme yok. `refresh` = inceleme yeniden okunmalı. */
@@ -151,7 +178,7 @@ export function classifyStaffAccountReopenFailure(error: unknown): { message: st
   const body = asRecord(e?.body);
   const code = typeof body?.code === 'string' ? body.code : undefined;
   const status = typeof e?.status === 'number' ? e.status : undefined;
-  if (code === 'STAFF_ACCOUNT_REVIEW_STALE' || code === 'STAFF_ACCOUNT_REOPEN_CONFLICT' || code === 'STAFF_ACCOUNT_REOPEN_UNKNOWN_GRANT') {
+  if (code === 'STAFF_ACCOUNT_REVIEW_STALE' || code === 'STAFF_ACCOUNT_REOPEN_CONFLICT' || code === 'STAFF_ACCOUNT_REOPEN_UNKNOWN_GRANT' || code === 'STAFF_CONTACT_REVIEW_REQUIRED') {
     return { message: 'Hesap ya da büro geneli izinler siz incelerken değişti; hiçbir şey yazılmadı. İncelemeyi yenileyip yeniden karar verin.', refresh: true };
   }
   if (code === 'STAFF_ACCOUNT_REOPEN_NOT_APPLICABLE') {

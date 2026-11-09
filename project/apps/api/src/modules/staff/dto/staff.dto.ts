@@ -131,6 +131,15 @@ export class ReopenStaffAccountDto {
   @IsString({ each: true })
   @IsNotEmpty({ each: true })
   keepGrantIds: string[];
+
+  // G1/G2 is a separate write-permission review; omission is compatible only when no contact ALLOW exists.
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ArrayUnique()
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
+  keepContactGrantIds?: string[];
 }
 
 export class UpdateStaffOrderDto {

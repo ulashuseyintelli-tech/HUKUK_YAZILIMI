@@ -39,12 +39,14 @@ export function StaffAccountReopenDialog({
 }) {
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [keep, setKeep] = useState<Set<string>>(new Set());
+  const [contactKeep, setContactKeep] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<{ message: string; refresh: boolean } | null>(null);
 
   const load = useCallback(async () => {
     setPhase({ kind: "loading" });
     setKeep(new Set());
+    setContactKeep(new Set());
     setFailure(null);
     try {
       const review = readStaffAccountReopenReview(await api.get(`/staff/${staffId}/account-reopen-review`));
@@ -71,7 +73,7 @@ export function StaffAccountReopenDialog({
     setBusy(true);
     setFailure(null);
     try {
-      const res = await api.post(`/staff/${staffId}/account-reopen`, buildStaffAccountReopenPayload(phase.review, keep));
+      const res = await api.post(`/staff/${staffId}/account-reopen`, buildStaffAccountReopenPayload(phase.review, keep, contactKeep));
       setPhase({ kind: "done", message: accountReopenResultMessage(res) });
       onDone?.();
     } catch (e: unknown) {
@@ -138,6 +140,18 @@ export function StaffAccountReopenDialog({
                 </div>
               )}
             </fieldset>
+            {review.contactAllowGrants !== undefined && <fieldset className="mt-3 border-t pt-3" disabled={busy}>
+              <legend className="font-medium mb-2">Korunacak iletişim yazma izinleri (G1/G2)</legend>
+              {review.contactAllowGrants.length === 0 ? <p className="text-gray-500">Bu hesapta iletişim yazma izni yok.</p>
+                : review.contactAllowGrants.map(g => <label key={g.id} className="flex items-start gap-2 mb-2">
+                  <input type="checkbox" aria-label={`${grantLabel(g.permissionKey)} iznini koru`} checked={contactKeep.has(g.id)}
+                    disabled={g.validUntil === null || review.account?.role === 'VIEWER'}
+                    onChange={e => setContactKeep(prev => { const next = new Set(prev); if (e.target.checked) next.add(g.id); else next.delete(g.id); return next; })} />
+                  <span>{grantLabel(g.permissionKey)}<span className="block text-[11px] text-gray-500">
+                    {g.startsInFuture ? `İleri tarihli: ${formatGrantDate(g.validFrom)}` : 'Şu an geçerli'} · bitiş {g.validUntil ? formatGrantDate(g.validUntil) : 'tanımsız; korunamaz'}
+                  </span></span>
+                </label>)}
+            </fieldset>}
           </>
         )}
 
