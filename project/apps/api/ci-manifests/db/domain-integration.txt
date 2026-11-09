@@ -507,3 +507,6 @@ src/modules/client/__tests__/client-object-scope-1b.http.db-gated.integration.sp
 src/modules/client/__tests__/client-deactivation-portal.http.db-gated.integration.spec.ts
 src/modules/client-approval/__tests__/client-approval-ledger-read.http.db-gated.integration.spec.ts
 src/modules/client-settlement/__tests__/client-payout-approval-window.http.db-gated.integration.spec.ts
+# F02 P3 taramasi (09.11.2026) — kiraci siniri: GET /address-discovery/uyap-query/debtor/:caseDebtorId/suggestions
+#   UyapQueryService.getSuggestedQueries tenantId'yi kullanmiyordu; gercek HTTP + tek kullanimlik PostgreSQL.
+src/modules/address-discovery/__tests__/uyap-query-suggestions-tenant-boundary.http.db-gated.integration.spec.ts
