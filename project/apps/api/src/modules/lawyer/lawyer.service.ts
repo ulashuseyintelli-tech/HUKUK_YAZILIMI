@@ -1058,10 +1058,6 @@ export class LawyerService {
     // ÖNCESİ alındı; dosya hiçbir anda sorumlusuz kalmaz — clear-before-set sırası, partial unique
     // index case_lawyer_one_responsible_per_case ile aynı tx içinde tutarlı).
     const deactivated = await this.prisma.$transaction(async (tx) => {
-      if (existing.userId) {
-        if (!actor?.userId) throw new ConflictException('Özel veri yetki kaldırma aktörü eksik; pasifleştirme iptal edildi.');
-        await revokeK73ForSubjectInTx(tx, tenantId, existing.userId, actor.userId, 'LAWYER_DEACTIVATED', this.audit);
-      }
       const { count } = await tx.lawyer.updateMany({
         where: { id, tenantId },
         data: { isActive: false },
@@ -1083,6 +1079,10 @@ export class LawyerService {
             "Bağlı kullanıcı hesabı deaktive edilemedi (tenant uyuşmazlığı veya veri bütünlüğü sorunu); pasifleştirme iptal edildi."
           );
         }
+        // Preserve Lawyer → User locking and the existing 409 integrity contract.
+        // The User update already holds the subject lock until this transaction commits.
+        if (!actor?.userId) throw new ConflictException('Özel veri yetki kaldırma aktörü eksik; pasifleştirme iptal edildi.');
+        await revokeK73ForSubjectInTx(tx, tenantId, existing.userId, actor.userId, 'LAWYER_DEACTIVATED', this.audit);
       }
 
       for (const t of transferPlan) {

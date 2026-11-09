@@ -361,7 +361,6 @@ export class StaffService {
     return this.prisma.$transaction(async (tx) => {
       if (existing.userId) {
         if (!actor?.userId) throw new ConflictException('Özel veri yetki kaldırma aktörü eksik; pasifleştirme iptal edildi.');
-        await revokeK73ForSubjectInTx(tx, tenantId, existing.userId, actor.userId, 'STAFF_DEACTIVATED', auditConsumer!);
         const userResult = await tx.user.updateMany({
           where: { id: existing.userId, tenantId },
           data: { isActive: false },
@@ -371,6 +370,8 @@ export class StaffService {
             'Bağlı kullanıcı hesabı deaktive edilemedi (tenant uyuşmazlığı veya veri bütünlüğü sorunu); pasifleştirme iptal edildi.'
           );
         }
+        // Preserve the linked-account 409 contract before K7.3 revocation; the User lock is held.
+        await revokeK73ForSubjectInTx(tx, tenantId, existing.userId, actor.userId, 'STAFF_DEACTIVATED', auditConsumer!);
       }
 
       const deactivated = await tx.staffMember.update({

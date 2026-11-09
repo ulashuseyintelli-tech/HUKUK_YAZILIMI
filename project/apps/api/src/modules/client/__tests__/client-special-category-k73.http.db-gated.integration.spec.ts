@@ -1,6 +1,6 @@
 jest.mock('pdf-poppler', () => ({ convert: async () => { throw new Error('Renderer not used in K7.3 acceptance'); } }));
 import 'reflect-metadata';
-import { ForbiddenException, INestApplication, NotFoundException, ValidationPipe } from '@nestjs/common';
+import { ConflictException, ForbiddenException, INestApplication, NotFoundException, ValidationPipe } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { JwtModule, JwtService } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
@@ -269,6 +269,20 @@ dbDescribe('K7.3 — real JWT/HTTP, bounded grants and atomic lifecycle on dispo
     const g = data(await grant()); await lawyers.delete(tenant, readerLawyer, actor());
     expect((await scopes().findUniqueOrThrow({ where: { id: g.id } })).revokedAt).not.toBeNull();
     expect(await db.permissionGrant.count({ where: { tenantId: tenant, subjectUserId: reader, permissionKey: K73_KEYS.READ } })).toBe(1);
+  });
+  it('corrupt linked accounts retain 409 and roll back profiles, existing grants and all audit writes', async () => {
+    expect((await grant()).status).toBe(201);
+    expect((await grant('READ', { subjectUserId: staffAdmin })).status).toBe(201);
+    const foreignLawyer = await user('USER', foreignTenant), foreignStaff = await user('USER', foreignTenant);
+    await db.lawyer.update({ where: { id: readerLawyer }, data: { userId: foreignLawyer.id } });
+    await db.staffMember.update({ where: { id: staffId }, data: { userId: foreignStaff.id } });
+    const before = await snapshot();
+    await expect(lawyers.delete(tenant, readerLawyer, actor())).rejects.toBeInstanceOf(ConflictException);
+    expect(await snapshot()).toEqual(before);
+    await expect(staff.remove(staffId, tenant, actor())).rejects.toBeInstanceOf(ConflictException);
+    expect(await snapshot()).toEqual(before);
+    expect(await db.user.findUniqueOrThrow({ where: { id: foreignLawyer.id } })).toMatchObject({ isActive: true });
+    expect(await db.user.findUniqueOrThrow({ where: { id: foreignStaff.id } })).toMatchObject({ isActive: true });
   });
   it('grant audit failure rolls back both permission and scope records', async () => {
     jest.spyOn(audit, 'logInTransaction').mockRejectedValueOnce(new Error('Synthetic grant audit failure'));
