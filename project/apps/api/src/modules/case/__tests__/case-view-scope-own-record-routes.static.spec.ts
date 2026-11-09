@@ -93,6 +93,8 @@ describe("F02 P3-D3b-2 — kendi kimlikli dosya nesnesi okuma rota envanteri (fa
       caseLease: "Kira sozlesmesi bulunamadi",
       caseFeeAgreement: "Ücret sözleşmesi bulunamadı",
       caseClient: "Dosya bulunamadı",
+      tebligat: "Tebligat bulunamadı", // P3 Tebligat (09.11.2026); envanteri tebligat-case-view-scope-routes.static.spec.ts
+      caseDebtor: "Dosya bulunamadı",
     });
   });
 

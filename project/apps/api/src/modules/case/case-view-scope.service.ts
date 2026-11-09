@@ -21,7 +21,9 @@ type Db = Prisma.TransactionClient | PrismaService;
  *  - CaseService.findAll / findOneVisible (D1: GET /cases, GET /cases/:id) → scopeWhere();
  *  - CaseViewScopeGuard (D2: dosya kimliği yolda olan belge okuma uçları) → assertCaseVisible();
  *  - TemplateEngineController.downloadArtifact (D2) → isArtifactVisible();
- *  - CaseObjectViewScopeGuard (D3b-2: kendi kimlikli kayıt / ücret sözleşmesi okuma uçları) → isCaseObjectVisible().
+ *  - CaseObjectViewScopeGuard (D3b-2: kendi kimlikli kayıt / ücret sözleşmesi okuma uçları) → isCaseObjectVisible();
+ *  - TebligatController (P3 Tebligat, 09.11.2026: `summary`) → assertCaseVisible() / scopeWhere(); `:id` ve
+ *    `case-debtor/:caseDebtorId` → CaseObjectViewScopeGuard ("tebligat" / "caseDebtor").
  */
 @Injectable()
 export class CaseViewScopeService {
@@ -115,6 +117,10 @@ export class CaseViewScopeService {
       }
       case "caseClient": // CaseClient'ta tenantId yok: kiracı bağlı dosyadan
         return (await this.prisma.caseClient.findFirst({ where: { id, case: { tenantId } }, select }))?.caseId ?? null;
+      case "tebligat": // P3 Tebligat: satır aktör kiracısında; dosya aşağıda ayrıca kiracı + kapsamla doğrulanır
+        return (await this.prisma.tebligat.findFirst({ where, select }))?.caseId ?? null;
+      case "caseDebtor": // P3 Tebligat: CaseDebtor'da tenantId yok → kiracı bağlı dosyadan (caseClient emsali)
+        return (await this.prisma.caseDebtor.findFirst({ where: { id, case: { tenantId } }, select }))?.caseId ?? null;
       default:
         return null;
     }
@@ -122,4 +128,12 @@ export class CaseViewScopeService {
 }
 
 /** P3-D3b-2: kendi kimliğiyle okunan, dosyaya bağlı nesne türleri (yeni kural değildir; dosya bu satırlardan çözülür). */
-export type CaseScopedObjectKind = "caseCollateral" | "caseInstrument" | "caseJudgment" | "caseLease" | "caseFeeAgreement" | "caseClient";
+export type CaseScopedObjectKind =
+  | "caseCollateral"
+  | "caseInstrument"
+  | "caseJudgment"
+  | "caseLease"
+  | "caseFeeAgreement"
+  | "caseClient"
+  | "tebligat" // P3 Tebligat (09.11.2026): GET /tebligat/:id
+  | "caseDebtor"; // P3 Tebligat (09.11.2026): GET /tebligat/case-debtor/:caseDebtorId

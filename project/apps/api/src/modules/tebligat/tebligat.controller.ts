@@ -1,6 +1,8 @@
 import {
   Controller,
+  ForbiddenException,
   Get,
+  Optional,
   Post,
   Put,
   Body,
@@ -8,6 +10,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { TebligatService } from "./tebligat.service";
 import { PttTrackingService } from "./ptt-tracking.service";
 import { UetsService, UetsSendRequest } from "./uets.service";
@@ -20,6 +23,19 @@ import {
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
+import { isCaseViewScopeEnabled } from "../case/case-view-scope";
+import { CaseViewScoped, CaseViewScopedByObject } from "../case/case-view-scope.guard";
+import { CaseViewScopeService } from "../case/case-view-scope.service";
+
+// F02 P3 Tebligat (R12 Kabul A sonrası, 09.11.2026): dosyaya bağlı tebligat OKUMALARI D1 dosya görünüm kapsamına bağlanır
+// (yeni kural / anahtar / bayrak YOK; CaseViewScopeService sözleşmesi aynen):
+//  - dosya kimliği yolda → `@CaseViewScoped()` (GET case/:caseId, check-priority/:caseId);
+//  - kendi kimliğiyle okunan → `@CaseViewScopedByObject` — dosya SUNUCUDAKİ satırdan çözülür (GET :id → tebligat;
+//    GET case-debtor/:caseDebtorId → CaseDebtor);
+//  - özet (`summary?caseId=`) → caseId verilirse dosya doğrulanır, verilmezse yalnız kapsamdaki dosyalar sayılır.
+// Bayrak KAPALI → ek sorgu yok, davranış bugünküyle aynı. Kapsam dışı = var olmayan: AYNI 404 gövdesi.
+// Kapsam dışı bırakılanlar: yazım uçları (değişmez); dış sistem sorguları (ptt-track, uets-check, uets-status,
+// electronic-channel — DB okumaz); `pending-actions` (bugün `:id` gölgesinde 404; erişilebilir KILINMADI).
 
 // F02-D-2 dilim 3 (owner "Burada başla" + ek talimat 30.10.2026): VIEWER tebligat oluşturamaz / güncelleyemez / gönderildi işaretleyemez, PTT ve elektronik sonuç yazamaz,
 // MERNİS tebligatı açamaz, UETS/KEP ile GÖNDEREMEZ, toplu PTT sorgusu tetikleyemez (dış sistem). Ölçülen boşluk: yalnız JWT;
@@ -32,7 +48,21 @@ export class TebligatController {
     private tebligatService: TebligatService,
     private pttTrackingService: PttTrackingService,
     private uetsService: UetsService,
+    @Optional() private readonly caseViewScope?: CaseViewScopeService,
   ) {}
+
+  /**
+   * F02 P3: bayrak açıkken satırların DOSYASI için süzgeç (dosya kiracısı belirleyici + D1 kapsamı; ALLOW → yalnız kiracı).
+   * Bayrak kapalı → undefined (ek sorgu yok). Bayrak açık + servis yok → 403 (fail-closed; CaseViewScopeGuard emsali).
+   */
+  private async caseRowFilter(tenantId: string, actorUserId: string): Promise<Prisma.CaseWhereInput | undefined> {
+    if (!isCaseViewScopeEnabled()) return undefined;
+    if (!this.caseViewScope) {
+      throw new ForbiddenException({ code: "CASE_VIEW_SCOPE_UNRESOLVED", message: "Dosya görünüm kapsamı çözümlenemedi" });
+    }
+    const scope = await this.caseViewScope.scopeWhere(tenantId, actorUserId);
+    return { tenantId, ...(scope ? { AND: [scope] } : {}) };
+  }
 
   // ==================== CRUD ====================
 
@@ -49,9 +79,41 @@ export class TebligatController {
   }
 
   /**
+   * Tebligat özeti getir
+   * GET /tebligat/summary
+   *
+   * R12 Kabul A (09.11.2026): Express rotaları TANIM SIRASIYLA eşler. Bu uç `:id`'den SONRA
+   * tanımlıyken `GET /tebligat/summary` → findById("summary") → 404 "Tebligat bulunamadı"
+   * dönüyordu (dosya Tebligat paneli meşru boş durumda bile hata bandı gösteriyordu).
+   * Bu yüzden `:id`'den ÖNCE durur. Kapı DEĞİŞMEDİ: sınıf düzeyi JwtAuthGuard +
+   * ViewerWriteDenyGuard, kiracı JWT'den (`@CurrentUser("tenantId")`).
+   *
+   * F02 P3: bayrak açıkken `caseId` verilirse dosya kiracı + kapsamla doğrulanır (kapsam dışı / yok → AYNI 404
+   * "Dosya bulunamadı"); verilmezse yalnız aktörün kapsamındaki dosyaların tebligatları sayılır (liste ile tutarlı).
+   */
+  @Get("summary")
+  async getSummary(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") actorUserId: string,
+    @Query("caseId") caseId?: string
+  ) {
+    if (caseId && isCaseViewScopeEnabled()) {
+      if (!this.caseViewScope) {
+        throw new ForbiddenException({ code: "CASE_VIEW_SCOPE_UNRESOLVED", message: "Dosya görünüm kapsamı çözümlenemedi" });
+      }
+      await this.caseViewScope.assertCaseVisible(tenantId, actorUserId, caseId);
+      return this.tebligatService.getSummary(tenantId, caseId);
+    }
+    const caseFilter = await this.caseRowFilter(tenantId, actorUserId);
+    // Bayrak kapalı → çağrı bugünküyle birebir aynı (ek argüman yok).
+    return caseFilter ? this.tebligatService.getSummary(tenantId, caseId, caseFilter) : this.tebligatService.getSummary(tenantId, caseId);
+  }
+
+  /**
    * Tebligat detayı getir
    * GET /tebligat/:id
    */
+  @CaseViewScopedByObject("tebligat", "id") // F02 P3: dosya tebligat satırından çözülür (bayrak açıkken; kapsam dışı / yok aynı 404)
   @Get(":id")
   findById(
     @CurrentUser("tenantId") tenantId: string,
@@ -64,6 +126,7 @@ export class TebligatController {
    * Dosya için tebligatları getir
    * GET /tebligat/case/:caseId
    */
+  @CaseViewScoped() // F02 P3: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   @Get("case/:caseId")
   findByCaseId(
     @CurrentUser("tenantId") tenantId: string,
@@ -75,13 +138,22 @@ export class TebligatController {
   /**
    * Borçlu için tebligatları getir
    * GET /tebligat/case-debtor/:caseDebtorId
+   *
+   * F02 P3: dosya CaseDebtor satırından çözülür (kapsam dışı / yok → "Dosya bulunamadı"; servis bulunamadı vermez).
+   * Tebligat.caseId ile CaseDebtor.caseId arasında DB kısıtı yok → bayrak açıkken satırlar KENDİ dosyalarının
+   * kiracı + kapsamıyla da süzülür (detay ucuyla tutarlı).
    */
+  @CaseViewScopedByObject("caseDebtor", "caseDebtorId")
   @Get("case-debtor/:caseDebtorId")
-  findByCaseDebtorId(
+  async findByCaseDebtorId(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") actorUserId: string,
     @Param("caseDebtorId") caseDebtorId: string
   ) {
-    return this.tebligatService.findByCaseDebtorId(tenantId, caseDebtorId);
+    const caseFilter = await this.caseRowFilter(tenantId, actorUserId);
+    return caseFilter
+      ? this.tebligatService.findByCaseDebtorId(tenantId, caseDebtorId, caseFilter)
+      : this.tebligatService.findByCaseDebtorId(tenantId, caseDebtorId); // bayrak kapalı → bugünkü çağrı
   }
 
   /**
@@ -144,7 +216,10 @@ export class TebligatController {
   /**
    * Adres öncelik kurallarını kontrol et
    * GET /tebligat/check-priority/:caseId
+   *
+   * F02 P3: önceki tebligat sonuçlarını OKUR (servis `tenantId + caseId [+ caseDebtorId]` ile süzer) → dosya kapsamı.
    */
+  @CaseViewScoped() // F02 P3: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   @Get("check-priority/:caseId")
   checkAddressPriority(
     @CurrentUser("tenantId") tenantId: string,
@@ -176,22 +251,14 @@ export class TebligatController {
   }
 
   // ==================== İSTATİSTİKLER ====================
-
-  /**
-   * Tebligat özeti getir
-   * GET /tebligat/summary
-   */
-  @Get("summary")
-  getSummary(
-    @CurrentUser("tenantId") tenantId: string,
-    @Query("caseId") caseId?: string
-  ) {
-    return this.tebligatService.getSummary(tenantId, caseId);
-  }
+  // (`GET /tebligat/summary` yukarıda, `:id`'den önce tanımlı — bkz. getSummary.)
 
   /**
    * Bekleyen işlemleri getir
    * GET /tebligat/pending-actions
+   *
+   * NOT (R12 Kabul A, 09.11.2026): bu uç hâlâ `:id`'den SONRA → bugün findById'ye düşer (404).
+   * Web'de çağıranı yok; erişilebilir kılmak kiracı geneli liste açtığı için ayrı karardır, burada değiştirilmedi.
    */
   @Get("pending-actions")
   getPendingActions(@CurrentUser("tenantId") tenantId: string) {

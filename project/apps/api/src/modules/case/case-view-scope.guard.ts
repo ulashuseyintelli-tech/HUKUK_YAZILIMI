@@ -56,6 +56,8 @@ export const CASE_OBJECT_NOT_FOUND: Readonly<Record<CaseScopedObjectKind, string
   caseLease: "Kira sozlesmesi bulunamadi",
   caseFeeAgreement: "Ücret sözleşmesi bulunamadı",
   caseClient: "Dosya bulunamadı",
+  tebligat: "Tebligat bulunamadı", // TebligatService.findById ile aynı gövde
+  caseDebtor: "Dosya bulunamadı", // borçlu tebligat listesi bulunamadı vermez (200 boş) → caseClient ile aynı
 };
 
 /**
