@@ -411,12 +411,13 @@ export class AddressTaskService {
   /**
    * Süresi geçmiş görevleri bul
    */
-  async findOverdueTasks(tenantId?: string): Promise<AddressTask[]> {
+  async findOverdueTasks(tenantId?: string, caseFilter?: Prisma.CaseWhereInput): Promise<AddressTask[]> {
     const now = new Date();
 
     return this.prisma.addressTask.findMany({
       where: {
         ...(tenantId ? { tenantId } : { tenant: ACTIVE_TENANT_WHERE }),
+        ...(caseFilter ? { case: caseFilter } : {}), // F02 P3 tarama S4: okuma ucu, bayrak açıkken
         status: 'WAITING_EXTERNAL',
         dueAt: { lt: now },
         attemptCount: { lt: 3 }, // maxAttempts'ten küçük
@@ -508,7 +509,7 @@ export class AddressTaskService {
   /**
    * Borçlu için görevleri getir
    */
-  async getTasksByDebtor(debtorId: string, tenantId: string): Promise<AddressTask[]> {
+  async getTasksByDebtor(debtorId: string, tenantId: string, caseFilter?: Prisma.CaseWhereInput): Promise<AddressTask[]> {
     // SEC-TENANT-HARDEN-P01 (ADDR-TID-06): fail-closed, bkz. getPendingTasksForCase.
     if (!tenantId) {
       throw new ForbiddenException('Tenant context required');
@@ -517,6 +518,7 @@ export class AddressTaskService {
       where: {
         tenantId,
         debtorId,
+        ...(caseFilter ? { case: caseFilter } : {}), // F02 P3 tarama S4: okuma ucu, bayrak açıkken
       },
       orderBy: { createdAt: 'desc' },
     });

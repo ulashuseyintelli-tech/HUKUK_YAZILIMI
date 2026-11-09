@@ -9,8 +9,11 @@ import {
   Query,
   UseGuards,
   Request,
+  Optional,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CaseViewScoped, CaseViewScopedByObject } from '../case/case-view-scope.guard';
+import { CaseViewScopeService, requireCaseViewScope } from '../case/case-view-scope.service';
 import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { AddressDiscoveryService } from './address-discovery.service';
 import { ClientInfoRequestService } from './client-info-request.service';
@@ -34,6 +37,8 @@ export class AddressDiscoveryController {
     private crossFileService: CrossFileService,
     private uyapQueryService: UyapQueryService,
     private institutionLetterService: InstitutionLetterService,
+    // F02 P3 tarama S4: çapraz dosya okumalarında satır süzgeci (bayrak açıkken zorunlu; yoksa 403)
+    @Optional() private readonly caseViewScope?: CaseViewScopeService,
   ) {}
 
   /** D-3a: aktör ve tenant YALNIZ sunucu tarafı JWT'den; gövdeden aktör/tenant alınmaz. */
@@ -57,6 +62,7 @@ export class AddressDiscoveryController {
   /**
    * Dosya için müvekkil bilgi taleplerini getir
    */
+  @CaseViewScoped() // F02 P3 tarama S4: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   @Get('client-info-request/case/:caseId')
   async getClientInfoRequestsForCase(
     @Request() req: any,
@@ -68,6 +74,7 @@ export class AddressDiscoveryController {
   /**
    * Tek bir talebi getir
    */
+  @CaseViewScopedByObject('clientInfoRequest', 'id') // F02 P3 tarama S4: dosya talep satırından çözülür
   @Get('client-info-request/:id')
   async getClientInfoRequest(
     @Request() req: any,
@@ -125,7 +132,11 @@ export class AddressDiscoveryController {
     @Request() req: any,
     @Param('debtorId') debtorId: string,
   ) {
-    return this.crossFileService.findSameDebtor(req.user.tenantId, debtorId);
+    // F02 P3 tarama S4: borçlu kimlikli yanıtta dosya ayrıntıları yalnız aktöre görünen dosyalardan (bayrak kapalı → bugünkü çağrı).
+    const caseFilter = await requireCaseViewScope(this.caseViewScope)?.caseRowFilter(req.user.tenantId, req.user.id);
+    return caseFilter
+      ? this.crossFileService.findSameDebtor(req.user.tenantId, debtorId, caseFilter)
+      : this.crossFileService.findSameDebtor(req.user.tenantId, debtorId);
   }
 
   /**
@@ -137,11 +148,10 @@ export class AddressDiscoveryController {
     @Param('debtorId') debtorId: string,
     @Query('currentCaseId') currentCaseId: string,
   ) {
-    return this.crossFileService.getAddressesFromOtherCases(
-      req.user.tenantId,
-      debtorId,
-      currentCaseId,
-    );
+    const caseFilter = await requireCaseViewScope(this.caseViewScope)?.caseRowFilter(req.user.tenantId, req.user.id); // F02 P3 tarama S4
+    return caseFilter
+      ? this.crossFileService.getAddressesFromOtherCases(req.user.tenantId, debtorId, currentCaseId, caseFilter)
+      : this.crossFileService.getAddressesFromOtherCases(req.user.tenantId, debtorId, currentCaseId);
   }
 
   /**
@@ -168,11 +178,10 @@ export class AddressDiscoveryController {
     @Param('debtorId') debtorId: string,
     @Query('currentCaseId') currentCaseId: string,
   ) {
-    const count = await this.crossFileService.getCrossFileAddressCount(
-      req.user.tenantId,
-      debtorId,
-      currentCaseId,
-    );
+    const caseFilter = await requireCaseViewScope(this.caseViewScope)?.caseRowFilter(req.user.tenantId, req.user.id); // F02 P3 tarama S4
+    const count = caseFilter
+      ? await this.crossFileService.getCrossFileAddressCount(req.user.tenantId, debtorId, currentCaseId, caseFilter)
+      : await this.crossFileService.getCrossFileAddressCount(req.user.tenantId, debtorId, currentCaseId);
     return { count };
   }
 
@@ -255,6 +264,7 @@ export class AddressDiscoveryController {
   /**
    * Araştırma durumunu getir
    */
+  @CaseViewScopedByObject('caseDebtor', 'caseDebtorId') // F02 P3 tarama S4: dosya, dosya borçlusu satırından çözülür
   @Get('research/:caseDebtorId')
   async getResearchStatus(
     @Request() req: any,
@@ -283,6 +293,7 @@ export class AddressDiscoveryController {
   /**
    * Sonraki aksiyonu öner
    */
+  @CaseViewScopedByObject('caseDebtor', 'caseDebtorId') // F02 P3 tarama S4: dosya, dosya borçlusu satırından çözülür
   @Get('research/:caseDebtorId/suggestions')
   async getSuggestions(
     @Request() req: any,
@@ -297,6 +308,7 @@ export class AddressDiscoveryController {
   /**
    * Araştırma timeline'ını getir
    */
+  @CaseViewScopedByObject('caseDebtor', 'caseDebtorId') // F02 P3 tarama S4: dosya, dosya borçlusu satırından çözülür
   @Get('research/:caseDebtorId/timeline')
   async getResearchTimeline(
     @Request() req: any,
@@ -356,6 +368,7 @@ export class AddressDiscoveryController {
   /**
    * Borçlu için UYAP sorgularını getir
    */
+  @CaseViewScopedByObject('caseDebtor', 'caseDebtorId') // F02 P3 tarama S4: dosya, dosya borçlusu satırından çözülür
   @Get('uyap-query/debtor/:caseDebtorId')
   async getUyapQueriesForDebtor(
     @Request() req: any,
@@ -370,6 +383,7 @@ export class AddressDiscoveryController {
   /**
    * Tek bir sorguyu getir
    */
+  @CaseViewScopedByObject('uyapQuery', 'id') // F02 P3 tarama S4: dosya, sorgunun dosya borçlusundan çözülür
   @Get('uyap-query/:id')
   async getUyapQuery(
     @Request() req: any,
@@ -413,6 +427,7 @@ export class AddressDiscoveryController {
   /**
    * Önerilen sorguları getir
    */
+  @CaseViewScopedByObject('caseDebtor', 'caseDebtorId') // F02 P3 tarama S4: dosya, dosya borçlusu satırından çözülür
   @Get('uyap-query/debtor/:caseDebtorId/suggestions')
   async getSuggestedUyapQueries(
     @Request() req: any,
@@ -448,6 +463,7 @@ export class AddressDiscoveryController {
   /**
    * Borçlu için kurum yazılarını getir
    */
+  @CaseViewScopedByObject('caseDebtor', 'caseDebtorId') // F02 P3 tarama S4: dosya, dosya borçlusu satırından çözülür
   @Get('institution-letter/debtor/:caseDebtorId')
   async getInstitutionLettersForDebtor(
     @Request() req: any,
@@ -462,6 +478,7 @@ export class AddressDiscoveryController {
   /**
    * Tek bir yazıyı getir
    */
+  @CaseViewScopedByObject('institutionLetter', 'id') // F02 P3 tarama S4: dosya, yazının dosya borçlusundan çözülür
   @Get('institution-letter/:id')
   async getInstitutionLetter(
     @Request() req: any,

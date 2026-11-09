@@ -22,10 +22,28 @@ const MODULES_DIR = resolve(__dirname, "../..");
 const SRC_DIR = resolve(MODULES_DIR, "..");
 
 /** Karar satırı başına kapısı henüz olmayan okuma sayısı (bu dilimden sonra). Envanter kapanışında boş nesne olur. */
-const EXPECTED_OPEN: Record<string, number> = { S1: 23, S2: 15, S3: 23, S4: 31, S5: 6, S6: 15, S7: 8, S11: 15 };
+const EXPECTED_OPEN: Record<string, number> = { S1: 23, S2: 15, S3: 23, S5: 6, S6: 15, S7: 8, S11: 15 };
 
-/** KAPILI_ICERDE notunda kabul edilen kapsam çağrıları (keyfî metin kapı sayılmaz). */
-const INNER_MARKERS = ["caseService.findAll", "findOneVisible", "assertCaseVisible", "isArtifactVisible", "findOneForActor"];
+/** KAPILI_ICERDE notunda kabul edilen handler içi kapsam çağrıları (keyfî metin kapı sayılmaz). */
+const INNER_MARKERS = ["caseService.findAll", "findOneVisible", "assertCaseVisible", "isArtifactVisible", "findOneForActor", "caseRowFilter"];
+/** `servis-dosyası::yöntem` biçimindeki notta, yöntemin gövdesinde bulunması gereken kapsam çağrılarından en az biri. */
+const SERVICE_SCOPE_CALLS = /requireCaseViewScope\(|caseRowFilter\(|visibleCaseIds\(|assertCaseVisible\(|isCaseVisible\(|viewScopeWhere\(|maskHiddenCases\(/;
+const SERVICE_NOTE = /^([\w./-]+\.ts)::(\w+)$/;
+
+/** Servis dosyasındaki bir yöntemin gövdesi (aynı girintideki bir sonraki üye bildirimine kadar); bulunamazsa boş dize. */
+function serviceMethodBody(file: string, method: string): string {
+  const lines = readFileSync(join(MODULES_DIR, file), "utf8").split(/\r?\n/);
+  const start = lines.findIndex((l) => new RegExp(`^  (?:public |private |protected )?(?:async )?${method}\\s*(?:<[^>]*>)?\\(`).test(l));
+  if (start < 0) return "";
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^  \}\s*$/.test(lines[i])) {
+      end = i + 1;
+      break;
+    }
+  }
+  return lines.slice(start, end).join("\n");
+}
 const GATE_DECORATOR = /CaseViewScoped\(|CaseViewScopedByObject\(|CaseViewScopeGuard|CaseObjectViewScopeGuard/;
 const CASE_KEYED_PATH = /:caseId\b|:caseDebtorId\b|\/cases?(\/|$)/;
 const CLASSES: RouteClass[] = ["KAPILI", "KAPILI_ICERDE", "BASKA_KAPI", "ISTISNA", "DOSYA_DISI", "YAZIM", "ACIK"];
@@ -150,7 +168,7 @@ describe("F02 P3 — bütün-controller dosya görünüm kapsamı rota envanteri
         if (!CLASSES.includes(cls)) problems.push(`${file} ${key}: bilinmeyen sınıf ${cls}`);
         if ((cls === "BASKA_KAPI" || cls === "ISTISNA" || cls === "DOSYA_DISI") && note.trim().length < 5) problems.push(`${file} ${key}: ${cls} gerekçesiz`);
         if (cls === "ACIK" && !/^S(1|2|3|4|5|6|7|8|9|10|11)$/.test(note)) problems.push(`${file} ${key}: ACIK notu karar satırı değil`);
-        if (cls === "KAPILI_ICERDE" && !INNER_MARKERS.includes(note)) problems.push(`${file} ${key}: tanınmayan iç kapı işareti "${note}"`);
+        if (cls === "KAPILI_ICERDE" && !INNER_MARKERS.includes(note) && !SERVICE_NOTE.test(note)) problems.push(`${file} ${key}: tanınmayan iç kapı işareti "${note}"`);
         if (cls === "YAZIM" && !key.startsWith("POST ")) problems.push(`${file} ${key}: YAZIM yalnız POST için (GET okuma sınıfı almalı)`);
       }
     }
@@ -172,12 +190,17 @@ describe("F02 P3 — bütün-controller dosya görünüm kapsamı rota envanteri
           if (!decorated) problems.push(`${file} ${key}: KAPILI ama dekoratörde kapı yok`);
         } else if (cls === "KAPILI_ICERDE") {
           gated++;
-          if (!route.segment.includes(note)) problems.push(`${file} ${key}: KAPILI_ICERDE ama gövdede "${note}" yok`);
+          const service = SERVICE_NOTE.exec(note);
+          if (service) {
+            // Kapı serviste: handler o yöntemi çağırmalı VE yöntemin gövdesinde kapsam çağrısı bulunmalı.
+            if (!route.segment.includes(`${service[2]}(`)) problems.push(`${file} ${key}: handler ${service[2]}() çağırmıyor`);
+            if (!SERVICE_SCOPE_CALLS.test(serviceMethodBody(service[1], service[2]))) problems.push(`${file} ${key}: ${note} gövdesinde kapsam çağrısı yok`);
+          } else if (!route.segment.includes(note)) problems.push(`${file} ${key}: KAPILI_ICERDE ama gövdede "${note}" yok`);
         } else if (decorated) problems.push(`${file} ${key}: kapı taşıyor ama sınıfı ${cls}`);
       }
     }
     expect(problems).toEqual([]);
-    expect(gated).toBeGreaterThanOrEqual(88); // P3 D1–D3b-2 + #3170 + #3172 (81) + bu dilim (S8 3, S9 3, S10 1)
+    expect(gated).toBeGreaterThanOrEqual(119); // P3 D1–D3b-2 + #3170 + #3172 (81) + S8 3 + S9 3 + S10 1 + S4 31
   });
 
   it("kapısı henüz olmayan okumalar karar satırı başına sabit (yalnız azalabilir); kapanışta boş olur", () => {
@@ -200,5 +223,10 @@ describe("F02 P3 — bütün-controller dosya görünüm kapsamı rota envanteri
     expect(GATE_DECORATOR.test(find("precautionary-order/precautionary-order.controller.ts", "POST /precautionary-orders").decorators)).toBe(false);
     expect(GATE_DECORATOR.test(find("case/case.controller.ts", "GET /cases/stats").decorators)).toBe(false);
     expect(find("task/task.controller.ts", "GET /tasks/:id").segment).toContain("findOneForActor");
+    // Servis içi kapı okuyucusu: kapsam çağrısı olan yöntem bulunur; olmayan yöntemde bulunmaz.
+    expect(SERVICE_SCOPE_CALLS.test(serviceMethodBody("debtor/debtor.service.ts", "findOneForActor"))).toBe(true);
+    expect(SERVICE_SCOPE_CALLS.test(serviceMethodBody("debtor/communication.service.ts", "getCommunicationHistory"))).toBe(true);
+    expect(SERVICE_SCOPE_CALLS.test(serviceMethodBody("debtor/debtor.service.ts", "findOne"))).toBe(false);
+    expect(serviceMethodBody("debtor/debtor.service.ts", "yokBoyleBirYontem")).toBe("");
   });
 });

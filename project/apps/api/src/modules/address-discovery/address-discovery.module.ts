@@ -14,9 +14,11 @@ import { CaseDebtorLifecycleGuardModule } from '../case-debtor-lifecycle-guard/c
 import { OfficeApprovalModule } from '../office-approval/office-approval.module';
 // D-3b ("Yol1"): bilgi talebine intake baglantisi eklemek icin mevcut intake servisi TUKETILIR.
 import { ClientIntakeLinkModule } from '../client-intake-link/client-intake-link.module';
+// F02 P3 tarama S4: okuma kapıları ve çapraz dosya satır süzgeci bu servisi ister; yoksa bayrak açıkken 403.
+import { CaseViewScopeModule } from '../case/case-view-scope.module';
 
 @Module({
-  imports: [PrismaModule, NotificationModule, forwardRef(() => PolicyEngineModule), CaseDebtorLifecycleGuardModule, OfficeApprovalModule, ClientIntakeLinkModule],
+  imports: [PrismaModule, NotificationModule, forwardRef(() => PolicyEngineModule), CaseDebtorLifecycleGuardModule, OfficeApprovalModule, ClientIntakeLinkModule, CaseViewScopeModule],
   controllers: [AddressDiscoveryController],
   providers: [
     AddressDiscoveryService,

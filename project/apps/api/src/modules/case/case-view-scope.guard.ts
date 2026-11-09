@@ -59,6 +59,10 @@ export const CASE_OBJECT_NOT_FOUND: Readonly<Record<CaseScopedObjectKind, string
   tebligat: "Tebligat bulunamadı", // TebligatService.findById ile aynı gövde
   caseDebtor: "Dosya bulunamadı", // borçlu tebligat listesi bulunamadı vermez (200 boş) → caseClient ile aynı
   precautionaryOrder: "İhtiyati haciz kararı bulunamadı", // PrecautionaryOrderService.findOne ile aynı gövde
+  clientInfoRequest: "Bilgi talebi bulunamadı", // ClientInfoRequestService.getRequest ile aynı gövde
+  uyapQuery: "Sorgu bulunamadı", // UyapQueryService.getQuery ile aynı gövde
+  institutionLetter: "Yazı bulunamadı", // InstitutionLetterService.getLetter ile aynı gövde
+  assetQuery: "Sorgu bulunamadı", // AssetQueryService.getQueryById ile aynı gövde
 };
 
 /**

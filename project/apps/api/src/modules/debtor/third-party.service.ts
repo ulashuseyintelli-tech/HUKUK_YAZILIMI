@@ -232,13 +232,14 @@ export class ThirdPartyService {
 
   // ==================== OVERDUE ALERTS ====================
 
-  async getOverdueIhbarnames(tenantId: string) {
+  async getOverdueIhbarnames(tenantId: string, caseFilter?: Prisma.CaseWhereInput) {
     const deadlineDate = new Date();
     deadlineDate.setDate(deadlineDate.getDate() - this.RESPONSE_DEADLINE_DAYS);
 
     const overdueThirdParties = await this.prisma.thirdParty.findMany({
       where: {
         tenantId,
+        ...(caseFilter ? { caseDebtor: { case: caseFilter } } : {}), // F02 P3 tarama S4: okuma ucu, bayrak açıkken
         responseDate: null,
         OR: [
           {
