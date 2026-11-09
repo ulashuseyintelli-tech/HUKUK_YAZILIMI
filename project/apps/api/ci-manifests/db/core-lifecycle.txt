@@ -358,3 +358,5 @@ src/modules/case/__tests__/case-view-scope-records.http.db-gated.integration.spe
 src/modules/case/__tests__/case-view-scope-own-records.http.db-gated.integration.spec.ts
 # F02 P3 (owner 08.11.2026): D2b belge uretim ucu kapsami + artefakt/dosya/aktor kiraci eslesmesi (bayraktan bagimsiz) - gercek HTTP + disposable PostgreSQL.
 src/modules/case/__tests__/case-view-scope-d2b-artifacts.http.db-gated.integration.spec.ts
+# F02 P3 Tebligat (R12 Kabul A sonrasi, 09.11.2026): dosyaya bagli tebligat okumalari (liste/ozet/detay/borclu/oncelik, 5 GET) - gercek HTTP + disposable PostgreSQL.
+src/modules/tebligat/__tests__/tebligat-case-view-scope.http.db-gated.integration.spec.ts

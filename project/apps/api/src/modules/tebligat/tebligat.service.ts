@@ -4,7 +4,7 @@ import {
   BadRequestException,
   Logger,
 } from "@nestjs/common";
-import { DebtorType } from "@prisma/client";
+import { DebtorType, Prisma } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { PrismaService } from "../../prisma/prisma.service";
 import { DebtorService } from "../debtor/debtor.service";
@@ -338,9 +338,10 @@ export class TebligatService {
   /// Çağrıldığı yerler:
   /// - TebligatController.findByCaseDebtorId() → GET /tebligat/case-debtor/:caseDebtorId (borçlu tebligat geçmişi)
   /// </remarks>
-  async findByCaseDebtorId(tenantId: string, caseDebtorId: string) {
+  /// `caseFilter` (F02 P3): yalnız bayrak açıkken denetleyiciden gelir — satırın DOSYASI bu süzgece uymalı. Yoksa davranış aynı.
+  async findByCaseDebtorId(tenantId: string, caseDebtorId: string, caseFilter?: Prisma.CaseWhereInput) {
     const tebligatlar = await (this.prisma as any).tebligat.findMany({
-      where: { tenantId, caseDebtorId },
+      where: { tenantId, caseDebtorId, ...(caseFilter ? { case: caseFilter } : {}) },
       orderBy: { createdAt: "desc" },
     });
 
@@ -1122,11 +1123,17 @@ export class TebligatService {
 
   /**
    * Tebligat özeti getir
+   *
+   * `caseFilter` (F02 P3): yalnız bayrak açıkken denetleyiciden gelir — sayılan satırların DOSYASI bu süzgece uymalı
+   * (liste kapsamıyla tutarlı). Yoksa davranış aynı.
    */
-  async getSummary(tenantId: string, caseId?: string): Promise<TebligatSummary> {
+  async getSummary(tenantId: string, caseId?: string, caseFilter?: Prisma.CaseWhereInput): Promise<TebligatSummary> {
     const where: any = { tenantId };
     if (caseId) {
       where.caseId = caseId;
+    }
+    if (caseFilter) {
+      where.case = caseFilter;
     }
 
     const [total, hazirlanan, gonderilen, teslimEdilen, iadeGelen, tebligEdilmisSayilan] =

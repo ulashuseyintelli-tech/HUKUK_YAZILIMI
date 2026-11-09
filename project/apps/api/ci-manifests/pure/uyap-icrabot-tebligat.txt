@@ -191,6 +191,8 @@ src/modules/tebligat/__tests__/tebligat-ptt-result-tk212-regression.spec.ts
 src/modules/tebligat/__tests__/tebligat-service-occurrence-integration.spec.ts
 # R12 Kabul A (09.11.2026): GET /tebligat/summary, GET /tebligat/:id tarafından gölgeleniyordu (404 "Tebligat bulunamadı").
 src/modules/tebligat/__tests__/tebligat-controller-route-order.spec.ts
+# F02 P3 Tebligat (09.11.2026): dosyaya bagli tebligat okuma rota envanteri (fail-closed; kapsam kapisi siniflandirmasi).
+src/modules/tebligat/__tests__/tebligat-case-view-scope-routes.static.spec.ts
 src/modules/tebligat/service-occurrence/__tests__/service-occurrence-recorded.consumer.spec.ts
 src/modules/tebligat/service-occurrence/__tests__/service-occurrence-recorded.registrar.spec.ts
 src/modules/tebligat/service-occurrence/__tests__/service-occurrence.service.spec.ts
