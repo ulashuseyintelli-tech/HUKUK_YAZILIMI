@@ -49,6 +49,8 @@ const buildTransactionalHarness = (options: { failAudit?: boolean } = {}) => {
     $transaction: jest.fn().mockImplementation(async (callback: (tx: any) => Promise<unknown>) => {
       const draft = cloneState(committed);
       const tx = {
+        $queryRaw: jest.fn().mockResolvedValue([{ id: LINKED_USER_ID }]),
+        clientSpecialCategoryGrantScope: { findMany: jest.fn().mockResolvedValue([]) },
         user: {
           updateMany: jest.fn().mockImplementation(({ where, data }: any) => {
             if (where.id !== draft.user.id || where.tenantId !== draft.user.tenantId) {

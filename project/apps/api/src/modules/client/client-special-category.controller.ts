@@ -4,11 +4,12 @@ import {
   Get,
   Param,
   Post,
+  Query,
   Request,
   UseGuards,
   ValidationPipe,
 } from '@nestjs/common';
-import { IsIn, IsString, MaxLength } from 'class-validator';
+import { IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { buildClientMutationActor } from './client.service';
@@ -33,12 +34,19 @@ const actorFrom = (req: AuthRequest) =>
   });
 
 class CreateSpecialRecordDto {
+  @IsOptional() @IsString() @MinLength(1) @MaxLength(100)
+  caseId?: string;
   @IsIn(CLIENT_SPECIAL_DATA_CATEGORIES as unknown as string[])
   category!: string;
 
   @IsString()
   @MaxLength(10000)
   content!: string;
+}
+
+class SpecialRecordScopeQuery {
+  @IsOptional() @IsString() @MinLength(1) @MaxLength(100)
+  caseId?: string;
 }
 
 @Controller('clients')
@@ -48,11 +56,13 @@ export class ClientSpecialCategoryController {
   constructor(private readonly special: ClientSpecialCategoryService) {}
 
   @Get(':id/special-category-records')
-  list(@Request() req: AuthRequest, @Param('id') id: string) {
+  list(@Request() req: AuthRequest, @Param('id') id: string,
+    @Query(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })) scope: SpecialRecordScopeQuery) {
     return this.special.listRecords({
       tenantId: req.user.tenantId,
       clientId: id,
       actor: actorFrom(req),
+      caseId: scope?.caseId,
     });
   }
 
@@ -68,15 +78,18 @@ export class ClientSpecialCategoryController {
       category: body.category,
       content: body.content,
       actor: actorFrom(req),
+      caseId: body.caseId,
     });
   }
 
   @Get('special-category-records/:recordId')
-  read(@Request() req: AuthRequest, @Param('recordId') recordId: string) {
+  read(@Request() req: AuthRequest, @Param('recordId') recordId: string,
+    @Query(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })) scope: SpecialRecordScopeQuery) {
     return this.special.readRecord({
       tenantId: req.user.tenantId,
       recordId,
       actor: actorFrom(req),
+      caseId: scope?.caseId,
     });
   }
 }

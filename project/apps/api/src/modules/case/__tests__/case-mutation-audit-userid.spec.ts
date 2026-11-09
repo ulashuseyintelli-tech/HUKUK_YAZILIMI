@@ -61,7 +61,10 @@ describe('WP-1c-2 — CASE update/delete/batchUpdate audit actor userId', () => 
       // CS2: delete() transaction'dan ÖNCE assertNoCaseFootprint çağırır (13 sayaç).
       // Bu test footprint YOK senaryosunu kanıtlar (0 → guard geçer, audit-userId akışı sürer).
       ...zeroFootprintCounts(),
-      $transaction: jest.fn(async (cb: any) => cb({ case: { delete: jest.fn(async () => ({})) } })),
+      $transaction: jest.fn(async (cb: any) => cb({ case: { delete: jest.fn(async () => ({})) },
+        clientSpecialCategoryGrantScope: { findMany: jest.fn().mockResolvedValue([]) },
+        caseLawyer: { findMany: jest.fn().mockResolvedValue([]) }, caseStaff: { findMany: jest.fn().mockResolvedValue([]) },
+      })),
     };
 
     await (service as any).delete('t1', 'case-1', ACTOR);

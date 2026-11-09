@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException, ForbiddenException, Logger, Inject, forwardRef, Optional } from "@nestjs/common";
+import { lockK73CaseSubjectsInTx, lockK73Subject, revokeLostK73ScopesInTx } from '../client/client-special-category-access';
 import { PrismaService } from "@/prisma/prisma.service";
 import { buildCheckPenaltySummary, type CheckInstrumentRow, type CheckPenaltyItemRow } from "./check-penalty-summary";
 import { hasPendingCheckPenaltyFormation } from "../claim-item/formation-cek/check-penalty-formation-status";
@@ -3304,9 +3305,11 @@ export class CaseService {
     // Transaction içinde silme ve audit log (veri bütünlüğü için)
     try {
       await this.prisma.$transaction(async (tx) => {
+        const k73Subjects = await lockK73CaseSubjectsInTx(tx, tenantId, id);
         await tx.case.delete({
           where: { id },
         });
+        for (const subject of k73Subjects) await revokeLostK73ScopesInTx(tx, tenantId, subject, userId);
 
         // CS2: audit artık GERÇEKTEN aynı transaction'da (logInTransaction; eski log() tx-bağsızdı
         // — audit yazılamazsa silme de rollback olur, audit'siz silme kalmaz).
@@ -4251,6 +4254,7 @@ export class CaseService {
     // CaseLawyer'ın bu dosyaya ait olduğunu kontrol et
     const caseLawyer = await this.prisma.caseLawyer.findFirst({
       where: { id: caseLawyerId, caseId },
+      include: { lawyer: { select: { userId: true } } },
     });
     if (!caseLawyer) throw new NotFoundException("Avukat ataması bulunamadı");
 
@@ -4263,23 +4267,27 @@ export class CaseService {
       );
     }
 
-    // L6: sorumlu-OLMAYAN avukat silme — mevcut akış. WP-1d-5-9: otomatik promote YOK (responsible
-    // silinmiyor) → demote/$transaction gerekmez; tek delete.
-    await this.prisma.caseLawyer.delete({ where: { id: caseLawyerId } });
+    // L6: non-responsible removal still never promotes another lawyer.
+    // K7.3 adds atomic scoped revocation and audit to the existing removal.
+    return this.prisma.$transaction(async tx => {
+      if (caseLawyer.lawyer.userId) await lockK73Subject(tx, tenantId, caseLawyer.lawyer.userId);
+      await tx.caseLawyer.delete({ where: { id: caseLawyerId } });
+      await revokeLostK73ScopesInTx(tx, tenantId, caseLawyer.lawyer.userId, userId);
 
-    // ASSIGN-4c: avukat çıkarması CASE_LAWYER DELETE olarak audit'lenir (oldValues silinen kayıttan).
-    await this.auditService.log({
-      tenantId,
-      action: 'DELETE',
-      entityType: 'CASE_LAWYER',
-      entityId: caseLawyerId,
-      userId, // WP-1c-3
-      metadata: { caseId }, // WP-1d-2-pre: legal-responsible temporal için caseId
-      oldValues: { lawyerId: caseLawyer.lawyerId, role: caseLawyer.role, isResponsible: caseLawyer.isResponsible },
-      description: 'Dosyadan avukat çıkarıldı',
+      // Relation removal, K7.3 revocation and audit commit together.
+      await this.auditService.logInTransaction(tx, {
+        tenantId,
+        action: 'DELETE',
+        entityType: 'CASE_LAWYER',
+        entityId: caseLawyerId,
+        userId, // WP-1c-3
+        metadata: { caseId }, // WP-1d-2-pre: legal-responsible temporal için caseId
+        oldValues: { lawyerId: caseLawyer.lawyerId, role: caseLawyer.role, isResponsible: caseLawyer.isResponsible },
+        description: 'Dosyadan avukat çıkarıldı',
+      });
+
+      return { success: true };
     });
-
-    return { success: true };
   }
 
   /**
@@ -4348,9 +4356,11 @@ export class CaseService {
     return this.withCasePermissionGrantAuthority(tenantId, userId, true, async (db) => {
       const caseExists = await db.case.findFirst({ where: { id: caseId, tenantId } });
       if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
-      const caseStaff = await db.caseStaff.findFirst({ where: { id: caseStaffId, caseId } });
+      const caseStaff = await db.caseStaff.findFirst({ where: { id: caseStaffId, caseId }, include: { staffMember: { select: { userId: true } } } });
       if (!caseStaff) throw new NotFoundException("Personel ataması bulunamadı");
+      if (caseStaff.staffMember.userId) await lockK73Subject(db as Prisma.TransactionClient, tenantId, caseStaff.staffMember.userId);
       const removed = await db.caseStaff.delete({ where: { id: caseStaffId } });
+      await revokeLostK73ScopesInTx(db as Prisma.TransactionClient, tenantId, caseStaff.staffMember.userId, userId);
       await this.auditService.logInTransaction(db as Prisma.TransactionClient, {
         tenantId, action: "DELETE", entityType: "CASE_STAFF", entityId: caseStaffId, userId,
         oldValues: { caseId, staffMemberId: removed.staffMemberId, roleOnCase: removed.roleOnCase },
@@ -4390,12 +4400,14 @@ export class CaseService {
     const write = async (db: Prisma.TransactionClient | PrismaService) => {
       const caseExists = await db.case.findFirst({ where: { id: caseId, tenantId } });
       if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
-      const caseStaff = await db.caseStaff.findFirst({ where: { id: caseStaffId, caseId } });
+      const caseStaff = await db.caseStaff.findFirst({ where: { id: caseStaffId, caseId }, include: { staffMember: { select: { userId: true } } } });
       if (!caseStaff) throw new NotFoundException("Personel ataması bulunamadı");
+      if (data.canView === false && caseStaff.staffMember.userId) await lockK73Subject(db as Prisma.TransactionClient, tenantId, caseStaff.staffMember.userId);
       const updated = await db.caseStaff.update({
         where: { id: caseStaffId }, data: updateData,
         include: { staffMember: { select: { id: true, firstName: true, lastName: true, staffType: true } } },
       });
+      if (data.canView === false) await revokeLostK73ScopesInTx(db as Prisma.TransactionClient, tenantId, caseStaff.staffMember.userId, userId);
       await this.auditService.logInTransaction(db as Prisma.TransactionClient, {
         tenantId, action: "UPDATE", entityType: "CASE_STAFF", entityId: caseStaffId, userId,
         newValues: updateData,

@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ConflictException, ForbiddenException, BadRequestException } from "@nestjs/common";
+import { revokeK73ForSubjectInTx } from '../client/client-special-category-access';
 import { PrismaService } from "@/prisma/prisma.service";
 import { LawyerRole, LawyerRank, Prisma } from "@prisma/client";
 import { normalizePersonName } from "@/common/name-match.util";
@@ -1057,6 +1058,10 @@ export class LawyerService {
     // ÖNCESİ alındı; dosya hiçbir anda sorumlusuz kalmaz — clear-before-set sırası, partial unique
     // index case_lawyer_one_responsible_per_case ile aynı tx içinde tutarlı).
     const deactivated = await this.prisma.$transaction(async (tx) => {
+      if (existing.userId) {
+        if (!actor?.userId) throw new ConflictException('Özel veri yetki kaldırma aktörü eksik; pasifleştirme iptal edildi.');
+        await revokeK73ForSubjectInTx(tx, tenantId, existing.userId, actor.userId, 'LAWYER_DEACTIVATED');
+      }
       const { count } = await tx.lawyer.updateMany({
         where: { id, tenantId },
         data: { isActive: false },

@@ -33,8 +33,11 @@ import { CLIENT_SENSITIVE_FIELDS } from '../client-mutation-policy';
 
 const TEST_KEY = randomBytes(32).toString('base64');
 
-const actorOf = (role: 'ADMIN' | 'USER' | 'VIEWER', userId = 'u1') =>
-  buildClientMutationActor({ userId, tenantId: 't1', role });
+const actorRoles = new Map<string, string>();
+const actorOf = (role: 'ADMIN' | 'USER' | 'VIEWER', userId = 'u1') => {
+  actorRoles.set(userId, role);
+  return buildClientMutationActor({ userId, tenantId: 't1', role });
+};
 
 const buildDeps = (opts: { record?: any } = {}) => {
   const tx = {
@@ -45,6 +48,12 @@ const buildDeps = (opts: { record?: any } = {}) => {
     },
   };
   const prisma: any = {
+    user: { findFirst: jest.fn(async ({ where }: any) => ({ id: where.id, tenantId: 't1', isActive: true, role: actorRoles.get(where.id) ?? 'ADMIN' })) },
+    $queryRaw: jest.fn(async () => []),
+    permissionGrant: { findFirst: jest.fn(async () => null) },
+    // This crypto/response fixture explicitly has a valid scoped grant. Real K7.3
+    // grant/date/relationship rejection is exercised without mocks in the HTTP/DB suite.
+    clientSpecialCategoryGrantScope: { findMany: jest.fn(async () => [{ id: 'k73-unit-scope', permissionGrant: { validUntil: new Date(Date.now() + 60_000) } }]) },
     client: { findFirst: jest.fn().mockResolvedValue({ id: 'c1', tenantId: 't1' }) },
     clientSpecialCategoryRecord: {
       findFirst: jest.fn().mockResolvedValue(opts.record ?? null),
@@ -57,11 +66,15 @@ const buildDeps = (opts: { record?: any } = {}) => {
     logInTransaction: jest.fn().mockResolvedValue(undefined),
   };
   const office = { isApproverEligible: jest.fn().mockResolvedValue(false) };
+  Object.assign(tx, { user: prisma.user, client: prisma.client, $queryRaw: prisma.$queryRaw,
+    permissionGrant: prisma.permissionGrant, clientSpecialCategoryGrantScope: prisma.clientSpecialCategoryGrantScope });
+  Object.assign(tx.clientSpecialCategoryRecord, prisma.clientSpecialCategoryRecord);
   const svc = new ClientSpecialCategoryService(prisma, audit as any, office as any);
   return { svc, prisma, tx, audit, office };
 };
 
 beforeEach(() => {
+  actorRoles.clear();
   process.env[CLIENT_SPECIAL_CATEGORY_KEY_ENV] = TEST_KEY;
 });
 afterAll(() => {
@@ -116,11 +129,12 @@ describe('K7.1 — kapalı liste ve sınıflandırma sınırı', () => {
 
 describe('Erişim kapısı + audit (K7.3)', () => {
   it('staff (USER, eligible değil) kayıt oluşturamaz; hiçbir yazma olmaz', async () => {
-    const { svc, prisma } = buildDeps();
+    const { svc, tx, audit } = buildDeps();
     await expect(
       svc.createRecord({ tenantId: 't1', clientId: 'c1', category: 'HEALTH', content: 'x', actor: actorOf('USER') }),
     ).rejects.toBeInstanceOf(ForbiddenException);
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(tx.clientSpecialCategoryRecord.create).not.toHaveBeenCalled();
+    expect(audit.logInTransaction).not.toHaveBeenCalled();
   });
 
   it('ADMIN kayıt oluşturur → DB değeri şifreli, audit metadata içerik TAŞIMAZ', async () => {
@@ -168,10 +182,10 @@ describe('Erişim kapısı + audit (K7.3)', () => {
     const { svc, audit } = buildDeps({ record });
     const res = await svc.readRecord({ tenantId: 't1', recordId: 'sp-1', actor: actorOf('ADMIN') });
     expect(res.content).toBe('gizli içerik');
-    expect(audit.log).toHaveBeenCalledWith(
+    expect(audit.logInTransaction).toHaveBeenCalledWith(expect.anything(),
       expect.objectContaining({ action: 'CLIENT_SPECIAL_DATA_ACCESS', entityId: 'sp-1' }),
     );
-    expect(JSON.stringify((audit.log as jest.Mock).mock.calls[0][0].metadata)).not.toContain('gizli');
+    expect(JSON.stringify((audit.logInTransaction as jest.Mock).mock.calls[0][1].metadata)).not.toContain('gizli');
   });
 
   it('eligible USER erişebilir (mevcut elevated primitive tüketildi)', async () => {

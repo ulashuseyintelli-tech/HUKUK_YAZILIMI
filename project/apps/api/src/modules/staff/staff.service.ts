@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException, ForbiddenException, Optional } from '@nestjs/common';
+import { revokeK73ForSubjectInTx } from '../client/client-special-category-access';
 import { PermissionGrantEffect, PermissionGrantScope, Prisma, StaffMember } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -359,6 +360,8 @@ export class StaffService {
 
     return this.prisma.$transaction(async (tx) => {
       if (existing.userId) {
+        if (!actor?.userId) throw new ConflictException('Özel veri yetki kaldırma aktörü eksik; pasifleştirme iptal edildi.');
+        await revokeK73ForSubjectInTx(tx, tenantId, existing.userId, actor.userId, 'STAFF_DEACTIVATED');
         const userResult = await tx.user.updateMany({
           where: { id: existing.userId, tenantId },
           data: { isActive: false },

@@ -45,7 +45,11 @@ function setup(counts: Counts = {}, opts: { deleteError?: any } = {}) {
     ? jest.fn(async () => { throw opts.deleteError; })
     : jest.fn(async () => ({ id: 'case-1' }));
   const auditLogInTx = jest.fn(async () => undefined);
-  const txMock = { case: { delete: caseDelete } };
+  const txMock = { case: { delete: caseDelete },
+    clientSpecialCategoryGrantScope: { findMany: jest.fn().mockResolvedValue([]) },
+    caseLawyer: { findMany: jest.fn().mockResolvedValue([]) },
+    caseStaff: { findMany: jest.fn().mockResolvedValue([]) },
+  };
   const transaction = jest.fn(async (cb: any) => cb(txMock));
 
   (service as any).findOne = jest.fn(async () => ({ id: 'case-1', tenantId: 'tenant-1', fileNumber: 'F-1' }));

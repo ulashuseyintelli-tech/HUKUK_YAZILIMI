@@ -16,6 +16,8 @@ import { ClientLegalHoldService } from './client-legal-hold.service';
 // C3-B04 (§13/7): özel nitelikli veri — sınıflandırma + erişim kapısı + şifreli saklama.
 import { ClientSpecialCategoryController } from './client-special-category.controller';
 import { ClientSpecialCategoryService } from './client-special-category.service';
+import { ClientSpecialCategoryAccessController } from './client-special-category-access.controller';
+import { ClientSpecialCategoryAccessService } from './client-special-category-access.service';
 // C3-B05 (§13/9): vekâletname↔capability binding — tek fail-closed efektif yetki kapısı.
 import { ClientPoaCapabilityController } from './client-poa-capability.controller';
 import { ClientPoaCapabilityService } from './client-poa-capability.service';
@@ -38,8 +40,8 @@ import { PoaModule } from '../poa/poa.module';
   // tek-segment statik collection route'larını gölgeler (`/clients/disclosure-texts`,
   // `/clients/data-subject-requests`, `/clients/legal-holds` → 404 "Müvekkil bulunamadı").
   // Bu iki controller'ı öne almak statikleri `:id`'den önce kaydeder; sıra DEĞİŞTİRİLMEMELİDİR.
-  controllers: [ClientKvkkRightsController, ClientLegalHoldController, ClientController, ClientAddressController, ClientConsentController, ClientSpecialCategoryController, ClientPoaCapabilityController],
-  providers: [ClientService, ClientAddressService, PoaExpiryDeliveryService, ClientConsentService, ClientDisclosureService, ClientDataSubjectRequestService, ClientLegalHoldService, ClientSpecialCategoryService, ClientPoaCapabilityService, ClientUyapTransferGateService],
+  controllers: [ClientKvkkRightsController, ClientLegalHoldController, ClientController, ClientAddressController, ClientConsentController, ClientSpecialCategoryController, ClientSpecialCategoryAccessController, ClientPoaCapabilityController],
+  providers: [ClientService, ClientAddressService, PoaExpiryDeliveryService, ClientConsentService, ClientDisclosureService, ClientDataSubjectRequestService, ClientLegalHoldService, ClientSpecialCategoryService, ClientSpecialCategoryAccessService, ClientPoaCapabilityService, ClientUyapTransferGateService],
   exports: [ClientService, ClientConsentService, ClientDisclosureService, ClientDataSubjectRequestService, ClientLegalHoldService, ClientSpecialCategoryService, ClientPoaCapabilityService, ClientUyapTransferGateService],
 })
 export class ClientModule {}

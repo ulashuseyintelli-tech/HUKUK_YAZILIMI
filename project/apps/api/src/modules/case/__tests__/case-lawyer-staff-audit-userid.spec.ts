@@ -66,7 +66,7 @@ describe('WP-1c-3 — CASE_LAWYER/CASE_STAFF audit actor userId', () => {
     (service as any).prisma = {
       case: { findFirst: jest.fn(async () => ({ id: 'case-1', tenantId: 'tenant-1' })) },
       caseLawyer: {
-        findFirst: jest.fn(async () => ({ id: 'cl-1', caseId: 'case-1', lawyerId: 'law-1', role: 'ASSIGNED', isResponsible: false })),
+        findFirst: jest.fn(async () => ({ id: 'cl-1', caseId: 'case-1', lawyerId: 'law-1', lawyer: { userId: null }, role: 'ASSIGNED', isResponsible: false })),
         // WP-1d-5-9: non-responsible silme doğrudan delete (eski $transaction/auto-promote yok).
         delete: jest.fn(async () => ({})),
       },
