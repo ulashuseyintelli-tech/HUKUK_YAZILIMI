@@ -79,8 +79,10 @@ export class UyapQueryService {
     }
 
     // Aynı sorgu daha önce yapılmış mı kontrol et
+    // Kiracı sınırı: başka büronun satırı (aynı caseDebtorId'yi gösterse bile) bu büronun sorgusunu engelleyemez.
     const existingQuery = await this.prisma.uyapQuery.findFirst({
       where: {
+        tenantId,
         caseDebtorId: dto.caseDebtorId,
         queryType: dto.queryType,
         status: { in: ['PENDING', 'COMPLETED'] },
@@ -306,10 +308,20 @@ export class UyapQueryService {
    * response-shape + frontend-contract KIRILIR. Outage uyarısı şimdilik yalnız createQuery'de
    * yüzeyleniyor; öneri-akışına uyarı frontend contract değişikliği gerektirir (ayrı PR).
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AddressDiscoveryController.getSuggestedUyapQueries() → GET /address-discovery/uyap-query/debtor/:caseDebtorId/suggestions
+  /// Kiracı sınırı (09.11.2026): dosya borçlusu yalnız çağıranın bürosundaki dosyadan okunur (CaseDebtor'da tenantId yok →
+  /// kiracı bağlı dosyadan); yapılmış sorgular yalnız çağıranın bürosunun satırlarıdır. Başka büronun ya da var olmayan dosya
+  /// borçlusu AYNI 404'ü alır (tür / sorgu geçmişi çıkarılamaz). Kiracı bağlamı yoksa fail-closed (Prisma `undefined` süzgeci düşürür).
+  /// </remarks>
   async getSuggestedQueries(tenantId: string, caseDebtorId: string) {
+    if (typeof tenantId !== 'string' || !tenantId || typeof caseDebtorId !== 'string' || !caseDebtorId) {
+      throw new NotFoundException('Borçlu bulunamadı');
+    }
     // Borçlu tipini al
     const caseDebtor = await this.prisma.caseDebtor.findFirst({
-      where: { id: caseDebtorId },
+      where: { id: caseDebtorId, case: { tenantId } },
       include: { debtor: { select: { type: true } } },
     });
 
@@ -322,7 +334,7 @@ export class UyapQueryService {
 
     // Yapılmış sorguları al
     const completedQueries = await this.prisma.uyapQuery.findMany({
-      where: { caseDebtorId, status: { in: ['PENDING', 'COMPLETED'] } },
+      where: { tenantId, caseDebtorId, status: { in: ['PENDING', 'COMPLETED'] } },
       select: { queryType: true },
     });
 
