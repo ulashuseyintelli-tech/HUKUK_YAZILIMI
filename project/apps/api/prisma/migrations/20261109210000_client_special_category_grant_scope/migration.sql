@@ -34,4 +34,3 @@ ALTER TABLE "ClientSpecialCategoryGrantScope" ADD CONSTRAINT "ClientSpecialCateg
 
 -- AddForeignKey
 ALTER TABLE "ClientSpecialCategoryGrantScope" ADD CONSTRAINT "ClientSpecialCategoryGrantScope_clientId_tenantId_fkey" FOREIGN KEY ("clientId", "tenantId") REFERENCES "Client"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
-
