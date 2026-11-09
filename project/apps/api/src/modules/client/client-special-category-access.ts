@@ -23,8 +23,8 @@ export async function k73ObjectInScope(db: K73Db, tenantId: string, userId: stri
   }
 }
 
-export function k73Scopes(db: K73Db): any {
-  const delegate = (db as any).clientSpecialCategoryGrantScope;
+export function k73Scopes(db: K73Db): K73Db['clientSpecialCategoryGrantScope'] {
+  const delegate = db.clientSpecialCategoryGrantScope;
   if (!delegate) throw new ServiceUnavailableException({ code: 'K73_SCHEMA_REQUIRED', message: 'Özel veri yetki şeması hazır değil.' });
   return delegate;
 }
@@ -102,7 +102,7 @@ export async function assertK73AccessInTx(
     },
   }, include: { permissionGrant: true } });
   const winner = rows.sort((a: any, b: any) => b.permissionGrant.validUntil.getTime() - a.permissionGrant.validUntil.getTime())[0];
-  if (!winner) throw new ForbiddenException({ code: 'K73_TIMED_GRANT_REQUIRED', message: 'Bu işlem ve kapsam için geçerli süreli özel veri yetkisi yok.' });
+  if (!winner || !winner.permissionGrant.validUntil) throw new ForbiddenException({ code: 'K73_TIMED_GRANT_REQUIRED', message: 'Bu işlem ve kapsam için geçerli süreli özel veri yetkisi yok.' });
   return { id: winner.id, validUntil: winner.permissionGrant.validUntil };
 }
 
