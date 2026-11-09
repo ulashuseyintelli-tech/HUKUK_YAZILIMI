@@ -24,7 +24,14 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { DebtorCrossCaseNotificationService } from "./debtor-cross-case-notification.service";
 import { CaseDebtorService } from "./case-debtor.service";
 import { DebtorCrossCaseNotificationTaskLinkService } from "./debtor-cross-case-notification-task-link.service";
+import { CaseViewScoped, CaseViewScopedByObject } from "../case/case-view-scope.guard";
 
+// F02 P3 Bulgu 3 (09.11.2026): web'in kullandığı dosyaya bağlı borçlu OKUMALARI dosya görünüm kapsamına bağlı (mevcut CaseViewScopeService sözleşmesi;
+//   yeni kural / anahtar / bayrak YOK). Bayrak kapalıyken ek sorgu yok, davranış aynı. Bayrak açıkken kapsam dışı ve olmayan dosya / dosya borçlusu AYNI 404.
+//   - `case/:caseId`, `case/:caseId/:caseDebtorId`, `case/:caseId/:caseDebtorId/service/history` → yoldaki dosya kiracı + kapsamla doğrulanır
+//     (CaseViewScopeGuard). Dosya borçlusu servis sorgusunda `id + caseId + case.tenantId` ile o dosyaya bağlıdır: başka dosyanın borçlusu 404.
+//   - `case-debtors/:caseDebtorId/active-process-summary` → dosya CaseDebtor satırından (aktör kiracısında) çözülür (CaseObjectViewScopeGuard).
+//   Genel borçlu platformu (`GET /debtors`, `:id`, `statistics`, çapraz dosya bildirimleri) ve yazım uçları bu kapıya BAĞLANMADI (kapsam dışı).
 // F02-D-2 dilim 5 (owner ek talimatı 30.10.2026): VIEWER borçlu / adres / istihbarat / tebligat durumu / çapraz dosya bildirimi YAZAMAZ (13 yazma); `check-duplicate` saf arama → açık. Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`; okuma uçları DEĞİŞMEZ.
 @Controller("debtors")
 @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
@@ -41,7 +48,9 @@ export class DebtorController {
   /// <remarks>
   /// Çağrıldığı yerler:
   /// - DebtorController.getDebtorsForCase() → GET /debtors/case/:caseId (operasyonel dosya borçlusu listesi)
+  /// - web: dosya detayı "Borçlular" kartı, UyapPanel, müvekkil başvurusu dönüştürme (api.getCaseDebtors)
   /// </remarks>
+  @CaseViewScoped() // F02 P3 Bulgu 3: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok aynı 404)
   @Get("case/:caseId")
   getDebtorsForCase(
     @CurrentUser("tenantId") tenantId: string,
@@ -55,6 +64,7 @@ export class DebtorController {
     );
   }
 
+  @CaseViewScoped() // F02 P3 Bulgu 3 (web: DebtorDetailDrawer); dosya borçlusu servis sorgusunda bu dosyaya bağlı
   @Get("case/:caseId/:caseDebtorId")
   getCaseDebtorDetail(
     @CurrentUser("tenantId") tenantId: string,
@@ -104,6 +114,7 @@ export class DebtorController {
     );
   }
 
+  @CaseViewScoped() // F02 P3 Bulgu 3 (web: DebtorDetailDrawer tebligat geçmişi); dosya borçlusu servis sorgusunda bu dosyaya bağlı
   @Get("case/:caseId/:caseDebtorId/service/history")
   getServiceHistory(
     @CurrentUser("tenantId") tenantId: string,
@@ -200,6 +211,7 @@ export class DebtorController {
   ///   hüküm ÜRETMEZ; yalnız "manuel hukukî inceleme önerilir" gözlemi). Statik route,
   ///   :id route'undan ÖNCE tanımlı (aksi halde Nest bunu debtor id'si sanır).
   /// </remarks>
+  @CaseViewScopedByObject("caseDebtor", "caseDebtorId") // F02 P3 Bulgu 3: dosya CaseDebtor satırından çözülür (web çağıranı yok)
   @Get("case-debtors/:caseDebtorId/active-process-summary")
   getCaseDebtorActiveProcessSummary(
     @CurrentUser("tenantId") tenantId: string,

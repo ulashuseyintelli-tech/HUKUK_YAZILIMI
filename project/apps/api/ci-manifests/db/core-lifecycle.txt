@@ -361,3 +361,5 @@ src/modules/case/__tests__/case-view-scope-own-records.http.db-gated.integration
 src/modules/case/__tests__/case-view-scope-d2b-artifacts.http.db-gated.integration.spec.ts
 # F02 P3 Tebligat (R12 Kabul A sonrasi, 09.11.2026): dosyaya bagli tebligat okumalari (liste/ozet/detay/borclu/oncelik, 5 GET) - gercek HTTP + disposable PostgreSQL.
 src/modules/tebligat/__tests__/tebligat-case-view-scope.http.db-gated.integration.spec.ts
+# F02 P3 Bulgu 3 (09.11.2026): web'in kullandigi dosyaya bagli borclu okumalari (liste / detay / tebligat gecmisi / aktif surec ozeti, 4 GET) - gercek HTTP + disposable PostgreSQL.
+src/modules/debtor/__tests__/debtor-case-view-scope.http.db-gated.integration.spec.ts
