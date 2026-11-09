@@ -8,6 +8,8 @@ import { AuditService } from '../audit/audit.service';
 import { WorkScopePermissionService } from '../work-scope-permission/work-scope-permission.service';
 import { WORK_SCOPE_VIEW_ALL_KEYS } from '../work-scope-permission/work-scope-permission.constants';
 import { ReactivateStaffDto, ReopenStaffAccountDto } from './dto/staff.dto';
+import { OfficeApprovalService } from '../office-approval/office-approval.service';
+import { expireContactGrantsInTx, readContactReopenGrants } from '../office/office-contact-account-reopen';
 
 export interface StaffDeactivateAuditActor {
   userId: string;
@@ -64,8 +66,11 @@ export interface StaffAccountReopenReview {
   reopenable: boolean;
   reason: StaffAccountReopenBlockReason | null;
   account: { role: string; isActive: boolean; hasPassword: boolean } | null;
-  /** İki F02 anahtarındaki GLOBAL, bitmemiş ALLOW kayıtları (ileri tarihliler dahil). */
+  /** Üç F02 anahtarındaki GLOBAL, bitmemiş ALLOW kayıtları (ileri tarihliler dahil). */
   allowGrants: Array<{ id: string; permissionKey: string; validFrom: string; validUntil: string | null; startsInFuture: boolean }>;
+  /** G1/G2 iletişim yazma izinleri F02 görüntüleme kümesine katılmaz. */
+  contactAllowGrants: StaffAccountReopenReview['allowGrants'];
+  contactDenyKeys: string[];
   /** Bilgi: açık ret (DENY) taşıyan anahtarlar; hesap açma bunlara DOKUNMAZ. */
   denyKeys: string[];
   /** Onayın bağlandığı içerik parmak izi; uygulanamıyorsa null. */
@@ -77,6 +82,7 @@ type AccountReopenState = {
   userId: string | null;
   userUpdatedAt: Date | null;
   tokenVersion: number | null;
+  contactOfficeId: string | null;
 };
 
 type AccountReopenReader = Pick<Prisma.TransactionClient, 'staffMember' | 'user' | 'permissionGrant'>;
@@ -91,6 +97,8 @@ export class StaffService {
     // O-5b: StaffModule WorkScopePermissionModule'ü içe aktarır. @Optional yalnız doğrudan kurulan
     // test fixture'ları içindir; yoksa hesap açma aynı servisi yerel olarak kurar (aynı kilit + denetim).
     @Optional() private readonly workScope?: WorkScopePermissionService,
+    // Existing direct-construction fixtures without contact grants keep their constructor contract.
+    @Optional() private readonly officeApproval?: OfficeApprovalService,
   ) {}
 
   /**
@@ -567,6 +575,9 @@ export class StaffService {
         const pre = await tx.staffMember.findFirst({ where: { id, tenantId }, select: { userId: true } });
         if (!pre) throw new NotFoundException('Personel bulunamadı');
         const users = [...new Set([actor.userId, ...(pre.userId ? [pre.userId] : [])])].sort();
+        // Only the added contact path needs F01's Lawyer -> User locking; retain the original F02-only path.
+        const hasContactGrants = (await readContactReopenGrants(tx, tenantId, pre.userId, new Date())).length > 0;
+        if (hasContactGrants) await tx.$queryRaw`SELECT "id" FROM "Lawyer" WHERE "userId" = ${actor.userId} FOR SHARE`;
         await tx.$queryRaw`SELECT "id" FROM "User" WHERE "tenantId" = ${tenantId} AND "id" IN (${Prisma.join(users)}) ORDER BY "id" FOR UPDATE`;
         // Yazıma esas yetki kararı: aktörün User satırı artık bu transaction'ın kilidinde; kilit beklenirken commit olan rol
         // kaldırma / pasifleştirme burada görülür (READ COMMITTED yeni anlık görüntü) ve commit'e kadar değişemez.
@@ -597,6 +608,27 @@ export class StaffService {
           });
         }
         const expireIds = reviewedIds.filter((g) => !keep.includes(g));
+        const contactIds = state.review.contactAllowGrants.map(g => g.id);
+        if (contactIds.length && !Array.isArray(data.keepContactGrantIds)) {
+          throw new ConflictException({ code: 'STAFF_CONTACT_REVIEW_REQUIRED', message: 'İletişim yazma izinlerini ayrıca gözden geçirin; hiçbir şey yazılmadı.' });
+        }
+        const contactKeep = data.keepContactGrantIds ?? [];
+        if (!Array.isArray(contactKeep) || contactKeep.some(g => typeof g !== 'string' || !contactIds.includes(g)) || new Set(contactKeep).size !== contactKeep.length) {
+          throw new BadRequestException('Korunacak iletişim izni bu inceleme grubunda yok; hiçbir şey yazılmadı.');
+        }
+        if (contactIds.length) {
+          if (!this.officeApproval || !await this.officeApproval.isF01ActorAuthorized(actor.userId, tenantId, undefined, { write: true, db: tx })) {
+            throw new ForbiddenException('İletişim izinleri için güncel F01 yazma yetkisi gerekir.');
+          }
+          if (contactKeep.length) {
+            const office = await tx.office.findUnique({ where: { tenantId }, select: { id: true } });
+            if (!office || state.contactOfficeId !== office.id || state.review.account.role === 'VIEWER'
+              || state.review.contactAllowGrants.some(g => contactKeep.includes(g.id) && g.validUntil === null)) {
+              throw new ConflictException('İletişim izni için büro, rol veya sonlu bitiş doğrulanamadı; hiçbir şey yazılmadı.');
+            }
+          }
+        }
+        const contactExpire = contactIds.filter(g => !contactKeep.includes(g));
         const userId = state.userId;
 
         const opened = await tx.user.updateMany({
@@ -607,6 +639,9 @@ export class StaffService {
 
         const expiredGrantCount = await workScope.expireAllowGrantsInTx(tx, {
           tenantId, actorUserId: actor.userId, person, subjectUserId: userId, grantIds: expireIds, now, requestId: actor.requestId,
+        });
+        const expiredContactGrantCount = await expireContactGrantsInTx(tx, auditConsumer, {
+          tenantId, actorUserId: actor.userId, staffId: id, subjectUserId: userId, ids: contactExpire, now, requestId: actor.requestId,
         });
         const revoked = await tx.passwordResetToken.updateMany({
           where: { tenantId, userId, consumedAt: null, revokedAt: null, expiresAt: { gt: now } },
@@ -636,6 +671,8 @@ export class StaffService {
             reviewFingerprint: data.reviewFingerprint,
             keptGrantIds: keep,
             expiredGrantIds: expireIds,
+            keptContactGrantIds: contactKeep,
+            expiredContactGrantIds: contactExpire,
             revokedResetTokenCount: revoked.count,
             sessionsInvalidated: true,
             roleChanged: false,
@@ -649,6 +686,7 @@ export class StaffService {
           account: { isActive: true, role: state.review.account.role },
           keptGrantCount: keep.length,
           expiredGrantCount,
+          ...(contactIds.length ? { keptContactGrantCount: contactKeep.length, expiredContactGrantCount } : {}),
           revokedResetTokenCount: revoked.count,
           sessionsInvalidated: true,
         };
@@ -688,7 +726,7 @@ export class StaffService {
     // Sıralı okuma: interactive transaction içinde aynı bağlantı paylaşılır.
     const card = await db.staffMember.findFirst({
       where: { id: staffId, tenantId },
-      select: { id: true, isActive: true, updatedAt: true, userId: true },
+      select: { id: true, isActive: true, updatedAt: true, userId: true, officeId: true },
     });
     if (!card) throw new NotFoundException('Personel bulunamadı');
     const user = card.userId
@@ -723,6 +761,8 @@ export class StaffService {
     const deny = subject
       ? await db.permissionGrant.findMany({ where: { ...subject, effect: PermissionGrantEffect.DENY }, select: { permissionKey: true } })
       : [];
+    const contactRows = await readContactReopenGrants(db, tenantId, user?.id ?? null, now);
+    const contactAllow = contactRows.filter(g => g.effect === 'ALLOW');
 
     const iso = (d: Date | null) => (d ? d.toISOString() : null);
     const reviewFingerprint =
@@ -742,6 +782,9 @@ export class StaffService {
                   id: g.id, permissionKey: g.permissionKey, effect: g.effect, scope: g.scope, validFrom: g.validFrom.toISOString(),
                   validUntil: iso(g.validUntil), updatedAt: g.updatedAt.toISOString(), grantedByUserId: g.grantedByUserId,
                 })),
+                ...(contactRows.length ? { contactOfficeId: card.officeId, contacts: contactRows.map(g => ({
+                  ...g, validFrom: iso(g.validFrom), validUntil: iso(g.validUntil), updatedAt: iso(g.updatedAt),
+                })) } : {}),
               }),
             )
             .digest('hex')
@@ -758,11 +801,15 @@ export class StaffService {
           startsInFuture: g.validFrom > now,
         })),
         denyKeys: [...new Set(deny.map((d) => d.permissionKey))].sort(),
+        contactAllowGrants: contactAllow.map(g => ({ id: g.id, permissionKey: g.permissionKey, validFrom: g.validFrom.toISOString(),
+          validUntil: iso(g.validUntil), startsInFuture: g.validFrom > now })),
+        contactDenyKeys: [...new Set(contactRows.filter(g => g.effect === 'DENY').map(g => g.permissionKey))].sort(),
         reviewFingerprint,
       },
       userId: user?.id ?? null,
       userUpdatedAt: user?.updatedAt ?? null,
       tokenVersion: user?.tokenVersion ?? null,
+      contactOfficeId: card.officeId ?? null,
     };
   }
 
