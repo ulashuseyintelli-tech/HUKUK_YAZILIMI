@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { findOrCreateDebtorAddress } from '@/common/address-hash.util'; // RFA-006 adres dedup
 
@@ -33,8 +34,12 @@ export class CrossFileService {
 
   /**
    * Aynı borçluyu diğer dosyalarda bul (TCKN/VKN bazlı)
+   *
+   * F02 P3 tarama S4 (owner kararı 09.11.2026): `caseFilter` verilirse (okuma uçları, bayrak açıkken) eşleşmeler yalnız aktöre
+   * görünen dosyalardan gelir; verilmezse davranış bugünküyle aynıdır (yazım yolu `copyAddressToCase` süzgeçsiz çağırır).
    */
-  async findSameDebtor(tenantId: string, debtorId: string): Promise<CrossFileMatch[]> {
+  async findSameDebtor(tenantId: string, debtorId: string, caseFilter?: Prisma.CaseWhereInput): Promise<CrossFileMatch[]> {
+    const caseScope = caseFilter ? { case: caseFilter } : {};
     const debtor = await this.prisma.debtor.findFirst({
       where: { id: debtorId, tenantId },
       select: {
@@ -62,6 +67,7 @@ export class CrossFileService {
             tckn: debtor.tckn,
             id: { not: debtorId },
           },
+          ...caseScope,
         },
         include: {
           case: { select: { id: true, fileNumber: true } },
@@ -89,6 +95,7 @@ export class CrossFileService {
             vkn: debtor.vkn,
             id: { not: debtorId },
           },
+          ...caseScope,
         },
         include: {
           case: { select: { id: true, fileNumber: true } },
@@ -119,6 +126,7 @@ export class CrossFileService {
             mersisNo: debtor.mersisNo,
             id: { not: debtorId },
           },
+          ...caseScope,
         },
         include: {
           case: { select: { id: true, fileNumber: true } },
@@ -149,9 +157,10 @@ export class CrossFileService {
     tenantId: string,
     debtorId: string,
     currentCaseId: string,
+    caseFilter?: Prisma.CaseWhereInput,
   ): Promise<CrossFileAddressDto[]> {
-    // Aynı borçluyu bul
-    const matches = await this.findSameDebtor(tenantId, debtorId);
+    // Aynı borçluyu bul (F02 P3 tarama S4: süzgeç verilirse yalnız görünen dosyalar; kaynak dosya da görünen dosyalardan seçilir)
+    const matches = await this.findSameDebtor(tenantId, debtorId, caseFilter);
     
     if (matches.length === 0) {
       return [];
@@ -176,7 +185,7 @@ export class CrossFileService {
         debtor: {
           include: {
             caseDebtors: {
-              where: { caseId: { not: currentCaseId } },
+              where: { caseId: { not: currentCaseId }, ...(caseFilter ? { case: caseFilter } : {}) },
               include: {
                 case: { select: { id: true, fileNumber: true } },
               },
@@ -324,11 +333,13 @@ export class CrossFileService {
     tenantId: string,
     debtorId: string,
     currentCaseId: string,
+    caseFilter?: Prisma.CaseWhereInput,
   ): Promise<number> {
     const addresses = await this.getAddressesFromOtherCases(
       tenantId,
       debtorId,
       currentCaseId,
+      caseFilter,
     );
     return addresses.length;
   }

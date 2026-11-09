@@ -4,8 +4,10 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Optional,
 } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
+import { CaseViewScopeService, requireCaseViewScope } from "@/modules/case/case-view-scope.service";
 import { normalizePersonName } from "@/common/name-match.util";
 import { Prisma } from "@prisma/client";
 import { partyDb, type PartyWriteTxContext } from "@/common/party-write-tx";
@@ -402,7 +404,9 @@ export class DebtorService {
     // MPB-028(a) PR-4: opsiyonel — AYNI desen. Sağlanmazsa (ya da flag kapalıysa)
     // finalizationRequestEligibleDate her zaman LEGACY (+7 gün) hesabına düşer; `finalizationDate`
     // bu servisten HİÇ etkilenmez (owner kararı — bkz. computeFinalizationEligibilityInfo).
-    private readonly legalPeriodCalculationService?: LegalPeriodCalculationService
+    private readonly legalPeriodCalculationService?: LegalPeriodCalculationService,
+    // F02 P3 tarama S4: borçlu kimlikli okumalarda gömülü dosya ayrıntılarının görünürlüğü (bayrak açıkken zorunlu; yoksa 403).
+    @Optional() private readonly caseViewScope?: CaseViewScopeService
   ) {}
 
   /**
@@ -598,6 +602,47 @@ export class DebtorService {
         },
         assets: true,
         communications: { orderBy: { createdAt: "desc" }, take: 10 },
+      },
+    });
+
+    if (!debtor) {
+      throw new NotFoundException("Borçlu bulunamadı");
+    }
+
+    return debtor;
+  }
+
+  /**
+   * DebtorController.findOne → GET /debtors/:id (F02 P3 tarama S4, owner kararı 09.11.2026).
+   * Borçlu kartı büro geneli ana kayıttır ve görünür kalır; yanıta gömülen DOSYA ayrıntıları (dosya borçlusu satırları ile dosya
+   * no / durum, dosyalı iletişim kayıtları) yalnız aktöre görünen dosyalardan gelir. Dosyasız iletişim kayıtları değişmez.
+   * Bayrak kapalı → `findOne` ile aynı sorgu ve gövde (ek sorgu yok). Yazım yolları iç `findOne`'ı kullanmayı sürdürür.
+   */
+  async findOneForActor(tenantId: string, id: string, actorUserId: string | undefined) {
+    const caseFilter = await requireCaseViewScope(this.caseViewScope)?.caseRowFilter(tenantId, actorUserId);
+    if (!caseFilter) return this.findOne(tenantId, id);
+
+    const visibleCaseIds = (
+      await this.prisma.caseDebtor.findMany({ where: { debtorId: id, case: caseFilter }, select: { caseId: true } })
+    ).map((row) => row.caseId);
+    const debtor = await this.prisma.debtor.findFirst({
+      where: { id, tenantId },
+      include: {
+        debtorAddresses: { orderBy: { isPrimary: "desc" } },
+        estateHeirs: true,
+        caseDebtors: {
+          where: { case: caseFilter },
+          include: {
+            case: { select: { id: true, fileNumber: true, status: true, caseStatus: true } },
+            selectedAddress: true,
+          },
+        },
+        assets: true,
+        communications: {
+          where: { OR: [{ caseId: null }, { caseId: { in: visibleCaseIds } }] },
+          orderBy: { createdAt: "desc" },
+          take: 10,
+        },
       },
     });
 
@@ -1625,16 +1670,22 @@ export class DebtorService {
   /// Çağrıldığı yerler:
   /// - DebtorController.getCrossFileAlerts() → GET /debtors/:id/cross-file-alerts (DebtorDetailDrawer açılışı)
   /// </remarks>
+  ///
+  /// F02 P3 tarama S4 (owner kararı 09.11.2026): bayrak açıkken yanıt yalnız aktöre GÖRÜNEN diğer dosyaların ayrıntısını taşır;
+  /// görünmeyen dosyalar için yalnız kiracı içi sayı (`hiddenOtherActiveCaseCount`) döner — dosya kimliği, numarası ve sorumlusu
+  /// verilmez; kaynak dosya görünmüyorsa `sourceCaseId` de verilmez. Bayrak kapalı → gövde bugünküyle aynı (alan eklenmez).
   async getCrossFileDebtorAlerts(
     tenantId: string,
     debtorId: string,
-    excludeCaseId?: string
+    excludeCaseId?: string,
+    actorUserId?: string
   ): Promise<{
     hasAlert: boolean;
     lastChangedAt: string | null;
     categories: string[];
     sourceCaseId: string | null;
     otherActiveCases: { caseId: string; fileNumber: string | null; responsibleName: string | null }[];
+    hiddenOtherActiveCaseCount?: number;
   }> {
     const empty = {
       hasAlert: false,
@@ -1701,13 +1752,21 @@ export class DebtorService {
       return empty;
     }
 
+    // F02 P3 tarama S4: görünür dosya kümesi (bayrak kapalı ya da büro geneli izin → süzme yok).
+    const visibleCaseIds = await requireCaseViewScope(this.caseViewScope)?.visibleCaseIds(tenantId, actorUserId, [
+      ...activeCaseDebtors.map((cd) => cd.caseId),
+      relevantSourceCaseId,
+    ]);
+    const shownCaseDebtors = visibleCaseIds ? activeCaseDebtors.filter((cd) => visibleCaseIds.has(cd.caseId)) : activeCaseDebtors;
+
     return {
       hasAlert: true,
       lastChangedAt: relevant.createdAt.toISOString(),
       categories:
         relevant.action === "DEBTOR_ADDRESS_UPDATE" ? ["address"] : (meta?.notifyCategories ?? []),
-      sourceCaseId: relevantSourceCaseId,
-      otherActiveCases: activeCaseDebtors.map((cd) => ({
+      sourceCaseId: visibleCaseIds && relevantSourceCaseId && !visibleCaseIds.has(relevantSourceCaseId) ? null : relevantSourceCaseId,
+      ...(visibleCaseIds ? { hiddenOtherActiveCaseCount: activeCaseDebtors.length - shownCaseDebtors.length } : {}),
+      otherActiveCases: shownCaseDebtors.map((cd) => ({
         caseId: cd.caseId,
         fileNumber: cd.case?.fileNumber ?? null,
         responsibleName: cd.case?.responsibleLawyer

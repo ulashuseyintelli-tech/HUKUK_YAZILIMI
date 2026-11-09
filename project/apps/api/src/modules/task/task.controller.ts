@@ -31,9 +31,10 @@ export class TaskController {
     return this.taskService.findAll(tenantId, query, userId);
   }
 
+  /** F02 P3 tarama S10: tek görev okuması listeyle aynı görev kapsamına bağlıdır; gömülü dosya yalnız dosya görünürse döner. */
   @Get(":id")
-  findOne(@CurrentUser("tenantId") tenantId: string, @Param("id") id: string) {
-    return this.taskService.findOne(tenantId, id);
+  findOne(@CurrentUser("tenantId") tenantId: string, @CurrentUser("id") userId: string, @Param("id") id: string) {
+    return this.taskService.findOneForActor(tenantId, id, userId);
   }
 
   @Post()

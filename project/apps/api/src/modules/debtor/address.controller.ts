@@ -8,8 +8,10 @@ import {
   Param,
   UseGuards,
   Request,
+  Optional,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "@/modules/auth/guards/jwt-auth.guard";
+import { CaseViewScopeService, requireCaseViewScope } from "@/modules/case/case-view-scope.service";
 import { ViewerWriteDenyGuard } from "@/modules/auth/guards/viewer-write-deny.guard";
 import { AddressService, CreateAddressDto, UpdateAddressDto, TK21_2RecordDto, AddressRiskFlagType } from "./address.service";
 
@@ -17,7 +19,11 @@ import { AddressService, CreateAddressDto, UpdateAddressDto, TK21_2RecordDto, Ad
 @Controller()
 @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class AddressController {
-  constructor(private readonly addressService: AddressService) {}
+  constructor(
+    private readonly addressService: AddressService,
+    // F02 P3 tarama S4: adres tebligat geçmişi / zinciri satır süzgeci (bayrak açıkken zorunlu; yoksa 403)
+    @Optional() private readonly caseViewScope?: CaseViewScopeService,
+  ) {}
 
   // ==================== DEBTOR ADDRESSES ====================
 
@@ -69,7 +75,11 @@ export class AddressController {
    */
   @Get("addresses/:addressId/history")
   async getAddressHistory(@Request() req: any, @Param("addressId") addressId: string) {
-    return this.addressService.getAddressHistory(req.user.tenantId, addressId);
+    // F02 P3 tarama S4: tebligat geçmişi satırları yalnız aktöre görünen dosyalardan (bayrak kapalı → bugünkü çağrı).
+    const caseFilter = await requireCaseViewScope(this.caseViewScope)?.caseRowFilter(req.user.tenantId, req.user.id);
+    return caseFilter
+      ? this.addressService.getAddressHistory(req.user.tenantId, addressId, caseFilter)
+      : this.addressService.getAddressHistory(req.user.tenantId, addressId);
   }
 
   /**
@@ -211,7 +221,10 @@ export class AddressController {
     @Request() req: any,
     @Param("debtorId") debtorId: string
   ) {
-    return this.addressService.getNotificationChain(req.user.tenantId, debtorId);
+    const caseFilter = await requireCaseViewScope(this.caseViewScope)?.caseRowFilter(req.user.tenantId, req.user.id); // F02 P3 tarama S4
+    return caseFilter
+      ? this.addressService.getNotificationChain(req.user.tenantId, debtorId, caseFilter)
+      : this.addressService.getNotificationChain(req.user.tenantId, debtorId);
   }
 
   // ==================== CASE DEBTOR ACTIVE ADDRESS ====================

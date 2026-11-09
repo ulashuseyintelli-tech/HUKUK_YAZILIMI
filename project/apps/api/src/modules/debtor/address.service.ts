@@ -13,6 +13,7 @@ import {
   LegalPriority,
   DebtorType,
   ServiceReturnReason,
+  Prisma,
 } from "@prisma/client";
 import { CaseDebtorLifecycleGuardService } from "../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service";
 import { AuditService } from "@/modules/audit/audit.service";
@@ -725,7 +726,7 @@ export class AddressService {
    * Get notification chain for a debtor (all addresses with attempt counts)
    * Phase 4: Tebligat Zinciri Takibi
    */
-  async getNotificationChain(tenantId: string, debtorId: string): Promise<{
+  async getNotificationChain(tenantId: string, debtorId: string, caseFilter?: Prisma.CaseWhereInput): Promise<{
     addresses: Array<{
       address: AddressDTO;
       attemptCount: number;
@@ -755,8 +756,10 @@ export class AddressService {
     const addresses = await this.getAddressesForDebtor(tenantId, debtorId);
     
     // Get current active address from case debtor
+    // F02 P3 tarama S4: `caseFilter` verilirse (okuma ucu, bayrak açıkken) seçili adres ve tebligat denemeleri yalnız aktöre
+    // görünen dosyalardan okunur; verilmezse davranış bugünküyle aynıdır.
     const caseDebtor = await this.prisma.caseDebtor.findFirst({
-      where: { debtorId },
+      where: { debtorId, ...(caseFilter ? { case: caseFilter } : {}) },
       select: { selectedAddressId: true },
     });
 
@@ -766,7 +769,7 @@ export class AddressService {
     const addressChain = await Promise.all(
       addresses.map(async (addr) => {
         const history = await this.prisma.serviceHistory.findMany({
-          where: { addressId: addr.id },
+          where: { addressId: addr.id, ...(caseFilter ? { caseDebtor: { case: caseFilter } } : {}) },
           orderBy: { createdAt: 'desc' },
         });
 
@@ -854,11 +857,12 @@ export class AddressService {
   /**
    * Get notification history for a specific address
    */
-  async getAddressHistory(tenantId: string, addressId: string) {
+  async getAddressHistory(tenantId: string, addressId: string, caseFilter?: Prisma.CaseWhereInput) {
     const address = await this.findAddressWithTenantCheck(tenantId, addressId);
 
     const history = await this.prisma.serviceHistory.findMany({
-      where: { addressId },
+      // F02 P3 tarama S4: `caseFilter` verilirse satırlar dosya borçlusunun dosyasıyla süzülür (ServiceHistory → CaseDebtor → Case).
+      where: { addressId, ...(caseFilter ? { caseDebtor: { case: caseFilter } } : {}) },
       orderBy: { createdAt: "desc" },
       take: 50,
     });

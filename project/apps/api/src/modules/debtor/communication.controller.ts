@@ -59,14 +59,20 @@ export class CommunicationController {
     @Query("caseId") caseId?: string,
     @Query("channel") channel?: string,
     @Query("page") page?: string,
-    @Query("limit") limit?: string
+    @Query("limit") limit?: string,
+    @CurrentUser("id") actorUserId?: string // sonda: mevcut konumsal çağrılar değişmez
   ) {
-    return this.communicationService.getCommunicationHistory(tenantId, debtorId, {
-      caseId,
-      channel,
-      page: page ? parseInt(page) : undefined,
-      limit: limit ? parseInt(limit) : undefined,
-    });
+    return this.communicationService.getCommunicationHistory(
+      tenantId,
+      debtorId,
+      {
+        caseId,
+        channel,
+        page: page ? parseInt(page) : undefined,
+        limit: limit ? parseInt(limit) : undefined,
+      },
+      actorUserId, // F02 P3 tarama S4: dosyalı kayıtlar dosya görünüm kapsamıyla süzülür
+    );
   }
 
   // ==================== TEMPLATES ====================

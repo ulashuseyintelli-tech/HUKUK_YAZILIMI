@@ -9,7 +9,10 @@ import {
   HttpStatus,
   UseGuards,
   ForbiddenException,
+  Optional,
 } from '@nestjs/common';
+import { CaseViewScoped } from '../case/case-view-scope.guard';
+import { CaseViewScopeService, requireCaseViewScope } from '../case/case-view-scope.service';
 import { AddressTaskService, CompleteTaskParams } from './address-task.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
@@ -42,7 +45,11 @@ import {
 @Controller('address-tasks')
 @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class AddressTaskController {
-  constructor(private readonly addressTaskService: AddressTaskService) {}
+  constructor(
+    private readonly addressTaskService: AddressTaskService,
+    // F02 P3 tarama S4: borçlu / kiracı geneli listelerde satır süzgeci (bayrak açıkken zorunlu; yoksa 403)
+    @Optional() private readonly caseViewScope?: CaseViewScopeService,
+  ) {}
 
   /**
    * İstekte gelen (body/query) tenantId'yi auth-tenant ile doğrular.
@@ -61,6 +68,7 @@ export class AddressTaskController {
    * Dosya için bekleyen görevleri getir
    * @remarks Çağıran: api.ts#getAddressTasksForCase. Tenant=auth context.
    */
+  @CaseViewScoped() // F02 P3 tarama S4: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   @Get('case/:caseId')
   async getTasksForCase(
     @CurrentUser('tenantId') tenantId: string,
@@ -74,6 +82,7 @@ export class AddressTaskController {
    * Dosya için tüm görevleri getir (tamamlananlar dahil)
    * @remarks Çağıran: api.ts#getAllAddressTasksForCase. Tenant=auth context.
    */
+  @CaseViewScoped() // F02 P3 tarama S4
   @Get('case/:caseId/all')
   async getAllTasksForCase(
     @CurrentUser('tenantId') tenantId: string,
@@ -87,6 +96,7 @@ export class AddressTaskController {
    * Dosya için notları getir (audit log'lardan showInNotes=true olanlar)
    * @remarks Çağıran: api.ts#getAddressNotesForCase. Tenant=auth context.
    */
+  @CaseViewScoped() // F02 P3 tarama S4
   @Get('case/:caseId/notes')
   async getNotesForCase(
     @CurrentUser('tenantId') tenantId: string,
@@ -104,8 +114,13 @@ export class AddressTaskController {
   async getTasksForDebtor(
     @CurrentUser('tenantId') tenantId: string,
     @Param('debtorId') debtorId: string,
+    @CurrentUser('id') actorUserId?: string, // sonda: mevcut konumsal çağrılar değişmez
   ) {
-    const tasks = await this.addressTaskService.getTasksByDebtor(debtorId, tenantId);
+    // F02 P3 tarama S4: borçlunun görevleri yalnız aktöre görünen dosyalardan (bayrak kapalı → bugünkü çağrı).
+    const caseFilter = await requireCaseViewScope(this.caseViewScope)?.caseRowFilter(tenantId, actorUserId);
+    const tasks = caseFilter
+      ? await this.addressTaskService.getTasksByDebtor(debtorId, tenantId, caseFilter)
+      : await this.addressTaskService.getTasksByDebtor(debtorId, tenantId);
     return { tasks };
   }
 
@@ -118,9 +133,14 @@ export class AddressTaskController {
   async getOverdueTasks(
     @CurrentUser('tenantId') tenantId: string,
     @Query('tenantId') queryTenantId?: string,
+    @CurrentUser('id') actorUserId?: string, // sonda: mevcut konumsal çağrılar değişmez
   ) {
     const resolved = this.resolveTenantId(tenantId, queryTenantId);
-    const tasks = await this.addressTaskService.findOverdueTasks(resolved);
+    // F02 P3 tarama S4: kiracı geneli liste yalnız aktöre görünen dosyaların görevleri (zamanlayıcı servisi süzgeçsiz çağırır).
+    const caseFilter = await requireCaseViewScope(this.caseViewScope)?.caseRowFilter(resolved, actorUserId);
+    const tasks = caseFilter
+      ? await this.addressTaskService.findOverdueTasks(resolved, caseFilter)
+      : await this.addressTaskService.findOverdueTasks(resolved);
     return { tasks };
   }
 

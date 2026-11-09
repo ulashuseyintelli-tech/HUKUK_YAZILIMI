@@ -8,7 +8,10 @@ import {
   Param,
   UseGuards,
   Req,
+  Optional,
 } from "@nestjs/common";
+import { CaseViewScoped, CaseViewScopedByObject } from "../case/case-view-scope.guard";
+import { CaseViewScopeService, requireCaseViewScope } from "../case/case-view-scope.service";
 import { ThirdPartyService } from "./third-party.service";
 import type { ExternalCaseReceiptInput } from "./third-party.service";
 import {
@@ -39,10 +42,13 @@ export class ThirdPartyController {
     private thirdPartyService: ThirdPartyService,
     private receiptAuthorization: ReceiptObjectScopeAuthorizationService,
     private externalCaseStatusTransition: ExternalCaseStatusTransitionService,
+    // F02 P3 tarama S4: kiracı geneli gecikmiş ihbarname listesinde satır süzgeci (bayrak açıkken zorunlu; yoksa 403)
+    @Optional() private readonly caseViewScope?: CaseViewScopeService,
   ) {}
 
   // ==================== THIRD PARTY CRUD ====================
 
+  @CaseViewScopedByObject("caseDebtor", "caseDebtorId") // F02 P3 tarama S4: dosya, dosya borçlusu satırından çözülür
   @Get("case-debtors/:caseDebtorId/third-parties")
   getThirdParties(
     @CurrentUser("tenantId") tenantId: string,
@@ -100,8 +106,10 @@ export class ThirdPartyController {
   // ==================== ALERTS ====================
 
   @Get("third-parties/overdue")
-  getOverdueIhbarnames(@CurrentUser("tenantId") tenantId: string) {
-    return this.thirdPartyService.getOverdueIhbarnames(tenantId);
+  async getOverdueIhbarnames(@CurrentUser("tenantId") tenantId: string, @CurrentUser("id") actorUserId?: string) {
+    // F02 P3 tarama S4: kiracı geneli liste yalnız aktöre görünen dosyaların ihbarnameleri (bayrak kapalı → bugünkü çağrı).
+    const caseFilter = await requireCaseViewScope(this.caseViewScope)?.caseRowFilter(tenantId, actorUserId);
+    return caseFilter ? this.thirdPartyService.getOverdueIhbarnames(tenantId, caseFilter) : this.thirdPartyService.getOverdueIhbarnames(tenantId);
   }
 
   // ==================== 89 İHBARNAME ZİNCİRİ ====================
@@ -110,6 +118,7 @@ export class ThirdPartyController {
    * Üçüncü şahısları durum bilgisiyle getir
    * GET /case-debtors/:caseDebtorId/third-parties/with-status
    */
+  @CaseViewScopedByObject("caseDebtor", "caseDebtorId") // F02 P3 tarama S4: dosya, dosya borçlusu satırından çözülür
   @Get("case-debtors/:caseDebtorId/third-parties/with-status")
   getThirdPartiesWithStatus(
     @CurrentUser("tenantId") tenantId: string,
@@ -134,6 +143,7 @@ export class ThirdPartyController {
    * Dosya için 89 ihbarname özeti
    * GET /cases/:caseId/ihbarname-summary
    */
+  @CaseViewScoped() // F02 P3 tarama S4: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   @Get("cases/:caseId/ihbarname-summary")
   getIhbarnameSummary(
     @CurrentUser("tenantId") tenantId: string,
@@ -148,6 +158,7 @@ export class ThirdPartyController {
    * Borçlunun alacaklı olduğu dış dosyaları getir
    * GET /case-debtors/:caseDebtorId/external-cases
    */
+  @CaseViewScopedByObject("caseDebtor", "caseDebtorId") // F02 P3 tarama S4: dosya, dosya borçlusu satırından çözülür
   @Get("case-debtors/:caseDebtorId/external-cases")
   getExternalCases(
     @CurrentUser("tenantId") tenantId: string,
