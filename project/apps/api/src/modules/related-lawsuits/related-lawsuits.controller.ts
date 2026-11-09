@@ -4,6 +4,7 @@ import { IsString, IsOptional, IsObject } from 'class-validator';
 import { RelatedLawsuitsService, LawsuitAvailability, LawsuitRecommendation } from './related-lawsuits.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { CaseViewScopeGuard } from '../case/case-view-scope.guard';
 
 // ============================================
 // DTO'LAR
@@ -227,6 +228,7 @@ export class RelatedLawsuitsController {
   /// Çağrıldığı yerler:
   /// - RelatedLawsuitsController.generateKarsiliksizCekSikayet() → GET /related-lawsuits/generate/karsiliksiz-cek/:caseId (karşılıksız çek şikayet üretimi)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3 tarama S8: aynı belgenin template-engine yolu D2'de kapılı; bu yol da dosya kapsamına bağlı
   @Get('generate/karsiliksiz-cek/:caseId')
   async generateKarsiliksizCekSikayet(
     @Param('caseId') caseId: string,
@@ -244,6 +246,7 @@ export class RelatedLawsuitsController {
   /// Çağrıldığı yerler:
   /// - RelatedLawsuitsController.previewKarsiliksizCekSikayet() → GET /related-lawsuits/generate/karsiliksiz-cek/:caseId/preview (karşılıksız çek şikayet önizleme)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3 tarama S8
   @Get('generate/karsiliksiz-cek/:caseId/preview')
   async previewKarsiliksizCekSikayet(
     @Param('caseId') caseId: string,
@@ -266,6 +269,7 @@ export class RelatedLawsuitsController {
   /// Çağrıldığı yerler:
   /// - RelatedLawsuitsController.downloadKarsiliksizCekSikayetWord() → GET /related-lawsuits/generate/karsiliksiz-cek/:caseId/word (karşılıksız çek şikayet Word indirme)
   /// </remarks>
+  @UseGuards(CaseViewScopeGuard) // F02 P3 tarama S8
   @Get('generate/karsiliksiz-cek/:caseId/word')
   async downloadKarsiliksizCekSikayetWord(
     @Param('caseId') caseId: string,

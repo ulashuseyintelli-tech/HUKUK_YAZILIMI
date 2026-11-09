@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
+import { CaseViewScoped, CaseViewScopedByObject } from '../case/case-view-scope.guard';
 import { PrecautionaryOrderService, CreatePrecautionaryOrderDto, CreatePrecautionaryCostDto } from './precautionary-order.service';
 
 // F02-D-2 dilim 3 (owner "Burada başla" + ek talimat 30.10.2026): VIEWER ihtiyati tedbir oluşturamaz / güncelleyemez / uygulayamaz / kaldıramaz / silemez, tedbir masrafı
@@ -22,6 +23,7 @@ export class PrecautionaryOrderController {
   /**
    * İhtiyati haciz kararını getir
    */
+  @CaseViewScopedByObject('precautionaryOrder', 'id') // F02 P3 tarama S9: dosya kararın satırından çözülür (bayrak açıkken; kapsam dışı / yok aynı 404)
   @Get(':id')
   async findOne(@Req() req: any, @Param('id') id: string) {
     return this.service.findOne(req.user.tenantId, id);
@@ -30,6 +32,7 @@ export class PrecautionaryOrderController {
   /**
    * Dosyaya ait ihtiyati haciz kararlarını getir
    */
+  @CaseViewScoped() // F02 P3 tarama S9: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   @Get('case/:caseId')
   async findByCase(@Req() req: any, @Param('caseId') caseId: string) {
     return this.service.findByCase(req.user.tenantId, caseId);
@@ -96,6 +99,7 @@ export class PrecautionaryOrderController {
   /**
    * İhtiyati haciz masraflarının toplamını hesapla
    */
+  @CaseViewScopedByObject('precautionaryOrder', 'id') // F02 P3 tarama S9
   @Get(':id/costs/total')
   async calculateTotalCosts(@Req() req: any, @Param('id') id: string) {
     return this.service.calculateTotalCosts(req.user.tenantId, id);
