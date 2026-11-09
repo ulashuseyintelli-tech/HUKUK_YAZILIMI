@@ -1,6 +1,6 @@
 jest.mock('pdf-poppler', () => ({ convert: async () => { throw new Error('Renderer not used in K7.3 acceptance'); } }));
 import 'reflect-metadata';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { ForbiddenException, INestApplication, NotFoundException, ValidationPipe } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { JwtModule, JwtService } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
@@ -313,6 +313,17 @@ dbDescribe('K7.3 — real JWT/HTTP, bounded grants and atomic lifecycle on dispo
     await holder; const response = await pending; expect(response.status).toBe(403);
     expect(await scopes().count({ where: { tenantId: tenant } })).toBe(0);
     expect(await db.permissionGrant.count({ where: { tenantId: tenant } })).toBe(0);
+  });
+  it('direct actor-facing entries reject absent/filter-shaped identity and object ids without wildcard reads or writes', async () => {
+    expect((await grant()).status).toBe(201);
+    const before = await snapshot();
+    await expect(access.listGrants(tenant, issuer, { clientId: undefined as any })).rejects.toBeInstanceOf(NotFoundException);
+    await expect(access.listGrants(tenant, issuer, { clientId: { not: '' } as any })).rejects.toBeInstanceOf(NotFoundException);
+    await expect(access.capabilities(tenant, { not: '' } as any, { clientId: client })).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(access.revoke(tenant, issuer, undefined as any, 'Synthetic reason')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(access.revoke(tenant, issuer, { not: '' } as any, 'Synthetic reason')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(records.readRecord({ tenantId: tenant, recordId: { not: '' } as any, actor: { userId: reader, role: 'USER' } })).rejects.toBeInstanceOf(NotFoundException);
+    expect(await snapshot()).toEqual(before);
   });
   it('case deletion locks canonical subjects even without prior grants and rejects a concurrent first grant', async () => {
     let release!: () => void, ready!: () => void;

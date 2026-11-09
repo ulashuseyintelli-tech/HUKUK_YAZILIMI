@@ -165,6 +165,7 @@ export class ClientSpecialCategoryService {
   /** Detay okuma: elevated + HER ERİŞİM ayrı audit (K7.3) + çözülmüş içerik. */
   async readRecord(params: { tenantId: string; recordId: string; actor: ClientMutationActor; caseId?: string }) {
     const { tenantId, recordId, actor } = params;
+    if (typeof recordId !== 'string' || !recordId) throw new NotFoundException('Kayıt bulunamadı');
     return this.prisma.$transaction(async (tx: any) => {
       const row = await this.delegate(tx).findFirst({ where: { id: recordId, tenantId } });
       if (!row) throw new NotFoundException('Kayıt bulunamadı');

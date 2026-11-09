@@ -32,6 +32,10 @@ export class ClientSpecialCategoryAccessService {
   }
 
   private async requireClient(tx: Prisma.TransactionClient, tenantId: string, scope: K73Scope) {
+    if (typeof scope?.clientId !== 'string' || !scope.clientId ||
+      (scope.caseId !== undefined && (typeof scope.caseId !== 'string' || !scope.caseId))) {
+      throw new NotFoundException('Müvekkil veya dosya bağı bulunamadı.');
+    }
     const client = await tx.client.findFirst({ where: {
       id: scope.clientId, tenantId,
       ...(scope.caseId ? { caseClients: { some: { caseId: scope.caseId, case: { tenantId } } } } : {}),
@@ -144,6 +148,7 @@ export class ClientSpecialCategoryAccessService {
   }
 
   async revoke(tenantId: string, actorUserId: string, scopeId: string, reason: string) {
+    if (typeof scopeId !== 'string' || !scopeId) throw new NotFoundException('Yetki bulunamadı.');
     reason = this.requireReason(reason);
     return this.transaction(async tx => {
       const row = await k73Scopes(tx).findFirst({ where: { id: scopeId, tenantId,

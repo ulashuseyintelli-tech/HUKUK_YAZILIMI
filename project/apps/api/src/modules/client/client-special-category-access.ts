@@ -30,7 +30,7 @@ export function k73Scopes(db: K73Db): any {
 }
 
 export async function currentK73Actor(db: K73Db, tenantId: string, userId: string | undefined | null) {
-  if (!tenantId || !userId) throw new ForbiddenException({ code: 'K73_ACCESS_DENIED' });
+  if (typeof tenantId !== 'string' || !tenantId || typeof userId !== 'string' || !userId) throw new ForbiddenException({ code: 'K73_ACCESS_DENIED' });
   const user = await db.user.findFirst({
     where: { id: userId, tenantId, isActive: true, role: { in: ['ADMIN', 'USER'] } },
     include: { staffMember: { select: { id: true } } },
@@ -42,7 +42,7 @@ export async function currentK73Actor(db: K73Db, tenantId: string, userId: strin
 // Callers: grant/revoke/duty-change and staff/lawyer/case transaction hooks.
 // The subject lock prevents a grant from being inserted behind an offboarding revoke.
 export async function lockK73Subject(db: K73Db, tenantId: string, subjectUserId: string) {
-  if (!tenantId || !subjectUserId) throw new ForbiddenException({ code: 'K73_ACCESS_DENIED' });
+  if (typeof tenantId !== 'string' || !tenantId || typeof subjectUserId !== 'string' || !subjectUserId) throw new ForbiddenException({ code: 'K73_ACCESS_DENIED' });
   const rows = await db.$queryRaw<Array<{ id: string }>>`
     SELECT "id" FROM "User" WHERE "tenantId" = ${tenantId} AND "id" = ${subjectUserId} FOR UPDATE
   `;
@@ -76,7 +76,7 @@ export async function assertK73AccessInTx(
   tenantId: string, userId: string | undefined | null, operation: K73Operation,
   clientId: string, caseId?: string,
 ): Promise<{ id: string; validUntil: Date }> {
-  if (!userId || !K73_OPERATIONS.includes(operation)) throw new ForbiddenException({ code: 'K73_ACCESS_DENIED' });
+  if (typeof tenantId !== 'string' || !tenantId || typeof userId !== 'string' || !userId || !K73_OPERATIONS.includes(operation)) throw new ForbiddenException({ code: 'K73_ACCESS_DENIED' });
   k73Scopes(db);
   // Lock before the decision. A committed revocation cannot be passed using an old snapshot.
   await db.$queryRaw`
