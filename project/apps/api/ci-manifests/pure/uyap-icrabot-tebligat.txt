@@ -189,6 +189,8 @@ src/modules/tebligat/__tests__/tebligat-electronic-result.spec.ts
 src/modules/tebligat/__tests__/tebligat-late-result-and-update-guard.spec.ts
 src/modules/tebligat/__tests__/tebligat-ptt-result-tk212-regression.spec.ts
 src/modules/tebligat/__tests__/tebligat-service-occurrence-integration.spec.ts
+# R12 Kabul A (09.11.2026): GET /tebligat/summary, GET /tebligat/:id tarafından gölgeleniyordu (404 "Tebligat bulunamadı").
+src/modules/tebligat/__tests__/tebligat-controller-route-order.spec.ts
 src/modules/tebligat/service-occurrence/__tests__/service-occurrence-recorded.consumer.spec.ts
 src/modules/tebligat/service-occurrence/__tests__/service-occurrence-recorded.registrar.spec.ts
 src/modules/tebligat/service-occurrence/__tests__/service-occurrence.service.spec.ts

@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
-// DoÄŸrudan import: HacizHistoryCard â†’ CaseHistoryPanel â†’ @/lib/api (mock) + safe Haciz projection.
-// @shared/types zinciri yok â†’ test-safe.
+// Doğrudan import: HacizHistoryCard → CaseHistoryPanel → @/lib/api (mock) + safe Haciz projection.
+// @shared/types zinciri yok → test-safe.
 import { HacizHistoryCard } from "@/components/case/HacizHistoryCard";
 import { api } from "@/lib/api";
 
-// CASEDETAILTABS-MIGRATION-C1: #123 Haciz Gönderim Geçmişi re-wire â€” collapsible + lazy.
+// CASEDETAILTABS-MIGRATION-C1: #123 Haciz Gönderim Geçmişi re-wire — collapsible + lazy.
 vi.mock("@/lib/api", () => ({
   api: { getCaseHacizAudits: vi.fn() },
 }));
@@ -51,22 +51,22 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("HacizHistoryCard â€” CASEDETAILTABS-MIGRATION-C1 (#123 re-wire, collapsible + lazy)", () => {
-  it("kapalÄ±yken (varsayÄ±lan) panel mount EDÄ°LMEZ â†’ fetch YAPILMAZ (lazy kanÄ±tÄ±)", () => {
+describe("HacizHistoryCard — CASEDETAILTABS-MIGRATION-C1 (#123 re-wire, collapsible + lazy)", () => {
+  it("kapalıyken (varsayılan) panel mount EDİLMEZ → fetch YAPILMAZ (lazy kanıtı)", () => {
     getAudits.mockResolvedValue({ logs: [sampleLog], total: 1, page: 1, limit: 20, totalPages: 1 });
     render(<HacizHistoryCard caseId="c1" />);
-    // Kart baÅŸlÄ±ÄŸÄ± gÃ¶rÃ¼nÃ¼r, ama panel mount edilmedi â†’ fetch tetiklenmez.
+    // Kart başlığı görünür, ama panel mount edilmedi → fetch tetiklenmez.
     expect(screen.getByText("Haciz Gönderim Geçmişi")).toBeTruthy();
-    expect(screen.queryByText(/Gizle/)).toBeNull(); // kapalÄ± durum (â–¼ GÃ¶ster)
-    expect(getAudits).not.toHaveBeenCalled(); // â† LAZY: kapalÄ± â†’ fetch YOK
+    expect(screen.queryByText(/Gizle/)).toBeNull(); // kapalı durum (▼ Göster)
+    expect(getAudits).not.toHaveBeenCalled(); // ← LAZY: kapalı → fetch YOK
   });
 
-  it("aÃ§Ä±lÄ±nca panel mount â†’ fetch YAPILIR + safe projection render edilir", async () => {
+  it("açılınca panel mount → fetch YAPILIR + safe projection render edilir", async () => {
     const { metadata, ...safeOnly } = sampleLog;
     getAudits.mockResolvedValue({ logs: [safeOnly], total: 1, page: 1, limit: 20, totalPages: 1 });
     render(<HacizHistoryCard caseId="c1" />);
     fireEvent.click(screen.getByRole("button"));
-    await waitFor(() => expect(getAudits).toHaveBeenCalledWith("c1")); // â† LAZY: aÃ§Ä±k â†’ fetch VAR
+    await waitFor(() => expect(getAudits).toHaveBeenCalledWith("c1")); // ← LAZY: açık → fetch VAR
     await waitFor(() => expect(screen.getByText("Borçlu #1")).toBeTruthy());
     expect(screen.getByText(/Borçlunun kayıtlı adresi yok/i)).toBeTruthy();
     expect(screen.getByText(/Risk: Yüksek/i)).toBeTruthy();
@@ -74,7 +74,7 @@ describe("HacizHistoryCard â€” CASEDETAILTABS-MIGRATION-C1 (#123 re-wire, c
     expect(screen.queryByText("RAW CPE WARNING")).toBeNull();
   });
 
-  it("safe projection yoksa raw metadata'ya dÃ¼ÅŸmez", async () => {
+  it("safe projection yoksa raw metadata'ya düşmez", async () => {
     getAudits.mockResolvedValue({
       logs: [{ ...sampleLog, hacizSafeProjection: null }],
       total: 1,
@@ -89,11 +89,53 @@ describe("HacizHistoryCard â€” CASEDETAILTABS-MIGRATION-C1 (#123 re-wire, c
     expect(screen.queryByText("RAW SNAPSHOT BORCLU")).toBeNull();
   });
 
-  it("aÃ§Ä±lÄ±nca boÅŸ-durum: kayÄ±t yoksa bilgi mesajÄ±", async () => {
+  it("açılınca boş-durum: kayıt yoksa bilgi mesajı", async () => {
     getAudits.mockResolvedValue({ logs: [], total: 0, page: 1, limit: 20, totalPages: 0 });
     render(<HacizHistoryCard caseId="c1" />);
     fireEvent.click(screen.getByRole("button"));
     await waitFor(() => expect(getAudits).toHaveBeenCalledWith("c1"));
-    expect(screen.getByText(/henÃ¼z haciz gÃ¶nderimi kaydÄ± yok/i)).toBeTruthy();
+    expect(screen.getByText(/henüz haciz gönderimi kaydı yok/i)).toBeTruthy();
+  });
+});
+
+// R12 Kabul A (09.11.2026): açılan paneldeki metinler çift kodlanmış UTF-8 (mojibake: "GÃ¶nderim",
+// "henÃ¼z", "Ã¢â‚¬Â¢") olarak görünüyordu; bozulma CaseHistoryPanel kaynak dizgelerindeydi (API etiketleri doğru).
+const MOJIBAKE = /Ã|Ä|Å|â€|Â/;
+
+describe("HacizHistoryCard — R12 Kabul A Türkçe metin (mojibake yok)", () => {
+  it("boş durum: başlık, açıklama ve bilgi metni doğru Türkçe", async () => {
+    getAudits.mockResolvedValue({ logs: [], total: 0, page: 1, limit: 20, totalPages: 0 });
+    const { container } = render(<HacizHistoryCard caseId="c1" />);
+    fireEvent.click(screen.getByRole("button"));
+    expect(await screen.findByText("Bu dosyada henüz haciz gönderimi kaydı yok.")).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 3, name: "Haciz Gönderim Geçmişi" })).toBeTruthy();
+    expect(
+      screen.getByText("Haciz talebi gönderildiği anda backend'in hesapladığı saha istihbaratı riski (karar-anı izi). Salt görüntü."),
+    ).toBeTruthy();
+    expect(container.textContent).not.toMatch(MOJIBAKE);
+  });
+
+  it("kayıtlı durum: gerekçe madde imi • ve metin doğru", async () => {
+    const { metadata, ...safeOnly } = sampleLog;
+    getAudits.mockResolvedValue({ logs: [safeOnly], total: 1, page: 1, limit: 20, totalPages: 1 });
+    const { container } = render(<HacizHistoryCard caseId="c1" />);
+    fireEvent.click(screen.getByRole("button"));
+    expect(await screen.findByText("• Borçlunun kayıtlı adresi yok")).toBeTruthy();
+    expect(container.textContent).not.toMatch(MOJIBAKE);
+  });
+
+  it("yükleniyor ve hata durumları doğru Türkçe", async () => {
+    getAudits.mockReturnValue(new Promise(() => {}));
+    const first = render(<HacizHistoryCard caseId="c1" />);
+    fireEvent.click(screen.getByRole("button"));
+    expect(screen.getByText("Yükleniyor…")).toBeTruthy();
+    expect(first.container.textContent).not.toMatch(MOJIBAKE);
+    first.unmount();
+
+    getAudits.mockRejectedValue(new Error("network"));
+    const second = render(<HacizHistoryCard caseId="c1" />);
+    fireEvent.click(screen.getByRole("button"));
+    expect(await screen.findByText("İşlem geçmişi yüklenemedi.")).toBeTruthy();
+    expect(second.container.textContent).not.toMatch(MOJIBAKE);
   });
 });

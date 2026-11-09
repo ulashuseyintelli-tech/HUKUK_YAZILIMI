@@ -6,8 +6,8 @@ import { api, HacizAuditLog } from "@/lib/api";
 import { riskBadge } from "@/lib/haciz-audit-format";
 
 /**
- * PR-D4e-7: Dosya "Ä°ÅŸlem GeÃ§miÅŸi" sekmesi â€” haciz gÃ¶nderim KARAR-ANI audit snapshot'larÄ± (READ-ONLY).
- * Yeni audit yazÄ±mÄ±/deÄŸiÅŸikliÄŸi YOK; yalnÄ±z gÃ¶rÃ¼nÃ¼rlÃ¼k. Ä°lk sÃ¼rÃ¼m sadece HACIZ_REQUEST_SUBMITTED.
+ * PR-D4e-7: Dosya "İşlem Geçmişi" sekmesi — haciz gönderim KARAR-ANI audit snapshot'ları (READ-ONLY).
+ * Yeni audit yazımı/değişikliği YOK; yalnız görünürlük. İlk sürüm sadece HACIZ_REQUEST_SUBMITTED.
  */
 
 function formatDate(iso: string) {
@@ -34,25 +34,25 @@ export function CaseHistoryPanel({ caseId }: { caseId: string }) {
   }, [caseId]);
 
   if (error) {
-    return <div className="text-sm text-gray-500 p-4">Ä°ÅŸlem geÃ§miÅŸi yÃ¼klenemedi.</div>;
+    return <div className="text-sm text-gray-500 p-4">İşlem geçmişi yüklenemedi.</div>;
   }
   if (logs === null) {
-    return <div className="text-sm text-gray-400 p-4">YÃ¼kleniyorâ€¦</div>;
+    return <div className="text-sm text-gray-400 p-4">Yükleniyor…</div>;
   }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
         <History className="w-5 h-5 text-gray-500" />
-        <h3 className="text-sm font-semibold text-gray-800">Haciz GÃ¶nderim GeÃ§miÅŸi</h3>
+        <h3 className="text-sm font-semibold text-gray-800">Haciz Gönderim Geçmişi</h3>
       </div>
       <p className="text-xs text-gray-500">
-        Haciz talebi gönderildiÄŸi anda backend'in hesapladÄ±ÄŸÄ± saha istihbaratÄ± riski (karar-anÄ± izi). Salt gÃ¶rÃ¼ntÃ¼.
+        Haciz talebi gönderildiği anda backend'in hesapladığı saha istihbaratı riski (karar-anı izi). Salt görüntü.
       </p>
 
       {logs.length === 0 ? (
         <div className="text-sm text-gray-500 border border-dashed border-gray-200 rounded-lg p-6 text-center">
-          Bu dosyada henÃ¼z haciz gÃ¶nderimi kaydÄ± yok.
+          Bu dosyada henüz haciz gönderimi kaydı yok.
         </div>
       ) : (
         <ul className="space-y-3">
@@ -96,7 +96,7 @@ export function CaseHistoryPanel({ caseId }: { caseId: string }) {
                         <ul className="space-y-0.5">
                           {d.reasons.map((reason) => (
                             <li key={reason.id} className="text-xs text-gray-600">
-                              Ã¢â‚¬Â¢ {reason.label}
+                              • {reason.label}
                             </li>
                           ))}
                         </ul>
