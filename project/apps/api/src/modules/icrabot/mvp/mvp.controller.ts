@@ -18,6 +18,7 @@ import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { ActionListService } from './action-list.service';
 import { RiskNetReportService } from './risk-net-report.service';
 import { WeeklyExportService } from './weekly-export.service';
+import { CaseViewScoped } from '../../case/case-view-scope.guard';
 
 @Controller('icrabot/actions')
 @UseGuards(JwtAuthGuard)
@@ -29,6 +30,7 @@ export class ActionListController {
    * Dosya için bekleyen aksiyonları listele
    */
   @Get(':caseId/list')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (modül bugün AppModule'e bağlı değil; bağlanırsa kapı hazır)
   async getActionList(
     @CurrentUser() user: { tenantId: string },
     @Param('caseId') caseId: string,
@@ -55,6 +57,7 @@ export class RiskReportController {
    * Dosya için risk ve net getiri raporu
    */
   @Get(':caseId/report')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (modül bugün AppModule'e bağlı değil; bağlanırsa kapı hazır)
   async getRiskReport(
     @CurrentUser() user: { tenantId: string },
     @Param('caseId') caseId: string,

@@ -20,6 +20,7 @@ import {
 } from '@nestjs/common';
 import { tenantScopeFromRequestUser } from './outbox-scope';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { CaseViewScoped } from '../../case/case-view-scope.guard';
 import { AdminGuard } from '../../auth/guards/admin.guard';
 // F02-C B-4 (owner kararı 31.10.2026): VIEWER yazma reddi — sınıf düzeyi, JwtAuthGuard'dan SONRA, containment guard'larından ÖNCE.
 import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from '../../auth/guards/viewer-write-deny.guard';
@@ -67,11 +68,13 @@ export class FactStoreController {
   // V28-TENANT-ISOLATION-CLOSEOUT-R01: FactStore'un TUM yuzeyleri tenant-scoped.
   // Kapsam authority'si YALNIZ dogrulanmis `req.user.tenantId`.
   @Get(':caseId')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async getSnapshot(@Req() req: any, @Param('caseId') caseId: string) {
     return this.factStore.getSnapshot(caseId, tenantScopeFromRequestUser(req.user));
   }
 
   @Get(':caseId/fact/:key')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async getFact(
     @Req() req: any,
     @Param('caseId') caseId: string,
@@ -82,6 +85,7 @@ export class FactStoreController {
   }
 
   @Get(':caseId/flag/:key')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async getFlag(
     @Req() req: any,
     @Param('caseId') caseId: string,
@@ -92,6 +96,7 @@ export class FactStoreController {
   }
 
   @Get(':caseId/audit')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async getAuditHistory(
     @Req() req: any,
     @Param('caseId') caseId: string,
@@ -157,6 +162,7 @@ export class FactStoreController {
   }
 
   @Get(':caseId/pattern/:pattern')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async getFactsByPattern(
     @Req() req: any,
     @Param('caseId') caseId: string,
@@ -170,6 +176,7 @@ export class FactStoreController {
   }
 
   @Get(':caseId/audit/:key')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async getKeyAuditHistory(
     @Req() req: any,
     @Param('caseId') caseId: string,
@@ -293,6 +300,7 @@ export class TimelineController {
    */
   // V28-XTEN-I02: tum timeline okuma yuzeyleri tenant-scoped.
   @Get(':caseId')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async getTimeline(
     @Req() req: any,
     @Param('caseId') caseId: string,
@@ -312,11 +320,13 @@ export class TimelineController {
   }
 
   @Get(':caseId/stats')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async getStats(@Req() req: any, @Param('caseId') caseId: string) {
     return this.timeline.getStats(caseId, tenantScopeFromRequestUser(req.user));
   }
 
   @Get(':caseId/summary')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async getRecentSummary(
     @Req() req: any,
     @Param('caseId') caseId: string,
@@ -358,6 +368,7 @@ export class EngineRunController {
   }
 
   @Get('case/:caseId')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async getRunsByCaseId(
     @Req() req: any,
     @Param('caseId') caseId: string,
@@ -412,6 +423,7 @@ export class OutboxController {
   }
 
   @Get('case/:caseId')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async getActionsByCaseId(
     @Req() req: any,
     @Param('caseId') caseId: string,
@@ -812,6 +824,7 @@ export class ActionFeedbackController {
    * Get last feedback for specific action type
    */
   @Get(':caseId/:actionType')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async getLastFeedback(
     @Req() req: any,
     @Param('caseId') caseId: string,
@@ -828,6 +841,7 @@ export class ActionFeedbackController {
    * Get all feedbacks for a case
    */
   @Get(':caseId')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async getAllFeedbacks(@Req() req: any, @Param('caseId') caseId: string) {
     return this.feedback.getAllFeedbacks(caseId, tenantScopeFromRequestUser(req.user));
   }
@@ -836,6 +850,7 @@ export class ActionFeedbackController {
    * Get callback history for a case
    */
   @Get(':caseId/callbacks')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async getCallbackHistory(@Req() req: any, @Param('caseId') caseId: string) {
     return this.feedback.getCallbackHistory(caseId, tenantScopeFromRequestUser(req.user));
   }
@@ -844,6 +859,7 @@ export class ActionFeedbackController {
    * Get last global action status
    */
   @Get(':caseId/last')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async getLastGlobalStatus(@Req() req: any, @Param('caseId') caseId: string) {
     return this.feedback.getLastGlobalStatus(caseId, tenantScopeFromRequestUser(req.user));
   }
