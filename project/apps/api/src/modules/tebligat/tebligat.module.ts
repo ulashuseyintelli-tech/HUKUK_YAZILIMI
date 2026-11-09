@@ -13,10 +13,12 @@ import { LegalDeadlineModule } from "../legal-deadline/legal-deadline.module"; /
 import { V28EngineModule } from "../icrabot/v28-engine/v28-engine.module"; // DEBTOR-OF01-HISTORY-P04-C-I01
 import { ServiceOccurrenceRecordedConsumerService } from "./service-occurrence/service-occurrence-recorded.consumer"; // DEBTOR-OF01-HISTORY-P04-C-I01
 import { ServiceOccurrenceRecordedRegistrar } from "./service-occurrence/service-occurrence-recorded.registrar"; // DEBTOR-OF01-HISTORY-P04-C-I01
+import { CaseViewScopeModule } from "../case/case-view-scope.module"; // F02 P3: dosyaya bağlı tebligat okumalarının kapsam kapısı
 
 @Module({
   imports: [
     PrismaModule,
+    CaseViewScopeModule,
     DebtorModule,
     CaseDebtorLifecycleGuardModule,
     DomainEventIngestModule,
