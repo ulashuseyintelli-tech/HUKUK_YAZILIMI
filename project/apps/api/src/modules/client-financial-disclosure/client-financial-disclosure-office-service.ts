@@ -432,6 +432,8 @@ export class ClientFinancialDisclosureOfficeService {
       where: {
         clientId: client.id,
         case: {
+          // F02 P3 tarama S3: bildirimler dosya başınadır; kapsam dışı dosyanın bildirimi var olmayan bildirimle aynı yanıtı alır.
+          ...(scope.caseFilter ?? {}),
           tenantId: scope.tenantId,
           ...(scope.caseId ? { id: scope.caseId } : {}),
         },

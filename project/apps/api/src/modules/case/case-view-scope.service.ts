@@ -69,6 +69,24 @@ export class CaseViewScopeService {
   }
 
   /**
+   * P3 tarama S3 (owner kararı 09.11.2026) — müvekkilin TÜM hesabını temsil eden mali belgeler eksik dosyalarla ÜRETİLMEZ:
+   * aktör müvekkilin (kiracıdaki) dosyalarından birini bile göremiyorsa 403. Kısmi toplam dönmez; hangi dosyanın gizli olduğu
+   * ya da kaç dosya olduğu söylenmez. Bayrak kapalı / büro geneli izin → geçer. Müvekkil yoksa ya da başka kiracıdaysa dosyası
+   * da yoktur → geçer; handler kendi "bulunamadı" yanıtını verir. Bu kapı mevcut mali işlem yetkilerinin YERİNE GEÇMEZ.
+   */
+  async assertAllClientCasesVisible(tenantId: string, actorUserId: string | null | undefined, clientId: unknown): Promise<void> {
+    if (!isCaseViewScopeEnabled()) return;
+    const scope = await this.scopeWhere(tenantId, actorUserId);
+    if (!scope) return;
+    if (typeof clientId !== "string" || !clientId) throw new ForbiddenException(CLIENT_TOTAL_SCOPE_DENIED);
+    const hidden = await this.prisma.case.findFirst({
+      where: { tenantId, caseClients: { some: { clientId } }, NOT: scope },
+      select: { id: true },
+    });
+    if (hidden) throw new ForbiddenException(CLIENT_TOTAL_SCOPE_DENIED);
+  }
+
+  /**
    * P3 tarama dilimleri (owner kararları 09.11.2026) — tek dosyanın görünürlüğü, hata FIRLATMADAN. Yeni kural değildir:
    * `assertCaseVisible` ile aynı yüklem. Bayrak kapalı → true (ek sorgu yok). Yanıtına dosya verisi GÖMEN okumalar (ör. tek
    * görev) "bu dosya aktöre görünür mü" sorusunu bununla yanıtlar; başka bir kaydı görebilmek dosya erişimi ÜRETMEZ.
@@ -135,13 +153,17 @@ export class CaseViewScopeService {
     if (!isCaseViewScopeEnabled()) return true;
     const scope = await this.scopeWhere(tenantId, actorUserId);
     if (typeof objectId !== "string" || !objectId) return false;
-    const caseId = await this.caseIdOf(tenantId, kind, objectId);
-    if (!caseId) return false;
-    const found = await this.prisma.case.findFirst({
-      where: { id: caseId, tenantId, ...(scope ? { AND: [scope] } : {}) },
-      select: { id: true },
-    });
-    return !!found;
+    // Mahsup kaydı İKİ dosyaya bağlıdır (ödenecek + masraf): ikisi de görünür olmalı.
+    const caseIds = kind === "clientOffset" ? await this.offsetCaseIds(tenantId, objectId) : [await this.caseIdOf(tenantId, kind, objectId)];
+    if (caseIds.length === 0 || caseIds.some((id) => !id)) return false;
+    const distinct = [...new Set(caseIds as string[])];
+    const visible = await this.prisma.case.count({ where: { id: { in: distinct }, tenantId, ...(scope ? { AND: [scope] } : {}) } });
+    return visible === distinct.length;
+  }
+
+  private async offsetCaseIds(tenantId: string, id: string): Promise<Array<string | null>> {
+    const row = await this.prisma.clientOffset.findFirst({ where: { id, tenantId }, select: { payableCaseId: true, expenseCaseId: true } });
+    return row ? [row.payableCaseId, row.expenseCaseId] : [];
   }
 
   /** Nesnenin dosya kimliği — yalnız aktör kiracısındaki satırdan (bulunamazsa null). */
@@ -187,11 +209,21 @@ export class CaseViewScopeService {
         return (await this.prisma.claimItem.findFirst({ where, select }))?.caseId ?? null;
       case "collection": // P3 tarama S1: satır aktör kiracısında; dosya FK'li
         return (await this.prisma.collection.findFirst({ where, select }))?.caseId ?? null;
+      case "collectionDisposition": // P3 tarama S3: satır aktör kiracısında; dosya FK'li
+        return (await this.prisma.collectionDisposition.findFirst({ where, select }))?.caseId ?? null;
+      case "clientPayoutManualReversal": // P3 tarama S3: satır aktör kiracısında; dosya FK'li
+        return (await this.prisma.clientPayoutManualReversal.findFirst({ where, select }))?.caseId ?? null;
       default:
         return null;
     }
   }
 }
+
+/** S3: müvekkil düzeyi mali belge reddi — tek gövde (hangi dosyanın gizli olduğu / dosya sayısı verilmez). */
+export const CLIENT_TOTAL_SCOPE_DENIED = {
+  code: "CASE_VIEW_SCOPE_CLIENT_TOTAL",
+  message: "Bu müvekkilin tüm dosyalarını görme yetkiniz olmadığı için müvekkil düzeyi mali belge gösterilemiyor",
+} as const;
 
 /** P3-D3b-2: kendi kimliğiyle okunan, dosyaya bağlı nesne türleri (yeni kural değildir; dosya bu satırlardan çözülür). */
 export type CaseScopedObjectKind =
@@ -209,7 +241,10 @@ export type CaseScopedObjectKind =
   | "institutionLetter" // P3 tarama S4: GET /address-discovery/institution-letter/:id
   | "assetQuery" // P3 tarama S4: GET /asset-queries/:queryId
   | "claimItem" // P3 tarama S1 (10.11.2026): GET /claim-items/:id
-  | "collection"; // P3 tarama S1: GET /collections/:id
+  | "collection" // P3 tarama S1: GET /collections/:id
+  | "collectionDisposition" // P3 tarama S3 (10.11.2026): POST /collection-dispositions/:id/distribution-recommendation
+  | "clientPayoutManualReversal" // P3 tarama S3: GET /client-payout-manual-reversals/:id
+  | "clientOffset"; // P3 tarama S3: GET /client-offsets/:offsetId/detail (iki dosya: ödenecek + masraf)
 
 /**
  * Handler / servis içi kapı yardımcısı: bayrak kapalı → undefined (bugünkü davranış, sorgu yok); bayrak açık + kapsam servisi

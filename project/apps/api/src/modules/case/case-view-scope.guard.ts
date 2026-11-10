@@ -82,6 +82,9 @@ export const CASE_OBJECT_NOT_FOUND: Readonly<Record<CaseScopedObjectKind, string
   assetQuery: "Sorgu bulunamadı", // AssetQueryService.getQueryById ile aynı gövde
   claimItem: "Alacak kalemi bulunamadı", // ClaimItemService.findOne ile aynı gövde
   collection: "Tahsilat bulunamadı", // CollectionService.findById ile aynı gövde
+  collectionDisposition: "Dağıtım kaydı bulunamadı", // DistributionRecommendationService.generate ile aynı gövde
+  clientPayoutManualReversal: "Manual reversal workflow bulunamadi", // ClientPayoutManualReversalReadService.detail ile aynı gövde
+  clientOffset: "Mahsup kaydı bulunamadı", // ClientOffsetService.getOffsetDetail ile aynı gövde
 };
 
 /**
@@ -109,6 +112,39 @@ export class CaseObjectViewScopeGuard implements CanActivate {
     }
     return true;
   }
+}
+
+/** P3 tarama S3: müvekkil kimliğinin okunacağı yol parametresi. */
+export const CLIENT_TOTAL_VIEW_SCOPE_PARAM = "f02:clientTotalViewScopeParam";
+
+/**
+ * F02 P3 tarama S3 (owner kararı 09.11.2026) — müvekkilin TÜM hesabını temsil eden mali okuma uçlarının kapısı.
+ * Aktör müvekkilin dosyalarından birini bile göremiyorsa 403 (kısmi toplam üretilmez). Kural CaseViewScopeService'tedir.
+ * Sınıf düzeyindeki kimlik / VIEWER kapılarından SONRA, handler'dan ÖNCE çalışır. Bayrak kapalı → sorgu yok, geçer.
+ * Bayrak açık + servis yok → 403 (fail-closed).
+ */
+@Injectable()
+export class ClientTotalViewScopeGuard implements CanActivate {
+  constructor(
+    @Optional() private readonly scope?: CaseViewScopeService,
+    @Optional() private readonly reflector?: Reflector,
+  ) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    if (!isCaseViewScopeEnabled()) return true;
+    if (!this.scope) {
+      throw new ForbiddenException({ code: "CASE_VIEW_SCOPE_UNRESOLVED", message: "Dosya görünüm kapsamı çözümlenemedi" });
+    }
+    const param = this.reflector?.get<string>(CLIENT_TOTAL_VIEW_SCOPE_PARAM, context.getHandler()) ?? "clientId";
+    const req = context.switchToHttp().getRequest();
+    await this.scope.assertAllClientCasesVisible(req.user?.tenantId, req.user?.id, req.params?.[param]);
+    return true;
+  }
+}
+
+/** P3 tarama S3: ör. `@ClientTotalViewScoped()` — müvekkil düzeyi mali belge; müvekkilin bütün dosyaları görünür olmalı. */
+export function ClientTotalViewScoped(param = "clientId") {
+  return applyDecorators(SetMetadata(CLIENT_TOTAL_VIEW_SCOPE_PARAM, param), UseGuards(ClientTotalViewScopeGuard));
 }
 
 /** P3-D3b-2: ör. `@CaseViewScopedByObject("caseCollateral", "id")`. Yeni kural değildir; dosya nesneden çözülür. */

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Req, ForbiddenException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Req, ForbiddenException, NotFoundException, Optional } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Request } from 'express';
 import { ClientStatementStatus } from '@prisma/client';
@@ -13,6 +13,8 @@ import {
   SupersedeClientStatementDto,
   VoidClientStatementDto,
 } from './dto/client-statement.dto';
+import { CaseViewScoped, ClientTotalViewScoped } from '../case/case-view-scope.guard';
+import { CaseViewScopeService, requireCaseViewScope } from '../case/case-view-scope.service';
 
 interface AuthRequest extends Request {
   user: { id: string; tenantId: string; role: string };
@@ -38,6 +40,7 @@ export class ClientStatementController {
     private readonly service: ClientStatementService,
     private readonly monthlyDelivery: ClientStatementMonthlyDeliveryService,
     private readonly officeApproval: OfficeApprovalService,
+    @Optional() private readonly caseViewScope?: CaseViewScopeService,
   ) {}
 
   /**
@@ -118,6 +121,7 @@ export class ClientStatementController {
 
   /** Dosya bazlı liste (default ACTIVE) — GET /client-statements/case/:caseId?status= */
   @Get('case/:caseId')
+  @CaseViewScoped() // F02 P3 tarama S3: dosya görünüm kapsamı (bayrak açıkken)
   async listByCase(
     @Req() req: AuthRequest,
     @Param('caseId') caseId: string,
@@ -131,6 +135,7 @@ export class ClientStatementController {
    * (':id' detay route'undan ÖNCE; 'client' static segment iki-segment match ile ayırır.)
    */
   @Get('client/:clientId')
+  @ClientTotalViewScoped() // F02 P3 tarama S3: dosya görünüm kapsamı (bayrak açıkken)
   async listByClient(
     @Req() req: AuthRequest,
     @Param('clientId') clientId: string,
@@ -142,6 +147,17 @@ export class ClientStatementController {
   /** Detay + satırlar — GET /client-statements/:id */
   @Get(':id')
   async findOne(@Req() req: AuthRequest, @Param('id') id: string) {
-    return this.service.findOne(req.user.tenantId, id);
+    const record = await this.service.findOne(req.user.tenantId, id);
+    // S3: dosya ekstresi dosyasının kapsamına bağlıdır (kapsam dışı = var olmayan ekstre, aynı 404); müvekkil düzeyi (genel)
+    // ekstre müvekkilin bütün dosyalarını görmeyi gerektirir (403; eksik dosyalarla belge gösterilmez).
+    const viewScope = requireCaseViewScope(this.caseViewScope);
+    if (viewScope) {
+      if (record.caseId) {
+        if (!(await viewScope.isCaseVisible(req.user.tenantId, req.user.id, record.caseId))) throw new NotFoundException('Ekstre bulunamadı');
+      } else {
+        await viewScope.assertAllClientCasesVisible(req.user.tenantId, req.user.id, record.clientId);
+      }
+    }
+    return record;
   }
 }

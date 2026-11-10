@@ -13,6 +13,7 @@ import { isClientFinancialDisclosureApprovedProvider } from './client-financial-
 import { isDisclosurePublicationEnabled } from './client-financial-disclosure-activation';
 import { ClientFinancialDisclosureController } from './client-financial-disclosure.controller';
 import { ClientFinancialDisclosureOfficeService } from './client-financial-disclosure-office-service';
+import { CaseViewScopeModule } from '../case/case-view-scope.module';
 
 /**
  * CLIENT-FINANCIAL-DISCLOSURE-PRODUCTION-ACTIVATION-R01 / I02 — PRODUCTION COMPOSITION BINDING
@@ -36,7 +37,7 @@ import { ClientFinancialDisclosureOfficeService } from './client-financial-discl
  *   COMPOSITION BOUND != WRITE PATH REACHABLE != PRODUCTION ACTIVATED
  */
 @Module({
-  imports: [PrismaModule],
+  imports: [CaseViewScopeModule, PrismaModule],
   controllers: [ClientFinancialDisclosureController],
   providers: [
     // CLIENT-FD-ACT-R01-I04: NotificationModule'un TAMAMI import EDILMEZ — o graf

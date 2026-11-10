@@ -11,6 +11,7 @@ import { ApproveDispositionDto } from './dto/approve-disposition.dto';
 import { GenerateDistributionRecommendationDto } from './dto/distribution-recommendation.dto';
 import { CpeRequired } from '../policy-engine/decorators/cpe-required.decorator';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
+import { CaseViewScoped, CaseViewScopedByObject } from '../case/case-view-scope.guard';
 
 /** actor compile-time shape — req.user.id auth context (body'den ASLA). */
 interface AuthRequest {
@@ -35,6 +36,7 @@ export class DispositionController {
    * actor = req.user (canonical unpaid masraf adayları için).
    */
   @Post(':id/distribution-recommendation')
+  @CaseViewScopedByObject('collectionDisposition', 'id') // F02 P3 tarama S3: dosya görünüm kapsamı (bayrak açıkken)
   @Header('Cache-Control', 'no-store') // preview · kullanıcı-girdisine bağlı · cache'lenmemeli
   async distributionRecommendation(
     @Request() req: AuthRequest,
@@ -64,6 +66,7 @@ export class DispositionController {
 
   /** Dosya bazlı dağıtım listesi (review UI; default tüm statüler). */
   @Get('case/:caseId')
+  @CaseViewScoped() // F02 P3 tarama S3: dosya görünüm kapsamı (bayrak açıkken)
   async listByCase(
     @Request() req: AuthRequest,
     @Param('caseId') caseId: string,
@@ -80,6 +83,7 @@ export class DispositionController {
 
   /** Müvekkile borç (outstanding) — read. UI HESAPLAMAZ; otorite backend (tek computeOutstanding). */
   @Get('case/:caseId/outstanding')
+  @CaseViewScoped() // F02 P3 tarama S3: dosya görünüm kapsamı (bayrak açıkken)
   async outstanding(
     @Request() req: AuthRequest,
     @Param('caseId') caseId: string,

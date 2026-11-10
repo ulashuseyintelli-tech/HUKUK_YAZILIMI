@@ -373,3 +373,5 @@ src/modules/debtor/__tests__/debtor-side-case-view-scope.http.db-gated.integrati
 src/modules/icrabot/v28-engine/v28-case-view-scope.http.db-gated.integration.spec.ts
 # F02 P3 tarama S1 (owner 09.11.2026): dosya duzeyi mali okumalar (alacak kalemi / tahsilat / faiz motoru / hesap ozeti / yevmiye ekstresi / odeme talimati, 23 uc) - gercek HTTP + disposable PostgreSQL.
 src/modules/case/__tests__/case-financial-reads-view-scope.http.db-gated.integration.spec.ts
+# F02 P3 tarama S3 (owner 09.11.2026): muvekkil mali okumalari (muvekkil toplami 403 / dosya duzeyi 404 / liste suzgecleri / mali bildirimler, 23 uc) - gercek HTTP + disposable PostgreSQL.
+src/modules/client-settlement/__tests__/client-financial-reads-view-scope.http.db-gated.integration.spec.ts

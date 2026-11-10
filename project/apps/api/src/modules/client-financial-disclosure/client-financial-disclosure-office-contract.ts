@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ClientFinancialDisclosureStatus } from '@prisma/client';
 import type { ClientFinancialDisclosureRenderOutputV1 } from './client-financial-disclosure-renderer.contract';
@@ -165,6 +166,8 @@ export interface OfficeDisclosureReadScope {
   readonly actorUserId: string;
   readonly clientId: string;
   readonly caseId?: string;
+  /** F02 P3 tarama S3: verilirse yalnız bu dosya süzgecine uyan dosyaların bildirimleri okunur (bayrak kapalı → undefined). */
+  readonly caseFilter?: Prisma.CaseWhereInput;
 }
 
 /** Purpose-bound selection for the existing content approval/send actions; not a generic read DTO. */
