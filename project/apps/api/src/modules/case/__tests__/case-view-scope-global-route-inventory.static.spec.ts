@@ -22,7 +22,7 @@ const MODULES_DIR = resolve(__dirname, "../..");
 const SRC_DIR = resolve(MODULES_DIR, "..");
 
 /** Karar satırı başına kapısı henüz olmayan okuma sayısı (bu dilimden sonra). Envanter kapanışında boş nesne olur. */
-const EXPECTED_OPEN: Record<string, number> = { S1: 23, S2: 15, S3: 23, S5: 6, S6: 15, S7: 8, S11: 15 };
+const EXPECTED_OPEN: Record<string, number> = { S1: 23, S2: 15, S3: 23, S5: 6, S6: 15, S7: 8 };
 
 /** KAPILI_ICERDE notunda kabul edilen handler içi kapsam çağrıları (keyfî metin kapı sayılmaz). */
 const INNER_MARKERS = ["caseService.findAll", "findOneVisible", "assertCaseVisible", "isArtifactVisible", "findOneForActor", "caseRowFilter"];
@@ -148,6 +148,23 @@ describe("F02 P3 — bütün-controller dosya görünüm kapsamı rota envanteri
     expect(appModule).toMatch(/\bV28EngineModule\b/);
   });
 
+  it("karantinadaki icrabot controller'larında dosya kimliği taşıyan her GET kapı dekoratörü taşır (S11: modül bağlanırsa kapı hazır)", () => {
+    // Bu rotalar çalışan uygulamada YOKTUR (gerçek HTTP ile ölçülemez); kaynak düzeyinde fail-closed tutulur.
+    const missing: string[] = [];
+    let count = 0;
+    for (const file of UNREGISTERED_ICRABOT_CONTROLLERS) {
+      for (const route of parsed[file] ?? []) {
+        if (route.verb !== "GET" || !/:caseId\b/.test(route.path)) continue;
+        count += 1;
+        if (!GATE_DECORATOR.test(route.decorators)) missing.push(`${file} ${route.key}`);
+      }
+    }
+    expect(missing).toEqual([]);
+    expect(count).toBe(12);
+    const icrabotModule = readFileSync(join(MODULES_DIR, "icrabot/icrabot.module.ts"), "utf8");
+    expect(icrabotModule).toMatch(/imports: \[[^\]]*\bCaseViewScopeModule\b/);
+  });
+
   it("dosyaya bağlı controller'larda her GET ve POST rotası veri dosyasında tam bir kez sınıflı; fazla / eksik rota yok", () => {
     const problems: string[] = [];
     for (const [file, entries] of Object.entries(CASE_RELATED_CONTROLLERS)) {
@@ -200,7 +217,7 @@ describe("F02 P3 — bütün-controller dosya görünüm kapsamı rota envanteri
       }
     }
     expect(problems).toEqual([]);
-    expect(gated).toBeGreaterThanOrEqual(119); // P3 D1–D3b-2 + #3170 + #3172 (81) + S8 3 + S9 3 + S10 1 + S4 31
+    expect(gated).toBeGreaterThanOrEqual(134); // P3 D1–D3b-2 + #3170 + #3172 (81) + S8 3 + S9 3 + S10 1 + S4 31 + S11 15
   });
 
   it("kapısı henüz olmayan okumalar karar satırı başına sabit (yalnız azalabilir); kapanışta boş olur", () => {

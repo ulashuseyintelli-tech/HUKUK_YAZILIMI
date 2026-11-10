@@ -369,3 +369,5 @@ src/modules/case/__tests__/case-view-scope-alt-routes.http.db-gated.integration.
 src/modules/task/__tests__/task-single-read-scope.http.db-gated.integration.spec.ts
 # F02 P3 tarama S4 (owner 09.11.2026): borclu tarafi dosyaya bagli okumalar (31 GET: dosya / dosya borclusu / kendi kimlikli + borclu kimlikli yanitlarin suzulmesi) - gercek HTTP + disposable PostgreSQL.
 src/modules/debtor/__tests__/debtor-side-case-view-scope.http.db-gated.integration.spec.ts
+# F02 P3 tarama S11 (owner T1, 09.11.2026): v28 dosya kimlikli okumalar (olgu / zaman cizelgesi / kosu / eylem kuyrugu / geri bildirim, 15 GET) - gercek HTTP + disposable PostgreSQL.
+src/modules/icrabot/v28-engine/v28-case-view-scope.http.db-gated.integration.spec.ts

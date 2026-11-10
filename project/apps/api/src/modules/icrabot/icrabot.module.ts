@@ -3,6 +3,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from '../../prisma/prisma.module';
 // CAN-P0-002-A1: isAutomationEnabled canonical owner (CaseService.patchFlags) icin.
 import { CaseModule } from '../case/case.module';
+import { CaseViewScopeModule } from '../case/case-view-scope.module';
 import { RecipeService } from './recipe.service';
 import { TaskOrchestratorService } from './task-orchestrator.service';
 import { IcrabotService } from './icrabot.service';
@@ -148,7 +149,7 @@ import { ApprovalWorkflowController } from './enterprise/enterprise.controller';
  * - Varlık: 17, Haciz: 23, Tahsilat: 16, Satış: 6, Finance: 1
  */
 @Module({
-  imports: [PrismaModule, ScheduleModule.forRoot(), CaseModule],
+  imports: [PrismaModule, ScheduleModule.forRoot(), CaseModule, CaseViewScopeModule], // F02 P3 tarama S11: dosya kapısı
   controllers: [
     IcrabotController, 
     AdminController, 

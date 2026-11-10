@@ -25,6 +25,7 @@ import { AuditReportService } from './audit-report.service';
 import { AdminRole } from '../config/admin-panel.config';
 import { JobFilter, JobStatus } from '../config/job-monitor.config';
 import { AuditExportOptions } from '../config/audit-report.config';
+import { CaseViewScoped } from '../../case/case-view-scope.guard';
 
 @Controller('icrabot/admin')
 @UseGuards(JwtAuthGuard)
@@ -235,6 +236,7 @@ export class AdminController {
   // ==================== AUDIT ====================
 
   @Get('audit/:caseId')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (modül bugün AppModule'e bağlı değil; bağlanırsa kapı hazır)
   async getAudit(@Param('caseId') caseId: string, @Req() req: any) {
     const tenantId = req.user.tenantId;
     const userId = req.user.id;
@@ -243,6 +245,7 @@ export class AdminController {
   }
 
   @Get('audit/:caseId/timeline')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (modül bugün AppModule'e bağlı değil; bağlanırsa kapı hazır)
   async getCaseTimeline(
     @Param('caseId') caseId: string,
     @Query('from') from: string,
@@ -281,6 +284,7 @@ export class AdminController {
   }
 
   @Get('audit/:caseId/evidence')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (modül bugün AppModule'e bağlı değil; bağlanırsa kapı hazır)
   async getEvidence(
     @Param('caseId') caseId: string,
     @Query('snapshotId') snapshotId: string,

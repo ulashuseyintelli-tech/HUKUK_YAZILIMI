@@ -24,6 +24,7 @@ import { BundleService, BundleType, BundleStatus } from './bundle.service';
 import { AuditExportService } from '../export/audit-export.service';
 import { SchedulerService } from '../scheduler/scheduler.service';
 import { RecipeRunnerService } from '../runner/recipe-runner.service';
+import { CaseViewScoped } from '../../case/case-view-scope.guard';
 
 // F02-D-2 dilim 4 (owner ek talimatı 30.10.2026): VIEWER paket oluşturamaz / güncelleyemez / onaylayamaz / terfi ettiremez / arşivleyemez / klonlayamaz,
 // denetim dışa aktarımı, zamanlayıcı tetiği, kuyruk işleme ve iş koşturma TETİKLEYEMEZ (otomasyon = UYAP botu yolu). `validate` saf
@@ -150,6 +151,7 @@ export class BundleController {
   }
 
   @Get('audit-export/:caseId/history')
+  @CaseViewScoped() // F02 P3 tarama S11: dosya görünüm kapsamı (modül bugün AppModule'e bağlı değil; bağlanırsa kapı hazır)
   async getExportHistory(@Param('caseId') caseId: string, @Req() req: any) {
     return this.auditExportService.getExportHistory(caseId, req.user.tenantId);
   }
