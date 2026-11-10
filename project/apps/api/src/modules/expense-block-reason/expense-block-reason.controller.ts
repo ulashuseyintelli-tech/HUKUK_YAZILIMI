@@ -1,9 +1,12 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Req, Optional } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { Request } from 'express';
 import { ExpenseBlockStatus } from '@prisma/client';
 import { ExpenseBlockReasonService } from './expense-block-reason.service';
+import { PrismaService } from '../../prisma/prisma.service';
+import { assertCaseExpensesVisible } from '../expense-request/expense-view-scope';
+import { WorkScopePermissionService } from '../work-scope-permission/work-scope-permission.service';
 import {
   CreateExpenseBlockReasonDto,
   TransitionExpenseBlockReasonDto,
@@ -22,7 +25,11 @@ interface AuthRequest extends Request {
 @Controller('expense-block-reasons')
 @UseGuards(AuthGuard('jwt'), ViewerWriteDenyGuard)
 export class ExpenseBlockReasonController {
-  constructor(private readonly service: ExpenseBlockReasonService) {}
+  constructor(
+    private readonly service: ExpenseBlockReasonService,
+    @Optional() private readonly prisma?: PrismaService,
+    @Optional() private readonly workScope?: WorkScopePermissionService,
+  ) {}
 
   /**
    * Savunma kaydı oluştur (OPEN)
@@ -73,6 +80,8 @@ export class ExpenseBlockReasonController {
     @Param('caseId') caseId: string,
     @Query('status') status?: ExpenseBlockStatus,
   ) {
+    // F02 P3 tarama S2: dosyanın masraf engel nedenleri dosya düzeyi masraf okumasıdır → masraf kapsamının dosya kapısı.
+    await assertCaseExpensesVisible(this.prisma as never, this.workScope as never, req.user.tenantId, caseId, req.user.id);
     return this.service.listByCase(req.user.tenantId, caseId, status);
   }
 }

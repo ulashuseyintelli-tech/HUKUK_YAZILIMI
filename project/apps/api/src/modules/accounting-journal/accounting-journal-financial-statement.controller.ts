@@ -8,6 +8,7 @@ import type {
   FinancialStatementReadRequest,
   FinancialStatementType,
 } from './accounting-journal-financial-statement.types';
+import { CaseViewScopedBy } from '../case/case-view-scope.guard';
 
 type QueryValue = string | string[] | undefined;
 
@@ -44,6 +45,7 @@ export class AccountingJournalFinancialStatementController {
   /// mevcut iki-eksenli modeli [read=JwtAuthGuard, write=capability] bozma).
   /// </remarks>
   @Get('financial-statements')
+  @CaseViewScopedBy('query') // F02 P3 tarama S1: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async getFinancialStatement(
     @CurrentUser('tenantId') tenantId: string,
     @Query() query: FinancialStatementQuery = {},

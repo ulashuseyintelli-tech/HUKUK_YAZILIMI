@@ -324,9 +324,10 @@ export class ClientSettlementReadService {
    * Çağrıldığı yerler:
    *  - ClientAccountingController.cases() → GET /clients/:clientId/accounting/cases
    */
-  async listClientCases(tenantId: string, clientId: string): Promise<{ items: ClientAccountingCaseItem[] }> {
+  async listClientCases(tenantId: string, clientId: string, caseFilter?: Prisma.CaseWhereInput): Promise<{ items: ClientAccountingCaseItem[] }> {
+    // caseFilter (F02 P3 tarama S3): verilirse liste yalnız bu dosya süzgecine uyan dosyaları taşır.
     const rows = await this.prisma.caseClient.findMany({
-      where: { clientId, role: { in: ELIGIBLE_ROLES }, client: { tenantId } },
+      where: { clientId, role: { in: ELIGIBLE_ROLES }, client: { tenantId }, ...(caseFilter ? { case: caseFilter } : {}) },
       select: {
         id: true,
         caseId: true,
@@ -356,6 +357,8 @@ export class ClientSettlementReadService {
   async listPayouts(
     tenantId: string,
     filters: { caseId?: string; caseClientId?: string; currency?: string; from?: string; to?: string; page?: number; limit?: number },
+    /** F02 P3 tarama S3: dosya süzgeçsiz listede aktörün görebildiği dosyaları çözer (`null` → süzme yok). ClientPayout'ta dosya ilişkisi yok. */
+    visibleCaseIds?: (caseIds: string[]) => Promise<Set<string> | null>,
   ): Promise<{ items: ClientPayoutListItem[]; page: number; limit: number; total: number }> {
     if (filters.caseId && filters.caseClientId) {
       await this.assertEligibleCaseClient(tenantId, filters.caseId, filters.caseClientId);
@@ -369,6 +372,11 @@ export class ClientSettlementReadService {
         ...(filters.from ? { gte: new Date(filters.from) } : {}),
         ...(filters.to ? { lte: new Date(filters.to) } : {}),
       };
+    }
+    if (!filters.caseId && visibleCaseIds) {
+      const candidates = await this.prisma.clientPayout.findMany({ where, distinct: ['caseId'], select: { caseId: true } });
+      const visible = await visibleCaseIds(candidates.map((row) => row.caseId));
+      if (visible) where.caseId = { in: [...visible] }; // sayı ve sayfalama aynı süzgeçle
     }
     const take = Math.min(Math.max(Number(filters.limit) || 50, 1), 200);
     const page = Math.max(Number(filters.page) || 1, 1);

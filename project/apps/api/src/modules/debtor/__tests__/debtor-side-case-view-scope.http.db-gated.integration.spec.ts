@@ -30,6 +30,14 @@ import { DebtorService } from "../debtor.service";
  * Gerçek HTTP (AddressDiscovery + AddressTask + AssetQuery + Debtor modülleri, ValidationPipe) + tek kullanımlık PostgreSQL.
  * Sözleşme D1 ile aynıdır (yeni kural / anahtar / bayrak YOK). Bayrak kapalı: davranış bugünküyle aynı. Yazım uçları değişmez.
  */
+/** Sıra duyarsız karşılaştırma: sıralama ölçütü olmayan (ya da eşit değerli) listelerde satır sırası sorgudan sorguya değişebilir. */
+const canon = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(canon).sort((a, b) => (JSON.stringify(a) < JSON.stringify(b) ? -1 : 1))
+    : value && typeof value === "object"
+      ? Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, canon(v)]))
+      : value;
+
 const TEST_DB_URL = resolveTestDatabaseUrl(process.env);
 if (process.env.CI && !TEST_DB_URL) throw new Error("Debtor side case view scope requires TEST_DATABASE_URL in CI.");
 const describeDb = TEST_DB_URL ? describe : describe.skip;
@@ -203,7 +211,7 @@ describeDb("F02 P3 tarama S4 — borçlu tarafı dosyaya bağlı okumalar (gerç
       const after = await http.get(w.u.allow, r.path("c6"));
       flag.off();
       expect([before.status, after.status]).toEqual([200, 200]);
-      expect(after.body).toEqual(before.body);
+      expect(canon(after.body)).toEqual(canon(before.body));
     });
   });
 
@@ -419,7 +427,7 @@ describeDb("F02 P3 tarama S4 — borçlu tarafı dosyaya bağlı okumalar (gerç
         const after = await http.get(w.u.allow, path);
         flag.off();
         expect([path, before.status, after.status]).toEqual([path, 200, 200]);
-        expect([path, after.body]).toEqual([path, before.body]);
+        expect([path, canon(after.body)]).toEqual([path, canon(before.body)]); // satır sırası sorgu planına bağlı olabilir
       }
     });
   });

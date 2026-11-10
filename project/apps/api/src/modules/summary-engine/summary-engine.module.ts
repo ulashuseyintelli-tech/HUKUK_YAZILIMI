@@ -5,9 +5,10 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { FeeEngineModule } from '../fee-engine/fee-engine.module';
 import { InterestEngineModule } from '../interest-engine/interest-engine.module';
 import { ClaimItemModule } from '../claim-item/claim-item.module';
+import { CaseViewScopeModule } from '../case/case-view-scope.module';
 
 @Module({
-  imports: [PrismaModule, FeeEngineModule, InterestEngineModule, ClaimItemModule],
+  imports: [CaseViewScopeModule, PrismaModule, FeeEngineModule, InterestEngineModule, ClaimItemModule],
   controllers: [SummaryEngineController],
   providers: [SummaryEngineService],
   exports: [SummaryEngineService],

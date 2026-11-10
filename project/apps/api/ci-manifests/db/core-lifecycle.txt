@@ -371,3 +371,11 @@ src/modules/task/__tests__/task-single-read-scope.http.db-gated.integration.spec
 src/modules/debtor/__tests__/debtor-side-case-view-scope.http.db-gated.integration.spec.ts
 # F02 P3 tarama S11 (owner T1, 09.11.2026): v28 dosya kimlikli okumalar (olgu / zaman cizelgesi / kosu / eylem kuyrugu / geri bildirim, 15 GET) - gercek HTTP + disposable PostgreSQL.
 src/modules/icrabot/v28-engine/v28-case-view-scope.http.db-gated.integration.spec.ts
+# F02 P3 tarama S1 (owner 09.11.2026): dosya duzeyi mali okumalar (alacak kalemi / tahsilat / faiz motoru / hesap ozeti / yevmiye ekstresi / odeme talimati, 23 uc) - gercek HTTP + disposable PostgreSQL.
+src/modules/case/__tests__/case-financial-reads-view-scope.http.db-gated.integration.spec.ts
+# F02 P3 tarama S3 (owner 09.11.2026): muvekkil mali okumalari (muvekkil toplami 403 / dosya duzeyi 404 / liste suzgecleri / mali bildirimler, 23 uc) - gercek HTTP + disposable PostgreSQL.
+src/modules/client-settlement/__tests__/client-financial-reads-view-scope.http.db-gated.integration.spec.ts
+# F02 P3 tarama S2 (owner 09.11.2026): masraf gorunum kapsami tek kayit / dosya listesi / dosya ozetleri / kuyruklar (15 uc) + masraf kapsami ile P3 dosya kapsami farklari - gercek HTTP + disposable PostgreSQL.
+src/modules/expense-request/__tests__/expense-read-scope.http.db-gated.integration.spec.ts
+# F02 P3 tarama S5 / S6 / S7 (owner 09.11.2026): muvekkil beyani / form, otomasyon / risk / AI, bildirim / takvim / banka okumalari (29 uc) - gercek HTTP + disposable PostgreSQL.
+src/modules/case/__tests__/case-view-scope-misc-reads.http.db-gated.integration.spec.ts

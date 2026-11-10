@@ -1,9 +1,11 @@
-import { Controller, Get, Post, Body, Param, Query, Request, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, Request, UseGuards, Optional } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { ClientPayoutService } from './client-payout.service';
 import { ClientSettlementReadService } from './client-settlement-read.service';
 import { CreateClientPayoutDto } from './dto/create-client-payout.dto';
+import { CaseViewScopedBy } from '../case/case-view-scope.guard';
+import { CaseViewScopeService, requireCaseViewScope } from '../case/case-view-scope.service';
 
 /** actor compile-time shape — req.user.id auth context (body'den ASLA). */
 interface AuthRequest {
@@ -16,10 +18,12 @@ export class ClientPayoutController {
   constructor(
     private readonly service: ClientPayoutService,
     private readonly readService: ClientSettlementReadService,
+    @Optional() private readonly caseViewScope?: CaseViewScopeService,
   ) {}
 
   /** ClientPayout listesi (paginated, read). tenant-scoped; cross-tenant/caseClient sızdırmaz. */
   @Get()
+  @CaseViewScopedBy('query', 'caseId', { optional: true }) // F02 P3 tarama S3: dosya görünüm kapsamı (bayrak açıkken)
   async list(
     @Request() req: AuthRequest,
     @Query('caseId') caseId?: string,
@@ -30,7 +34,9 @@ export class ClientPayoutController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
-    const data = await this.readService.listPayouts(req.user.tenantId, {
+    // S3: dosya kimliği verilmişse kapı (dekoratör) doğrular; verilmemişse liste aktörün görebildiği dosyalarla sınırlanır.
+    const viewScope = requireCaseViewScope(this.caseViewScope);
+    const filters = {
       caseId,
       caseClientId,
       currency,
@@ -38,7 +44,10 @@ export class ClientPayoutController {
       to,
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
-    });
+    };
+    const data = viewScope
+      ? await this.readService.listPayouts(req.user.tenantId, filters, (caseIds) => viewScope.visibleCaseIds(req.user.tenantId, req.user.id, caseIds))
+      : await this.readService.listPayouts(req.user.tenantId, filters); // bayrak kapalı: bugünkü çağrı aynen
     return { data };
   }
 

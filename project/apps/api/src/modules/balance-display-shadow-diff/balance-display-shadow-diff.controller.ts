@@ -4,6 +4,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { BalanceDisplayShadowDiffService } from './balance-display-shadow-diff.service';
 import type { BalanceDisplayShadowDiffReport } from './balance-display-shadow-diff.types';
 import { turkeyToday } from '../../common/turkey-calendar';
+import { CaseViewScoped } from '../case/case-view-scope.guard';
 
 @Controller('interest-engine')
 export class BalanceDisplayShadowDiffController {
@@ -22,6 +23,7 @@ export class BalanceDisplayShadowDiffController {
    * </remarks>
    */
   @Get('case/:caseId/balance/display/shadow-diff')
+  @CaseViewScoped() // F02 P3 tarama S1: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   @UseGuards(JwtAuthGuard)
   async getShadowDiff(
     @CurrentUser('tenantId') tenantId: string,

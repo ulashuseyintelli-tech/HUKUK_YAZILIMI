@@ -5,6 +5,7 @@ import { ClientIntakeReviewService } from './client-intake-review.service';
 import { ClientIntakeReviewAuthorizationService } from './client-intake-review-authorization.service';
 import { ClientIntakeReviewPermissionController } from './client-intake-review-permission.controller';
 import { ClientIntakeReviewPermissionService } from './client-intake-review-permission.service';
+import { CaseViewScopeModule } from '../case/case-view-scope.module';
 
 /**
  * Client Intake Review Queue modülü (Faz 4.5).
@@ -14,7 +15,7 @@ import { ClientIntakeReviewPermissionService } from './client-intake-review-perm
  * Bu sınır, "approve'a basınca hemen oluştur" kaymasını yapısal olarak engeller.
  */
 @Module({
-  imports: [PrismaModule],
+  imports: [CaseViewScopeModule, PrismaModule],
   controllers: [ClientIntakeReviewController, ClientIntakeReviewPermissionController],
   providers: [ClientIntakeReviewService, ClientIntakeReviewAuthorizationService, ClientIntakeReviewPermissionService],
   exports: [ClientIntakeReviewService],

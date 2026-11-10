@@ -7,8 +7,10 @@ import {
   Post,
   Query,
   UseGuards,
+  Optional,
 } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { CaseViewScopeService, requireCaseViewScope } from '../case/case-view-scope.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import {
@@ -40,20 +42,26 @@ export class ClientFinancialDisclosureController {
     private readonly approval: ClientFinancialDisclosureApprovalService,
     private readonly publication: ClientFinancialDisclosurePublicationService,
     private readonly office: ClientFinancialDisclosureOfficeService,
+    @Optional() private readonly caseViewScope?: CaseViewScopeService,
   ) {}
+
+  /** F02 P3 tarama S3: büro bildirim okumalarının dosya süzgeci (bayrak kapalı → undefined; bayrak açık + servis yok → 403). */
+  private async caseFilter(tenantId: string, actorUserId: string) {
+    return requireCaseViewScope(this.caseViewScope)?.caseRowFilter(tenantId, actorUserId);
+  }
 
   /**
    * Cagrildigi yerler:
    * - Office FD workspace -> GET /client-financial-disclosures/office/clients/:clientId
    */
   @Get('office/clients/:clientId')
-  getOfficeList(
+  async getOfficeList(
     @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') actorUserId: string,
     @Param('clientId') clientId: string,
     @Query() query: ClientFinancialDisclosureOfficeQueryDto,
   ) {
-    return this.office.getList({ tenantId, actorUserId, clientId, caseId: query.caseId });
+    return this.office.getList({ tenantId, actorUserId, clientId, caseId: query.caseId, caseFilter: await this.caseFilter(tenantId, actorUserId) });
   }
 
   /**
@@ -61,7 +69,7 @@ export class ClientFinancialDisclosureController {
    * - Office FD workspace preparation -> GET /client-financial-disclosures/office/clients/:clientId/preparation-sources
    */
   @Get('office/clients/:clientId/preparation-sources')
-  getOfficePreparationSources(
+  async getOfficePreparationSources(
     @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') actorUserId: string,
     @Param('clientId') clientId: string,
@@ -72,6 +80,7 @@ export class ClientFinancialDisclosureController {
       actorUserId,
       clientId,
       caseId: query.caseId,
+      caseFilter: await this.caseFilter(tenantId, actorUserId),
     });
   }
 
@@ -80,25 +89,25 @@ export class ClientFinancialDisclosureController {
    * - Office FD approval panel -> GET /client-financial-disclosures/office/clients/:clientId/versions/:disclosureVersionId/recipients
    */
   @Get('office/clients/:clientId/versions/:disclosureVersionId/recipients')
-  getOfficeRecipientSelection(
+  async getOfficeRecipientSelection(
     @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') actorUserId: string,
     @Param('clientId') clientId: string,
     @Param('disclosureVersionId') disclosureVersionId: string,
   ) {
-    return this.office.getRecipientSelection({ tenantId, actorUserId, clientId }, disclosureVersionId);
+    return this.office.getRecipientSelection({ tenantId, actorUserId, clientId, caseFilter: await this.caseFilter(tenantId, actorUserId) }, disclosureVersionId);
   }
 
   /** Office FD workspace detail -> curated version detail. */
   @Get('office/clients/:clientId/versions/:disclosureVersionId')
-  getOfficeDetail(
+  async getOfficeDetail(
     @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') actorUserId: string,
     @Param('clientId') clientId: string,
     @Param('disclosureVersionId') disclosureVersionId: string,
   ) {
     return this.office.getDetail(
-      { tenantId, actorUserId, clientId },
+      { tenantId, actorUserId, clientId, caseFilter: await this.caseFilter(tenantId, actorUserId) },
       disclosureVersionId,
     );
   }
@@ -108,14 +117,14 @@ export class ClientFinancialDisclosureController {
    * - Office FD workspace preview -> GET /client-financial-disclosures/office/clients/:clientId/versions/:disclosureVersionId/preview
    */
   @Get('office/clients/:clientId/versions/:disclosureVersionId/preview')
-  getOfficePreview(
+  async getOfficePreview(
     @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') actorUserId: string,
     @Param('clientId') clientId: string,
     @Param('disclosureVersionId') disclosureVersionId: string,
   ) {
     return this.office.getPreview(
-      { tenantId, actorUserId, clientId },
+      { tenantId, actorUserId, clientId, caseFilter: await this.caseFilter(tenantId, actorUserId) },
       disclosureVersionId,
     );
   }
@@ -125,7 +134,7 @@ export class ClientFinancialDisclosureController {
    * - Office FD workspace history -> GET /client-financial-disclosures/office/clients/:clientId/disclosures/:disclosureId/history
    */
   @Get('office/clients/:clientId/disclosures/:disclosureId/history')
-  getOfficeHistory(
+  async getOfficeHistory(
     @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') actorUserId: string,
     @Param('clientId') clientId: string,
@@ -133,7 +142,7 @@ export class ClientFinancialDisclosureController {
     @Query() query: ClientFinancialDisclosureOfficeQueryDto,
   ) {
     return this.office.getHistory(
-      { tenantId, actorUserId, clientId, caseId: query.caseId },
+      { tenantId, actorUserId, clientId, caseId: query.caseId, caseFilter: await this.caseFilter(tenantId, actorUserId) },
       disclosureId,
     );
   }
@@ -143,14 +152,14 @@ export class ClientFinancialDisclosureController {
    * - Office FD workspace timeline -> GET /client-financial-disclosures/office/clients/:clientId/versions/:disclosureVersionId/timeline
    */
   @Get('office/clients/:clientId/versions/:disclosureVersionId/timeline')
-  getOfficeTimeline(
+  async getOfficeTimeline(
     @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') actorUserId: string,
     @Param('clientId') clientId: string,
     @Param('disclosureVersionId') disclosureVersionId: string,
   ) {
     return this.office.getTimeline(
-      { tenantId, actorUserId, clientId },
+      { tenantId, actorUserId, clientId, caseFilter: await this.caseFilter(tenantId, actorUserId) },
       disclosureVersionId,
     );
   }

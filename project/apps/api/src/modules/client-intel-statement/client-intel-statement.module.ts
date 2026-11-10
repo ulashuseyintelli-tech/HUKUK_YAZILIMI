@@ -3,6 +3,7 @@ import { PrismaModule } from '@/prisma/prisma.module';
 import { ClientIntelStatementController } from './client-intel-statement.controller';
 import { ClientIntelStatementService } from './client-intel-statement.service';
 import { OfficeApprovalModule } from '../office-approval/office-approval.module';
+import { CaseViewScopeModule } from '../case/case-view-scope.module';
 
 /**
  * Müvekkil İstihbarat Beyanı modülü (Faz 4.0).
@@ -12,7 +13,7 @@ import { OfficeApprovalModule } from '../office-approval/office-approval.module'
  * retract/falsePositive/supersede capability-gate (isApproverEligible) için gerekli.
  */
 @Module({
-  imports: [PrismaModule, OfficeApprovalModule],
+  imports: [CaseViewScopeModule, PrismaModule, OfficeApprovalModule],
   controllers: [ClientIntelStatementController],
   providers: [ClientIntelStatementService],
   exports: [ClientIntelStatementService],

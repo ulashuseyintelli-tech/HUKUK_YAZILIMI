@@ -13,9 +13,11 @@ import { NotificationHistoryPermissionController } from "./notification-history-
 import { NotificationHistoryPermissionService } from "./notification-history-permission.service";
 import { ClientNotificationHistoryAccessService } from "./client-notification-history-access.service";
 import { ExpenseSendApprovalService } from './expense-send-approval.service';
+import { CaseViewScopeModule } from "../case/case-view-scope.module";
 
 @Module({
   imports: [
+    CaseViewScopeModule, // F02 P3 tarama: dosya kapısı
     PrismaModule,
     OfficeModule,
     MessageTemplateModule,

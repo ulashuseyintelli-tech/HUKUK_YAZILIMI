@@ -9,10 +9,12 @@ import { AccountingJournalWriterService } from "../accounting-journal";
 import { OfficeApprovalModule } from "../office-approval/office-approval.module";
 import { PermissionDiagnosticsModule } from "../permission-diagnostics/permission-diagnostics.module";
 import { ReceiptObjectScopeAuthorizationService } from "./receipt-object-scope-authorization.service";
+import { CaseViewScopeModule } from "../case/case-view-scope.module";
 
 @Module({
   // G3a: SummaryEngineModule → CollectionService kanonik ledger forward write için.
   imports: [
+    CaseViewScopeModule, // F02 P3 tarama S1: dosya kapısı
     PrismaModule,
     DomainEventIngestModule,
     SummaryEngineModule,

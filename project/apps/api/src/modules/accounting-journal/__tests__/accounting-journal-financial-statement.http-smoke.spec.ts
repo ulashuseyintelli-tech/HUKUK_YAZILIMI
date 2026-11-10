@@ -8,6 +8,7 @@ import * as jwt from 'jsonwebtoken';
 import * as request from 'supertest';
 import { AuthService } from '../../auth/auth.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { CaseViewScopeGuard } from '../../case/case-view-scope.guard';
 import { JwtStrategy } from '../../auth/strategies/jwt.strategy';
 import { AccountingJournalFinancialStatementController } from '../accounting-journal-financial-statement.controller';
 import { AccountingJournalFinancialStatementProjectionService } from '../accounting-journal-financial-statement.projection.service';
@@ -180,7 +181,9 @@ describe('AccountingJournalFinancialStatementController HTTP smoke', () => {
 
   it('guard metadata: class uses JwtAuthGuard, endpoint AdminGuard tasimaz (ACCT-5A office-wide read)', () => {
     expect(classGuards()).toContain(JwtAuthGuard);
-    expect(methodGuards()).toHaveLength(0);
+    // F02 P3 tarama S1 (owner kararı 09.11.2026): ACCT-5A'nın büro içi okuma yetkisi korunur (AdminGuard YOK); bayrak açıkken
+    // dosya görünüm kapsamı AYRICA uygulanır. Yöntem düzeyindeki tek kapı dosya kapısıdır.
+    expect(methodGuards()).toEqual([CaseViewScopeGuard]);
   });
 
   it('JWT yoksa 401 doner ve projection service cagrilmaz', async () => {

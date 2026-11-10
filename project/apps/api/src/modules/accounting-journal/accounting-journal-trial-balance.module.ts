@@ -12,9 +12,10 @@ import { AccountingJournalReversalService } from './accounting-journal-reversal.
 import { AccountingJournalTrialBalanceController } from './accounting-journal-trial-balance.controller';
 import { AccountingJournalTrialBalanceService } from './accounting-journal-trial-balance.service';
 import { AccountingJournalWriterService } from './accounting-journal.writer';
+import { CaseViewScopeModule } from '../case/case-view-scope.module';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [CaseViewScopeModule, PrismaModule],
   controllers: [
     AccountingJournalTrialBalanceController,
     AccountingJournalCutoverReadinessController,

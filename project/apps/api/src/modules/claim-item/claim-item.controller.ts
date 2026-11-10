@@ -22,6 +22,7 @@ import {
   InterestType,
 } from './dto/claim-item.dto';
 import { previewCekFormation } from './formation-cek/cek-formation-preview';
+import { CaseViewScoped, CaseViewScopedByObject } from '../case/case-view-scope.guard';
 
 @Controller('claim-items')
 @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
@@ -41,6 +42,7 @@ export class ClaimItemController {
 
   // Dosyanın alacak kalemlerini getir
   @Get('case/:caseId')
+  @CaseViewScoped() // F02 P3 tarama S1: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async findByCaseId(
     @CurrentUser('tenantId') tenantId: string,
     @Param('caseId') caseId: string,
@@ -51,6 +53,7 @@ export class ClaimItemController {
 
   // Tek alacak kalemi getir
   @Get(':id')
+  @CaseViewScopedByObject('claimItem', 'id') // F02 P3 tarama S1: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async findOne(
     @CurrentUser('tenantId') tenantId: string,
     @Param('id') id: string,
@@ -119,6 +122,7 @@ export class ClaimItemController {
   }
   // Dosyanın alacak özetini getir
   @Get('case/:caseId/summary')
+  @CaseViewScoped() // F02 P3 tarama S1: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async getClaimSummary(
     @CurrentUser('tenantId') tenantId: string,
     @Param('caseId') caseId: string,
@@ -247,6 +251,7 @@ export class ClaimItemController {
 
   // Dosyayı kural motoru ile doğrula
   @Post('case/:caseId/validate')
+  @CaseViewScoped() // F02 P3 tarama S1: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   @AllowViewerReadOnlyPost() // okuma/hesap: yazma YAPMAZ (kaynaktan dogrulandi)
   async validateCase(
     @CurrentUser('tenantId') tenantId: string,

@@ -10,9 +10,10 @@ import {
   ADR014_DURABLE_AUDIT_WRITER,
   NoopAdr014DurableAuditWriter,
 } from './balance-display-shadow-diff-audit-writer';
+import { CaseViewScopeModule } from '../case/case-view-scope.module';
 
 @Module({
-  imports: [CaseModule, InterestEngineModule],
+  imports: [CaseViewScopeModule, CaseModule, InterestEngineModule],
   controllers: [BalanceDisplayShadowDiffController],
   providers: [
     BalanceDisplayShadowDiffService,

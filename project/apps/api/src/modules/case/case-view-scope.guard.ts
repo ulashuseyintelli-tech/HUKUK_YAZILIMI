@@ -5,6 +5,9 @@ import { CaseScopedObjectKind, CaseViewScopeService } from "./case-view-scope.se
 
 /** Dosya kimliğinin okunacağı yol parametresinin adı (varsayılan `caseId`; P3-D3: case.controller `:id`). */
 export const CASE_VIEW_SCOPE_PARAM = "f02:caseViewScopeParam";
+/** P3 tarama S1: dosya kimliği yolda değil SORGUDA / GÖVDEDE olan okuma uçları (yoksa kimlik yoldan okunur). */
+export const CASE_VIEW_SCOPE_SOURCE = "f02:caseViewScopeSource";
+export type CaseViewScopeSource = { from: "query" | "body"; optional: boolean };
 
 /**
  * F02 P3-D2 / P3-D3 (owner kararları 08.11.2026) — dosya kimliği YOLDA olan okuma uçlarının kapısı.
@@ -27,8 +30,13 @@ export class CaseViewScopeGuard implements CanActivate {
       throw new ForbiddenException({ code: "CASE_VIEW_SCOPE_UNRESOLVED", message: "Dosya görünüm kapsamı çözümlenemedi" });
     }
     const param = this.reflector?.get<string>(CASE_VIEW_SCOPE_PARAM, context.getHandler()) ?? "caseId";
+    const source = this.reflector?.get<CaseViewScopeSource>(CASE_VIEW_SCOPE_SOURCE, context.getHandler());
     const req = context.switchToHttp().getRequest();
-    await this.scope.assertCaseVisible(req.user?.tenantId, req.user?.id, req.params?.[param]);
+    const caseId = source ? req[source.from]?.[param] : req.params?.[param];
+    // `optional`: dosya kimliği verilmeden de anlamlı olan uçlar (dosyasız hesap / büro toplamı) — kimlik YOKSA kapı geçirir,
+    // dosyasız dal handler'ın kendi kuralına kalır. Kimlik VERİLMİŞSE her zaman doğrulanır.
+    if (source?.optional && (caseId === undefined || caseId === null || caseId === "")) return true;
+    await this.scope.assertCaseVisible(req.user?.tenantId, req.user?.id, caseId);
     return true;
   }
 }
@@ -39,6 +47,15 @@ export class CaseViewScopeGuard implements CanActivate {
  */
 export function CaseViewScoped(param = "caseId") {
   return applyDecorators(SetMetadata(CASE_VIEW_SCOPE_PARAM, param), UseGuards(CaseViewScopeGuard));
+}
+
+/**
+ * P3 tarama S1: dosya kimliği sorgu dizgesinde ya da gövdede olan OKUMA uçları (ör. `@CaseViewScopedBy("query")`).
+ * Yeni kural değildir; aynı kapı, kimliğin okunduğu yer farklı. Kimlik yine GÜVENİLMEZDİR: kiracı + kapsam ile DB'den doğrulanır.
+ */
+export function CaseViewScopedBy(from: "query" | "body", param = "caseId", options: { optional?: boolean } = {}) {
+  const source: CaseViewScopeSource = { from, optional: options.optional === true };
+  return applyDecorators(SetMetadata(CASE_VIEW_SCOPE_PARAM, param), SetMetadata(CASE_VIEW_SCOPE_SOURCE, source), UseGuards(CaseViewScopeGuard));
 }
 
 /** P3-D3b-2: kendi kimlikli nesne kapısının okuduğu nesne türü + yol parametresi. */
@@ -63,6 +80,13 @@ export const CASE_OBJECT_NOT_FOUND: Readonly<Record<CaseScopedObjectKind, string
   uyapQuery: "Sorgu bulunamadı", // UyapQueryService.getQuery ile aynı gövde
   institutionLetter: "Yazı bulunamadı", // InstitutionLetterService.getLetter ile aynı gövde
   assetQuery: "Sorgu bulunamadı", // AssetQueryService.getQueryById ile aynı gövde
+  claimItem: "Alacak kalemi bulunamadı", // ClaimItemService.findOne ile aynı gövde
+  collection: "Tahsilat bulunamadı", // CollectionService.findById ile aynı gövde
+  collectionDisposition: "Dağıtım kaydı bulunamadı", // DistributionRecommendationService.generate ile aynı gövde
+  clientPayoutManualReversal: "Manual reversal workflow bulunamadi", // ClientPayoutManualReversalReadService.detail ile aynı gövde
+  clientOffset: "Mahsup kaydı bulunamadı", // ClientOffsetService.getOffsetDetail ile aynı gövde
+  clientIntelStatement: "İstihbarat beyanı bulunamadı", // ClientIntelStatementService.findOne ile aynı gövde
+  clientIntakeSubmission: "Gönderim bulunamadı", // ClientIntakeReviewService.getOne ile aynı gövde
 };
 
 /**
@@ -90,6 +114,39 @@ export class CaseObjectViewScopeGuard implements CanActivate {
     }
     return true;
   }
+}
+
+/** P3 tarama S3: müvekkil kimliğinin okunacağı yol parametresi. */
+export const CLIENT_TOTAL_VIEW_SCOPE_PARAM = "f02:clientTotalViewScopeParam";
+
+/**
+ * F02 P3 tarama S3 (owner kararı 09.11.2026) — müvekkilin TÜM hesabını temsil eden mali okuma uçlarının kapısı.
+ * Aktör müvekkilin dosyalarından birini bile göremiyorsa 403 (kısmi toplam üretilmez). Kural CaseViewScopeService'tedir.
+ * Sınıf düzeyindeki kimlik / VIEWER kapılarından SONRA, handler'dan ÖNCE çalışır. Bayrak kapalı → sorgu yok, geçer.
+ * Bayrak açık + servis yok → 403 (fail-closed).
+ */
+@Injectable()
+export class ClientTotalViewScopeGuard implements CanActivate {
+  constructor(
+    @Optional() private readonly scope?: CaseViewScopeService,
+    @Optional() private readonly reflector?: Reflector,
+  ) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    if (!isCaseViewScopeEnabled()) return true;
+    if (!this.scope) {
+      throw new ForbiddenException({ code: "CASE_VIEW_SCOPE_UNRESOLVED", message: "Dosya görünüm kapsamı çözümlenemedi" });
+    }
+    const param = this.reflector?.get<string>(CLIENT_TOTAL_VIEW_SCOPE_PARAM, context.getHandler()) ?? "clientId";
+    const req = context.switchToHttp().getRequest();
+    await this.scope.assertAllClientCasesVisible(req.user?.tenantId, req.user?.id, req.params?.[param]);
+    return true;
+  }
+}
+
+/** P3 tarama S3: ör. `@ClientTotalViewScoped()` — müvekkil düzeyi mali belge; müvekkilin bütün dosyaları görünür olmalı. */
+export function ClientTotalViewScoped(param = "clientId") {
+  return applyDecorators(SetMetadata(CLIENT_TOTAL_VIEW_SCOPE_PARAM, param), UseGuards(ClientTotalViewScopeGuard));
 }
 
 /** P3-D3b-2: ör. `@CaseViewScopedByObject("caseCollateral", "id")`. Yeni kural değildir; dosya nesneden çözülür. */

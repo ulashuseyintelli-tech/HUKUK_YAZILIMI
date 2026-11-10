@@ -5,7 +5,7 @@ import { CaseBalanceService } from '@/modules/case-balance/case-balance.service'
 import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
 import { OfficeService } from '@/modules/office/office.service';
 import { WorkScopePermissionService } from '@/modules/work-scope-permission/work-scope-permission.service';
-import { EXPENSE_VIEW_ALL_KEY, expenseViewWhereFor, isExpenseViewScopeEnabled } from './expense-view-scope';
+import { EXPENSE_VIEW_ALL_KEY, assertCaseExpensesVisible, expenseViewWhereFor, isExpenseViewScopeEnabled } from './expense-view-scope';
 import { ExpenseCalculatorService, CaseData, EXPENSE_SET_TEMPLATES } from './expense-calculator.service';
 import { ExpenseNotificationService } from './expense-notification.service';
 import { ExpensePaymentReversalContractService, ExpensePaymentReversalRequestKind } from './expense-payment-reversal-contract.service';
@@ -199,6 +199,36 @@ export class ExpenseRequestService {
     return expenseViewWhereFor(resolution, tenantId, actorUserId);
   }
 
+  /**
+   * F02 P3 tarama S2 (owner kararı 09.11.2026) — masraf görünüm kapsamının OKUMA uçlarına tutarlı uygulanması için satır
+   * süzgeci (liste / istatistikle aynı kural; `viewScopeWhere`). `null` → süzme yok (bayrak kapalı ya da büro geneli izin).
+   * Çağıranlar: ExpenseRequestController okuma uçları (tek kayıt, dosya listesi, kuyruklar).
+   */
+  async readScopeWhere(tenantId: string, actorUserId?: string): Promise<Prisma.ExpenseRequestWhereInput | null> {
+    return this.viewScopeWhere(tenantId, actorUserId);
+  }
+
+  /**
+   * S2 — tek masraf talebi OKUMASI: kapsam dışı talep var olmayan taleple AYNI 404'ü alır (içerik üretilmeden önce).
+   * Yazım / işlem yolları `findOne` kullanmayı sürdürür; mevcut işlem yetkileri değişmez.
+   */
+  async assertRequestVisible(tenantId: string, id: string, actorUserId?: string): Promise<void> {
+    const scope = await this.viewScopeWhere(tenantId, actorUserId);
+    if (!scope) return;
+    const visible = await this.prisma.expenseRequest.findFirst({ where: { id, tenantId, AND: [scope] }, select: { id: true } });
+    if (!visible) throw new NotFoundException('Masraf talebi bulunamadı');
+  }
+
+  /**
+   * S2 — dosyanın BÜTÜN masraf taleplerinden üretilen okumalar (özet, ayrıntı, üç görünüm, finans kalemleri, açılış durumu,
+   * masraf kapısı, engel nedenleri): aktör büro geneli izinli ya da dosyaya bağlı (kapsamın dosya bağı dalı) olmalı.
+   * Yalnız kendi oluşturduğu / onayladığı talepleri gören aktör dosyanın bütününü görmez → var olmayan dosyayla aynı 404
+   * (eksik taleplerle özet üretilmez). Bayrak kapalı → geçer (ek sorgu yok).
+   */
+  async assertCaseExpensesVisible(tenantId: string, caseId: string, actorUserId?: string): Promise<void> {
+    return assertCaseExpensesVisible(this.prisma, this.workScope as never, tenantId, caseId, actorUserId);
+  }
+
   async findOne(tenantId: string, id: string) {
     const request = await this.prisma.expenseRequest.findFirst({
       where: { id, tenantId },
@@ -231,9 +261,10 @@ export class ExpenseRequestService {
     return request;
   }
 
-  async findByCaseId(tenantId: string, caseId: string) {
+  async findByCaseId(tenantId: string, caseId: string, scope?: Prisma.ExpenseRequestWhereInput | null) {
+    // scope (F02 P3 tarama S2): verilirse liste yalnız aktörün masraf kapsamındaki talepleri taşır (GET /expense-requests ile aynı).
     return this.prisma.expenseRequest.findMany({
-      where: { tenantId, caseId },
+      where: { tenantId, caseId, ...(scope ? { AND: [scope] } : {}) },
       include: {
         client: { select: { id: true, name: true, displayName: true } },
       },

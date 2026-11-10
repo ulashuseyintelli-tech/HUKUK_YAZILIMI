@@ -28,6 +28,7 @@ import {
   UseGuards,
   NotFoundException,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
 import { CasePolicyEngine } from './case-policy-engine.service';
 import { DecisionLoggerService } from './decision-logger';
@@ -38,6 +39,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CaseViewScoped } from '../case/case-view-scope.guard';
+import { CaseViewScopeService, requireCaseViewScope } from '../case/case-view-scope.service';
 
 // ============================================
 // DTOs
@@ -80,6 +83,7 @@ export class PolicyEngineController {
     private readonly cpe: CasePolicyEngine,
     private readonly decisionLogger: DecisionLoggerService,
     private readonly prisma: PrismaService,
+    @Optional() private readonly caseViewScope?: CaseViewScopeService,
   ) {}
 
   /**
@@ -114,6 +118,7 @@ export class PolicyEngineController {
    */
   @AllowViewerReadOnlyPost() // saf: politika değerlendirmesi (CasePolicyEngine.canPerformAction yalnız hesaplar) — DB yazma / denetim izi / dış çağrı yok (servis yan etki haritası)
   @Post('cases/:caseId/can-perform-action')
+  @CaseViewScoped() // F02 P3 tarama S5–S7: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   @HttpCode(HttpStatus.OK)
   async canPerformAction(
     @CurrentUser('tenantId') tenantId: string,
@@ -162,6 +167,7 @@ export class PolicyEngineController {
    * Dosya için önerilen aksiyonları döndürür.
    */
   @Get('cases/:caseId/next-actions')
+  @CaseViewScoped() // F02 P3 tarama S5–S7: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async getNextActions(
     @CurrentUser('tenantId') tenantId: string,
     @Param('caseId') caseId: string,
@@ -244,6 +250,7 @@ export class PolicyEngineController {
    * Dosya için karar geçmişini döndürür.
    */
   @Get('cases/:caseId/decision-history')
+  @CaseViewScoped() // F02 P3 tarama S5–S7: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async getDecisionHistory(
     @CurrentUser('tenantId') tenantId: string,
     @Param('caseId') caseId: string,
@@ -284,12 +291,17 @@ export class PolicyEngineController {
   async getDecision(
     @CurrentUser('tenantId') tenantId: string,
     @Param('decisionId') decisionId: string,
+    @CurrentUser('id') actorUserId?: string,
   ) {
     this.logger.log(`getDecision: ${decisionId}`);
-
     const decision = await this.decisionLogger.getDecision(decisionId);
-
-    if (!decision || !(await this.caseBelongsToTenant(tenantId, decision.caseId))) {
+    // S6: kararın dosyası aktöre görünmüyorsa karar da görünmez (var olmayan kararla aynı yanıt).
+    const viewScope = requireCaseViewScope(this.caseViewScope);
+    if (
+      !decision ||
+      !(await this.caseBelongsToTenant(tenantId, decision.caseId)) ||
+      (viewScope && !(await viewScope.isCaseVisible(tenantId, actorUserId, decision.caseId)))
+    ) {
       return {
         success: false,
         error: 'Decision not found',

@@ -60,6 +60,8 @@ dbDescribe('3c unpaid cancellation and payment-history preservation (HTTP + disp
       cancel: (...args: Parameters<ExpenseRequestService['cancel']>) => active.cancel(...args),
       delete: (...args: Parameters<ExpenseRequestService['delete']>) => active.delete(...args),
       findOne: (...args: Parameters<ExpenseRequestService['findOne']>) => active.findOne(...args),
+      // F02 P3 tarama S2: tek kayıt okumaları (GET :id, :id/three-view) masraf kapsamı kapısından geçer (bayrak kapalı → geçer).
+      assertRequestVisible: (...args: Parameters<ExpenseRequestService['assertRequestVisible']>) => active.assertRequestVisible(...args),
     };
     const module = await Test.createTestingModule({ controllers: [ExpenseRequestController], providers: [
       { provide: ExpenseRequestService, useValue: commands }, { provide: ExpenseViewService, useValue: new ExpenseViewService(db) },

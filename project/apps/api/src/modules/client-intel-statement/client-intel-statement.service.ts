@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
-import { ClientIntelStatus } from '@prisma/client';
+import { ClientIntelStatus, Prisma } from '@prisma/client';
 import {
   CreateClientIntelStatementDto,
   SupersedeClientIntelStatementDto,
@@ -184,9 +184,10 @@ export class ClientIntelStatementService {
    * - ClientIntelStatementController.listByDebtor() → GET /client-intel-statements/debtor/:debtorId?status=
    * </remarks>
    */
-  async listByDebtor(tenantId: string, debtorId: string, status?: ClientIntelStatus) {
+  async listByDebtor(tenantId: string, debtorId: string, status?: ClientIntelStatus, caseFilter?: Prisma.CaseWhereInput) {
+    // caseFilter (F02 P3 tarama S5): verilirse yalnız bu dosya süzgecine uyan dosyaların beyanları döner.
     return this.prisma.clientIntelStatement.findMany({
-      where: { tenantId, debtorId, status: status ?? ClientIntelStatus.ACTIVE },
+      where: { tenantId, debtorId, status: status ?? ClientIntelStatus.ACTIVE, ...(caseFilter ? { case: caseFilter } : {}) },
       orderBy: { createdAt: 'desc' },
     });
   }
