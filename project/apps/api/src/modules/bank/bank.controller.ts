@@ -3,6 +3,7 @@ import { BankService } from './bank.service';
 import { normalizeOptionalCaseDebtorId } from '../collection/collection-source-identity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
+import { AdminGuard } from '../auth/guards/admin.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { GuidedOpenObserveService } from '../permission-diagnostics/guided-open-observe.service';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
@@ -16,7 +17,10 @@ import { CaseViewScopeService, requireCaseViewScope } from '../case/case-view-sc
 // F02-D-2 dilim 1 (owner devam talimatı 30.10.2026): VIEWER banka hesabı ekleyemez, senkron tetikleyemez, hareket eşleştiremez,
 // EFT/havale GÖNDEREMEZ (para hareketi). Ölçülen boşluk: yalnız JWT; BankService rol sormuyor; eşleştirmedeki nesne-kapsam
 // yetkisi (receiptAuthorization) rol kapısı DEĞİL. Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`
-// (JwtAuthGuard'dan SONRA). Okuma uçları (hesaplar, bakiye, hareketler, eşleşmemiş, istatistik) DEĞİŞMEZ.
+// (JwtAuthGuard'dan SONRA). Hesap listesi ve bakiye okumaları DEĞİŞMEZ.
+// F02 P3 K1 (owner kararı 11.11.2026): banka HAREKET okumaları (hesap hareketleri, eşleşmemiş hareketler, hareket istatistiği)
+// mevcut ADMIN rolüyle sınırlıdır (`AdminGuard`, metot düzeyi; rol her istekte DB'den okunan güncel roldür). Yeni muhasebe izni
+// YOK; kiracı sınırı (servis) ve P3 maskelemesi (hesap hareketleri) aynen korunur.
 @Controller('bank')
 @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class BankController {
@@ -104,6 +108,7 @@ export class BankController {
   /// - BankService.getTransactions() → tenant kontrollü hesap hareketi listesi
   /// </remarks>
   @Get('accounts/:id/transactions')
+  @UseGuards(AdminGuard) // F02 P3 K1: banka hareketi okuması yalnız ADMIN (kiracı sınırı ve P3 maskelemesi aşağıda aynen)
   async getTransactions(
     @CurrentUser('tenantId') tenantId: string,
     @Param('id') id: string,
@@ -123,7 +128,7 @@ export class BankController {
     });
     // F02 P3 tarama S7 (owner kararı 09.11.2026): banka hareketleri büro muhasebesi kapsamında kalır (hareket satırları
     // süzülmez). Bayrak açıkken gereksiz dosya / kişi alanları dönmez: ham banka yükü (`rawData`) hiç dönmez; eşleşen dosya
-    // ve tahsilat kimliği yalnız dosya aktöre görünüyorsa döner. Bu uç için ayrı bir muhasebe izni bugün YOKTUR (yeni izin eklenmedi).
+    // ve tahsilat kimliği yalnız dosya aktöre görünüyorsa döner. Ayrı muhasebe izni YOK; okuma K1 ile ADMIN rolüne sınırlı (yukarıdaki AdminGuard).
     const viewScope = requireCaseViewScope(this.caseViewScope);
     if (!viewScope) return rows;
     const list = rows as Array<Record<string, unknown> & { matchedCaseId?: string | null }>;
@@ -186,6 +191,7 @@ export class BankController {
    * Eşleşmemiş işlemleri getir
    */
   @Get('transactions/unmatched')
+  @UseGuards(AdminGuard) // F02 P3 K1: banka hareketi okuması yalnız ADMIN
   async getUnmatchedTransactions(
     @CurrentUser('tenantId') tenantId: string,
     @Query('limit') limit?: string,
@@ -235,6 +241,7 @@ export class BankController {
    * Banka istatistikleri
    */
   @Get('stats')
+  @UseGuards(AdminGuard) // F02 P3 K1: hareket sayıları ve gelen / giden toplamları — yalnız ADMIN
   async getStats(@CurrentUser('tenantId') tenantId: string) {
     return this.bankService.getStats(tenantId);
   }
