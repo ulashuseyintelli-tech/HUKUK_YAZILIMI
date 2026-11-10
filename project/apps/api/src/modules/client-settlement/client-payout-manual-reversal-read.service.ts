@@ -200,6 +200,7 @@ export class ClientPayoutManualReversalReadService {
   async list(
     tenantId: string,
     filters: ListClientPayoutManualReversalsDto,
+    caseFilter?: Prisma.CaseWhereInput,
   ): Promise<{ items: ClientPayoutManualReversalListItem[]; page: number; limit: number; total: number }> {
     if (!tenantId) throw new BadRequestException('tenantId yok');
     this.assertEnums(filters);
@@ -207,6 +208,7 @@ export class ClientPayoutManualReversalReadService {
     const page = Math.max(Number(filters.page) || 1, 1);
     const limit = Math.min(Math.max(Number(filters.limit) || 50, 1), 200);
     const where = this.buildWhere(tenantId, filters);
+    if (caseFilter) where.case = caseFilter; // F02 P3 tarama S3: yalnız bu dosya süzgecine uyan dosyaların iş akışları
     const orderBy = this.buildOrderBy(filters.status);
 
     const [rows, total] = await Promise.all([

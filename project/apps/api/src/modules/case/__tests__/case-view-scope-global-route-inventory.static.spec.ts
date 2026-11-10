@@ -22,10 +22,10 @@ const MODULES_DIR = resolve(__dirname, "../..");
 const SRC_DIR = resolve(MODULES_DIR, "..");
 
 /** Karar satırı başına kapısı henüz olmayan okuma sayısı (bu dilimden sonra). Envanter kapanışında boş nesne olur. */
-const EXPECTED_OPEN: Record<string, number> = { S2: 15, S3: 23, S5: 6, S6: 15, S7: 8 };
+const EXPECTED_OPEN: Record<string, number> = { S2: 15, S5: 6, S6: 15, S7: 8 };
 
 /** KAPILI_ICERDE notunda kabul edilen handler içi kapsam çağrıları (keyfî metin kapı sayılmaz). */
-const INNER_MARKERS = ["caseService.findAll", "findOneVisible", "assertCaseVisible", "isArtifactVisible", "findOneForActor", "caseRowFilter", "recordCaseVisible"];
+const INNER_MARKERS = ["caseService.findAll", "findOneVisible", "assertCaseVisible", "isArtifactVisible", "findOneForActor", "caseRowFilter", "recordCaseVisible", "assertAllClientCasesVisible", "this.caseFilter("];
 /** `servis-dosyası::yöntem` biçimindeki notta, yöntemin gövdesinde bulunması gereken kapsam çağrılarından en az biri. */
 const SERVICE_SCOPE_CALLS = /requireCaseViewScope\(|caseRowFilter\(|visibleCaseIds\(|assertCaseVisible\(|isCaseVisible\(|viewScopeWhere\(|maskHiddenCases\(/;
 const SERVICE_NOTE = /^([\w./-]+\.ts)::(\w+)$/;
@@ -44,7 +44,7 @@ function serviceMethodBody(file: string, method: string): string {
   }
   return lines.slice(start, end).join("\n");
 }
-const GATE_DECORATOR = /CaseViewScoped\(|CaseViewScopedBy\(|CaseViewScopedByObject\(|CaseViewScopeGuard|CaseObjectViewScopeGuard/;
+const GATE_DECORATOR = /CaseViewScoped\(|ClientTotalViewScoped\(|CaseViewScopedBy\(|CaseViewScopedByObject\(|CaseViewScopeGuard|CaseObjectViewScopeGuard/;
 const CASE_KEYED_PATH = /:caseId\b|:caseDebtorId\b|\/cases?(\/|$)/;
 const CLASSES: RouteClass[] = ["KAPILI", "KAPILI_ICERDE", "BASKA_KAPI", "ISTISNA", "DOSYA_DISI", "YAZIM", "ACIK"];
 
@@ -217,7 +217,7 @@ describe("F02 P3 — bütün-controller dosya görünüm kapsamı rota envanteri
       }
     }
     expect(problems).toEqual([]);
-    expect(gated).toBeGreaterThanOrEqual(157); // P3 D1–D3b-2 + #3170 + #3172 (81) + S8 3 + S9 3 + S10 1 + S4 31 + S11 15 + S1 23
+    expect(gated).toBeGreaterThanOrEqual(180); // P3 D1–D3b-2 + #3170 + #3172 (81) + S8 3 + S9 3 + S10 1 + S4 31 + S11 15 + S1 23 + S3 23
   });
 
   it("kapısı henüz olmayan okumalar karar satırı başına sabit (yalnız azalabilir); kapanışta boş olur", () => {

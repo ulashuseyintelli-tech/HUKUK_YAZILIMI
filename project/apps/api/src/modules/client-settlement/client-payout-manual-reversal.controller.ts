@@ -1,10 +1,12 @@
-import { Body, Controller, Get, Param, Post, Query, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Request, UseGuards, Optional } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { ClientPayoutManualReversalReadService } from './client-payout-manual-reversal-read.service';
 import { ClientPayoutManualReversalService } from './client-payout-manual-reversal.service';
 import { CloseClientPayoutManualReversalDto } from './dto/close-client-payout-manual-reversal.dto';
 import { ListClientPayoutManualReversalsDto } from './dto/list-client-payout-manual-reversals.dto';
+import { CaseViewScopedByObject } from '../case/case-view-scope.guard';
+import { CaseViewScopeService, requireCaseViewScope } from '../case/case-view-scope.service';
 
 interface AuthRequest {
   user: { id: string; tenantId: string };
@@ -22,6 +24,7 @@ export class ClientPayoutManualReversalController {
   constructor(
     private readonly service: ClientPayoutManualReversalService,
     private readonly readService: ClientPayoutManualReversalReadService,
+    @Optional() private readonly caseViewScope?: CaseViewScopeService,
   ) {}
 
   /// <remarks>
@@ -30,7 +33,9 @@ export class ClientPayoutManualReversalController {
   /// </remarks>
   @Get()
   async list(@Request() req: AuthRequest, @Query() query: ListClientPayoutManualReversalsDto) {
-    const data = await this.readService.list(req.user.tenantId, query ?? {});
+    // S3: kuyruk yalnız aktörün görebildiği dosyaların iş akışlarını taşır (sayı ve sayfalama aynı süzgeçle).
+    const caseFilter = await requireCaseViewScope(this.caseViewScope)?.caseRowFilter(req.user.tenantId, req.user.id);
+    const data = caseFilter ? await this.readService.list(req.user.tenantId, query ?? {}, caseFilter) : await this.readService.list(req.user.tenantId, query ?? {});
     return { data };
   }
 
@@ -39,6 +44,7 @@ export class ClientPayoutManualReversalController {
   /// - ClientPayoutManualReversalController.detail() -> GET /client-payout-manual-reversals/:id (manuel reversal operasyon detayi)
   /// </remarks>
   @Get(':id')
+  @CaseViewScopedByObject('clientPayoutManualReversal', 'id') // F02 P3 tarama S3: dosya görünüm kapsamı (bayrak açıkken)
   async detail(@Request() req: AuthRequest, @Param('id') id: string) {
     const data = await this.readService.detail(req.user.tenantId, id);
     return { data };

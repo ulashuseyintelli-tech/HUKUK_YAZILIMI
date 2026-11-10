@@ -1,10 +1,12 @@
-import { Controller, Get, Post, Body, Param, Query, Request, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, Request, UseGuards, Optional } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CpeRequired } from '../policy-engine/decorators/cpe-required.decorator';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { ClientOffsetService } from './client-offset.service';
 import { CreateClientOffsetDto, ReverseClientOffsetDto, PreviewClientOffsetDto } from './dto/client-offset.dto';
+import { CaseViewScopedByObject, ClientTotalViewScoped } from '../case/case-view-scope.guard';
+import { CaseViewScopeService, requireCaseViewScope } from '../case/case-view-scope.service';
 
 interface AuthRequest {
   user: { id: string; tenantId: string };
@@ -20,10 +22,14 @@ interface AuthRequest {
 @Controller('client-offsets')
 @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class ClientOffsetController {
-  constructor(private readonly service: ClientOffsetService) {}
+  constructor(
+    private readonly service: ClientOffsetService,
+    @Optional() private readonly caseViewScope?: CaseViewScopeService,
+  ) {}
 
   /** Mahsuba uygun payable bucket'lar + ödenmemiş ExpenseRequest'ler + canApply (read-only; otomatik eşleme YOK). */
   @Get('client/:clientId/eligibility')
+  @ClientTotalViewScoped() // F02 P3 tarama S3: dosya görünüm kapsamı (bayrak açıkken)
   async eligibility(@Request() req: AuthRequest, @Param('clientId') clientId: string, @Query('currency') currency?: string) {
     return this.service.getEligibility(req.user.tenantId, req.user.id, clientId, currency || 'TRY');
   }
@@ -35,11 +41,18 @@ export class ClientOffsetController {
   @Post('preview')
   @AllowViewerReadOnlyPost() // okuma/hesap: yazma YAPMAZ (kaynaktan dogrulandi)
   async preview(@Request() req: AuthRequest, @Body() dto: PreviewClientOffsetDto) {
+    // S3: önizleme iki dosyanın tutarlarını okur (ödenecek + masraf): ikisi de aktöre görünür olmalı (kapsam dışı / yok 404).
+    const viewScope = requireCaseViewScope(this.caseViewScope);
+    if (viewScope) {
+      await viewScope.assertCaseVisible(req.user.tenantId, req.user.id, dto?.payableCaseId);
+      await viewScope.assertCaseVisible(req.user.tenantId, req.user.id, dto?.expenseCaseId);
+    }
     return this.service.previewOffset(req.user.tenantId, req.user.id, dto);
   }
 
   /** Müvekkilin mahsupları (APPLY+REVERSAL). */
   @Get('client/:clientId')
+  @ClientTotalViewScoped() // F02 P3 tarama S3: dosya görünüm kapsamı (bayrak açıkken)
   async list(
     @Request() req: AuthRequest,
     @Param('clientId') clientId: string,
@@ -54,6 +67,7 @@ export class ClientOffsetController {
   /// - OffsetDrawer detail panel → GET /client-offsets/:offsetId/detail (read-only audit/source projection)
   /// </remarks>
   @Get(':offsetId/detail')
+  @CaseViewScopedByObject('clientOffset', 'offsetId') // F02 P3 tarama S3: dosya görünüm kapsamı (bayrak açıkken)
   async detail(@Request() req: AuthRequest, @Param('offsetId') offsetId: string) {
     return this.service.getOffsetDetail(req.user.tenantId, offsetId);
   }

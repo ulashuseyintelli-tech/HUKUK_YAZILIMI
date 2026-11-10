@@ -1,8 +1,10 @@
-﻿import { Controller, Get, Param, Query, Request, UseGuards } from '@nestjs/common';
+﻿import { Controller, Get, Param, Query, Request, UseGuards, Optional } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ClientAccountingMovementsReadService } from './client-accounting-movements-read.service';
 import { ClientAccountingSummaryReadService } from './client-accounting-summary-read.service';
 import { ClientSettlementReadService } from './client-settlement-read.service';
+import { ClientTotalViewScoped } from '../case/case-view-scope.guard';
+import { CaseViewScopeService, requireCaseViewScope } from '../case/case-view-scope.service';
 
 /** actor compile-time shape â€” req.user.tenantId auth context. */
 interface AuthRequest {
@@ -22,12 +24,15 @@ export class ClientAccountingController {
     private readonly readService: ClientSettlementReadService,
     private readonly summaryReadService: ClientAccountingSummaryReadService,
     private readonly movementsReadService: ClientAccountingMovementsReadService,
+    @Optional() private readonly caseViewScope?: CaseViewScopeService,
   ) {}
 
   /** MÃ¼vekkilin (eligible) dosyalarÄ± + caseClientId resolve. tenant-scoped. */
   @Get('cases')
   async cases(@Request() req: AuthRequest, @Param('clientId') clientId: string) {
-    const data = await this.readService.listClientCases(req.user.tenantId, clientId);
+    // S3: müvekkilin dosya listesi yalnız aktörün görebildiği dosyaları taşır (dosya listesiyle aynı kapsam).
+    const caseFilter = await requireCaseViewScope(this.caseViewScope)?.caseRowFilter(req.user.tenantId, req.user.id);
+    const data = await this.readService.listClientCases(req.user.tenantId, clientId, caseFilter);
     return { data };
   }
 
@@ -37,6 +42,7 @@ export class ClientAccountingController {
    * GET /clients/:clientId/accounting/summary?currency=TRY
    */
   @Get('summary')
+  @ClientTotalViewScoped() // F02 P3 tarama S3: dosya görünüm kapsamı (bayrak açıkken)
   async summary(
     @Request() req: AuthRequest,
     @Param('clientId') clientId: string,
@@ -64,6 +70,13 @@ export class ClientAccountingController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
+    // S3: tek dosyaya daraltılmış istek o dosyanın kapısından geçer (404); müvekkil geneli hareket dökümü müvekkilin bütün
+    // dosyalarını görmeyi gerektirir (403; eksik dosyalarla döküm üretilmez).
+    const viewScope = requireCaseViewScope(this.caseViewScope);
+    if (viewScope) {
+      if (caseId !== undefined) await viewScope.assertCaseVisible(req.user.tenantId, req.user.id, caseId);
+      if (!(scope === 'case' && caseId)) await viewScope.assertAllClientCasesVisible(req.user.tenantId, req.user.id, clientId);
+    }
     const data = await this.movementsReadService.getClientAccountingMovements(req.user.tenantId, clientId, {
       scope,
       caseId,

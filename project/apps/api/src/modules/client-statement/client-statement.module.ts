@@ -17,6 +17,7 @@ import {
 } from './client-statement-monthly-delivery.service';
 import { ClientStatementNotificationDeliveryAdapter } from './client-statement-notification-delivery.adapter';
 import { ClientStatementPrismaDeliveryLedgerAdapter } from './client-statement-prisma-delivery-ledger.adapter';
+import { CaseViewScopeModule } from '../case/case-view-scope.module';
 
 /**
  * Müvekkil Ekstresi modülü (PR-3 + Faz 3.4 "ekstre hazır" maili).
@@ -34,7 +35,7 @@ import { ClientStatementPrismaDeliveryLedgerAdapter } from './client-statement-p
  * için production'da hiçbir mail üretilmez/gönderilmez.
  */
 @Module({
-  imports: [PrismaModule, ClientNotificationModule, OfficeModule, OfficeApprovalModule, InterestEngineModule],
+  imports: [CaseViewScopeModule, PrismaModule, ClientNotificationModule, OfficeModule, OfficeApprovalModule, InterestEngineModule],
   controllers: [ClientStatementController],
   providers: [
     ClientStatementService,
