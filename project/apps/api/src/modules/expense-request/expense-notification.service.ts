@@ -747,15 +747,17 @@ export class ExpenseNotificationService {
   /**
    * Vadesi yaklaşan masraf taleplerini bul
    */
-  async findDueReminders(tenantId: string, daysBeforeDue: number = 2) {
+  async findDueReminders(tenantId: string, daysBeforeDue: number = 2, scope?: Prisma.ExpenseRequestWhereInput | null) {
     const targetDate = new Date();
     targetDate.setDate(targetDate.getDate() + daysBeforeDue);
 
+    // scope (F02 P3 tarama S2): verilirse kuyruk yalnız aktörün masraf kapsamındaki talepleri taşır.
     return this.prisma.expenseRequest.findMany({
       where: {
         tenantId,
         status: { in: ['SENT', 'REMINDED'] },
         dueDate: { lte: targetDate },
+        ...(scope ? { AND: [scope] } : {}),
       },
       include: {
         client: { select: { displayName: true, email: true } },
