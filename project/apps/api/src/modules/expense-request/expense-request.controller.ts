@@ -55,11 +55,13 @@ export class ExpenseRequestController {
 
   @Get('by-case/:caseId')
   async findByCaseId(@Req() req: AuthRequest, @Param('caseId') caseId: string) {
-    return this.service.findByCaseId(req.user.tenantId, caseId);
+    // S2: dosyanın talep listesi aktörün masraf kapsamıyla daralır (GET /expense-requests ile aynı kural).
+    return this.service.findByCaseId(req.user.tenantId, caseId, await this.service.readScopeWhere(req.user.tenantId, req.user.id));
   }
 
   @Get(':id')
   async findOne(@Req() req: AuthRequest, @Param('id') id: string) {
+    await this.service.assertRequestVisible(req.user.tenantId, id, req.user.id); // S2: kapsam dışı = var olmayan (404)
     return this.service.findOne(req.user.tenantId, id);
   }
 
@@ -162,6 +164,7 @@ export class ExpenseRequestController {
    */
   @Get('case/:caseId/opening-status')
   async getOpeningExpenseStatus(@Req() req: AuthRequest, @Param('caseId') caseId: string) {
+    await this.service.assertCaseExpensesVisible(req.user.tenantId, caseId, req.user.id); // S2
     return this.service.getOpeningExpenseAutomationStatus(caseId, req.user.tenantId);
   }
 
@@ -266,6 +269,7 @@ export class ExpenseRequestController {
     @Query('clientId') clientId?: string,
   ) {
     // clientId opsiyonel → seçili müvekkile filtreli masraf özeti (TM3 Faz7-V). Salt-okuma.
+    await this.service.assertCaseExpensesVisible(req.user.tenantId, caseId, req.user.id); // S2: eksik taleplerle özet üretilmez
     return this.service.getExpenseSummaryForCase(req.user.tenantId, caseId, clientId);
   }
 
@@ -275,6 +279,7 @@ export class ExpenseRequestController {
    */
   @Get('case/:caseId/details')
   async getExpenseDetails(@Req() req: AuthRequest, @Param('caseId') caseId: string) {
+    await this.service.assertCaseExpensesVisible(req.user.tenantId, caseId, req.user.id); // S2
     return this.service.getExpenseRequestsWithDetails(req.user.tenantId, caseId);
   }
 
@@ -288,6 +293,7 @@ export class ExpenseRequestController {
    */
   @Get('case/:caseId/gate-status')
   async getGateStatus(@Req() req: AuthRequest, @Param('caseId') caseId: string) {
+    await this.service.assertCaseExpensesVisible(req.user.tenantId, caseId, req.user.id); // S2
     return this.gateService.checkGateForCase(req.user.tenantId, caseId);
   }
 
@@ -301,6 +307,7 @@ export class ExpenseRequestController {
     @Param('caseId') caseId: string,
     @Param('actionType') actionType: string,
   ) {
+    await this.service.assertCaseExpensesVisible(req.user.tenantId, caseId, req.user.id); // S2
     const canPerform = await this.gateService.canPerformUyapActionForCase(req.user.tenantId, caseId, actionType);
     return { canPerform, actionType };
   }
@@ -311,6 +318,7 @@ export class ExpenseRequestController {
    */
   @Get('case/:caseId/gate-summary')
   async getGateSummary(@Req() req: AuthRequest, @Param('caseId') caseId: string) {
+    await this.service.assertCaseExpensesVisible(req.user.tenantId, caseId, req.user.id); // S2
     return this.gateService.getGateSummaryForCase(req.user.tenantId, caseId);
   }
 
@@ -341,7 +349,8 @@ export class ExpenseRequestController {
   @Get('due-reminders')
   async getDueReminders(@Req() req: AuthRequest, @Query('days') days?: string) {
     const daysBeforeDue = days ? parseInt(days, 10) : 2;
-    return this.notificationService.findDueReminders(req.user.tenantId, daysBeforeDue);
+    // S2: kuyruk aktörün masraf kapsamıyla daralır
+    return this.notificationService.findDueReminders(req.user.tenantId, daysBeforeDue, await this.service.readScopeWhere(req.user.tenantId, req.user.id));
   }
 
   /**
@@ -361,6 +370,7 @@ export class ExpenseRequestController {
    */
   @Get(':id/three-view')
   async getThreeView(@Req() req: AuthRequest, @Param('id') id: string) {
+    await this.service.assertRequestVisible(req.user.tenantId, id, req.user.id); // S2: kapsam dışı = var olmayan (404)
     return this.viewService.getThreeViewData(req.user.tenantId, id);
   }
 
@@ -370,6 +380,7 @@ export class ExpenseRequestController {
    */
   @Get('case/:caseId/three-view')
   async getThreeViewForCase(@Req() req: AuthRequest, @Param('caseId') caseId: string) {
+    await this.service.assertCaseExpensesVisible(req.user.tenantId, caseId, req.user.id); // S2
     return this.viewService.getThreeViewDataForCase(req.user.tenantId, caseId);
   }
 
@@ -379,7 +390,8 @@ export class ExpenseRequestController {
    */
   @Get('pending-tasks')
   async getPendingTasks(@Req() req: AuthRequest) {
-    return this.viewService.getPendingExpenseTasks(req.user.tenantId);
+    // S2: kuyruk aktörün masraf kapsamıyla daralır
+    return this.viewService.getPendingExpenseTasks(req.user.tenantId, await this.service.readScopeWhere(req.user.tenantId, req.user.id));
   }
 
   /**
@@ -388,6 +400,7 @@ export class ExpenseRequestController {
    */
   @Get('case/:caseId/finance-items')
   async getFinanceItems(@Req() req: AuthRequest, @Param('caseId') caseId: string) {
+    await this.service.assertCaseExpensesVisible(req.user.tenantId, caseId, req.user.id); // S2
     return this.viewService.getExpenseFinanceItems(req.user.tenantId, caseId);
   }
 
@@ -397,7 +410,8 @@ export class ExpenseRequestController {
    */
   @Get('client/:clientId/requests')
   async getClientRequests(@Req() req: AuthRequest, @Param('clientId') clientId: string) {
-    return this.viewService.getExpenseClientRequests(req.user.tenantId, clientId);
+    // S2: müvekkilin talepleri aktörün masraf kapsamıyla daralır
+    return this.viewService.getExpenseClientRequests(req.user.tenantId, clientId, await this.service.readScopeWhere(req.user.tenantId, req.user.id));
   }
 
   // ==================== CALCULATOR ENDPOINT'LERİ ====================

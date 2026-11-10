@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 
 // ==================== VIEW INTERFACES ====================
@@ -244,9 +245,10 @@ export class ExpenseViewService {
     return results;
   }
 
-  async getPendingExpenseTasks(tenantId: string): Promise<ExpenseTaskView[]> {
+  async getPendingExpenseTasks(tenantId: string, scope?: Prisma.ExpenseRequestWhereInput | null): Promise<ExpenseTaskView[]> {
+    // scope (F02 P3 tarama S2): verilirse kuyruk yalnız aktörün masraf kapsamındaki talepleri taşır.
     const expenses = await this.prisma.expenseRequest.findMany({
-      where: { tenantId, status: { in: ['PENDING', 'SENT', 'REMINDED', 'PARTIAL', 'OVERDUE'] as any } },
+      where: { tenantId, status: { in: ['PENDING', 'SENT', 'REMINDED', 'PARTIAL', 'OVERDUE'] as any }, ...(scope ? { AND: [scope] } : {}) },
       include: {
         requestItems: { orderBy: { sortOrder: 'asc' } },
         case: { select: { fileNumber: true, executionFileNumber: true } },
@@ -292,9 +294,10 @@ export class ExpenseViewService {
     return results;
   }
 
-  async getExpenseClientRequests(tenantId: string, clientId: string): Promise<ExpenseClientRequestView[]> {
+  async getExpenseClientRequests(tenantId: string, clientId: string, scope?: Prisma.ExpenseRequestWhereInput | null): Promise<ExpenseClientRequestView[]> {
+    // scope (F02 P3 tarama S2): verilirse liste yalnız aktörün masraf kapsamındaki talepleri taşır.
     const expenses = await this.prisma.expenseRequest.findMany({
-      where: { tenantId, clientId, status: { not: 'CANCELLED' } },
+      where: { tenantId, clientId, status: { not: 'CANCELLED' }, ...(scope ? { AND: [scope] } : {}) },
       include: {
         requestItems: { orderBy: { sortOrder: 'asc' } },
         case: { select: { fileNumber: true, executionFileNumber: true } },
