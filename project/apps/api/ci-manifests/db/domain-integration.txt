@@ -511,3 +511,4 @@ src/modules/client-settlement/__tests__/client-payout-approval-window.http.db-ga
 #   UyapQueryService.getSuggestedQueries tenantId'yi kullanmiyordu; gercek HTTP + tek kullanimlik PostgreSQL.
 src/modules/address-discovery/__tests__/uyap-query-suggestions-tenant-boundary.http.db-gated.integration.spec.ts
 src/modules/client/__tests__/client-special-category-k73.http.db-gated.integration.spec.ts
+src/modules/client/__tests__/client-bank-account-h13a.http.db-gated.integration.spec.ts

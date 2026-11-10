@@ -16,6 +16,7 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { Client } from '@/lib/api/client.types';
 import { ClientForm } from '@/components/client/client-form';
+import { ClientBankAccountsPanel } from '@/components/client/client-bank-accounts-panel';
 import {
   buildEditClientPayload,
   clientFormValuesFromClient,
@@ -108,7 +109,7 @@ export default function EditClientPage() {
           Müvekkil bulunamadı
         </div>
       ) : (
-        <ClientForm
+        <><ClientForm
           mode="edit"
           initialValues={clientFormValuesFromClient(client)}
           readOnlyContact={{
@@ -127,6 +128,7 @@ export default function EditClientPage() {
           onSubmit={handleSubmit}
           onCancel={() => router.push(`/clients/${clientId}`)}
         />
+        <ClientBankAccountsPanel clientId={clientId} /></>
       )}
     </div>
   );
