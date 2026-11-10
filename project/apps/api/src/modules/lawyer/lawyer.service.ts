@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ConflictException, ForbiddenException, BadRequestException } from "@nestjs/common";
+import { revokeK73ForSubjectInTx } from '../client/client-special-category-access';
 import { PrismaService } from "@/prisma/prisma.service";
 import { LawyerRole, LawyerRank, Prisma } from "@prisma/client";
 import { normalizePersonName } from "@/common/name-match.util";
@@ -1078,6 +1079,10 @@ export class LawyerService {
             "Bağlı kullanıcı hesabı deaktive edilemedi (tenant uyuşmazlığı veya veri bütünlüğü sorunu); pasifleştirme iptal edildi."
           );
         }
+        // Preserve Lawyer → User locking and the existing 409 integrity contract.
+        // The User update already holds the subject lock until this transaction commits.
+        if (!actor?.userId) throw new ConflictException('Özel veri yetki kaldırma aktörü eksik; pasifleştirme iptal edildi.');
+        await revokeK73ForSubjectInTx(tx, tenantId, existing.userId, actor.userId, 'LAWYER_DEACTIVATED', this.audit);
       }
 
       for (const t of transferPlan) {

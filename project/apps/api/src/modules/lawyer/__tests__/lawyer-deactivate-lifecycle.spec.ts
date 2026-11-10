@@ -43,6 +43,8 @@ const build = (
   const replacementCaseLawyers = opts.replacementCaseLawyers ?? [];
 
   const prisma: any = {
+    $queryRaw: jest.fn().mockResolvedValue([{ id: 'u-linked' }]),
+    clientSpecialCategoryGrantScope: { findMany: jest.fn().mockResolvedValue([]) },
     lawyer: {
       findFirst: jest.fn().mockImplementation(({ where }: any) => {
         if (where.id === LAWYER_ID) return Promise.resolve(existing);

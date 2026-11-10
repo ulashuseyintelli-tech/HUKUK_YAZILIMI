@@ -386,6 +386,14 @@ export const CASE_RELATED_CONTROLLERS: Readonly<Record<string, readonly RouteEnt
   "client/client-poa-capability.controller.ts": [
     ["GET /clients/:id/effective-capabilities", "BASKA_KAPI", "K16 müvekkil nesne kapsamı (CaseLawyer ∪ CaseStaff canView; bayraksız, her zaman açık)"],
   ],
+  "client/client-special-category-access.controller.ts": [
+    ["GET /client-special-category-access/capabilities", "BASKA_KAPI", "K7.3: güncel aktör; veri işlemi mevcut işlem yetkisi + kanonik K16 nesne bağı + süreli kapsamlı izin gerektirir; yönetim içerik erişimi değildir"],
+    ["GET /client-special-category-access/candidates", "BASKA_KAPI", "Owner onaylı K7.3 izin yönetimi: güncel aynı-tenant personelsiz ADMIN; yalnız uygun kişi/kapsam seçimi, korumalı içerik yok"],
+    ["GET /client-special-category-access/grants", "BASKA_KAPI", "Owner onaylı K7.3 izin yönetimi: güncel aynı-tenant personelsiz ADMIN; yalnız yetki geçmişi, korumalı içerik yok"],
+    ["POST /client-special-category-access/grants", "YAZIM", ""],
+    ["POST /client-special-category-access/grants/:id/revoke", "YAZIM", ""],
+    ["POST /client-special-category-access/subjects/:id/duty-change", "YAZIM", ""],
+  ],
   "client/client-special-category.controller.ts": [
     ["GET /clients/:id/special-category-records", "BASKA_KAPI", "K16 müvekkil nesne kapsamı (CaseLawyer ∪ CaseStaff canView; bayraksız, her zaman açık)"],
     ["POST /clients/:id/special-category-records", "YAZIM", ""],

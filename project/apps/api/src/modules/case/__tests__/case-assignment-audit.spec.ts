@@ -62,14 +62,16 @@ describe('ASSIGN-4c CaseService.removeCaseLawyer — CASE_LAWYER DELETE audit', 
           lawyerId: 'law-1',
           role: 'ASSIGNED',
           isResponsible: false,
+          lawyer: { userId: null },
         })),
         // WP-1d-5-9: non-responsible silme doğrudan delete (eski $transaction/auto-promote yok).
         delete: jest.fn(async () => ({})),
       },
     };
-    (service as any).auditService = { log: auditLog };
+    (service as any).prisma.$transaction = async (cb: any) => cb((service as any).prisma);
+    (service as any).auditService = { log: auditLog, logInTransaction: async (_tx: any, input: any) => auditLog(input) };
 
-    await (service as any).removeCaseLawyer('tenant-1', 'case-1', 'cl-1');
+    await (service as any).removeCaseLawyer('tenant-1', 'case-1', 'cl-1', 'actor-1');
 
     expect(auditLog).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -34,6 +34,9 @@ const build = (
   const existing = opts.existing === undefined ? EXISTING : opts.existing;
 
   const prisma: any = {
+    $queryRaw: jest.fn().mockResolvedValue([{ id: 'u-linked' }]),
+    clientSpecialCategoryGrantScope: { findMany: jest.fn().mockResolvedValue([]) },
+    auditLog: { create: jest.fn().mockResolvedValue({ id: 'audit-test' }) },
     staffMember: {
       findFirst: jest.fn().mockResolvedValue(existing),
       update: jest.fn().mockImplementation(({ where, data }: any) => Promise.resolve({ id: where.id, ...data })),
@@ -66,7 +69,7 @@ describe('CANDIDATE-A — StaffService.remove() deactivate lifecycle', () => {
 
   it('bağlı userId VARSA → user.updateMany({id,tenantId}, isActive:false) doğru where ile çağrılır, AYNI transaction içinde', async () => {
     const { svc, prisma } = build({ existing: { ...EXISTING, userId: 'u-linked' } });
-    const result = await svc.remove(STAFF_ID, TENANT);
+    const result = await svc.remove(STAFF_ID, TENANT, { userId: 'admin-test', role: 'ADMIN', requestId: 'test-linked' });
     expect(prisma.user.updateMany).toHaveBeenCalledWith({
       where: { id: 'u-linked', tenantId: TENANT },
       data: { isActive: false },
@@ -81,7 +84,7 @@ describe('CANDIDATE-A — StaffService.remove() deactivate lifecycle', () => {
 
   it('bağlı User ZATEN inactive olsa bile updateMany count=1 döner → idempotent, hata FIRLATILMAZ', async () => {
     const { svc } = build({ existing: { ...EXISTING, userId: 'u-linked' }, userUpdateCount: 1 });
-    await expect(svc.remove(STAFF_ID, TENANT)).resolves.toMatchObject({ isActive: false });
+    await expect(svc.remove(STAFF_ID, TENANT, { userId: 'admin-test', role: 'ADMIN', requestId: 'test-linked' })).resolves.toMatchObject({ isActive: false });
   });
 
   it(
@@ -91,7 +94,7 @@ describe('CANDIDATE-A — StaffService.remove() deactivate lifecycle', () => {
       'throw\'u doğrular)',
     async () => {
       const { svc, prisma } = build({ existing: { ...EXISTING, userId: 'u-linked' }, userUpdateCount: 0 });
-      await expect(svc.remove(STAFF_ID, TENANT)).rejects.toThrow(ConflictException);
+      await expect(svc.remove(STAFF_ID, TENANT, { userId: 'admin-test', role: 'ADMIN', requestId: 'test-linked' })).rejects.toThrow('Bağlı kullanıcı hesabı deaktive edilemedi');
       // StaffMember write hiç YAPILMADI (User check, StaffMember write'tan ÖNCE çalışır) —
       // fail-closed tasarımın erken-çıkış özelliği.
       expect(prisma.staffMember.update).not.toHaveBeenCalled();

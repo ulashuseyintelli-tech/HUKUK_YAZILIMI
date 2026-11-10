@@ -1,4 +1,4 @@
-import { assertClientObjectScope, clientObjectScope } from './client-object-scope';
+import { assertK73AccessInTx } from './client-special-category-access';
 import {
   ForbiddenException,
   Injectable,
@@ -25,9 +25,9 @@ import { type ClientMutationActor } from './client-mutation-policy';
  *   uygulama seviyesi) + AYRI anahtar yönetimi (DB dışı, env: CLIENT_SPECIAL_CATEGORY_DATA_KEY,
  *   base64 32 bayt) + least-privilege erişim kapısı (yükseltilmiş yetki) + her erişimde
  *   AYRI audit + liste yanıtında maskeleme (içerik asla listelenmez) + export ucu YOK.
- *   Organizasyonel önlemler (MFA, periyodik yetki kontrolü, güvenlik testi, görev
- *   değişiminde erişim kaldırma) bu servisin dışındadır ve blok raporunda açıkça
- *   NOT_IMPLEMENTED_IN_B04 olarak kayıtlıdır.
+ *   B04'te eksik kalan süreli kişi/nesne/işlem yetkisi ve görev değişiminde kapatma,
+ *   CLIENT-SPECIAL-CATEGORY-K73-SA01 ile eklenir. MFA, periyodik yetki kontrolü ve
+ *   genel güvenlik programı bu dar teslimin dışında kalır.
  * - K7.4: mevcut veri taraması BU BLOKTA YOKTUR (yalnız WAVE 4, read-only, ayrı yetki).
  * - Silme YOKTUR: özel nitelikli kayıt da POL-E 8-koşul kapısına (C3-B03) tabidir.
  *
@@ -104,21 +104,6 @@ export class ClientSpecialCategoryService {
     return key;
   }
 
-  /** K7.3 least-privilege: erişim kapısı yükseltilmiş yetkidir (ADMIN veya eligible). */
-  private async assertElevated(actor: ClientMutationActor, tenantId: string): Promise<void> {
-    const isAdmin = actor?.role === 'ADMIN';
-    const eligible =
-      !isAdmin && actor?.userId
-        ? await this.officeApproval.isApproverEligible(actor.userId, tenantId)
-        : false;
-    if (!actor?.userId || (!isAdmin && !eligible)) {
-      throw new ForbiddenException({
-        code: 'SPECIAL_DATA_ELEVATED_REQUIRED',
-        message: 'Özel nitelikli veri erişimi yükseltilmiş yetki ister (K7.3 least-privilege)',
-      });
-    }
-  }
-
   private assertCategory(category: string): ClientSpecialDataCategoryCode {
     if (!(CLIENT_SPECIAL_DATA_CATEGORIES as readonly string[]).includes(category)) {
       throw new ForbiddenException({
@@ -136,19 +121,13 @@ export class ClientSpecialCategoryService {
     category: string;
     content: string;
     actor: ClientMutationActor;
+    caseId?: string;
   }) {
     const { tenantId, clientId, content, actor } = params;
-    await this.assertElevated(actor, tenantId);
-    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, clientId);
     const category = this.assertCategory(params.category);
-    const key = this.requireKey();
-
-    const client = await this.prisma.client.findFirst({ where: { id: clientId, tenantId } });
-    if (!client) throw new NotFoundException('Müvekkil bulunamadı');
-
-    const contentEncrypted = encryptSpecialContent(key, content);
     return this.prisma.$transaction(async (tx: any) => {
-      await assertClientObjectScope(tx, tenantId, actor?.userId, clientId);
+      const access = await assertK73AccessInTx(tx, this.officeApproval, tenantId, actor?.userId, 'CREATE', clientId, params.caseId);
+      const contentEncrypted = encryptSpecialContent(this.requireKey(), content);
       const created = await this.delegate(tx).create({
         data: { tenantId, clientId, category, contentEncrypted, createdByUserId: actor.userId },
       });
@@ -159,54 +138,57 @@ export class ClientSpecialCategoryService {
         entityId: created.id,
         userId: actor.userId ?? undefined,
         // Yalnız kategori ve kayıt kimliği — İÇERİK ASLA audit'e yazılmaz.
-        metadata: { clientId, category },
+        metadata: { clientId, category, accessScopeId: access.id },
       });
       return { id: created.id, category: created.category, createdAt: created.createdAt };
     });
   }
 
   /** Liste: MASKELİ — içerik asla dönmez (K7.3 maskeleme). */
-  async listRecords(params: { tenantId: string; clientId: string; actor: ClientMutationActor }) {
+  async listRecords(params: { tenantId: string; clientId: string; actor: ClientMutationActor; caseId?: string }) {
     const { tenantId, clientId, actor } = params;
-    await this.assertElevated(actor, tenantId);
-    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, clientId);
-    const rows = await this.delegate().findMany({
-      where: { tenantId, clientId },
-      orderBy: { createdAt: 'desc' },
+    return this.prisma.$transaction(async (tx: any) => {
+      await assertK73AccessInTx(tx, this.officeApproval, tenantId, actor?.userId, 'LIST', clientId, params.caseId);
+      const rows = await this.delegate(tx).findMany({
+        where: { tenantId, clientId },
+        orderBy: { createdAt: 'desc' },
+      });
+      return rows.map((r: any) => ({
+        id: r.id,
+        category: r.category,
+        createdByUserId: r.createdByUserId,
+        createdAt: r.createdAt,
+      }));
     });
-    return rows.map((r: any) => ({
-      id: r.id,
-      category: r.category,
-      createdByUserId: r.createdByUserId,
-      createdAt: r.createdAt,
-    }));
   }
 
   /** Detay okuma: elevated + HER ERİŞİM ayrı audit (K7.3) + çözülmüş içerik. */
-  async readRecord(params: { tenantId: string; recordId: string; actor: ClientMutationActor }) {
+  async readRecord(params: { tenantId: string; recordId: string; actor: ClientMutationActor; caseId?: string }) {
     const { tenantId, recordId, actor } = params;
-    await this.assertElevated(actor, tenantId);
-    const row = await this.delegate().findFirst({ where: { id: recordId, tenantId } });
-    if (!row) throw new NotFoundException('Kayıt bulunamadı');
-
-    await assertClientObjectScope(this.prisma, tenantId, actor?.userId, row.clientId);
-    const key = this.requireKey();
-    const content = decryptSpecialContent(key, row.contentEncrypted);
-    await this.audit.log({
-      tenantId,
-      action: 'CLIENT_SPECIAL_DATA_ACCESS',
-      entityType: 'CLIENT_SPECIAL_DATA',
-      entityId: recordId,
-      userId: actor.userId ?? undefined,
-      metadata: { clientId: row.clientId, category: row.category },
+    if (typeof recordId !== 'string' || !recordId) throw new NotFoundException('Kayıt bulunamadı');
+    return this.prisma.$transaction(async (tx: any) => {
+      const row = await this.delegate(tx).findFirst({ where: { id: recordId, tenantId } });
+      if (!row) throw new NotFoundException('Kayıt bulunamadı');
+      const access = await assertK73AccessInTx(tx, this.officeApproval, tenantId, actor?.userId, 'READ', row.clientId, params.caseId);
+      const key = this.requireKey();
+      const content = decryptSpecialContent(key, row.contentEncrypted);
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: 'CLIENT_SPECIAL_DATA_ACCESS',
+        entityType: 'CLIENT_SPECIAL_DATA',
+        entityId: recordId,
+        userId: actor.userId ?? undefined,
+        metadata: { clientId: row.clientId, category: row.category, accessScopeId: access.id },
+      });
+      return {
+        id: row.id,
+        clientId: row.clientId,
+        category: row.category,
+        content,
+        createdByUserId: row.createdByUserId,
+        createdAt: row.createdAt,
+        accessExpiresAt: access.validUntil.toISOString(),
+      };
     });
-    return {
-      id: row.id,
-      clientId: row.clientId,
-      category: row.category,
-      content,
-      createdByUserId: row.createdByUserId,
-      createdAt: row.createdAt,
-    };
   }
 }

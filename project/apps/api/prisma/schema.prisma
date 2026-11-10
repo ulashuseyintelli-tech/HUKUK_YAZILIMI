@@ -633,6 +633,7 @@ model Client {
   dataSubjectRequests            ClientDataSubjectRequest[] // İlgili kişi başvuruları (C3-B02)
   legalHolds                     ClientLegalHold[] // Legal hold kayıtları (C3-B03)
   specialCategoryRecords         ClientSpecialCategoryRecord[] // Özel nitelikli veri kayıtları (C3-B04)
+  specialCategoryGrantScopes     ClientSpecialCategoryGrantScope[]
   poaExpiryDeliveries            PoaExpiryNotificationDelivery[]
   caseClients                    CaseClient[]
   notifications                  ClientNotification[]
@@ -10270,10 +10271,35 @@ model PermissionGrant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  specialCategoryScope ClientSpecialCategoryGrantScope?
+
+  @@unique([id, tenantId])
   @@index([tenantId])
   @@index([tenantId, subjectUserId])
   @@index([tenantId, permissionKey])
   @@index([validUntil])
+}
+
+// K7.3: PermissionGrant remains the permission/time source; this binding narrows only
+// the three special-category keys to a canonical client and optionally a case.
+// caseId is historical scope, not a cascading FK: deleting/reassigning a case must
+// revoke access atomically without deleting permission history or broadening scope.
+model ClientSpecialCategoryGrantScope {
+  id                   String @id @default(cuid())
+  tenantId             String
+  permissionGrantId    String
+  permissionGrant      PermissionGrant @relation(fields: [permissionGrantId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  clientId             String
+  client               Client @relation(fields: [clientId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  caseId               String?
+  revokedAt            DateTime?
+  revokedByUserId      String?
+  revokeReason         String?
+  createdAt            DateTime @default(now())
+
+  @@unique([permissionGrantId, tenantId])
+  @@index([tenantId, clientId, caseId])
+  @@index([tenantId, revokedAt])
 }
 
 // ==================== TEAM/MANAGER HIERARCHY FOUNDATION (CANDIDATE-I1, additive-only) ====================

@@ -260,12 +260,13 @@ describe('WP-1d-5-9 CaseService.removeCaseLawyer (lifecycle — mevcut sorumlu s
           lawyerId: 'law-1',
           role: opts.removedResponsible ? 'RESPONSIBLE' : 'ASSIGNED',
           isResponsible: opts.removedResponsible,
+          lawyer: { userId: null },
         })),
         delete: del,
       },
     };
     (service as any).prisma = mockPrisma;
-    (service as any).auditService = { log: auditLog };
+    (service as any).auditService = { log: auditLog, logInTransaction: async (_tx: any, input: any) => auditLog(input) };
     return { service, del, auditLog };
   }
 

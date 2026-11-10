@@ -34,7 +34,7 @@ const makeService = () => {
     },
   });
   const auditLog = jest.fn(async () => undefined);
-  (service as any).auditService = { log: auditLog };
+  (service as any).auditService = { log: auditLog, logInTransaction: async (_tx: any, input: any) => auditLog(input) };
   return { service, auditLog };
 };
 
@@ -68,7 +68,7 @@ describe("WP-1d-2-pre — CASE_LAWYER audit metadata.caseId", () => {
       case: { findFirst: jest.fn(async () => ({ id: CASE_ID, tenantId: "t1" })) },
       // WP-1d-5-9: non-responsible silme doğrudan delete (eski $transaction/auto-promote yok).
       caseLawyer: {
-        findFirst: jest.fn(async () => ({ id: "cl-1", caseId: CASE_ID, lawyerId: "law-1", role: "ASSIGNED", isResponsible: false })),
+        findFirst: jest.fn(async () => ({ id: "cl-1", caseId: CASE_ID, lawyerId: "law-1", lawyer: { userId: null }, role: "ASSIGNED", isResponsible: false })),
         delete: jest.fn(async () => ({})),
       },
     };

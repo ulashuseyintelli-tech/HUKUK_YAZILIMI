@@ -18,11 +18,13 @@ const listRecords = vi.fn();
 const readRecord = vi.fn();
 const effectiveCapabilities = vi.fn();
 const actionCatalog = vi.fn();
+const specialCapabilities = vi.fn();
 
 vi.mock('@/lib/api/client-compliance', async (importOriginal) => {
   const orig = await importOriginal<typeof import('@/lib/api/client-compliance')>();
   return {
     ...orig,
+    clientSpecialCategoryAccessApi: { ...orig.clientSpecialCategoryAccessApi, capabilities: (...a: unknown[]) => specialCapabilities(...a) },
     clientComplianceSpecialCategoryApi: {
       listRecords: (...a: unknown[]) => listRecords(...a),
       readRecord: (...a: unknown[]) => readRecord(...a),
@@ -40,6 +42,8 @@ function wrap(ui: React.ReactElement) {
 }
 
 beforeEach(() => {
+  specialCapabilities.mockReset().mockImplementation((clientId: string) => Promise.resolve({ canManage: false,
+    scope: { clientId, caseId: null }, caseScopes: [], operations: Object.fromEntries(['LIST', 'READ', 'CREATE'].map(op => [op, { allowed: true, validUntil: new Date(Date.now() + 60_000).toISOString() }])) }));
   listRecords.mockReset(); readRecord.mockReset();
   effectiveCapabilities.mockReset(); actionCatalog.mockReset();
 });

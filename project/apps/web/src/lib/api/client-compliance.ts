@@ -182,8 +182,10 @@ export interface ClientSpecialCategoryMeta {
 /** readRecord — elevated + anahtar (K7.3) gerektirir; içerik ÇÖZÜLMÜŞ döner. */
 export interface ClientSpecialCategoryContent {
   id: string;
+  clientId: string;
   category: string;
   content: string;
+  accessExpiresAt: string;
 }
 
 export type EffectiveCapabilityReason =
@@ -216,13 +218,61 @@ export interface ClientActionCatalogItem {
 }
 
 export const clientComplianceSpecialCategoryApi = {
-  async listRecords(clientId: string): Promise<ClientSpecialCategoryMeta[]> {
-    const res = await apiClient.get(`/clients/${clientId}/special-category-records`);
-    return res.data ?? [];
-  },
-  async readRecord(recordId: string): Promise<ClientSpecialCategoryContent> {
-    const res = await apiClient.get(`/clients/special-category-records/${encodeURIComponent(recordId)}`);
+  async listRecords(clientId: string, caseId?: string): Promise<ClientSpecialCategoryMeta[]> {
+    const suffix = caseId ? `?caseId=${encodeURIComponent(caseId)}` : '';
+    const res = await apiClient.get(`/clients/${clientId}/special-category-records${suffix}`);
+    if (!Array.isArray(res.data)) throw new Error('Özel veri liste yanıtı doğrulanamadı.');
     return res.data;
+  },
+  async readRecord(recordId: string, caseId?: string): Promise<ClientSpecialCategoryContent> {
+    const suffix = caseId ? `?caseId=${encodeURIComponent(caseId)}` : '';
+    const res = await apiClient.get(`/clients/special-category-records/${encodeURIComponent(recordId)}${suffix}`);
+    if (res.data?.id !== recordId || !res.data?.clientId || typeof res.data?.content !== 'string' ||
+      !Number.isFinite(Date.parse(res.data?.accessExpiresAt))) throw new Error('Özel veri erişim yanıtı doğrulanamadı.');
+    return res.data;
+  },
+};
+
+export type K73Operation = 'LIST' | 'READ' | 'CREATE';
+export interface K73Capabilities {
+  canManage: boolean;
+  scope: { clientId: string; caseId: string | null };
+  caseScopes: Array<{ caseId: string | null; label: string }>;
+  operations: Record<K73Operation, { allowed: boolean; validUntil: string | null }>;
+}
+export interface K73Grant {
+  id: string; subjectUserId: string; caseId: string | null; operation: K73Operation;
+  validFrom: string; validUntil: string; revokedAt: string | null; reason: string; revokeReason: string | null;
+}
+const k73Query = (clientId: string, caseId?: string) => new URLSearchParams({ clientId, ...(caseId ? { caseId } : {}) }).toString();
+export const clientSpecialCategoryAccessApi = {
+  async capabilities(clientId: string, caseId?: string): Promise<K73Capabilities> {
+    const res = await apiClient.get(`/client-special-category-access/capabilities?${k73Query(clientId, caseId)}`);
+    if (!res.data?.operations || !Array.isArray(res.data?.caseScopes) || ['LIST', 'READ', 'CREATE'].some(op =>
+      typeof res.data.operations[op]?.allowed !== 'boolean' ||
+      (res.data.operations[op].allowed && !Number.isFinite(Date.parse(res.data.operations[op].validUntil))))) {
+      throw new Error('Özel veri yetki durumu doğrulanamadı.');
+    }
+    return res.data;
+  },
+  async candidates(clientId: string, caseId?: string, q = ''): Promise<{ users: Array<{ id: string; label: string }>; cases: Array<{ id: string; label: string }>; truncated: boolean }> {
+    const res = await apiClient.get(`/client-special-category-access/candidates?${k73Query(clientId, caseId)}&q=${encodeURIComponent(q)}`);
+    if (!Array.isArray(res.data?.users) || !Array.isArray(res.data?.cases)) throw new Error('Yetki adayları doğrulanamadı.');
+    return res.data;
+  },
+  async listGrants(clientId: string): Promise<K73Grant[]> {
+    const res = await apiClient.get(`/client-special-category-access/grants?${k73Query(clientId)}`);
+    if (!Array.isArray(res.data)) throw new Error('Yetki listesi doğrulanamadı.');
+    return res.data;
+  },
+  async grant(input: { clientId: string; caseId?: string; subjectUserId: string; operation: K73Operation; validFrom: string; validUntil: string; reason: string }) {
+    return (await apiClient.post('/client-special-category-access/grants', input)).data;
+  },
+  async revoke(id: string, reason: string) {
+    return (await apiClient.post(`/client-special-category-access/grants/${encodeURIComponent(id)}/revoke`, { reason })).data;
+  },
+  async dutyChange(subjectUserId: string, reason: string) {
+    return (await apiClient.post(`/client-special-category-access/subjects/${encodeURIComponent(subjectUserId)}/duty-change`, { reason })).data;
   },
 };
 
