@@ -37,6 +37,14 @@ import { CaseViewScopeService } from "../case-view-scope.service";
  * Gerçek HTTP + tek kullanımlık PostgreSQL. Yöntem farksaldır (bayrak kapalı ilişkisiz kullanıcı = taban). Yeni kural / anahtar /
  * bayrak YOK. Kod okuması gerçek erişim kanıtı değildir.
  */
+/** Sıra duyarsız karşılaştırma: sıralama ölçütü olmayan (ya da eşit değerli) listelerde satır sırası sorgudan sorguya değişebilir. */
+const canon = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(canon).sort((a, b) => (JSON.stringify(a) < JSON.stringify(b) ? -1 : 1))
+    : value && typeof value === "object"
+      ? Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, canon(v)]))
+      : value;
+
 const TEST_DB_URL = resolveTestDatabaseUrl(process.env);
 if (process.env.CI && !TEST_DB_URL) throw new Error("Case view scope misc reads require TEST_DATABASE_URL in CI.");
 const describeDb = TEST_DB_URL ? describe : describe.skip;
@@ -287,7 +295,7 @@ describeDb("F02 P3 tarama S5 / S6 / S7 — kalan dosyaya bağlı okumalar (gerç
       // (kiracısı büro A, dosyası büro B olan uyuşmazlık satırı bayrak kapalıyken kiracı süzgecinden geçer; bayrak açıkken dosya
       //  kiracısı belirleyicidir ve satır düşer — karşılaştırma bu satır dışında yapılır)
       const comparable = (body: unknown) => (Array.isArray(body) ? body.filter((x: { caseId?: string }) => x.caseId !== w.c.b1) : body);
-      if (!/evidence-report|stats/.test(r.name)) expect(comparable(allowed.body)).toEqual(comparable(all.body));
+      if (!/evidence-report|stats/.test(r.name)) expect(canon(comparable(allowed.body))).toEqual(canon(comparable(all.body)));
     });
 
     it("S6 GET automation/stats — sayaçlar da aynı süzgeçle üretilir", async () => {
@@ -341,7 +349,7 @@ describeDb("F02 P3 tarama S5 / S6 / S7 — kalan dosyaya bağlı okumalar (gerç
       expect(row(resp, w.c.c6)).toEqual({ ...row(before, w.missing), caseId: w.c.c6 });
       expect(row(resp, w.missing)).toEqual(row(before, w.missing));
       const allowed = await http.post(w.u.allow, `/ai/batch-suggest`, body);
-      expect(allowed.body).toEqual(before.body);
+      expect(canon(allowed.body)).toEqual(canon(before.body));
     });
   });
 
