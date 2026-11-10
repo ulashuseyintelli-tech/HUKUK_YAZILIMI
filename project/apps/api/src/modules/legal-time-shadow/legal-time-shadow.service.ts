@@ -1,5 +1,5 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { WorkflowStage } from "@prisma/client";
+import { Prisma, WorkflowStage } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { LegalDeadlineService } from "../legal-deadline/legal-deadline.service";
 
@@ -175,9 +175,10 @@ export class LegalTimeShadowService {
    *
    * Tamamen read-only; hiçbir mutasyon yapmaz, hiçbir karar mekanizmasını etkilemez.
    */
-  async buildEvidenceReport(tenantId: string) {
+  async buildEvidenceReport(tenantId: string, caseFilter?: Prisma.CaseWhereInput) {
+    // caseFilter (F02 P3 tarama S6): verilirse rapor yalnız bu dosya süzgecine uyan dosyaların satırlarından üretilir.
     const rows = await this.prisma.legalTimeShadowDiff.findMany({
-      where: { tenantId },
+      where: { tenantId, ...(caseFilter ? { case: caseFilter } : {}) },
       orderBy: { createdAt: "desc" },
     });
 

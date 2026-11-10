@@ -9,11 +9,12 @@ import { SettlementVerifierAuthorizationService } from './settlement-verifier-au
 import { BankSettlementEvidenceWriterService } from './bank-settlement-evidence-writer.service';
 import { BankCandidateSettlementTransitionService } from './bank-candidate-settlement-transition.service';
 import { BankLifecycleController } from './bank-lifecycle.controller';
+import { CaseViewScopeModule } from '../case/case-view-scope.module';
 
 @Module({
   // G3d: banka eşleşmesi tahsilatı kanonik CollectionService'ten üretir.
   // P2b-2: BANK_TRANSFER observe hook için GuidedOpenObserveService (observe-only; finans mantığı değişmez).
-  imports: [PrismaModule, ConfigModule, CollectionModule, PermissionDiagnosticsModule],
+  imports: [CaseViewScopeModule, PrismaModule, ConfigModule, CollectionModule, PermissionDiagnosticsModule],
   controllers: [BankController, BankLifecycleController],
   providers: [
     BankService,

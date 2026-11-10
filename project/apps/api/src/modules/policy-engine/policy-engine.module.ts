@@ -11,6 +11,7 @@ import { GateCheckerService } from './gate-checker';
 import { RuleEngineService } from './rule-engine';
 import { CpeRequiredGuard } from './decorators/cpe-required.guard';
 import { DeprecatedUsageTrackerService } from './deprecated-usage-tracker.service';
+import { CaseViewScopeModule } from '../case/case-view-scope.module';
 
 /**
  * Case Policy Engine Module
@@ -34,6 +35,7 @@ import { DeprecatedUsageTrackerService } from './deprecated-usage-tracker.servic
  */
 @Module({
   imports: [
+    CaseViewScopeModule, // F02 P3 tarama: dosya kapısı
     PrismaModule,
     ScheduleModule.forRoot(),
   ],

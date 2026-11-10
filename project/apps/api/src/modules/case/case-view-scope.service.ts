@@ -209,6 +209,10 @@ export class CaseViewScopeService {
         return (await this.prisma.claimItem.findFirst({ where, select }))?.caseId ?? null;
       case "collection": // P3 tarama S1: satır aktör kiracısında; dosya FK'li
         return (await this.prisma.collection.findFirst({ where, select }))?.caseId ?? null;
+      case "clientIntelStatement": // P3 tarama S5: satır aktör kiracısında; dosya FK'li
+        return (await this.prisma.clientIntelStatement.findFirst({ where, select }))?.caseId ?? null;
+      case "clientIntakeSubmission": // P3 tarama S5: satır aktör kiracısında; dosya FK'li
+        return (await this.prisma.clientIntakeSubmission.findFirst({ where, select }))?.caseId ?? null;
       case "collectionDisposition": // P3 tarama S3: satır aktör kiracısında; dosya FK'li
         return (await this.prisma.collectionDisposition.findFirst({ where, select }))?.caseId ?? null;
       case "clientPayoutManualReversal": // P3 tarama S3: satır aktör kiracısında; dosya FK'li
@@ -217,6 +221,14 @@ export class CaseViewScopeService {
         return null;
     }
   }
+}
+
+/**
+ * P3 tarama S7 — dosyaya FK'siz `caseId` alanıyla bağlanan satırlar (takvim, müvekkil bildirimi) için süzgeç: dosyasız satırlar
+ * kalır (mevcut yetkileri korunur), dosyalı satırlar yalnız görünen dosyalarla. `visible === null` → süzme yok.
+ */
+export function looseCaseIdWhere(visible: Set<string> | null): { OR: Array<{ caseId: null } | { caseId: { in: string[] } }> } | undefined {
+  return visible ? { OR: [{ caseId: null }, { caseId: { in: [...visible] } }] } : undefined;
 }
 
 /** S3: müvekkil düzeyi mali belge reddi — tek gövde (hangi dosyanın gizli olduğu / dosya sayısı verilmez). */
@@ -244,7 +256,9 @@ export type CaseScopedObjectKind =
   | "collection" // P3 tarama S1: GET /collections/:id
   | "collectionDisposition" // P3 tarama S3 (10.11.2026): POST /collection-dispositions/:id/distribution-recommendation
   | "clientPayoutManualReversal" // P3 tarama S3: GET /client-payout-manual-reversals/:id
-  | "clientOffset"; // P3 tarama S3: GET /client-offsets/:offsetId/detail (iki dosya: ödenecek + masraf)
+  | "clientOffset" // P3 tarama S3: GET /client-offsets/:offsetId/detail (iki dosya: ödenecek + masraf)
+  | "clientIntelStatement" // P3 tarama S5 (10.11.2026): GET /client-intel-statements/:id
+  | "clientIntakeSubmission"; // P3 tarama S5: GET /client-intake-submissions/:id
 
 /**
  * Handler / servis içi kapı yardımcısı: bayrak kapalı → undefined (bugünkü davranış, sorgu yok); bayrak açık + kapsam servisi

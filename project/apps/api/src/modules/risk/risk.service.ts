@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
-import { WorkflowStage } from "@prisma/client";
+import { Prisma, WorkflowStage } from "@prisma/client";
 import { filterConfirmedCollections, sumConfirmedCollections } from "../../common/collection-confirmed.util";
 
 export interface RiskFactors {
@@ -308,12 +308,14 @@ export class RiskService {
   }
 
   // Yüksek riskli dosyalar
-  async getHighRiskCases(tenantId: string, limit = 10) {
+  async getHighRiskCases(tenantId: string, limit = 10, caseFilter?: Prisma.CaseWhereInput) {
+    // caseFilter (F02 P3 tarama S6): verilirse liste yalnız bu dosya süzgecine uyan dosyaları taşır.
     return this.prisma.case.findMany({
       where: {
         tenantId,
         status: "ACTIVE",
         riskScore: { gte: 50 },
+        ...(caseFilter ? { AND: [caseFilter] } : {}),
       },
       orderBy: { riskScore: "desc" },
       take: limit,

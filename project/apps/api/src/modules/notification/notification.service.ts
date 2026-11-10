@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import {
@@ -188,12 +189,14 @@ export class NotificationService {
   }
 
   // Bekleyen tebligatları getir
-  async findPending(tenantId: string) {
+  async findPending(tenantId: string, caseFilter?: Prisma.CaseWhereInput) {
+    // caseFilter (F02 P3 tarama S7): verilirse dosyalı bildirimler yalnız bu süzgece uyan dosyalarla; dosyasız bildirimler kalır.
     return this.prisma.notificationQueue.findMany({
       where: {
         status: { in: [NotificationStatus.PENDING, NotificationStatus.SCHEDULED] },
         scheduledAt: { lte: new Date() },
         OR: [{ tenantId }, { case: { tenantId } }],
+        ...(caseFilter ? { AND: [{ OR: [{ caseId: null }, { case: caseFilter }] }] } : {}),
       },
       include: { case: { select: { fileNumber: true, tenantId: true } } },
       orderBy: { scheduledAt: "asc" },
@@ -201,12 +204,13 @@ export class NotificationService {
   }
 
   // Süresi dolan tebligatları getir
-  async findExpired(tenantId: string) {
+  async findExpired(tenantId: string, caseFilter?: Prisma.CaseWhereInput) {
     return this.prisma.notificationQueue.findMany({
       where: {
         status: NotificationStatus.DELIVERED,
         expiresAt: { lte: new Date() },
         OR: [{ tenantId }, { case: { tenantId } }],
+        ...(caseFilter ? { AND: [{ OR: [{ caseId: null }, { case: caseFilter }] }] } : {}), // F02 P3 tarama S7
       },
       include: { case: true },
     });

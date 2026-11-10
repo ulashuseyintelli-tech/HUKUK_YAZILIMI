@@ -1,5 +1,10 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
+import { looseCaseIdWhere } from "../case/case-view-scope.service";
+
+/** F02 P3 tarama S7: aday dosya kimliklerinden aktörün görebildiklerini çözer (`null` → süzme yok). */
+export type CaseVisibility = (caseIds: Array<string | null>) => Promise<Set<string> | null>;
 
 @Injectable()
 export class CalendarService {
@@ -7,15 +12,24 @@ export class CalendarService {
 
   constructor(private prisma: PrismaService) {}
 
-  async getEvents(tenantId: string, year: number, month: number) {
+  /**
+   * F02 P3 tarama S7 — takvim kaydı dosyaya FK'siz `caseId` ile bağlıdır: aynı sorgunun aday dosya kimlikleri çözülür,
+   * dosyalı kayıtlar yalnız görünen dosyalarla sınırlanır; dosyasız kayıtlar kalır. Verilmezse (bayrak kapalı) süzgeç yok.
+   */
+  private async caseScope(where: Prisma.CalendarEventWhereInput, caseVisibility?: CaseVisibility) {
+    if (!caseVisibility) return {};
+    const candidates = await this.prisma.calendarEvent.findMany({ where: { ...where, caseId: { not: null } }, distinct: ["caseId"], select: { caseId: true } });
+    const filter = looseCaseIdWhere(await caseVisibility(candidates.map((row) => row.caseId)));
+    return filter ? { AND: [filter] } : {};
+  }
+
+  async getEvents(tenantId: string, year: number, month: number, caseVisibility?: CaseVisibility) {
     const startDate = new Date(year, month - 1, 1);
     const endDate = new Date(year, month, 0, 23, 59, 59);
 
+    const where: Prisma.CalendarEventWhereInput = { tenantId, date: { gte: startDate, lte: endDate } };
     return this.prisma.calendarEvent.findMany({
-      where: {
-        tenantId,
-        date: { gte: startDate, lte: endDate },
-      },
+      where: { ...where, ...(await this.caseScope(where, caseVisibility)) },
       orderBy: { date: "asc" },
     });
   }
@@ -89,17 +103,14 @@ export class CalendarService {
     return { success: true };
   }
 
-  async getUpcomingEvents(tenantId: string, days: number = 7) {
+  async getUpcomingEvents(tenantId: string, days: number = 7, caseVisibility?: CaseVisibility) {
     const now = new Date();
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + days);
 
+    const where: Prisma.CalendarEventWhereInput = { tenantId, date: { gte: now, lte: futureDate }, isCompleted: false };
     return this.prisma.calendarEvent.findMany({
-      where: {
-        tenantId,
-        date: { gte: now, lte: futureDate },
-        isCompleted: false,
-      },
+      where: { ...where, ...(await this.caseScope(where, caseVisibility)) }, // süzgeç `take`ten ÖNCE uygulanır
       orderBy: { date: "asc" },
       take: 10,
     });

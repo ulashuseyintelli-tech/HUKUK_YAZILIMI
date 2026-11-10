@@ -6,6 +6,7 @@ import {
   Param,
   Body,
   UseGuards,
+  Optional,
 } from "@nestjs/common";
 import { NotificationService } from "./notification.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -14,6 +15,8 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { GuidedOpenObserveService } from "../permission-diagnostics/guided-open-observe.service";
 import { ActionCode } from "../policy-engine/types/action-code.enum";
 import { NotificationStatus } from "@prisma/client";
+import { CaseViewScoped } from "../case/case-view-scope.guard";
+import { CaseViewScopeService, requireCaseViewScope } from "../case/case-view-scope.service";
 
 // F02-D-2 dilim 1 (owner devam talimatı 30.10.2026): VIEWER tebligat oluşturamaz, durum yazamaz, durum sorgusu tetikleyemez,
 // SMS / e-posta GÖNDEREMEZ. Ölçülen boşluk: bu denetleyici yalnız JWT taşıyordu; servis katmanında rol kontrolü YOK
@@ -26,10 +29,12 @@ export class NotificationController {
     private notificationService: NotificationService,
     // P2b-2: Guided-Open observe adapter (diagnostic only; engelleme yok)
     private guidedOpenObserve: GuidedOpenObserveService,
+    @Optional() private readonly caseViewScope?: CaseViewScopeService,
   ) {}
 
   // Dosya için tebligatları getir
   @Get("case/:caseId")
+  @CaseViewScoped() // F02 P3 tarama S5–S7: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async findByCaseId(@CurrentUser("tenantId") tenantId: string, @Param("caseId") caseId: string) {
     return this.notificationService.findByCaseId(tenantId, caseId);
   }
@@ -65,6 +70,7 @@ export class NotificationController {
 
   // Ödeme süresi bilgisi
   @Get("case/:caseId/payment-deadline")
+  @CaseViewScoped() // F02 P3 tarama S5–S7: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async getPaymentDeadline(@CurrentUser("tenantId") tenantId: string, @Param("caseId") caseId: string) {
     return this.notificationService.getPaymentDeadline(tenantId, caseId);
   }
@@ -115,14 +121,17 @@ export class NotificationController {
 
   // Bekleyen tebligatlar
   @Get("pending")
-  async findPending(@CurrentUser("tenantId") tenantId: string) {
-    return this.notificationService.findPending(tenantId);
+  async findPending(@CurrentUser("tenantId") tenantId: string, @CurrentUser("id") actorUserId?: string) {
+    // S7: dosyalı bildirimler yalnız görünen dosyalarla; dosyasız (büro) bildirimleri mevcut yetkisinde kalır.
+    const caseFilter = await requireCaseViewScope(this.caseViewScope)?.caseRowFilter(tenantId, actorUserId);
+    return this.notificationService.findPending(tenantId, caseFilter);
   }
 
   // Süresi dolan tebligatlar
   @Get("expired")
-  async findExpired(@CurrentUser("tenantId") tenantId: string) {
-    return this.notificationService.findExpired(tenantId);
+  async findExpired(@CurrentUser("tenantId") tenantId: string, @CurrentUser("id") actorUserId?: string) {
+    const caseFilter = await requireCaseViewScope(this.caseViewScope)?.caseRowFilter(tenantId, actorUserId); // S7
+    return this.notificationService.findExpired(tenantId, caseFilter);
   }
 
   // İstatistikler

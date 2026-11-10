@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Req, Optional } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Request } from 'express';
 import { ClientIntelStatus } from '@prisma/client';
@@ -9,6 +9,8 @@ import {
   TransitionClientIntelStatementDto,
   SupersedeClientIntelStatementDto,
 } from './dto/client-intel-statement.dto';
+import { CaseViewScoped, CaseViewScopedByObject } from '../case/case-view-scope.guard';
+import { CaseViewScopeService, requireCaseViewScope } from '../case/case-view-scope.service';
 
 interface AuthRequest extends Request {
   user: { id: string; tenantId: string };
@@ -23,8 +25,10 @@ interface AuthRequest extends Request {
 // F02-D / J-27: VIEWER yazma reddi (create dahil; kapalı kural OWN-13 §51 / AK-1a; B4/B6 yüklemi). Okuma değişmez.
 @UseGuards(AuthGuard('jwt'), ViewerWriteDenyGuard)
 export class ClientIntelStatementController {
-  constructor(private readonly service: ClientIntelStatementService) {}
-
+  constructor(
+    private readonly service: ClientIntelStatementService,
+    @Optional() private readonly caseViewScope?: CaseViewScopeService,
+  ) {}
   /** Beyan oluştur (ACTIVE) — POST /client-intel-statements/case/:caseId */
   @Post('case/:caseId')
   async create(
@@ -67,6 +71,7 @@ export class ClientIntelStatementController {
 
   /** Dosya bazlı liste (default ACTIVE) — GET /client-intel-statements/case/:caseId?status= */
   @Get('case/:caseId')
+  @CaseViewScoped() // F02 P3 tarama S5–S7: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async listByCase(
     @Req() req: AuthRequest,
     @Param('caseId') caseId: string,
@@ -82,11 +87,14 @@ export class ClientIntelStatementController {
     @Param('debtorId') debtorId: string,
     @Query('status') status?: ClientIntelStatus,
   ) {
-    return this.service.listByDebtor(req.user.tenantId, debtorId, status);
+    // S5: borçlu hakkındaki beyanlar yalnız aktörün görebildiği dosyalardan gelir.
+    const caseFilter = await requireCaseViewScope(this.caseViewScope)?.caseRowFilter(req.user.tenantId, req.user.id);
+    return this.service.listByDebtor(req.user.tenantId, debtorId, status, caseFilter);
   }
 
   /** Detay — GET /client-intel-statements/:id */
   @Get(':id')
+  @CaseViewScopedByObject('clientIntelStatement', 'id') // F02 P3 tarama S5–S7: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async findOne(@Req() req: AuthRequest, @Param('id') id: string) {
     return this.service.findOne(req.user.tenantId, id);
   }

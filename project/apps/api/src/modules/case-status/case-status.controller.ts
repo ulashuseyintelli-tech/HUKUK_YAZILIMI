@@ -10,6 +10,7 @@ import { OfficeApprovalShadowService } from '../office-approval/office-approval-
 import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { LegalCaseStatus } from '@prisma/client';
 import { FinancialCaseCloseApprovalService } from './financial-case-close-approval.service';
+import { CaseViewScoped } from '../case/case-view-scope.guard';
 
 // P3-2C: confirm token binding'in sabit yüzey kimliği (issue↔consume aynı olmalı).
 const CHANGE_STATUS_SURFACE = 'POST /case-status/:caseId/change';
@@ -132,6 +133,7 @@ export class CaseStatusController {
   /// </remarks>
   // Statü geçmişi
   @Get(':caseId/history')
+  @CaseViewScoped() // F02 P3 tarama S5–S7: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   @UseGuards(JwtAuthGuard)
   async getStatusHistory(
     @CurrentUser('tenantId') tenantId: string,

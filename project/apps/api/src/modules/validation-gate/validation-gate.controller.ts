@@ -4,6 +4,7 @@ import { validateBankClaim, isBankClaim, getBankClaimInterestRules, BankClaimVal
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { CaseViewScoped } from '../case/case-view-scope.guard';
 
 // MasterValidations tipini export et
 export interface MasterValidationsResponse {
@@ -110,6 +111,7 @@ export class ValidationGateController {
    * Tenant-scoped (JwtAuthGuard). isValid her zaman true; yalnız warnings döner.
    */
   @Get(':caseId/pre-haciz-intelligence')
+  @CaseViewScoped() // F02 P3 tarama S5–S7: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   @UseGuards(JwtAuthGuard)
   async preHacizIntelligence(
     @CurrentUser('tenantId') tenantId: string,

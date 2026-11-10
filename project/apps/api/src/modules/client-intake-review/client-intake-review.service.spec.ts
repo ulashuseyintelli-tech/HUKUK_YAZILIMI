@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { PrismaModule } from '@/prisma/prisma.module';
+import { CaseViewScopeModule } from '../case/case-view-scope.module';
 import { ClientIntakeReviewService } from './client-intake-review.service';
 import { ClientIntakeReviewModule } from './client-intake-review.module';
 
@@ -137,7 +138,9 @@ describe('ClientIntakeReviewService', () => {
   describe('⛔ MİMARİ SINIR (yapısal)', () => {
     it('ReviewQueueModule YALNIZ PrismaModule import eder (promote/kanonik YOK)', () => {
       const imports = Reflect.getMetadata('imports', ClientIntakeReviewModule) || [];
-      expect(imports).toEqual([PrismaModule]);
+      // F02 P3 tarama S5 (owner kararı 09.11.2026): okuma uçlarının dosya görünüm kapısı için CaseViewScopeModule eklendi.
+      // Sınırın amacı değişmedi: promote / kanonik modüller (aşağıdaki ad denetimi) yine YOK.
+      expect(imports).toEqual([CaseViewScopeModule, PrismaModule]);
       const names = imports.map((m: any) => m?.name || '');
       expect(names.some((n: string) => /Promotion|IntelStatement|Debtor|Asset/.test(n))).toBe(false);
     });

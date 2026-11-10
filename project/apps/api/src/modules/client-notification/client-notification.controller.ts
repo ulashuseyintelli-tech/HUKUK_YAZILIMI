@@ -10,6 +10,7 @@ import {
   ForbiddenException,
   BadRequestException,
   Res,
+  Optional,
 } from "@nestjs/common";
 import type { Response } from "express";
 import { ClientNotificationHistoryAccessService } from "./client-notification-history-access.service";
@@ -29,6 +30,7 @@ import {
 } from "../client/client-workspace-command-authority";
 import { ClientNotificationAuthorityAdapter } from "./client-notification-authority.adapter";
 import { OfficeF01AuthorizationGuard } from "../office-approval/office-f01-authorization.guard";
+import { CaseViewScopeService, requireCaseViewScope } from "../case/case-view-scope.service";
 
 @Controller("client-notifications")
 @UseGuards(JwtAuthGuard)
@@ -36,7 +38,8 @@ export class ClientNotificationController {
   constructor(
     private service: ClientNotificationService,
     private readonly authority: ClientNotificationAuthorityAdapter,
-    private readonly history: ClientNotificationHistoryAccessService
+    private readonly history: ClientNotificationHistoryAccessService,
+    @Optional() private readonly caseViewScope?: CaseViewScopeService,
   ) {}
 
   // Bildirim Kontrol Merkezi — sağlık/özet/teşhis. ADMIN gate: teslimat istatistiği ve hata
@@ -44,14 +47,17 @@ export class ClientNotificationController {
   @Get("overview")
   async getOverview(
     @CurrentUser("tenantId") tenantId: string,
-    @CurrentUser("role") role: string
+    @CurrentUser("role") role: string,
+    @CurrentUser("id") actorUserId?: string
   ) {
     if (role !== "ADMIN") {
       throw new ForbiddenException(
         "Bildirim Kontrol Merkezi'ne yalnız yönetici (ADMIN) erişebilir"
       );
     }
-    const data = await this.service.getNotificationOverview(tenantId);
+    // S5: son gönderimler listesinde dosyalı bildirimler yalnız görünen dosyalarla; dosyasız bildirimler mevcut (ADMIN) yetkisinde kalır.
+    const viewScope = requireCaseViewScope(this.caseViewScope);
+    const data = await this.service.getNotificationOverview(tenantId, viewScope ? (caseIds) => viewScope.visibleCaseIds(tenantId, actorUserId, caseIds) : undefined);
     return { success: true, data };
   }
 

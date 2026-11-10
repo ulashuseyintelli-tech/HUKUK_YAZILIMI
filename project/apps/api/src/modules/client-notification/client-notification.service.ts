@@ -1,6 +1,7 @@
 import { assertClientObjectScope } from '../client/client-object-scope';
 import { Injectable, Logger, BadRequestException, NotFoundException, ForbiddenException, Optional } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
+import { looseCaseIdWhere } from "../case/case-view-scope.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { OfficeService } from "../office/office.service";
 import { fetchWithTimeout } from "../../common/fetch-with-timeout.util";
@@ -287,7 +288,15 @@ export class ClientNotificationService {
    * - ClientNotificationController.getOverview() → GET /client-notifications/overview (ADMIN-gate) — Bildirim Kontrol Merkezi sayfası
    * </remarks>
    */
-  async getNotificationOverview(tenantId: string) {
+  async getNotificationOverview(tenantId: string, caseVisibility?: (caseIds: Array<string | null>) => Promise<Set<string> | null>) {
+    // caseVisibility (F02 P3 tarama S5): verilirse "son gönderimler" listesinde dosyalı bildirimler yalnız görünen dosyalarla
+    // sınırlanır (bildirim dosyaya FK'siz `caseId` ile bağlıdır); dosyasız bildirimler ve sayaçlar değişmez.
+    let recentWhere: Prisma.ClientNotificationWhereInput = { tenantId };
+    if (caseVisibility) {
+      const candidates = await this.prisma.clientNotification.findMany({ where: { tenantId, caseId: { not: null } }, distinct: ["caseId"], select: { caseId: true } });
+      const filter = looseCaseIdWhere(await caseVisibility(candidates.map((row) => row.caseId)));
+      if (filter) recentWhere = { tenantId, AND: [filter] };
+    }
     const now = new Date();
     const since24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const since7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -319,7 +328,7 @@ export class ClientNotificationService {
       }),
       // Son gönderimler (en yeni 20) — "gitti mi?" sorusu
       this.prisma.clientNotification.findMany({
-        where: { tenantId },
+        where: recentWhere,
         orderBy: { createdAt: "desc" },
         take: 20,
         select: {

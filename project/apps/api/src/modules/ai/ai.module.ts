@@ -4,9 +4,10 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { AiService } from './ai.service';
 import { AiDocumentService } from './ai-document.service';
 import { AiController } from './ai.controller';
+import { CaseViewScopeModule } from '../case/case-view-scope.module';
 
 @Module({
-  imports: [ConfigModule, PrismaModule],
+  imports: [CaseViewScopeModule, ConfigModule, PrismaModule],
   controllers: [AiController],
   providers: [AiService, AiDocumentService],
   exports: [AiService, AiDocumentService],

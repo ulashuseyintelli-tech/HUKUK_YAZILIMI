@@ -106,6 +106,8 @@ describe("F02 P3-D3b-2 — kendi kimlikli dosya nesnesi okuma rota envanteri (fa
       collectionDisposition: "Dağıtım kaydı bulunamadı",
       clientPayoutManualReversal: "Manual reversal workflow bulunamadi",
       clientOffset: "Mahsup kaydı bulunamadı",
+      clientIntelStatement: "İstihbarat beyanı bulunamadı",
+      clientIntakeSubmission: "Gönderim bulunamadı",
     });
   });
 
