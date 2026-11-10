@@ -400,3 +400,4 @@ src/modules/fee-engine/__tests__/fee-preview-case-summary-parity.spec.ts
 src/modules/fee-engine/__tests__/fee-preview-service-callers.spec.ts
 # Asama masraf seti ISTEK ANAHTARI saf kararlari (anahtar dogrulama, parmak izi, tekrar / cakisma / iptal karari).
 src/modules/expense-request/__tests__/stage-expense-idempotency.spec.ts
+src/modules/client/__tests__/client-bank-account-h13a.spec.ts

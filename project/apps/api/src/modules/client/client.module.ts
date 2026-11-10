@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ClientAddressController } from './client-address.controller';
 import { ClientAddressService } from './client-address.service';
+import { ClientBankAccountController } from './client-bank-account.controller';
+import { ClientBankAccountService } from './client-bank-account.service';
 import { ClientController } from './client.controller';
 import { ClientService } from './client.service';
 // C3-B01 (§13/5): KVKK açık rıza kaydı — registry + consent servis/controller.
@@ -40,8 +42,8 @@ import { PoaModule } from '../poa/poa.module';
   // tek-segment statik collection route'larını gölgeler (`/clients/disclosure-texts`,
   // `/clients/data-subject-requests`, `/clients/legal-holds` → 404 "Müvekkil bulunamadı").
   // Bu iki controller'ı öne almak statikleri `:id`'den önce kaydeder; sıra DEĞİŞTİRİLMEMELİDİR.
-  controllers: [ClientKvkkRightsController, ClientLegalHoldController, ClientController, ClientAddressController, ClientConsentController, ClientSpecialCategoryController, ClientSpecialCategoryAccessController, ClientPoaCapabilityController],
-  providers: [ClientService, ClientAddressService, PoaExpiryDeliveryService, ClientConsentService, ClientDisclosureService, ClientDataSubjectRequestService, ClientLegalHoldService, ClientSpecialCategoryService, ClientSpecialCategoryAccessService, ClientPoaCapabilityService, ClientUyapTransferGateService],
+  controllers: [ClientKvkkRightsController, ClientLegalHoldController, ClientController, ClientAddressController, ClientBankAccountController, ClientConsentController, ClientSpecialCategoryController, ClientSpecialCategoryAccessController, ClientPoaCapabilityController],
+  providers: [ClientService, ClientAddressService, ClientBankAccountService, PoaExpiryDeliveryService, ClientConsentService, ClientDisclosureService, ClientDataSubjectRequestService, ClientLegalHoldService, ClientSpecialCategoryService, ClientSpecialCategoryAccessService, ClientPoaCapabilityService, ClientUyapTransferGateService],
   exports: [ClientService, ClientConsentService, ClientDisclosureService, ClientDataSubjectRequestService, ClientLegalHoldService, ClientSpecialCategoryService, ClientPoaCapabilityService, ClientUyapTransferGateService],
 })
 export class ClientModule {}

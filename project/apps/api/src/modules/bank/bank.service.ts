@@ -125,6 +125,8 @@ export class BankService {
 
   /**
    * Banka hesabı ekle
+   * Consumers: BankController.addAccount; bank-mock-containment.spec.ts.
+   * Client profile accounts are written only by ClientBankAccountService (H-13/A).
    */
   async addBankAccount(tenantId: string, data: {
     bankCode: string;
@@ -142,6 +144,9 @@ export class BankService {
     isPrimary?: boolean;
     notes?: string;
   }) {
+    if (data.ownerType === 'CLIENT') {
+      throw new BadRequestException({ code: 'CLIENT_BANK_PROFILE_ROUTE_REQUIRED', message: 'Müvekkil banka hesabını müvekkil profilinden kaydedin.' });
+    }
     // IBAN formatını doğrula
     const cleanIban = data.iban.replace(/\s/g, '').toUpperCase();
     if (!this.isValidIban(cleanIban)) {

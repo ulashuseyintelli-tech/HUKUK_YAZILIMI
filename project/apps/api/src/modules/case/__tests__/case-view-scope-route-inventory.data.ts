@@ -360,6 +360,10 @@ export const CASE_RELATED_CONTROLLERS: Readonly<Record<string, readonly RouteEnt
     ["POST /clients/:clientId/addresses/:addressId/archive", "YAZIM", ""],
     ["POST /clients/:clientId/addresses/:addressId/restore", "YAZIM", ""],
   ],
+  "client/client-bank-account.controller.ts": [
+    ["GET /clients/:clientId/bank-accounts", "BASKA_KAPI", "H13/A: mevcut K16 canonical Client nesne kapsamı her zaman zorunlu; yazma ayrıca mevcut hassas Client işlem yetkisini gerektirir"],
+    ["POST /clients/:clientId/bank-accounts", "YAZIM", ""],
+  ],
   "client/client-consent.controller.ts": [
     ["GET /clients/:id/consents", "BASKA_KAPI", "K16 müvekkil nesne kapsamı (CaseLawyer ∪ CaseStaff canView; bayraksız, her zaman açık)"],
     ["POST /clients/:id/consents", "YAZIM", ""],
