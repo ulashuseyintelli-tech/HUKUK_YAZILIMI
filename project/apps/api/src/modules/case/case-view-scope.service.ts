@@ -183,6 +183,10 @@ export class CaseViewScopeService {
         const row = await this.prisma.assetQuery.findFirst({ where, select: { caseDebtorId: true } });
         return row ? this.caseIdOf(tenantId, "caseDebtor", row.caseDebtorId) : null;
       }
+      case "claimItem": // P3 tarama S1: satır aktör kiracısında; dosya FK'li
+        return (await this.prisma.claimItem.findFirst({ where, select }))?.caseId ?? null;
+      case "collection": // P3 tarama S1: satır aktör kiracısında; dosya FK'li
+        return (await this.prisma.collection.findFirst({ where, select }))?.caseId ?? null;
       default:
         return null;
     }
@@ -203,7 +207,9 @@ export type CaseScopedObjectKind =
   | "clientInfoRequest" // P3 tarama S4 (10.11.2026): GET /address-discovery/client-info-request/:id
   | "uyapQuery" // P3 tarama S4: GET /address-discovery/uyap-query/:id
   | "institutionLetter" // P3 tarama S4: GET /address-discovery/institution-letter/:id
-  | "assetQuery"; // P3 tarama S4: GET /asset-queries/:queryId
+  | "assetQuery" // P3 tarama S4: GET /asset-queries/:queryId
+  | "claimItem" // P3 tarama S1 (10.11.2026): GET /claim-items/:id
+  | "collection"; // P3 tarama S1: GET /collections/:id
 
 /**
  * Handler / servis içi kapı yardımcısı: bayrak kapalı → undefined (bugünkü davranış, sorgu yok); bayrak açık + kapsam servisi

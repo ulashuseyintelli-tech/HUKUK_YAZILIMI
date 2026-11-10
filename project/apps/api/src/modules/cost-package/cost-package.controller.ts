@@ -3,6 +3,7 @@ import { CostPackageService, ComputeExpenseParams } from './cost-package.service
 import { AuthGuard } from '@nestjs/passport';
 import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { Request } from 'express';
+import { CaseViewScopedBy } from '../case/case-view-scope.guard';
 
 interface AuthRequest extends Request {
   user: { id: string; tenantId: string };
@@ -31,6 +32,7 @@ export class CostPackageController {
    */
   @AllowViewerReadOnlyPost() // saf: masraf önerisi hesabı (computeExpenseRequest yalnız okur) — DB yazma / denetim izi / dış çağrı yok (servis kaynağı yan etki haritası)
   @Post('compute')
+  @CaseViewScopedBy('body', 'caseId', { optional: true }) // F02 P3 tarama S1: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async computeExpenseRequest(
     @Body() body: ComputeExpenseParams,
     @Req() req: AuthRequest,

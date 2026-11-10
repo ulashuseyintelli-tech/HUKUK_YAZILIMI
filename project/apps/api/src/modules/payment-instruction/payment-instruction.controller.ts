@@ -19,6 +19,7 @@ import {
   PAYMENT_PURPOSE_TO_ACCOUNT,
   TargetAccountType,
 } from './payment-instruction.types';
+import { CaseViewScopedBy } from '../case/case-view-scope.guard';
 
 // F02-D-2 dilim 1 (owner devam talimatı 30.10.2026): VIEWER ödeme talimatı oluşturamaz (mali yazma). Ölçülen boşluk: yalnız
 // JWT; servis (PaymentInstructionService) rol sormuyor. Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`.
@@ -40,6 +41,7 @@ export class PaymentInstructionController {
    * x-tenant-id header fallback'i kaldırıldı (cross-tenant yazma vektörü kapatıldı).
    */
   @Post()
+  @CaseViewScopedBy('body') // F02 P3 tarama S1: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async createPaymentInstruction(
     @CurrentUser('tenantId') tenantId: string,
     @Body() dto: CreatePaymentInstructionDto,
@@ -57,6 +59,7 @@ export class PaymentInstructionController {
    * Güvenlik: tenantId yalnızca JwtAuthGuard'lı context'ten (@CurrentUser).
    */
   @Post('debtor')
+  @CaseViewScopedBy('body') // F02 P3 tarama S1: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async createDebtorPayment(
     @CurrentUser('tenantId') tenantId: string,
     @Body() body: { caseId: string; amount: number; debtorName: string },
@@ -79,6 +82,7 @@ export class PaymentInstructionController {
    * Güvenlik: tenantId yalnızca JwtAuthGuard'lı context'ten (@CurrentUser).
    */
   @Post('fee')
+  @CaseViewScopedBy('body') // F02 P3 tarama S1: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async createFeePayment(
     @CurrentUser('tenantId') tenantId: string,
     @Body() body: { caseId: string; purpose: PaymentPurpose; amount: number },

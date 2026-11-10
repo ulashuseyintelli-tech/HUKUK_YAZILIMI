@@ -12,6 +12,7 @@ import { SummaryEngineService, SummaryResult } from './summary-engine.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { CaseViewScoped } from '../case/case-view-scope.guard';
 
 // F02-D-2 dilim 5 (owner ek talimatı 30.10.2026): VIEWER ödeme kaydı / talep tutarı YAZAMAZ (2 yazma). Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`; okuma uçları DEĞİŞMEZ.
 @Controller('summary-engine')
@@ -24,6 +25,7 @@ export class SummaryEngineController {
    * GET /api/summary-engine/case/:caseId
    */
   @Get('case/:caseId')
+  @CaseViewScoped() // F02 P3 tarama S1: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async getCaseSummary(
     @CurrentUser('tenantId') tenantId: string,
     @Param('caseId') caseId: string,

@@ -12,9 +12,10 @@ import {
   CekAutoGenerateFormationService,
   cekAutoGenerateFormationOptionsFromEnv,
 } from './formation-cek/cek-auto-generate-formation.service';
+import { CaseViewScopeModule } from '../case/case-view-scope.module';
 
 @Module({
-  imports: [PrismaModule, ClaimEngineModule, OfficeApprovalModule, DomainEventIngestModule],
+  imports: [CaseViewScopeModule, PrismaModule, ClaimEngineModule, OfficeApprovalModule, DomainEventIngestModule],
   controllers: [ClaimItemController],
   providers: [
     ClaimItemService,

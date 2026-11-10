@@ -2052,8 +2052,13 @@ export class CollectionService {
    * Çağrıldığı yer: CollectionController.getSummary() → GET /collections/summary.
    * Para birimi seçilmemiş karışık kümede miktar toplamı üretilmez.
    */
-  async getSummary(tenantId: string, caseId?: string, currency?: string): Promise<CollectionSummary> {
-    const scope = await resolveCollectionReportScope(this.prisma, { tenantId, ...(caseId ? { caseId } : {}) }, currency);
+  async getSummary(tenantId: string, caseId?: string, currency?: string, caseFilter?: Prisma.CaseWhereInput): Promise<CollectionSummary> {
+    // caseFilter (F02 P3 tarama S1): verilirse toplamlar yalnız bu dosya süzgecine uyan dosyaların tahsilatlarından oluşur.
+    const scope = await resolveCollectionReportScope(
+      this.prisma,
+      { tenantId, ...(caseId ? { caseId } : {}), ...(caseFilter ? { case: caseFilter } : {}) },
+      currency,
+    );
     const where = scope.where;
 
     // Toplam tahsilat

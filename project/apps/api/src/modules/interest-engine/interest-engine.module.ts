@@ -32,6 +32,7 @@ import { StrategySelectorService } from './strategy/strategy-selector.service';
 import { InterestEngineMetricsService } from './metrics/interest-engine-metrics.service';
 // G4c-1: compute-on-demand bakiye orkestrasyonu (additive, read-only)
 import { CaseBalanceService } from './orchestration/case-balance.service';
+import { CaseViewScopeModule } from '../case/case-view-scope.module';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // AUDIT SERVICE PROVIDER (Environment-based selection)
@@ -67,7 +68,7 @@ const AuditServiceProvider = {
 };
 
 @Module({
-  imports: [PrismaModule, ScheduleModule.forRoot()],
+  imports: [CaseViewScopeModule, PrismaModule, ScheduleModule.forRoot()],
   controllers: [InterestEngineController],
   providers: [
     // Legacy services (deprecated, kept for backward compatibility)

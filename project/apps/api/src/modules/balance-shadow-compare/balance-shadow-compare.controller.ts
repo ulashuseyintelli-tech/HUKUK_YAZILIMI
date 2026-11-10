@@ -8,6 +8,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { BalanceShadowCompareService, BalanceShadowCompareResult } from './balance-shadow-compare.service';
 import { turkeyToday } from '../../common/turkey-calendar';
+import { CaseViewScoped } from '../case/case-view-scope.guard';
 
 @Controller('balance-compare')
 export class BalanceShadowCompareController {
@@ -22,6 +23,7 @@ export class BalanceShadowCompareController {
    * <remarks>Çağrıldığı yerler: HTTP GET /balance-compare/case/:caseId (Av./ürün cutover analizi).</remarks>
    */
   @Get('case/:caseId')
+  @CaseViewScoped() // F02 P3 tarama S1: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   @UseGuards(JwtAuthGuard)
   async getShadowCompare(
     @CurrentUser('tenantId') tenantId: string,

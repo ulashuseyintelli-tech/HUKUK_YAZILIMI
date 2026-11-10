@@ -18,6 +18,7 @@ import {
   HttpStatus,
   BadRequestException,
   NotFoundException,
+  Optional,
   UseGuards,
 } from '@nestjs/common';
 // G4c-2: read-only bakiye endpoint (auth-context tenantId)
@@ -37,6 +38,8 @@ import { InterestTypeCode } from './types/domain.types';
 // E-G2a: fixedRate zorunluluk predicate'i + % → 0-1 dönüştürücü (TEK kaynak, packages/types).
 import { requiresFixedRate, percentToRate } from '@shared/types';
 import { turkeyToday } from '../../common/turkey-calendar';
+import { CaseViewScoped } from '../case/case-view-scope.guard';
+import { CaseViewScopeService, requireCaseViewScope } from '../case/case-view-scope.service';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DTOs
@@ -116,7 +119,17 @@ export class InterestEngineController {
     private readonly traceExporter: TraceExporterService,
     private readonly metrics: InterestEngineMetricsService,
     private readonly caseBalance: CaseBalanceService,
+    @Optional() private readonly caseViewScope?: CaseViewScopeService,
   ) {}
+
+  /**
+   * F02 P3 tarama S1 — hesap kaydı dosyaya bağlıdır (kayıt kimliğiyle okunur; dosya kimliği yolda değil): kaydın dosyası
+   * aktöre görünmüyorsa kayıt da görünmez. Bayrak kapalı → true (ek sorgu yok). Bayrak açık + servis yok → 403.
+   */
+  private async recordCaseVisible(tenantId: string, actorUserId: string | undefined, caseId: unknown): Promise<boolean> {
+    const scope = requireCaseViewScope(this.caseViewScope);
+    return scope ? scope.isCaseVisible(tenantId, actorUserId, caseId) : true;
+  }
 
   /**
    * GET /interest-engine/case/:caseId/balance
@@ -128,6 +141,7 @@ export class InterestEngineController {
    * <remarks>Çağrıldığı yerler: HTTP GET /interest-engine/case/:caseId/balance (frontend/araç gözlemi).</remarks>
    */
   @Get('case/:caseId/balance')
+  @CaseViewScoped() // F02 P3 tarama S1: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   @UseGuards(JwtAuthGuard)
   async getCaseBalance(
     @CurrentUser('tenantId') tenantId: string,
@@ -150,6 +164,7 @@ export class InterestEngineController {
    * <remarks>Çağrıldığı yerler: HTTP GET /interest-engine/case/:caseId/balance/display (cutover panel kaynağı, flag arkası).</remarks>
    */
   @Get('case/:caseId/balance/display')
+  @CaseViewScoped() // F02 P3 tarama S1: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   @UseGuards(JwtAuthGuard)
   async getCaseBalanceDisplay(
     @CurrentUser('tenantId') tenantId: string,
@@ -398,10 +413,11 @@ export class InterestEngineController {
    */
   @Get('records/:id')
   @UseGuards(JwtAuthGuard)
-  async getRecord(@CurrentUser('tenantId') tenantId: string, @Param('id') id: string): Promise<unknown> {
+  async getRecord(@CurrentUser('tenantId') tenantId: string, @Param('id') id: string, @CurrentUser('id') actorUserId?: string): Promise<unknown> {
     const record = await this.auditWriter.getRecord(id);
 
-    if (!record || record.tenantId !== tenantId) {
+    // S1: kapsam dışı dosyanın kaydı = var olmayan kayıt (aynı 404)
+    if (!record || record.tenantId !== tenantId || !(await this.recordCaseVisible(tenantId, actorUserId, record.caseId))) {
       throw new NotFoundException(`Record ${id} not found`);
     }
 
@@ -420,8 +436,11 @@ export class InterestEngineController {
   async queryRecords(
     @CurrentUser('tenantId') tenantId: string,
     @Query() query: RecordQueryDto,
+    @CurrentUser('id') actorUserId?: string,
   ): Promise<unknown[]> {
     if (query.caseId) {
+      // S1: kapsam dışı dosya = kaydı olmayan / var olmayan dosya (aynı boş liste)
+      if (!(await this.recordCaseVisible(tenantId, actorUserId, query.caseId))) return [];
       return this.auditWriter.getRecordsForCase(query.caseId, tenantId);
     }
 
@@ -438,9 +457,10 @@ export class InterestEngineController {
    */
   @Get('trace/:recordId')
   @UseGuards(JwtAuthGuard)
-  async getTrace(@CurrentUser('tenantId') tenantId: string, @Param('recordId') recordId: string): Promise<unknown> {
+  async getTrace(@CurrentUser('tenantId') tenantId: string, @Param('recordId') recordId: string, @CurrentUser('id') actorUserId?: string): Promise<unknown> {
     const record = await this.auditWriter.getRecord(recordId);
-    if (!record || record.tenantId !== tenantId) {
+    // S1: kapsam dışı dosyanın izi = var olmayan iz (aynı 404)
+    if (!record || record.tenantId !== tenantId || !(await this.recordCaseVisible(tenantId, actorUserId, record.caseId))) {
       throw new NotFoundException(`Trace for record ${recordId} not found`);
     }
 
