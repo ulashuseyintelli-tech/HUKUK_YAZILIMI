@@ -4,7 +4,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { WorkflowEngine } from "./workflow-engine.service";
 import { PoaExpiryDeliveryService } from "./poa-expiry-delivery.service";
 import { DebtorCrossCaseNotificationService } from "../debtor/debtor-cross-case-notification.service";
-import { CaseStatus, WorkflowStage, NotificationStatus, LegalCaseStatus, PoaStatus } from "@prisma/client";
+import { CaseStatus, WorkflowStage, NotificationStatus, LegalCaseStatus, PoaStatus, Prisma } from "@prisma/client";
 import { filterConfirmedCollections, sumConfirmedCollections } from "../../common/collection-confirmed.util";
 import { SCHEDULER_TIMEZONE } from "../../common/scheduler-timezone";
 import { reportCronJobFailure } from "../../common/cron-failure-reporting";
@@ -453,17 +453,18 @@ export class AutomationService {
   }
 
   // İstatistikler
-  async getAutomationStats(tenantId: string): Promise<any> {
+  async getAutomationStats(tenantId: string, caseFilter?: Prisma.CaseWhereInput): Promise<any> {
+    // caseFilter (F02 P3 tarama S6): verilirse sayaçlar ve son kararlar yalnız bu dosya süzgecine uyan dosyalardan üretilir.
     // SEC-XTEN-AUTOMATION-STATS-01: tenant context yoksa fail-closed (sorgu hiç çalışmaz).
     if (!tenantId) {
       return { totalAutoCases: 0, totalAutoActions: 0, recentActions: [] };
     }
 
     const [totalAuto, totalProcessed, recentActions] = await Promise.all([
-      this.prisma.case.count({ where: { isAutoMode: true, tenantId } }),
-      this.prisma.decisionLog.count({ where: { isAutomatic: true, case: { tenantId } } }),
+      this.prisma.case.count({ where: { isAutoMode: true, tenantId, ...(caseFilter ? { AND: [caseFilter] } : {}) } }),
+      this.prisma.decisionLog.count({ where: { isAutomatic: true, case: caseFilter ?? { tenantId } } }),
       this.prisma.decisionLog.findMany({
-        where: { isAutomatic: true, case: { tenantId } },
+        where: { isAutomatic: true, case: caseFilter ?? { tenantId } },
         orderBy: { createdAt: "desc" },
         take: 10,
         include: { case: { select: { fileNumber: true } } },

@@ -11,6 +11,7 @@ import { EscalationModule } from "../escalation/escalation.module";
 import { PoaExpiryDeliveryService } from "./poa-expiry-delivery.service";
 import { DebtorModule } from "../debtor/debtor.module";
 import { LegalDeadlineModule } from "../legal-deadline/legal-deadline.module";
+import { CaseViewScopeModule } from "../case/case-view-scope.module";
 
 /**
  * Automation Module
@@ -26,6 +27,7 @@ import { LegalDeadlineModule } from "../legal-deadline/legal-deadline.module";
  */
 @Module({
   imports: [
+    CaseViewScopeModule, // F02 P3 tarama: dosya kapısı
     ScheduleModule.forRoot(),
     PrismaModule,
     forwardRef(() => ExpenseRequestModule),

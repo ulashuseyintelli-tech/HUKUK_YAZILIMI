@@ -85,6 +85,8 @@ export const CASE_OBJECT_NOT_FOUND: Readonly<Record<CaseScopedObjectKind, string
   collectionDisposition: "Dağıtım kaydı bulunamadı", // DistributionRecommendationService.generate ile aynı gövde
   clientPayoutManualReversal: "Manual reversal workflow bulunamadi", // ClientPayoutManualReversalReadService.detail ile aynı gövde
   clientOffset: "Mahsup kaydı bulunamadı", // ClientOffsetService.getOffsetDetail ile aynı gövde
+  clientIntelStatement: "İstihbarat beyanı bulunamadı", // ClientIntelStatementService.findOne ile aynı gövde
+  clientIntakeSubmission: "Gönderim bulunamadı", // ClientIntakeReviewService.getOne ile aynı gövde
 };
 
 /**

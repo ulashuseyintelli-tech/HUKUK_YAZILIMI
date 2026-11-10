@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Req, Optional } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { Request } from 'express';
@@ -12,6 +12,8 @@ import {
   runAuthorizedClientWorkspaceCommand,
 } from '../client/client-workspace-command-authority';
 import { ClientIntakeReviewAuthorizationService } from './client-intake-review-authorization.service';
+import { CaseViewScopedBy, CaseViewScopedByObject } from '../case/case-view-scope.guard';
+import { CaseViewScopeService, requireCaseViewScope } from '../case/case-view-scope.service';
 
 interface AuthRequest extends Request {
   user: { id: string; tenantId: string; role?: string };
@@ -29,6 +31,7 @@ export class ClientIntakeReviewController {
     private readonly service: ClientIntakeReviewService,
     private readonly reviewAuthorization: ClientIntakeReviewAuthorizationService,
     private readonly audit: AuditService,
+    @Optional() private readonly caseViewScope?: CaseViewScopeService,
   ) {}
 
   /**
@@ -62,16 +65,20 @@ export class ClientIntakeReviewController {
 
   /** Kuyruk listesi (default CLIENT_SUBMITTED+IN_REVIEW) — GET /client-intake-submissions?status=&caseId= */
   @Get('client-intake-submissions')
+  @CaseViewScopedBy('query', 'caseId', { optional: true }) // F02 P3 tarama S5–S7: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async listQueue(
     @Req() req: AuthRequest,
     @Query('status') status?: ClientIntakeSubmissionStatus,
     @Query('caseId') caseId?: string,
   ) {
-    return this.service.listQueue(req.user.tenantId, { status, caseId });
+    // S5: inceleme kuyruğu yalnız aktörün görebildiği dosyaların gönderimlerini taşır (dosya kimliği verilmişse kapı doğrular).
+    const caseFilter = await requireCaseViewScope(this.caseViewScope)?.caseRowFilter(req.user.tenantId, req.user.id);
+    return this.service.listQueue(req.user.tenantId, { status, caseId }, caseFilter);
   }
 
   /** Detay + alanlar — GET /client-intake-submissions/:id */
   @Get('client-intake-submissions/:id')
+  @CaseViewScopedByObject('clientIntakeSubmission', 'id') // F02 P3 tarama S5–S7: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async getOne(@Req() req: AuthRequest, @Param('id') id: string) {
     return this.service.getOne(req.user.tenantId, id);
   }

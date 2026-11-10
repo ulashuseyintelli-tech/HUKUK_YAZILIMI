@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Param, UseGuards } from "@nestjs/common";
+import { Controller, Get, Post, Param, UseGuards, Optional } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { LegalTimeShadowService } from "./legal-time-shadow.service";
+import { CaseViewScopeService, requireCaseViewScope } from "../case/case-view-scope.service";
 
 /**
  * MPB-028(a) PR-3 Evidence Activation.
@@ -17,8 +18,10 @@ import { LegalTimeShadowService } from "./legal-time-shadow.service";
 @Controller("legal-time-shadow")
 @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class LegalTimeShadowController {
-  constructor(private legalTimeShadowService: LegalTimeShadowService) {}
-
+  constructor(
+    private legalTimeShadowService: LegalTimeShadowService,
+    @Optional() private readonly caseViewScope?: CaseViewScopeService,
+  ) {}
   // Tek bir tebligat için shadow-diff hesapla (flag kapalıysa no-op).
   @Post("tebligat/:tebligatId/compute")
   async compute(
@@ -34,7 +37,9 @@ export class LegalTimeShadowController {
 
   // Birikmiş kanıtı salt-okuma olarak döner (kategori/limit yok — Owner Decision 7/8).
   @Get("evidence-report")
-  async evidenceReport(@CurrentUser("tenantId") tenantId: string) {
-    return this.legalTimeShadowService.buildEvidenceReport(tenantId);
+  async evidenceReport(@CurrentUser("tenantId") tenantId: string, @CurrentUser("id") actorUserId?: string) {
+    // S6: gölge fark raporu yalnız aktörün görebildiği dosyaların satırlarından üretilir.
+    const caseFilter = await requireCaseViewScope(this.caseViewScope)?.caseRowFilter(tenantId, actorUserId);
+    return caseFilter ? this.legalTimeShadowService.buildEvidenceReport(tenantId, caseFilter) : this.legalTimeShadowService.buildEvidenceReport(tenantId); // bayrak kapalı: bugünkü çağrı aynen
   }
 }

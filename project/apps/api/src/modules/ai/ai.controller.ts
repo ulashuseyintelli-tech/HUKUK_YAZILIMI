@@ -1,9 +1,11 @@
-import { Controller, Get, Param, Post, Body, UseGuards, Request, Res, Header } from '@nestjs/common';
+import { Controller, Get, Param, Post, Body, UseGuards, Request, Res, Header, Optional } from '@nestjs/common';
 import { Response } from 'express';
 import { AiService } from './ai.service';
 import { AiDocumentService, DocumentGenerationRequest } from './ai-document.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
+import { CaseViewScoped } from '../case/case-view-scope.guard';
+import { CaseViewScopeService, requireCaseViewScope } from '../case/case-view-scope.service';
 
 // F02-D-2 dilim 5 (owner ek talimatı 30.10.2026): VIEWER AI önerisi / belge üretimi tetikleyemez (OpenAI dış çağrısı = yan etki; 4 yazma). Kapalı kural OWN-13 §51 / AK-1a / B4-B6 `ViewerWriteDenyGuard`; okuma uçları DEĞİŞMEZ.
 @Controller('ai')
@@ -12,10 +14,12 @@ export class AiController {
   constructor(
     private readonly aiService: AiService,
     private readonly aiDocumentService: AiDocumentService,
+    @Optional() private readonly caseViewScope?: CaseViewScopeService,
   ) {}
 
   // Dosya için AI önerisi al
   @Get('case/:caseId/suggest')
+  @CaseViewScoped() // F02 P3 tarama S5–S7: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async getSuggestions(@Request() req: any, @Param('caseId') caseId: string) {
     const suggestions = await this.aiService.getSuggestions(req.user.tenantId, caseId);
     return {
@@ -26,6 +30,7 @@ export class AiController {
 
   // Dosya için tahsilat tahmini
   @Get('case/:caseId/predict')
+  @CaseViewScoped() // F02 P3 tarama S5–S7: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı / yok 404)
   async getPrediction(@Request() req: any, @Param('caseId') caseId: string) {
     const prediction = await this.aiService.getPrediction(req.user.tenantId, caseId);
     return {
@@ -48,9 +53,12 @@ export class AiController {
   @Post('batch-suggest')
   async batchSuggest(@Request() req: any, @Body() body: { caseIds: string[] }) {
     const tenantId = req.user.tenantId;
+    // S6: toplu öneride kapsam dışı dosya var olmayan dosyayla AYNI satırı alır (öneri üretilmez).
+    const visible = await requireCaseViewScope(this.caseViewScope)?.visibleCaseIds(tenantId, req.user.id, Array.isArray(body?.caseIds) ? body.caseIds : []);
     const results = await Promise.all(
       body.caseIds.map(async (caseId) => {
         try {
+          if (visible && !visible.has(caseId)) throw new Error('Case not found');
           const suggestions = await this.aiService.getSuggestions(tenantId, caseId);
           return { caseId, suggestions, error: null };
         } catch (error: any) {

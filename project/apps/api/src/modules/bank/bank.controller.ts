@@ -11,6 +11,7 @@ import {
   RECEIPT_AUTHORIZATION_SURFACES,
   ReceiptObjectScopeAuthorizationService,
 } from '../collection/receipt-object-scope-authorization.service';
+import { CaseViewScopeService, requireCaseViewScope } from '../case/case-view-scope.service';
 
 // F02-D-2 dilim 1 (owner devam talimatı 30.10.2026): VIEWER banka hesabı ekleyemez, senkron tetikleyemez, hareket eşleştiremez,
 // EFT/havale GÖNDEREMEZ (para hareketi). Ölçülen boşluk: yalnız JWT; BankService rol sormuyor; eşleştirmedeki nesne-kapsam
@@ -25,6 +26,7 @@ export class BankController {
     private guidedOpenObserve: GuidedOpenObserveService,
     @Optional()
     private receiptAuthorization?: ReceiptObjectScopeAuthorizationService,
+    @Optional() private readonly caseViewScope?: CaseViewScopeService,
   ) {}
 
   // ==================== HESAP YÖNETİMİ ====================
@@ -110,14 +112,25 @@ export class BankController {
     @Query('transactionType') transactionType?: string,
     @Query('isMatched') isMatched?: string,
     @Query('limit') limit?: string,
+    @CurrentUser('id') actorUserId?: string, // sonda: mevcut konumsal çağrılar değişmez
   ) {
-    return this.bankService.getTransactions(id, tenantId, {
+    const rows = await this.bankService.getTransactions(id, tenantId, {
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
       transactionType,
       isMatched: isMatched === 'true' ? true : isMatched === 'false' ? false : undefined,
       limit: limit ? parseInt(limit) : undefined,
     });
+    // F02 P3 tarama S7 (owner kararı 09.11.2026): banka hareketleri büro muhasebesi kapsamında kalır (hareket satırları
+    // süzülmez). Bayrak açıkken gereksiz dosya / kişi alanları dönmez: ham banka yükü (`rawData`) hiç dönmez; eşleşen dosya
+    // ve tahsilat kimliği yalnız dosya aktöre görünüyorsa döner. Bu uç için ayrı bir muhasebe izni bugün YOKTUR (yeni izin eklenmedi).
+    const viewScope = requireCaseViewScope(this.caseViewScope);
+    if (!viewScope) return rows;
+    const list = rows as Array<Record<string, unknown> & { matchedCaseId?: string | null }>;
+    const visible = await viewScope.visibleCaseIds(tenantId, actorUserId, list.map((row) => row.matchedCaseId));
+    return list.map(({ rawData: _rawData, ...row }) =>
+      visible && row.matchedCaseId && !visible.has(row.matchedCaseId) ? { ...row, matchedCaseId: null, matchedCollectionId: null } : row,
+    );
   }
 
   /**

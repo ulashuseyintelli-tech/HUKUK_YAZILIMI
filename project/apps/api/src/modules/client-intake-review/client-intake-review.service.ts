@@ -34,10 +34,12 @@ export class ClientIntakeReviewService {
    * - ClientIntakeReviewController.listQueue() → GET /client-intake-submissions?status=&caseId=
    * </remarks>
    */
-  async listQueue(tenantId: string, params: { status?: ClientIntakeSubmissionStatus; caseId?: string }) {
+  async listQueue(tenantId: string, params: { status?: ClientIntakeSubmissionStatus; caseId?: string }, caseFilter?: Prisma.CaseWhereInput) {
+    // caseFilter (F02 P3 tarama S5): verilirse yalnız bu dosya süzgecine uyan dosyaların gönderimleri döner.
     return this.prisma.clientIntakeSubmission.findMany({
       where: {
         tenantId,
+        ...(caseFilter ? { case: caseFilter } : {}),
         ...(params.caseId ? { caseId: params.caseId } : {}),
         ...(params.status
           ? { status: params.status }

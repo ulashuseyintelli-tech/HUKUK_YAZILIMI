@@ -3,6 +3,7 @@ import { PrismaModule } from "../../prisma/prisma.module";
 import { LegalDeadlineModule } from "../legal-deadline/legal-deadline.module";
 import { LegalTimeShadowService } from "./legal-time-shadow.service";
 import { LegalTimeShadowController } from "./legal-time-shadow.controller";
+import { CaseViewScopeModule } from "../case/case-view-scope.module";
 
 /**
  * MPB-028(a) PR-3 — Shadow-Read + Diff Evidence modülü.
@@ -12,7 +13,7 @@ import { LegalTimeShadowController } from "./legal-time-shadow.controller";
  * Evidence Activation'ın manuel/lokal tetikleme + kanıt okuma yüzeyidir.
  */
 @Module({
-  imports: [PrismaModule, LegalDeadlineModule],
+  imports: [CaseViewScopeModule, PrismaModule, LegalDeadlineModule],
   controllers: [LegalTimeShadowController],
   providers: [LegalTimeShadowService],
   exports: [LegalTimeShadowService],
