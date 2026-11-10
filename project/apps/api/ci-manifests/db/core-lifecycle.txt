@@ -379,3 +379,5 @@ src/modules/client-settlement/__tests__/client-financial-reads-view-scope.http.d
 src/modules/expense-request/__tests__/expense-read-scope.http.db-gated.integration.spec.ts
 # F02 P3 tarama S5 / S6 / S7 (owner 09.11.2026): muvekkil beyani / form, otomasyon / risk / AI, bildirim / takvim / banka okumalari (29 uc) - gercek HTTP + disposable PostgreSQL.
 src/modules/case/__tests__/case-view-scope-misc-reads.http.db-gated.integration.spec.ts
+# F02 P3 K1 (owner 11.11.2026): banka hareket okumalari (hesap hareketleri / eslesmemis / istatistik) yalniz ADMIN; kiraci siniri + P3 maskelemesi - gercek HTTP + disposable PostgreSQL.
+src/modules/bank/__tests__/bank-movement-reads-admin.http.db-gated.integration.spec.ts

@@ -361,18 +361,27 @@ describeDb("F02 P3 tarama S5 / S6 / S7 — kalan dosyaya bağlı okumalar (gerç
     type Tx = { id: string; matchedCaseId: string | null; matchedCollectionId: string | null; rawData?: unknown; counterpartyName?: string };
     const rows = (res: request.Response) => res.body as Tx[];
 
-    it("bayrak kapalı: bugünkü yanıt (ham yük ve eşleşen dosya kimliği dahil)", async () => {
+    // F02 P3 K1 (owner kararı 11.11.2026): hareket okumaları yalnız ADMIN. Maskeleme ADMIN üzerinde sınanır; ADMIN olmayan roller
+    // rol kapısında 403 alır (veri üretilmeden). İlişkili / büro geneli izinli ADMIN ve çapraz büro ADMIN vakaları:
+    // bank/__tests__/bank-movement-reads-admin.http.db-gated.integration.spec.ts.
+    const ADMIN_REQUIRED = { statusCode: 403, message: "Bu işlem için ADMIN yetkisi gerekir", error: "Forbidden" };
+
+    it("bayrak kapalı: ADMIN bugünkü yanıtı alır (ham yük ve eşleşen dosya kimliği dahil)", async () => {
       flag.off();
-      const res = await http.get(w.u.nobody, `/bank/accounts/${account}/transactions`);
+      const res = await http.get(w.u.admin, `/bank/accounts/${account}/transactions`);
       expect([res.status, rows(res).length]).toEqual([200, A_CASE_KEYS.length + 1]);
       const c6 = rows(res).find((x) => x.id === tx.c6)!;
       expect([c6.matchedCaseId, c6.matchedCollectionId, JSON.stringify(c6.rawData)]).toEqual([w.c.c6, mark("TAHSILAT", "c6"), JSON.stringify({ ham: mark("HAM", "c6") })]);
     });
 
-    it("bayrak açık: satırlar süzülmez (muhasebe bütünlüğü); ham yük hiç dönmez; eşleşen dosya / tahsilat kimliği yalnız dosya görünüyorsa döner", async () => {
+    it("bayrak açık: ADMIN için satırlar süzülmez (muhasebe bütünlüğü); ham yük hiç dönmez; eşleşen dosya / tahsilat kimliği yalnız dosya görünüyorsa döner; ADMIN olmayan roller 403", async () => {
       flag.on();
       for (const [label, actor, visible] of w.visibility) {
         const res = await http.get(actor, `/bank/accounts/${account}/transactions`);
+        if (actor !== w.u.admin) {
+          expect([label, res.status, res.body, text(res).includes("HAM-")]).toEqual([label, 403, ADMIN_REQUIRED, false]);
+          continue;
+        }
         expect([label, res.status, rows(res).length]).toEqual([label, 200, A_CASE_KEYS.length + 1]);
         expect([label, text(res).includes("HAM-"), rows(res).some((x) => "rawData" in x)]).toEqual([label, false, false]);
         for (const k of A_CASE_KEYS) {
@@ -386,11 +395,11 @@ describeDb("F02 P3 tarama S5 / S6 / S7 — kalan dosyaya bağlı okumalar (gerç
       }
     });
 
-    it("kiracı sınırı ve var olmayan hesap bayraktan bağımsız", async () => {
+    it("var olmayan hesap bayraktan bağımsız (ADMIN); başka büronun ADMIN olmayan kullanıcısı rol kapısında durur", async () => {
       for (const on of [false, true]) {
         on ? flag.on() : flag.off();
-        expect([on, (await http.get(w.v.allow, `/bank/accounts/${account}/transactions`)).body]).toEqual([on, nf("Hesap bulunamadı")]);
-        expect([on, (await http.get(w.u.allow, `/bank/accounts/${w.missing}/transactions`)).body]).toEqual([on, nf("Hesap bulunamadı")]);
+        expect([on, (await http.get(w.v.allow, `/bank/accounts/${account}/transactions`)).body]).toEqual([on, ADMIN_REQUIRED]);
+        expect([on, (await http.get(w.u.admin, `/bank/accounts/${w.missing}/transactions`)).body]).toEqual([on, nf("Hesap bulunamadı")]);
       }
     });
   });
