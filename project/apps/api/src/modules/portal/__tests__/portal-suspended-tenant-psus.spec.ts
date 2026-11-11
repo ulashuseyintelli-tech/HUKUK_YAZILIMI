@@ -61,7 +61,7 @@ describe("CLIENT-PSUS — askıdaki tenant'ta portal erişimi kapalı", () => {
       const user = { id: "PU1", email: "a@x.com", clientId: "C1", passwordHash, tokenVersion: 0,
         client: { id: "C1", displayName: "A", tenantId: "T1", type: "PERSON", tenant: { lifecycle } } };
       // KR-4: giriş birebir eşleşmeyi en çok iki aktif kayıtla okur (findMany, take: 2); burada tek hesap.
-      const prisma: any = { clientPortalUser: { findFirst: jest.fn().mockResolvedValue(user), findMany: jest.fn().mockResolvedValue([user]), update: jest.fn() } };
+      const prisma: any = { $queryRaw: jest.fn().mockResolvedValue([user]), clientPortalUser: { findFirst: jest.fn().mockResolvedValue(user), findMany: jest.fn().mockResolvedValue([user]), update: jest.fn() } };
       const jwt: any = { sign: jest.fn().mockReturnValue("jwt") };
       return { svc: new PortalService(prisma, jwt, {} as any, {} as any, {} as any, {} as any), prisma, jwt };
     }
@@ -105,7 +105,7 @@ describe("CLIENT-PSUS — askıdaki tenant'ta portal erişimi kapalı", () => {
     it.each(NON_ACTIVE)("%s tenant → {success:true}, token ÜRETİLMEZ, e-posta GÖNDERİLMEZ", async (lc) => {
       const user = { id: "PU1", email: "a@x.com", client: { tenant: { lifecycle: lc } } };
       // KR-4: sıfırlama talebi birebir eşleşmeyi en çok iki aktif kayıtla okur (findMany, take: 2); burada tek hesap.
-      const prisma: any = { clientPortalUser: { findFirst: jest.fn().mockResolvedValue(user), findMany: jest.fn().mockResolvedValue([user]), update: jest.fn(), updateMany: jest.fn() } };
+      const prisma: any = { $queryRaw: jest.fn().mockResolvedValue([user]), clientPortalUser: { findFirst: jest.fn().mockResolvedValue(user), findMany: jest.fn().mockResolvedValue([user]), update: jest.fn(), updateMany: jest.fn() } };
       const email: any = { send: jest.fn() };
       const svc = new PortalService(prisma, {} as any, {} as any, {} as any, { get: () => "https://x" } as any, email);
       await expect(svc.createResetToken("a@x.com")).resolves.toEqual({ success: true });

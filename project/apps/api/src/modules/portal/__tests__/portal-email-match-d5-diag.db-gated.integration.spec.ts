@@ -5,7 +5,7 @@
  * (veritabanında kırpma + yalnız ASCII küçültme) ve koşullu yazımın gerçek veritabanında fiilen çalıştığını ölçer:
  *  [1] harf/boşluk farkıyla yazılan adres → token KAYITLI hesaba yazılır, e-posta KAYITLI adrese gider
  *  [2] ortam ön koşulu: veritabanının birebir karşılaştırması harf duyarlıdır; sunucu kodlaması UTF8 (servisi çağırmaz)
- *  [3] yalnız harf farkıyla ayrışan iki aktif hesap → hiçbirine token yazılmaz; birebir yazım kendi hesabına gider;
+ *  [3] owner model A: yalnız harf farkıyla ayrışan iki aktif hesap → birebir yazım dahil hiçbirine token yazılmaz;
  *      pasif hesap aday sayılmaz
  *  [4] metin olmayan e-posta alanı → eşleşme yok; dış cevap aynı
  *  [5] harf farkıyla giriş → oturum kayıtlı hesaba; metin olmayan alanla giriş → ret
@@ -150,7 +150,7 @@ describeDb("D5-DIAG-R01 — portal e-posta biçim farkı eşleşmesi (integratio
     expect((await prisma.clientPortalUser.findFirst({ where: { email: stored, isActive: true } }))?.email).toBe(stored);
   });
 
-  it("[3] iki aktif varyant → üçüncü yazım hiçbirine gitmez; birebir yazım kendi hesabına; pasif hesap aday sayılmaz", async () => {
+  it("[3] iki aktif varyant → birebir yazımlar dahil hiçbirine token yok; pasif hesap aday sayılmaz", async () => {
     const base = `cift.${uniq()}@d5-diag-r01.test`;
     const a = await seedPortalUser("cift-a", base.replace("cift", "Cift"));
     const b = await seedPortalUser("cift-b", base.replace("cift", "CIFT"));
@@ -158,10 +158,12 @@ describeDb("D5-DIAG-R01 — portal e-posta biçim farkı eşleşmesi (integratio
     expect(await tokenOf(a.id)).toBeNull();
     expect(await tokenOf(b.id)).toBeNull();
     expect(sendSpy).not.toHaveBeenCalled();
-    // birebir yazım önceliklidir
-    await portal.createResetToken(b.email);
-    expect(await tokenOf(a.id)).toBeNull();
-    expect(await tokenOf(b.id)).toMatch(/^[0-9a-f]{64}$/);
+    for (const typed of [a.email, b.email, ' ' + base.toUpperCase() + ' ']) {
+      await portal.createResetToken(typed);
+      expect(await tokenOf(a.id)).toBeNull();
+      expect(await tokenOf(b.id)).toBeNull();
+      expect(sendSpy).not.toHaveBeenCalled();
+    }
     // pasif varyant aday değildir: tek aktif hesap kalınca üçüncü yazım ona çözülür
     await prisma.clientPortalUser.update({ where: { id: b.id }, data: { isActive: false, resetToken: null, resetTokenExp: null } });
     await portal.createResetToken(base);
@@ -381,7 +383,7 @@ describeDb("D5-DIAG-R01 — portal e-posta biçim farkı eşleşmesi (integratio
       expect(res).toEqual(await portal.createResetToken(unknownAddress()));
       expect(res).toEqual({ success: true });
       const lines = logSpy.mock.calls.map((c) => String(c[0]));
-      expect(lines.filter((l) => l.includes("belirsiz (birebir)"))).toHaveLength(1);
+      expect(lines.filter((l) => l.includes("(belirsiz)"))).toHaveLength(1);
       expect(lines.join("|").toLowerCase()).not.toContain(email.toLowerCase());
     } finally {
       logSpy.mockRestore();
