@@ -429,13 +429,6 @@ export class ClientStatementService {
     return record;
   }
 
-  // ==================== mail tetiği (Faz 3.4) ====================
-
-  /**
-   * "Ekstre hazır" maili — BEST-EFFORT. Token derleme + dispatch tamamen try/catch içinde:
-   * mail (veya token okuması) başarısız olsa bile commit'li ekstre DEĞİŞMEZ, throw etmez.
-   * Yalnız create()'te çağrılır (m34-1: supersede/void mail tetiklemez).
-   */
   // ==================== iç yardımcılar ====================
 
   private parsePeriod(startStr: string, endStr: string) {
