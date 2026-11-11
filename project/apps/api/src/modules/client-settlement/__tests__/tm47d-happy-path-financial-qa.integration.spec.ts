@@ -129,8 +129,6 @@ describeDb('TM47D-6 happy path financial QA', () => {
     offsetService = new ClientOffsetService(prisma as any, audit, readService);
     statementService = new ClientStatementService(
       prisma as any,
-      { dispatch: jest.fn().mockResolvedValue(undefined) } as any,
-      { getOfficeIdentity: jest.fn().mockResolvedValue({ name: 'TM47D QA Office' }) } as any,
       audit,
       buildCaseBalanceService(prisma),
     );

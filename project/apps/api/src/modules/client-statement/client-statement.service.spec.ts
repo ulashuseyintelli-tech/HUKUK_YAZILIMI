@@ -263,27 +263,36 @@ describe('ClientStatementService', () => {
     });
   });
 
-  describe('mail tetiği (3.4) — yalnız create, best-effort', () => {
-    it('create → dispatcher STATEMENT_READY ile çağrılır', async () => {
+  describe('CL-R08 — dosya ekstresi otomatik e-posta üretmez', () => {
+    it.each([false, true])('create ve audit korunur; bildirim altyapısı kapalı=%s olsa da gönderim/lookup yok', async (unavailable) => {
       mockPrisma.case.findFirst.mockResolvedValue({ id: CASE });
       mockPrisma.client.findFirst.mockResolvedValue({ id: CLIENT });
       mockPrisma.caseBalance.findFirst.mockResolvedValue(null);
+      mockPrisma.balanceLedger.findMany.mockResolvedValue([]);
+      mockPrisma.expenseRequest.findMany.mockResolvedValue([]);
+      mockPrisma.clientPayout.findMany.mockResolvedValue([]);
       mockPrisma.clientStatement.create.mockResolvedValue({ id: 'st-1' });
-      mockPrisma.clientStatement.findFirst.mockResolvedValue({
+      const statement = {
         id: 'st-1', clientId: CLIENT, caseId: CASE,
         periodStart: new Date('2026-06-01'), periodEnd: new Date('2026-06-30'),
         closingBalance: D(120), lines: [],
-      });
+      };
+      mockPrisma.clientStatement.findFirst.mockResolvedValue(statement);
+      if (unavailable) {
+        mockDispatcher.dispatch.mockRejectedValue(new Error('mail transport unavailable'));
+        mockOffice.getOfficeIdentity.mockRejectedValue(new Error('mail identity unavailable'));
+      }
 
-      await service.create(TENANT, CASE, USER, dto);
-
-      expect(mockDispatcher.dispatch).toHaveBeenCalledWith(
-        TENANT, USER,
-        expect.objectContaining({ templateCode: 'STATEMENT_READY', type: 'STATEMENT_READY', refType: 'ClientStatement', refId: 'st-1' }),
-      );
+      await expect(service.create(TENANT, CASE, USER, dto)).resolves.toEqual(statement);
+      expect(mockPrisma.clientStatement.create).toHaveBeenCalledTimes(1);
+      expect(mockAudit.logInTransaction).toHaveBeenCalledWith(mockPrisma, expect.objectContaining({
+        action: 'CLIENT_STATEMENT_GENERATED', entityId: 'st-1', tenantId: TENANT, userId: USER,
+      }));
+      expect(mockDispatcher.dispatch).not.toHaveBeenCalled();
+      expect(mockOffice.getOfficeIdentity).not.toHaveBeenCalled();
     });
 
-    it('supersede STATEMENT_READY maili TETİKLEMEZ (m34-1 create only)', async () => {
+    it('supersede otomatik e-posta üretmemeyi sürdürür', async () => {
       mockPrisma.clientStatement.findFirst
         .mockResolvedValueOnce({ id: 'old-1', status: 'ACTIVE', caseId: CASE, clientId: CLIENT })
         .mockResolvedValue({ id: 'new-1', clientId: CLIENT, caseId: CASE, periodStart: new Date(), periodEnd: new Date(), closingBalance: D(0), lines: [] });

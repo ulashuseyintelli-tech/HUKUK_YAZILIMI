@@ -9,11 +9,8 @@
  *  4. İçerikte iç ID / başka müvekkil verisi SIZMAZ (POL-4).
  *  5. Bu blokta GERÇEK SMTP çağrılmaz — taşıma portu test double ile doğrulanır.
  *
- * KARAKTERİZASYON: bugünkü `notifyStatementReady` yalnız 4 token taşıyan best-effort
- * dispatch'tir ve EK GÖNDEREMEZ; aşağıdaki [B03-0] bunu kayda geçirir.
+ * CL-R08 dosya oluşturma e-postasını kaldırır; bu ayrı PDF teslim sözleşmesi korunur.
  */
-import { readFileSync } from 'fs';
-import { join } from 'path';
 import { ClientStatementStatus } from '@prisma/client';
 import { ClientStatementNotRenderableError } from '../client-statement-pdf.document';
 import { ClientStatementPdfService } from '../client-statement-pdf.service';
@@ -70,19 +67,6 @@ const makePort = () => {
 };
 
 describe('CAD C3-B03 — içerikli ekstre maili + PDF eki', () => {
-  it('[B03-0] KARAKTERİZASYON: bugünkü STATEMENT_READY dispatch\'i EK TAŞIYAMAZ (4 token, best-effort)', () => {
-    const svcSrc = readFileSync(join(__dirname, '..', 'client-statement.service.ts'), 'utf8');
-    // mevcut token seti
-    for (const t of ['periodStart', 'periodEnd', 'closingBalance', 'officeName']) {
-      expect(svcSrc).toContain(t);
-    }
-    // dispatch girdisinde attachment YOK (bu blok bunu kapatır)
-    const dispatchBlock = svcSrc.slice(svcSrc.indexOf('templateCode: \'STATEMENT_READY\''), svcSrc.indexOf('templateCode: \'STATEMENT_READY\'') + 400);
-    expect(dispatchBlock).not.toContain('attachment');
-    // best-effort: hata yutulur
-    expect(svcSrc).toContain('Ekstre maili tetiklenemedi');
-  });
-
   // 3. Fail-closed kapı
   it.each([[ClientStatementStatus.SUPERSEDED], [ClientStatementStatus.VOID]])(
     '[B03-1] %s ekstre için gönderim kapısı açılmaz',
