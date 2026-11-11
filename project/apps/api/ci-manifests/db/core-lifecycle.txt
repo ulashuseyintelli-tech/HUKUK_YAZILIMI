@@ -381,3 +381,5 @@ src/modules/expense-request/__tests__/expense-read-scope.http.db-gated.integrati
 src/modules/case/__tests__/case-view-scope-misc-reads.http.db-gated.integration.spec.ts
 # F02 P3 K1 (owner 11.11.2026): banka hareket okumalari (hesap hareketleri / eslesmemis / istatistik) yalniz ADMIN; kiraci siniri + P3 maskelemesi - gercek HTTP + disposable PostgreSQL.
 src/modules/bank/__tests__/bank-movement-reads-admin.http.db-gated.integration.spec.ts
+# MESE pilot (owner GO-COMPLETE 12.11.2026): tarihsel dosya aktarimi POST /cases/historical-import (bayrak + ADMIN) - normal POST /cases degismedi, varsayilan kisi / bilgi talebi / acilis masraf talebi yok, tekrar 409 - gercek HTTP + disposable PostgreSQL.
+src/modules/case/__tests__/case-historical-import.http.db-gated.integration.spec.ts
