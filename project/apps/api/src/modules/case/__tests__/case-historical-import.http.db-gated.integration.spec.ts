@@ -168,12 +168,12 @@ describeWithDisposableDb('Tarihsel dosya aktarımı — POST /cases/historical-i
     };
   }
 
-  /** MEŞE P02 biçiminde (ilamlı; iki kalem, ikisi de takip öncesi YASAL faizli) sentetik dosya gövdesi. */
+  /** Sentetik ilamlı dosya gövdesi: iki kalem (vekâlet ücreti + gider), ikisi de takip öncesi YASAL faizli. Gerçek dosya verisi DEĞİL. */
   const caseBody = (f: Fixture, tag: string, lawyerId = f.mappedLawyer) => ({
     fileNumber: f.fileNo(tag),
     type: 'GENERAL_EXECUTION',
     currency: 'TRY',
-    startDate: '2026-11-09',
+    startDate: '2026-10-20',
     creditors: [{ id: f.client, type: 'COMPANY', name: 'HI Sentetik Şirket' }],
     debtors: [
       { type: 'INDIVIDUAL', name: `Sentetik Borçlu Bir ${tag}` },
@@ -181,8 +181,8 @@ describeWithDisposableDb('Tarihsel dosya aktarımı — POST /cases/historical-i
     ],
     lawyers: [{ id: lawyerId, name: 'Eşlenen', surname: 'Avukat' }],
     dues: [
-      { type: 'VEKALET_UCRETI', description: 'İlam vekâlet ücreti', amount: 10000, dueDate: '2025-05-27', interestType: 'YASAL', interestTypeCode: 'LEGAL_3095', interestStartDate: '2025-05-27' },
-      { type: 'EXPENSE', description: 'Yargılama gideri', amount: 730, dueDate: '2025-05-27', interestType: 'YASAL', interestTypeCode: 'LEGAL_3095', interestStartDate: '2025-05-27' },
+      { type: 'VEKALET_UCRETI', description: 'Sentetik vekâlet ücreti', amount: 12500, dueDate: '2025-03-14', interestType: 'YASAL', interestTypeCode: 'LEGAL_3095', interestStartDate: '2025-03-14' },
+      { type: 'EXPENSE', description: 'Sentetik gider', amount: 415, dueDate: '2025-03-14', interestType: 'YASAL', interestTypeCode: 'LEGAL_3095', interestStartDate: '2025-03-14' },
     ],
   });
 
@@ -270,7 +270,7 @@ describeWithDisposableDb('Tarihsel dosya aktarımı — POST /cases/historical-i
       select: { fileNumber: true, isAutomationEnabled: true, allowUyapActions: true, showToClient: true, metadata: true, caseDate: true, currency: true },
     });
     expect(saved).toMatchObject({ fileNumber: f.fileNo('T1'), isAutomationEnabled: false, allowUyapActions: false, showToClient: false, currency: 'TRY' });
-    expect(saved.caseDate?.toISOString().slice(0, 10)).toBe('2026-11-09');
+    expect(saved.caseDate?.toISOString().slice(0, 10)).toBe('2026-10-20');
     const marker = (saved.metadata as Record<string, any>).historicalImport;
     expect(marker).toMatchObject({ sourceSystem: 'MESE', sourceCaseRef: f.sourceRef('T1'), importedById: f.admin });
     expect(typeof marker.importedAt).toBe('string');
