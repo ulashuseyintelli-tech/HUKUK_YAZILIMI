@@ -130,6 +130,20 @@ import {
   planResponsible,
 } from "./case-responsible.helpers";
 export { pickResponsibleFallbackIndex, resolveResponsiblePromotion, planResponsible };
+import type { HistoricalCaseImportDto } from "./dto/historical-case-import.dto";
+import {
+  assertHistoricalImportPayload,
+  HISTORICAL_IMPORT_ALREADY_EXISTS,
+  HISTORICAL_IMPORT_SKIPPED_SIDE_EFFECTS,
+  type HistoricalImportMarker,
+  type HistoricalImportSource,
+} from "./historical-import/case-historical-import";
+
+/** CaseService.create() seçenekleri. Boş → bugünkü yeni takip açılışı AYNEN. */
+export interface CaseCreateOptions {
+  /** Tarihsel dosya aktarımı (yalnız CaseService.createHistoricalImport verir). */
+  historicalImport?: HistoricalImportSource;
+}
 
 type CalculationSummaryCanonicalShadowMatchStatus =
   | "MATCH"
@@ -2359,9 +2373,26 @@ export class CaseService {
 
   /// <remarks>
   /// Çağrıldığı yerler:
-  /// - CaseController.create() → POST /cases (Yeni takip oluşturma)
+  /// - CaseController.historicalImport() → POST /cases/historical-import (bayrak açık + ADMIN; kapılar controller'da)
   /// </remarks>
-  async create(tenantId: string, dto: CreateCaseDto, userId?: string, userRole?: string) {
+  /// Tarihsel dosya aktarımı: aynı dosya açılış yolu (tenant / FK / sınıflandırma / taraf / alacak kalemi doğrulamaları
+  /// AYNEN), yalnız yeni takibin ilk gün yan etkileri olmadan. Ayrıntı: historical-import/case-historical-import.ts.
+  async createHistoricalImport(tenantId: string, dto: HistoricalCaseImportDto, userId?: string, userRole?: string) {
+    assertHistoricalImportPayload(dto.case);
+    return this.create(tenantId, dto.case, userId, userRole, {
+      historicalImport: { sourceSystem: dto.sourceSystem, sourceCaseRef: dto.sourceCaseRef },
+    });
+  }
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseController.create() → POST /cases (Yeni takip oluşturma)
+  /// - CaseService.createHistoricalImport() → POST /cases/historical-import (`options.historicalImport` ile)
+  /// </remarks>
+  async create(tenantId: string, dto: CreateCaseDto, userId?: string, userRole?: string, options: CaseCreateOptions = {}) {
+    // Tarihsel aktarım (yalnız createHistoricalImport verir): yeni takibin ilk gün yan etkileri atlanır; undefined → bugünkü
+    // yeni takip davranışı AYNEN.
+    const historicalImport = options.historicalImport;
     // INTEREST_POLICY_ASSIGNED (HR-26: HUMAN actor zorunlu) için userId şart.
     // "Bu faiz politikasını kim atadı?" sorusunun cevabı olmadan event hukuken zayıf.
     // Fail-fast: tx başlamadan reddet ('unknown' actor kabul edilmez).
@@ -2462,6 +2493,28 @@ export class CaseService {
         }
       }
 
+      // Tarihsel aktarım: aynı kaynak dosya (kaynak sistem + kaynak dosya kimliği) bu büroya daha önce aktarıldıysa
+      // taraf / dosya yazılmadan 409 (dosya no farklı verilse bile). Eşzamanlı çift gönderimde backstop dosya no
+      // benzersizliğidir (P2002 → 409).
+      if (historicalImport) {
+        const alreadyImported = await this.prisma.case.findFirst({
+          where: {
+            tenantId,
+            AND: [
+              { metadata: { path: ["historicalImport", "sourceSystem"], equals: historicalImport.sourceSystem } },
+              { metadata: { path: ["historicalImport", "sourceCaseRef"], equals: historicalImport.sourceCaseRef } },
+            ],
+          },
+          select: { id: true },
+        });
+        if (alreadyImported) {
+          throw new ConflictException({
+            code: HISTORICAL_IMPORT_ALREADY_EXISTS,
+            message: `Bu kaynak dosya (${historicalImport.sourceSystem} ${historicalImport.sourceCaseRef}) daha önce aktarıldı`,
+          });
+        }
+      }
+
       // CASE-CREATE-FK-TENANT: Case'e bağlanacak tenant-scoped FK'ler (Client/Court/ExecutionOffice)
       // bu büroya ait mi? ValidationPipe yalnız SHAPE doğrular; caller'ın doğrudan verdiği MEVCUT id'ler
       // cross-tenant olabilir → guard'sız persist (clientId + caseClient creditorIds + courtId +
@@ -2554,7 +2607,10 @@ export class CaseService {
             uyapBirimKodu: uyapBirimKodu,
             hasUyapWarning: !uyapBirimKodu,
             hasArticle4Request: dto.hasArticle4Request || false,
-            isAutomationEnabled: true,
+            // Tarihsel aktarım: dosya incelenene kadar otomasyon / UYAP işlemi / müvekkile gösterim KAPALI açılır
+            // (kullanıcı mevcut PATCH /cases/:id ile açar). Yeni takip: bugünkü varsayılanlar AYNEN.
+            isAutomationEnabled: !historicalImport,
+            ...(historicalImport && { allowUyapActions: false, showToClient: false }),
             // Alt Kategori ve Para Birimi (UYAP Uyumlu)
             subCategory: dto.subCategory || "GENEL",
             currency: dto.currency || "TRY",
@@ -2564,7 +2620,18 @@ export class CaseService {
             // Faiz Bilgileri
             interestType: dto.interestType || "YASAL",
             // K3-L KP-2: tür istekte açıkça gelmediyse şema varsayılanı (YASAL) KESİN tercih sayılmaz — kaynağı yazılır
-            metadata: { interestTypeSource: caseInterestTypeSourceForCreate(dto.interestType) },
+            metadata: {
+              interestTypeSource: caseInterestTypeSourceForCreate(dto.interestType),
+              // Tarihsel aktarım: kaynak sistem + kaynak dosya kimliği + aktarım kaydı (yinelenen aktarım denetimi bunu okur)
+              ...(historicalImport && {
+                historicalImport: {
+                  sourceSystem: historicalImport.sourceSystem,
+                  sourceCaseRef: historicalImport.sourceCaseRef,
+                  importedAt: new Date().toISOString(),
+                  importedById: userId,
+                } satisfies HistoricalImportMarker,
+              }),
+            },
             interestStartDate: dto.interestStartDate ? new Date(dto.interestStartDate) : undefined,
             interestDescription: dto.interestDescription || this.generateInterestDescription(
               (dto.subCategory as CaseSubCategory) || CaseSubCategory.GENEL,
@@ -2818,8 +2885,10 @@ export class CaseService {
         }
 
         // 7. Varsayılan stajyer avukatları ekle (isDefaultForNewCases = true)
+        // Tarihsel aktarım: ATLANIR — yalnız istekte açıkça eşlenen avukatlar bağlanır (varsayılan liste başka sistemde
+        // açılmış dosyanın kişisi değildir).
         const existingLawyerIds = dto.lawyers?.map(l => l.id).filter(Boolean) || [];
-        const defaultInternLawyers = await tx.lawyer.findMany({
+        const defaultInternLawyers = historicalImport ? [] : await tx.lawyer.findMany({
           where: {
             tenantId,
             isDefaultForNewCases: true,
@@ -2872,7 +2941,13 @@ export class CaseService {
 
         // 8. Personel ata (ASSIGN-2a). dto.staff verilmişse SEÇİM kanonik otorite (default ile
         //    MERGE YOK); verilmemişse mevcut isDefaultForNewCases davranışı AYNEN. Detay: assignCaseStaff.
-        const staffResult = await this.assignCaseStaff(tx, tenantId, newCase.id, dto.staff);
+        //    Tarihsel aktarım: `staff` verilmediyse BOŞ seçim sayılır → varsayılan personel eklenmez.
+        const staffResult = await this.assignCaseStaff(
+          tx,
+          tenantId,
+          newCase.id,
+          historicalImport ? (dto.staff ?? []) : dto.staff,
+        );
 
         // 8.5. CASE_OPENED domain event (HR-39: same-tx append)
         await this.domainEventIngestService.appendInTransaction(tx, {
@@ -3075,20 +3150,44 @@ export class CaseService {
           });
         }
 
-        // Otomatik müvekkil bilgi talebi gönder (arka planda)
-        this.clientInfoRequestService
-          .sendAutoRequestOnCaseCreate(tenantId, result.case.id)
-          .catch((err) => {
-            this.logger.warn(`Otomatik bilgi talebi gönderilemedi: ${err.message}`);
+        // Tarihsel aktarım kaydı (kaynak sistem + kaynak dosya kimliği + atlanan yan etkiler). Tx commit SONRASI.
+        if (historicalImport) {
+          await this.auditService.log({
+            tenantId,
+            action: 'CREATE',
+            entityType: 'CASE',
+            entityId: result.case.id,
+            userId,
+            newValues: { fileNumber: result.case.fileNumber },
+            metadata: {
+              changeType: 'HISTORICAL_IMPORT',
+              sourceSystem: historicalImport.sourceSystem,
+              sourceCaseRef: historicalImport.sourceCaseRef,
+              skippedSideEffects: [...HISTORICAL_IMPORT_SKIPPED_SIDE_EFFECTS],
+            },
+            description: `Tarihsel dosya aktarıldı: ${historicalImport.sourceSystem} ${historicalImport.sourceCaseRef} → ${result.case.fileNumber}`,
           });
+        }
+
+        // Otomatik müvekkil bilgi talebi gönder (arka planda). Tarihsel aktarımda GÖNDERİLMEZ (dış gönderim).
+        if (!historicalImport) {
+          this.clientInfoRequestService
+            .sendAutoRequestOnCaseCreate(tenantId, result.case.id)
+            .catch((err) => {
+              this.logger.warn(`Otomatik bilgi talebi gönderilemedi: ${err.message}`);
+            });
+        }
 
         // Peşin harç matrahı TL olarak hesaplanamıyorsa (dövizli / karma dosya) yanlış ya da eksik tutarlı talep kayda
         // geçmez: otomatik talep DENENMEZ, dosya açılışı engellenmez, neden ve gereken bilgi yanıtta bildirilir.
-        openingExpenseRequest = await this.resolveOpeningExpenseNotCreated(tenantId, result.case.id, dto.sendExpenseEmail === true);
+        // Tarihsel aktarımda açılış masraf talebi hiç DENENMEZ (kaynakta olmayan mali kayıt + muhasebe günlüğü).
+        openingExpenseRequest = historicalImport
+          ? undefined
+          : await this.resolveOpeningExpenseNotCreated(tenantId, result.case.id, dto.sendExpenseEmail === true);
 
         // Otomatik açılış masraf seti oluştur
         // Case oluşturulduğunda OPENING masrafları otomatik oluşturulur
-        if (!openingExpenseRequest) {
+        if (!openingExpenseRequest && !historicalImport) {
           const shouldSendEmail = dto.sendExpenseEmail === true;
           // E-posta istenmediyse eskisi gibi arka planda çalışır. Beklenmeyen hata dosya açılışını bozmaz.
           const automation = this.runOpeningExpenseAutomation(tenantId, result.case.id, result.case.fileNumber, shouldSendEmail, userId).catch(
@@ -3110,6 +3209,9 @@ export class CaseService {
         poaWarnings: poaWarnings.length > 0 ? poaWarnings : undefined,
         ...(checkPenaltyFormation ? { checkPenaltyFormation } : {}),
         ...(openingExpenseRequest ? { openingExpenseRequest } : {}),
+        ...(historicalImport
+          ? { historicalImport: { ...historicalImport, skippedSideEffects: [...HISTORICAL_IMPORT_SKIPPED_SIDE_EFFECTS] } }
+          : {}),
       };
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
