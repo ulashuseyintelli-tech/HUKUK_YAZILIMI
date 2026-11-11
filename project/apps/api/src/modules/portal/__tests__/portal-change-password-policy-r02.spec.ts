@@ -15,6 +15,7 @@ async function build(currentPassword: string) {
   const user = { id: 'PU1', email: 'a@x.com', clientId: 'C1', passwordHash, tokenVersion: 3, isActive: true,
     client: { id: 'C1', displayName: 'M', tenantId: 'T1', type: 'PERSON', tenant: { lifecycle: 'ACTIVE' } } };
   const prisma = {
+    $queryRaw: jest.fn().mockResolvedValue([user]),
     clientPortalUser: {
       findFirst: jest.fn().mockResolvedValue(user),
       // KR-4: giriş birebir eşleşmeyi en çok iki aktif kayıtla okur (findMany, take: 2); burada tek hesap.

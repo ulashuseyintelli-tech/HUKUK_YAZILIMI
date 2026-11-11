@@ -34,8 +34,8 @@ function extractTokenFromFragment(url: URL): string | null {
 
 function buildService(over: any = {}) {
   const prisma = {
-    // D5-DIAG-R01: birebir eşleşme yoksa biçim farkı (harf/boşluk) sorgusu çalışır; bu dosyada eşleşen hesap yok.
-    $queryRaw: jest.fn().mockResolvedValue([]),
+    // Model A: tekillik sorgusu her yazımda çalışır; bu fikstürde en çok bir aktif hesap vardır.
+    $queryRaw: jest.fn().mockResolvedValue(over.foundUser ? [over.foundUser] : []),
     clientPortalUser: {
       findFirst: jest.fn().mockResolvedValue(over.foundUser ?? null),
       // KR-4: birebir eşleşme en çok iki aktif kayıt okur (findMany, take: 2); bu dosyada en çok bir hesap.

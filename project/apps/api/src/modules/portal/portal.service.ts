@@ -525,8 +525,8 @@ export class PortalService {
   }
 
   /**
-   * D5-DIAG-R01 — biçim farkıyla yazılmış adresin aktif portal hesabına çözülmesi. YALNIZ birebir eşleşme TEK hesaba
-   * çözülmediğinde çağrılır (birebir eşleşme yok ya da KR-4 belirsiz birebir eşleşme; ikincisinde sonuç kullanılmaz).
+   * D5-DIAG-R01 — adresin tek aktif portal hesabına çözülmesi; giriş ve sıfırlamada her yazımda çağrılır.
+   * Owner model A: birebir yazım da global normalize tekillik kontrolünü atlayamaz.
    * Kapalı yön: tam olarak BİR aktif hesap varsa onun id'si döner; yoksa `id: null`; birden çok hesap varsa ya da
    * aday sınırı dolduysa `ambiguous: true` — eşleşme yok sayılır. `createPortalUser` çakışma kapısı aynı karşılaştırmayı
    * kullanır; ikisi birlikte değiştirilir.
@@ -555,24 +555,12 @@ export class PortalService {
         select: { id: true, displayName: true, tenantId: true, type: true, tenant: { select: { lifecycle: true } } },
       },
     };
-    // KR-4: birebir eşleşme en çok İKİ aktif kayıt okur (sıralama yok). İki kayıt = adres birden çok aktif hesapla birebir
-    // eşleşiyor → eşleşme yok sayılır (biçim farkı belirsiz dalıyla aynı kapalı yön): hesap seçilmez, parola denenmez,
-    // giriş kaydı ve oturum yazılmaz. İşlem sırası bilinmeyen adres dalıyla aynıdır (biçim farkı ölçümü koşar, sonucu
-    // kullanılmaz; ret parola denemesinden önce, aynı mesajla).
-    const exact = await this.prisma.clientPortalUser.findMany({
-      where: { email, isActive: true },
-      include,
-      take: 2,
-    });
-    const exactAmbiguous = exact.length > 1;
-    let portalUser = exactAmbiguous ? null : exact[0] ?? null;
-    if (!portalUser) {
-      // D5-DIAG-R01: birebir eşleşme yoksa biçim farkı (harf/boşluk) tek aktif hesaba çözülüyorsa o hesap kullanılır.
-      const resolved = await this.resolveActivePortalUserByFoldedEmail(email);
-      if (resolved.id && !exactAmbiguous) {
-        portalUser = await this.prisma.clientPortalUser.findFirst({ where: { id: resolved.id, isActive: true }, include });
-      }
-    }
+    // Owner model A: eski normalize çakışmada birebir yazım da hesap seçemez.
+    // Tam bir aktif aday yoksa parola denenmez, giriş kaydı ve oturum yazılmaz.
+    const resolved = await this.resolveActivePortalUserByFoldedEmail(email);
+    const portalUser = resolved.id
+      ? await this.prisma.clientPortalUser.findFirst({ where: { id: resolved.id, isActive: true }, include })
+      : null;
 
     if (!portalUser) {
       throw new UnauthorizedException("Geçersiz e-posta veya şifre");
@@ -782,40 +770,23 @@ export class PortalService {
       return { success: true };
     }
     const include = { client: { select: { tenant: { select: { lifecycle: true } } } } };
-    // KR-4: birebir eşleşme en çok İKİ aktif kayıt okur (sıralama yok). İki kayıt = adres birden çok aktif hesapla birebir
-    // eşleşiyor → eşleşme yok sayılır (biçim farkı belirsiz dalıyla aynı kapalı yön): hiçbir satıra token yazılmaz, e-posta
-    // gönderilmez, dış cevap bilinmeyen adresle aynıdır. İşlem sırası bilinmeyen adres dalıyla aynıdır (biçim farkı ölçümü
-    // koşar, sonucu kullanılmaz).
-    const exact = await this.prisma.clientPortalUser.findMany({
-      where: { email, isActive: true },
-      include,
-      take: 2,
-    });
-    const exactAmbiguous = exact.length > 1;
-    let portalUser = exactAmbiguous ? null : exact[0] ?? null;
-    let ambiguous = false;
-    if (!portalUser) {
-      // D5-DIAG-R01: birebir eşleşme yoksa biçim farkı (harf/boşluk) tek aktif hesaba çözülüyorsa o hesap kullanılır.
-      const resolved = await this.resolveActivePortalUserByFoldedEmail(email);
-      ambiguous = resolved.ambiguous;
-      if (resolved.id && !exactAmbiguous) {
-        portalUser = await this.prisma.clientPortalUser.findFirst({ where: { id: resolved.id, isActive: true }, include });
-      }
-    }
+    // Owner model A: girişle aynı global normalize tekillik; birebir yazım istisnası yoktur.
+    const resolved = await this.resolveActivePortalUserByFoldedEmail(email);
+    const portalUser = resolved.id
+      ? await this.prisma.clientPortalUser.findFirst({ where: { id: resolved.id, isActive: true }, include })
+      : null;
 
     // D5-DIAG-R01: sessiz dalların hangisine düşüldüğü iç günlükte AYIRT EDİLİR (adres, token ve URL yazılmaz).
     // Dış cevap bütün dallarda bilinmeyen kullanıcıyla AYNIDIR (enumeration-safe). Boş adres ayrı satırdır: istemcinin
     // alanı boş göndermesi (ör. sayfa devralınmadan önce doldurulan alan) yanlış yazılmış adresten ayırt edilebilsin.
-    // KR-4: belirsiz birebir eşleşme kendi satırını yazar (biçim farkı belirsizliğinden ayırt edilir).
+    // Birebir veya biçim farkı çakışmaları aynı normalize belirsizlik olarak kaydedilir.
     if (!portalUser) {
       this.logger.log(
-        exactAmbiguous
-          ? "Şifre sıfırlama talebi: adres birebir yazımla birden çok aktif portal hesabıyla eşleşiyor — belirsiz (birebir); token üretilmedi, e-posta gönderilmedi"
-          : ambiguous
-            ? "Şifre sıfırlama talebi: adres biçim farkıyla birden çok aktif portal hesabıyla eşleşiyor (belirsiz) — token üretilmedi, e-posta gönderilmedi"
-            : foldPortalEmail(email) === ""
-              ? "Şifre sıfırlama talebi: e-posta alanı boş — token üretilmedi, e-posta gönderilmedi"
-              : "Şifre sıfırlama talebi: eşleşen aktif portal hesabı yok — token üretilmedi, e-posta gönderilmedi"
+        resolved.ambiguous
+          ? "Şifre sıfırlama talebi: adres biçim farkıyla birden çok aktif portal hesabıyla eşleşiyor (belirsiz) — token üretilmedi, e-posta gönderilmedi"
+          : foldPortalEmail(email) === ""
+            ? "Şifre sıfırlama talebi: e-posta alanı boş — token üretilmedi, e-posta gönderilmedi"
+            : "Şifre sıfırlama talebi: eşleşen aktif portal hesabı yok — token üretilmedi, e-posta gönderilmedi"
       );
       return { success: true };
     }
