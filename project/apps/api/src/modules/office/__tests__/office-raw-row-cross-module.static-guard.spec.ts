@@ -1,8 +1,8 @@
 /**
  * F-B01-04 — YAPISAL KİLİT: ham `Office` satırı OfficeService modülünün DIŞINA çıkmaz.
  *
- * Bu suite DAVRANIŞ değil YAPI kanıtlar. Gerekçesi tektir: bugünkü beş çağıranın yalnız
- * `name` okuması, YARIN eklenecek altıncı bir çağıranın ham satırı alıp `...office` ile
+ * Bu suite DAVRANIŞ değil YAPI kanıtlar. Gerekçesi tektir: bugünkü çağıranların yalnız
+ * `name` okuması, YARIN eklenecek başka bir çağıranın ham satırı alıp `...office` ile
  * bir bildirim token'ına yaymayacağını göstermez. Bir davranış testi yeni çağıranı FARK
  * EDEMEZ; kaynak taraması eder.
  *
@@ -120,11 +120,10 @@ describe('F-B01-04 static guard — ham Office satiri modul disina cikmaz', () =
     expect(offenders).toEqual([]);
   });
 
-  it('bes bilinen tuketici daraltilmis getOfficeIdentity yuzeyini kullanir', () => {
+  it('dort aktif tuketici daraltilmis getOfficeIdentity yuzeyini kullanir', () => {
     const consumers = [
       'modules/client-approval/client-approval.service.ts',
       'modules/client-intake-link/client-intake-link.service.ts',
-      'modules/client-statement/client-statement.service.ts',
       'modules/client-statement/client-statement-monthly-delivery.service.ts',
       'modules/expense-request/expense-request.service.ts',
     ];
@@ -140,6 +139,11 @@ describe('F-B01-04 static guard — ham Office satiri modul disina cikmaz', () =
         raw: false,
       });
     }
+  });
+
+  it('CL-R08: otomatik mail tuketicisi kaldirilan dosya ekstre servisi Office kimligi okumaz', () => {
+    const source = stripComments(readFileSync(join(API_SRC, 'modules/client-statement/client-statement.service.ts'), 'utf8'));
+    expect(source).not.toMatch(/\bOfficeService\b|\.getOfficeIdentity\s*\(/);
   });
 
   it('daraltilmis yuzey OfficeService uzerinde GERCEKTEN tanimli', () => {
