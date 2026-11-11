@@ -2682,16 +2682,15 @@ export class CaseService {
         });
 
         // 3. CaseClient ilişkilerini oluştur (tüm alacaklılar için)
-        if (clientIds.length > 0) {
-          for (let i = 0; i < clientIds.length; i++) {
-            await tx.caseClient.create({
-              data: {
-                caseId: newCase.id,
-                clientId: clientIds[i],
-                role: i === 0 ? "ALACAKLI" : "ORTAK_ALACAKLI",
-              },
-            });
-          }
+        // (CodeQL js/loop-bound-injection: yerel dizi üzerinde for…of; sıra ve roller aynı.)
+        for (const [index, clientId] of clientIds.entries()) {
+          await tx.caseClient.create({
+            data: {
+              caseId: newCase.id,
+              clientId,
+              role: index === 0 ? "ALACAKLI" : "ORTAK_ALACAKLI",
+            },
+          });
         }
 
         // 4. Avukatları - mevcut veya yeni

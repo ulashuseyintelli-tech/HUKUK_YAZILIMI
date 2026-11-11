@@ -248,6 +248,21 @@ describeWithDisposableDb('Tarihsel dosya aktarımı — POST /cases/historical-i
     await Promise.allSettled(openingExpenseSpy.mock.results.map((r) => r.value));
   });
 
+  it('normal POST /cases çoklu alacaklı: ilk alacaklı ALACAKLI, sonrakiler ORTAK_ALACAKLI (sıra korunur)', async () => {
+    const f = await fixture('coklu');
+    const second = (await prisma.client.create({ data: { tenantId: f.tenantId, type: 'COMPANY', name: `HI İkinci Şirket ${f.fileNo('x')}` } })).id;
+    const body = { ...caseBody(f, 'C1'), creditors: [{ id: f.client, type: 'COMPANY', name: 'Bir' }, { id: second, type: 'COMPANY', name: 'İki' }] };
+    const res = await postCase(f.admin, body);
+    expect(res.status).toBe(201);
+    const links = await prisma.caseClient.findMany({ where: { caseId: res.body.id }, select: { clientId: true, role: true } });
+    expect(links.sort((a, b) => (a.role < b.role ? -1 : 1))).toEqual([
+      { clientId: f.client, role: 'ALACAKLI' },
+      { clientId: second, role: 'ORTAK_ALACAKLI' },
+    ]);
+    const saved = await prisma.case.findUniqueOrThrow({ where: { id: res.body.id }, select: { clientId: true } });
+    expect(saved.clientId).toBe(f.client);
+  });
+
   it('tarihsel aktarım: yalnız eşlenen avukat; varsayılan kişi, bilgi talebi, masraf talebi, günlük, bildirim YOK; kaynak kimliği korunur', async () => {
     const f = await fixture('tarihsel');
     const before = await rows(f.tenantId);
