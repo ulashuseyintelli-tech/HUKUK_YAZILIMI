@@ -1,0 +1,42 @@
+# Portal email A supplied owner decision request
+
+Request-only. Append exactly the supplied new owner policy through the V1 chain. Fresh Decision Log writer coordination is required before target execution; prior turns are closed. Product HTTP/DB implementation and its one manifest entry are separately gated.
+
+<!-- GOV_COORD_REQUEST_JSON_BEGIN -->
+```json
+{
+  "schemaVersion": 1,
+  "requestId": "GOV-REQ-20261111-CLIENT-PORTAL-EMAIL-A-SA01",
+  "requestFingerprint": "d4aa9f12c003725016ce57e4cf2d835df8340797ab9ec0f6848e7d68a8c7d8bb",
+  "requestedBy": "CODEX_LOCAL",
+  "createdAt": "2026-11-11T10:03:47Z",
+  "baseMainSha": "a872c110b43c75d76287bac268d33001126f9a5b",
+  "semanticAuthorityRef": {
+    "kind": "SEMANTIC_AUTHORITY",
+    "path": "project/docs/governance/decision-log.md",
+    "recordId": "GOV-COORD-V2-T1-RATIFICATION",
+    "evidenceSha": "a872c110b43c75d76287bac268d33001126f9a5b"
+  },
+  "executionGrantRef": {
+    "kind": "EXECUTION_GRANT",
+    "path": "project/docs/governance/coordination-execution-grants/GOV-COORD-V1-CODEX-LOCAL.md",
+    "recordId": "GOV-COORD-V1-CODEX-LOCAL",
+    "evidenceSha": "a872c110b43c75d76287bac268d33001126f9a5b"
+  },
+  "operation": {
+    "type": "EXACT_APPEND_AT_DECLARED_ANCHOR",
+    "changeClass": "LEVEL_2_MECHANICAL",
+    "targetFile": "project/docs/governance/decision-log.md",
+    "recordIdentity": "| Date | Decision | Scope | Source | Follow-up |",
+    "anchor": "|---|---|---|---|",
+    "expectedOldValue": "|---|---|---|---|",
+    "newValue": "\n| 2026-11-11 | <!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=CLIENT-PORTAL-EMAIL-A-SA01 --> **PORTAL EMAIL MODEL A - SUPPLIED OWNER DECISION:** Active technical portal accounts use global email uniqueness with existing trim and ASCII folding. | Preserve create/reactivate conflict 409 without another account/tenant identity disclosure. Remove exact-spelling priority in login/recovery: any normalized ambiguity (including candidate truncation) selects no account, issues no token, login-success write or email; preserve generic public responses. Inactive accounts do not reserve email; tenant suspension does not release an otherwise active account reservation. Preserve existing session/tokenVersion model and one technical portal account per Client. | Owner supplied the A policy and explicitly authorized bounded implementation, focused HTTP/disposable-DB validation, PR, required CI, exact-head merge and main verification; transcript SHA256 9a1ba92085cbe1dac51ccd80e1770da88266d41ec689b5cc83284c9ba911a061. Mechanical transcription only, not agent ratification or machine grant. | No schema/migration/live operation, legacy record rewriting/merging/transfer or new principal/role/representation. Reuse existing folded resolver and serialized account writer. Coordinate fresh single-row and one manifest-entry writer turns; prior closed turns are not reused. Preserve O-5/F04_RACE and physical residues; return writers after delivery. |",
+    "evidenceSha": "a872c110b43c75d76287bac268d33001126f9a5b",
+    "expectedResultSha256": "205dc873aaa694cd989ad3f5c3496bd05d16736cc60546f28ff86a1f2299dc03"
+  },
+  "declaredTargetAllowlist": [
+    "project/docs/governance/decision-log.md"
+  ]
+}
+```
+<!-- GOV_COORD_REQUEST_JSON_END -->
