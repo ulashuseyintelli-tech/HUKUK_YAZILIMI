@@ -401,3 +401,5 @@ src/modules/fee-engine/__tests__/fee-preview-service-callers.spec.ts
 # Asama masraf seti ISTEK ANAHTARI saf kararlari (anahtar dogrulama, parmak izi, tekrar / cakisma / iptal karari).
 src/modules/expense-request/__tests__/stage-expense-idempotency.spec.ts
 src/modules/client/__tests__/client-bank-account-h13a.spec.ts
+# MESE pilot (owner GO-COMPLETE 12.11.2026): kanuni faiz (3095 md.1) oran tablosu - resmi kaynak/kanit, bitisik kapali donemler, 7589 sonrasi %31 (reeskont x 0,80); seed-interest-rates.ts tuketir.
+src/modules/interest-engine/rates/__tests__/legal-3095-rate-table.spec.ts
