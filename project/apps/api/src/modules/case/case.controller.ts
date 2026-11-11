@@ -10,12 +10,15 @@ import {
   Query,
   UseGuards,
   BadRequestException,
+  NotFoundException,
   Optional,
   ServiceUnavailableException,
   Req,
 } from "@nestjs/common";
 import { CaseService } from "./case.service";
 import { CreateCaseDto, CreateDueDto, UpdateCaseDto, UpdateDueDto } from "./dto/case.dto";
+import { HistoricalCaseImportDto } from "./dto/historical-case-import.dto";
+import { isCaseHistoricalImportEnabled } from "./historical-import/case-historical-import";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
@@ -246,6 +249,31 @@ export class CaseController {
     @Body() dto: CreateCaseDto,
   ) {
     return this.caseService.create(tenantId, dto, userId, userRole);
+  }
+
+  /**
+   * Tarihsel dosya aktarımı (başka sistemde açılmış dosya; yeni takip açılışından AYRI). Bayrak
+   * (`CASE_HISTORICAL_IMPORT_ENABLED`) kapalıyken uç yokmuş gibi 404; açıkken yalnız ADMIN (reddedilen deneme denetime
+   * yazılır). Yeni takip açılışının varsayılan avukat / personel, müvekkil bilgi talebi ve açılış masraf talebi yan
+   * etkileri bu yolda ÇALIŞMAZ; ayrıntı `historical-import/case-historical-import.ts`. Normal POST /cases değişmez.
+   */
+  @Post("historical-import")
+  async historicalImport(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
+    @CurrentUser("role") userRole: string,
+    @Body() dto: HistoricalCaseImportDto,
+  ) {
+    if (!isCaseHistoricalImportEnabled()) {
+      throw new NotFoundException();
+    }
+    await this.permissionHardGuard.assertBridgeAdmin("cases.historicalImport", {
+      tenantId,
+      actorUserId: userId,
+      role: userRole,
+      requestPath: "/cases/historical-import",
+    });
+    return this.caseService.createHistoricalImport(tenantId, dto, userId, userRole);
   }
 
   @Put(":id")
