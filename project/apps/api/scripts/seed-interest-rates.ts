@@ -8,9 +8,21 @@
  * 
  * Veya pnpm ile:
  *   pnpm --filter @hukuk/api seed:rates
+ *
+ * Seçenekler (verilmezse bugünkü davranış: bütün türler, bütün bürolar):
+ *   --only=LEGAL_3095[,TTK_1530,...]   yalnız verilen oran türlerini yükler
+ *   --tenant-slug=<slug>               yalnız o kiracının bürosuna yükler (bulunamazsa çıkış 1)
+ *   --dry-run                          yazmaz; eklenecek satırları listeler
+ *   --yalniz-dogrulanmis               yalnız resmî kaynakla doğrulanmış satırlar (LEGAL_3095 tablosunda VERIFIED_OFFICIAL);
+ *                                      doğrulama bilgisi taşımayan bir tür (avans, TTK) seçiliyse çıkış 1
+ * Bilinmeyen seçenek ya da tür → çıkış 1 (hiçbir şey yazılmaz).
+ *
+ * Kanuni faiz (LEGAL_3095) satırları kaynak ve kanıtıyla `src/modules/interest-engine/rates/legal-3095-rate-table.ts`
+ * içindedir (kapalı dönemler: validTo yazılır).
  */
 
 import { PrismaClient } from '@prisma/client';
+import { LEGAL_3095_RATE_TABLE } from '../src/modules/interest-engine/rates/legal-3095-rate-table';
 
 const prisma = new PrismaClient();
 
@@ -62,12 +74,8 @@ const AVANS_FAIZ_ORANLARI = [
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════
-// YASAL FAİZ (3095 sayılı Kanun m.1)
+// YASAL FAİZ (3095 sayılı Kanun m.1) → LEGAL_3095_RATE_TABLE (kaynak + kanıt + kapalı dönemler)
 // ═══════════════════════════════════════════════════════════════════════════
-const YASAL_FAIZ_ORANLARI = [
-  { validFrom: '2006-01-01', annualRate: 0.09 },
-  { validFrom: '2024-06-01', annualRate: 0.24 },
-];
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TTK 1530 GEÇ ÖDEME FAİZİ
@@ -89,107 +97,120 @@ function generateVersionHash(entry: { interestType: string; validFrom: string; a
   return crypto.createHash('sha256').update(data).digest('hex').substring(0, 16);
 }
 
-async function seedRatesForTenant(tenantId: string): Promise<number> {
+const RATE_TYPES = ['COMMERCIAL_AVANS_3095_2_2', 'LEGAL_3095', 'TTK_1530'] as const;
+type RateType = (typeof RATE_TYPES)[number];
+
+interface SeedOptions {
+  only: ReadonlySet<RateType>;
+  tenantSlug?: string;
+  dryRun: boolean;
+  /** Yalnız resmî kaynakla doğrulanmış satırlar (bugün yalnız LEGAL_3095 tablosu doğrulama bilgisi taşır). */
+  verifiedOnly: boolean;
+}
+
+/** Doğrulama bilgisi (verification) taşıyan türler; --yalniz-dogrulanmis yalnız bunlarla kullanılabilir. */
+const VERIFIABLE_TYPES: ReadonlySet<RateType> = new Set<RateType>(['LEGAL_3095']);
+
+interface SeedRow {
+  validFrom: string;
+  validTo?: string | null;
+  annualRate: number;
+  source: string;
+  sourceRef: string;
+}
+
+/** Komut satırı seçenekleri; bilinmeyen seçenek / tür → hata (hiçbir şey yazılmadan). */
+function parseArgs(argv: readonly string[]): SeedOptions {
+  let only: Set<RateType> = new Set(RATE_TYPES);
+  let tenantSlug: string | undefined;
+  let dryRun = false;
+  let verifiedOnly = false;
+  for (const arg of argv) {
+    if (arg === '--dry-run') {
+      dryRun = true;
+    } else if (arg === '--yalniz-dogrulanmis') {
+      verifiedOnly = true;
+    } else if (arg.startsWith('--only=')) {
+      const requested = arg.slice('--only='.length).split(',').map((t) => t.trim()).filter(Boolean);
+      const unknown = requested.filter((t) => !(RATE_TYPES as readonly string[]).includes(t));
+      if (requested.length === 0 || unknown.length > 0) {
+        throw new Error(`Bilinmeyen oran türü: ${unknown.join(', ') || '(boş)'} — geçerli: ${RATE_TYPES.join(', ')}`);
+      }
+      only = new Set(requested as RateType[]);
+    } else if (arg.startsWith('--tenant-slug=')) {
+      tenantSlug = arg.slice('--tenant-slug='.length).trim();
+      if (!tenantSlug) throw new Error('--tenant-slug boş olamaz');
+    } else {
+      throw new Error(`Bilinmeyen seçenek: ${arg}`);
+    }
+  }
+  if (verifiedOnly) {
+    const unverifiable = [...only].filter((t) => !VERIFIABLE_TYPES.has(t));
+    if (unverifiable.length > 0) {
+      throw new Error(`--yalniz-dogrulanmis: doğrulama bilgisi olmayan tür seçili (${unverifiable.join(', ')}); --only=LEGAL_3095 ile kullanın`);
+    }
+  }
+  return { only, tenantSlug, dryRun, verifiedOnly };
+}
+
+/** Aynı (büro, tür, validFrom) satırı varsa atlar; yoksa ekler (kuru koşuda yalnız listeler). */
+async function seedRows(tenantId: string, interestType: RateType, rows: readonly SeedRow[], opts: SeedOptions): Promise<number> {
+  let added = 0;
+  for (const rate of rows) {
+    const existing = await prisma.rateSchedule.findFirst({
+      where: { tenantId, interestType, validFrom: new Date(rate.validFrom) },
+    });
+    if (existing) continue;
+    if (opts.dryRun) {
+      console.log(`  [kuru] ${interestType} ${rate.validFrom} → ${rate.validTo ?? 'açık'} ${rate.annualRate} (${rate.sourceRef})`);
+      added++;
+      continue;
+    }
+    await prisma.rateSchedule.create({
+      data: {
+        tenantId,
+        interestType,
+        validFrom: new Date(rate.validFrom),
+        validTo: rate.validTo ? new Date(rate.validTo) : null,
+        annualRate: rate.annualRate,
+        source: rate.source,
+        sourceRef: rate.sourceRef,
+        versionHash: generateVersionHash({ interestType, validFrom: rate.validFrom, annualRate: rate.annualRate }),
+      },
+    });
+    added++;
+  }
+  return added;
+}
+
+async function seedRatesForTenant(tenantId: string, opts: SeedOptions): Promise<number> {
   let addedCount = 0;
 
   console.log(`\n📊 Tenant ${tenantId} için oranlar yükleniyor...`);
 
   // Avans Faizi
-  for (const rate of AVANS_FAIZ_ORANLARI) {
-    const existing = await prisma.rateSchedule.findFirst({
-      where: {
-        tenantId,
-        interestType: 'COMMERCIAL_AVANS_3095_2_2',
-        validFrom: new Date(rate.validFrom),
-      },
-    });
-
-    if (!existing) {
-      await prisma.rateSchedule.create({
-        data: {
-          tenantId,
-          interestType: 'COMMERCIAL_AVANS_3095_2_2',
-          validFrom: new Date(rate.validFrom),
-          annualRate: rate.annualRate,
-          source: 'TCMB',
-          sourceRef: `TCMB ${rate.validFrom}`,
-          versionHash: generateVersionHash({
-            interestType: 'COMMERCIAL_AVANS_3095_2_2',
-            validFrom: rate.validFrom,
-            annualRate: rate.annualRate,
-          }),
-        },
-      });
-      addedCount++;
-    }
+  if (opts.only.has('COMMERCIAL_AVANS_3095_2_2')) {
+    const rows = AVANS_FAIZ_ORANLARI.map((r) => ({ ...r, source: 'TCMB', sourceRef: `TCMB ${r.validFrom}` }));
+    const n = await seedRows(tenantId, 'COMMERCIAL_AVANS_3095_2_2', rows, opts);
+    console.log(`  ✅ Avans faizi: ${n} oran eklendi`);
+    addedCount += n;
   }
-  console.log(`  ✅ Avans faizi: ${addedCount} oran eklendi`);
 
-  // Yasal Faiz
-  let yasalCount = 0;
-  for (const rate of YASAL_FAIZ_ORANLARI) {
-    const existing = await prisma.rateSchedule.findFirst({
-      where: {
-        tenantId,
-        interestType: 'LEGAL_3095',
-        validFrom: new Date(rate.validFrom),
-      },
-    });
-
-    if (!existing) {
-      await prisma.rateSchedule.create({
-        data: {
-          tenantId,
-          interestType: 'LEGAL_3095',
-          validFrom: new Date(rate.validFrom),
-          annualRate: rate.annualRate,
-          source: 'RESMI_GAZETE',
-          sourceRef: 'Resmi Gazete',
-          versionHash: generateVersionHash({
-            interestType: 'LEGAL_3095',
-            validFrom: rate.validFrom,
-            annualRate: rate.annualRate,
-          }),
-        },
-      });
-      yasalCount++;
-      addedCount++;
-    }
+  // Yasal Faiz (kaynak + kanıt + kapalı dönemler: LEGAL_3095_RATE_TABLE)
+  if (opts.only.has('LEGAL_3095')) {
+    const rows = opts.verifiedOnly ? LEGAL_3095_RATE_TABLE.filter((r) => r.verification === 'VERIFIED_OFFICIAL') : LEGAL_3095_RATE_TABLE;
+    const n = await seedRows(tenantId, 'LEGAL_3095', rows, opts);
+    console.log(`  ✅ Yasal faiz: ${n} oran eklendi`);
+    addedCount += n;
   }
-  console.log(`  ✅ Yasal faiz: ${yasalCount} oran eklendi`);
 
   // TTK 1530
-  let ttkCount = 0;
-  for (const rate of TTK_1530_ORANLARI) {
-    const existing = await prisma.rateSchedule.findFirst({
-      where: {
-        tenantId,
-        interestType: 'TTK_1530',
-        validFrom: new Date(rate.validFrom),
-      },
-    });
-
-    if (!existing) {
-      await prisma.rateSchedule.create({
-        data: {
-          tenantId,
-          interestType: 'TTK_1530',
-          validFrom: new Date(rate.validFrom),
-          annualRate: rate.annualRate,
-          source: 'TCMB',
-          sourceRef: `TCMB TTK 1530 ${rate.validFrom.substring(0, 4)}`,
-          versionHash: generateVersionHash({
-            interestType: 'TTK_1530',
-            validFrom: rate.validFrom,
-            annualRate: rate.annualRate,
-          }),
-        },
-      });
-      ttkCount++;
-      addedCount++;
-    }
+  if (opts.only.has('TTK_1530')) {
+    const rows = TTK_1530_ORANLARI.map((r) => ({ ...r, source: 'TCMB', sourceRef: `TCMB TTK 1530 ${r.validFrom.substring(0, 4)}` }));
+    const n = await seedRows(tenantId, 'TTK_1530', rows, opts);
+    console.log(`  ✅ TTK 1530: ${n} oran eklendi`);
+    addedCount += n;
   }
-  console.log(`  ✅ TTK 1530: ${ttkCount} oran eklendi`);
 
   return addedCount;
 }
@@ -202,12 +223,17 @@ async function main() {
   console.log('');
 
   try {
-    // Tüm tenant'ları al
+    const opts = parseArgs(process.argv.slice(2));
+    console.log(`  Türler: ${[...opts.only].join(', ')}${opts.tenantSlug ? ` · kiracı: ${opts.tenantSlug}` : ''}${opts.verifiedOnly ? ' · yalnız doğrulanmış' : ''}${opts.dryRun ? ' · KURU KOŞU (yazım yok)' : ''}`);
+
+    // Bürolar (rate_schedule.tenantId → Office.id); --tenant-slug verilmişse yalnız o kiracının bürosu
     const tenants = await prisma.office.findMany({
+      where: opts.tenantSlug ? { tenant: { slug: opts.tenantSlug } } : undefined,
       select: { id: true, name: true },
     });
 
     if (tenants.length === 0) {
+      if (opts.tenantSlug) throw new Error(`Kiracı bulunamadı ya da bürosu yok: ${opts.tenantSlug}`);
       console.log('⚠️  Hiç tenant bulunamadı. Önce bir büro oluşturun.');
       return;
     }
@@ -216,16 +242,14 @@ async function main() {
     tenants.forEach(t => console.log(`   - ${t.name} (${t.id})`));
 
     let totalAdded = 0;
-
     for (const tenant of tenants) {
-      const added = await seedRatesForTenant(tenant.id);
+      const added = await seedRatesForTenant(tenant.id, opts);
       totalAdded += added;
     }
 
     console.log('\n═══════════════════════════════════════════════════════════════');
-    console.log(`✅ TAMAMLANDI: Toplam ${totalAdded} oran eklendi`);
+    console.log(`✅ TAMAMLANDI: Toplam ${totalAdded} oran ${opts.dryRun ? 'eklenecekti (kuru koşu)' : 'eklendi'}`);
     console.log('═══════════════════════════════════════════════════════════════');
-
   } catch (error) {
     console.error('❌ Hata:', error);
     process.exit(1);
