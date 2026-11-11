@@ -12,8 +12,8 @@ Only the observed registered eg operation is closed here. Exact execution PR and
   "status": "SUCCEEDED",
   "executionPrNumber": 3204,
   "executionMergeSha": "12f32101c9136ef0c83112c79f51d6a22fd59b89",
-  "effectiveMainSha": "8a2202bdd294990f47af08a9b35482d8a14737a4",
-  "completedAt": "2026-11-11T22:52:16Z",
+  "effectiveMainSha": "0dd063ac346612f077c4030f63cba599d1bef14b",
+  "completedAt": "2026-11-11T23:13:18Z",
   "validationEvidence": [
     {
       "name": "exact-target:project/docs/governance/coordination-execution-grants/CLIENT-STATEMENT-READY-CLR08-EG01.md:sha256:10c99bf708f8ce1dfcaf20308558c0779f01f925e04e090166be728855746dbb",
