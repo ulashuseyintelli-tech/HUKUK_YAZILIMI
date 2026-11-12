@@ -1,5 +1,6 @@
 import { IsEmail, IsString, MinLength, IsOptional, IsIn, Matches, ValidateIf } from "class-validator";
 import { StaffType } from "@prisma/client";
+import { STAFF_PASSWORD_MIN_LENGTH, STAFF_PASSWORD_MIN_LENGTH_MESSAGE } from "../password-policy";
 
 /** K-A1 a′ (owner kararı 2026-10-29/30): ilk hesap bir KİŞİ KARTINA bağlı doğar — avukat ise Lawyer, değilse StaffMember. */
 export const REGISTER_PERSON_TYPES = ["LAWYER", "STAFF"] as const;
@@ -20,7 +21,7 @@ export class RegisterDto {
   email: string;
 
   @IsString()
-  @MinLength(8)
+  @MinLength(STAFF_PASSWORD_MIN_LENGTH, { message: STAFF_PASSWORD_MIN_LENGTH_MESSAGE })
   password: string;
 
   /**

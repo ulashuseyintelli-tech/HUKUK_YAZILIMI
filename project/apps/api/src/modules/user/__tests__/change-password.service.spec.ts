@@ -1,5 +1,6 @@
 // OFFICE-AUTH-P01: self-service parola değiştirme — mevcut parola doğrulama, politika
-// sınırları (min 12 / max 72 bayt / eski-yeni aynı olamaz / confirmation), tenant-scope,
+// sınırları (max 72 bayt / eski-yeni aynı olamaz / confirmation; asgari uzunluk DTO'da — auth/password-policy.ts,
+// HTTP testi staff-password-min-length.http.spec.ts), tenant-scope,
 // atomik update (passwordHash+passwordChangedAt+tokenVersion++), audit redaction.
 import { BadRequestException, UnauthorizedException } from "@nestjs/common";
 import * as bcrypt from "bcrypt";

@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 import { Scale, ArrowLeft } from "lucide-react";
 import { api } from "@/lib/api";
 import { PasswordInput } from "@/components/ui/PasswordInput";
+import { STAFF_NEW_PASSWORD_MIN_LENGTH_MESSAGE, STAFF_PASSWORD_MIN_LENGTH } from "@/lib/password-policy";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -46,6 +47,12 @@ export default function ResetPasswordPage() {
     const password = formData.get("password") as string;
     const passwordConfirmation = formData.get("passwordConfirmation") as string;
 
+    // Tarayıcı `minLength` ile zaten durdurur; bu denetim aynı kuralı Türkçe mesajla ve React gönderiminde de uygular
+    // (API kısa parolayı reddederse aşağıdaki genel "bağlantı geçersiz" mesajı yanıltıcı olurdu).
+    if (password.length < STAFF_PASSWORD_MIN_LENGTH) {
+      setError(STAFF_NEW_PASSWORD_MIN_LENGTH_MESSAGE);
+      return;
+    }
     if (password !== passwordConfirmation) {
       setError("Yeni parola ve tekrarı eşleşmiyor");
       return;
@@ -108,13 +115,13 @@ export default function ResetPasswordPage() {
             <form onSubmit={handleSubmit} method="post" className="space-y-4">
               <div>
                 <label htmlFor="password" className="block text-sm font-medium mb-2">
-                  Yeni Parola
+                  Yeni Parola (en az {STAFF_PASSWORD_MIN_LENGTH} karakter)
                 </label>
                 <PasswordInput
                   id="password"
                   name="password"
                   required
-                  minLength={12}
+                  minLength={STAFF_PASSWORD_MIN_LENGTH}
                   autoComplete="new-password"
                   className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
                   placeholder="••••••••"
@@ -129,7 +136,7 @@ export default function ResetPasswordPage() {
                   id="passwordConfirmation"
                   name="passwordConfirmation"
                   required
-                  minLength={12}
+                  minLength={STAFF_PASSWORD_MIN_LENGTH}
                   autoComplete="new-password"
                   className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
                   placeholder="••••••••"

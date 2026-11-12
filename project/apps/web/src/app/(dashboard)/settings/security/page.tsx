@@ -6,6 +6,7 @@ import { KeyRound } from "lucide-react";
 import { api } from "@/lib/api";
 import { PasswordInput } from "@/components/ui/PasswordInput";
 import { useHydrated } from "@/lib/use-hydrated";
+import { STAFF_NEW_PASSWORD_MIN_LENGTH_MESSAGE, STAFF_PASSWORD_MIN_LENGTH } from "@/lib/password-policy";
 
 /**
  * OFFICE-AUTH-P01: authenticated OFFICE kullanıcısı (Lawyer/StaffMember/Admin) için
@@ -25,8 +26,8 @@ export default function SecuritySettingsPage() {
     e.preventDefault();
     setError("");
 
-    if (newPassword.length < 12) {
-      setError("Yeni parola en az 12 karakter olmalıdır.");
+    if (newPassword.length < STAFF_PASSWORD_MIN_LENGTH) {
+      setError(STAFF_NEW_PASSWORD_MIN_LENGTH_MESSAGE);
       return;
     }
     if (new TextEncoder().encode(newPassword).length > 72) {
@@ -80,7 +81,7 @@ export default function SecuritySettingsPage() {
 
         <div>
           <label htmlFor="newPassword" className="block text-sm font-medium mb-2">
-            Yeni Parola (en az 12 karakter)
+            Yeni Parola (en az {STAFF_PASSWORD_MIN_LENGTH} karakter)
           </label>
           <PasswordInput
             id="newPassword"

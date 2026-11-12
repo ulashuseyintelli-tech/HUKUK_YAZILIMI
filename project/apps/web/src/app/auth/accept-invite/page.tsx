@@ -18,6 +18,7 @@ import Link from "next/link";
 import { Scale } from "lucide-react";
 import { api } from "@/lib/api";
 import { PasswordInput } from "@/components/ui/PasswordInput";
+import { STAFF_PASSWORD_MIN_LENGTH, STAFF_PASSWORD_MIN_LENGTH_MESSAGE } from "@/lib/password-policy";
 import { useHydrated } from "@/lib/use-hydrated";
 
 function AcceptInviteInner() {
@@ -64,8 +65,8 @@ function AcceptInviteInner() {
       setError("Davet bağlantısı geçersiz (token bulunamadı).");
       return;
     }
-    if (password.length < 8) {
-      setError("Parola en az 8 karakter olmalıdır.");
+    if (password.length < STAFF_PASSWORD_MIN_LENGTH) {
+      setError(STAFF_PASSWORD_MIN_LENGTH_MESSAGE);
       return;
     }
     if (password !== confirm) {
@@ -106,7 +107,7 @@ function AcceptInviteInner() {
             </p>
             <PasswordInput
               name="password"
-              placeholder="Yeni parola (en az 8 karakter)"
+              placeholder={`Yeni parola (en az ${STAFF_PASSWORD_MIN_LENGTH} karakter)`}
               autoComplete="new-password"
               required
               className="w-full border rounded px-3 py-2"
