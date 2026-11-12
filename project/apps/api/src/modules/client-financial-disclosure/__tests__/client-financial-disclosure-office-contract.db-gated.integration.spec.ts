@@ -159,7 +159,7 @@ describeDb('CODEX-X1 PRE01 — office contract (disposable PostgreSQL)', () => {
     expect(item.versionId).toBe(versionA);
     expect(item.status).toBe('SEND_FAILED');
     expect(item.officeFileNumber).toBe(`PRE01-A-${suffix}`);
-    expect(item.actions.canRetryPublication).toBe(true);
+    expect(item.actions.canRetryPublication).toBe(false);
     expect(() => assertOfficeDisclosureProjectionSafe(item)).not.toThrow();
 
     const preview = await service.getPreview(
@@ -241,7 +241,8 @@ describeDb('CODEX-X1 PRE01 — office contract (disposable PostgreSQL)', () => {
       { tenantId: tenantA, actorUserId: partner, clientId: clientA },
       versionA,
     );
-    expect(detail.delivery.state).toBe('FAILED_RETRY_AVAILABLE');
+    expect(detail.delivery.state).toBe('RECONCILIATION_REQUIRED');
+    expect(detail.actions.canRetryPublication).toBe(false);
     expect(timeline.events.map((event) => event.type)).toContain('SEND_FAILED');
     const serialized = JSON.stringify({ detail, timeline });
     expect(serialized).not.toContain('SMTP_SECRET_CODE');

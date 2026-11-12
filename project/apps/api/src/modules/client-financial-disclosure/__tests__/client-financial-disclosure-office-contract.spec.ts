@@ -40,6 +40,7 @@ function version(status: ClientFinancialDisclosureStatus = ClientFinancialDisclo
   const instant = new Date('2026-08-08T10:00:00.000Z');
   return {
     id: V,
+    tenantId: T,
     disclosureId: D,
     version: 1,
     status,
@@ -306,14 +307,14 @@ describe('CODEX-X1 PRE01 — office financial disclosure contract', () => {
     expect(partnerDetail.actions.canPublish).toBe(true);
   });
 
-  it('SEND_FAILED retry capability üretir fakat ham provider hata kodu/detayı sızdırmaz', async () => {
+  it('kanıtsız eski SEND_FAILED retry capability üretmez ve ham provider hata kodu/detayı sızdırmaz', async () => {
     const prisma = buildPrisma({ versions: [version(ClientFinancialDisclosureStatus.SEND_FAILED)] });
     const result = await new ClientFinancialDisclosureOfficeService(prisma as any).getDetail(
       { tenantId: T, actorUserId: U, clientId: C },
       V,
     );
-    expect(result.actions.canRetryPublication).toBe(true);
-    expect(result.delivery.state).toBe('FAILED_RETRY_AVAILABLE');
+    expect(result.actions.canRetryPublication).toBe(false);
+    expect(result.delivery.state).toBe('RECONCILIATION_REQUIRED');
     const serialized = JSON.stringify(result);
     expect(serialized).not.toContain('SMTP_RAW_FAILURE_CODE');
     expect(serialized).not.toContain('raw provider stack secret');

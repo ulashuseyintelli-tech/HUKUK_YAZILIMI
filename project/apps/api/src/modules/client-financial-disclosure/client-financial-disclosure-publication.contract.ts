@@ -76,6 +76,7 @@ export const CLIENT_FINANCIAL_DISCLOSURE_PUBLICATION_INVARIANT_ERROR_CODES = [
   'DISCLOSURE_PUBLICATION_RECIPIENT_MISSING',
   'DISCLOSURE_PUBLICATION_SEND_ALREADY_CLAIMED',
   'DISCLOSURE_PUBLICATION_SEND_PROOF_MISSING',
+  'DISCLOSURE_PUBLICATION_RECONCILIATION_REQUIRED',
   'DISCLOSURE_PUBLICATION_ALREADY_PUBLISHED',
   'DISCLOSURE_PUBLICATION_SUPERSESSION_INVALID',
   'DISCLOSURE_PUBLICATION_CONCURRENT_TRANSITION',
@@ -127,6 +128,8 @@ export interface DisclosureDispatchResult {
   readonly errorCode?: string;
   readonly errorMessage?: string;
   readonly provider: string;
+  /** Acceptance certainty, independent of transient/permanent retry telemetry. Absent is unknown on failure. */
+  readonly deliveryOutcome?: 'ACCEPTED' | 'REJECTED' | 'INDETERMINATE';
   /**
    * CLIENT-FD-ACT-R01-I04 — OPSIYONEL basarisizlik siniflandirmasi (geriye donuk uyumlu).
    * `true`  : gecici hata, ayni versiyon icin `retrySend()` anlamlidir.
@@ -224,6 +227,8 @@ function publicationMessage(code: ClientFinancialDisclosurePublicationErrorCode)
       'Another dispatcher already claimed the send for this disclosure version.',
     DISCLOSURE_PUBLICATION_SEND_PROOF_MISSING:
       'Publication requires a persistent provider message id; none is present.',
+    DISCLOSURE_PUBLICATION_RECONCILIATION_REQUIRED:
+      'Delivery evidence is uncertain; resending is blocked pending reconciliation.',
     DISCLOSURE_PUBLICATION_ALREADY_PUBLISHED:
       'Disclosure version is already published; a second publication is refused.',
     DISCLOSURE_PUBLICATION_SUPERSESSION_INVALID:

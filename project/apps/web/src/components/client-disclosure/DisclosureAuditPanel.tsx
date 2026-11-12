@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Card, Spinner } from '@hukuk/ui';
 import { History } from 'lucide-react';
@@ -48,20 +48,26 @@ export function DisclosureAuditPanel({
   actions: OfficeDisclosureActionCapabilities;
 }) {
   const queryClient = useQueryClient();
-  const [notice, setNotice] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const contextKey = `${clientId}/${versionId}`;
+  const currentContext = useRef(contextKey);
+  currentContext.current = contextKey;
+  const [notice, setNotice] = useState<{ contextKey: string; text: string } | null>(null);
+  const [error, setError] = useState<{ contextKey: string; text: string } | null>(null);
   const timeline = useQuery({
     queryKey: ['client-financial-disclosures', 'office-timeline', clientId, versionId],
     queryFn: () => clientFinancialDisclosureApi.getTimeline(clientId, versionId),
   });
   const retry = useMutation({
-    mutationFn: () => clientFinancialDisclosureApi.retryPublication(versionId),
+    mutationFn: (command: { contextKey: string; versionId: string }) => clientFinancialDisclosureApi.retryPublication(command.versionId),
     onMutate: () => {
       setNotice(null);
       setError(null);
     },
-    onSuccess: async () => {
-      setNotice('Kontrollü teslim retry’ı işlendi; güncel durum yenilendi.');
+    onSuccess: async (result, command) => {
+      if (currentContext.current === command.contextKey) {
+        if (result?.status === 'PUBLISHED') setNotice({ contextKey: command.contextKey, text: 'Bildirim yayımlandı; sağlayıcı kabulü posta kutusuna teslim veya okunma kanıtı değildir.' });
+        else setError({ contextKey: command.contextKey, text: 'Bildirim yayımlanmadı; güncel teslim durumu kontrol edilmelidir.' });
+      }
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: ['client-financial-disclosures', 'office-list', clientId],
@@ -77,13 +83,14 @@ export function DisclosureAuditPanel({
         }),
       ]);
     },
-    onError: () => {
+    onError: (_error, command) => {
       // Provider/backend ayrıntısı ve teknik hata kimlikleri office UI'a taşınmaz.
-      setError('Kontrollü teslim retry’ı tamamlanamadı.');
+      if (currentContext.current === command.contextKey) setError({ contextKey: command.contextKey, text: 'Kontrollü teslim işlemi tamamlanamadı.' });
     },
   });
 
   const deliveryFailed = delivery.state === 'FAILED_RETRY_AVAILABLE';
+  const accepted = delivery.state === 'PROVIDER_ACCEPTED';
 
   return (
     <Card className="p-4">
@@ -96,25 +103,29 @@ export function DisclosureAuditPanel({
 
       {deliveryFailed ? (
         <div role="alert" className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          Teslim sağlayıcısı bildirimi kabul etmedi veya kabul kanıtı alınamadı. İçerik ve
+          Teslim sağlayıcısının bildirimi kabul etmediği doğrulandı. İçerik ve
           alıcı mühürü korunarak yalnız kontrollü retry başlatılabilir.
         </div>
       ) : null}
 
-      {deliveryFailed && actions.canRetryPublication ? (
+      {delivery.state === 'RECONCILIATION_REQUIRED' ? (
+        <div role="alert" className="mt-3 text-amber-900">Teslim sonucu belirsiz; uzlaştırma için kanıt gerekiyor. Yeniden gönderim ve yayınlama engelli.</div>
+      ) : null}
+      {accepted ? <p className="mt-3">Sağlayıcı kabul kanıtı kayıtlı. Yayınlama yeniden e-posta gönderilmeden tamamlanabilir.</p> : null}
+      {(deliveryFailed || accepted) && actions.canRetryPublication ? (
         <Button
           size="sm"
           variant="outline"
           className="mt-3"
           disabled={retry.isPending}
-          onClick={() => retry.mutate()}
+          onClick={() => retry.mutate({ contextKey, versionId })}
         >
-          {retry.isPending ? <Spinner className="h-4 w-4" /> : 'Kontrollü teslim retry’ını başlat'}
+          {retry.isPending ? <Spinner className="h-4 w-4" /> : accepted ? 'Yeniden göndermeden yayınlamayı tamamla' : 'Kontrollü teslim retry’ını başlat'}
         </Button>
       ) : null}
 
-      {notice ? <p role="status" className="mt-3 text-sm text-emerald-700">{notice}</p> : null}
-      {error ? <p role="alert" className="mt-3 text-sm text-red-700">{error}</p> : null}
+      {notice?.contextKey === contextKey ? <p role="status" className="mt-3 text-sm text-emerald-700">{notice.text}</p> : null}
+      {error?.contextKey === contextKey ? <p role="alert" className="mt-3 text-sm text-red-700">{error.text}</p> : null}
 
       {timeline.isLoading ? <Spinner data-testid="financial-disclosure-timeline-loading" /> : null}
       {timeline.isError ? (

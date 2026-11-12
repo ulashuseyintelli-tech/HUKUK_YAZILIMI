@@ -82,6 +82,29 @@ beforeEach(() => {
 });
 
 describe('DisclosureAuditPanel X1-B05', () => {
+  it('CL-R10 uncertain evidence never presents a resend button, even with stale capability', async () => {
+    renderPanel({ delivery: { ...pendingDelivery, state: 'RECONCILIATION_REQUIRED' }, actions: { ...noActions, canRetryPublication: true } });
+    expect(await screen.findByText(/Teslim sonucu belirsiz/)).toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(retryPublication).not.toHaveBeenCalled();
+  });
+
+  it('CL-R10 accepted evidence offers publication completion explicitly without resend', async () => {
+    renderPanel({ delivery: { ...pendingDelivery, state: 'PROVIDER_ACCEPTED', providerAcceptedAt: '2026-11-13T00:00:00Z' }, actions: { ...noActions, canRetryPublication: true } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Yeniden göndermeden yayınlamayı tamamla' }));
+    await waitFor(() => expect(retryPublication).toHaveBeenCalledWith('version-secret-id'));
+    expect(await screen.findByRole('status')).toHaveTextContent('Bildirim yayımlandı');
+    expect(screen.queryByRole('button', { name: 'Kontrollü teslim retry’ını başlat' })).not.toBeInTheDocument();
+  });
+
+  it('CL-R10 retry result SEND_FAILED does not produce a success notice', async () => {
+    retryPublication.mockResolvedValue({ status: 'SEND_FAILED' });
+    renderPanel({ delivery: { ...pendingDelivery, state: 'FAILED_RETRY_AVAILABLE' }, actions: { ...noActions, canRetryPublication: true } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Kontrollü teslim retry’ını başlat' }));
+    await waitFor(() => expect(screen.getAllByRole('alert').some(n => n.textContent?.includes('Bildirim yayımlanmadı'))).toBe(true));
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
   it('curated olayları kullanıcı etiketleriyle gösterir ve teknik kimliği render etmez', async () => {
     const view = renderPanel();
 
@@ -109,7 +132,7 @@ describe('DisclosureAuditPanel X1-B05', () => {
     });
 
     expect(await screen.findByText('Bildirim sürümü oluşturuldu')).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent('Teslim sağlayıcısı bildirimi kabul etmedi');
+    expect(screen.getByRole('alert')).toHaveTextContent('Teslim sağlayıcısının bildirimi kabul etmediği doğrulandı');
     expect(
       screen.queryByRole('button', { name: 'Kontrollü teslim retry’ını başlat' }),
     ).not.toBeInTheDocument();
@@ -129,7 +152,7 @@ describe('DisclosureAuditPanel X1-B05', () => {
 
     await waitFor(() => expect(retryPublication).toHaveBeenCalledWith('version-secret-id'));
     expect(await screen.findByRole('status')).toHaveTextContent(
-      'Kontrollü teslim retry’ı işlendi; güncel durum yenilendi.',
+      'Bildirim yayımlandı; sağlayıcı kabulü posta kutusuna teslim veya okunma kanıtı değildir.',
     );
     expect(screen.queryByText(/tekrar gönder/i)).not.toBeInTheDocument();
   });
@@ -146,7 +169,7 @@ describe('DisclosureAuditPanel X1-B05', () => {
 
     await waitFor(() =>
       expect(screen.getAllByRole('alert').some((node) =>
-        node.textContent?.includes('Kontrollü teslim retry’ı tamamlanamadı.'),
+        node.textContent?.includes('Kontrollü teslim işlemi tamamlanamadı.'),
       )).toBe(true),
     );
     expect(view.container.textContent).not.toContain('SMTP');

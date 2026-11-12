@@ -19,6 +19,48 @@ import {
 } from '../client-financial-disclosure-publication.contract';
 import type { DisclosureNotificationDispatcher } from '../client-financial-disclosure-publication.contract';
 import { UnconfiguredDisclosureNotificationDispatcher } from '../unconfigured-disclosure-dispatcher';
+import { loadDisclosureDeliveryEvidence, type DisclosureDeliveryEvidenceVersion } from '../client-financial-disclosure-delivery-evidence';
+
+describe('CL-R10 attempt-bound delivery evidence', () => {
+  const when = new Date('2026-11-13T00:00:00Z');
+  const v: DisclosureDeliveryEvidenceVersion = {
+    id: 'version', tenantId: 'tenant', disclosureId: 'root', version: 1, status: 'SEND_FAILED',
+    sendRequestedAt: when, sendFailureCode: 'SMTP_550', providerMessageId: null, providerAcceptedAt: null, publishedAt: null,
+  };
+  const metadata = { disclosureId: 'root', version: 1, provider: 'smtp', sendRequestedAt: when.toISOString(), deliveryOutcome: 'REJECTED', failureCode: 'SMTP_550' };
+  const failure = { tenantId: 'tenant', entityId: 'version', action: 'CLIENT_FINANCIAL_DISCLOSURE_SEND_FAILED', metadata };
+  const evidence = async (version: DisclosureDeliveryEvidenceVersion, audits: unknown[]) => {
+    const findMany = jest.fn().mockResolvedValue(audits);
+    const result = await loadDisclosureDeliveryEvidence({ auditLog: { findMany } } as any, [version], 'smtp');
+    if (version.sendRequestedAt) expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ actorType: 'SYSTEM', decisionResult: 'ALLOWED', entityType: 'ClientFinancialDisclosureVersion' }) }));
+    return result.get(version.id);
+  };
+  it('only explicit, same-attempt definite rejection authorizes resend', async () => {
+    expect(await evidence(v, [failure])).toBe('REJECTED');
+    expect(await evidence(v, [])).toBe('UNKNOWN');
+    expect(await evidence(v, [{ ...failure, metadata: { ...metadata, deliveryOutcome: undefined } }])).toBe('UNKNOWN');
+  });
+  it.each([
+    { tenantId: 'other' }, { entityId: 'other' },
+    { metadata: { ...metadata, provider: 'mock' } }, { metadata: { ...metadata, provider: 'ses' } },
+    { metadata: { ...metadata, version: 2 } }, { metadata: { ...metadata, disclosureId: 'other' } },
+    { metadata: { ...metadata, sendRequestedAt: '2026-11-12T00:00:00Z' } },
+    { metadata: { ...metadata, failureCode: 'ETIMEDOUT' } },
+  ])('rejects mismatched proof %j', async change => {
+    expect(await evidence(v, [{ ...failure, ...change }])).toBe('UNKNOWN');
+  });
+  it('conflicting same-time outcomes cannot reuse an older rejection', async () => {
+    expect(await evidence(v, [failure, { ...failure, metadata: { ...metadata, deliveryOutcome: 'INDETERMINATE' } }])).toBe('UNKNOWN');
+  });
+  it('accepted fields alone are not proof; exact atomic SENT evidence is required', async () => {
+    const accepted = { ...v, status: 'SEND_PENDING', sendFailureCode: null, providerMessageId: 'message', providerAcceptedAt: when };
+    const sent = { ...failure, action: 'CLIENT_FINANCIAL_DISCLOSURE_SENT', metadata: { ...metadata, providerMessageId: 'message', providerAcceptedAt: when.toISOString() } };
+    expect(await evidence(accepted, [])).toBe('UNKNOWN');
+    expect(await evidence(accepted, [sent])).toBe('ACCEPTED');
+    expect(await evidence(accepted, [{ ...sent, metadata: { ...sent.metadata, providerMessageId: 'wrong' } }])).toBe('UNKNOWN');
+    expect(await evidence({ ...accepted, providerAcceptedAt: new Date(when.getTime() + 1) }, [sent])).toBe('UNKNOWN');
+  });
+});
 
 /**
  * CLIENT-FD-ACT-R01-I04 — dispatcher adapter suite.
@@ -43,6 +85,13 @@ const compileWith = (providerName: string) =>
     .compile();
 
 describe('CLIENT-FD-ACT-R01-I04 — dispatcher adapter', () => {
+  it.each(['REJECTED', 'INDETERMINATE'] as const)('CL-R10 transports existing %s certainty independently of retryable', async deliveryOutcome => {
+    const email = makeProvider('smtp');
+    jest.spyOn(email, 'send').mockResolvedValue({ success: false, provider: 'smtp', errorCode: 'ETIMEDOUT', deliveryOutcome });
+    const result = await new ClientFinancialDisclosureEmailDispatcher(email).send({ to: 'client@example.test', subject: 'subject', text: 'text' });
+    expect(result.deliveryOutcome).toBe(deliveryOutcome);
+    expect(result.retryable).toBe(true);
+  });
   // ── provider adi ────────────────────────────────────────────────────────────
   it('[1] provider adı UYDURULMAZ — EmailProviderService’in kendi değeridir', () => {
     for (const name of ['smtp', 'sendgrid', 'ses', 'mock']) {
@@ -192,6 +241,7 @@ describe('CLIENT-FD-ACT-R01-I04 — dispatcher adapter', () => {
       errorCode: 'DISCLOSURE_PROVIDER_IDENTITY_MISMATCH',
       provider: 'smtp',
       retryable: false,
+      deliveryOutcome: 'INDETERMINATE',
     });
     expect(result.messageId).toBeUndefined();
   });
@@ -209,7 +259,7 @@ describe('CLIENT-FD-ACT-R01-I04 — dispatcher adapter', () => {
     for (const secret of ['gizli-alici@example.test', 'GIZLI KONU', 'GIZLI GOVDE', '1750.50', 'mailbox unavailable']) {
       expect(body).not.toContain(secret);
     }
-    expect(Object.keys(r).sort()).toEqual(['errorCode', 'provider', 'retryable', 'success']);
+    expect(Object.keys(r).sort()).toEqual(['deliveryOutcome', 'errorCode', 'provider', 'retryable', 'success']);
   });
 
   it('[12] adapter publication state machine sorumluluklarını TEKRARLAMAZ', () => {

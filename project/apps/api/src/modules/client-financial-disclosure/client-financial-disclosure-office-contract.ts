@@ -30,6 +30,7 @@ export type OfficeDisclosureDeliveryState =
   | 'NOT_REQUESTED'
   | 'PENDING'
   | 'FAILED_RETRY_AVAILABLE'
+  | 'RECONCILIATION_REQUIRED'
   | 'PROVIDER_ACCEPTED'
   | 'PUBLISHED';
 

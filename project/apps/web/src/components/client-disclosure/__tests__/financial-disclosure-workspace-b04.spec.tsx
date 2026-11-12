@@ -79,6 +79,18 @@ beforeEach(() => {
 });
 
 describe('DisclosureApprovalPanel X1-B04', () => {
+  it('CL-R10 HTTP 200 SEND_FAILED is not publication success', async () => {
+    publish.mockResolvedValue({ status: 'SEND_FAILED' });
+    getRecipientSelection.mockResolvedValue({ surface: 'OFFICE_RECIPIENT_SELECTION', options: [], selectedRecipient: { email: 'client@example.test' } });
+    renderPanel({ ...noActions, canPublish: true });
+    const button = screen.getByRole('button', { name: 'Yayınla ve gönder' });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Bildirim yayımlanmadı');
+    expect(screen.queryByText('Yayın ve teslim işlemi tamamlandı.')).not.toBeInTheDocument();
+    expect(publish).toHaveBeenCalledTimes(1);
+  });
+
   it('staff capability projeksiyonunda nihai onay ve yayın aksiyonlarını göstermez veya çağırmaz', () => {
     renderPanel(noActions);
 
