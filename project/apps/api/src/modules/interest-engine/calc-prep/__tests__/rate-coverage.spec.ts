@@ -94,9 +94,30 @@ describe('RateProviderService — validTo DAHİL sorgu (başlangıç günü bite
 
   it('prisma: validTo filtresi gte (başlangıç günü dahil)', async () => {
     const findMany = jest.fn().mockResolvedValue([]);
-    const provider = new RateProviderService({ rateSchedule: { findMany } } as never);
+    const findUnique = jest.fn().mockResolvedValue({ id: 'o1' });
+    const provider = new RateProviderService({ rateSchedule: { findMany }, office: { findUnique } } as never);
     await provider.getRatesForPeriod({ interestType: L, startDate: '2026-01-31', endDate: '2026-04-01', tenantId: 't1' });
     const where = findMany.mock.calls[0][0].where;
     expect(where.OR).toEqual([{ validTo: null }, { validTo: { gte: new Date('2026-01-31') } }]);
+  });
+});
+
+describe('RateProviderService — oran deposu büro kimliğiyle okunur (rate_schedule.tenantId → Office.id)', () => {
+  it('kiracı kimliği tek büroya çözülür; oran sorgusu büro kimliğiyle yapılır', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const findUnique = jest.fn().mockResolvedValue({ id: 'office-1' });
+    const provider = new RateProviderService({ rateSchedule: { findMany }, office: { findUnique } } as never);
+    await provider.getRatesForPeriod({ interestType: L, startDate: '2026-01-01', endDate: '2026-04-01', tenantId: 'tenant-1' });
+    expect(findUnique).toHaveBeenCalledWith({ where: { tenantId: 'tenant-1' }, select: { id: true } });
+    expect(findMany.mock.calls[0][0].where.tenantId).toBe('office-1');
+  });
+
+  it('kiracının bürosu yoksa oran sorgulanmaz → boş liste', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const findUnique = jest.fn().mockResolvedValue(null);
+    const provider = new RateProviderService({ rateSchedule: { findMany }, office: { findUnique } } as never);
+    const rates = await provider.getRatesForPeriod({ interestType: L, startDate: '2026-01-01', endDate: '2026-04-01', tenantId: 'tenant-yok' });
+    expect(rates).toEqual([]);
+    expect(findMany).not.toHaveBeenCalled();
   });
 });

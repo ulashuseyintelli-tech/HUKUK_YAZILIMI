@@ -143,9 +143,20 @@ export class RateProviderService {
       return [];
     }
 
+    // Oran deposu BÜRO kimliğiyle anahtarlıdır: `rate_schedule.tenantId` FK → `Office.id` (RateSyncService ve oran
+    // yükleme betiği bu anahtarla yazar). Çağıranlar kimlik bağlamındaki `Tenant.id`'yi verir; kiracının tek bürosu
+    // `Office.tenantId @unique` ile çözülür. Büro yoksa oran da yoktur → boş liste (kapsama kapısı RATE_COVERAGE_MISSING).
+    const office = await this.prisma.office.findUnique({
+      where: { tenantId: options.tenantId },
+      select: { id: true },
+    });
+    if (!office) {
+      return [];
+    }
+
     const rates = await this.prisma.rateSchedule.findMany({
       where: {
-        tenantId: options.tenantId,
+        tenantId: office.id,
         interestType: options.interestType,
         validFrom: { lte: new Date(options.endDate) },
         // K3-L TK-2: validTo DAHİLDİR (RateScheduleService.addRate önceki oranı yeni başlangıçtan bir gün önce kapatır);
