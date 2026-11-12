@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
 import PortalFinancialDisclosuresPage from "@/app/portal/financial-disclosures/page";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -138,6 +138,47 @@ describe("PortalFinancialDisclosuresPage — CLIENT-P2-U03-TRACK-B-I06", () => {
       expect(text).not.toContain(derived);
     }
   });
+
+  it.each(["CURRENT", "HISTORY"] as const)(
+    "[8] %s yüzeyinde altı canonical satır türü Türkçedir; mali değerler aynen korunur",
+    async (surface) => {
+      const rows = [
+        { type: "CLIENT_PAYABLE", label: "Müvekkile Ödenecek", amount: "600.01" },
+        { type: "CONTRACTUAL_FEE_WITHHELD", label: "Akdi Ücret Kesintisi", amount: "123.45" },
+        { type: "FIRM_EXPENSE_REIMBURSEMENT", label: "Büro masraf iadesi", amount: "65.43" },
+        { type: "CLIENT_EXPENSE_REIMBURSEMENT", label: "Müvekkil masraf iadesi", amount: "54.32" },
+        { type: "OFFSET_CLIENT_ADVANCE", label: "Müvekkil avans mahsubu", amount: "98.76" },
+        { type: "OTHER", label: "Diğer dağıtım kalemi", amount: "58.03" },
+      ];
+      const financialProjection = {
+        currency: "EUR",
+        totalCollected: "1000.00",
+        clientNetAmount: "600.01",
+        lines: rows.map(({ type, amount }) => ({ type, amount })),
+      };
+      mockSurfaces(
+        { surface: "CURRENT", items: [{ ...CURRENT.items[0], ...financialProjection }] },
+        { surface: "HISTORY", items: [{ ...HISTORY.items[0], ...financialProjection }] },
+      );
+      render(<PortalFinancialDisclosuresPage />);
+      await waitFor(() => expect(screen.getByTestId("surface-current")).toBeTruthy());
+      if (surface === "HISTORY") {
+        fireEvent.click(screen.getByTestId("tab-history"));
+        await waitFor(() => expect(screen.getByTestId("surface-history")).toBeTruthy());
+      }
+
+      const card = screen.getByTestId("disclosure-card");
+      const renderedRows = within(card).getAllByRole("listitem");
+      expect(renderedRows).toHaveLength(rows.length);
+      rows.forEach(({ type, label, amount }, index) => {
+        expect(within(renderedRows[index]).getByText(label)).toBeTruthy();
+        expect(within(renderedRows[index]).getByText(`${amount} EUR`)).toBeTruthy();
+        expect(renderedRows[index].textContent).not.toContain(type);
+      });
+      expect(within(card).getByText("1000.00 EUR")).toBeTruthy();
+      expect(within(card).getAllByText("600.01 EUR")).toHaveLength(2);
+    },
+  );
 
   it("[5] projeksiyonda olmayan/yasak alanlar API sızdırsa bile EKRANA ÇIKMAZ", async () => {
     const leaky = {

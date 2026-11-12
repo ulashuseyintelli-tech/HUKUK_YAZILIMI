@@ -41,6 +41,10 @@ type Disclosure = {
 const lineLabels: Record<string, string> = {
   CLIENT_PAYABLE: "Müvekkile Ödenecek",
   CONTRACTUAL_FEE_WITHHELD: "Akdi Ücret Kesintisi",
+  FIRM_EXPENSE_REIMBURSEMENT: "Büro masraf iadesi",
+  CLIENT_EXPENSE_REIMBURSEMENT: "Müvekkil masraf iadesi",
+  OFFSET_CLIENT_ADVANCE: "Müvekkil avans mahsubu",
+  OTHER: "Diğer dağıtım kalemi",
   STATUTORY_FEE_WITHHELD: "Vekalet Ücreti Kesintisi",
   EXPENSE_REIMBURSEMENT: "Masraf Mahsubu",
   THIRD_PARTY_PAYABLE: "Üçüncü Kişiye Ödenecek",
