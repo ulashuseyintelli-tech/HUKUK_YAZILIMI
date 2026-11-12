@@ -320,6 +320,25 @@ describe('CODEX-X1 PRE01 — office financial disclosure contract', () => {
     expect(serialized).not.toContain('raw provider stack secret');
   });
 
+  it('CL-R10 unknown acceptance fields do not expose an acceptance date', async () => {
+    const row = { ...version(ClientFinancialDisclosureStatus.SEND_PENDING), providerMessageId: 'unproven', providerAcceptedAt: new Date('2026-08-08T10:00:00Z') };
+    const prisma = buildPrisma({ versions: [row] });
+    const detail = await new ClientFinancialDisclosureOfficeService(prisma as any).getDetail({ tenantId: T, actorUserId: U, clientId: C }, V);
+    expect(detail.delivery.state).toBe('RECONCILIATION_REQUIRED');
+    expect(detail.delivery.providerAcceptedAt).toBeNull();
+    expect(detail.actions.canRetryPublication).toBe(false);
+  });
+
+  it('CL-R10 preserves historical accepted dates for already published superseded versions', async () => {
+    const row = { ...version(ClientFinancialDisclosureStatus.PUBLISHED), status: ClientFinancialDisclosureStatus.SUPERSEDED };
+    const prisma = buildPrisma({ versions: [row] });
+    const detail = await new ClientFinancialDisclosureOfficeService(prisma as any).getDetail({ tenantId: T, actorUserId: U, clientId: C }, V);
+    expect(detail.delivery.state).toBe('PROVIDER_ACCEPTED');
+    expect(detail.delivery.providerAcceptedAt).toBe(row.providerAcceptedAt!.toISOString());
+    expect(detail.delivery.publishedAt).toBe(row.publishedAt!.toISOString());
+    expect(detail.actions.canRetryPublication).toBe(false);
+  });
+
   it('preparation yüzeyi yalnız POSTED/SINGLE_CASE_CLIENT sorgular ve ham kaynak ID döndürmez', async () => {
     const prisma = buildPrisma();
     prisma.collectionDisposition.findMany.mockResolvedValueOnce([

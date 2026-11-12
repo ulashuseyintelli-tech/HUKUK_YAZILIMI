@@ -646,7 +646,8 @@ export class ClientFinancialDisclosureOfficeService {
     providerAcceptedAt: Date | null;
     publishedAt: Date | null;
   }, evidence: DisclosureDeliveryEvidence = 'UNKNOWN'): OfficeDisclosureDeliveryEvidence {
-    const accepted = version.providerMessageId !== null && version.providerAcceptedAt !== null;
+    const accepted = version.providerMessageId !== null && version.providerAcceptedAt !== null &&
+      (evidence === 'ACCEPTED' || version.publishedAt !== null);
     const state =
       version.status === ClientFinancialDisclosureStatus.PUBLISHED
         ? 'PUBLISHED'
@@ -654,7 +655,7 @@ export class ClientFinancialDisclosureOfficeService {
           ? 'RECONCILIATION_REQUIRED'
           : evidence === 'REJECTED'
             ? 'FAILED_RETRY_AVAILABLE'
-            : accepted && evidence === 'ACCEPTED'
+            : accepted
             ? 'PROVIDER_ACCEPTED'
             : version.status === ClientFinancialDisclosureStatus.SEND_PENDING
               ? 'PENDING'
