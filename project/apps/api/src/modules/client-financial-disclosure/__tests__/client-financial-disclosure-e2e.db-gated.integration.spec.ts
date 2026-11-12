@@ -407,6 +407,25 @@ describeDb('CLIENT-FD-ACT-R01-I06 — uçtan uca kabul (gerçek Nest composition
   const postRecovery = (http: INestApplication, id: string, actor = uP1) =>
     request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/retry-publication`).set('x-test-user', actor);
 
+  it('CL-R10 HTTP never-claimed durable intent resumes the first send with the existing recipient gate', async () => {
+    await withHttp('clr10-first-send', OK, async ({ module, http }) => {
+      const id = await upToSendPending(module, `clr10-first-send-${S}`);
+      expect((await read(id)).sendRequestedAt).toBeNull();
+      expect(providerCalls).toHaveLength(0);
+      const detail = await request(http.getHttpServer()).get(`/client-financial-disclosures/office/clients/${clA}/versions/${id}`).set('x-test-user', uP1).expect(200);
+      expect(detail.body.actions.canPublish).toBe(true);
+      expect(detail.body.actions.canRetryPublication).toBe(false);
+      await request(http.getHttpServer()).get(`/client-financial-disclosures/office/clients/${clA}/versions/${id}/recipients`).set('x-test-user', uP1).expect(200)
+        .expect(r => expect(r.body.selectedRecipient.email).toBe(`client-clr10-first-send-${S}@example.test`));
+      await request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/publish`).set('x-test-user', uP1).expect(201)
+        .expect(r => expect(r.body.status).toBe('PUBLISHED'));
+      const before = await persisted(id);
+      await request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/publish`).set('x-test-user', uP1).expect(409);
+      expect(await persisted(id)).toEqual(before);
+      expect(providerCalls).toHaveLength(1);
+    });
+  });
+
   it.each([
     ['timeout', { success: false, errorCode: 'ETIMEDOUT', provider: 'smtp', deliveryOutcome: 'INDETERMINATE' }],
     ['reset', { success: false, errorCode: 'ECONNRESET', provider: 'smtp', deliveryOutcome: 'INDETERMINATE' }],

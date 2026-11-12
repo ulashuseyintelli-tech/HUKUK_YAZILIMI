@@ -327,6 +327,17 @@ describe('CODEX-X1 PRE01 — office financial disclosure contract', () => {
     expect(detail.delivery.state).toBe('RECONCILIATION_REQUIRED');
     expect(detail.delivery.providerAcceptedAt).toBeNull();
     expect(detail.actions.canRetryPublication).toBe(false);
+    expect(detail.actions.canPublish).toBe(false);
+  });
+
+  it('CL-R10 fresh, never-claimed durable intent retains the existing first-send action', async () => {
+    const row = { ...version(ClientFinancialDisclosureStatus.SEND_PENDING), sendRequestedAt: null };
+    const prisma = buildPrisma({ versions: [row] });
+    const detail = await new ClientFinancialDisclosureOfficeService(prisma as any).getDetail({ tenantId: T, actorUserId: U, clientId: C }, V);
+    expect(detail.delivery.state).toBe('PENDING');
+    expect(detail.actions.canPublish).toBe(true);
+    expect(detail.actions.canRetryPublication).toBe(false);
+    expect(prisma.auditLog.findMany).not.toHaveBeenCalled();
   });
 
   it('CL-R10 preserves historical accepted dates for already published superseded versions', async () => {

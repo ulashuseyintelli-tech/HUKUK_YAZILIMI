@@ -250,7 +250,8 @@ export class ClientFinancialDisclosureOfficeService {
     const resolved = await this.resolveScope(scope);
     const version = await this.loadVersion(scope, resolved.caseClientIds, disclosureVersionId);
     const request = await this.loadApprovalRequest(scope.tenantId, version.officeApprovalRequestId, version.id);
-    const actions = this.actions(this.status(version.status), request, version, resolved, scope.actorUserId);
+    const evidence = (await loadDisclosureDeliveryEvidence(this.prisma, [version])).get(version.id);
+    const actions = this.actions(this.status(version.status), request, version, resolved, scope.actorUserId, evidence);
     if (!actions.canRequestContentApproval && !actions.canCompleteContentApproval && !actions.canPublish) {
       throw new OfficeDisclosureProjectionForbiddenError();
     }
@@ -631,7 +632,8 @@ export class ClientFinancialDisclosureOfficeService {
         request.status === 'APPROVED' &&
         request.approverUserId !== null &&
         request.approverUserId === actorUserId,
-      canPublish: publish && eligible && status === 'CONTENT_APPROVED',
+      canPublish: publish && eligible &&
+        (status === 'CONTENT_APPROVED' || (status === 'SEND_PENDING' && evidence === 'NONE')),
       canRetryPublication: publish && eligible &&
         ((status === 'SEND_FAILED' && evidence === 'REJECTED') || (status === 'SEND_PENDING' && evidence === 'ACCEPTED')),
       canReverse: publish && eligible && status === 'PUBLISHED',
