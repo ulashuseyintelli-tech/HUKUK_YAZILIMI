@@ -104,7 +104,8 @@ describeWithDisposableDb('Masraf paketi önerisi — dövizli dosyada oranlı ka
   let clientId: string;
   const suffix = randomUUID().slice(0, 8);
   // Kodlar koşuya özeldir: paket koda göre aranır (sistem paketi + büro paketi); ortak veritabanında ad çakışmasın
-  const OPENING = `CPFX_UYAP_PRE_${suffix}`;
+  // Regresyon: tutar olmayan kod iki eski regex eslesmesini de tasir; kosuya ozgu ek korunur.
+  const OPENING = `CPFX_UYAP_PRE_5000_5857_${suffix}`;
   const RE_NOTIFICATION = `CPFX_RE_TEBLIGAT_${suffix}`;
   const SEIZURE = `CPFX_HACIZ_${suffix}`;
   const SALE = `CPFX_SATIS_${suffix}`;
@@ -358,8 +359,25 @@ describeWithDisposableDb('Masraf paketi önerisi — dövizli dosyada oranlı ka
       expect(res.body.incompleteSuggestion.message).toContain(`paketinin önerisi eksik: dosya para birimi ${currency}.`);
       // Peşin harç ne kalem listesinde ne de herhangi bir tutar alanında: yanlış öneri (5.000) ve yanlış toplam (5.857,90) yok
       expect(res.body.items.map((item: any) => item.itemCode)).not.toContain('PESIN_HARC');
-      expect(JSON.stringify(res.body)).not.toMatch(/5000|5857/);
+      expect(res.body.items.flatMap((item: any) => [item.suggestedAmount, item.finalAmount])).not.toContain(5_000);
+      expect(res.body.totalSuggested).not.toBe(5_857.9);
       expect(Object.keys(res.body.incompleteSuggestion.notCalculableItems[0]).sort()).toEqual(['isEditable', 'itemCode', 'label', 'sortOrder']);
+    });
+
+    it.each([
+      ['suggestedAmount', 5_000],
+      ['finalAmount', 5_000],
+      ['totalSuggested', 5_857.9],
+    ] as const)('NEGATIF KONTROL: yanlis %s tutari mevcut yanit sozlesmesinden gecmez', async (field, amount) => {
+      const res = await compute(caseId, OPENING);
+      expect(res.status).toBe(201);
+      expect(res.body).toEqual(incompleteOpeningResponse(currency, [currency]));
+
+      const invalid = structuredClone(res.body);
+      if (field === 'totalSuggested') invalid.totalSuggested = amount;
+      else invalid.items[0][field] = amount;
+
+      expect(() => expect(invalid).toEqual(incompleteOpeningResponse(currency, [currency]))).toThrow();
     });
 
     it('SABİT ve ADET BAZLI kalemler değişmez: TL dosyadaki tutarlarla birebir aynı', async () => {
