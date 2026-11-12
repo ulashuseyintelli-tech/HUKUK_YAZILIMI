@@ -115,6 +115,10 @@ export function sumClaimSummaryTotals(items: readonly ClaimSummaryItemInput[]): 
       case 'EXPENSE':
         totals.expense += amount;
         break;
+      // Yargılama gideri masraf toplamına TEK KEZ girer (kalem türü ayrı; tebligat masrafı sayılmaz).
+      case 'YARGILAMA_GIDERI':
+        totals.expense += amount;
+        break;
       case 'FEE':
         totals.fee += amount;
         break;

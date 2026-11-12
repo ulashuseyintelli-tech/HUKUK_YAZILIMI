@@ -383,4 +383,6 @@ src/modules/case/__tests__/case-view-scope-misc-reads.http.db-gated.integration.
 src/modules/bank/__tests__/bank-movement-reads-admin.http.db-gated.integration.spec.ts
 # MESE pilot (owner GO-COMPLETE 12.11.2026): tarihsel dosya aktarimi POST /cases/historical-import (bayrak + ADMIN) - normal POST /cases degismedi, varsayilan kisi / bilgi talebi / acilis masraf talebi yok, tekrar 409 - gercek HTTP + disposable PostgreSQL.
 src/modules/case/__tests__/case-historical-import.http.db-gated.integration.spec.ts
+# Yargilama Gideri turu (owner 12.11.2026 GO-COMPLETE P02): tarihsel aktarimda Due / ClaimItem YARGILAMA_GIDERI, masraf kaydi yok, faiz karari turden cikmaz, tekrar 409, eski EXPENSE AYNEN - gercek HTTP + disposable PostgreSQL.
+src/modules/case/__tests__/case-historical-import-yargilama-gideri.http.db-gated.integration.spec.ts
 src/modules/interest-engine/__tests__/rate-provider-office-key.http.db-gated.integration.spec.ts

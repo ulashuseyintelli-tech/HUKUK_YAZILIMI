@@ -24,6 +24,8 @@ describe('mapDueTypeToClaimItemType (G1)', () => {
     [DueType.PRIM, ClaimItemType.PRINCIPAL],
     [DueType.OTHER, ClaimItemType.OTHER],
     [DueType.NAFAKA, null],
+    // Owner 12.11.2026 (P02): yargılama gideri kendi türüne gider — EXPENSE / tebligat masrafı DEĞİL.
+    [DueType.YARGILAMA_GIDERI, ClaimItemType.YARGILAMA_GIDERI],
   ];
 
   it.each(expected)('%s → %s', (dueType, claimItemType) => {

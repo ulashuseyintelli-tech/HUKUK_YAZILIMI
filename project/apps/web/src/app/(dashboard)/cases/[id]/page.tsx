@@ -2953,6 +2953,7 @@ export default function CaseDetailPage() {
                             KOMISYON: 'Komisyon',
                             PRIM: 'Prim/İkramiye',
                             OTHER: 'Diğer',
+                            YARGILAMA_GIDERI: 'Yargılama Gideri',
                           };
                           const displayName = due.description || typeLabels[due.type] || due.type;
                           const interestLabel = getInterestReadDisplayLabel(due);

@@ -37,6 +37,8 @@ export enum AncillaryType {
   VEKALET_UCRETI = 'VEKALET_UCRETI',
   HARC = 'HARC',
   TEBLIGAT_MASRAFI = 'TEBLIGAT_MASRAFI',
+  // İlamda hükmedilen yargılama gideri — masraf kademesi; TEBLIGAT_MASRAFI ile birleştirilmez.
+  YARGILAMA_GIDERI = 'YARGILAMA_GIDERI',
   CEK_TAZMINATI = 'CEK_TAZMINATI',
   KOMISYON = 'KOMISYON',
   DIGER = 'DIGER',
@@ -49,6 +51,7 @@ export enum AncillaryType {
 export const TBK100_ALLOCATION_ORDER: (AncillaryType | 'INTEREST' | 'PRINCIPAL')[] = [
   AncillaryType.HARC,
   AncillaryType.TEBLIGAT_MASRAFI,
+  AncillaryType.YARGILAMA_GIDERI,
   AncillaryType.KOMISYON,
   AncillaryType.VEKALET_UCRETI,
   AncillaryType.CEK_TAZMINATI,

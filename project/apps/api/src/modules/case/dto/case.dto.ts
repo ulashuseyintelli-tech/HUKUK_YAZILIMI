@@ -266,6 +266,8 @@ export enum DueType {
   KOMISYON = "KOMISYON",
   PRIM = "PRIM",
   OTHER = "OTHER",
+  // İlamda hükmedilen yargılama gideri. Tebligat masrafından (EXPENSE) AYRI tür; ClaimItemType.YARGILAMA_GIDERI üretir.
+  YARGILAMA_GIDERI = "YARGILAMA_GIDERI",
 }
 
 export class DueDto {

@@ -115,6 +115,8 @@ const itemTypeLabels: Record<string, { label: string; icon: any; color: string }
   TAX_BSMV: { label: "BSMV", icon: Receipt, color: "text-gray-600 bg-gray-100" },
   TAX_KKDF: { label: "KKDF", icon: Receipt, color: "text-gray-600 bg-gray-100" },
   OTHER: { label: "Diğer", icon: FileText, color: "text-gray-600 bg-gray-100" },
+  // İlamda hükmedilen yargılama gideri — tebligat masrafından ayrı tür.
+  YARGILAMA_GIDERI: { label: "Yargılama Gideri", icon: Scale, color: "text-orange-700 bg-orange-50" },
 };
 
 interface Props {

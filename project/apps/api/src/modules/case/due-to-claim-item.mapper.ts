@@ -14,6 +14,7 @@ import { DueType, DueDto } from './dto/case.dto';
  *
  * Hukuki kararlar (tbk100-legal-decisions-ledger, R1/R2):
  *   KOMISYON→EXPENSE · KIRA/AIDAT/PRIM→PRINCIPAL · TAZMINAT→PENALTY · NAFAKA→null.
+ *   YARGILAMA_GIDERI→YARGILAMA_GIDERI (owner 12.11.2026: tebligat masrafı olarak yazılmaz).
  */
 const DUE_TO_CLAIM_ITEM: Record<DueType, ClaimItemType | null> = {
   [DueType.PRINCIPAL]: ClaimItemType.PRINCIPAL,
@@ -28,6 +29,8 @@ const DUE_TO_CLAIM_ITEM: Record<DueType, ClaimItemType | null> = {
   [DueType.KOMISYON]: ClaimItemType.EXPENSE,
   [DueType.PRIM]: ClaimItemType.PRINCIPAL,
   [DueType.OTHER]: ClaimItemType.OTHER,
+  // Yargılama gideri kendi türüne gider (EXPENSE değil): motor bunu tebligat masrafından ayrı masraf kalemi sayar.
+  [DueType.YARGILAMA_GIDERI]: ClaimItemType.YARGILAMA_GIDERI,
   // NAFAKA: alacak muhasebesi otoritesi değil → yalnız Due (taksit takvimi) kalır.
   [DueType.NAFAKA]: null,
 };

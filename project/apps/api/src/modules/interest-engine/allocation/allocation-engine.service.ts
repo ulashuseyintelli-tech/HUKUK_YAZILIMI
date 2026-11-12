@@ -436,6 +436,7 @@ export class AllocationEngineService {
     const labels: Record<AncillaryType, string> = {
       [AncillaryType.HARC]: 'Harç',
       [AncillaryType.TEBLIGAT_MASRAFI]: 'Tebligat Masrafı',
+      [AncillaryType.YARGILAMA_GIDERI]: 'Yargılama Gideri',
       [AncillaryType.VEKALET_UCRETI]: 'Vekalet Ücreti',
       [AncillaryType.CEK_TAZMINATI]: 'Çek Tazminatı',
       [AncillaryType.KOMISYON]: 'Komisyon',

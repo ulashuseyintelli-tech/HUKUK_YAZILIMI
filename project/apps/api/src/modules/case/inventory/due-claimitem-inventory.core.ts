@@ -102,6 +102,7 @@ const DUE_TO_CLAIM_ITEM_TYPE: Record<string, string | null> = {
   KOMISYON: 'EXPENSE',
   PRIM: 'PRINCIPAL',
   OTHER: 'OTHER',
+  YARGILAMA_GIDERI: 'YARGILAMA_GIDERI',
 };
 
 interface MarkerInfo {

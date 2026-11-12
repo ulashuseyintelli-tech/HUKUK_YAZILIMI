@@ -36,6 +36,7 @@ const HER_TURDEN: Array<{ itemType: ClaimItemType; amount: number }> = [
   { itemType: ClaimItemType.TAX_BSMV, amount: 5 },
   { itemType: ClaimItemType.TAX_KKDF, amount: 15.5 },
   { itemType: ClaimItemType.OTHER, amount: 7.77 },
+  { itemType: ClaimItemType.YARGILAMA_GIDERI, amount: 41.5 },
 ];
 
 /** HER_TURDEN için elle hesaplanmış beklenen toplamlar (yardımcı çağrılarak ÜRETİLMEDİ). */
@@ -44,13 +45,13 @@ const HER_TURDEN_TOPLAM: ClaimSummaryTotals = {
   preInterest: 330.3, // INTEREST 110,10 + PRE_INTEREST 220,20
   postInterest: 330.3,
   totalInterest: 660.6,
-  expense: 250,
+  expense: 291.5, // EXPENSE 250 + YARGILAMA_GIDERI 41,50 (masraf toplamında tek kez; "Diğer"e düşmez)
   fee: 120.05,
   attorneyFee: 9_000,
   penalty: 1_750.25, // PENALTY 1.000 + CHECK_PENALTY 500 + CONTRACTUAL_PENALTY 250,25
   tax: 38.5, // KDV 18 + BSMV 5 + KKDF 15,50
   other: 7.77,
-  grandTotal: 21_827.17,
+  grandTotal: 21_868.67,
 };
 
 const SIFIR_TOPLAM: ClaimSummaryTotals = {
@@ -79,7 +80,7 @@ const paraBirimiyle = (currency: string): ClaimSummaryItemInput[] =>
 describe('Alacak özeti kategori toplamları (sumClaimSummaryTotals)', () => {
   it('fikstür her kalem türünü tam bir kez içerir (bakıldığının kanıtı)', () => {
     expect(HER_TURDEN.map((row) => row.itemType).sort()).toEqual(Object.values(ClaimItemType).sort());
-    expect(HER_TURDEN).toHaveLength(14);
+    expect(HER_TURDEN).toHaveLength(15);
   });
 
   it('her kalem türü kendi kategorisine toplanır; genel toplam bütün kalemlerin toplamıdır', () => {
@@ -138,7 +139,7 @@ describe('Alacak özeti para birimi bağlamı (buildClaimSummaryCurrencyStatus)'
       alacakParaBirimi: currency,
       paraBirimleri: [currency],
       paraBirimiEksikKalemSayisi: 0,
-      toplamlarParaBirimiBazinda: [{ paraBirimi: currency, kalemSayisi: 14, totals: HER_TURDEN_TOPLAM }],
+      toplamlarParaBirimiBazinda: [{ paraBirimi: currency, kalemSayisi: 15, totals: HER_TURDEN_TOPLAM }],
     });
   });
 
@@ -265,9 +266,9 @@ describe('Alacak özeti para birimi bağlamı (buildClaimSummaryCurrencyStatus)'
     const sayilan = status.toplamlarParaBirimiBazinda.reduce((sum, row) => sum + row.kalemSayisi, 0);
     expect(sayilan + status.paraBirimiEksikKalemSayisi).toBe(items.length);
     expect(status.toplamlarParaBirimiBazinda.map((row) => [row.paraBirimi, row.kalemSayisi])).toEqual([
-      ['EUR', 14],
+      ['EUR', 15],
       ['TRY', 1],
-      ['USD', 14],
+      ['USD', 15],
     ]);
   });
 
@@ -311,6 +312,7 @@ describe('ClaimItemService.getClaimSummary — mevcut alanlar ve para birimi ba�
     TAX_BSMV: 'BSMV',
     TAX_KKDF: 'KKDF',
     OTHER: 'Diğer',
+    YARGILAMA_GIDERI: 'Yargılama Gideri',
   };
 
   describe('mevcut alanlar DEĞİŞMEDİ (karakterizasyon — sorgu sırası iddiaları hariç düzeltmesiz servis koduyla da geçer)', () => {
@@ -382,7 +384,7 @@ describe('ClaimItemService.getClaimSummary — mevcut alanlar ve para birimi ba�
         alacakParaBirimi: summary.currency,
         paraBirimleri: [summary.currency],
         paraBirimiEksikKalemSayisi: 0,
-        toplamlarParaBirimiBazinda: [{ paraBirimi: summary.currency, kalemSayisi: 14, totals: summary.totals }],
+        toplamlarParaBirimiBazinda: [{ paraBirimi: summary.currency, kalemSayisi: 15, totals: summary.totals }],
       });
     });
 

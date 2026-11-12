@@ -255,7 +255,7 @@ export class SummaryEngineService implements OnModuleInit {
       policies: {
         use_demanded_amount_for_summary: true,
         use_collected_amount_for_balance: true,
-        allocation_order: ['EXPENSE', 'FEE', 'ATTORNEY_FEE', 'PRE_INTEREST', 'POST_INTEREST', 'PRINCIPAL', 'PENALTY', 'OTHER'],
+        allocation_order: ['EXPENSE', 'YARGILAMA_GIDERI', 'FEE', 'ATTORNEY_FEE', 'PRE_INTEREST', 'POST_INTEREST', 'PRINCIPAL', 'PENALTY', 'OTHER'],
         bad_check_compensation: { default_on: true, rate: 0.10, base_item_type: 'PRINCIPAL' },
         default_currency: 'TRY',
       },
@@ -263,7 +263,7 @@ export class SummaryEngineService implements OnModuleInit {
         principal_bucket: { label: 'Asıl Alacak', include_types: ['PRINCIPAL'] },
         penalty_bucket: { label: 'Tazminat', include_types: ['PENALTY', 'CHECK_PENALTY'] },
         fees_bucket: { label: 'Harçlar', include_types: ['FEE', 'STAMP'] },
-        expenses_bucket: { label: 'Masraflar', include_types: ['EXPENSE', 'POSTAGE'] },
+        expenses_bucket: { label: 'Masraflar', include_types: ['EXPENSE', 'POSTAGE', 'YARGILAMA_GIDERI'] },
         attorney_fee_bucket: { label: 'Vekalet Ücreti', include_types: ['ATTORNEY_FEE'] },
       },
       summary_sections: [],
@@ -885,7 +885,7 @@ export class SummaryEngineService implements OnModuleInit {
     // P-0 (doc-27): MASRAF → FER'İ → FAİZ → ANAPARA. allocationOrder indeksi bu sırayı
     // yansıtır (tutarlar allocator'dan gelir). CONTRACTUAL_PENALTY dahil (yoksa o item'a
     // satır atanmaz).
-    const tbk100Order = ['FEE', 'EXPENSE', 'COMMISSION', 'ATTORNEY_FEE', 'CHECK_PENALTY', 'PENALTY', 'CONTRACTUAL_PENALTY', 'OTHER', 'INTEREST', 'PRE_INTEREST', 'POST_INTEREST', 'PRINCIPAL'];
+    const tbk100Order = ['FEE', 'EXPENSE', 'YARGILAMA_GIDERI', 'COMMISSION', 'ATTORNEY_FEE', 'CHECK_PENALTY', 'PENALTY', 'CONTRACTUAL_PENALTY', 'OTHER', 'INTEREST', 'PRE_INTEREST', 'POST_INTEREST', 'PRINCIPAL'];
 
     // PR-AO-3 ÇİFT-DAĞITIM FIX: result-kategori bazında PAYLAŞILAN kalan havuzu.
     // Birden çok itemType aynı AncillaryType'a maplenince (örn. PENALTY/CONTRACTUAL/
