@@ -62,12 +62,15 @@ export interface ClientStatementDeliveryContext {
   readonly actorId: string;
   /** Şablon render token'ları — iç ID İÇERMEZ (bkz. buildStatementDeliveryTokens). */
   readonly tokens: Readonly<Record<string, string>>;
+  /** Internal monthly recovery only; never supplied by the generic resend DTO. */
+  readonly retryFailed?: boolean;
 }
 
 export interface ClientStatementDeliveryResult {
   success: boolean;
   messageId?: string;
   errorCode?: string;
+  reconciled?: boolean;
 }
 
 /** Taşıma portu — üretimde bildirim zinciri adaptörü, testte double. */

@@ -20,8 +20,8 @@ import type {
  * - Gövde/başlık kalıcı şablon motorundan üretilir; bu adaptör kendi metnini
  *   dayatmaz — B03 mesajı ekin kimliğini (dosya adı) ve içeriğini sağlar.
  * - `dispatch()` ASLA throw etmez; sonucu tipli bir teslim sonucuna çeviririz.
- *   `skipped` = aynı dedupeKey için zaten SENT kayıt var → ikinci provider çağrısı
- *   YAPILMAZ (aynı teslim için tam 1 gönderim kuralı).
+ *   Typed skipped evidence distinguishes SENT, FAILED and uncertain PENDING.
+ *   SENT evidence can reconcile the monthly ledger; PENDING never authorizes transport.
  */
 export const CLIENT_STATEMENT_DELIVERY_TEMPLATE_CODE = 'STATEMENT_READY';
 export const CLIENT_STATEMENT_DELIVERY_REF_TYPE = 'ClientStatement';
@@ -41,6 +41,8 @@ export class ClientStatementNotificationDeliveryAdapter implements ClientStateme
       type: CLIENT_STATEMENT_DELIVERY_TEMPLATE_CODE,
       tokens: context.tokens,
       dedupeKey: context.dedupeKey,
+      ...(context.retryFailed ? { force: true } : {}),
+      expectedRecipientEmail: message.to,
       refType: CLIENT_STATEMENT_DELIVERY_REF_TYPE,
       refId: context.statementId,
       attachments: message.attachments.map((attachment) => ({
@@ -54,6 +56,15 @@ export class ClientStatementNotificationDeliveryAdapter implements ClientStateme
       return { success: true, messageId: result.notificationId };
     }
     if (result.status === 'skipped') {
+      if (result.existingStatus === 'SENT') {
+        return { success: true, messageId: result.notificationId, reconciled: true };
+      }
+      if (result.existingStatus === 'PENDING') {
+        return { success: false, messageId: result.notificationId, errorCode: 'DELIVERY_UNCERTAIN' };
+      }
+      if (result.existingStatus === 'FAILED' || result.existingStatus === 'MISSING') {
+        return { success: false, messageId: result.notificationId, errorCode: 'RETRY_NOT_CLAIMED' };
+      }
       return { success: false, messageId: result.notificationId, errorCode: 'ALREADY_SENT' };
     }
     return { success: false, errorCode: 'DISPATCH_FAILED' };

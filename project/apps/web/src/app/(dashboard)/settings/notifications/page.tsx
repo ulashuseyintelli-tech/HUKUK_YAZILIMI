@@ -18,6 +18,7 @@ import { api } from '@/lib/api';
 import { toActionErrorMessage } from '@/lib/action-error';
 import { runMutation, runRefreshOnly } from '@/lib/mutation-outcome';
 import { useKeyedSubmitLock } from '@/lib/use-submit-lock';
+import { MonthlyStatementDeliveryRecovery, type MonthlyDeliveryRow } from '@/components/client-accounting/MonthlyStatementDeliveryRecovery';
 
 const PROVIDER_LABEL: Record<string, string> = {
   NETGSM: 'NetGSM',
@@ -44,6 +45,7 @@ const CHANNEL_LABEL: Record<string, string> = {
 type EngineStatus = string;
 
 interface Overview {
+  monthlyDeliveries?: MonthlyDeliveryRow[];
   generatedAt: string;
   channels: {
     email: { configured: boolean; host: string | null; sender: string | null };
@@ -483,6 +485,7 @@ export default function NotificationControlCenterPage() {
         </div>
       </div>
 
+      <MonthlyStatementDeliveryRecovery rows={data.monthlyDeliveries} onRefresh={() => load({ silent: true, propagateError: true })} />
       {/* === DİKKAT GEREKİYOR === */}
       {engines.poa.status === 'ATTENTION' && (
         <div>

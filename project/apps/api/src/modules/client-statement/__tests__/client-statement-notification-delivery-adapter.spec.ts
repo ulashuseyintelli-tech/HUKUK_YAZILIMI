@@ -38,6 +38,7 @@ function makeRender() {
         credit: '150.00',
         runningBalance: '250.00',
         isInformational: false,
+        informationalAmount: null,
         fileReference: null,
       },
     ],
@@ -123,7 +124,7 @@ describe('CAD C3 — bildirim zinciri adaptörü', () => {
     expect(input.force).toBeUndefined();
   });
 
-  it('[ADP-4] zincir zaten SENT diyorsa sonuç başarı sayılmaz (ikinci gönderim yok)', async () => {
+  it('[ADP-4] ayrıntısız eski skipped sonucu gönderim kanıtı sayılmaz', async () => {
     const render = makeRender();
     const message = buildStatementDeliveryMessage({ render, recipientEmail: 'muvekkil@ornek.com', pdf: PDF });
     const { adapter } = makeAdapter('skipped');
@@ -142,5 +143,13 @@ describe('CAD C3 — bildirim zinciri adaptörü', () => {
     const result = await adapter.send(message, makeContext(render));
 
     expect(result).toEqual({ success: false, errorCode: 'DISPATCH_FAILED' });
+  });
+
+  it.each(['SENT', 'PENDING', 'FAILED'] as const)('typed %s evidence is not collapsed into already-sent', async existingStatus => {
+    const { adapter, dispatcher } = makeAdapter('skipped');
+    dispatcher.dispatch.mockResolvedValue({ status: 'skipped', notificationId: 'notif-1', existingStatus });
+    const result = await adapter.send(buildStatementDeliveryMessage({ render: makeRender(), recipientEmail: 'muvekkil@ornek.com', pdf: PDF }), makeContext());
+    if (existingStatus === 'SENT') expect(result).toEqual({ success: true, messageId: 'notif-1', reconciled: true });
+    else expect(result).toEqual({ success: false, messageId: 'notif-1', errorCode: existingStatus === 'PENDING' ? 'DELIVERY_UNCERTAIN' : 'RETRY_NOT_CLAIMED' });
   });
 });

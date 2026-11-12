@@ -35,6 +35,8 @@ export interface ClientStatementDeliveryLedgerRecord {
   nextRetryAt: Date | null;
   sentAt: Date | null;
   lastError: string | null;
+  /** Derived under the notification lock, not persisted or caller selectable. */
+  retryFailed?: boolean;
 }
 
 export type ClientStatementDeliveryClaimSkipReason =
@@ -102,6 +104,13 @@ export interface ClientStatementDeliveryLedgerReservation {
   periodKey: string;
   recipientEmail: string;
   now: Date;
+  actorUserId?: string;
+  auditActorId?: string;
+}
+
+export interface ClientStatementDeliveryEvidence {
+  ledger: ClientStatementDeliveryLedgerRecord | null;
+  notificationStatus: 'NONE' | 'PENDING' | 'FAILED' | 'SENT' | 'CONFLICT';
 }
 
 /**
@@ -115,6 +124,11 @@ export interface ClientStatementDeliveryLedgerPort {
   markSent(dedupeKey: string, now: Date): Promise<void>;
   /** Başarısızlığı KALICI olarak damgalar; terminal ise `nextRetryAt` null bırakılır. */
   markFailed(dedupeKey: string, attempts: number, error: string, now: Date): Promise<void>;
+  /** Paired evidence methods are mandatory on the production Prisma adapter. */
+  inspectDelivery?(input: ClientStatementDeliveryLedgerReservation): Promise<ClientStatementDeliveryEvidence>;
+  claimDelivery?(input: ClientStatementDeliveryLedgerReservation): Promise<ClientStatementDeliveryLedgerRecord | null>;
+  reconcileSent?(input: ClientStatementDeliveryLedgerReservation): Promise<boolean>;
+  finishDelivery?(input: ClientStatementDeliveryLedgerReservation, claim: ClientStatementDeliveryLedgerRecord, sent: boolean, error?: string): Promise<'SENT' | 'FAILED' | 'UNCERTAIN'>;
 }
 
 /** Defter kaydına yazılacak hata metni — sınırlı uzunluk (emsal: truncateError/500). */

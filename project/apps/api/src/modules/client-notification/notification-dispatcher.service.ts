@@ -15,13 +15,14 @@ export interface DispatchInput {
   dedupeKey?: string; // Cagiran typed command stable artifact dedupeKey'i verebilir.
   refType: string; // 'ClientApprovalRequest' | 'ClientStatement' | 'ExpenseRequest' ...
   refId: string;
-  force?: boolean; // true → SENT idempotency kontrolünü atla (açık tekrar gönderim — m3a-2)
+  force?: boolean; // Explicit FAILED reclaim only; PENDING/SENT and missing records cannot be forced.
   /**
    * CAD C3: opsiyonel mail ekleri — TAŞIMA-ONLY. Verilmezse dispatch davranışı
    * birebir aynıdır (backward-compatible). Ek içeriği ne render motoruna, ne
    * ClientNotification kaydına, ne de loga girer; yalnız sendEmail'e devredilir.
    */
   attachments?: readonly ClientNotificationAttachment[];
+  expectedRecipientEmail?: string;
 }
 
 export type DispatchStatus = 'sent' | 'failed' | 'skipped';
@@ -31,6 +32,7 @@ export interface DispatchResult {
   dedupeKey: string;
   error?: string;
   approval?: ExpenseSendApprovalOutcome;
+  existingStatus?: 'PENDING' | 'SENT' | 'FAILED' | 'MISSING';
 }
 
 /**
@@ -102,6 +104,7 @@ export class NotificationDispatcherService {
         templateId: template?.id,
         dedupeKey,
         ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+        ...(input.expectedRecipientEmail ? { expectedRecipientEmail: input.expectedRecipientEmail } : {}),
       };
 
       if (isExpense) {
@@ -127,7 +130,8 @@ export class NotificationDispatcherService {
         if (claim.kind !== 'ACQUIRED') {
           if (expenseContext) await this.expenseApproval!.reconcile(tenantId, userId, expenseContext, claim.notificationId);
           // EXISTING_PENDING | EXISTING_SENT | EXISTING_FAILED → skipped (ikinci normal send yok).
-          return { status: 'skipped', notificationId: claim.notificationId, dedupeKey };
+          return { status: 'skipped', notificationId: claim.notificationId, dedupeKey,
+            ...(input.expectedRecipientEmail ? { existingStatus: claim.kind === 'EXISTING_SENT' ? 'SENT' as const : claim.kind === 'EXISTING_PENDING' ? 'PENDING' as const : 'FAILED' as const } : {}) };
         }
         // 3) Yalnız claim sahibi provider'a ulaşır (Inv-2/3). reuseNotificationId ile claim tx DIŞINDA gönderilir.
         const claimedDto = {
@@ -149,6 +153,7 @@ export class NotificationDispatcherService {
           status: 'skipped',
           ...(reclaim.kind !== 'NO_RECORD' ? { notificationId: reclaim.notificationId } : {}),
           dedupeKey,
+          ...(input.expectedRecipientEmail ? { existingStatus: reclaim.kind === 'NO_RECORD' ? 'MISSING' as const : reclaim.kind === 'EXISTING_SENT' ? 'SENT' as const : 'PENDING' as const } : {}),
         };
       }
       const reclaimedDto = {
@@ -175,7 +180,7 @@ export class NotificationDispatcherService {
   }
 
   /**
-   * Manuel resend: SENT yoksa (yalnız FAILED/yok) tekrar dener. SENT varsa force gerektirir.
+   * Manuel resend: explicit force yalnız mevcut FAILED satırını yeniden sahiplenebilir; PENDING/SENT reddedilir.
    *
    * <remarks>
    * Çağrıldığı yerler:
@@ -193,7 +198,7 @@ export class NotificationDispatcherService {
   }
 
   async resend(tenantId: string, userId: string, input: DispatchInput): Promise<DispatchResult> {
-    // force=false ise dispatch zaten SENT'i skip eder; force=true açık tekrar gönderim.
+    // force=false normal claim; force=true yalnız atomik FAILED reclaim.
     return this.dispatch(tenantId, userId, input);
   }
 
