@@ -4375,6 +4375,7 @@ enum DueType {
   KOMISYON // Komisyon
   PRIM // Prim/İkramiye
   OTHER // Diğer
+  YARGILAMA_GIDERI // Yargılama Gideri (ilamda hükmedilen yargılama gideri; tebligat masrafından AYRI tür)
 }
 
 enum AssetType {
@@ -6666,6 +6667,7 @@ enum ClaimItemType {
   TAX_BSMV // BSMV
   TAX_KKDF // KKDF
   OTHER // Diğer
+  YARGILAMA_GIDERI // Yargılama Gideri (ilam; masraf sınıfı; motor AncillaryType.YARGILAMA_GIDERI — TEBLIGAT_MASRAFI DEĞİL)
 }
 
 // Alacak Kalemi Kaynak Süreci

@@ -672,6 +672,7 @@ export class ClaimItemService {
       TAX_BSMV: 'BSMV',
       TAX_KKDF: 'KKDF',
       OTHER: 'Diğer',
+      YARGILAMA_GIDERI: 'Yargılama Gideri',
     };
 
     const groupedItems: Record<string, { amount: number; count: number }> = {};

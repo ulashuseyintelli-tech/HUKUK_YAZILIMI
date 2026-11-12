@@ -32,6 +32,8 @@ const ITEM_TYPE_TO_ALLOCATION: Record<string, AllocationType> = {
   PRE_INTEREST: AllocationType.INTEREST,
   POST_INTEREST: AllocationType.INTEREST,
   EXPENSE: AllocationType.EXPENSE,
+  // Yargılama gideri tahsilat dağıtımında masraf kovasına girer (kalem türü ayrı kalır).
+  YARGILAMA_GIDERI: AllocationType.EXPENSE,
   FEE: AllocationType.FEE,
   ATTORNEY_FEE: AllocationType.ATTORNEY_FEE,
   PENALTY: AllocationType.PENALTY,

@@ -220,7 +220,7 @@ export class DocumentTemplateService {
       .reduce((sum, d) => sum + Number(d.amount), 0) || 0;
 
     const expenses = caseData.dues
-      ?.filter(d => d.type === 'EXPENSE' || d.type === 'OTHER')
+      ?.filter(d => d.type === 'EXPENSE' || d.type === 'OTHER' || d.type === 'YARGILAMA_GIDERI')
       .reduce((sum, d) => sum + Number(d.amount), 0) || 0;
 
     return {

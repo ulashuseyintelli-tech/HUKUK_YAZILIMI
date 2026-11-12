@@ -345,6 +345,7 @@ const CLAIM_ITEM_TYPE_LABELS: Readonly<Record<string, string>> = Object.freeze({
   POST_INTEREST: 'Takip Sonrası Faiz',
   EXPENSE: 'Masraf',
   MASRAF: 'Masraf',
+  YARGILAMA_GIDERI: 'Yargılama Gideri',
   FEE: 'Harç',
   POSTAGE: 'Posta Gideri',
   STAMP: 'Damga Vergisi',

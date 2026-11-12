@@ -23,6 +23,7 @@ export function mapItemTypeToAncillary(itemType: string): AncillaryType | null {
   const mapping: Record<string, AncillaryType> = {
     FEE: AncillaryType.HARC,
     EXPENSE: AncillaryType.TEBLIGAT_MASRAFI,
+    YARGILAMA_GIDERI: AncillaryType.YARGILAMA_GIDERI,
     ATTORNEY_FEE: AncillaryType.VEKALET_UCRETI,
     CHECK_PENALTY: AncillaryType.CEK_TAZMINATI,
     PENALTY: AncillaryType.DIGER,
@@ -32,8 +33,8 @@ export function mapItemTypeToAncillary(itemType: string): AncillaryType | null {
   return mapping[itemType] || null;
 }
 
-/** Masraf (cost) kalemi mi? (doc-27: FEE/EXPENSE = masraf; gerisi fer'i.) */
-const COST_ITEM_TYPES: ReadonlySet<string> = new Set(['FEE', 'EXPENSE']);
+/** Masraf (cost) kalemi mi? (doc-27: FEE/EXPENSE = masraf; gerisi fer'i. YARGILAMA_GIDERI de masraf kademesindedir.) */
+const COST_ITEM_TYPES: ReadonlySet<string> = new Set(['FEE', 'EXPENSE', 'YARGILAMA_GIDERI']);
 export function isCostItemType(itemType: string): boolean {
   return COST_ITEM_TYPES.has(itemType);
 }

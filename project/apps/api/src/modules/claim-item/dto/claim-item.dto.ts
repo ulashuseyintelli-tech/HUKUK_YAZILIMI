@@ -28,6 +28,8 @@ export enum ClaimItemType {
   TAX_BSMV = 'TAX_BSMV',
   TAX_KKDF = 'TAX_KKDF',
   OTHER = 'OTHER',
+  // İlamda hükmedilen yargılama gideri (masraf sınıfı; tebligat masrafından ayrı).
+  YARGILAMA_GIDERI = 'YARGILAMA_GIDERI',
 }
 
 // Kaynak Belge Türü

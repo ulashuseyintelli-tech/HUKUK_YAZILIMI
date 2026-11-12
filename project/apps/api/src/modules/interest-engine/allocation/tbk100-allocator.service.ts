@@ -59,6 +59,7 @@ export interface AllocationResult {
 const ANCILLARY_LABELS: Record<AncillaryType, string> = {
   [AncillaryType.HARC]: 'Harç',
   [AncillaryType.TEBLIGAT_MASRAFI]: 'Tebligat Masrafı',
+  [AncillaryType.YARGILAMA_GIDERI]: 'Yargılama Gideri',
   [AncillaryType.VEKALET_UCRETI]: 'Vekalet Ücreti',
   [AncillaryType.CEK_TAZMINATI]: 'Çek Tazminatı',
   [AncillaryType.KOMISYON]: 'Komisyon',
@@ -78,6 +79,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 export const DEFAULT_ANCILLARY_PRIORITY: AncillaryType[] = [
   AncillaryType.HARC,
   AncillaryType.TEBLIGAT_MASRAFI,
+  AncillaryType.YARGILAMA_GIDERI,
   AncillaryType.VEKALET_UCRETI,
   AncillaryType.CEK_TAZMINATI,
   AncillaryType.KOMISYON,

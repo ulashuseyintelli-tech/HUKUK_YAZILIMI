@@ -17,6 +17,8 @@ import { BadRequestException } from '@nestjs/common';
 // üyelerini içerir — 'COMMISSION' burada YOK: kural motorunun (claim-engine-rules.yaml) iç
 // etiketi, ClaimItemService.mapItemType() tarafından yaratma ÖNCESİ 'EXPENSE'e çevrilir
 // (claim-item.service.ts:732-744); ClaimItem hiçbir zaman itemType='COMMISSION' ile saklanmaz.
+// YARGILAMA_GIDERI bilinçli olarak bu listede YOK: tür eklenmesi faiz işletme kararı değildir; açık değer
+// verilmezse durum UNKNOWN kalır (owner 12.11.2026, P02).
 const NO_INTEREST_DEFAULT_ITEM_TYPES: ReadonlySet<string> = new Set([
   'EXPENSE',
   'FEE',
