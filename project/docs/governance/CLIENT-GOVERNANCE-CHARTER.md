@@ -2899,6 +2899,11 @@ DIFF   : 4 dosya, +1463 / -0
 (6) provider-kabul (SENT) ve yayinlama olaylari AYRI AYRI AuditLog'a yazilir
 ```
 
+**CL-R10 A — owner-approved bounded successor (2026-11-13):** The NULL message-ID guard above records the original I04 implementation, not a prohibition on persisting provider acceptance before final publication. For the successor bound to `CLIENT-FD-RECOVERY-CLR10-SA01` in `decision-log.md`, approved-provider acceptance, message ID and its attempt-bound SENT audit are committed together before the publication transaction. The existing sealed version/recipient/content/snapshot checks are repeated; the single guarded SEND_PENDING -> PUBLISHED transition matches that exact durable acceptance rather than requiring a NULL message ID. A recovery of this acceptance does not call transport or require another human approval.
+
+Only trustworthy definite-rejection evidence may release a claim for explicit resend. Unknown, missing-ID and unclassified legacy evidence remains blocked and visible; absence of durable evidence does not prove non-delivery. A crash before the first durable acceptance write has no automatic recovery or exactly-once SMTP guarantee. For this successor only, the supplied decision narrowly supersedes the placement of SENT audit in §35.11(6)/§43.2(6); PUBLISHED audit remains atomic with publication. This clarification preserves the success threshold in §35.10, the invariants in §35.11 and historical acceptances; it imports no CL-R07 timer/attempt policy and creates no new persistent lifecycle, schema, cron, provider-proof entry or forced publication.
+
+
 ### 43.3 §35.10 Mock Provider Yasağı
 
 Yayınlama yalnız onaylı gerçek provider'larla (`smtp` / `sendgrid` / `ses`) mümkündür. `mock`, boş değer veya listede olmayan herhangi bir ad **fail-closed** reddedilir ve guard provider'a **tek byte gitmeden önce** çalışır. Sessiz mock fallback'i Financial Disclosure gate'ini tatmin **edemez**.
