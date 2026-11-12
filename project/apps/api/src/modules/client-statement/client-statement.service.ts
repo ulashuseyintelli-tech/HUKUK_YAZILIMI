@@ -12,8 +12,6 @@ import {
   CollectionDispositionLineType,
   ClaimItemType,
 } from '@prisma/client';
-import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
-import { OfficeService } from '@/modules/office/office.service';
 import { AuditService } from '@/modules/audit/audit.service';
 import {
   CreateClientStatementDto,
@@ -84,8 +82,6 @@ export class ClientStatementService {
 
   constructor(
     private prisma: PrismaService,
-    private dispatcher: NotificationDispatcherService,
-    private office: OfficeService,
     private audit: AuditService,
     private caseBalance: CaseBalanceService,
     @Optional() private readonly errorReporter?: IntegrationErrorReporter,
@@ -161,8 +157,6 @@ export class ClientStatementService {
     });
 
     const result = await this.findOne(tenantId, created.id);
-    // State commit edildi → "ekstre hazır" maili BEST-EFFORT (yalnız create — m34-1; supersede/void mail YOK)
-    await this.notifyStatementReady(tenantId, userId, result);
     return result;
   }
 
@@ -433,58 +427,6 @@ export class ClientStatementService {
     });
     if (!record) throw new NotFoundException('Ekstre bulunamadı');
     return record;
-  }
-
-  // ==================== mail tetiği (Faz 3.4) ====================
-
-  /**
-   * "Ekstre hazır" maili — BEST-EFFORT. Token derleme + dispatch tamamen try/catch içinde:
-   * mail (veya token okuması) başarısız olsa bile commit'li ekstre DEĞİŞMEZ, throw etmez.
-   * Yalnız create()'te çağrılır (m34-1: supersede/void mail tetiklemez).
-   */
-  private async notifyStatementReady(
-    tenantId: string,
-    userId: string,
-    st: { id: string; clientId: string; caseId: string | null; periodStart: Date; periodEnd: Date; closingBalance: Prisma.Decimal },
-  ): Promise<void> {
-    // Faz B: client-level ekstre (caseId=null) case-bazlı "ekstre hazır" maili tetiklemez.
-    if (!st.caseId) return;
-    const caseId = st.caseId;
-    try {
-      const [client, kase, office] = await Promise.all([
-        this.prisma.client.findFirst({
-          where: { id: st.clientId, tenantId },
-          select: { displayName: true, name: true, firstName: true, lastName: true },
-        }),
-        this.prisma.case.findFirst({
-          where: { id: caseId, tenantId },
-          select: { fileNumber: true, executionFileNumber: true },
-        }),
-        this.office.getOfficeIdentity(tenantId),
-      ]);
-
-      const tokens: Record<string, string> = {
-        clientName: client?.displayName || client?.name || [client?.firstName, client?.lastName].filter(Boolean).join(' ') || 'Müvekkil',
-        caseFileNumber: kase?.fileNumber ?? '',
-        executionFileNumber: kase?.executionFileNumber ?? '',
-        periodStart: st.periodStart.toISOString().slice(0, 10),
-        periodEnd: st.periodEnd.toISOString().slice(0, 10),
-        closingBalance: st.closingBalance.toString(),
-        officeName: office?.name ?? '',
-      };
-
-      await this.dispatcher.dispatch(tenantId, userId, {
-        clientId: st.clientId,
-        caseId,
-        templateCode: 'STATEMENT_READY',
-        type: 'STATEMENT_READY',
-        tokens,
-        refType: 'ClientStatement',
-        refId: st.id,
-      });
-    } catch (e: any) {
-      this.logger.warn(`Ekstre maili tetiklenemedi (${st.id}): ${e.message}`);
-    }
   }
 
   // ==================== iç yardımcılar ====================

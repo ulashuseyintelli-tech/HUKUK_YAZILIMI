@@ -194,6 +194,72 @@ describeWithDisposableDb('Ekstre kaynak para birimi sınırı (HTTP + disposable
     expect(await statementDocumentCounts(prisma, tenant.tenantId)).toEqual(before);
   }
 
+  describe('CL-R08 — dosya oluşturma, e-posta gönderimi değildir', () => {
+    it.each([true, false])('özel hazır şablonu aktif=%s: HTTP 201 + snapshot/audit var; gönderim ve teslim kaydı yok', async (isActive) => {
+      const f = await setup(`clr08-template-${isActive}`);
+      await seedTryRows(f);
+      const template = await prisma.messageTemplate.create({ data: {
+        tenantId: t1.tenantId, code: 'STATEMENT_READY', name: 'CL-R08 test şablonu',
+        category: 'STATEMENT_READY', channel: 'EMAIL', isActive,
+        subject: 'Ekstreniz hazır', body: '{{clientName}}: {{closingBalance}}',
+      } });
+      try {
+        const before = await statementDocumentCounts(prisma, t1.tenantId);
+        const ledgerBefore = await prisma.clientStatementDeliveryLedger.count({ where: { tenantId: t1.tenantId } });
+        dispatcher.dispatch.mockClear();
+
+        const res = await caseStatement(f);
+
+        expect(res.status).toBe(201);
+        expect(res.body).toMatchObject({ caseId: f.caseId, clientId: f.clientId, currency: 'TRY', status: 'ACTIVE' });
+        expect(Number(res.body.openingBalance)).toBe(100);
+        expect(Number(res.body.closingBalance)).toBe(980);
+        expect(res.body.lines).toHaveLength(4);
+        expect(await statementDocumentCounts(prisma, t1.tenantId)).toEqual({
+          ...before, statements: before.statements + 1, lines: before.lines + 4, audits: before.audits + 1,
+        });
+        expect(await prisma.auditLog.count({ where: {
+          tenantId: t1.tenantId, action: 'CLIENT_STATEMENT_GENERATED', entityId: res.body.id,
+        } })).toBe(1);
+        expect(await prisma.clientStatementDeliveryLedger.count({ where: { tenantId: t1.tenantId } })).toBe(ledgerBefore);
+        expect(dispatcher.dispatch).not.toHaveBeenCalled();
+        expect(await prisma.messageTemplate.findUnique({ where: { id: template.id } })).toEqual(template);
+
+        const after = await statementDocumentCounts(prisma, t1.tenantId);
+        expect((await caseStatement(f)).status).toBe(409);
+        expect(await statementDocumentCounts(prisma, t1.tenantId)).toEqual(after);
+        expect(dispatcher.dispatch).not.toHaveBeenCalled();
+      } finally {
+        await prisma.messageTemplate.delete({ where: { id: template.id } });
+      }
+    });
+
+    it('oluşturma audit yazısından sonraki hata snapshot/satır/audit işlemini geri alır; gönderim yok', async () => {
+      const f = await setup('clr08-audit-rollback');
+      await seedTryRows(f);
+      const before = await statementDocumentCounts(prisma, t1.tenantId);
+      const ledgerBefore = await prisma.clientStatementDeliveryLedger.count({ where: { tenantId: t1.tenantId } });
+      const audit = app.get(AuditService);
+      const original = audit.logInTransaction.bind(audit);
+      let reachedAudit = false;
+      const injected = jest.spyOn(audit, 'logInTransaction').mockImplementationOnce(async (tx, input) => {
+        await original(tx, input);
+        reachedAudit = true;
+        throw new Error('CL-R08-after-generated-audit');
+      });
+      dispatcher.dispatch.mockClear();
+      try {
+        expect((await caseStatement(f)).status).toBe(500);
+        expect(reachedAudit).toBe(true);
+        expect(await statementDocumentCounts(prisma, t1.tenantId)).toEqual(before);
+        expect(await prisma.clientStatementDeliveryLedger.count({ where: { tenantId: t1.tenantId } })).toBe(ledgerBefore);
+        expect(dispatcher.dispatch).not.toHaveBeenCalled();
+      } finally {
+        injected.mockRestore();
+      }
+    });
+  });
+
   describe('geçerli TL ekstre davranışı korunur', () => {
     it('H07: 5000 TRY avans + 600 TRY payable kapanışı, sonraki boş dönemde aynen devreder; client-level avansı sahiplenmez', async () => {
       const f = await setup('h07-carry');

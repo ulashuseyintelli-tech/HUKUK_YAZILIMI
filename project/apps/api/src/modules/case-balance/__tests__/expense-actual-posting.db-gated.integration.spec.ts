@@ -299,7 +299,7 @@ describeDb('C1-B05-B typed EXPENSE_ACTUAL posting (gerçek PostgreSQL + local ma
     // servisi (computeCaseBalance) — advance-ledger DEĞİL. Faiz projeksiyonunu boş döndüren stub
     // yeterli (bu test faiz değil EXPENSE_ACTUAL satır kimliğini sınar).
     const interestStub: any = { computeCaseBalance: jest.fn().mockResolvedValue({ currencyResults: [] }) };
-    const stmtSvc = new ClientStatementService(prisma as any, dispatcher as any, {} as any, {} as any, interestStub);
+    const stmtSvc = new ClientStatementService(prisma as any, {} as any, interestStub);
     const period = { start: new Date(Date.now() - 60 * 60 * 1000), end: new Date(Date.now() + 60 * 60 * 1000) };
     const collect = () => (stmtSvc as any).collect(tenantId, caseId, period.start, period.end, false, null);
 

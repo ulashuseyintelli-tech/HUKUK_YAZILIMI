@@ -20,8 +20,8 @@ import { ClientStatementPrismaDeliveryLedgerAdapter } from './client-statement-p
 import { CaseViewScopeModule } from '../case/case-view-scope.module';
 
 /**
- * Müvekkil Ekstresi modülü (PR-3 + Faz 3.4 "ekstre hazır" maili).
- * Bağımsız modül (K-M1). Mail için ClientNotificationModule (dispatcher) + OfficeModule reuse.
+ * Müvekkil Ekstresi modülü. Dosya ekstresi oluşturma otomatik e-posta tetiklemez (CL-R08).
+ * Bağımsız modül (K-M1). Aylık PDF teslimi için ClientNotificationModule + OfficeModule korunur.
  *
  * CAD C3-B04: aylık koşu (ClientStatementMonthlyDeliveryService) VARSAYILAN KAPALI'dır —
  * `CLIENT_STATEMENT_MONTHLY_DELIVERY` env'i açıkça 'true' değilse CRON KAYDI BİLE
