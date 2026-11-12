@@ -3,9 +3,10 @@ import { IsNotEmpty, IsString, MinLength } from "class-validator";
 /**
  * D5-SEC-R01 — portal parola SIFIRLAMA gövdesi için API tarafı doğrulama.
  *
- * Politika YENİ DEĞİLDİR: portal sıfırlama sayfası (`app/portal/reset-password/page.tsx`) en az 8 karakter ister; personel
- * (`auth.dto.ts`) ve davet (`user-invite.dto.ts`) aynı `@IsString() @MinLength(8)` kuralını API'de uygular. Önceden sıfırlama
- * gövdesi satır içi tip (`{ token; password }`) olduğu için global ValidationPipe metatype'ı `Object` görüp HİÇ doğrulamıyordu.
+ * Politika YENİ DEĞİLDİR: portal sıfırlama sayfası (`app/portal/reset-password/page.tsx`) en az 8 karakter ister. Önceden
+ * sıfırlama gövdesi satır içi tip (`{ token; password }`) olduğu için global ValidationPipe metatype'ı `Object` görüp HİÇ
+ * doğrulamıyordu. Personel (büro kullanıcısı) parolaları ayrı tanımdan yönetilir: `auth/password-policy.ts`
+ * (owner kararı 12.11.2026, en az 6); bu portal değeri o karardan etkilenmez.
  *
  * D5-SEC-R02 (owner kararı 2026-09-28): portal PROFİL parola değiştirme de aynı kurala geçer (web profil sayfası 8'e
  * çekildi; API `PortalChangePasswordDto` ile uygular). Kural yalnız YENİ parola belirlenirken uygulanır; mevcut parolalarla

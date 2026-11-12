@@ -1,4 +1,5 @@
 import { IsEmail, IsString, MinLength, IsOptional, IsIn } from "class-validator";
+import { STAFF_PASSWORD_MIN_LENGTH, STAFF_PASSWORD_MIN_LENGTH_MESSAGE } from "../../password-policy";
 
 /** Admin tarafından gerçek kişi için davet oluşturma. Parola İÇERMEZ (kullanıcı belirler). */
 export class CreateInviteDto {
@@ -38,6 +39,6 @@ export class AcceptInviteDto {
   token: string;
 
   @IsString()
-  @MinLength(8)
+  @MinLength(STAFF_PASSWORD_MIN_LENGTH, { message: STAFF_PASSWORD_MIN_LENGTH_MESSAGE })
   password: string;
 }
