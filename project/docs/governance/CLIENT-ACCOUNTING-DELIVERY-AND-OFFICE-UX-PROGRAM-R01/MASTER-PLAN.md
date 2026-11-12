@@ -59,6 +59,12 @@ POL-1  ClientFinancialDisclosure bir OLAY BİLDİRİMİDİR.
        ClientStatement bir DÖNEMSEL EKSTREDİR.
        BİRLEŞTİRİLMEZ. Ayrı şablon · ayrı onay · ayrı gönderim anlamı korunur.
 
+       CL-R08 kapsam referansı: dosya oluşturmanın otomatik hazır e-postası
+       ile kabul edilmiş müvekkil-level aylık PDF/H6 tesliminin ayrımı için
+       decision-log.md / CLIENT-STATEMENT-READY-CLR08-SA01 ve Charter §23.10.
+       Tarihsel C3/H6 kabulü ve bu programın kapanışı yeniden açılmaz;
+       ortak şablon, token sözleşmesi ve teslim defteri korunur.
+
 POL-2  Tahakkuk etmiş fakat TAHSİL EDİLMEMİŞ faiz:
        INFORMATIONAL / NON-CASH. Açılış ve kapanış bakiyesini DEĞİŞTİRMEZ.
 

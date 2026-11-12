@@ -1189,6 +1189,8 @@ Tarayıcı tarafında hesaplanan count/sum/total/dashboard-card canonical aggreg
 
 `ClientStatement` CLIENT-owned immutable artifact, belirli zamanda oluşturulmuş snapshot, live ledger DEĞİL, canonical current balance DEĞİL, çoklu finansal kayıttan üretilen client-level financial rollup taşır. POL-F Option B nedeniyle: **CLIENT STATEMENT PORTAL/CLIENT-FACING VISIBILITY: NOT AUTHORIZED** — gerekçe: client-facing financial aggregate visibility PROHIBITED. Statement'ın "client-facing artifact" olarak modellenmiş olması görünürlük yetkisi OLUŞTURMAZ. Gelecekte açılması ayrı owner policy kararı + POL-F expansion + source/reconciliation review GEREKTİRİR. Supersession veya void, underlying financial reversal DEĞİLDİR.
 
+**CL-R08 kapsam referansı (owner kararı, 2026-11-11):** Dosya ekstresi oluşturma ile kabul edilmiş müvekkil düzeyindeki aylık PDF/H6 e-posta tesliminin ayrımı, `decision-log.md` içindeki `CLIENT-STATEMENT-READY-CLR08-SA01` kararından izlenir. Aylık teslimin tarihsel kabul kanıtı aynı dosyanın 2026-08-12 tarihli `CLIENT-ACCOUNTING-DELIVERY-AND-OFFICE-UX-PROGRAM-R01 — TERMINAL_CLOSED (OWNER RATIFICATION)` kaydıdır. Bu referans genel portal/aggregate görünürlüğü açmaz; dosya oluşturma tetiğinin kaldırılması aylık kabulü yeniden açmaz. Runtime/yayın durumu ayrı teslim kanıtından doğrulanır.
+
 ### 23.11 Financial Confidence Map
 
 Claimed amount: PARTIAL/source confidence non-uniform. Collection context: PARTIAL/status-filter policy open. Outstanding: source-dependent/not portal-authorized. Advance/cari: unavailable as authoritative. Payable: not payment. Payout recorded: not bank execution. Accounting: outside client authority. BP-06 bu source/reconciliation boşluklarını ÇÖZMEZ.
