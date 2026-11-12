@@ -1,8 +1,10 @@
-import { Inject, Injectable, Logger, Optional, type OnModuleInit } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional, type OnModuleInit } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { ClientStatementStatus } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { OfficeService } from '@/modules/office/office.service';
+import { OfficeApprovalService } from '../office-approval/office-approval.service';
+import { assertClientObjectScope } from '../client/client-object-scope';
 import { ACTIVE_TENANT_WHERE } from '@/modules/tenant/tenant-lifecycle';
 import { resolveSchedulerTimezone } from '../../common/scheduler-timezone';
 import { ClientStatementService } from './client-statement.service';
@@ -24,6 +26,8 @@ import {
   CLIENT_STATEMENT_DELIVERY_MAX_ATTEMPTS,
   isTerminalAttempt,
   truncateLedgerError,
+  decideDeliveryClaim,
+  type ClientStatementDeliveryLedgerReservation,
   type ClientStatementDeliveryLedgerPort,
   type ClientStatementDeliveryLedgerRecord,
 } from './client-statement-delivery-ledger.contract';
@@ -35,6 +39,7 @@ import {
   buildMonthlyStatementDedupeKey,
   buildMonthlyStatementLockKey,
   resolvePreviousMonthPeriod,
+  identifyMonthlyStatementPeriod,
 } from './client-statement-monthly-period';
 
 /**
@@ -86,7 +91,9 @@ export type MonthlyDeliveryOutcome =
   | 'SKIPPED_DUPLICATE_RUN'
   /** E1: ekstreye girecek kayıtlarda TL dışı / belirlenemeyen para birimi var — ekstre üretilmedi (hata değil, açık atlama). */
   | 'SKIPPED_UNSUPPORTED_CURRENCY'
-  | 'FAILED';
+  | 'FAILED'
+  | 'RECONCILED'
+  | 'RECONCILIATION_REQUIRED';
 
 export interface MonthlyDeliveryTargetResult {
   tenantId: string;
@@ -113,6 +120,8 @@ export interface MonthlyDeliveryRunResult {
   planned: number;
   skipped: number;
   failed: number;
+  reconciled: number;
+  reconciliationRequired: number;
   targets: readonly MonthlyDeliveryTargetResult[];
 }
 
@@ -148,6 +157,7 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
     @Optional() @Inject(CLIENT_STATEMENT_DELIVERY_LEDGER_PORT)
     private readonly ledger?: ClientStatementDeliveryLedgerPort,
     @Optional() private readonly errorReporter?: IntegrationErrorReporter,
+    @Optional() private readonly approval?: OfficeApprovalService,
   ) {}
 
   /** Env bayrağı — açık teyit olmadan KAPALI. */
@@ -191,7 +201,7 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
     this.logger.log(
       `Aylık ekstre koşusu (${result.periodKey}): tarandı=${result.scanned} üretildi=${result.generated} ` +
         `yeniden-kullanıldı=${result.reused} teslim=${result.delivered} plan=${result.planned} ` +
-        `atlandı=${result.skipped} başarısız=${result.failed}`,
+        `atlandı=${result.skipped} başarısız=${result.failed} uzlaştırıldı=${result.reconciled} uzlaştırma-gerekli=${result.reconciliationRequired}`,
     );
   }
 
@@ -242,6 +252,8 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
       if (target.outcome === 'DELIVERED') result.delivered += 1;
       else if (target.outcome === 'PLANNED') result.planned += 1;
       else if (target.outcome === 'FAILED') result.failed += 1;
+      else if (target.outcome === 'RECONCILED') result.reconciled += 1;
+      else if (target.outcome === 'RECONCILIATION_REQUIRED') result.reconciliationRequired += 1;
       else result.skipped += 1;
     }
 
@@ -307,6 +319,39 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
       return { ...base, outcome: 'SKIPPED_EMPTY_PERIOD', statementSource };
     }
 
+    return this.deliverStatement(client, statement, period, statementSource, recipientEmail, deliveredInRun, now, base);
+  }
+
+  /** Targeted recovery never regenerates a statement or chooses a period from today's month. */
+  async retryDeliveryForActor(tenantId: string, actorUserId: string, statementId: string, now = new Date()) {
+    const actor = actorUserId ? await this.prisma.user.findFirst({ where: { id: actorUserId, tenantId, isActive: true }, select: { role: true } }) : null;
+    if (!actor || actor.role === 'VIEWER' || !this.approval || !await this.approval.isApproverEligible(actorUserId, tenantId)) {
+      throw new ForbiddenException('MONTHLY_DELIVERY_AUTHORITY_REQUIRED');
+    }
+    if (!this.isEnabled()) return { enabled: false, target: null };
+    const rows = await this.prisma.clientStatementDeliveryLedger.findMany({ where: { tenantId, statementId }, take: 2 });
+    if (rows.length !== 1) throw new NotFoundException('Tekil aylık teslim bulunamadı');
+    const row = rows[0];
+    await assertClientObjectScope(this.prisma, tenantId, actorUserId, row.clientId);
+    const statement = await this.statements.findOne(tenantId, statementId);
+    const period = identifyMonthlyStatementPeriod(statement.periodStart, statement.periodEnd);
+    const client = await this.prisma.client.findFirst({ where: { tenantId, id: row.clientId, isActive: true }, include: { contacts: true } });
+    if (!client || statement.caseId || !period || period.periodKey !== row.periodKey ||
+      statement.clientId !== row.clientId || statement.status !== 'ACTIVE') throw new NotFoundException('Aylık teslim kapsamı geçerli değil');
+    const recipientEmail = this.resolveRecipientEmail(client);
+    if (!recipientEmail || recipientEmail !== row.recipientEmail) return { enabled: true, target: {
+      tenantId, clientId: row.clientId, statementSource: 'REUSED', outcome: 'RECONCILIATION_REQUIRED', reason: 'recipient-scope-changed',
+    } };
+    if (!this.ledger?.inspectDelivery || !this.ledger.claimDelivery || !this.ledger.finishDelivery || !this.ledger.reconcileSent) {
+      throw new ForbiddenException('MONTHLY_DELIVERY_RECOVERY_UNAVAILABLE');
+    }
+    return { enabled: true, target: await this.deliverStatement(client, statement, period, 'REUSED', recipientEmail,
+      new Set(), now, { tenantId, clientId: row.clientId }, actorUserId) };
+  }
+
+  private async deliverStatement(client: ClientRow, statement: Awaited<ReturnType<ClientStatementService['findOne']>>,
+    period: { periodKey: string }, statementSource: 'GENERATED' | 'REUSED', recipientEmail: string,
+    deliveredInRun: Set<string>, now: Date, base: { tenantId: string; clientId: string }, actorUserId?: string): Promise<MonthlyDeliveryTargetResult> {
     const dedupeKey = buildMonthlyStatementDedupeKey(statement.id, period.periodKey);
     if (deliveredInRun.has(dedupeKey)) {
       return { ...base, outcome: 'SKIPPED_ALREADY_DELIVERED', statementSource, reason: 'in-run-ledger' };
@@ -329,12 +374,35 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
       return { ...base, outcome: 'PLANNED', statementSource };
     }
 
+    const input: ClientStatementDeliveryLedgerReservation = {
+      tenantId: client.tenantId, clientId: client.id, statementId: statement.id, dedupeKey,
+      periodKey: period.periodKey, recipientEmail, now, actorUserId, auditActorId: actorUserId ?? CLIENT_STATEMENT_MONTHLY_ACTOR,
+    };
+    const paired = !!this.ledger?.inspectDelivery;
+    if (paired) {
+      try {
+        const evidence = await this.ledger!.inspectDelivery!(input);
+        if (evidence.notificationStatus === 'SENT') {
+          const reconciled = await this.ledger!.reconcileSent!(input);
+          return { ...base, statementSource, outcome: reconciled ? 'RECONCILED' : 'RECONCILIATION_REQUIRED', reason: 'durable-notification-sent' };
+        }
+        if (['PENDING', 'CONFLICT'].includes(evidence.notificationStatus) || evidence.ledger?.status === 'SENT') {
+          return { ...base, statementSource, outcome: 'RECONCILIATION_REQUIRED', reason: 'notification-outcome-unresolved' };
+        }
+        const decision = decideDeliveryClaim(evidence.ledger, now);
+        if (decision.action === 'SKIP') return { ...base, statementSource, outcome: 'SKIPPED_LEDGER_CLAIM_LOST', reason: decision.reason };
+      } catch (error) {
+        if (error instanceof ForbiddenException || error instanceof NotFoundException) throw error;
+        return { ...base, statementSource, outcome: 'RECONCILIATION_REQUIRED', reason: 'delivery-evidence-unavailable' };
+      }
+    }
+
     // Kalici defter bagliysa rezervasyon ONUN unique kisitina dayanir: yarisi
     // kaybeden kosu null alir ve GONDERMEZ (cift gonderim yapisal olarak imkansiz).
     let reservation: ClientStatementDeliveryLedgerRecord | null = null;
     if (this.ledger) {
       try {
-        reservation = await this.ledger.claim({
+        reservation = paired ? await this.ledger.claimDelivery!(input) : await this.ledger.claim({
           tenantId: client.tenantId,
           clientId: client.id,
           statementId: statement.id,
@@ -344,7 +412,11 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
           now,
         });
       } catch (error: any) {
+        if (error instanceof ForbiddenException || error instanceof NotFoundException) throw error;
         this.logger.warn(`Teslim defteri rezervasyonu alinamadi (${dedupeKey}): ${error?.message || error}`);
+        if (this.errorReporter) reportCronJobFailure(this.errorReporter, CLIENT_STATEMENT_MONTHLY_JOB_ID, new Error('Delivery claim unavailable'), {
+          tenantId: client.tenantId, reasonCode: 'STATEMENT_DELIVERY_CLAIM_FAILED', metadata: { dedupeKey },
+        });
         return { ...base, outcome: 'FAILED', statementSource, reason: 'ledger-claim-error' };
       }
       if (!reservation) {
@@ -383,8 +455,19 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
         dedupeKey,
         periodKey: period.periodKey,
         actorId: CLIENT_STATEMENT_MONTHLY_ACTOR,
+        ...(reservation?.retryFailed ? { retryFailed: true } : {}),
         tokens: buildStatementDeliveryTokens(render),
       });
+      if (paired && reservation) {
+        const state = await this.ledger!.finishDelivery!(input, reservation, !!sent?.success, sent?.errorCode);
+        if (state === 'UNCERTAIN') return { ...base, statementSource, outcome: 'RECONCILIATION_REQUIRED', reason: 'delivery-outcome-unresolved' };
+        if (state === 'FAILED') {
+          this.reportTerminalFailure(client.tenantId, dedupeKey, reservation.attempts, sent?.errorCode ?? 'delivery-failed');
+          return { ...base, statementSource, outcome: 'FAILED', reason: sent?.errorCode ?? 'delivery-failed' };
+        }
+        deliveredInRun.add(dedupeKey);
+        return { ...base, statementSource, outcome: sent?.success && !sent.reconciled ? 'DELIVERED' : 'RECONCILED' };
+      }
       if (!sent?.success) {
         await this.recordDeliveryFailure(client.tenantId, dedupeKey, reservation, sent?.errorCode, now);
         return { ...base, outcome: 'FAILED', statementSource, reason: sent?.errorCode || 'delivery-failed' };
@@ -411,6 +494,15 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
       }
       return { ...base, outcome: 'DELIVERED', statementSource };
     } catch (error: any) {
+      if (paired && reservation) {
+        try {
+          const state = await this.ledger!.finishDelivery!(input, reservation, false, 'delivery-error');
+          if (state === 'FAILED') this.reportTerminalFailure(client.tenantId, dedupeKey, reservation.attempts, 'delivery-error');
+          return { ...base, statementSource, outcome: state === 'FAILED' ? 'FAILED' : state === 'SENT' ? 'RECONCILED' : 'RECONCILIATION_REQUIRED', reason: 'delivery-error' };
+        } catch {
+          return { ...base, statementSource, outcome: 'RECONCILIATION_REQUIRED', reason: 'delivery-state-write-failed' };
+        }
+      }
       this.logger.warn(`Aylık ekstre teslim edilemedi (${client.tenantId}/${client.id}): ${error?.message || error}`);
       await this.recordDeliveryFailure(client.tenantId, dedupeKey, reservation, error?.message, now);
       return { ...base, outcome: 'FAILED', statementSource, reason: 'delivery-error' };
@@ -491,6 +583,10 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
       }
     }
 
+    this.reportTerminalFailure(tenantId, dedupeKey, attempts, error);
+  }
+
+  private reportTerminalFailure(tenantId: string, dedupeKey: string, attempts: number, error: string) {
     if (isTerminalAttempt(attempts) && this.errorReporter) {
       reportCronJobFailure(this.errorReporter, CLIENT_STATEMENT_MONTHLY_JOB_ID, new Error(error), {
         tenantId,
@@ -563,6 +659,8 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
       planned: 0,
       skipped: 0,
       failed: 0,
+      reconciled: 0,
+      reconciliationRequired: 0,
       targets: [],
     };
   }

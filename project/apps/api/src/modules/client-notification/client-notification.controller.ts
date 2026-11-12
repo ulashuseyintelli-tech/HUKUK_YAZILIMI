@@ -57,7 +57,7 @@ export class ClientNotificationController {
     }
     // S5: son gönderimler listesinde dosyalı bildirimler yalnız görünen dosyalarla; dosyasız bildirimler mevcut (ADMIN) yetkisinde kalır.
     const viewScope = requireCaseViewScope(this.caseViewScope);
-    const data = await this.service.getNotificationOverview(tenantId, viewScope ? (caseIds) => viewScope.visibleCaseIds(tenantId, actorUserId, caseIds) : undefined);
+    const data = await this.service.getNotificationOverview(tenantId, viewScope ? (caseIds) => viewScope.visibleCaseIds(tenantId, actorUserId, caseIds) : undefined, actorUserId);
     return { success: true, data };
   }
 

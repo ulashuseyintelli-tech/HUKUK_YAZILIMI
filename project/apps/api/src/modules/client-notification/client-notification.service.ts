@@ -9,6 +9,9 @@ import { maskEmail, maskPhone } from "../../common/pii-mask.util";
 import * as nodemailer from "nodemailer";
 import { clientEmailRecipient } from './client-email-recipient';
 import { ExpenseSendApprovalService, type ExpenseSendContext } from './expense-send-approval.service';
+import { OfficeApprovalService } from '../office-approval/office-approval.service';
+import { isClientObjectInScope } from '../client/client-object-scope';
+import { CLIENT_STATEMENT_DELIVERY_MAX_ATTEMPTS, CLIENT_STATEMENT_DELIVERY_LOCK_TIMEOUT_MINUTES } from '../client-statement/client-statement-delivery-ledger.contract';
 
 interface PoaRecentDeliveryOverviewRow {
   id: string;
@@ -121,6 +124,8 @@ export interface ClientNotificationAttachment {
 }
 
 export interface SendEmailDto {
+  /** Trusted statement transport context; public send/resend DTOs do not expose this field. */
+  expectedRecipientEmail?: string;
   clientId: string;
   caseId?: string;
   type: string; // MASRAF_ISTEK, GENEL_BILGILENDIRME, RAPOR, HATIRLATMA
@@ -269,6 +274,7 @@ export class ClientNotificationService {
     private prisma: PrismaService,
     private officeService: OfficeService,
     @Optional() private readonly expenseApproval?: ExpenseSendApprovalService,
+    @Optional() private readonly officeApproval?: OfficeApprovalService,
   ) {}
 
   /**
@@ -288,7 +294,7 @@ export class ClientNotificationService {
    * - ClientNotificationController.getOverview() → GET /client-notifications/overview (ADMIN-gate) — Bildirim Kontrol Merkezi sayfası
    * </remarks>
    */
-  async getNotificationOverview(tenantId: string, caseVisibility?: (caseIds: Array<string | null>) => Promise<Set<string> | null>) {
+  async getNotificationOverview(tenantId: string, caseVisibility?: (caseIds: Array<string | null>) => Promise<Set<string> | null>, actorUserId?: string) {
     // caseVisibility (F02 P3 tarama S5): verilirse "son gönderimler" listesinde dosyalı bildirimler yalnız görünen dosyalarla
     // sınırlanır (bildirim dosyaya FK'siz `caseId` ile bağlıdır); dosyasız bildirimler ve sayaçlar değişmez.
     let recentWhere: Prisma.ClientNotificationWhereInput = { tenantId };
@@ -534,8 +540,35 @@ export class ClientNotificationService {
     // Planlandı listesi statiktir (motoru olmayan, sahte aktiflik gösterilmeyen özellikler)
     const plannedEngines = 5;
 
+    const monthlyDeliveries = [];
+    if (this.prisma.clientStatementDeliveryLedger) {
+      const rows = await this.prisma.clientStatementDeliveryLedger.findMany({ where: { tenantId }, orderBy: { updatedAt: 'desc' }, take: 20,
+        select: { statementId: true, clientId: true, periodKey: true, dedupeKey: true, status: true, attempts: true, nextRetryAt: true, reservedAt: true, updatedAt: true,
+          recipientEmail: true, statement: { select: { status: true, caseId: true } }, client: { select: { isActive: true, email: true, contacts: true } } } });
+      const eligible = !!actorUserId && !!this.officeApproval && await this.officeApproval.isApproverEligible(actorUserId, tenantId);
+      for (const row of rows) {
+        const notifications = await this.prisma.clientNotification.findMany({ where: { tenantId, dedupeKey: row.dedupeKey }, take: 2,
+          select: { clientId: true, channel: true, type: true, status: true, sentAt: true } });
+        const n = notifications.length === 1 ? notifications[0] : null;
+        const valid = n && n.clientId === row.clientId && n.channel === 'EMAIL' && n.type === 'STATEMENT_READY' &&
+          ['SENT', 'FAILED', 'PENDING'].includes(n.status) && (n.status !== 'SENT' || n.sentAt !== null);
+        const recipient = clientEmailRecipient(row.client)?.trim().toLowerCase();
+        const state = !row.client.isActive || row.statement.status !== 'ACTIVE' || row.statement.caseId || recipient !== row.recipientEmail ? 'RECONCILIATION_REQUIRED'
+          : notifications.length > 1 || (n && !valid) ? 'RECONCILIATION_REQUIRED'
+          : n?.status === 'PENDING' ? 'RECONCILIATION_REQUIRED'
+          : n?.status === 'SENT' ? (row.status === 'SENT' ? 'SENT' : 'RECONCILE_SENT')
+          : row.status === 'SENT' ? 'RECONCILIATION_REQUIRED'
+          : row.attempts >= CLIENT_STATEMENT_DELIVERY_MAX_ATTEMPTS ? 'EXHAUSTED'
+          : row.status === 'PENDING' && row.reservedAt && row.reservedAt.getTime() >= now.getTime() - CLIENT_STATEMENT_DELIVERY_LOCK_TIMEOUT_MINUTES * 60_000 ? 'IN_PROGRESS'
+          : row.nextRetryAt && row.nextRetryAt > now ? 'RETRY_NOT_DUE' : 'RETRY_ELIGIBLE';
+        const related = eligible && await isClientObjectInScope(this.prisma, tenantId, actorUserId, row.clientId);
+        monthlyDeliveries.push({ statementId: row.statementId, periodKey: row.periodKey, attempts: row.attempts,
+          state, nextRetryAt: row.nextRetryAt?.toISOString() ?? null, canRecover: process.env.CLIENT_STATEMENT_MONTHLY_DELIVERY === 'true' && !!related && ['RETRY_ELIGIBLE', 'RECONCILE_SENT'].includes(state) });
+      }
+    }
     return {
       generatedAt: now.toISOString(),
+      monthlyDeliveries,
       channels,
       engines,
       stats: {
@@ -732,6 +765,11 @@ export class ClientNotificationService {
       throw new BadRequestException("Müvekkilin e-posta adresi bulunamadı");
     }
 
+    if (dto.expectedRecipientEmail !== undefined &&
+      recipientEmail.trim().toLowerCase() !== dto.expectedRecipientEmail.trim().toLowerCase()) {
+      await markClaimFailed('statement-recipient-changed');
+      throw new BadRequestException('Ekstre teslim alıcısı değişmiş; gönderim durduruldu');
+    }
     const smtpSettings = await this.officeService.getFullSmtpSettings(tenantId);
     if (!smtpSettings.smtpHost || !smtpSettings.smtpUser) {
       await markClaimFailed("smtp-not-configured");

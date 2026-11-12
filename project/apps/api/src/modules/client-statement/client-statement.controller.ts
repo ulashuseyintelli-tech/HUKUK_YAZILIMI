@@ -58,6 +58,13 @@ export class ClientStatementController {
     return { record: 'CLIENT_STATEMENT_MONTHLY_DELIVERY_MANUAL_RUN', tenantId: req.user.tenantId, result };
   }
 
+  /** Existing monthly execution authority, further bounded to a persisted delivery and canonical Client relation. */
+  @Post(':id/monthly-delivery/retry')
+  async retryMonthlyDelivery(@Req() req: AuthRequest, @Param('id') id: string) {
+    await this.assertCanRunManualDelivery(req.user.id, req.user.tenantId, req.user.role);
+    return this.monthlyDelivery.retryDeliveryForActor(req.user.tenantId, req.user.id, id);
+  }
+
   /**
    * Yetki: scheduler manuel-run ile AYNI politika (owner F02 kararı). VIEWER DENY; elevated =
    * `OfficeApprovalService.isApproverEligible` (PARTNER veya canApproveOfficeActions). ADMIN rolü

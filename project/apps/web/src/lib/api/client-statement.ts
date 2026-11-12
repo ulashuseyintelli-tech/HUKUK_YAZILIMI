@@ -69,6 +69,11 @@ export interface CreateClientLevelStatementInput {
 }
 
 export const clientStatementApi = {
+  /** Only an existing monthly delivery; no caller-selected recipient, period or transport payload. */
+  async recoverMonthlyDelivery(statementId: string): Promise<{ enabled: boolean; target: { outcome: string; reason?: string } | null }> {
+    const response = await apiClient.post(`/client-statements/${encodeURIComponent(statementId)}/monthly-delivery/retry`);
+    return response.data;
+  },
   /** Dosya bazlı liste (default ACTIVE). */
   async list(caseId: string): Promise<ClientStatement[]> {
     const resp = await apiClient.get<ClientStatement[]>(`/client-statements/case/${caseId}`);

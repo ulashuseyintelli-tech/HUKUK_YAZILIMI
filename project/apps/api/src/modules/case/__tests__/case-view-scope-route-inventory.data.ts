@@ -347,6 +347,7 @@ export const CASE_RELATED_CONTROLLERS: Readonly<Record<string, readonly RouteEnt
   ],
   "client-statement/client-statement.controller.ts": [
     ["POST /client-statements/monthly-delivery/run-now", "YAZIM", ""],
+    ["POST /client-statements/:id/monthly-delivery/retry", "YAZIM", ""],
     ["POST /client-statements/case/:caseId", "YAZIM", ""],
     ["POST /client-statements/client/:clientId", "YAZIM", ""],
     ["POST /client-statements/:id/supersede", "YAZIM", ""],
