@@ -397,7 +397,7 @@ export class ClientFinancialDisclosureOfficeService {
         entityId: version.id,
         action: { in: Object.values(CLIENT_FINANCIAL_DISCLOSURE_AUDIT_ACTIONS) },
       },
-      select: { action: true, createdAt: true },
+      select: { action: true, createdAt: true, actorType: true, userId: true },
       orderBy: { createdAt: 'asc' },
     });
 
@@ -419,7 +419,9 @@ export class ClientFinancialDisclosureOfficeService {
     for (const audit of audits) {
       const type = this.auditEventType(audit.action);
       if (type) {
-        events.push({ type, occurredAt: this.isoRequired(audit.createdAt), actor: 'SYSTEM' });
+        const actor = audit.actorType === 'USER' && typeof audit.userId === 'string' && audit.userId.trim().length > 0
+          ? 'OFFICE_USER' : 'SYSTEM';
+        events.push({ type, occurredAt: this.isoRequired(audit.createdAt), actor });
       }
     }
     events.sort((left, right) => left.occurredAt.localeCompare(right.occurredAt));

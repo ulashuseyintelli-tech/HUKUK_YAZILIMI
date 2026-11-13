@@ -249,4 +249,28 @@ describeDb('CODEX-X1 PRE01 — office contract (disposable PostgreSQL)', () => {
     expect(serialized).not.toContain('raw provider stack secret');
     expect(serialized).not.toContain('SECRET-ID');
   });
+
+  it('KI-230 timeline preserves legacy audit rows and projects operator class without identity leakage', async () => {
+    const before = await prisma.auditLog.findMany({ where: { tenantId: tenantA, entityId: versionA }, orderBy: { id: 'asc' } });
+    const userAudit = await prisma.auditLog.create({ data: {
+      tenantId: tenantA, entityType: 'ClientFinancialDisclosureVersion', entityId: versionA,
+      action: 'CLIENT_FINANCIAL_DISCLOSURE_PUBLISHED', actorType: 'USER', userId: partner,
+      userName: 'PRIVATE-OPERATOR-NAME', decisionResult: 'ALLOWED',
+    } });
+    const legacyAudit = await prisma.auditLog.create({ data: {
+      tenantId: tenantA, entityType: 'ClientFinancialDisclosureVersion', entityId: versionA,
+      action: 'CLIENT_FINANCIAL_DISCLOSURE_REVERSED', actorType: 'SYSTEM', decisionResult: 'ALLOWED',
+    } });
+    const timeline = await service.getTimeline({ tenantId: tenantA, actorUserId: partner, clientId: clientA }, versionA);
+    expect(timeline.events.find(event => event.type === 'PUBLISHED')?.actor).toBe('OFFICE_USER');
+    expect(timeline.events.find(event => event.type === 'REVERSED')?.actor).toBe('SYSTEM');
+    const serialized = JSON.stringify(timeline);
+    for (const secret of [partner, userAudit.id, legacyAudit.id, 'PRIVATE-OPERATOR-NAME', 'userId', 'actorType']) {
+      expect(serialized).not.toContain(secret);
+    }
+    expect(await prisma.auditLog.findMany({ where: { tenantId: tenantA, entityId: versionA, id: { notIn: [userAudit.id, legacyAudit.id] } }, orderBy: { id: 'asc' } }))
+      .toEqual(before);
+    expect(await prisma.auditLog.findUniqueOrThrow({ where: { id: legacyAudit.id } }))
+      .toMatchObject({ actorType: 'SYSTEM', userId: null });
+  });
 });
