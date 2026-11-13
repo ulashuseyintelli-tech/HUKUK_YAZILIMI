@@ -8,6 +8,7 @@ import {
   Query,
   UseGuards,
   Optional,
+  Inject,
 } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { CaseViewScopeService, requireCaseViewScope } from '../case/case-view-scope.service';
@@ -20,12 +21,14 @@ import {
 import { ClientFinancialDisclosureApprovalService } from './client-financial-disclosure-approval.service';
 import { ClientFinancialDisclosureOfficeService } from './client-financial-disclosure-office-service';
 import { ClientFinancialDisclosurePublicationService } from './client-financial-disclosure-publication.service';
+import { ClientFinancialDisclosureWriterService } from './client-financial-disclosure-writer.service';
 import { ClientFinancialDisclosureOfficeQueryDto } from './dto/client-financial-disclosure-office.dto';
 import {
   CompleteDisclosureOfficeApprovalDto,
   RequestDisclosureContentApprovalDto,
   ReverseClientFinancialDisclosureDto,
   SupersedeClientFinancialDisclosureDto,
+  CreateClientFinancialDisclosureCorrectionDto,
 } from './dto/client-financial-disclosure.dto';
 
 /**
@@ -43,6 +46,7 @@ export class ClientFinancialDisclosureController {
     private readonly publication: ClientFinancialDisclosurePublicationService,
     private readonly office: ClientFinancialDisclosureOfficeService,
     @Optional() private readonly caseViewScope?: CaseViewScopeService,
+    @Optional() @Inject(ClientFinancialDisclosureWriterService) private readonly writer?: ClientFinancialDisclosureWriterService,
   ) {}
 
   /** F02 P3 tarama S3: büro bildirim okumalarının dosya süzgeci (bayrak kapalı → undefined; bayrak açık + servis yok → 403). */
@@ -343,6 +347,27 @@ export class ClientFinancialDisclosureController {
       actorUserId,
       correctionReason: body.correctionReason,
     });
+  }
+
+  /**
+   * Cagrildigi yerler:
+   * - clientFinancialDisclosureApi.createCorrection() -> Office DisclosureCorrectionPanel.
+   * Reuses preparation eligibility and the existing office case-scope filter.
+   */
+  @Post('office/clients/:clientId/versions/:disclosureVersionId/corrections')
+  async createCorrection(
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') actorUserId: string,
+    @Param('clientId') clientId: string,
+    @Param('disclosureVersionId') disclosureVersionId: string,
+    @Body() body: CreateClientFinancialDisclosureCorrectionDto,
+  ) {
+    this.assertWriteEnabled();
+    if (!this.writer) throw new ForbiddenException('Disclosure correction writer is unavailable.');
+    const created = await this.writer.createCorrectionVersion({ tenantId, actorUserId, clientId, disclosureVersionId,
+      correctionReason: body.correctionReason, caseFilter: await this.caseFilter(tenantId, actorUserId) });
+    return { disclosureId: created.disclosureId, disclosureVersionId: created.versionId,
+      version: created.version, status: created.status, replayed: created.replayed };
   }
 
   /** Flag kapalıyken tenant/version lookup yapılmadan tek tip fail-closed cevap. */

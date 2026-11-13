@@ -29,6 +29,10 @@ describeDb('CLIENT-P2-U03-TRACK-B-I02 — disclosure writer (gerçek PostgreSQL)
   const ccB = `i02-ccB-${S}`;
   /** caseA (tenant A) icinde ama Client'i tenant B'ye ait — cross-tenant deligi izole eder. */
   const ccXt = `i02-ccXt-${S}`;
+  const creator = `i02-creator-${S}`;
+  const outsider = `i02-outsider-${S}`;
+  const viewer = `i02-viewer-${S}`;
+  const inactive = `i02-inactive-${S}`;
 
   /** POSTED dispozisyon + CONFIRMED collection + iki satır kurar. */
   const seedSource = async (opts: {
@@ -68,9 +72,19 @@ describeDb('CLIENT-P2-U03-TRACK-B-I02 — disclosure writer (gerçek PostgreSQL)
       ('${ccA2}','${caseA2}','${clA}',now()),
       ('${ccB}','${caseB}','${clB}',now()),
       ('${ccXt}','${caseA}','${clB}',now())`);
+    await prisma.user.createMany({ data: [
+      { id: creator, tenantId: tA, email: `${creator}@example.test`, name: 'C', surname: 'A' },
+      { id: outsider, tenantId: tA, email: `${outsider}@example.test`, name: 'N', surname: 'A', role: 'ADMIN' },
+      { id: viewer, tenantId: tA, email: `${viewer}@example.test`, name: 'V', surname: 'A', role: 'VIEWER' },
+      { id: inactive, tenantId: tA, email: `${inactive}@example.test`, name: 'I', surname: 'A', isActive: false },
+    ] });
+    await prisma.lawyer.createMany({ data: [creator, viewer, inactive].map(id => ({
+      id: `lw-${id}`, tenantId: tA, userId: id, name: 'L', surname: 'A', lawyerRank: 'LAWYER' as const,
+    })) });
   });
 
   afterAll(async () => {
+    await prisma.auditLog.deleteMany({ where: { tenantId: { in: [tA, tB] } } });
     await sql(`DELETE FROM "ClientFinancialDisclosureLine" WHERE "tenantId" IN ('${tA}','${tB}')`);
     await sql(`UPDATE "ClientFinancialDisclosure" SET "currentVersionId" = NULL WHERE "tenantId" IN ('${tA}','${tB}')`);
     await sql(`DELETE FROM "ClientFinancialDisclosureVersion" WHERE "tenantId" IN ('${tA}','${tB}')`);
@@ -81,6 +95,8 @@ describeDb('CLIENT-P2-U03-TRACK-B-I02 — disclosure writer (gerçek PostgreSQL)
     await sql(`DELETE FROM "CaseClient" WHERE id IN ('${ccA}','${ccA2}','${ccB}','${ccXt}')`);
     await sql(`DELETE FROM "Case" WHERE "tenantId" IN ('${tA}','${tB}')`);
     await sql(`DELETE FROM "Client" WHERE "tenantId" IN ('${tA}','${tB}')`);
+    await prisma.lawyer.deleteMany({ where: { tenantId: { in: [tA, tB] } } });
+    await prisma.user.deleteMany({ where: { tenantId: { in: [tA, tB] } } });
     await sql(`DELETE FROM "Tenant" WHERE id IN ('${tA}','${tB}')`);
     await prisma.$disconnect();
   });
@@ -94,6 +110,73 @@ describeDb('CLIENT-P2-U03-TRACK-B-I02 — disclosure writer (gerçek PostgreSQL)
       return (e as ClientFinancialDisclosureError).code;
     }
   };
+
+  const publishedFixture = async (key: string) => {
+    const { dispId } = await seedSource({ key: `clz04-${key}-${S}`, tenantId: tA, caseId: caseA, caseClientId: ccA });
+    const input = { tenantId: tA, caseId: caseA, caseClientId: ccA, collectionDispositionId: dispId, sendIdempotencyKey: `clz04-${key}-${S}` };
+    const first = await svc.createDisclosureVersion(input);
+    await prisma.clientFinancialDisclosureVersion.update({ where: { id: first.versionId }, data: { status: 'PUBLISHED', publishedAt: new Date() } });
+    return { first, input, command: { tenantId: tA, clientId: clA, actorUserId: creator, disclosureVersionId: first.versionId, correctionReason: 'Bildirim düzeltmesi' } };
+  };
+
+  it('CL-Z04 creates a new immutable source-bound draft with empty approval/send fields while v1 remains current', async () => {
+    const f = await publishedFixture('draft');
+    const before = await prisma.clientFinancialDisclosureVersion.findUniqueOrThrow({ where: { id: f.first.versionId } });
+    const result = await svc.createCorrectionVersion(f.command);
+    expect(result).toMatchObject({ disclosureId: f.first.disclosureId, version: 2, status: 'DRAFT', replayed: false });
+    const created = await prisma.clientFinancialDisclosureVersion.findUniqueOrThrow({ where: { id: result.versionId }, include: { lines: true } });
+    expect(created).toMatchObject({ supersedesVersionId: f.first.versionId, correctionReason: 'Bildirim düzeltmesi',
+      officeApprovalRequestId: null, officeApprovedById: null, contentApprovedById: null, notificationContent: null,
+      approvedRecipientEmail: null, sendRequestedAt: null, providerMessageId: null, providerAcceptedAt: null, publishedAt: null });
+    expect(created.totalCollected.toFixed(2)).toBe('2500.75'); expect(created.clientNetAmount.toFixed(2)).toBe('1750.50'); expect(created.lines).toHaveLength(2);
+    expect((await svc.verifyPersistedSnapshot({ tenantId: tA, versionId: result.versionId })).verdict).toBe('MATCH');
+    expect(await prisma.clientFinancialDisclosureVersion.findUniqueOrThrow({ where: { id: f.first.versionId } })).toEqual(before);
+    expect((await prisma.clientFinancialDisclosure.findUniqueOrThrow({ where: { id: result.disclosureId } })).currentVersionId).toBe(f.first.versionId);
+    expect(await svc.createDisclosureVersion(f.input)).toMatchObject({ versionId: f.first.versionId, version: 1, replayed: true });
+    const audits = await prisma.auditLog.findMany({ where: { entityId: result.versionId } });
+    expect(audits).toHaveLength(1); expect(audits[0]).toMatchObject({ actorType: 'USER', userId: creator });
+    expect(JSON.stringify(audits[0].metadata)).not.toContain(f.command.correctionReason);
+  });
+
+  it('CL-Z04 serializes duplicate correction commands and preserves the first reason without another version/audit', async () => {
+    const f = await publishedFixture('race');
+    const results = await Promise.all([svc.createCorrectionVersion(f.command), svc.createCorrectionVersion(f.command)]);
+    expect(results[0].versionId).toBe(results[1].versionId); expect(results.filter(x => x.replayed)).toHaveLength(1);
+    expect(await prisma.clientFinancialDisclosureVersion.count({ where: { disclosureId: f.first.disclosureId } })).toBe(2);
+    expect(await prisma.auditLog.count({ where: { entityId: results[0].versionId } })).toBe(1);
+    await expect(svc.createCorrectionVersion({ ...f.command, correctionReason: 'Farklı istek' })).rejects.toMatchObject({ code: 'DISCLOSURE_IDEMPOTENCY_CONFLICT' });
+  });
+
+  it.each([['ADMIN without preparation rights', () => outsider], ['VIEWER with lawyer binding', () => viewer], ['inactive lawyer', () => inactive], ['missing actor', () => '']])(
+    'CL-Z04 denies %s with zero version/audit writes', async (_label, actorId) => {
+      const f = await publishedFixture(`actor-${actorId() || 'none'}`);
+      await expect(svc.createCorrectionVersion({ ...f.command, actorUserId: actorId() })).rejects.toMatchObject({ status: 403 });
+      expect(await prisma.clientFinancialDisclosureVersion.count({ where: { disclosureId: f.first.disclosureId } })).toBe(1);
+      expect(await prisma.auditLog.count({ where: { tenantId: tA, metadata: { path: ['disclosureId'], equals: f.first.disclosureId } } })).toBe(0);
+    });
+
+  it('CL-Z04 rejects wrong tenant/client/case scope, blank reason and a reversed source without writes', async () => {
+    const f = await publishedFixture('scope');
+    await expect(svc.createCorrectionVersion({ ...f.command, tenantId: tB })).rejects.toMatchObject({ status: 403 });
+    await expect(svc.createCorrectionVersion({ ...f.command, clientId: clB })).rejects.toMatchObject({ status: 404 });
+    await expect(svc.createCorrectionVersion({ ...f.command, caseFilter: { id: caseA2 } })).rejects.toMatchObject({ status: 404 });
+    await expect(svc.createCorrectionVersion({ ...f.command, correctionReason: '   ' })).rejects.toMatchObject({ status: 409 });
+    await prisma.collectionDisposition.update({ where: { id: f.input.collectionDispositionId }, data: { status: 'CANCELLED' } });
+    await expect(svc.createCorrectionVersion(f.command)).rejects.toMatchObject({ code: 'DISCLOSURE_SOURCE_STATE_INVALID' });
+    expect(await prisma.clientFinancialDisclosureVersion.count({ where: { disclosureId: f.first.disclosureId } })).toBe(1);
+  });
+
+  it('CL-Z04 rolls back the new version and lines when its real audit create fails', async () => {
+    const f = await publishedFixture('audit'); let auditAttempts = 0;
+    const failing = prisma.$extends({ query: { auditLog: { async create({ args, query }) {
+      if (args.data.action === 'CLIENT_FINANCIAL_DISCLOSURE_CORRECTION_CREATED') { auditAttempts++; throw new Error('isolated audit write fault'); }
+      return query(args);
+    } } } });
+    await expect(new ClientFinancialDisclosureWriterService(failing as unknown as PrismaClient).createCorrectionVersion(f.command)).rejects.toThrow('isolated audit write fault');
+    expect(auditAttempts).toBe(1);
+    expect(await prisma.clientFinancialDisclosureVersion.count({ where: { disclosureId: f.first.disclosureId } })).toBe(1);
+    expect((await prisma.clientFinancialDisclosure.findUniqueOrThrow({ where: { id: f.first.disclosureId } })).currentVersionId).toBe(f.first.versionId);
+  });
 
   // ── [1] pozitif zincir + [7] atomiklik ────────────────────────────────────────
   it('[1][7] geçerli zincirle disclosure + version + lines atomik oluşturulur', async () => {

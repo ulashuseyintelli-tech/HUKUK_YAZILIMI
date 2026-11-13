@@ -245,6 +245,7 @@ export const CASE_RELATED_CONTROLLERS: Readonly<Record<string, readonly RouteEnt
     ["POST /client-financial-disclosures/:disclosureVersionId/retry-publication", "YAZIM", ""],
     ["POST /client-financial-disclosures/:disclosureVersionId/reverse", "YAZIM", ""],
     ["POST /client-financial-disclosures/:supersededVersionId/supersede", "YAZIM", ""],
+    ["POST /client-financial-disclosures/office/clients/:clientId/versions/:disclosureVersionId/corrections", "YAZIM", ""],
   ],
   "client-intake-link/client-intake-link.controller.ts": [
     ["POST /client-intake-links/case/:caseId", "YAZIM", ""],

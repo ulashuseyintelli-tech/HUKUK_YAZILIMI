@@ -1,4 +1,5 @@
 import { ConflictException } from '@nestjs/common';
+import type { Prisma, ClientFinancialDisclosureStatus } from '@prisma/client';
 
 /**
  * CLIENT-P2-U03-TRACK-B-I02 — DISCLOSURE SERVICE FOUNDATION AND INVARIANT ENFORCEMENT
@@ -135,6 +136,20 @@ export interface CreateDisclosureVersionResult {
   readonly sourceFingerprint: string;
   /** Aynı dispozisyon + aynı kaynak durumu için canonical mevcut sonuç döndürüldü. */
   readonly replayed: boolean;
+}
+
+/** Office correction command; scope and actor are derived by the HTTP adapter, never its body. */
+export interface CreateDisclosureCorrectionInput {
+  readonly tenantId: string;
+  readonly clientId: string;
+  readonly actorUserId: string;
+  readonly disclosureVersionId: string;
+  readonly correctionReason: string;
+  readonly caseFilter?: Prisma.CaseWhereInput;
+}
+
+export interface CreateDisclosureCorrectionResult extends CreateDisclosureVersionResult {
+  readonly status: ClientFinancialDisclosureStatus;
 }
 
 export type DisclosureIntegrityVerdict = 'MATCH' | 'MISMATCH';

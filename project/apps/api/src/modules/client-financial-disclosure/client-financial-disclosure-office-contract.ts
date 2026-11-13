@@ -45,6 +45,7 @@ export interface OfficeDisclosureActionCapabilities {
   readonly canRetryPublication: boolean;
   readonly canReverse: boolean;
   readonly canSupersede: boolean;
+  readonly canCreateCorrection?: boolean;
 }
 
 export interface OfficeDisclosureSummary {

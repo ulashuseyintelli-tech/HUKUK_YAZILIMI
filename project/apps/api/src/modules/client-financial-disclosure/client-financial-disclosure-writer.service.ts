@@ -20,9 +20,13 @@ import {
   ClientFinancialDisclosureError,
   type CreateDisclosureVersionInput,
   type CreateDisclosureVersionResult,
+  type CreateDisclosureCorrectionInput,
+  type CreateDisclosureCorrectionResult,
   type DisclosureLineSnapshotV1,
   type VerifyDisclosureSnapshotResult,
 } from './client-financial-disclosure.contract';
+import { PREPARE_ELIGIBILITY_SELECT, isPrepareEligibleUser } from './client-financial-disclosure-prepare-eligibility';
+import { OfficeDisclosureProjectionForbiddenError, OfficeDisclosureProjectionNotFoundError } from './client-financial-disclosure-office-contract';
 
 /**
  * CLIENT-P2-U03-TRACK-B-I02 — DISCLOSURE SERVICE FOUNDATION AND INVARIANT ENFORCEMENT
@@ -81,13 +85,19 @@ export class ClientFinancialDisclosureWriterService {
         });
 
         if (existing) {
-          const latest = existing.versions[0];
+          let latest = existing.versions[0];
           if (!latest) {
             // Aggregate var, versiyon yok → yarım kalmış durum; sessizce tamamlanmaz.
             throw new ClientFinancialDisclosureError('DISCLOSURE_CONCURRENT_MODIFICATION');
           }
           if (latest.sendIdempotencyKey !== input.sendIdempotencyKey) {
-            throw new ClientFinancialDisclosureError('DISCLOSURE_IDEMPOTENCY_CONFLICT');
+            // A later correction must not steal the first creation command's replay.
+            const original = await tx.clientFinancialDisclosureVersion.findFirst({
+              where: { tenantId: input.tenantId, disclosureId: existing.id, sendIdempotencyKey: input.sendIdempotencyKey },
+              select: { id: true, version: true, snapshotHash: true, sourceFingerprint: true, sendIdempotencyKey: true },
+            });
+            if (!original) throw new ClientFinancialDisclosureError('DISCLOSURE_IDEMPOTENCY_CONFLICT');
+            latest = original;
           }
           if (latest.sourceFingerprint !== source.fingerprint) {
             // Aynı idempotency anahtarı, farklı kaynak durumu → conflict (§20).
@@ -103,33 +113,6 @@ export class ClientFinancialDisclosureWriterService {
           };
         }
 
-        // ── Snapshot + hash (§15/§16/§17) ─────────────────────────────────────────
-        const version = CLIENT_FINANCIAL_DISCLOSURE_FIRST_VERSION;
-        const snapshotPayload = buildDisclosureSnapshotPayload({
-          tenantId: input.tenantId,
-          caseId: input.caseId,
-          caseClientId: input.caseClientId,
-          clientId: source.clientId,
-          collectionDispositionId: input.collectionDispositionId,
-          version,
-          currency: source.currency,
-          sourceCollectionId: source.collectionId,
-          sourceCollectionAmount: source.collectionAmount,
-          sourceCollectionDate: source.collectionDate,
-          dispositionTotalAmount: source.dispositionTotalAmount,
-          dispositionPostedAt: source.dispositionPostedAt,
-          totalCollected: source.totalCollected,
-          clientNetAmount: source.clientNetAmount,
-          lines: source.lines,
-        });
-        assertDisclosureReconciliation({
-          lines: source.lines,
-          totalCollected: snapshotPayload.totalCollected,
-          clientNetAmount: snapshotPayload.clientNetAmount,
-        });
-        const snapshotHash = disclosureSnapshotHash(snapshotPayload);
-
-        // ── Write (§21 atomicity) ─────────────────────────────────────────────────
         const disclosure = await tx.clientFinancialDisclosure.create({
           data: {
             tenantId: input.tenantId,
@@ -141,41 +124,11 @@ export class ClientFinancialDisclosureWriterService {
           select: { id: true },
         });
 
-        const created = await tx.clientFinancialDisclosureVersion.create({
-          data: {
-            tenantId: input.tenantId,
-            disclosureId: disclosure.id,
-            version,
-            status: ClientFinancialDisclosureStatus.DRAFT,
-            sourceCollectionId: source.collectionId,
-            sourceCollectionAmount: source.collectionAmount,
-            sourceCollectionDate: source.collectionDate,
-            dispositionTotalAmount: source.dispositionTotalAmount,
-            dispositionPostedAt: source.dispositionPostedAt,
-            currency: source.currency,
-            totalCollected: new Prisma.Decimal(snapshotPayload.totalCollected),
-            clientNetAmount: new Prisma.Decimal(snapshotPayload.clientNetAmount),
-            snapshotHash,
-            sourceFingerprint: source.fingerprint,
-            sendIdempotencyKey: input.sendIdempotencyKey,
-          },
-          select: { id: true },
-        });
-
-        await tx.clientFinancialDisclosureLine.createMany({
-          data: source.lines.map((line) => ({
-            tenantId: input.tenantId,
-            disclosureVersionId: created.id,
-            type: line.type as never,
-            amount: new Prisma.Decimal(line.amount),
-            sourceDispositionLineId: line.sourceDispositionLineId,
-            sortOrder: line.sortOrder,
-          })),
-        });
+        const created = await this.persistSnapshotVersion(tx, input, source, disclosure.id, CLIENT_FINANCIAL_DISCLOSURE_FIRST_VERSION);
 
         await tx.clientFinancialDisclosure.update({
           where: { id: disclosure.id },
-          data: { currentVersionId: created.id },
+          data: { currentVersionId: created.versionId },
         });
 
         // ── TOCTOU son kontrol (§22) ──────────────────────────────────────────────
@@ -186,18 +139,74 @@ export class ClientFinancialDisclosureWriterService {
           throw new ClientFinancialDisclosureError('DISCLOSURE_CONCURRENT_MODIFICATION');
         }
 
-        return {
-          disclosureId: disclosure.id,
-          versionId: created.id,
-          version,
-          snapshotHash,
-          sourceFingerprint: source.fingerprint,
-          replayed: false,
-        };
+        return created;
       });
     } catch (error) {
       throw this.mapError(error);
     }
+  }
+
+  /**
+   * Cagrildigi yerler:
+   * - ClientFinancialDisclosureController.createCorrection() -> Office correction panel.
+   * Actor, canonical parent and source gates run in this transaction.
+   */
+  async createCorrectionVersion(input: CreateDisclosureCorrectionInput): Promise<CreateDisclosureCorrectionResult> {
+    const reason = input.correctionReason?.trim() ?? '';
+    if (!reason) throw new ClientFinancialDisclosureError('DISCLOSURE_SOURCE_STATE_INVALID');
+    try {
+      return await this.prisma.$transaction(async tx => {
+        const actor = typeof input.actorUserId === 'string' && input.actorUserId.length > 0
+          ? await tx.user.findFirst({ where: { id: input.actorUserId, tenantId: input.tenantId, isActive: true },
+            select: { isActive: true, tenantId: true, role: true, ...PREPARE_ELIGIBILITY_SELECT } }) : null;
+        if (!actor || actor.role === 'VIEWER' || !isPrepareEligibleUser(actor, input.tenantId)) {
+          throw new OfficeDisclosureProjectionForbiddenError();
+        }
+        const where = {
+          id: input.disclosureVersionId, tenantId: input.tenantId,
+          disclosure: { tenantId: input.tenantId,
+            case: { ...(input.caseFilter ?? {}), tenantId: input.tenantId },
+            caseClient: { clientId: input.clientId, client: { tenantId: input.tenantId } } },
+        };
+        const select = { id: true, status: true, publishedAt: true,
+          disclosure: { select: { id: true, caseId: true, caseClientId: true, collectionDispositionId: true, currentVersionId: true } },
+          supersededByVersion: { select: { id: true, version: true, status: true, snapshotHash: true, sourceFingerprint: true, correctionReason: true } },
+        } as const;
+        const located = await tx.clientFinancialDisclosureVersion.findFirst({ where, select });
+        if (!located) throw new OfficeDisclosureProjectionNotFoundError();
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`client-financial-disclosure:${input.tenantId}:${located.disclosure.collectionDispositionId}`}, 0))`;
+        const previous = await tx.clientFinancialDisclosureVersion.findFirst({ where, select });
+        if (!previous) throw new OfficeDisclosureProjectionNotFoundError();
+        const existing = previous.supersededByVersion;
+        if (existing) {
+          if (existing.correctionReason !== reason) throw new ClientFinancialDisclosureError('DISCLOSURE_IDEMPOTENCY_CONFLICT');
+          return { disclosureId: previous.disclosure.id, versionId: existing.id, version: existing.version,
+            snapshotHash: existing.snapshotHash, sourceFingerprint: existing.sourceFingerprint, status: existing.status, replayed: true };
+        }
+        if (previous.status !== ClientFinancialDisclosureStatus.PUBLISHED || !previous.publishedAt || previous.disclosure.currentVersionId !== previous.id) {
+          throw new ClientFinancialDisclosureError('DISCLOSURE_IMMUTABLE');
+        }
+        const root = previous.disclosure;
+        const createInput = { tenantId: input.tenantId, caseId: root.caseId, caseClientId: root.caseClientId,
+          collectionDispositionId: root.collectionDispositionId,
+          sendIdempotencyKey: `client-financial-disclosure-correction:${root.id}:${previous.id}` };
+        const source = await this.loadAuthorisedSource(tx, createInput);
+        const sequence = await tx.clientFinancialDisclosureVersion.aggregate({
+          where: { tenantId: input.tenantId, disclosureId: root.id }, _max: { version: true },
+        });
+        const version = (sequence._max.version ?? 0) + 1;
+        const created = await this.persistSnapshotVersion(tx, createInput, source, root.id, version,
+          { previousVersionId: previous.id, reason });
+        const reread = await this.loadAuthorisedSource(tx, createInput);
+        if (reread.fingerprint !== source.fingerprint) throw new ClientFinancialDisclosureError('DISCLOSURE_CONCURRENT_MODIFICATION');
+        await tx.auditLog.create({ data: { tenantId: input.tenantId, userId: input.actorUserId, actorType: 'USER',
+          entityType: 'ClientFinancialDisclosureVersion', entityId: created.versionId,
+          action: 'CLIENT_FINANCIAL_DISCLOSURE_CORRECTION_CREATED', decisionResult: 'ALLOWED',
+          reasonCode: 'CLIENT_FINANCIAL_DISCLOSURE_CORRECTION_CREATED', metadata: { disclosureId: root.id, version, supersedesVersionId: previous.id } } });
+        // The existing publication remains current until accepted delivery and the atomic replacement commit.
+        return { ...created, status: ClientFinancialDisclosureStatus.DRAFT };
+      });
+    } catch (error) { throw this.mapError(error); }
   }
 
   /**
@@ -263,9 +272,87 @@ export class ClientFinancialDisclosureWriterService {
   }
 
   /**
-   * Yetkili kaynak zincirini tenant+parent scope ile okur ve doğrular (§13).
-   * "findUnique(id) → kayıt varsa kabul et" modeli KULLANILMAZ.
+   * Cagrildigi yerler:
+   * - createDisclosureVersion() -> initial sealed snapshot.
+   * - createCorrectionVersion() -> fresh correction snapshot and immutable lines.
    */
+  private async persistSnapshotVersion(
+    tx: Prisma.TransactionClient,
+    input: CreateDisclosureVersionInput,
+    source: Awaited<ReturnType<ClientFinancialDisclosureWriterService['loadAuthorisedSource']>>,
+    disclosureId: string,
+    version: number,
+    correction?: { previousVersionId: string; reason: string },
+  ): Promise<CreateDisclosureVersionResult> {
+    // ── Snapshot + hash (§15/§16/§17) ─────────────────────────────────────────
+    const snapshotPayload = buildDisclosureSnapshotPayload({
+      tenantId: input.tenantId,
+      caseId: input.caseId,
+      caseClientId: input.caseClientId,
+      clientId: source.clientId,
+      collectionDispositionId: input.collectionDispositionId,
+      version,
+      currency: source.currency,
+      sourceCollectionId: source.collectionId,
+      sourceCollectionAmount: source.collectionAmount,
+      sourceCollectionDate: source.collectionDate,
+      dispositionTotalAmount: source.dispositionTotalAmount,
+      dispositionPostedAt: source.dispositionPostedAt,
+      totalCollected: source.totalCollected,
+      clientNetAmount: source.clientNetAmount,
+      lines: source.lines,
+    });
+    assertDisclosureReconciliation({
+      lines: source.lines,
+      totalCollected: snapshotPayload.totalCollected,
+      clientNetAmount: snapshotPayload.clientNetAmount,
+    });
+    const snapshotHash = disclosureSnapshotHash(snapshotPayload);
+
+    const created = await tx.clientFinancialDisclosureVersion.create({
+      data: {
+        tenantId: input.tenantId,
+        disclosureId,
+        version,
+        ...(correction ? { supersedesVersionId: correction.previousVersionId, correctionReason: correction.reason } : {}),
+        status: ClientFinancialDisclosureStatus.DRAFT,
+        sourceCollectionId: source.collectionId,
+        sourceCollectionAmount: source.collectionAmount,
+        sourceCollectionDate: source.collectionDate,
+        dispositionTotalAmount: source.dispositionTotalAmount,
+        dispositionPostedAt: source.dispositionPostedAt,
+        currency: source.currency,
+        totalCollected: new Prisma.Decimal(snapshotPayload.totalCollected),
+        clientNetAmount: new Prisma.Decimal(snapshotPayload.clientNetAmount),
+        snapshotHash,
+        sourceFingerprint: source.fingerprint,
+        sendIdempotencyKey: input.sendIdempotencyKey,
+      },
+      select: { id: true },
+    });
+
+    await tx.clientFinancialDisclosureLine.createMany({
+      data: source.lines.map((line) => ({
+        tenantId: input.tenantId,
+        disclosureVersionId: created.id,
+        type: line.type as never,
+        amount: new Prisma.Decimal(line.amount),
+        sourceDispositionLineId: line.sourceDispositionLineId,
+        sortOrder: line.sortOrder,
+      })),
+    });
+
+    return {
+      disclosureId,
+      versionId: created.id,
+      version,
+      snapshotHash,
+      sourceFingerprint: source.fingerprint,
+      replayed: false,
+    };
+  }
+
+  /** Tenant and canonical parent-bound source verification (§13); no ID-only authorization. */
   private async loadAuthorisedSource(
     tx: Prisma.TransactionClient,
     input: CreateDisclosureVersionInput,

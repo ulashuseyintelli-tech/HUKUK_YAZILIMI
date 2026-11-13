@@ -44,7 +44,7 @@ const VERSION_SELECT = {
   supersededAt: true,
   reversedAt: true,
   correctionReason: true,
-  supersededByVersion: { select: { id: true } },
+  supersededByVersion: { select: { id: true, status: true, publishedAt: true } },
   lines: { select: { type: true, amount: true, sortOrder: true } },
   disclosure: { select: { currentVersionId: true, case: { select: { fileNumber: true } } } },
 } as const;
@@ -177,7 +177,7 @@ export class ClientFinancialDisclosureProjectionService {
     supersededAt: Date | null;
     reversedAt: Date | null;
     correctionReason: string | null;
-    supersededByVersion: { id: string } | null;
+    supersededByVersion: { id: string; status: ClientFinancialDisclosureStatus; publishedAt: Date | null } | null;
     lines: ReadonlyArray<{
       type: CollectionDispositionLineType;
       amount: unknown;
@@ -211,7 +211,8 @@ export class ClientFinancialDisclosureProjectionService {
         v.status === ClientFinancialDisclosureStatus.PUBLISHED &&
         v.disclosure.currentVersionId === v.id,
       supersedesDisclosureId: v.supersedesVersionId,
-      supersededByDisclosureId: v.supersededByVersion?.id ?? null,
+      supersededByDisclosureId: v.supersededByVersion?.publishedAt && CLIENT_VISIBLE_STATUSES.includes(v.supersededByVersion.status)
+        ? v.supersededByVersion.id : null,
       isReversed: v.reversedAt !== null,
       correctionReason: v.correctionReason,
       remittanceStatus: this.remittanceStatus(v),
