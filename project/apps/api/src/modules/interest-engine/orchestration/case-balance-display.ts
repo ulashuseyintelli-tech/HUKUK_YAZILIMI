@@ -663,7 +663,15 @@ function buildDiagnostics(
             interestAccrualStatus: item.interestAccrualStatus,
             description: item.description,
             attorneyFeeBasis: item.attorneyFeeBasis ?? null,
-            accruedInterest: null,
+            // D1: yalnız açıkça belirlenmiş kalemde açıklayıcı faiz; aksi halde null (sıfır SAYILMAZ). Kovalar / toplamlar null kalır.
+            accruedInterest: item.interest?.status === 'COMPUTED' ? item.interest.totalInterest : null,
+            interestStatus: item.interest?.status ?? null,
+            interestReasonCode: item.interest?.reasonCode ?? null,
+            preEnforcementInterest: item.interest?.status === 'COMPUTED' ? item.interest.preEnforcementInterest : null,
+            postEnforcementInterest: item.interest?.status === 'COMPUTED' ? item.interest.postEnforcementInterest : null,
+            interestStartDate: item.interest?.startDate ?? null,
+            interestTypeCode: item.interest?.interestTypeCode ?? null,
+            interestStartDateProvenance: item.interest?.startDateProvenance ?? null,
           }))),
       },
     });

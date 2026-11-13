@@ -175,7 +175,16 @@ export interface TalepEdilenIslemisFaiz {
  * Anaparasız dosya açıklayıcı dökümü (sunucu: case-calculation-summary.principal-free.ts; istemci hesabı ve çevirme YOK).
  * Tutar kayıtlı kalem tutarıdır; toplam sunucunun para birimi bazlı projeksiyon toplamıdır; nihai borç her zaman null.
  */
-export type AnaparasizKalemFaizDurumu = 'BELIRLENEMEDI' | 'HESAPLANMADI' | 'ISLEMEZ_KAYITLI';
+export type AnaparasizKalemFaizDurumu = 'BELIRLENEMEDI' | 'HESAPLANMADI' | 'ISLEMEZ_KAYITLI' | 'HESAPLANDI';
+/** D1: yalnız HESAPLANDI kalemde; motorun kalem bazında değerleri (takip tarihi yoksa öncesi / sonrası null). */
+export interface AnaparasizKalemFaizi {
+  takipOncesi: number | null;
+  takipSonrasi: number | null;
+  toplam: number;
+  baslangic: string | null;
+  baslangicDayanagi: string | null;
+  faizTuru: string | null;
+}
 export interface AnaparasizKalemDokumu {
   durum: 'NIHAI_TOPLAM_HESAPLANAMADI';
   otorite: 'ACIKLAYICI_DOKUM';
@@ -192,10 +201,20 @@ export interface AnaparasizKalemDokumu {
       faizDurumu: AnaparasizKalemFaizDurumu;
       /** Yalnız vekâlet ücreti kaleminde: kayıtlı hukuki kaynak (owner K1); etiket sunucuda bundan kurulur. */
       vekaletUcretiKaynagi?: 'ILAM' | 'TAKIP' | 'BILINMIYOR';
+      /** D1: yalnız HESAPLANDI kalemde. */
+      faiz?: AnaparasizKalemFaizi;
+      /** D1: hesaplanmadı / belirlenemedi nedeni (sunucu kodu). */
+      faizNedeni?: string;
     }>;
     kalemTutarlariToplami: number | null;
+    /** D1: yalnız her kalemin faiz durumu belliyken dolu; aksi halde null (sıfır DEĞİL). Eski sunucu göndermezse undefined. */
+    faizToplami?: number | null;
+    takipOncesiFaizToplami?: number | null;
+    takipSonrasiFaizToplami?: number | null;
+    /** D1: kalem tutarları + faiz — AÇIKLAYICI; nihai borç DEĞİL (harç / masraf / takip vekâlet ücreti / ödeme yok). */
+    kalemVeFaizToplami?: number | null;
   }>;
-  faizDurumu: 'BELIRLENEMEDI' | 'HESAPLANMADI';
+  faizDurumu: 'BELIRLENEMEDI' | 'HESAPLANMADI' | 'HESAPLANDI';
   nihaiBorcToplami: null;
   mesaj: string;
 }

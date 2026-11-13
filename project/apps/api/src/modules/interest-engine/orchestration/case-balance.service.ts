@@ -36,6 +36,13 @@ import type { CurrencyGroupDiagnostic } from '../calc-prep/currency-grouper';
 import { deriveRateRequirements } from '../calc-prep/rate-requirements';
 import { findUncoveredRateBuckets } from '../calc-prep/rate-coverage';
 import type { UncoveredRateBucket } from '../calc-prep/rate-coverage';
+import {
+  computedPrincipalFreeInterest,
+  failedPrincipalFreeInterest,
+  resolvePrincipalFreeInterestBucket,
+  type PrincipalFreeInterestItem,
+  type PrincipalFreeInterestResult,
+} from './principal-free-interest';
 import { ClaimBucket, AncillaryType } from '../types/domain.types';
 import { mapPersistedInterestTypeCode } from '../mapping/interest-type-bridge';
 import { RateEntry, RateSourceType } from '../rates/rate-entry.entity';
@@ -138,6 +145,8 @@ export interface CaseBalancePrincipalFreeBasis {
     description: string | null;
     /** Vekâlet ücretinin kayıtlı hukuki kaynağı (owner K1); yalnız ATTORNEY_FEE'de dolu olabilir, NULL = bilinmiyor. */
     attorneyFeeBasis: string | null;
+    /** D1: kalemin açıklayıcı faiz sonucu (yalnız açıkça belirlenmiş kalemde COMPUTED); anapara / nihai bakiye değildir. */
+    interest?: PrincipalFreeInterestResult;
   }>;
 }
 
@@ -781,22 +790,56 @@ export class CaseBalanceService {
     const principalFreeBasis = grouped.groups.length === 0 && carryByCurrency.size === 0
       ? buildPrincipalFreeBasis(asm.projectionItems, interestStatusById, descriptionById, attorneyFeeBasisById)
       : [];
+    // D1 (owner GO-COMPLETE 13.11.2026): faizi AÇIKÇA belirlenmiş kalemin faizi mevcut motorla, kalem başına ve ödemesiz
+    // hesaplanır (yalnız açıklayıcı; anapara / nihai bakiye / otorite DEĞİŞMEZ). Ödemeli dosya bu dala zaten girmez.
+    if (principalFreeBasis.length > 0) {
+      const inputById = new Map(itemInputs.map((input) => [input.id, input] as [string, ClaimItemInput]));
+      const endDateById = new Map(claimItems.map((ci) => [ci.id, toISO(ci.interestEndDate)] as [string, string | null]));
+      for (const basis of principalFreeBasis) {
+        for (const item of basis.items) {
+          const input = inputById.get(item.claimItemId);
+          item.interest = await this.computePrincipalFreeInterest(
+            caseId,
+            tenantId,
+            {
+              id: item.claimItemId,
+              amount: item.amount,
+              currency: basis.currency,
+              interestAccrualStatus: item.interestAccrualStatus,
+              interestTypeCode: input?.interestTypeCode ?? null,
+              interestRate: input?.interestRate ?? null,
+              interestStartDate: input?.interestStartDate ?? null,
+              interestEndDate: endDateById.get(item.claimItemId) ?? null,
+              interestStartDateProvenance: input?.interestStartDateProvenance ?? null,
+              interestPolicyHold: input?.interestPolicyHold ?? false,
+            },
+            asOfDate,
+            toISO(caseRow.caseDate),
+            now,
+          );
+        }
+      }
+    }
     for (const basis of principalFreeBasis) {
       currencyResults.push({ currency: basis.currency, result: null, skippedReason: 'NO_PRINCIPAL_BASIS', grossPrincipal: 0 });
+      const anyComputed = basis.items.some((item) => item.interest?.status === 'COMPUTED');
       perCurrency.push({
         currency: basis.currency,
         code: 'NO_PRINCIPAL_BASIS',
-        message:
-          "Dosyada anapara kalemi yok; faiz motoru çalıştırılmadı. Masraf / fer'i tutarları kayıtlı kaynak tutarıdır; " +
-          'faizleri hesaplanmadı ve nihai bakiye üretilmedi.',
+        message: anyComputed
+          ? "Dosyada anapara kalemi yok; masraf / fer'i tutarları kayıtlı kaynak tutarıdır. Faizi açıkça belirlenmiş kalemlerin " +
+            'faizi açıklayıcı olarak hesaplandı; nihai bakiye üretilmedi.'
+          : "Dosyada anapara kalemi yok; faiz motoru çalıştırılmadı. Masraf / fer'i tutarları kayıtlı kaynak tutarıdır; " +
+            'faizleri hesaplanmadı ve nihai bakiye üretilmedi.',
       });
       for (const item of basis.items) {
-        if (item.interestAccrualStatus === 'NO_INTEREST') continue;
+        if (item.interestAccrualStatus === 'NO_INTEREST' || item.interest?.status === 'COMPUTED') continue;
         perCurrency.push({
           currency: basis.currency,
           code: item.interestAccrualStatus === 'ACCRUES' ? 'ANCILLARY_INTEREST_NOT_COMPUTED' : 'ANCILLARY_INTEREST_UNKNOWN',
           message: item.interestAccrualStatus === 'ACCRUES'
-            ? `Kalem ${item.claimItemId} (${item.itemType}) faiz işler olarak kayıtlı; motor masraf / fer'i faizini hesaplamıyor, faiz hesaplanmadı.`
+            ? `Kalem ${item.claimItemId} (${item.itemType}) faiz işler olarak kayıtlı ama faizi hesaplanamadı ` +
+              `(${item.interest?.reasonCode ?? 'NEDEN_YOK'}); sıfır sayılmadı.`
             : `Kalem ${item.claimItemId} (${item.itemType}) faiz işleme durumu belirlenmemiş (${item.interestAccrualStatus ?? 'boş'}); faiz hesaplanmadı, sıfır sayılmadı.`,
         });
       }
@@ -941,6 +984,48 @@ export class CaseBalanceService {
         };
       })
       .filter((row: CaseBalanceBlockedOverpaymentDiagnostic) => row.attemptedOverpaymentAmount > 0);
+  }
+
+  /**
+   * D1 — anaparasız dosyada TEK kalemin açıklayıcı faizi (owner GO-COMPLETE 13.11.2026). Uygun değilse neden kodlu sonuç;
+   * uygunsa yalnız bellekte kurulan faiz matrahı kovasıyla mevcut motor (ödemesiz, takip tarihi ile öncesi / sonrası ayrımı).
+   * Oran kapsamı eksikse motor ÇALIŞTIRILMAZ (komşu oran ya da sıfır yok); motor hatası "hesaplanamadı" olur.
+   */
+  private async computePrincipalFreeInterest(
+    caseId: string,
+    tenantId: string,
+    item: PrincipalFreeInterestItem,
+    asOfDate: string,
+    enforcementDate: string | null,
+    now: string,
+  ): Promise<PrincipalFreeInterestResult> {
+    const resolved = resolvePrincipalFreeInterestBucket(item, { enforcementProceedingDate: enforcementDate, asOfDate });
+    if ('result' in resolved) return resolved.result;
+    const { bucket } = resolved;
+    const rates = await this.gatherRates(tenantId, [bucket], asOfDate);
+    if (findUncoveredRateBuckets([bucket], rates, asOfDate).length > 0) {
+      return failedPrincipalFreeInterest(item, bucket, 'RATE_COVERAGE_MISSING');
+    }
+    try {
+      const result = this.engine.computeBalance(
+        {
+          caseId,
+          claimBuckets: [bucket],
+          payments: [],
+          asOfDate,
+          enforcementDate: enforcementDate ?? undefined,
+          mode: CalculationMode.PREVIEW,
+          options: DEFAULT_OPTIONS,
+        },
+        rates,
+        now,
+        DEFAULT_INTERPRETATION_PROFILE_ID,
+      );
+      return computedPrincipalFreeInterest(item, bucket, result);
+    } catch (e) {
+      if (e instanceof InterestEngineError) return failedPrincipalFreeInterest(item, bucket, 'ENGINE_ERROR');
+      throw e;
+    }
   }
 
   /**
