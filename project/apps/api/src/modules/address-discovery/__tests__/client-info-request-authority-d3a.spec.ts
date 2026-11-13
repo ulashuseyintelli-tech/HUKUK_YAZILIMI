@@ -55,6 +55,8 @@ function buildHarness(opts: { eligible?: boolean; emailOk?: boolean; requestFoun
       create: jest.fn().mockResolvedValue({ id: REQUEST_ID, clientId: CLIENT_ID, caseId: CASE_ID }),
       delete: jest.fn().mockResolvedValue({}),
       update: jest.fn().mockResolvedValue({ id: REQUEST_ID, reminderCount: 1, clientId: CLIENT_ID }),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      findUniqueOrThrow: jest.fn().mockResolvedValue({ id: REQUEST_ID, clientId: CLIENT_ID }),
       findFirst: jest.fn().mockResolvedValue(
         requestFound
           ? {
@@ -78,7 +80,8 @@ function buildHarness(opts: { eligible?: boolean; emailOk?: boolean; requestFoun
   const emailProvider: AnyRecord = {
     send: jest.fn().mockResolvedValue(emailOk ? { success: true } : { success: false, errorMessage: 'smtp down' }),
   };
-  const audit: AnyRecord = { log: jest.fn().mockResolvedValue(undefined) };
+  prisma.$transaction = jest.fn((run: (tx: AnyRecord) => unknown) => run(prisma));
+  const audit: AnyRecord = { log: jest.fn().mockResolvedValue(undefined), logInTransaction: jest.fn().mockResolvedValue(undefined) };
   const officeApproval: AnyRecord = { isApproverEligible: jest.fn().mockResolvedValue(eligible) };
   // D-3b: intake link servisi (Yol1) — bu suite baglantiyi ISTEMEZ; cagrilmadigi dogrulanir.
   const intakeLink: AnyRecord = {
@@ -247,6 +250,8 @@ describe('D-3a — durum isaretleri: VIEWER kapali, USER/ADMIN acik (elevated SA
         });
         expect(h.prisma.clientInfoRequest.update).not.toHaveBeenCalled();
         expect(h.audit.log).not.toHaveBeenCalled();
+        expect(h.prisma.clientInfoRequest.updateMany).not.toHaveBeenCalled();
+        expect(h.audit.logInTransaction).not.toHaveBeenCalled();
       });
 
       it('cross-tenant -> 403 TENANT_MISMATCH; yazma YOK', async () => {
@@ -260,19 +265,22 @@ describe('D-3a — durum isaretleri: VIEWER kapali, USER/ADMIN acik (elevated SA
       it('USER (elevated DEGIL) -> izin verilir; eligibility HIC sorgulanmaz (gonderim esigi degil)', async () => {
         const h = buildHarness({ eligible: false });
         await op.invoke(h, 'USER');
-        expect(h.prisma.clientInfoRequest.update).toHaveBeenCalledTimes(1);
+        expect(h.prisma.clientInfoRequest.updateMany).toHaveBeenCalledTimes(1);
+        expect(h.prisma.clientInfoRequest.update).not.toHaveBeenCalled();
         expect(h.officeApproval.isApproverEligible).not.toHaveBeenCalled();
       });
 
       it('ADMIN -> izin + ortak aktorlu audit (CLIENT_INFO_REQUEST_STATUS)', async () => {
         const h = buildHarness();
         await op.invoke(h, 'ADMIN');
-        expect(h.audit.log).toHaveBeenCalledWith(
+        expect(h.audit.logInTransaction).toHaveBeenCalledWith(
+          h.prisma,
           expect.objectContaining({
             action: 'CLIENT_INFO_REQUEST_STATUS',
             entityType: 'Client',
             entityId: CLIENT_ID,
             userId: 'user-1',
+            actorType: 'USER',
             metadata: expect.objectContaining({ requestId: REQUEST_ID, status: op.status }),
           }),
         );
@@ -283,6 +291,8 @@ describe('D-3a — durum isaretleri: VIEWER kapali, USER/ADMIN acik (elevated SA
         await expect(op.invoke(h, 'ADMIN')).rejects.toBeInstanceOf(NotFoundException);
         expect(h.prisma.clientInfoRequest.update).not.toHaveBeenCalled();
         expect(h.audit.log).not.toHaveBeenCalled();
+        expect(h.prisma.clientInfoRequest.updateMany).not.toHaveBeenCalled();
+        expect(h.audit.logInTransaction).not.toHaveBeenCalled();
       });
     });
   }

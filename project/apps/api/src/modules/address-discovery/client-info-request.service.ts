@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, Logger, NotFoundException, ServiceUnavailableException, BadRequestException } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException, ServiceUnavailableException, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { EmailProviderService } from '../notification/email-provider.service';
 import { AuditService } from '../audit/audit.service';
@@ -8,9 +8,10 @@ import {
   runAuthorizedClientWorkspaceCommand,
   type ClientWorkspaceCommandActor,
 } from '../client/client-workspace-command-authority';
-import { decideClientOperationalCommand } from '../client/client-mutation-policy';
+import { decideClientOperationalCommand, decideClientWorkspaceCommand } from '../client/client-mutation-policy';
+import { assertClientObjectScope } from '../client/client-object-scope';
 import { ClientIntakeLinkService } from '../client-intake-link/client-intake-link.service';
-import { ClientIntakeFieldCategory } from '@prisma/client';
+import { ClientIntakeFieldCategory, type Prisma } from '@prisma/client';
 import {
   redactInfoRequestRecord,
   redactInfoRequestRecords,
@@ -26,6 +27,11 @@ import {
   generateReminderEmailSubject,
   generateReminderEmailText,
 } from './templates/client-info-email.template';
+
+export interface ClientInfoRequestActionScope {
+  clientId?: string;
+  caseId?: string;
+}
 
 @Injectable()
 export class ClientInfoRequestService {
@@ -499,15 +505,16 @@ ${generateIntakeLinkTextBlock(intakeUrl, intakeExpiresAt)}`
    * @remarks Çağrıldığı yerler:
    * - AddressDiscoveryController.sendClientInfoRequestReminder() → POST /address-discovery/client-info-request/:id/reminder
    */
-  async sendReminder(tenantId: string, requestId: string, actor: ClientWorkspaceCommandActor) {
+  async sendReminder(tenantId: string, requestId: string, actor: ClientWorkspaceCommandActor, scope?: ClientInfoRequestActionScope) {
     // Tenant-scoped okuma (yan etki YOK): audit entityId için clientId; yok/cross-tenant → NotFound.
     const owner = await this.prisma.clientInfoRequest.findFirst({
       where: { id: requestId, tenantId },
-      select: { clientId: true },
+      select: { clientId: true, caseId: true },
     });
     if (!owner) {
       throw new NotFoundException('Bilgi talebi bulunamadı');
     }
+    await this.assertActionScope(this.prisma, tenantId, actor, owner, scope);
     return runAuthorizedClientWorkspaceCommand(
       this.workspaceCommandDeps(),
       actor,
@@ -617,31 +624,22 @@ ${generateIntakeLinkTextBlock(intakeUrl, intakeExpiresAt)}`
    * @remarks Çağrıldığı yerler:
    * - AddressDiscoveryController.markClientInfoRequestAsResponded() → PUT /address-discovery/client-info-request/:id/respond
    */
-  async markAsResponded(tenantId: string, requestId: string, actor: ClientWorkspaceCommandActor, notes?: string) {
+  async markAsResponded(tenantId: string, requestId: string, actor: ClientWorkspaceCommandActor, notes?: string, scope?: ClientInfoRequestActionScope) {
     this.assertCanMarkStatus(actor, tenantId);
-    const request = await this.prisma.clientInfoRequest.findFirst({
-      where: { id: requestId, tenantId },
+    return this.prisma.$transaction(async tx => {
+      const request = await tx.clientInfoRequest.findFirst({ where: { id: requestId, tenantId } });
+      if (!request) throw new NotFoundException('Bilgi talebi bulunamadı');
+      await this.assertActionScope(tx, tenantId, actor, request, scope);
+      const moved = await tx.clientInfoRequest.updateMany({
+        where: { id: requestId, tenantId, status: request.status, updatedAt: request.updatedAt },
+        data: { status: 'RESPONDED', respondedAt: new Date(), responseNotes: notes },
+      });
+      if (moved.count !== 1) throw new ConflictException('Bilgi talebi değişti; güncel kaydı kontrol edin.');
+      await this.logStatusAudit(tx, tenantId, request.clientId, requestId, 'RESPONDED', actor);
+      return tx.clientInfoRequest.findUniqueOrThrow({ where: { id: requestId }, include: {
+        client: { select: { id: true, displayName: true } }, debtor: { select: { id: true, name: true } },
+      } });
     });
-
-    if (!request) {
-      throw new NotFoundException('Bilgi talebi bulunamadı');
-    }
-
-    const result = await this.prisma.clientInfoRequest.update({
-      where: { id: requestId },
-      data: {
-        status: 'RESPONDED',
-        respondedAt: new Date(),
-        responseNotes: notes,
-      },
-      include: {
-        client: { select: { id: true, displayName: true } },
-        debtor: { select: { id: true, name: true } },
-      },
-    });
-
-    await this.logStatusAudit(tenantId, request.clientId, requestId, 'RESPONDED', actor);
-    return result;
   }
 
   /**
@@ -650,62 +648,93 @@ ${generateIntakeLinkTextBlock(intakeUrl, intakeExpiresAt)}`
    * @remarks Çağrıldığı yerler:
    * - AddressDiscoveryController.markClientInfoRequestAsNoResponse() → PUT /address-discovery/client-info-request/:id/no-response
    */
-  async markAsNoResponse(tenantId: string, requestId: string, actor: ClientWorkspaceCommandActor) {
+  async markAsNoResponse(tenantId: string, requestId: string, actor: ClientWorkspaceCommandActor, scope?: ClientInfoRequestActionScope) {
     this.assertCanMarkStatus(actor, tenantId);
-    const request = await this.prisma.clientInfoRequest.findFirst({
-      where: { id: requestId, tenantId },
+    return this.prisma.$transaction(async tx => {
+      const request = await tx.clientInfoRequest.findFirst({ where: { id: requestId, tenantId } });
+      if (!request) throw new NotFoundException('Bilgi talebi bulunamadı');
+      await this.assertActionScope(tx, tenantId, actor, request, scope);
+      const moved = await tx.clientInfoRequest.updateMany({
+        where: { id: requestId, tenantId, status: request.status, updatedAt: request.updatedAt }, data: { status: 'NO_RESPONSE' },
+      });
+      if (moved.count !== 1) throw new ConflictException('Bilgi talebi değişti; güncel kaydı kontrol edin.');
+      await this.logStatusAudit(tx, tenantId, request.clientId, requestId, 'NO_RESPONSE', actor);
+      return tx.clientInfoRequest.findUniqueOrThrow({ where: { id: requestId } });
     });
-
-    if (!request) {
-      throw new NotFoundException('Bilgi talebi bulunamadı');
-    }
-
-    const result = await this.prisma.clientInfoRequest.update({
-      where: { id: requestId },
-      data: {
-        status: 'NO_RESPONSE',
-      },
-    });
-
-    await this.logStatusAudit(tenantId, request.clientId, requestId, 'NO_RESPONSE', actor);
-    return result;
   }
 
   /**
    * D-3a: durum işaretlerinin ortak aktörlü audit'i. Yalnız BAŞARILI mutasyondan sonra çağrılır;
    * metadata yalnız talep kimliği ve yeni durumu taşır (e-posta içeriği/adresi YAZILMAZ).
+   * Callers: markAsResponded(), markAsNoResponse(); both pass their write transaction.
    */
   private async logStatusAudit(
+    tx: Prisma.TransactionClient,
     tenantId: string,
     clientId: string,
     requestId: string,
     status: 'RESPONDED' | 'NO_RESPONSE',
     actor: ClientWorkspaceCommandActor,
   ): Promise<void> {
-    await this.audit.log({
+    await this.audit.logInTransaction(tx, {
       tenantId,
       userId: String(actor?.userId ?? ''),
       action: 'CLIENT_INFO_REQUEST_STATUS',
       entityType: 'Client',
       entityId: clientId,
       metadata: { requestId, status, actorRole: actor?.role ?? null },
+      actorType: 'USER',
+      decisionResult: 'SUCCESS',
     });
   }
 
   /**
    * Dosya için talepleri getir
+   * @remarks Caller: AddressDiscoveryController.getClientInfoRequestsForCase().
    */
-  async getRequestsForCase(tenantId: string, caseId: string) {
+  async getRequestsForCase(tenantId: string, caseId: string, actor?: ClientWorkspaceCommandActor, clientId?: string) {
+    if (clientId !== undefined) {
+      if (typeof clientId !== 'string' || !clientId) throw new BadRequestException('Müvekkil bağlamı geçersiz.');
+      if (actor?.tenantId !== tenantId) throw new ForbiddenException('Aktör bağlamı geçersiz.');
+      await assertClientObjectScope(this.prisma, tenantId, actor?.userId, clientId, caseId);
+    }
     // GUVENLIK: okuma yolu da redakte edilir (duzeltme oncesi kayitlar baglanti tasiyabilir).
     const rows = await this.prisma.clientInfoRequest.findMany({
-      where: { tenantId, caseId },
+      where: { tenantId, caseId, ...(clientId !== undefined ? { clientId } : {}) },
       include: {
         client: { select: { id: true, displayName: true } },
         debtor: { select: { id: true, name: true } },
       },
       orderBy: { sentAt: 'desc' },
     });
-    return redactInfoRequestRecords(rows);
+    const sameTenant = actor?.tenantId === tenantId;
+    const operational = sameTenant && decideClientOperationalCommand({ userId: actor?.userId, role: actor?.role }).allowed;
+    const coarseSend = sameTenant && decideClientWorkspaceCommand({ userId: actor?.userId, role: actor?.role, elevatedAuthority: false }).allowed;
+    const elevated = operational && !coarseSend && rows.length > 0
+      ? await this.officeApproval.isApproverEligible(actor!.userId!, tenantId) : false;
+    const send = sameTenant && decideClientWorkspaceCommand({ userId: actor?.userId, role: actor?.role, elevatedAuthority: elevated }).allowed;
+    return redactInfoRequestRecords(rows).map(row => ({ ...row, actions: {
+      canSendReminder: row.status === 'SENT' && send,
+      canMarkResponded: row.status === 'SENT' && operational,
+      canMarkNoResponse: row.status === 'SENT' && operational,
+    } }));
+  }
+
+  /**
+   * The new workspace supplies both parents; legacy callers retain their existing contract.
+   * Callers: sendReminder(), markAsResponded(), markAsNoResponse().
+   */
+  private async assertActionScope(
+    db: Prisma.TransactionClient, tenantId: string, actor: ClientWorkspaceCommandActor,
+    request: { clientId: string; caseId: string }, scope?: ClientInfoRequestActionScope,
+  ): Promise<void> {
+    if (scope === undefined) return;
+    if (typeof scope.clientId !== 'string' || !scope.clientId || typeof scope.caseId !== 'string' || !scope.caseId) {
+      throw new BadRequestException('Dosya ve müvekkil bağlamı birlikte gerekli.');
+    }
+    if (request.clientId !== scope.clientId || request.caseId !== scope.caseId) throw new NotFoundException('Bilgi talebi bulunamadı');
+    if (actor?.tenantId !== tenantId) throw new ForbiddenException('Aktör bağlamı geçersiz.');
+    await assertClientObjectScope(db, tenantId, actor.userId, request.clientId, request.caseId);
   }
 
   /**

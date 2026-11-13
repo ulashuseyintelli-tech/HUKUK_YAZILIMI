@@ -2928,29 +2928,33 @@ class ApiClient {
     });
   }
 
-  async getClientInfoRequestsForCase(caseId: string) {
-    return this.request<ClientInfoRequestDTO[]>(`/address-discovery/client-info-request/case/${caseId}`);
+  async getClientInfoRequestsForCase(caseId: string, clientId?: string) {
+    const query = clientId === undefined ? '' : `?clientId=${encodeURIComponent(clientId)}`;
+    return this.request<ClientInfoRequestDTO[]>(`/address-discovery/client-info-request/case/${encodeURIComponent(caseId)}${query}`);
   }
 
   async getClientInfoRequest(id: string) {
     return this.request<ClientInfoRequestDTO>(`/address-discovery/client-info-request/${id}`);
   }
 
-  async markClientInfoRequestAsResponded(id: string, notes?: string) {
-    return this.request<ClientInfoRequestDTO>(`/address-discovery/client-info-request/${id}/respond`, {
+  async markClientInfoRequestAsResponded(id: string, notes?: string, scope?: { clientId: string; caseId: string }) {
+    const query = scope ? `?${new URLSearchParams(scope)}` : '';
+    return this.request<ClientInfoRequestDTO>(`/address-discovery/client-info-request/${encodeURIComponent(id)}/respond${query}`, {
       method: 'PUT',
       body: JSON.stringify({ notes }),
     });
   }
 
-  async sendClientInfoRequestReminder(id: string) {
-    return this.request<ClientInfoRequestDTO>(`/address-discovery/client-info-request/${id}/reminder`, {
+  async sendClientInfoRequestReminder(id: string, scope?: { clientId: string; caseId: string }) {
+    const query = scope ? `?${new URLSearchParams(scope)}` : '';
+    return this.request<ClientInfoRequestDTO>(`/address-discovery/client-info-request/${encodeURIComponent(id)}/reminder${query}`, {
       method: 'POST',
     });
   }
 
-  async markClientInfoRequestAsNoResponse(id: string) {
-    return this.request<ClientInfoRequestDTO>(`/address-discovery/client-info-request/${id}/no-response`, {
+  async markClientInfoRequestAsNoResponse(id: string, scope?: { clientId: string; caseId: string }) {
+    const query = scope ? `?${new URLSearchParams(scope)}` : '';
+    return this.request<ClientInfoRequestDTO>(`/address-discovery/client-info-request/${encodeURIComponent(id)}/no-response${query}`, {
       method: 'PUT',
     });
   }
@@ -4824,6 +4828,8 @@ export interface ClientInfoRequestDTO {
   responseNotes?: string;
   reminderCount: number;
   reminderSentAt?: string;
+  emailSent?: boolean;
+  actions?: { canSendReminder: boolean; canMarkResponded: boolean; canMarkNoResponse: boolean };
   client?: { id: string; displayName: string };
   debtor?: { id: string; name: string };
 }

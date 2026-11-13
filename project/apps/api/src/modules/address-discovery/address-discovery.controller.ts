@@ -67,8 +67,9 @@ export class AddressDiscoveryController {
   async getClientInfoRequestsForCase(
     @Request() req: any,
     @Param('caseId') caseId: string,
+    @Query('clientId') clientId?: string,
   ) {
-    return this.clientInfoRequestService.getRequestsForCase(req.user.tenantId, caseId);
+    return this.clientInfoRequestService.getRequestsForCase(req.user.tenantId, caseId, this.actorOf(req), clientId);
   }
 
   /**
@@ -91,12 +92,15 @@ export class AddressDiscoveryController {
     @Request() req: any,
     @Param('id') id: string,
     @Body() body: { notes?: string },
+    @Query('clientId') clientId?: string,
+    @Query('caseId') caseId?: string,
   ) {
     return this.clientInfoRequestService.markAsResponded(
       req.user.tenantId,
       id,
       this.actorOf(req),
       body.notes,
+      clientId === undefined && caseId === undefined ? undefined : { clientId, caseId },
     );
   }
 
@@ -107,8 +111,11 @@ export class AddressDiscoveryController {
   async sendClientInfoRequestReminder(
     @Request() req: any,
     @Param('id') id: string,
+    @Query('clientId') clientId?: string,
+    @Query('caseId') caseId?: string,
   ) {
-    return this.clientInfoRequestService.sendReminder(req.user.tenantId, id, this.actorOf(req));
+    return this.clientInfoRequestService.sendReminder(req.user.tenantId, id, this.actorOf(req),
+      clientId === undefined && caseId === undefined ? undefined : { clientId, caseId });
   }
 
   /**
@@ -118,8 +125,11 @@ export class AddressDiscoveryController {
   async markClientInfoRequestAsNoResponse(
     @Request() req: any,
     @Param('id') id: string,
+    @Query('clientId') clientId?: string,
+    @Query('caseId') caseId?: string,
   ) {
-    return this.clientInfoRequestService.markAsNoResponse(req.user.tenantId, id, this.actorOf(req));
+    return this.clientInfoRequestService.markAsNoResponse(req.user.tenantId, id, this.actorOf(req),
+      clientId === undefined && caseId === undefined ? undefined : { clientId, caseId });
   }
 
   // ==================== CROSS-FILE ====================

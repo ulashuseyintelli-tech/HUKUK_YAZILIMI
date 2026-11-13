@@ -514,3 +514,4 @@ src/modules/client/__tests__/client-special-category-k73.http.db-gated.integrati
 src/modules/client/__tests__/client-bank-account-h13a.http.db-gated.integration.spec.ts
 src/modules/portal/__tests__/portal-email-uniqueness-a.http.db-gated.integration.spec.ts
 src/modules/client-statement/__tests__/client-statement-retry-clr07.http.db-gated.integration.spec.ts
+src/modules/address-discovery/__tests__/client-info-request-actions-clz03.http.db-gated.integration.spec.ts
