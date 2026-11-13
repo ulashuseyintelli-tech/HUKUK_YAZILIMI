@@ -2404,6 +2404,7 @@ export default function NewCasePage() {
                       };
                       const response = await api.post("/clients", clientData);
                       const savedClient = response.data?.data || response.data || response;
+                      if (!savedClient?.id) throw new Error("Müvekkil kaydedilemedi - ID alınamadı");
                       // Taranan vekaletname bilgisi varsa kanonik /poa ile kaydet
                       // (avukat eşleştirmesi tarama akışındaki #1 ile aynı).
                       if (savedClient?.id && hasPoaInput(result)) {
@@ -2413,12 +2414,17 @@ export default function NewCasePage() {
                             lawyerIds: resolveLawyerIdsFromScan(result, existingLawyers),
                           });
                         } catch (poaErr) {
-                          console.warn("Vekalet oluşturulamadı:", poaErr);
+                          alert(poaCreateFailureMessage(poaErr, savedClient.displayName || savedClient.name || savedClient.id));
                         }
                       }
-                      const clientsRes = await api.get("/clients");
-                      setExistingClients(clientsRes.data?.data || []);
+                      // Müvekkil kaydı tamamlandı; liste yenileme reddi bu seçimi geri alamaz.
                       addExistingCreditor(savedClient);
+                      try {
+                        const clientsRes = await api.get("/clients");
+                        setExistingClients(clientsRes.data?.data || []);
+                      } catch (refreshErr: any) {
+                        alert(`Müvekkil kaydedildi, ancak liste yenilenemedi: ${refreshErr.message || "Bilinmeyen hata"}`);
+                      }
                     } catch (err: any) {
                       alert(err.message || "Müvekkil kaydedilemedi");
                     }

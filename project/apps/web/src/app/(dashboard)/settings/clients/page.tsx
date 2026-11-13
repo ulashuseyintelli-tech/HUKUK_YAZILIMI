@@ -168,6 +168,7 @@ export default function ClientsSettingsPage() {
     setSaving(true);
     try {
       let clientId: string;
+      let savedClientLabel: string | undefined;
 
       // Vekaletname alanları ClientPowerOfAttorney'e aittir; /clients gövdesine
       // gönderilmez (ClientService okumaz, lenient ValidationPipe düşürür). Vekalet
@@ -196,6 +197,7 @@ export default function ClientsSettingsPage() {
         // döner (`_existingReturned`), kapsam dışı ya da pasif kayıt 409 fırlatır (catch'te API mesajı gösterilir).
         // Create üzerinden "geri getirme" artık YOK (yaşam döngüsü yalnız yetkili pasif/aktif işlemiyle).
         const body = res.data?.data ?? res.data;
+        savedClientLabel = body?.displayName || body?.name || clientId;
         if (body?._existingReturned) {
           clientExisting = true;
           alert(
@@ -235,8 +237,7 @@ export default function ClientsSettingsPage() {
             console.log("Vekalet otomatik oluşturuldu");
           }
         } catch (poaErr) {
-          console.warn("Vekalet oluşturulamadı:", poaErr);
-          // Vekalet oluşturulamazsa bile müvekkil kaydedildi, devam et
+          alert(poaCreateFailureMessage(poaErr, savedClientLabel));
         }
       }
       
