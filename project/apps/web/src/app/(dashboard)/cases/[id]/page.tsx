@@ -86,6 +86,7 @@ import {
 } from "@/lib/guarded-primary-display";
 import { getInterestReadDisplayLabel } from "@/lib/interest-type-resolver";
 import { caseLawyerPermissionsForDisplay } from "@/lib/case-lawyer-permissions";
+import { clientResolvedAddress, type ClientAddressSource } from "@/lib/client-display";
 
 // ============================================
 // TİPLER
@@ -99,6 +100,8 @@ interface BankAccount {
   accountHolder?: string;
   isPrimary?: boolean;
 }
+
+type CaseClientAddress = { line: string | null; source: ClientAddressSource };
 
 interface CaseDetail {
   id: string;
@@ -143,6 +146,7 @@ interface CaseDetail {
     district?: string;
     bankAccounts?: BankAccount[];
     isActive?: boolean; // RFA-010: pasif müvekkil [Pasif] etiketi için
+    resolvedAddress?: CaseClientAddress;
   };
   caseClients?: {
     id: string;
@@ -162,6 +166,7 @@ interface CaseDetail {
       district?: string;
       bankAccounts?: BankAccount[];
       isActive?: boolean; // RFA-010: pasif müvekkil [Pasif] etiketi için
+      resolvedAddress?: CaseClientAddress;
     };
   }[];
   debtors: {
@@ -784,7 +789,11 @@ export default function CaseDetailPage() {
     district?: string;
     bankAccounts?: BankAccount[];
     role?: string;
+    resolvedAddress?: CaseClientAddress;
   } | null>(null);
+  const selectedClientAddress = selectedClient?.resolvedAddress !== undefined
+    ? selectedClient.resolvedAddress?.line ?? null
+    : selectedClient ? clientResolvedAddress(selectedClient).text : null;
   
   // Client Stats for Work Card
   const [clientStats, setClientStats] = useState<{
@@ -4444,15 +4453,12 @@ export default function CaseDetailPage() {
                     </div>
                   </div>
                 )}
-                {selectedClient.address && (
+                {selectedClientAddress && (
                   <div className="text-sm text-gray-600">
-                    <p>{selectedClient.address}</p>
-                    {(selectedClient.district || selectedClient.city) && (
-                      <p className="text-xs text-gray-400">{[selectedClient.district, selectedClient.city].filter(Boolean).join(' / ')}</p>
-                    )}
+                    <p>{selectedClientAddress}</p>
                   </div>
                 )}
-                {!selectedClient.email && !selectedClient.address && (
+                {!selectedClient.email && !selectedClientAddress && (
                   <p className="text-xs text-gray-400 italic">İletişim bilgisi eksik</p>
                 )}
               </div>
