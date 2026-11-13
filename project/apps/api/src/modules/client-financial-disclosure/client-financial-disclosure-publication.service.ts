@@ -243,7 +243,7 @@ export class ClientFinancialDisclosurePublicationService {
           await this.writeAudit(tx, version, CLIENT_FINANCIAL_DISCLOSURE_AUDIT_ACTIONS.SEND_FAILED, {
             provider: this.dispatcher.providerName, failureCode, deliveryOutcome,
             sendRequestedAt: claimed.sendRequestedAt!.toISOString(),
-          });
+          }, { actorType: 'SYSTEM' });
         });
       } catch (error) {
         throw this.mapError(error);
@@ -275,7 +275,7 @@ export class ClientFinancialDisclosurePublicationService {
         await this.writeAudit(tx, version, CLIENT_FINANCIAL_DISCLOSURE_AUDIT_ACTIONS.SENT, {
           provider: dispatch.provider, providerMessageId: messageId,
           providerAcceptedAt: providerAcceptedAt.toISOString(), sendRequestedAt: claimed.sendRequestedAt!.toISOString(),
-        });
+        }, { actorType: 'SYSTEM' });
         return { ...version, providerMessageId: messageId, providerAcceptedAt, sendFailureCode: null };
       });
       return await this.publishAccepted(input, claimed);
@@ -372,7 +372,7 @@ export class ClientFinancialDisclosurePublicationService {
         this.assertSingleTransition(moved.count);
         await this.writeAudit(tx, version, CLIENT_FINANCIAL_DISCLOSURE_AUDIT_ACTIONS.REVERSED, {
           provider: this.dispatcher.providerName,
-        });
+        }, { actorType: 'USER', userId: input.actorUserId });
 
         return this.result(
           version,
@@ -454,7 +454,7 @@ export class ClientFinancialDisclosurePublicationService {
         await this.writeAudit(tx, old, CLIENT_FINANCIAL_DISCLOSURE_AUDIT_ACTIONS.SUPERSEDED, {
           provider: this.dispatcher.providerName,
           supersedingVersion: fresh.version,
-        });
+        }, { actorType: 'USER', userId: input.actorUserId });
 
         return this.result(
           old,
@@ -654,7 +654,7 @@ export class ClientFinancialDisclosurePublicationService {
       this.assertSingleTransition(moved.count);
       await this.writeAudit(tx, version, CLIENT_FINANCIAL_DISCLOSURE_AUDIT_ACTIONS.PUBLISHED, {
         provider: this.dispatcher.providerName, providerMessageId: version.providerMessageId!,
-      });
+      }, { actorType: 'USER', userId: input.actorUserId });
       return this.result(version, ClientFinancialDisclosureStatus.SEND_PENDING, ClientFinancialDisclosureStatus.PUBLISHED, false);
     });
   }
@@ -680,14 +680,19 @@ export class ClientFinancialDisclosurePublicationService {
     version: LoadedVersion,
     action: string,
     metadata: Record<string, string | number>,
+    actor: { actorType: 'SYSTEM' } | { actorType: 'USER'; userId: string },
   ): Promise<void> {
+    if (actor.actorType === 'USER' && (typeof actor.userId !== 'string' || actor.userId.trim().length === 0)) {
+      throw new ClientFinancialDisclosurePublicationAuthorizationError('DISCLOSURE_PUBLICATION_NOT_ELIGIBLE');
+    }
     await tx.auditLog.create({
       data: {
         tenantId: version.tenantId,
         action,
         entityType: CLIENT_FINANCIAL_DISCLOSURE_AUDIT_ENTITY,
         entityId: version.id,
-        actorType: 'SYSTEM',
+        actorType: actor.actorType,
+        userId: actor.actorType === 'USER' ? actor.userId : null,
         decisionResult: 'ALLOWED',
         reasonCode: action,
         metadata: {

@@ -58,6 +58,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
   const uP2 = `i04-p2-${S}`;
   const uPlain = `i04-plain-${S}`;
   const uOther = `i04-other-${S}`;
+  const uActor = `i04-actor-${S}`;
 
   const svcWith = (d: DisclosureNotificationDispatcher, client: PrismaClient = prisma) =>
     new ClientFinancialDisclosurePublicationService(client, d);
@@ -148,12 +149,12 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
     await sql(`INSERT INTO "CaseClient"("id","caseId","clientId","updatedAt") VALUES ('${ccA}','${caseA}','${clA}',now())`);
     const user = (id: string, t: string) => `('${id}','${t}','${id}@example.test','U','${id}',true,now())`;
     await sql(`INSERT INTO "User"("id","tenantId","email","name","surname","isActive","updatedAt") VALUES
-      ${user(uReq, tA)}, ${user(uP1, tA)}, ${user(uP2, tA)}, ${user(uPlain, tA)}, ${user(uOther, tB)}`);
+      ${user(uReq, tA)}, ${user(uP1, tA)}, ${user(uP2, tA)}, ${user(uPlain, tA)}, ${user(uOther, tB)}, ${user(uActor, tA)}`);
     const lw = (u: string, t: string, r: string, c: boolean) =>
       `('lw-${u}','${t}','${u}','L','${u}','${r}'::"LawyerRank",${c},now())`;
     await sql(`INSERT INTO "Lawyer"("id","tenantId","userId","name","surname","lawyerRank","canApproveOfficeActions","updatedAt") VALUES
       ${lw(uP1, tA, 'PARTNER', false)}, ${lw(uP2, tA, 'PARTNER', false)},
-      ${lw(uPlain, tA, 'LAWYER', false)}, ${lw(uOther, tB, 'PARTNER', false)}`);
+      ${lw(uPlain, tA, 'LAWYER', false)}, ${lw(uOther, tB, 'PARTNER', false)}, ${lw(uActor, tA, 'PARTNER', false)}`);
   });
 
   afterAll(async () => {
@@ -249,7 +250,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
 
     const audits = await prisma.auditLog.findMany({
       where: { tenantId: tA, entityId: versionId },
-      select: { action: true, entityType: true, metadata: true },
+      select: { action: true, entityType: true, metadata: true, actorType: true, userId: true },
       orderBy: { createdAt: 'asc' },
     });
     expect(audits.map((a) => a.action)).toEqual([
@@ -257,11 +258,28 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
       'CLIENT_FINANCIAL_DISCLOSURE_PUBLISHED',
     ]);
     expect(audits[0].entityType).toBe('ClientFinancialDisclosureVersion');
+    expect(audits[0]).toMatchObject({ actorType: 'SYSTEM', userId: null });
+    expect(audits[1]).toMatchObject({ actorType: 'USER', userId: uP1 });
     // §35.14: audit metadata finansal tutar, alıcı e-postası veya hash TAŞIMAZ.
     const meta = JSON.stringify(audits.map((a) => a.metadata));
     for (const forbidden of ['1750.50', '2500.75', '@example.test', v.snapshotHash, v.notificationContentHash]) {
       expect(meta).not.toContain(String(forbidden));
     }
+  });
+
+  it('KI-230 publication records the actual operator rather than either approver', async () => {
+    const id = await contentApproved(`ki230-actor-${S}`);
+    const dispatcher = new FakeDispatcher('smtp', ok);
+    const service = svcWith(dispatcher);
+    await service.beginSend({ tenantId: tA, disclosureVersionId: id, actorUserId: uActor });
+    await service.dispatchAndPublish({ tenantId: tA, disclosureVersionId: id, actorUserId: uActor });
+    const stored = await prisma.clientFinancialDisclosureVersion.findUniqueOrThrow({ where: { id } });
+    expect(stored.officeApprovedById).toBe(uP1);
+    expect(stored.contentApprovedById).toBe(uP2);
+    const audit = await prisma.auditLog.findMany({ where: { tenantId: tA, entityId: id, action: 'CLIENT_FINANCIAL_DISCLOSURE_PUBLISHED' } });
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toMatchObject({ actorType: 'USER', userId: uActor });
+    expect(dispatcher.calls).toHaveLength(1);
   });
 
   it('[4b] onaydan sonra canlı dosya referansı değişse bile mühürlü renderer çıktısını aynen gönderir', async () => {
@@ -543,9 +561,12 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
     expect(after.publishedAt).toEqual(before.publishedAt);
 
     const again = await svc.reversePublishedVersion({
-      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP2, correctionReason: 'Hatalı tutar',
+      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, correctionReason: 'Hatalı tutar',
     });
     expect(again.replayed).toBe(true);
+    const audits = await prisma.auditLog.findMany({ where: { tenantId: tA, entityId: versionId, action: 'CLIENT_FINANCIAL_DISCLOSURE_REVERSED' } });
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ actorType: 'USER', userId: uP2 });
   });
 
   it('[18] yayınlanmamış versiyon reverse EDİLEMEZ', async () => {
@@ -591,9 +612,46 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
 
     const again = await svc.supersedePublishedVersion({
       tenantId: tA, supersededVersionId: versionA, supersedingVersionId: v2,
-      actorUserId: uP1, correctionReason: 'Düzeltme',
+      actorUserId: uP2, correctionReason: 'Düzeltme',
     });
     expect(again.replayed).toBe(true);
+    const audits = await prisma.auditLog.findMany({ where: { tenantId: tA, entityId: versionA, action: 'CLIENT_FINANCIAL_DISCLOSURE_SUPERSEDED' } });
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ actorType: 'USER', userId: uP1 });
+  });
+
+  it.each(['REVERSED', 'SUPERSEDED'])('KI-230 %s audit failure rolls back status, links and attribution', async operation => {
+    const id = await sendPending(`ki230-rollback-${operation}-${S}`);
+    const dispatcher = new FakeDispatcher('smtp', ok);
+    const service = svcWith(dispatcher);
+    await service.dispatchAndPublish({ tenantId: tA, disclosureVersionId: id, actorUserId: uP1 });
+    const next = `ki230-next-${operation}-${S}`;
+    if (operation === 'SUPERSEDED') {
+      const original = await prisma.clientFinancialDisclosureVersion.findUniqueOrThrow({ where: { id } });
+      const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...fields } = original;
+      await prisma.clientFinancialDisclosureVersion.create({ data: {
+        ...fields, id: next, version: 2, status: 'CONTENT_APPROVED',
+        officeApprovalRequestId: null, sendIdempotencyKey: `ki230-next-send-${S}`,
+        sendRequestedAt: null, providerMessageId: null, providerAcceptedAt: null, publishedAt: null,
+      } });
+    }
+    const snapshot = async () => ({
+      versions: await prisma.clientFinancialDisclosureVersion.findMany({ where: { id: { in: [id, next] } }, orderBy: { id: 'asc' } }),
+      audits: await prisma.auditLog.findMany({ where: { tenantId: tA, entityId: id }, orderBy: { id: 'asc' } }),
+    });
+    const before = await snapshot();
+    const fault = jest.spyOn(service as any, 'writeAudit').mockRejectedValue(new Error('isolated actor audit failure'));
+    try {
+      const command = operation === 'REVERSED'
+        ? service.reversePublishedVersion({ tenantId: tA, disclosureVersionId: id, actorUserId: uP2, correctionReason: 'Düzeltme' })
+        : service.supersedePublishedVersion({ tenantId: tA, supersededVersionId: id, supersedingVersionId: next, actorUserId: uP2, correctionReason: 'Düzeltme' });
+      await expect(command).rejects.toBeDefined();
+      expect(fault).toHaveBeenCalledTimes(1);
+      expect(fault.mock.calls[0][2]).toBe(`CLIENT_FINANCIAL_DISCLOSURE_${operation}`);
+      expect(fault.mock.calls[0][4]).toEqual({ actorType: 'USER', userId: uP2 });
+    } finally { fault.mockRestore(); }
+    expect(await snapshot()).toEqual(before);
+    expect(dispatcher.calls).toHaveLength(1);
   });
 
   it('[20] farklı disclosure’a ait veya onaylanmamış versiyonla supersession reddedilir', async () => {

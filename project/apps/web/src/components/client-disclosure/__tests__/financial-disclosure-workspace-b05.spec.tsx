@@ -82,6 +82,25 @@ beforeEach(() => {
 });
 
 describe('DisclosureAuditPanel X1-B05', () => {
+  it('KI-230 distinguishes operator events, unrecorded legacy attribution and provider system facts', async () => {
+    getTimeline.mockResolvedValue({
+      surface: 'OFFICE_TIMELINE', versionId: 'version-secret-id',
+      events: [
+        { type: 'PUBLISHED', occurredAt: '2026-11-13T10:00:00Z', actor: 'OFFICE_USER' },
+        { type: 'REVERSED', occurredAt: '2026-11-13T10:01:00Z', actor: 'SYSTEM' },
+        { type: 'SUPERSEDED', occurredAt: '2026-11-13T10:02:00Z', actor: 'SYSTEM' },
+        { type: 'PROVIDER_ACCEPTED', occurredAt: '2026-11-13T10:00:00Z', actor: 'SYSTEM' },
+      ],
+    });
+    const view = renderPanel();
+    expect(await screen.findByText('Bildirim yayımlandı')).toBeInTheDocument();
+    expect(screen.getByText(/Büro kullanıcısı/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Kullanıcı atfı kaydedilmemiş/)).toHaveLength(2);
+    expect(screen.getByText(/^Sistem ·/)).toBeInTheDocument();
+    expect(view.container.textContent).not.toContain('version-secret-id');
+    expect(view.container.textContent).not.toContain('userId');
+  });
+
   it('CL-R10 uncertain evidence never presents a resend button, even with stale capability', async () => {
     renderPanel({ delivery: { ...pendingDelivery, state: 'RECONCILIATION_REQUIRED' }, actions: { ...noActions, canRetryPublication: true } });
     expect(await screen.findByText(/Teslim sonucu belirsiz/)).toBeInTheDocument();

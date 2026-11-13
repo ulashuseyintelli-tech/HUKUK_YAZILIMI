@@ -8,6 +8,7 @@ import {
   clientFinancialDisclosureApi,
   type OfficeDisclosureActionCapabilities,
   type OfficeDisclosureDetail,
+  type OfficeDisclosureTimelineEvent,
   type OfficeDisclosureTimelineEventType,
 } from '@/lib/api/client-financial-disclosure';
 
@@ -25,10 +26,11 @@ const eventLabel: Record<OfficeDisclosureTimelineEventType, string> = {
   CANCELLED: 'Bildirim iptal edildi',
 };
 
-const actorLabel = {
-  OFFICE_USER: 'Büro kullanıcısı',
-  SYSTEM: 'Sistem',
-} as const;
+const actorLabel = (event: OfficeDisclosureTimelineEvent) => {
+  if (event.actor === 'OFFICE_USER') return 'Büro kullanıcısı';
+  return ['PUBLISHED', 'REVERSED', 'SUPERSEDED'].includes(event.type)
+    ? 'Kullanıcı atfı kaydedilmemiş' : 'Sistem';
+};
 
 const displayDate = (value: string) => new Date(value).toLocaleString('tr-TR');
 
@@ -142,7 +144,7 @@ export function DisclosureAuditPanel({
               <li key={`${event.type}-${event.occurredAt}-${index}`} className="rounded-md border p-3 text-sm">
                 <p className="font-medium">{eventLabel[event.type]}</p>
                 <p className="mt-1 text-gray-500">
-                  {actorLabel[event.actor]} · {displayDate(event.occurredAt)}
+                  {actorLabel(event)} · {displayDate(event.occurredAt)}
                 </p>
               </li>
             ))}

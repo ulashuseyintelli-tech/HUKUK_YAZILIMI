@@ -186,6 +186,38 @@ describe('CODEX-X1 PRE01 — office financial disclosure contract', () => {
     ).toThrow(OfficeDisclosureProjectionForbiddenError);
   });
 
+  it('KI-230 timeline projects only verified user attribution and never exposes actor identifiers', async () => {
+    const prisma = buildPrisma({ versions: [version(ClientFinancialDisclosureStatus.PUBLISHED)] });
+    const events = [
+      { action: 'CLIENT_FINANCIAL_DISCLOSURE_PUBLISHED', actorType: 'USER', userId: 'recorded-publisher' },
+      { action: 'CLIENT_FINANCIAL_DISCLOSURE_REVERSED', actorType: 'USER', userId: 'recorded-reverser' },
+      { action: 'CLIENT_FINANCIAL_DISCLOSURE_SUPERSEDED', actorType: 'USER', userId: 'recorded-replacer' },
+      { action: 'CLIENT_FINANCIAL_DISCLOSURE_SENT', actorType: 'SYSTEM', userId: null },
+      { action: 'CLIENT_FINANCIAL_DISCLOSURE_SEND_FAILED', actorType: 'SYSTEM', userId: null },
+      { action: 'CLIENT_FINANCIAL_DISCLOSURE_PUBLISHED', actorType: 'SYSTEM', userId: null },
+      { action: 'CLIENT_FINANCIAL_DISCLOSURE_REVERSED', actorType: 'USER', userId: null },
+    ].map((event, i) => ({ ...event, createdAt: new Date(Date.UTC(2026, 10, 13, 12, 0, i)) }));
+    prisma.auditLog.findMany.mockResolvedValue(events);
+    const service = new ClientFinancialDisclosureOfficeService(prisma as any);
+
+    const result = await service.getTimeline({ tenantId: T, actorUserId: U, clientId: C }, V);
+
+    expect(result.events.filter(event => event.type === 'PUBLISHED').map(event => event.actor))
+      .toEqual(['OFFICE_USER', 'SYSTEM']);
+    expect(result.events.filter(event => event.type === 'REVERSED').map(event => event.actor))
+      .toEqual(['OFFICE_USER', 'SYSTEM']);
+    expect(result.events.find(event => event.type === 'SUPERSEDED')?.actor).toBe('OFFICE_USER');
+    expect(result.events.find(event => event.type === 'PROVIDER_ACCEPTED')?.actor).toBe('SYSTEM');
+    expect(result.events.find(event => event.type === 'SEND_FAILED')?.actor).toBe('SYSTEM');
+    expect(prisma.auditLog.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      select: { action: true, createdAt: true, actorType: true, userId: true },
+    }));
+    const serialized = JSON.stringify(result);
+    for (const secret of ['recorded-publisher', 'recorded-reverser', 'recorded-replacer', 'userId', 'actorType']) {
+      expect(serialized).not.toContain(secret);
+    }
+  });
+
   it('detail tenant+client+caseClient+case zincirini sorguda zorlar ve curated çıktı verir', async () => {
     const prisma = buildPrisma();
     const service = new ClientFinancialDisclosureOfficeService(prisma as any);

@@ -407,6 +407,57 @@ describeDb('CLIENT-FD-ACT-R01-I06 — uçtan uca kabul (gerçek Nest composition
   const postRecovery = (http: INestApplication, id: string, actor = uP1) =>
     request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/retry-publication`).set('x-test-user', actor);
 
+  it.each(['reverse', 'supersede'])('KI-230 HTTP %s binds the actual principal and preserves the original replay attribution', async operation => {
+    await withHttp(`ki230-http-${operation}`, OK, async ({ module, http }) => {
+      const id = await upToSendPending(module, `ki230-http-${operation}-${S}`);
+      const untouched = await persisted(id);
+      await request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/publish`).expect(403);
+      expect(await persisted(id)).toEqual(untouched);
+      expect(providerCalls).toHaveLength(0);
+      await request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/publish`)
+        .set('x-test-user', uP1).send({ actorUserId: uP2 }).expect(201);
+      let state = await persisted(id);
+      expect(state.audits.find(a => a.action === 'CLIENT_FINANCIAL_DISCLOSURE_PUBLISHED'))
+        .toMatchObject({ actorType: 'USER', userId: uP1 });
+      expect(state.audits.find(a => a.action === 'CLIENT_FINANCIAL_DISCLOSURE_SENT'))
+        .toMatchObject({ actorType: 'SYSTEM', userId: null });
+      const body: { correctionReason: string; supersedingVersionId?: string } = { correctionReason: 'Düzeltme' };
+      if (operation === 'supersede') {
+        const original = await prisma.clientFinancialDisclosureVersion.findUniqueOrThrow({ where: { id } });
+        const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...fields } = original;
+        const next = `e2e-ki230-next-${S}`;
+        await prisma.clientFinancialDisclosureVersion.create({ data: {
+          ...fields, id: next, version: 2, status: 'CONTENT_APPROVED',
+          officeApprovalRequestId: null, sendIdempotencyKey: `e2e-ki230-next-send-${S}`,
+          sendRequestedAt: null, providerMessageId: null, providerAcceptedAt: null, publishedAt: null,
+        } });
+        body.supersedingVersionId = next;
+      }
+      const beforeCommand = await persisted(id);
+      await request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/${operation}`)
+        .set('x-test-user', uP2).send({ ...body, actorUserId: uP1 }).expect(400);
+      expect(await persisted(id)).toEqual(beforeCommand);
+      await request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/${operation}`)
+        .set('x-test-user', uP2).send(body).expect(201);
+      const action = operation === 'reverse' ? 'REVERSED' : 'SUPERSEDED';
+      state = await persisted(id);
+      expect(state.version.status).toBe(action);
+      const commandAudits = state.audits.filter(a => a.action === `CLIENT_FINANCIAL_DISCLOSURE_${action}`);
+      expect(commandAudits).toHaveLength(1);
+      expect(commandAudits[0]).toMatchObject({ actorType: 'USER', userId: uP2 });
+      const timeline = await request(http.getHttpServer())
+        .get(`/client-financial-disclosures/office/clients/${clA}/versions/${id}/timeline`)
+        .set('x-test-user', uP1).expect(200);
+      expect(timeline.body.events.find((event: { type: string }) => event.type === action)?.actor).toBe('OFFICE_USER');
+      expect(JSON.stringify(timeline.body)).not.toContain(uP2);
+      expect(JSON.stringify(timeline.body)).not.toContain('userId');
+      await request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/${operation}`)
+        .set('x-test-user', uP1).send(body).expect(201).expect(r => expect(r.body.replayed).toBe(true));
+      expect(await persisted(id)).toEqual(state);
+      expect(providerCalls).toHaveLength(1);
+    });
+  });
+
   it('CL-R10 HTTP never-claimed durable intent resumes the first send with the existing recipient gate', async () => {
     await withHttp('clr10-first-send', OK, async ({ module, http }) => {
       const id = await upToSendPending(module, `clr10-first-send-${S}`);
@@ -478,7 +529,11 @@ describeDb('CLIENT-FD-ACT-R01-I06 — uçtan uca kabul (gerçek Nest composition
         if (args[2] === `CLIENT_FINANCIAL_DISCLOSURE_${action}`) throw new Error('isolated audit fault');
         return original(...args);
       });
-      try { await request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/publish`).set('x-test-user', uP1).expect(500); }
+      try {
+        await request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/publish`).set('x-test-user', uP1).expect(500);
+        expect(fault).toHaveBeenCalledWith(expect.anything(), expect.anything(), `CLIENT_FINANCIAL_DISCLOSURE_${action}`, expect.anything(),
+          action === 'SENT' ? { actorType: 'SYSTEM' } : { actorType: 'USER', userId: uP1 });
+      }
       finally { fault.mockRestore(); }
       const v = await read(id);
       expect(v.status).toBe('SEND_PENDING');
@@ -495,7 +550,7 @@ describeDb('CLIENT-FD-ACT-R01-I06 — uçtan uca kabul (gerçek Nest composition
         const detail = await request(http.getHttpServer()).get(`/client-financial-disclosures/office/clients/${clA}/versions/${id}`).set('x-test-user', uP1).expect(200);
         expect(detail.body.delivery.state).toBe('PROVIDER_ACCEPTED');
         expect(detail.body.actions.canRetryPublication).toBe(true);
-        const results = await Promise.all([postRecovery(http, id), postRecovery(http, id)]);
+        const results = await Promise.all([postRecovery(http, id, uP2), postRecovery(http, id, uP2)]);
         expect(results.some(r => r.status === 201 && r.body.status === 'PUBLISHED')).toBe(true);
         expect(results.every(r => r.status === 201 || r.status === 409)).toBe(true);
         const after = await persisted(id);
@@ -503,6 +558,10 @@ describeDb('CLIENT-FD-ACT-R01-I06 — uçtan uca kabul (gerçek Nest composition
         expect(after.version.providerAcceptedAt).toEqual(before.version.providerAcceptedAt);
         expect(after.audits.filter(a => a.action === 'CLIENT_FINANCIAL_DISCLOSURE_SENT')).toHaveLength(1);
         expect(after.audits.filter(a => a.action === 'CLIENT_FINANCIAL_DISCLOSURE_PUBLISHED')).toHaveLength(1);
+        expect(after.audits.find(a => a.action === 'CLIENT_FINANCIAL_DISCLOSURE_SENT'))
+          .toMatchObject({ actorType: 'SYSTEM', userId: null });
+        expect(after.audits.find(a => a.action === 'CLIENT_FINANCIAL_DISCLOSURE_PUBLISHED'))
+          .toMatchObject({ actorType: 'USER', userId: uP2 });
       }
       expect(providerCalls).toHaveLength(1);
     });
