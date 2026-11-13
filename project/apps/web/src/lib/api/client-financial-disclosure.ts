@@ -78,7 +78,7 @@ export interface OfficeDisclosureDetail extends OfficeDisclosureSummary {
     readonly contentApprovedAt: string | null;
   };
   readonly delivery: {
-    readonly state: 'NOT_REQUESTED' | 'PENDING' | 'FAILED_RETRY_AVAILABLE' | 'PROVIDER_ACCEPTED' | 'PUBLISHED';
+    readonly state: 'NOT_REQUESTED' | 'PENDING' | 'FAILED_RETRY_AVAILABLE' | 'RECONCILIATION_REQUIRED' | 'PROVIDER_ACCEPTED' | 'PUBLISHED';
     readonly sendRequestedAt: string | null;
     readonly providerAcceptedAt: string | null;
     readonly publishedAt: string | null;
@@ -175,6 +175,22 @@ export interface DisclosureApprovalTransitionResult {
   readonly previousStatus: OfficeDisclosureStatus;
   readonly status: OfficeDisclosureStatus;
   readonly replayed: boolean;
+}
+
+export interface DisclosurePublicationResult {
+  readonly disclosureVersionId: string;
+  readonly status: 'PUBLISHED' | 'SEND_FAILED';
+  readonly replayed: boolean;
+}
+
+function publicationResult(value: unknown, versionId: string): DisclosurePublicationResult {
+  if (!value || typeof value !== 'object') throw new Error('Publication result unavailable');
+  const result = value as Record<string, unknown>;
+  if (result.disclosureVersionId !== versionId ||
+      (result.status !== 'PUBLISHED' && result.status !== 'SEND_FAILED') || typeof result.replayed !== 'boolean') {
+    throw new Error('Publication result unavailable');
+  }
+  return { disclosureVersionId: versionId, status: result.status, replayed: result.replayed };
 }
 
 export const clientFinancialDisclosureApi = {
@@ -336,20 +352,20 @@ export const clientFinancialDisclosureApi = {
   },
 
   /** Mühürlü içeriği mevcut publication pipeline'ına teslim eder. */
-  async publish(versionId: string): Promise<unknown> {
+  async publish(versionId: string): Promise<DisclosurePublicationResult> {
     const response = await apiClient.post<unknown>(
       `/client-financial-disclosures/${encodeURIComponent(versionId)}/publish`,
       {},
     );
-    return response.data;
+    return publicationResult(response.data, versionId);
   },
 
-  /** SEND_FAILED -> canonical idempotency-bound retry; eligibility remains backend-authoritative. */
-  async retryPublication(versionId: string): Promise<unknown> {
+  /** Proven rejection retries transport; durable acceptance completes publication without resend. */
+  async retryPublication(versionId: string): Promise<DisclosurePublicationResult> {
     const response = await apiClient.post<unknown>(
       `/client-financial-disclosures/${encodeURIComponent(versionId)}/retry-publication`,
       {},
     );
-    return response.data;
+    return publicationResult(response.data, versionId);
   },
 };

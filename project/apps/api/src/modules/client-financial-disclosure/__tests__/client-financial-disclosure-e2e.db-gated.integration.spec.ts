@@ -1,6 +1,6 @@
 import { Test, type TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { ForbiddenException, ValidationPipe } from '@nestjs/common';
+import { ForbiddenException, ValidationPipe, type INestApplication } from '@nestjs/common';
 import request = require('supertest');
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { PrismaClient } from '@prisma/client';
@@ -334,7 +334,7 @@ describeDb('CLIENT-FD-ACT-R01-I06 — uçtan uca kabul (gerçek Nest composition
     }
   });
 
-  it('[3] RESTART PROOF: A sahiplenip düşerse B çift GÖNDERMEZ; kurtarma explicit retry’dir', async () => {
+  it('[3] RESTART PROOF: A sahiplenip düşerse B çift GÖNDERMEZ; kanıtsız legacy retry engellidir', async () => {
     // A gonderim SIRASINDA duser: saglayici cagrilir, fakat surec yayinlamayi tamamlayamaz.
     const a = await bootInstance('A', () => {
       throw new Error('process died mid-dispatch');
@@ -363,26 +363,186 @@ describeDb('CLIENT-FD-ACT-R01-I06 — uçtan uca kabul (gerçek Nest composition
       ).rejects.toThrow();
       expect(providerCalls.filter((c) => c.instance === 'B')).toHaveLength(0);
 
-      // Canonical kurtarma yolu: once SEND_FAILED'e dusurulur, sonra explicit retrySend().
+      // Legacy DB mutation is NOT delivery evidence and must not authorize a resend.
       await prisma.clientFinancialDisclosureVersion.updateMany({
         where: { id: versionId, tenantId: tA },
         data: { status: 'SEND_FAILED', sendFailureCode: 'PROCESS_INTERRUPTED' },
       });
-      await publication.retrySend({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1 });
-      expect((await read(versionId)).sendRequestedAt).toBeNull();
-
-      const done = await publication.dispatchAndPublish({
-        tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1,
-      });
-      expect(done.status).toBe('PUBLISHED');
-      const final = await read(versionId);
-      expect(final.status).toBe('PUBLISHED');
-      // Deterministik son durum: TEK message ID, TEK yayinlama.
-      expect(final.providerMessageId).not.toBeNull();
-      expect(providerCalls.filter((c) => c.instance === 'B')).toHaveLength(1);
+      const before = await read(versionId);
+      await expect(publication.retrySend({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1 }))
+        .rejects.toMatchObject({ response: { code: 'DISCLOSURE_PUBLICATION_RECONCILIATION_REQUIRED' } });
+      expect(await read(versionId)).toEqual(before);
+      expect(providerCalls.filter((c) => c.instance === 'B')).toHaveLength(0);
     } finally {
       await b.close();
     }
+  });
+
+  // CL-R10: real HTTP + Nest/Prisma/approval/FD adapter; only external transport is substituted.
+  const withHttp = async (
+    name: string,
+    reply: (n: number) => unknown,
+    run: (context: { module: TestingModule; http: INestApplication; client: PrismaClient }) => Promise<void>,
+  ) => {
+    const write = process.env[CLIENT_FINANCIAL_DISCLOSURE_WRITE_FLAG];
+    process.env[CLIENT_FINANCIAL_DISCLOSURE_WRITE_FLAG] = 'true';
+    const inst = await bootInstance(name, reply, true);
+    const http = inst.app.createNestApplication();
+    http.useLogger(false);
+    http.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
+    try {
+      await http.init();
+      await run({ module: inst.app, http, client: inst.client });
+    } finally {
+      await http.close();
+      await inst.close();
+      if (write === undefined) delete process.env[CLIENT_FINANCIAL_DISCLOSURE_WRITE_FLAG];
+      else process.env[CLIENT_FINANCIAL_DISCLOSURE_WRITE_FLAG] = write;
+    }
+  };
+  const persisted = async (id: string) => ({
+    version: await prisma.clientFinancialDisclosureVersion.findUniqueOrThrow({ where: { id } }),
+    audits: await prisma.auditLog.findMany({ where: { tenantId: tA, entityId: id }, orderBy: { id: 'asc' } }),
+  });
+  const postRecovery = (http: INestApplication, id: string, actor = uP1) =>
+    request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/retry-publication`).set('x-test-user', actor);
+
+  it('CL-R10 HTTP never-claimed durable intent resumes the first send with the existing recipient gate', async () => {
+    await withHttp('clr10-first-send', OK, async ({ module, http }) => {
+      const id = await upToSendPending(module, `clr10-first-send-${S}`);
+      expect((await read(id)).sendRequestedAt).toBeNull();
+      expect(providerCalls).toHaveLength(0);
+      const detail = await request(http.getHttpServer()).get(`/client-financial-disclosures/office/clients/${clA}/versions/${id}`).set('x-test-user', uP1).expect(200);
+      expect(detail.body.actions.canPublish).toBe(true);
+      expect(detail.body.actions.canRetryPublication).toBe(false);
+      await request(http.getHttpServer()).get(`/client-financial-disclosures/office/clients/${clA}/versions/${id}/recipients`).set('x-test-user', uP1).expect(200)
+        .expect(r => expect(r.body.selectedRecipient.email).toBe(`client-clr10-first-send-${S}@example.test`));
+      await request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/publish`).set('x-test-user', uP1).expect(201)
+        .expect(r => expect(r.body.status).toBe('PUBLISHED'));
+      const before = await persisted(id);
+      await request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/publish`).set('x-test-user', uP1).expect(409);
+      expect(await persisted(id)).toEqual(before);
+      expect(providerCalls).toHaveLength(1);
+    });
+  });
+
+  it.each([
+    ['timeout', { success: false, errorCode: 'ETIMEDOUT', provider: 'smtp', deliveryOutcome: 'INDETERMINATE' }],
+    ['reset', { success: false, errorCode: 'ECONNRESET', provider: 'smtp', deliveryOutcome: 'INDETERMINATE' }],
+    ['missing-id', { success: true, provider: 'smtp', deliveryOutcome: 'ACCEPTED' }],
+    ['legacy', { success: false, errorCode: 'SMTP_550', provider: 'smtp' }],
+    ['wrong-provider', { success: true, messageId: 'untrusted', provider: 'mock', deliveryOutcome: 'ACCEPTED' }],
+  ])('CL-R10 HTTP %s cannot release claim, resend, publish or write success audit', async (key, result) => {
+    await withHttp(`clr10-${key}`, () => result, async ({ module, http }) => {
+      const id = await upToSendPending(module, `clr10-${key}-${S}`);
+      await request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/publish`).set('x-test-user', uP1)
+        .expect(201).expect(r => expect(r.body.status).toBe('SEND_FAILED'));
+      const before = await persisted(id);
+      expect(before.version.providerMessageId).toBeNull();
+      await postRecovery(http, id).expect(409).expect(r => expect(r.body.code).toBe('DISCLOSURE_PUBLICATION_RECONCILIATION_REQUIRED'));
+      expect(await persisted(id)).toEqual(before);
+      expect(providerCalls).toHaveLength(1);
+      const detail = await request(http.getHttpServer()).get(`/client-financial-disclosures/office/clients/${clA}/versions/${id}`).set('x-test-user', uP1).expect(200);
+      expect(detail.body.delivery.state).toBe('RECONCILIATION_REQUIRED');
+      expect(detail.body.actions.canRetryPublication).toBe(false);
+      expect(before.audits.filter(a => /_SENT$|_PUBLISHED$/.test(a.action))).toHaveLength(0);
+    });
+  });
+
+  it('CL-R10 HTTP proven rejection permits one explicit resend and publishes once', async () => {
+    await withHttp('clr10-rejected', n => n === 1
+      ? { success: false, errorCode: 'SMTP_550', provider: 'smtp', deliveryOutcome: 'REJECTED' } : OK(n),
+    async ({ module, http }) => {
+      const id = await upToSendPending(module, `clr10-rejected-${S}`);
+      await request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/publish`).set('x-test-user', uP1).expect(201);
+      const detail = await request(http.getHttpServer()).get(`/client-financial-disclosures/office/clients/${clA}/versions/${id}`).set('x-test-user', uP1).expect(200);
+      expect(detail.body.delivery.state).toBe('FAILED_RETRY_AVAILABLE');
+      expect(detail.body.actions.canRetryPublication).toBe(true);
+      await postRecovery(http, id).expect(201).expect(r => expect(r.body.status).toBe('PUBLISHED'));
+      const before = await persisted(id);
+      await postRecovery(http, id).expect(409);
+      expect(await persisted(id)).toEqual(before);
+      expect(providerCalls).toHaveLength(2);
+      expect(before.audits.filter(a => a.action === 'CLIENT_FINANCIAL_DISCLOSURE_SENT')).toHaveLength(1);
+      expect(before.audits.filter(a => a.action === 'CLIENT_FINANCIAL_DISCLOSURE_PUBLISHED')).toHaveLength(1);
+    });
+  });
+
+  it.each(['SENT', 'PUBLISHED'])('CL-R10 HTTP %s audit fault: restart preserves exact evidence boundary', async action => {
+    let id = '';
+    await withHttp(`clr10-fault-${action}`, OK, async ({ module, http }) => {
+      id = await upToSendPending(module, `clr10-fault-${action}-${S}`);
+      const service = module.get(ClientFinancialDisclosurePublicationService) as any;
+      const original = service.writeAudit.bind(service);
+      const fault = jest.spyOn(service, 'writeAudit').mockImplementation(async (...args: any[]) => {
+        if (args[2] === `CLIENT_FINANCIAL_DISCLOSURE_${action}`) throw new Error('isolated audit fault');
+        return original(...args);
+      });
+      try { await request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/publish`).set('x-test-user', uP1).expect(500); }
+      finally { fault.mockRestore(); }
+      const v = await read(id);
+      expect(v.status).toBe('SEND_PENDING');
+      expect(v.publishedAt).toBeNull();
+      expect(v.providerMessageId === null).toBe(action === 'SENT');
+      expect(providerCalls).toHaveLength(1);
+    });
+    const before = await persisted(id);
+    await withHttp(`clr10-restart-${action}`, () => { throw new Error('RECOVERY MUST NOT SEND'); }, async ({ http }) => {
+      if (action === 'SENT') {
+        await postRecovery(http, id).expect(409);
+        expect(await persisted(id)).toEqual(before);
+      } else {
+        const detail = await request(http.getHttpServer()).get(`/client-financial-disclosures/office/clients/${clA}/versions/${id}`).set('x-test-user', uP1).expect(200);
+        expect(detail.body.delivery.state).toBe('PROVIDER_ACCEPTED');
+        expect(detail.body.actions.canRetryPublication).toBe(true);
+        const results = await Promise.all([postRecovery(http, id), postRecovery(http, id)]);
+        expect(results.some(r => r.status === 201 && r.body.status === 'PUBLISHED')).toBe(true);
+        expect(results.every(r => r.status === 201 || r.status === 409)).toBe(true);
+        const after = await persisted(id);
+        expect(after.version.providerMessageId).toBe(before.version.providerMessageId);
+        expect(after.version.providerAcceptedAt).toEqual(before.version.providerAcceptedAt);
+        expect(after.audits.filter(a => a.action === 'CLIENT_FINANCIAL_DISCLOSURE_SENT')).toHaveLength(1);
+        expect(after.audits.filter(a => a.action === 'CLIENT_FINANCIAL_DISCLOSURE_PUBLISHED')).toHaveLength(1);
+      }
+      expect(providerCalls).toHaveLength(1);
+    });
+  });
+
+  it.each(['SEND_FAILED', 'SEND_PENDING'])('CL-R10 HTTP legacy %s with cleared claim is not fresh send intent', async status => {
+    await withHttp('clr10-legacy-cleared', OK, async ({ module, http }) => {
+      const id = await upToSendPending(module, `clr10-old-${status}-${S}`);
+      await prisma.clientFinancialDisclosureVersion.update({ where: { id }, data: { status: status as any, sendRequestedAt: null, sendFailureCode: 'PROCESS_INTERRUPTED' } });
+      const before = await persisted(id);
+      await postRecovery(http, id).expect(409);
+      if (status === 'SEND_PENDING') await request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/publish`).set('x-test-user', uP1).expect(409);
+      expect(await persisted(id)).toEqual(before);
+      expect(providerCalls).toHaveLength(0);
+    });
+  });
+
+  it('CL-R10 HTTP current actor, role, flag and recipient gates retain rejection atomicity', async () => {
+    await withHttp('clr10-auth', () => ({ success: false, errorCode: 'SMTP_550', provider: 'smtp', deliveryOutcome: 'REJECTED' }), async ({ module, http }) => {
+      const id = await upToSendPending(module, `clr10-auth-${S}`);
+      await request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/publish`).set('x-test-user', uP1).expect(201);
+      const before = await persisted(id);
+      await postRecovery(http, id, uReq).expect(403);
+      await request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/retry-publication`).expect(403);
+      await prisma.user.update({ where: { id: uP1 }, data: { role: 'VIEWER' } });
+      try { await postRecovery(http, id).expect(403); }
+      finally { await prisma.user.update({ where: { id: uP1 }, data: { role: 'USER' } }); }
+      await prisma.user.update({ where: { id: uP1 }, data: { isActive: false } });
+      try { await postRecovery(http, id).expect(403); }
+      finally { await prisma.user.update({ where: { id: uP1 }, data: { isActive: true } }); }
+      delete process.env[CLIENT_FINANCIAL_DISCLOSURE_PUBLICATION_FLAG];
+      try { await postRecovery(http, id).expect(403); }
+      finally { process.env[CLIENT_FINANCIAL_DISCLOSURE_PUBLICATION_FLAG] = 'true'; }
+      expect(await persisted(id)).toEqual(before);
+      expect(providerCalls).toHaveLength(1);
+      await prisma.clientContact.deleteMany({ where: { clientId: clA, value: `client-clr10-auth-${S}@example.test` } });
+      await postRecovery(http, id).expect(409);
+      expect(await persisted(id)).toEqual(before);
+      expect(providerCalls).toHaveLength(1);
+    });
   });
 
   // ── CONCURRENCY PROOF — IKI AYRI INSTANCE ───────────────────────────────────

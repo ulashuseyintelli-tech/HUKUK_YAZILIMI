@@ -117,7 +117,11 @@ export function DisclosureApprovalPanel({
     },
     onSuccess: async (_result, action) => {
       if (currentContext.current === action.contextKey) {
-        setNotice({ contextKey: action.contextKey, text: successMessage[action.kind] });
+        if (action.kind === 'publish' && (!_result || typeof _result !== 'object' || !('status' in _result) || _result.status !== 'PUBLISHED')) {
+          setError({ contextKey: action.contextKey, text: 'Bildirim yayımlanmadı; teslim durumu denetim panelinden kontrol edilmelidir.' });
+        } else {
+          setNotice({ contextKey: action.contextKey, text: successMessage[action.kind] });
+        }
         if (action.kind === 'request-content') setSelection({ contextKey: action.contextKey, email: '' });
       }
       await Promise.all([

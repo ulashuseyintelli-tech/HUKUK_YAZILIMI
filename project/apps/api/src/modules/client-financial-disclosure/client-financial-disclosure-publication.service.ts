@@ -1,4 +1,5 @@
 import { assertDisclosureRecipient } from './client-financial-disclosure-recipient';
+import { loadDisclosureDeliveryEvidence } from './client-financial-disclosure-delivery-evidence';
 import {
   ClientFinancialDisclosureStatus,
   Prisma,
@@ -167,10 +168,7 @@ export class ClientFinancialDisclosurePublicationService {
   async dispatchAndPublish(
     input: DispatchDisclosureInput,
   ): Promise<DisclosurePublicationTransitionResult> {
-    // §35.10 — mock/onaysız provider yayınlamayı ASLA yetkilendiremez. Guard, provider'a
-    // tek bir byte gitmeden ÖNCE çalışır.
     this.assertProductionProvider();
-
     let claimed: LoadedVersion;
     try {
       claimed = await this.prisma.$transaction(async (tx) => {
@@ -178,164 +176,109 @@ export class ClientFinancialDisclosurePublicationService {
         const version = await this.loadVersion(tx, input.tenantId, input.disclosureVersionId);
         this.assertNotTerminal(version);
         if (version.publishedAt !== null) {
-          throw new ClientFinancialDisclosurePublicationError(
-            'DISCLOSURE_PUBLICATION_ALREADY_PUBLISHED',
-          );
+          throw new ClientFinancialDisclosurePublicationError('DISCLOSURE_PUBLICATION_ALREADY_PUBLISHED');
         }
         this.assertExactStatus(version, ClientFinancialDisclosureStatus.SEND_PENDING);
         await this.assertEligibleActor(tx, input.actorUserId, version.tenantId);
         await this.assertPublishablePayload(tx, version);
-
+        const evidence = (await loadDisclosureDeliveryEvidence(tx, [version], this.dispatcher.providerName)).get(version.id);
+        if (evidence === 'ACCEPTED') return version;
+        if (evidence !== 'NONE') {
+          throw new ClientFinancialDisclosurePublicationError(version.sendRequestedAt !== null && version.providerMessageId === null
+            ? 'DISCLOSURE_PUBLICATION_SEND_ALREADY_CLAIMED' : 'DISCLOSURE_PUBLICATION_RECONCILIATION_REQUIRED');
+        }
+        const sendRequestedAt = new Date();
         const claim = await tx.clientFinancialDisclosureVersion.updateMany({
           where: {
-            id: version.id,
-            tenantId: version.tenantId,
+            id: version.id, tenantId: version.tenantId,
             status: ClientFinancialDisclosureStatus.SEND_PENDING,
-            sendRequestedAt: null,
-            publishedAt: null,
+            sendRequestedAt: null, publishedAt: null, providerMessageId: null, providerAcceptedAt: null,
           },
-          data: { sendRequestedAt: new Date() },
+          data: { sendRequestedAt },
         });
-        if (claim.count !== 1) {
-          throw new ClientFinancialDisclosurePublicationError(
-            'DISCLOSURE_PUBLICATION_SEND_ALREADY_CLAIMED',
-          );
-        }
-        return version;
+        this.assertSingleTransition(claim.count);
+        return { ...version, sendRequestedAt };
       });
     } catch (error) {
       throw this.mapError(error);
     }
+    if (claimed.providerMessageId !== null) return this.publishAccepted(input, claimed);
 
-    // ── (2) PROVIDER ÇAĞRISI — TRANSACTION DIŞINDA ─────────────────────────────
-    // The exact renderer output was sealed during content approval. Publication deliberately
-    // does not re-render or accept caller-provided subject/body after approval.
-    const approvedContent = parseClientFinancialDisclosureRenderOutput(
-      claimed.notificationContent as string,
-    );
+    // The durable claim precedes transport. An interrupted/throwing transport never releases it.
+    const approvedContent = parseClientFinancialDisclosureRenderOutput(claimed.notificationContent as string);
     const dispatch = await this.dispatcher.send({
       to: claimed.approvedRecipientEmail as string,
       subject: approvedContent.subject,
       text: approvedContent.text,
     });
-
-    // ── (3) GERÇEK KABUL + KALICI MESSAGE ID ZORUNLU ───────────────────────────
     const messageId = typeof dispatch.messageId === 'string' ? dispatch.messageId.trim() : '';
-    const providerReceiptApproved = isClientFinancialDisclosureApprovedDispatchReceipt(
-      this.dispatcher.providerName,
-      dispatch.provider,
-    );
-    const failureCode = !providerReceiptApproved
-      ? 'DISCLOSURE_PROVIDER_IDENTITY_MISMATCH'
-      : dispatch.errorCode ?? 'PROVIDER_MESSAGE_ID_MISSING';
-    if (!dispatch.success || messageId.length === 0 || !providerReceiptApproved) {
-      // Eksik message ID veya provider-kimligi uyusmazligi -> SEND_FAILED (§35.10).
-      // Provider hata DETAYI yalnız internal.
+    const providerReceiptApproved = isClientFinancialDisclosureApprovedDispatchReceipt(this.dispatcher.providerName, dispatch.provider);
+    const accepted = dispatch.success && messageId.length > 0 && providerReceiptApproved &&
+      (dispatch.deliveryOutcome === undefined || dispatch.deliveryOutcome === 'ACCEPTED');
+    if (!accepted) {
+      const failureCode = !providerReceiptApproved ? 'DISCLOSURE_PROVIDER_IDENTITY_MISMATCH' :
+        dispatch.errorCode ?? (messageId.length === 0 ? 'PROVIDER_MESSAGE_ID_MISSING' : 'PROVIDER_OUTCOME_INDETERMINATE');
+      const deliveryOutcome = providerReceiptApproved && !dispatch.success &&
+        dispatch.deliveryOutcome === 'REJECTED' ? 'REJECTED' : 'INDETERMINATE';
       try {
         await this.prisma.$transaction(async (tx) => {
-          await tx.clientFinancialDisclosureVersion.updateMany({
-            where: { id: claimed.id, tenantId: claimed.tenantId, publishedAt: null },
+          await this.lockVersion(tx, input.tenantId, input.disclosureVersionId);
+          const version = await this.loadVersion(tx, input.tenantId, input.disclosureVersionId);
+          this.assertExactStatus(version, ClientFinancialDisclosureStatus.SEND_PENDING);
+          this.assertSameSend(claimed, version);
+          if (version.providerMessageId !== null || version.providerAcceptedAt !== null) {
+            throw new ClientFinancialDisclosurePublicationError('DISCLOSURE_PUBLICATION_CONCURRENT_TRANSITION');
+          }
+          const moved = await tx.clientFinancialDisclosureVersion.updateMany({
+            where: {
+              id: version.id, tenantId: version.tenantId, status: ClientFinancialDisclosureStatus.SEND_PENDING,
+              sendRequestedAt: claimed.sendRequestedAt, publishedAt: null, providerMessageId: null, providerAcceptedAt: null,
+            },
             data: {
               status: ClientFinancialDisclosureStatus.SEND_FAILED,
-              sendFailureCode: failureCode,
-              sendFailureDetail: dispatch.errorMessage ?? null,
+              sendFailureCode: failureCode, sendFailureDetail: dispatch.errorMessage ?? null,
             },
           });
-          await this.writeAudit(tx, claimed, CLIENT_FINANCIAL_DISCLOSURE_AUDIT_ACTIONS.SEND_FAILED, {
-            provider: this.dispatcher.providerName,
-            failureCode,
+          this.assertSingleTransition(moved.count);
+          await this.writeAudit(tx, version, CLIENT_FINANCIAL_DISCLOSURE_AUDIT_ACTIONS.SEND_FAILED, {
+            provider: this.dispatcher.providerName, failureCode, deliveryOutcome,
+            sendRequestedAt: claimed.sendRequestedAt!.toISOString(),
           });
         });
       } catch (error) {
         throw this.mapError(error);
       }
       return {
-        disclosureVersionId: claimed.id,
-        previousStatus: ClientFinancialDisclosureStatus.SEND_PENDING,
-        status: ClientFinancialDisclosureStatus.SEND_FAILED,
-        replayed: false,
-        sendFailureCode: failureCode,
+        disclosureVersionId: claimed.id, previousStatus: ClientFinancialDisclosureStatus.SEND_PENDING,
+        status: ClientFinancialDisclosureStatus.SEND_FAILED, replayed: false, sendFailureCode: failureCode,
       };
     }
 
-    // ── (4)(5)(6) YENİDEN DOĞRULAMA + TEK GUARDED GEÇİŞ + AUDIT ────────────────
+    // Persist transport facts with their audit BEFORE the publication transaction.
+    // If publication later rolls back, retry completes publication without another transport call.
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      claimed = await this.prisma.$transaction(async (tx) => {
         await this.lockVersion(tx, input.tenantId, input.disclosureVersionId);
         const version = await this.loadVersion(tx, input.tenantId, input.disclosureVersionId);
-        this.assertNotTerminal(version);
-
-        if (version.publishedAt !== null) {
-          return this.result(version, version.status, version.status, true);
-        }
         this.assertExactStatus(version, ClientFinancialDisclosureStatus.SEND_PENDING);
-        // (4) snapshot / içerik / alıcı bağlamaları gönderimden SONRA da doğrulanır;
-        // alıcı gönderim ile yayınlama arasında değişmiş olamaz.
         await this.assertPublishablePayload(tx, version);
-        if (version.approvedRecipientEmail !== claimed.approvedRecipientEmail) {
-          throw new ClientFinancialDisclosurePublicationError(
-            'DISCLOSURE_PUBLICATION_RECIPIENT_CHANGED',
-          );
-        }
-        if (version.snapshotHash !== claimed.snapshotHash) {
-          throw new ClientFinancialDisclosurePublicationError(
-            'DISCLOSURE_PUBLICATION_STALE_SNAPSHOT',
-          );
-        }
-        if (
-          version.notificationContent !== claimed.notificationContent ||
-          version.notificationContentHash !== claimed.notificationContentHash
-        ) {
-          throw new ClientFinancialDisclosurePublicationError(
-            'DISCLOSURE_PUBLICATION_CONTENT_HASH_MISMATCH',
-          );
-        }
-        if (
-          version.approvedRecipientPortalUserId !== claimed.approvedRecipientPortalUserId
-        ) {
-          throw new ClientFinancialDisclosurePublicationError(
-            'DISCLOSURE_PUBLICATION_RECIPIENT_CHANGED',
-          );
-        }
-
-        const now = new Date();
+        this.assertSameSend(claimed, version);
+        const providerAcceptedAt = new Date();
         const moved = await tx.clientFinancialDisclosureVersion.updateMany({
           where: {
-            id: version.id,
-            tenantId: version.tenantId,
-            status: ClientFinancialDisclosureStatus.SEND_PENDING,
-            publishedAt: null,
-            providerMessageId: null,
+            id: version.id, tenantId: version.tenantId, status: ClientFinancialDisclosureStatus.SEND_PENDING,
+            sendRequestedAt: claimed.sendRequestedAt, publishedAt: null, providerMessageId: null, providerAcceptedAt: null,
           },
-          data: {
-            status: ClientFinancialDisclosureStatus.PUBLISHED,
-            providerMessageId: messageId,
-            providerAcceptedAt: now,
-            publishedAt: now,
-            sendFailureCode: null,
-            sendFailureDetail: null,
-          },
+          data: { providerMessageId: messageId, providerAcceptedAt, sendFailureCode: null, sendFailureDetail: null },
         });
         this.assertSingleTransition(moved.count);
-
-        // (6) provider-kabul (SENT) ve yayınlama olayları AYRI kayıtlardır.
         await this.writeAudit(tx, version, CLIENT_FINANCIAL_DISCLOSURE_AUDIT_ACTIONS.SENT, {
-          provider: this.dispatcher.providerName,
-          providerMessageId: messageId,
+          provider: dispatch.provider, providerMessageId: messageId,
+          providerAcceptedAt: providerAcceptedAt.toISOString(), sendRequestedAt: claimed.sendRequestedAt!.toISOString(),
         });
-        await this.writeAudit(tx, version, CLIENT_FINANCIAL_DISCLOSURE_AUDIT_ACTIONS.PUBLISHED, {
-          provider: this.dispatcher.providerName,
-          providerMessageId: messageId,
-        });
-
-        return {
-          disclosureVersionId: version.id,
-          previousStatus: ClientFinancialDisclosureStatus.SEND_PENDING,
-          status: ClientFinancialDisclosureStatus.PUBLISHED,
-          replayed: false,
-          providerMessageId: messageId,
-        };
+        return { ...version, providerMessageId: messageId, providerAcceptedAt, sendFailureCode: null };
       });
+      return await this.publishAccepted(input, claimed);
     } catch (error) {
       throw this.mapError(error);
     }
@@ -347,40 +290,40 @@ export class ClientFinancialDisclosurePublicationService {
    * operatör eylemiyle serbest bırakılır; `dispatchAndPublish` kendi kendine sıfırlayamaz.
    */
   async retrySend(input: RetryDisclosureSendInput): Promise<DisclosurePublicationTransitionResult> {
+    this.assertProductionProvider();
     try {
       return await this.prisma.$transaction(async (tx) => {
         await this.lockVersion(tx, input.tenantId, input.disclosureVersionId);
         const version = await this.loadVersion(tx, input.tenantId, input.disclosureVersionId);
         this.assertNotTerminal(version);
         if (version.publishedAt !== null) {
-          throw new ClientFinancialDisclosurePublicationError(
-            'DISCLOSURE_PUBLICATION_ALREADY_PUBLISHED',
-          );
+          throw new ClientFinancialDisclosurePublicationError('DISCLOSURE_PUBLICATION_ALREADY_PUBLISHED');
         }
-        this.assertExactStatus(version, ClientFinancialDisclosureStatus.SEND_FAILED);
         await this.assertEligibleActor(tx, input.actorUserId, version.tenantId);
         await this.assertPublishablePayload(tx, version);
-
+        const evidence = (await loadDisclosureDeliveryEvidence(tx, [version], this.dispatcher.providerName)).get(version.id);
+        if (version.status === ClientFinancialDisclosureStatus.SEND_PENDING && evidence === 'ACCEPTED') {
+          return this.result(version, version.status, version.status, true);
+        }
+        if (version.status === ClientFinancialDisclosureStatus.SEND_PENDING) {
+          throw new ClientFinancialDisclosurePublicationError('DISCLOSURE_PUBLICATION_RECONCILIATION_REQUIRED');
+        }
+        this.assertExactStatus(version, ClientFinancialDisclosureStatus.SEND_FAILED);
+        if (evidence !== 'REJECTED') {
+          throw new ClientFinancialDisclosurePublicationError('DISCLOSURE_PUBLICATION_RECONCILIATION_REQUIRED');
+        }
         const moved = await tx.clientFinancialDisclosureVersion.updateMany({
           where: {
-            id: version.id,
-            tenantId: version.tenantId,
-            status: ClientFinancialDisclosureStatus.SEND_FAILED,
-            publishedAt: null,
+            id: version.id, tenantId: version.tenantId, status: ClientFinancialDisclosureStatus.SEND_FAILED,
+            sendRequestedAt: version.sendRequestedAt, publishedAt: null, providerMessageId: null, providerAcceptedAt: null,
           },
           data: {
-            status: ClientFinancialDisclosureStatus.SEND_PENDING,
-            sendRequestedAt: null,
+            status: ClientFinancialDisclosureStatus.SEND_PENDING, sendRequestedAt: null,
+            sendFailureCode: null, sendFailureDetail: null,
           },
         });
         this.assertSingleTransition(moved.count);
-
-        return this.result(
-          version,
-          ClientFinancialDisclosureStatus.SEND_FAILED,
-          ClientFinancialDisclosureStatus.SEND_PENDING,
-          false,
-        );
+        return this.result(version, ClientFinancialDisclosureStatus.SEND_FAILED, ClientFinancialDisclosureStatus.SEND_PENDING, false);
       });
     } catch (error) {
       throw this.mapError(error);
@@ -682,6 +625,56 @@ export class ClientFinancialDisclosurePublicationService {
    * snapshot/içerik hash'i veya provider hata DETAYI YAZILMAZ (§35.14) — yalnız
    * versiyon kimliği, provider adı ve kalıcı provider message ID tutulur.
    */
+  private async publishAccepted(
+    input: DispatchDisclosureInput,
+    accepted: LoadedVersion,
+  ): Promise<DisclosurePublicationTransitionResult> {
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockVersion(tx, input.tenantId, input.disclosureVersionId);
+      const version = await this.loadVersion(tx, input.tenantId, input.disclosureVersionId);
+      this.assertNotTerminal(version);
+      await this.assertEligibleActor(tx, input.actorUserId, version.tenantId);
+      if (version.publishedAt !== null) return this.result(version, version.status, version.status, true);
+      this.assertExactStatus(version, ClientFinancialDisclosureStatus.SEND_PENDING);
+      await this.assertPublishablePayload(tx, version);
+      this.assertSameSend(accepted, version);
+      const evidence = (await loadDisclosureDeliveryEvidence(tx, [version], this.dispatcher.providerName)).get(version.id);
+      if (evidence !== 'ACCEPTED' || version.providerMessageId !== accepted.providerMessageId ||
+          version.providerAcceptedAt?.getTime() !== accepted.providerAcceptedAt?.getTime()) {
+        throw new ClientFinancialDisclosurePublicationError('DISCLOSURE_PUBLICATION_SEND_PROOF_MISSING');
+      }
+      const moved = await tx.clientFinancialDisclosureVersion.updateMany({
+        where: {
+          id: version.id, tenantId: version.tenantId, status: ClientFinancialDisclosureStatus.SEND_PENDING,
+          publishedAt: null, providerMessageId: version.providerMessageId,
+          providerAcceptedAt: version.providerAcceptedAt, sendRequestedAt: version.sendRequestedAt,
+        },
+        data: { status: ClientFinancialDisclosureStatus.PUBLISHED, publishedAt: new Date() },
+      });
+      this.assertSingleTransition(moved.count);
+      await this.writeAudit(tx, version, CLIENT_FINANCIAL_DISCLOSURE_AUDIT_ACTIONS.PUBLISHED, {
+        provider: this.dispatcher.providerName, providerMessageId: version.providerMessageId!,
+      });
+      return this.result(version, ClientFinancialDisclosureStatus.SEND_PENDING, ClientFinancialDisclosureStatus.PUBLISHED, false);
+    });
+  }
+
+  private assertSameSend(before: LoadedVersion, after: LoadedVersion): void {
+    if (before.sendRequestedAt?.getTime() !== after.sendRequestedAt?.getTime()) {
+      throw new ClientFinancialDisclosurePublicationError('DISCLOSURE_PUBLICATION_CONCURRENT_TRANSITION');
+    }
+    if (before.snapshotHash !== after.snapshotHash) {
+      throw new ClientFinancialDisclosurePublicationError('DISCLOSURE_PUBLICATION_STALE_SNAPSHOT');
+    }
+    if (before.approvedRecipientEmail !== after.approvedRecipientEmail ||
+        before.approvedRecipientPortalUserId !== after.approvedRecipientPortalUserId) {
+      throw new ClientFinancialDisclosurePublicationError('DISCLOSURE_PUBLICATION_RECIPIENT_CHANGED');
+    }
+    if (before.notificationContent !== after.notificationContent || before.notificationContentHash !== after.notificationContentHash) {
+      throw new ClientFinancialDisclosurePublicationError('DISCLOSURE_PUBLICATION_CONTENT_HASH_MISMATCH');
+    }
+  }
+
   private async writeAudit(
     tx: Prisma.TransactionClient,
     version: LoadedVersion,

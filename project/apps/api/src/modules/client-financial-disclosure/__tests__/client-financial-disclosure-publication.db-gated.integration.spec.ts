@@ -498,7 +498,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
   // ── §35.7 SEND_FAILED retry ───────────────────────────────────────────────────
   it('[15] retrySend SEND_FAILED → SEND_PENDING; sahiplenme serbest bırakılır ve yayınlanır', async () => {
     const versionId = await sendPending(`p15-${S}`);
-    await svcWith(new FakeDispatcher('smtp', () => ({ success: false, errorCode: 'SMTP_421', provider: 'smtp' })))
+    await svcWith(new FakeDispatcher('smtp', () => ({ success: false, errorCode: 'SMTP_421', provider: 'smtp', deliveryOutcome: 'REJECTED' })))
       .dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1 });
     expect((await readVersion(versionId)).sendRequestedAt).toBeInstanceOf(Date);
 

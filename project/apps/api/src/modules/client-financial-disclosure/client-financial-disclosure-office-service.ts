@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { loadDisclosureDeliveryEvidence, type DisclosureDeliveryEvidence } from './client-financial-disclosure-delivery-evidence';
 import { disclosureRecipientSelection } from './client-financial-disclosure-recipient';
 import type { OfficeDisclosureRecipientSelection } from './client-financial-disclosure-office-contract';
 import {
@@ -62,6 +63,11 @@ const CLIENT_NAME_SELECT = {
 
 const OFFICE_SUMMARY_SELECT = {
   id: true,
+  tenantId: true,
+  sendRequestedAt: true,
+  providerMessageId: true,
+  providerAcceptedAt: true,
+  sendFailureCode: true,
   disclosureId: true,
   version: true,
   status: true,
@@ -139,6 +145,7 @@ export class ClientFinancialDisclosureOfficeService {
     const resolved = await this.resolveScope(scope);
     const versions = await this.loadVersions(scope, resolved.caseClientIds);
     const requests = await this.loadApprovalRequests(scope.tenantId, versions);
+    const evidence = await loadDisclosureDeliveryEvidence(this.prisma, versions);
     const seenRoots = new Set<string>();
     const items: OfficeDisclosureSummary[] = [];
 
@@ -151,6 +158,7 @@ export class ClientFinancialDisclosureOfficeService {
           requests.get(version.officeApprovalRequestId ?? ''),
           resolved,
           scope.actorUserId,
+          evidence.get(version.id),
         ),
       );
     }
@@ -242,7 +250,8 @@ export class ClientFinancialDisclosureOfficeService {
     const resolved = await this.resolveScope(scope);
     const version = await this.loadVersion(scope, resolved.caseClientIds, disclosureVersionId);
     const request = await this.loadApprovalRequest(scope.tenantId, version.officeApprovalRequestId, version.id);
-    const actions = this.actions(this.status(version.status), request, version, resolved, scope.actorUserId);
+    const evidence = (await loadDisclosureDeliveryEvidence(this.prisma, [version])).get(version.id);
+    const actions = this.actions(this.status(version.status), request, version, resolved, scope.actorUserId, evidence);
     if (!actions.canRequestContentApproval && !actions.canCompleteContentApproval && !actions.canPublish) {
       throw new OfficeDisclosureProjectionForbiddenError();
     }
@@ -269,8 +278,9 @@ export class ClientFinancialDisclosureOfficeService {
       version.officeApprovalRequestId,
       version.id,
     );
+    const evidence = (await loadDisclosureDeliveryEvidence(this.prisma, [version])).get(version.id);
     const detail: OfficeDisclosureDetail = {
-      ...this.summary(version, request, resolved, scope.actorUserId),
+      ...this.summary(version, request, resolved, scope.actorUserId, evidence),
       lines: [...version.lines]
         .sort((left, right) => left.sortOrder - right.sortOrder)
         .map((line) => ({ type: line.type, amount: canonicalMoney(line.amount) })),
@@ -279,7 +289,7 @@ export class ClientFinancialDisclosureOfficeService {
         officeApprovedAt: this.iso(version.officeApprovedAt),
         contentApprovedAt: this.iso(version.contentApprovedAt),
       },
-      delivery: this.delivery(version),
+      delivery: this.delivery(version, evidence),
       supersedesVersionId: version.supersedesVersionId,
       supersededByVersionId: version.supersededByVersion?.id ?? null,
       correctionReason: version.correctionReason,
@@ -348,6 +358,7 @@ export class ClientFinancialDisclosureOfficeService {
     if (versions.length === 0) throw new OfficeDisclosureProjectionNotFoundError();
     const requests = await this.loadApprovalRequests(scope.tenantId, versions);
     const current = versions.find((version) => this.isCurrentEffective(version));
+    const evidence = await loadDisclosureDeliveryEvidence(this.prisma, versions);
     return this.safe({
       surface: 'OFFICE_HISTORY',
       disclosureId,
@@ -358,6 +369,7 @@ export class ClientFinancialDisclosureOfficeService {
           requests.get(version.officeApprovalRequestId ?? ''),
           resolved,
           scope.actorUserId,
+          evidence.get(version.id),
         ),
       ),
     });
@@ -562,6 +574,7 @@ export class ClientFinancialDisclosureOfficeService {
     request: ApprovalRequestProjection | undefined,
     resolved: ResolvedOfficeScope,
     actorUserId: string,
+    evidence: DisclosureDeliveryEvidence = 'UNKNOWN',
   ): OfficeDisclosureSummary {
     const status = this.status(version.status);
     return {
@@ -577,7 +590,7 @@ export class ClientFinancialDisclosureOfficeService {
       updatedAt: this.isoRequired(version.updatedAt),
       publishedAt: this.iso(version.publishedAt),
       isCurrentEffective: this.isCurrentEffective(version),
-      actions: this.actions(status, request, version, resolved, actorUserId),
+      actions: this.actions(status, request, version, resolved, actorUserId, evidence),
     };
   }
 
@@ -587,6 +600,7 @@ export class ClientFinancialDisclosureOfficeService {
     version: { officeApprovedById: string | null },
     resolved: ResolvedOfficeScope,
     actorUserId: string,
+    evidence: DisclosureDeliveryEvidence = 'UNKNOWN',
   ): OfficeDisclosureActionCapabilities {
     const write = isDisclosureWriteEnabled();
     const publish = write && isDisclosurePublicationEnabled();
@@ -618,8 +632,10 @@ export class ClientFinancialDisclosureOfficeService {
         request.status === 'APPROVED' &&
         request.approverUserId !== null &&
         request.approverUserId === actorUserId,
-      canPublish: publish && eligible && status === 'CONTENT_APPROVED',
-      canRetryPublication: publish && eligible && status === 'SEND_FAILED',
+      canPublish: publish && eligible &&
+        (status === 'CONTENT_APPROVED' || (status === 'SEND_PENDING' && evidence === 'NONE')),
+      canRetryPublication: publish && eligible &&
+        ((status === 'SEND_FAILED' && evidence === 'REJECTED') || (status === 'SEND_PENDING' && evidence === 'ACCEPTED')),
       canReverse: publish && eligible && status === 'PUBLISHED',
       canSupersede: publish && eligible && status === 'PUBLISHED',
     };
@@ -631,14 +647,17 @@ export class ClientFinancialDisclosureOfficeService {
     providerMessageId: string | null;
     providerAcceptedAt: Date | null;
     publishedAt: Date | null;
-  }): OfficeDisclosureDeliveryEvidence {
-    const accepted = version.providerMessageId !== null && version.providerAcceptedAt !== null;
+  }, evidence: DisclosureDeliveryEvidence = 'UNKNOWN'): OfficeDisclosureDeliveryEvidence {
+    const accepted = version.providerMessageId !== null && version.providerAcceptedAt !== null &&
+      (evidence === 'ACCEPTED' || version.publishedAt !== null);
     const state =
       version.status === ClientFinancialDisclosureStatus.PUBLISHED
         ? 'PUBLISHED'
-        : version.status === ClientFinancialDisclosureStatus.SEND_FAILED
-          ? 'FAILED_RETRY_AVAILABLE'
-          : accepted
+        : evidence === 'UNKNOWN' && (version.status === 'SEND_FAILED' || version.status === 'SEND_PENDING')
+          ? 'RECONCILIATION_REQUIRED'
+          : evidence === 'REJECTED'
+            ? 'FAILED_RETRY_AVAILABLE'
+            : accepted
             ? 'PROVIDER_ACCEPTED'
             : version.status === ClientFinancialDisclosureStatus.SEND_PENDING
               ? 'PENDING'

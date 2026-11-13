@@ -88,6 +88,7 @@ export class ClientFinancialDisclosureEmailDispatcher implements DisclosureNotif
         errorCode: 'DISCLOSURE_RECIPIENT_INVALID',
         provider: this.providerName,
         retryable: false,
+        deliveryOutcome: 'REJECTED',
       };
     }
 
@@ -105,6 +106,7 @@ export class ClientFinancialDisclosureEmailDispatcher implements DisclosureNotif
         errorCode: 'DISCLOSURE_PROVIDER_IDENTITY_MISMATCH',
         provider: this.providerName,
         retryable: false,
+        deliveryOutcome: 'INDETERMINATE',
       };
     }
 
@@ -126,6 +128,7 @@ export class ClientFinancialDisclosureEmailDispatcher implements DisclosureNotif
         errorCode,
         provider: result.provider ?? this.providerName,
         retryable: result.success ? true : classifyDispatchFailure(result.errorCode),
+        deliveryOutcome: !result.success && result.deliveryOutcome === 'REJECTED' ? 'REJECTED' : 'INDETERMINATE',
       };
     }
 
@@ -133,6 +136,7 @@ export class ClientFinancialDisclosureEmailDispatcher implements DisclosureNotif
       success: true,
       messageId,
       provider: result.provider ?? this.providerName,
+      deliveryOutcome: result.deliveryOutcome ?? 'ACCEPTED',
     };
   }
 }
