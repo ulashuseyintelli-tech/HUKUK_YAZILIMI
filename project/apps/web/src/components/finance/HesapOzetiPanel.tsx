@@ -205,6 +205,17 @@ export function HesapOzetiPanel({
   const anaparasizDokum = hesap.anaparasizKalemDokumu;
   const nihaiToplamYok = Boolean(anaparasizDokum);
   const toplamMetni = (ad: string, deger: number): string => (nihaiToplamYok ? 'hesaplanamadı' : tutar(ad, deger));
+  // Takip sonrası faiz (sunucu kararı): anaparasız dosyada kalemlerin faiz durumu kanonik olarak belirsiz → eski özetin
+  // yer tutucu 0'ı gösterilmez; dökümün faiz durumu aynı metinle yazılır (döküm ile eski bölüm aynı dosyada çelişmez).
+  // Değer yoksa (null / sonlu değil) de sıfıra çevrilmez. Döküm yokken hesaplanmış gerçek sıfır 0,00 olarak kalır.
+  const takipSonrasiFaizDegeri: unknown = displayHesap.takipSonrasiFaiz;
+  const takipSonrasiFaizBelirsiz =
+    Boolean(anaparasizDokum) || typeof takipSonrasiFaizDegeri !== 'number' || !Number.isFinite(takipSonrasiFaizDegeri);
+  const takipSonrasiFaizMetni = anaparasizDokum
+    ? anaparasizFaizMetni(anaparasizDokum.faizDurumu)
+    : takipSonrasiFaizBelirsiz
+      ? 'belirlenemedi'
+      : tutar('takipSonrasiFaiz', displayHesap.takipSonrasiFaiz);
   // Tutar yerine "gösterilemez" yazılan toplam satırı vurgulu tutar biçimiyle (büyük, renkli) basılmaz
   const toplamSinifi = (ad: string, vurgulu: string): string =>
     nihaiToplamYok || (paraBirimiKisitli && alan(ad)?.durum !== 'GECERLI') ? 'font-medium text-gray-500' : vurgulu;
@@ -352,7 +363,7 @@ export function HesapOzetiPanel({
         {/* Takip Sonrası Faiz */}
         <div className="flex justify-between py-1 border-t border-gray-200">
           <span className="font-medium text-gray-700">Takip Sonrası Faiz =</span>
-          <span className="font-semibold">{tutar('takipSonrasiFaiz', displayHesap.takipSonrasiFaiz)}</span>
+          <span data-testid="hesap-deger-takipSonrasiFaiz" className={takipSonrasiFaizBelirsiz ? 'font-medium text-gray-500' : 'font-semibold'}>{takipSonrasiFaizMetni}</span>
         </div>
         
         {/* TOPLAM BORÇ */}
@@ -530,6 +541,11 @@ const FAIZ_DURUMU_METNI: Record<AnaparasizKalemFaizDurumu, string> = {
   ISLEMEZ_KAYITLI: 'faiz işlemez (kayıtlı)',
 };
 
+/** Dökümün faiz satırı ile eski bölümün "Takip Sonrası Faiz" satırı AYNI metni kullanır (iki bölüm çelişmez). */
+function anaparasizFaizMetni(faizDurumu: AnaparasizKalemDokumu['faizDurumu']): string {
+  return faizDurumu === 'BELIRLENEMEDI' ? 'belirlenemedi' : 'hesaplanmadı';
+}
+
 /**
  * Anaparasız dosya açıklayıcı dökümü — kayıtlı kalem tutarları (sunucu değerleri), "Kalem tutarları toplamı" ile
  * "Nihai borç toplamı" AYRI; faiz belirlenemedi; nihai borç hesaplanamadı. Kesin hesap / nihai mali kabul DEĞİLDİR.
@@ -562,7 +578,7 @@ export function AnaparasizKalemDokumuPanel({ dokum }: { dokum: AnaparasizKalemDo
       ))}
       <div className="flex justify-between py-0.5">
         <span>Faiz</span>
-        <span data-testid="hesap-anaparasiz-faiz">{dokum.faizDurumu === 'BELIRLENEMEDI' ? 'belirlenemedi' : 'hesaplanmadı'}</span>
+        <span data-testid="hesap-anaparasiz-faiz">{anaparasizFaizMetni(dokum.faizDurumu)}</span>
       </div>
       <div className="flex justify-between border-t border-amber-300 py-0.5 font-bold">
         <span>Nihai borç toplamı</span>
