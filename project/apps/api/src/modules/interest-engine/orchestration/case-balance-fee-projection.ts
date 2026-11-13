@@ -11,7 +11,9 @@ export type FeeProjectionDiagnosticCode =
   | 'FEE_PROJECTION_CURRENCY_MISMATCH'
   | 'FEE_PROJECTION_LEGAL_BALANCE_BLOCKED'
   | 'FEE_PROJECTION_CROSS_CURRENCY_TOTAL_FORBIDDEN'
-  | 'FEE_POLICY_OWNER_GATED';
+  | 'FEE_POLICY_OWNER_GATED'
+  /** Anaparasız dosya: satırlar kayıtlı kaynak tutardır; anapara / faiz hesabı yok, nihai bakiye değildir (INFO). */
+  | 'FEE_PROJECTION_PRINCIPAL_FREE_BASIS';
 
 export interface FeeProjectionDiagnostic {
   code: FeeProjectionDiagnosticCode;
@@ -121,9 +123,18 @@ export function buildCaseBalanceFeeProjection(
       .filter((row) => row.resultAvailable && isSupportedCurrency(evidenceCurrency(row.currency)))
       .map((row) => evidenceCurrency(row.currency)),
   );
+  // Anaparasız dosya (NO_PRINCIPAL_BASIS): o para biriminde hesaplanacak anapara yok; kayıtlı masraf / fer'i kaynak
+  // tutarı kendi para biriminde projeksiyona UYGUNDUR (çapraz para birimi eklemesi değildir). Bu satır "atlanan
+  // hesap" sayılmaz. İşaretsiz girdide (boş küme ya da başka para birimi) MISMATCH kuralı AYNEN geçerlidir.
+  const principalFreeCurrencies = new Set(
+    input.currencyResults
+      .filter((row) => !row.resultAvailable && row.skippedReason === 'NO_PRINCIPAL_BASIS'
+        && isSupportedCurrency(evidenceCurrency(row.currency)))
+      .map((row) => evidenceCurrency(row.currency)),
+  );
   const skippedByCurrency = new Map(
     input.currencyResults
-      .filter((row) => !row.resultAvailable)
+      .filter((row) => !row.resultAvailable && row.skippedReason !== 'NO_PRINCIPAL_BASIS')
       .map((row) => [evidenceCurrency(row.currency), row.skippedReason ?? 'UNAVAILABLE']),
   );
 
@@ -147,7 +158,7 @@ export function buildCaseBalanceFeeProjection(
       issues.add('FEE_PROJECTION_CURRENCY_MISSING');
     } else if (!isSupportedCurrency(currency)) {
       issues.add('FEE_PROJECTION_CURRENCY_UNSUPPORTED');
-    } else if (!calculatedCurrencies.has(currency)) {
+    } else if (!calculatedCurrencies.has(currency) && !principalFreeCurrencies.has(currency)) {
       issues.add('FEE_PROJECTION_CURRENCY_MISMATCH');
     }
     if (globalBlockerCodes.length > 0 || skippedByCurrency.has(currency)) {
@@ -178,6 +189,15 @@ export function buildCaseBalanceFeeProjection(
       lines,
       ...(available ? {} : { diagnosticCodes }),
     });
+
+    if (principalFreeCurrencies.has(currency)) {
+      diagnostics.push({
+        code: 'FEE_PROJECTION_PRINCIPAL_FREE_BASIS',
+        severity: 'INFO',
+        message: 'Case has no principal claim; lines are persisted source amounts only. Interest is not calculated and no final balance is produced.',
+        details: { currency, sourceItemIds: sourceItems.map((item) => item.sourceItemId) },
+      });
+    }
 
     for (const code of diagnosticCodes) {
       diagnostics.push({

@@ -109,19 +109,25 @@ export function buildCaseBalanceSnapshotReadiness(balance: CaseBalanceResult): C
   const principalNotSimulated =
     fatalCodes.some((code) => PRINCIPAL_NOT_SIMULATED_CODES.has(code)) ||
     skippedReasons.some((code) => PRINCIPAL_NOT_SIMULATED_CODES.has(code));
+  // Anaparasız dosya: faiz motoru çalışmadı, masraf / fer'i faizi hesaplanmadı → nihai bakiye yok (mevcut INTEREST_BASE
+  // sınıfı; yeni sınıf açılmaz). Kaynak tutarlar ücret projeksiyonunda ayrıca görünür.
+  const principalFree = skippedReasons.includes('NO_PRINCIPAL_BASIS');
   const interestBaseSourceCodes = uniqueSorted([
-    ...skippedReasons.filter((code) => code === 'ENGINE_ERROR' || PRINCIPAL_NOT_SIMULATED_CODES.has(code)),
+    ...skippedReasons.filter((code) =>
+      code === 'ENGINE_ERROR' || code === 'NO_PRINCIPAL_BASIS' || PRINCIPAL_NOT_SIMULATED_CODES.has(code)),
     ...fatalCodes.filter((code) => PRINCIPAL_NOT_SIMULATED_CODES.has(code)),
     ...perCurrencyCodes,
     ...(balance.unsimulatedPrincipals ?? []).map((principal) => principal.reasonCode),
   ]);
-  if (skippedReasons.includes('ENGINE_ERROR') || principalNotSimulated) {
+  if (skippedReasons.includes('ENGINE_ERROR') || principalNotSimulated || principalFree) {
     blockers.push({
       code: 'INTEREST_BASE',
       sourceCodes: interestBaseSourceCodes.length > 0 ? interestBaseSourceCodes : ['ENGINE_ERROR'],
       message: principalNotSimulated
         ? 'Anaparanin faiz tabani cozulemedi veya faizsiz anapara simule edilmedi; kismi ya da sifir faizli bakiye uretilmez.'
-        : 'Interest-base hesaplama sonucu uretilemedi; bos veya sifir basari fallback uygulanmaz.',
+        : principalFree && !skippedReasons.includes('ENGINE_ERROR')
+          ? "Dosyada anapara yok; masraf / fer'i kaynak tutarlari gosterilir, faizleri hesaplanmadi; nihai bakiye uretilmez."
+          : 'Interest-base hesaplama sonucu uretilemedi; bos veya sifir basari fallback uygulanmaz.',
     });
   }
 

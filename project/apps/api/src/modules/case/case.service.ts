@@ -49,6 +49,7 @@ import {
   buildCaseCalculationSummaryCompatibilityAdapter,
   buildUnavailableCaseCalculationSummaryCompatibilityAdapter,
 } from "./case-calculation-summary.compatibility";
+import { buildAnaparasizKalemDokumu } from "./case-calculation-summary.principal-free";
 import { buildCalculationSummaryCurrencyStatus } from "./case-calculation-summary-currency";
 import { resolveInitialPolicy } from "../interest-engine/interest-strategy.config";
 import { mapDtoCaseTypeToInterestCaseType } from "./case-type-mapping";
@@ -5431,25 +5432,32 @@ export class CaseService {
       legacyShadowInput,
       canonicalResolution,
     );
-    const canonicalCompatibility = canonicalResolution.status === "OK"
+    const canonicalDisplay = canonicalResolution.status === "OK"
+      ? toCaseBalanceDisplay({
+        tenantId,
+        caseId,
+        balance: canonicalResolution.balance,
+      })
+      : null;
+    const canonicalCompatibility = canonicalDisplay
       ? buildCaseCalculationSummaryCompatibilityAdapter({
         legacy: legacySummary,
-        display: toCaseBalanceDisplay({
-          tenantId,
-          caseId,
-          balance: canonicalResolution.balance,
-        }),
+        display: canonicalDisplay,
       })
       : buildUnavailableCaseCalculationSummaryCompatibilityAdapter({
         reason: canonicalResolution.status === "UNAVAILABLE"
           ? "CASE_BALANCE_SERVICE_UNAVAILABLE"
           : "CANONICAL_COMPUTE_FAILED",
       });
+    // Anaparasız dosya: kayıtlı kalem tutarları açıklayıcı döküm olarak eklenir; eski alanlar DEĞİŞMEZ. Ekran, bu alan
+    // varken eski toplamları nihai borç gibi göstermez (nihai toplam hesaplanamadı). Yalnız doluyken yazılır.
+    const anaparasizKalemDokumu = buildAnaparasizKalemDokumu(canonicalDisplay);
 
     return {
       ...legacySummary,
       canonicalShadow,
       canonicalCompatibility,
+      ...(anaparasizKalemDokumu ? { anaparasizKalemDokumu } : {}),
     };
   }
 

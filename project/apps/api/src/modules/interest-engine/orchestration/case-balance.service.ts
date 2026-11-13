@@ -54,6 +54,7 @@ import {
   buildCaseBalanceFeeProjection,
   type CaseBalanceFeeProjection,
 } from './case-balance-fee-projection';
+import { fromCents, toCents } from '../allocation/minor-unit';
 
 /** Q2: compute-on-demand default options. gapPolicy=WARN_ONLY_FOR_PREVIEW → PREVIEW'de gap bloklamaz. */
 const DEFAULT_OPTIONS: CalculationOptions = {
@@ -76,7 +77,13 @@ export type CaseBalanceSkipReason =
    */
   | 'INTEREST_UNRESOLVED'
   /** K3-L D2-b1: bu para biriminde açık faizsiz (NO_INTEREST) anapara var; kanonik motor henüz simüle etmiyor. */
-  | 'NON_ACCRUING_NOT_SIMULATED';
+  | 'NON_ACCRUING_NOT_SIMULATED'
+  /**
+   * Anaparasız dosya (yalnız masraf / fer'i; örn. ilam vekâlet ücreti + yargılama gideri): principal kovası, taşınan
+   * anapara ve kapsamdaki ödeme YOK. Motor çalıştırılmadı; masraf / fer'i tutarları kayıtlı kaynak tutarıdır, faizleri
+   * hesaplanmadı (sıfır SAYILMAZ), nihai bakiye üretilmez. Para birimi yalnız kalemin kendi (destekli) para biriminden.
+   */
+  | 'NO_PRINCIPAL_BASIS';
 
 export interface CaseBalanceCurrencyResult {
   currency: string;
@@ -109,6 +116,27 @@ export interface CaseBalanceUnsimulatedPrincipal {
   kind: 'NON_ACCRUING' | 'UNRESOLVED';
   reasonCode: string;
   accruedInterest: null;
+}
+
+/**
+ * Anaparasız dosyada (skippedReason NO_PRINCIPAL_BASIS) para birimi bazında kaynak tutar dökümü. Tutarlar kayıtlı
+ * kalem tutarıdır (formül / tarife / çevirme YOK); faiz hesaplanmadı. `interestAccrualStatus` kaydın kendisidir;
+ * UNKNOWN / boş değer sıfır faiz ya da "faiz işlemez" kabulüne ÇEVRİLMEZ.
+ */
+export interface CaseBalancePrincipalFreeBasis {
+  currency: string;
+  /** Kaynak tutarı geçerli kalemlerin toplamı (kuruş hassasiyetinde). */
+  projectedAmount: number;
+  items: Array<{
+    claimItemId: string;
+    itemType: string;
+    category: 'COST' | 'ANCILLARY';
+    code: AncillaryType;
+    amount: number;
+    interestAccrualStatus: string | null;
+    /** Kalemin kayıtlı açıklaması (örn. "İLAM VEKALET ÜCRETİ"); gösterim etiketi içindir, hesaba girmez. */
+    description: string | null;
+  }>;
 }
 
 export interface CaseBalancePerCurrencyDiagnostic {
@@ -221,6 +249,55 @@ export interface CaseBalanceResult {
   paymentsInScope?: CaseBalancePaymentInScope[];
   /** K3-L KP-3: talep edilmiş işlemiş faiz kalemleri — kanonik hesaba dahil DEĞİL (yalnız dolu iken yazılır). */
   claimedInterestItems?: CaseBalanceClaimedInterestItem[];
+  /** Anaparasız dosya: para birimi bazında kaynak tutar dökümü (yalnız dolu iken yazılır; bkz. NO_PRINCIPAL_BASIS). */
+  principalFreeBasis?: CaseBalancePrincipalFreeBasis[];
+}
+
+/**
+ * Anaparasız dosya tespiti ve dökümü (SAF). Yalnız `sourceStatus=AVAILABLE` ve para birimi destekli kalemler dökülür;
+ * eksik / desteksiz para birimli kalem için satır ÜRETİLMEZ (varsayılan para birimi atanmaz; ücret projeksiyonu o kalemi
+ * CURRENCY_MISSING / CURRENCY_UNSUPPORTED ile kapatır). Kararlı sıra: para birimi, kalem kimliği.
+ */
+function buildPrincipalFreeBasis(
+  projectionItems: ReadonlyArray<{
+    sourceItemId: string;
+    itemType: string;
+    category: 'COST' | 'ANCILLARY';
+    code: AncillaryType;
+    amount: number;
+    currency: string;
+    sourceStatus: 'AVAILABLE' | 'INVALID_AMOUNT';
+  }>,
+  interestStatusById: ReadonlyMap<string, string | null>,
+  descriptionById: ReadonlyMap<string, string | null>,
+): CaseBalancePrincipalFreeBasis[] {
+  const byCurrency = new Map<string, CaseBalancePrincipalFreeBasis>();
+  for (const item of projectionItems) {
+    if (item.sourceStatus !== 'AVAILABLE') continue;
+    const classified = classifyCurrency(item.currency);
+    if (classified.blockedReason) continue;
+    const entry = byCurrency.get(classified.currency) ?? { currency: classified.currency, projectedAmount: 0, items: [] };
+    entry.items.push({
+      claimItemId: item.sourceItemId,
+      itemType: item.itemType,
+      category: item.category,
+      code: item.code,
+      amount: fromCents(toCents(item.amount)),
+      interestAccrualStatus: interestStatusById.get(item.sourceItemId) ?? null,
+      description: descriptionById.get(item.sourceItemId) ?? null,
+    });
+    byCurrency.set(classified.currency, entry);
+  }
+  return [...byCurrency.values()]
+    .map((entry) => {
+      const items = [...entry.items].sort((a, b) => a.claimItemId.localeCompare(b.claimItemId));
+      return {
+        currency: entry.currency,
+        projectedAmount: fromCents(items.reduce((sum, item) => sum + toCents(item.amount), 0n)),
+        items,
+      };
+    })
+    .sort((a, b) => a.currency.localeCompare(b.currency));
 }
 
 /** K3-L KP-3: assembler'ın dışladığı talep edilmiş işlemiş faiz kalemleri → sonuç kaydı (kararlı sıra). */
@@ -683,6 +760,41 @@ export class CaseBalanceService {
       });
     }
 
+    // Anaparasız dosya (yalnız masraf / fer'i; örn. ilam vekâlet ücreti + yargılama gideri): principal kovası, taşınan
+    // anapara ve kapsamdaki ödeme YOK, kaynak tutarı geçerli masraf / fer'i kalemi VAR. Eskiden currencyResults boş
+    // kalıyor; ücret projeksiyonu boş kümeyi "para birimi uyuşmazlığı" sayıyor, görünüm para birimini UNKNOWN ve durumu
+    // OK gösteriyordu. Artık kalemin KENDİ para birimiyle açık satır + neden yazılır; motor ve oran sorgusu çalışmaz;
+    // faiz hesaplanmadı (sıfır SAYILMAZ). Ödemeli / anaparalı / taşınan anaparalı dosyalar bu yoldan GEÇMEZ.
+    const interestStatusById = new Map<string, string | null>(
+      claimItems.map((ci) => [ci.id, (ci.interestAccrualStatus as string | null) ?? null] as [string, string | null]),
+    );
+    const descriptionById = new Map<string, string | null>(
+      claimItems.map((ci) => [ci.id, (ci.description as string | null) ?? null] as [string, string | null]),
+    );
+    const principalFreeBasis = grouped.groups.length === 0 && carryByCurrency.size === 0
+      ? buildPrincipalFreeBasis(asm.projectionItems, interestStatusById, descriptionById)
+      : [];
+    for (const basis of principalFreeBasis) {
+      currencyResults.push({ currency: basis.currency, result: null, skippedReason: 'NO_PRINCIPAL_BASIS', grossPrincipal: 0 });
+      perCurrency.push({
+        currency: basis.currency,
+        code: 'NO_PRINCIPAL_BASIS',
+        message:
+          "Dosyada anapara kalemi yok; faiz motoru çalıştırılmadı. Masraf / fer'i tutarları kayıtlı kaynak tutarıdır; " +
+          'faizleri hesaplanmadı ve nihai bakiye üretilmedi.',
+      });
+      for (const item of basis.items) {
+        if (item.interestAccrualStatus === 'NO_INTEREST') continue;
+        perCurrency.push({
+          currency: basis.currency,
+          code: item.interestAccrualStatus === 'ACCRUES' ? 'ANCILLARY_INTEREST_NOT_COMPUTED' : 'ANCILLARY_INTEREST_UNKNOWN',
+          message: item.interestAccrualStatus === 'ACCRUES'
+            ? `Kalem ${item.claimItemId} (${item.itemType}) faiz işler olarak kayıtlı; motor masraf / fer'i faizini hesaplamıyor, faiz hesaplanmadı.`
+            : `Kalem ${item.claimItemId} (${item.itemType}) faiz işleme durumu belirlenmemiş (${item.interestAccrualStatus ?? 'boş'}); faiz hesaplanmadı, sıfır sayılmadı.`,
+        });
+      }
+    }
+
     // K3-L TK-2: oran kapsaması eksik kovalar da faizi çözülemeyen anapara olarak taşınır (tek liste, kararlı sıra)
     const unsimulated = [
       ...asm.principalCarry,
@@ -730,6 +842,7 @@ export class CaseBalanceService {
       ...(asm.excluded.interestItems.length > 0
         ? { claimedInterestItems: toClaimedInterestItems(asm.excluded.interestItems) }
         : {}),
+      ...(principalFreeBasis.length > 0 ? { principalFreeBasis } : {}),
     };
   }
 

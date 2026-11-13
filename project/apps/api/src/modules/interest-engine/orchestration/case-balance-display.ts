@@ -98,6 +98,11 @@ export type BalanceDisplayDiagnosticCode =
   | 'MULTI_CURRENCY_DISPLAY_UNSAFE'
   | 'INTEREST_UNRESOLVED'
   | 'NON_ACCRUING_NOT_SIMULATED'
+  /**
+   * Anaparasız dosya (yalnız masraf / fer'i): kaynak kalem tutarları görünür, faiz hesaplanmadı (sıfır SAYILMAZ),
+   * nihai bakiye ve üst toplamlar üretilmez.
+   */
+  | 'NO_PRINCIPAL_BASIS'
   /** K3-L TK-3: hesap tarihinden sonra tarihli ödemeler bu bakiyeye girmedi (bilgi; kayıt değişmedi). */
   | 'PAYMENTS_AFTER_AS_OF_EXCLUDED'
   /** K3-L KP-3 / TK-7: talep edilmiş işlemiş faiz kaydı var ve mevcut hesaba DAHİL EDİLMEDİ (toplama eklenmedi). */
@@ -633,6 +638,36 @@ function buildDiagnostics(
     });
   }
 
+  // Anaparasız dosya: kaynak kalem tutarları ve faiz durumları kalem kalem; faiz hesaplanmadı, nihai bakiye yok
+  const principalFreeBasis = balance.principalFreeBasis ?? [];
+  if (principalFreeBasis.length > 0) {
+    diagnostics.push({
+      code: 'NO_PRINCIPAL_BASIS',
+      severity: 'BLOCKER',
+      message:
+        "Dosyada anapara kalemi yok; masraf / fer'i kalemleri kayitli kaynak tutarlariyla gosterilir. Faizleri hesaplanmadi " +
+        '(sifir SAYILMADI); nihai bakiye ve ust toplamlar uretilmedi.',
+      details: {
+        currencies: principalFreeBasis.map((basis) => basis.currency),
+        projectedAmountByCurrency: Object.fromEntries(
+          principalFreeBasis.map((basis) => [basis.currency, round2(basis.projectedAmount)]),
+        ),
+        observations: principalFreeBasis.flatMap((basis) =>
+          basis.items.map((item) => ({
+            claimItemId: item.claimItemId,
+            itemType: item.itemType,
+            category: item.category,
+            code: item.code,
+            currency: basis.currency,
+            amount: round2(item.amount),
+            interestAccrualStatus: item.interestAccrualStatus,
+            description: item.description,
+            accruedInterest: null,
+          }))),
+      },
+    });
+  }
+
   // K3-L KP-2: dosya düzeyi YASAL türünün kaynağı doğrulanamıyor — görünür uyarı (engel DEĞİL; tür değiştirilmedi)
   const unconfirmedCaseInterest = (balance.diagnostics?.assembler ?? [])
     .filter((diagnostic) => diagnostic.code === 'CASE_INTEREST_TYPE_UNCONFIRMED');
@@ -823,6 +858,13 @@ function buildUnsafeSources(diagnostics: BalanceDisplayDiagnostic[]): BalanceDis
       reason: 'Motora girmeyen anapara nedeniyle bu para biriminde bakiye, snapshot ve primary display authority uretilmez.',
     });
   }
+  if (diagnostics.some((d) => d.code === 'NO_PRINCIPAL_BASIS')) {
+    sources.push({
+      code: 'NO_PRINCIPAL_BASIS',
+      source: 'CaseBalanceResult.principalFreeBasis',
+      reason: "Anaparasiz dosyada kaynak kalem tutarlari aciklayici dokumdur; faiz hesaplanmadigi icin bakiye, snapshot ve primary display authority uretilmez.",
+    });
+  }
   for (const code of [
     'REVERSAL_INTEGRITY_INVALID',
     'ZERO_OR_NEGATIVE_PAYMENT',
@@ -983,8 +1025,10 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
   const status: 'OK' | 'UNAVAILABLE' = readiness.blockers.length > 0 ? 'UNAVAILABLE' : 'OK';
 
   const currencies: CaseBalanceDisplayCurrency[] = (balance.currencyResults ?? []).map((cr) => {
+    // Anaparasız satırda (NO_PRINCIPAL_BASIS) da faiz ve kalan BİLİNMİYOR → null (0 değil)
     const principalNotSimulated =
-      cr.skippedReason === 'INTEREST_UNRESOLVED' || cr.skippedReason === 'NON_ACCRUING_NOT_SIMULATED';
+      cr.skippedReason === 'INTEREST_UNRESOLVED' || cr.skippedReason === 'NON_ACCRUING_NOT_SIMULATED'
+      || cr.skippedReason === 'NO_PRINCIPAL_BASIS';
     return {
     currency: cr.currency,
     grossPrincipal: round2(cr.grossPrincipal),
@@ -1074,11 +1118,13 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
     // K3-L KP-7: "Toplam tahsilat" — dosyaya fiilen giren, netleşmiş para (fazla ödeme kalanı yüz değerin içinde)
     grossReceivedAmount: receiptsForTotals?.receivedAmount ?? null,
   };
+  const principalFree = (balance.currencyResults ?? []).some((cr) => cr.skippedReason === 'NO_PRINCIPAL_BASIS');
   const unavailableReason = status === 'UNAVAILABLE'
     ? fatal[0]?.code
       ?? (noBucketCurrencies.length > 0 ? 'NO_BUCKETS' : undefined)
       ?? [...currencyBlockerCodes].sort()[0]
       ?? (hasReversalCurrencyMismatch ? 'REVERSAL_CURRENCY_MISMATCH' : undefined)
+      ?? (principalFree ? 'NO_PRINCIPAL_BASIS' : undefined)
       ?? readiness.blockers[0]?.sourceCodes[0]
       ?? readiness.blockers[0]?.code
       ?? 'UNKNOWN'
@@ -1109,11 +1155,13 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
       principalAuthorityAvailable,
       principalDiagnosticCodes: finalDebtStatesCurrencyMismatch
         ? ['FINAL_DEBT_STATES_CURRENCY_MISMATCH']
-        : undefined,
+        // Anaparasız dosyada anapara "yok"tur (eksik durum değil); sahte 0 basılmaz, neden açık yazılır
+        : principalFree ? ['NO_PRINCIPAL_BASIS'] : undefined,
       heldOverpayment: singleCurrency ? heldOverpayment : null,
       interestUnknownCodes: ([
         ...((balance.unsimulatedPrincipals ?? []).some((p) => p.kind === 'UNRESOLVED') ? ['INTEREST_UNRESOLVED'] : []),
         ...((balance.unsimulatedPrincipals ?? []).some((p) => p.kind === 'NON_ACCRUING') ? ['NON_ACCRUING_NOT_SIMULATED'] : []),
+        ...(principalFree ? ['NO_PRINCIPAL_BASIS'] : []),
       ] as BalanceDisplayDiagnosticCode[]),
     }),
     totals,
