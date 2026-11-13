@@ -295,6 +295,8 @@ src/modules/icrabot/v28-engine/__tests__/outbox-no-handler-poison-disposition.db
 #   GERCEK Postgres + GERCEK EngineRunnerService ile kanitlayan runtime dogrulama.
 src/modules/icrabot/v28-engine/__tests__/outbox-webhook-rejection.db-gated.integration.spec.ts
 src/modules/interest-engine/__tests__/scenario-materializer.db-gated.integration.spec.ts
+# D1 anaparasiz aciklayici faiz (owner GO-COMPLETE 13.11.2026): faizi acikca belirlenmis ilam kalemi kalem bazinda takip oncesi / sonrasi; kalem + faiz aciklayici, nihai borc null, otorite degismez; bilinmeyen / orani olmayan kalem hesaplanmaz - gercek HTTP + rate_schedule + disposable PostgreSQL.
+src/modules/interest-engine/__tests__/principal-free-interest.http.db-gated.integration.spec.ts
 src/modules/interest-engine/legal-application-plan/__tests__/legal-application-writer.db-gated.integration.spec.ts
 src/modules/legal-deadline/__tests__/legal-deadline.db-gated.integration.spec.ts
 src/modules/legal-deadline/__tests__/legal-deadline-snapshot-invariant.db-gated.integration.spec.ts

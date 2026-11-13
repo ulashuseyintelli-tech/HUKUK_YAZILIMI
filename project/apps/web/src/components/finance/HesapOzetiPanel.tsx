@@ -209,10 +209,15 @@ export function HesapOzetiPanel({
   // yer tutucu 0'ı gösterilmez; dökümün faiz durumu aynı metinle yazılır (döküm ile eski bölüm aynı dosyada çelişmez).
   // Değer yoksa (null / sonlu değil) de sıfıra çevrilmez. Döküm yokken hesaplanmış gerçek sıfır 0,00 olarak kalır.
   const takipSonrasiFaizDegeri: unknown = displayHesap.takipSonrasiFaiz;
-  const takipSonrasiFaizBelirsiz =
-    Boolean(anaparasizDokum) || typeof takipSonrasiFaizDegeri !== 'number' || !Number.isFinite(takipSonrasiFaizDegeri);
+  // D1: dökümde faiz hesaplandıysa eski bölümün takip öncesi / sonrası satırları dökümün açıklayıcı toplamını yazar
+  // (tek para biriminde); hesaplanmadıysa dökümle AYNI metin. Eski özetin yer tutucu değeri kullanılmaz.
+  const dokumFaizTutari = (alan: DokumFaizAlani): number | null =>
+    anaparasizDokum ? anaparasizFaizTutari(anaparasizDokum, alan) : null;
+  const takipSonrasiFaizBelirsiz = anaparasizDokum
+    ? dokumFaizTutari('sonrasi') == null
+    : typeof takipSonrasiFaizDegeri !== 'number' || !Number.isFinite(takipSonrasiFaizDegeri);
   const takipSonrasiFaizMetni = anaparasizDokum
-    ? anaparasizFaizMetni(anaparasizDokum.faizDurumu)
+    ? anaparasizFaizMetni(anaparasizDokum, 'sonrasi')
     : takipSonrasiFaizBelirsiz
       ? 'belirlenemedi'
       : tutar('takipSonrasiFaiz', displayHesap.takipSonrasiFaiz);
@@ -323,8 +328,15 @@ export function HesapOzetiPanel({
         <CheckPenaltyInfo summary={hesap?.tazminatDurumu} />
         {displayHesap.komisyon > 0 && <Row label="Komisyon" value={displayHesap.komisyon} text={tutar('komisyon', displayHesap.komisyon)} />}
         
-        {/* Takip Öncesi Faiz */}
-        {displayHesap.takipOncesiFaiz > 0 && <Row label="Takip Öncesi Faiz" value={displayHesap.takipOncesiFaiz} text={tutar('takipOncesiFaiz', displayHesap.takipOncesiFaiz)} />}
+        {/* Takip Öncesi Faiz — D1: anaparasız dosyada dökümün açıklayıcı değeri (yalnız hesaplandıysa) */}
+        {anaparasizDokum
+          ? dokumFaizTutari('oncesi') != null && (
+              <div className="flex justify-between py-0.5">
+                <span className="text-gray-600">Takip Öncesi Faiz</span>
+                <span data-testid="hesap-deger-takipOncesiFaiz" className="font-medium">{anaparasizFaizMetni(anaparasizDokum, 'oncesi')}</span>
+              </div>
+            )
+          : displayHesap.takipOncesiFaiz > 0 && <Row label="Takip Öncesi Faiz" value={displayHesap.takipOncesiFaiz} text={tutar('takipOncesiFaiz', displayHesap.takipOncesiFaiz)} />}
 
         {/* K3-L KP-3 / TK-7: talep edilmiş işlemiş faiz — varlığı ve tutarı açık; hesaba DAHİL EDİLMEDİ (sunucu değeri) */}
         <ClaimedInterestInfo info={hesap?.talepEdilenIslemisFaiz} />
@@ -539,11 +551,29 @@ const FAIZ_DURUMU_METNI: Record<AnaparasizKalemFaizDurumu, string> = {
   BELIRLENEMEDI: 'faiz durumu belirlenmedi',
   HESAPLANMADI: 'faiz hesaplanmadı',
   ISLEMEZ_KAYITLI: 'faiz işlemez (kayıtlı)',
+  HESAPLANDI: 'faiz hesaplandı (açıklayıcı)',
 };
 
-/** Dökümün faiz satırı ile eski bölümün "Takip Sonrası Faiz" satırı AYNI metni kullanır (iki bölüm çelişmez). */
-function anaparasizFaizMetni(faizDurumu: AnaparasizKalemDokumu['faizDurumu']): string {
-  return faizDurumu === 'BELIRLENEMEDI' ? 'belirlenemedi' : 'hesaplanmadı';
+type DokumFaizAlani = 'toplam' | 'oncesi' | 'sonrasi';
+
+/** D1: dökümün faiz toplamı — YALNIZ tek para biriminde ve sunucu doldurduysa; aksi halde null (istemci hesabı yok). */
+function anaparasizFaizTutari(dokum: AnaparasizKalemDokumu, alan: DokumFaizAlani): number | null {
+  if (dokum.faizDurumu !== 'HESAPLANDI' || dokum.paraBirimleri.length !== 1) return null;
+  const pb = dokum.paraBirimleri[0];
+  const deger = alan === 'toplam' ? pb.faizToplami : alan === 'oncesi' ? pb.takipOncesiFaizToplami : pb.takipSonrasiFaizToplami;
+  return typeof deger === 'number' && Number.isFinite(deger) ? deger : null;
+}
+
+/**
+ * Dökümün faiz satırı ile eski bölümün takip öncesi / sonrası faiz satırları AYNI kaynaktan yazılır (iki bölüm çelişmez).
+ * Belirsizse "belirlenemedi", hesaplanamadıysa "hesaplanmadı"; hesaplandıysa açıklayıcı tutar (gerçek sıfır 0,00 ₺).
+ */
+function anaparasizFaizMetni(dokum: AnaparasizKalemDokumu, alan: DokumFaizAlani = 'toplam'): string {
+  if (dokum.faizDurumu === 'BELIRLENEMEDI') return 'belirlenemedi';
+  if (dokum.faizDurumu !== 'HESAPLANDI') return 'hesaplanmadı';
+  if (dokum.paraBirimleri.length !== 1) return 'para birimi bazında (dökümde)';
+  const deger = anaparasizFaizTutari(dokum, alan);
+  return deger == null ? 'hesaplanmadı' : formatParaBirimli(deger, dokum.paraBirimleri[0].paraBirimi);
 }
 
 /**
@@ -567,18 +597,37 @@ export function AnaparasizKalemDokumuPanel({ dokum }: { dokum: AnaparasizKalemDo
                 {kalem.tutar == null ? 'hesaplanamadı' : formatParaBirimli(kalem.tutar, pb.paraBirimi)}
               </span>
             </div>
-          ))}
+          )).flatMap((satir, i) => {
+            const kalem = pb.kalemler[i];
+            if (kalem.faizDurumu !== 'HESAPLANDI' || !kalem.faiz) return [satir];
+            const f = kalem.faiz;
+            return [
+              satir,
+              <div key={`${kalem.claimItemId}-faiz`} data-testid={`hesap-anaparasiz-kalem-faiz-${kalem.claimItemId}`} className="pb-0.5 pl-3 text-[10px] text-amber-800">
+                {f.takipOncesi != null && f.takipSonrasi != null
+                  ? `Takip öncesi faiz ${formatParaBirimli(f.takipOncesi, pb.paraBirimi)} · Takip sonrası faiz ${formatParaBirimli(f.takipSonrasi, pb.paraBirimi)}`
+                  : `Faiz ${formatParaBirimli(f.toplam, pb.paraBirimi)}`}
+                {f.baslangic ? ` (başlangıç ${formatDate(f.baslangic)})` : ''}
+              </div>,
+            ];
+          })}
           <div className="flex justify-between border-t border-amber-200 py-0.5 font-semibold">
             <span>Kalem tutarları toplamı{dokum.paraBirimleri.length > 1 ? ` (${pb.paraBirimi})` : ''}</span>
             <span data-testid={`hesap-anaparasiz-kalem-toplami-${pb.paraBirimi}`}>
               {pb.kalemTutarlariToplami == null ? 'hesaplanamadı' : formatParaBirimli(pb.kalemTutarlariToplami, pb.paraBirimi)}
             </span>
           </div>
+          {typeof pb.kalemVeFaizToplami === 'number' && (
+            <div className="flex justify-between py-0.5">
+              <span>Kalem tutarları + faiz (açıklayıcı; nihai borç değildir){dokum.paraBirimleri.length > 1 ? ` (${pb.paraBirimi})` : ''}</span>
+              <span data-testid={`hesap-anaparasiz-kalem-ve-faiz-${pb.paraBirimi}`}>{formatParaBirimli(pb.kalemVeFaizToplami, pb.paraBirimi)}</span>
+            </div>
+          )}
         </div>
       ))}
       <div className="flex justify-between py-0.5">
         <span>Faiz</span>
-        <span data-testid="hesap-anaparasiz-faiz">{anaparasizFaizMetni(dokum.faizDurumu)}</span>
+        <span data-testid="hesap-anaparasiz-faiz">{anaparasizFaizMetni(dokum)}</span>
       </div>
       <div className="flex justify-between border-t border-amber-300 py-0.5 font-bold">
         <span>Nihai borç toplamı</span>

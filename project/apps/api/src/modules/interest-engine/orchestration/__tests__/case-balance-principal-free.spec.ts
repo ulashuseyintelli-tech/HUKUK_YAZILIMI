@@ -163,8 +163,10 @@ describe('Anaparasız dosya — servis + görünüm + eski özet uyumluluğu', (
       currency: 'TRY',
       projectedAmount: 5555.66,
       items: [
-        { claimItemId: 'ci-vu', itemType: 'ATTORNEY_FEE', category: 'ANCILLARY', code: AncillaryType.VEKALET_UCRETI, amount: 4321.1, interestAccrualStatus: 'UNKNOWN', description: 'İLAM VEKALET ÜCRETİ', attorneyFeeBasis: null },
-        { claimItemId: 'ci-yg', itemType: 'YARGILAMA_GIDERI', category: 'COST', code: AncillaryType.YARGILAMA_GIDERI, amount: 1234.56, interestAccrualStatus: 'UNKNOWN', description: 'YARGILAMA GİDERİ', attorneyFeeBasis: null },
+        { claimItemId: 'ci-vu', itemType: 'ATTORNEY_FEE', category: 'ANCILLARY', code: AncillaryType.VEKALET_UCRETI, amount: 4321.1, interestAccrualStatus: 'UNKNOWN', description: 'İLAM VEKALET ÜCRETİ', attorneyFeeBasis: null,
+          interest: { status: 'UNKNOWN', reasonCode: 'ACCRUAL_STATUS_UNKNOWN', preEnforcementInterest: null, postEnforcementInterest: null, totalInterest: null, startDate: null, interestTypeCode: null, startDateProvenance: null } },
+        { claimItemId: 'ci-yg', itemType: 'YARGILAMA_GIDERI', category: 'COST', code: AncillaryType.YARGILAMA_GIDERI, amount: 1234.56, interestAccrualStatus: 'UNKNOWN', description: 'YARGILAMA GİDERİ', attorneyFeeBasis: null,
+          interest: { status: 'UNKNOWN', reasonCode: 'ACCRUAL_STATUS_UNKNOWN', preEnforcementInterest: null, postEnforcementInterest: null, totalInterest: null, startDate: null, interestTypeCode: null, startDateProvenance: null } },
       ],
     }]);
     // İki kalem AYRI kodlarla (yargılama gideri tebligat masrafı değil; vekâlet ücreti fer'i)
@@ -225,10 +227,15 @@ describe('Anaparasız dosya — servis + görünüm + eski özet uyumluluğu', (
         paraBirimi: 'TRY',
         kalemler: [
           // owner K1: kaynak kaydı NULL → açıklama "İLAM …" olsa da tür ÇIKARILMAZ; "türü belirtilmemiş" + BILINMIYOR
-          { claimItemId: 'ci-vu', kod: 'VEKALET_UCRETI', kalemTuru: 'ATTORNEY_FEE', etiket: 'Vekâlet Ücreti (alacak kalemi; türü belirtilmemiş) — İLAM VEKALET ÜCRETİ', tutar: 4321.1, faizDurumu: 'BELIRLENEMEDI', vekaletUcretiKaynagi: 'BILINMIYOR' },
-          { claimItemId: 'ci-yg', kod: 'YARGILAMA_GIDERI', kalemTuru: 'YARGILAMA_GIDERI', etiket: 'Yargılama Gideri', tutar: 1234.56, faizDurumu: 'BELIRLENEMEDI' },
+          { claimItemId: 'ci-vu', kod: 'VEKALET_UCRETI', kalemTuru: 'ATTORNEY_FEE', etiket: 'Vekâlet Ücreti (alacak kalemi; türü belirtilmemiş) — İLAM VEKALET ÜCRETİ', tutar: 4321.1, faizDurumu: 'BELIRLENEMEDI', vekaletUcretiKaynagi: 'BILINMIYOR', faizNedeni: 'ACCRUAL_STATUS_UNKNOWN' },
+          { claimItemId: 'ci-yg', kod: 'YARGILAMA_GIDERI', kalemTuru: 'YARGILAMA_GIDERI', etiket: 'Yargılama Gideri', tutar: 1234.56, faizDurumu: 'BELIRLENEMEDI', faizNedeni: 'ACCRUAL_STATUS_UNKNOWN' },
         ],
         kalemTutarlariToplami: 5555.66,
+        // D1: faiz durumu bilinmeyen kalem varken faiz ve kalem + faiz toplamı null (sıfır SAYILMAZ)
+        faizToplami: null,
+        takipOncesiFaizToplami: null,
+        takipSonrasiFaizToplami: null,
+        kalemVeFaizToplami: null,
       }],
       faizDurumu: 'BELIRLENEMEDI',
       nihaiBorcToplami: null,
@@ -346,5 +353,169 @@ describe('Anaparasız dosya — servis + görünüm + eski özet uyumluluğu', (
     const { service } = setup({ claimItems: [principal(), vekalet()], rates: legalRate() });
     expect(buildAnaparasizKalemDokumu(display(await service.computeCaseBalance('t1', 'case1', AS_OF)))).toBeUndefined();
     expect(buildAnaparasizKalemDokumu(null)).toBeUndefined();
+  });
+});
+
+/**
+ * D1 (owner GO-COMPLETE 13.11.2026 "İlam kalemleri için yapısal ayrım ve faiz hesabını uygula"):
+ * faiz durumu (ACCRUES), kalemin kendi türü, başlangıcı ve başlangıç dayanağı AÇIKÇA kayıtlı kalemde faiz MEVCUT motorla,
+ * kalem başına ve ödemesiz hesaplanır; takip öncesi / sonrası kalem bazında. Sahte anapara YOK, otorite (K2) ve nihai borç
+ * (K3) DEĞİŞMEZ; bilinmeyen sıfır sayılmaz. Sentetik oran %24 (2025-01-01'den), takip tarihi 2025-02-01, hesap 2025-06-01.
+ */
+describe('D1 — anaparasız dosyada faizi açıkça belirlenmiş kalemler (açıklayıcı faiz)', () => {
+  const belirli = {
+    interestAccrualStatus: 'ACCRUES',
+    interestType: 'YASAL',
+    interestTypeCode: 'LEGAL_3095',
+    interestStartDate: new Date('2025-01-10'),
+    interestStartDateProvenance: 'JUDGMENT_DATE',
+    interestEndDate: null,
+  };
+  /** Bağımsız sağlama: tutar × %24 × gün / 365; motorun gün sayımı uzlaşımına bir günlük pay. */
+  const yaklasik = (tutar: number, gun: number) => ({ deger: (tutar * 0.24 * gun) / 365, birGun: (tutar * 0.24) / 365 });
+  const yakinMi = (gercek: number | null | undefined, tutar: number, gun: number) => {
+    const { deger, birGun } = yaklasik(tutar, gun);
+    return typeof gercek === 'number' && Math.abs(gercek - deger) <= birGun + 0.01;
+  };
+
+  it('T13: iki belirlenmiş kalem → kalem başına tek motor çağrısı (ödemesiz, tek kova); takip öncesi / sonrası; anapara / otorite / nihai DEĞİŞMEZ', async () => {
+    const { service, computeBalanceSpy, rateProvider } = setup({ claimItems: [vekalet(belirli), yargilama(belirli)], rates: legalRate() });
+    const res = await service.computeCaseBalance('t1', 'case1', AS_OF);
+
+    // Motor: kalem başına bir çağrı; tek kova = kalem kimliği + kalem tutarı; ödeme YOK; takip tarihi ile ayrım
+    expect(computeBalanceSpy).toHaveBeenCalledTimes(2);
+    for (const call of computeBalanceSpy.mock.calls) {
+      const req = call[0];
+      expect(req.payments).toEqual([]);
+      expect(req.claimBuckets).toHaveLength(1);
+      expect(req.enforcementDate).toBe('2025-02-01');
+    }
+    expect(computeBalanceSpy.mock.calls.map((c) => [c[0].claimBuckets[0].id, c[0].claimBuckets[0].amount, c[0].claimBuckets[0].startDate]).sort())
+      .toEqual([['ci-vu', 4321.1, '2025-01-10'], ['ci-yg', 1234.56, '2025-01-10']]);
+    expect(rateProvider.getRatesForPeriod).toHaveBeenCalled();
+
+    // Kalem sonucu = motorun kendi (yuvarlanmış) değerleri
+    const items = res.principalFreeBasis![0].items;
+    for (const item of items) {
+      const idx = computeBalanceSpy.mock.calls.findIndex((c) => c[0].claimBuckets[0].id === item.claimItemId);
+      const engineResult = computeBalanceSpy.mock.results[idx].value;
+      expect(item.interest).toMatchObject({
+        status: 'COMPUTED',
+        reasonCode: null,
+        totalInterest: engineResult.totalInterest,
+        preEnforcementInterest: engineResult.preEnforcementInterest,
+        postEnforcementInterest: engineResult.postEnforcementInterest,
+        startDate: '2025-01-10',
+        interestTypeCode: 'LEGAL_3095',
+        startDateProvenance: 'JUDGMENT_DATE',
+      });
+    }
+    const vu = items.find((i) => i.claimItemId === 'ci-vu')!.interest!;
+    const yg = items.find((i) => i.claimItemId === 'ci-yg')!.interest!;
+    // Bağımsız sağlama: 22 gün takip öncesi, 120 gün takip sonrası
+    expect(yakinMi(vu.preEnforcementInterest, 4321.1, 22)).toBe(true);
+    expect(yakinMi(vu.postEnforcementInterest, 4321.1, 120)).toBe(true);
+    expect(yakinMi(yg.preEnforcementInterest, 1234.56, 22)).toBe(true);
+    expect(yakinMi(yg.postEnforcementInterest, 1234.56, 120)).toBe(true);
+    expect(vu.totalInterest!).toBeGreaterThan(0);
+
+    // Sahte anapara YOK; nihai bakiye YOK; otorite yükselmez
+    expect(res.currencyResults).toEqual([{ currency: 'TRY', result: null, skippedReason: 'NO_PRINCIPAL_BASIS', grossPrincipal: 0 }]);
+    expect(res.diagnostics.perCurrency.map((d) => d.code)).toEqual(['NO_PRINCIPAL_BASIS']);
+    const view = display(res);
+    expect(view.authority).toBe('UNSAFE_FOR_PRIMARY_DISPLAY');
+    expect(view.status).toBe('UNAVAILABLE');
+    expect(Object.values(view.totals).every((v) => v === null)).toBe(true);
+    expect(view.buckets.find((b) => b.code === 'PRINCIPAL')).toMatchObject({ amount: null, displayable: false });
+    expect(view.buckets.filter((b) => b.code === 'ACCRUED_INTEREST').every((b) => b.amount === null)).toBe(true);
+
+    // Döküm: kalem bazında faiz; açıklayıcı toplamlar; nihai borç null, durum ve otorite aynı
+    const dokum = buildAnaparasizKalemDokumu(view)!;
+    expect(dokum).toMatchObject({ durum: 'NIHAI_TOPLAM_HESAPLANAMADI', otorite: 'ACIKLAYICI_DOKUM', faizDurumu: 'HESAPLANDI', nihaiBorcToplami: null });
+    const pb = dokum.paraBirimleri[0];
+    const kvu = pb.kalemler.find((k) => k.claimItemId === 'ci-vu')!;
+    expect(kvu).toMatchObject({ faizDurumu: 'HESAPLANDI', faiz: { takipOncesi: vu.preEnforcementInterest, takipSonrasi: vu.postEnforcementInterest, toplam: vu.totalInterest, baslangic: '2025-01-10', baslangicDayanagi: 'JUDGMENT_DATE', faizTuru: 'LEGAL_3095' } });
+    expect(kvu).not.toHaveProperty('faizNedeni');
+    const cents = (n: number) => Math.round(n * 100);
+    expect(cents(pb.faizToplami!)).toBe(cents(vu.totalInterest!) + cents(yg.totalInterest!));
+    expect(cents(pb.takipOncesiFaizToplami!)).toBe(cents(vu.preEnforcementInterest!) + cents(yg.preEnforcementInterest!));
+    expect(cents(pb.takipSonrasiFaizToplami!)).toBe(cents(vu.postEnforcementInterest!) + cents(yg.postEnforcementInterest!));
+    expect(cents(pb.kalemVeFaizToplami!)).toBe(cents(5555.66) + cents(pb.faizToplami!));
+    expect(dokum.mesaj).toContain('nihai borç toplamı hesaplanamadı');
+    expect(dokum.mesaj).toContain('harç, masraf, takip vekâlet ücreti ve ödemeler dahil değildir');
+  });
+
+  it('T14: bir kalem belirlenmiş, diğeri UNKNOWN → yalnız belirlenmiş kalem hesaplanır; faiz ve kalem + faiz toplamı null (sıfır sayılmaz)', async () => {
+    const { service, computeBalanceSpy } = setup({ claimItems: [vekalet(belirli), yargilama()], rates: legalRate() });
+    const view = display(await service.computeCaseBalance('t1', 'case1', AS_OF));
+    expect(computeBalanceSpy).toHaveBeenCalledTimes(1);
+    const pb = buildAnaparasizKalemDokumu(view)!.paraBirimleri[0];
+    expect(pb.kalemler.find((k) => k.claimItemId === 'ci-vu')!.faizDurumu).toBe('HESAPLANDI');
+    expect(pb.kalemler.find((k) => k.claimItemId === 'ci-yg')).toMatchObject({ faizDurumu: 'BELIRLENEMEDI', faizNedeni: 'ACCRUAL_STATUS_UNKNOWN' });
+    expect(pb.kalemler.find((k) => k.claimItemId === 'ci-yg')).not.toHaveProperty('faiz');
+    expect(pb).toMatchObject({ faizToplami: null, takipOncesiFaizToplami: null, takipSonrasiFaizToplami: null, kalemVeFaizToplami: null });
+    expect(buildAnaparasizKalemDokumu(view)!.faizDurumu).toBe('BELIRLENEMEDI');
+  });
+
+  it.each([
+    ['dayanak yok', { interestStartDateProvenance: null }, 'START_DATE_PROVENANCE_MISSING'],
+    ['kendi türü yok (dosya / eski tür yedeğine düşülmez)', { interestTypeCode: null }, 'INTEREST_TYPE_CODE_MISSING'],
+    ['başlangıç yok', { interestStartDate: null }, 'START_DATE_MISSING'],
+    ['bitiş tarihi var (motor taşımaz; sessizce yok sayılmaz)', { interestEndDate: new Date('2025-04-01') }, 'INTEREST_END_DATE_UNSUPPORTED'],
+    ['başlangıç hesap tarihinden sonra', { interestStartDate: new Date('2025-07-01') }, 'START_DATE_AFTER_AS_OF'],
+  ])('T15: ACCRUES ama %s → hesaplanmadı (%s); motor çağrılmaz; ANCILLARY_INTEREST_NOT_COMPUTED', async (_ad, eksik, neden) => {
+    const { service, computeBalanceSpy } = setup({ claimItems: [vekalet({ ...belirli, ...eksik })], rates: legalRate() });
+    const res = await service.computeCaseBalance('t1', 'case1', AS_OF);
+    expect(computeBalanceSpy).not.toHaveBeenCalled();
+    expect(res.principalFreeBasis![0].items[0].interest).toMatchObject({ status: 'NOT_COMPUTED', reasonCode: neden, totalInterest: null });
+    expect(res.diagnostics.perCurrency.map((d) => d.code).sort()).toEqual(['ANCILLARY_INTEREST_NOT_COMPUTED', 'NO_PRINCIPAL_BASIS']);
+    const pb = buildAnaparasizKalemDokumu(display(res))!.paraBirimleri[0];
+    expect(pb.kalemler[0]).toMatchObject({ faizDurumu: 'HESAPLANMADI', faizNedeni: neden });
+    expect(pb.faizToplami).toBeNull();
+  });
+
+  it('T16: oran kapsamı eksik (oran 2025-03-01\'de başlıyor) → RATE_COVERAGE_MISSING; motor çalışmaz; komşu oran / sıfır yok', async () => {
+    const lateRate = legalRate().map((r) => ({ ...r, validFrom: '2025-03-01' }));
+    const { service, computeBalanceSpy } = setup({ claimItems: [vekalet(belirli)], rates: lateRate });
+    const res = await service.computeCaseBalance('t1', 'case1', AS_OF);
+    expect(computeBalanceSpy).not.toHaveBeenCalled();
+    expect(res.principalFreeBasis![0].items[0].interest).toMatchObject({ status: 'NOT_COMPUTED', reasonCode: 'RATE_COVERAGE_MISSING', totalInterest: null });
+  });
+
+  it('T17: açık NO_INTEREST + belirlenmiş kalem → işlemez kalemin katkısı 0; toplamlar dolu; dayanak ENFORCEMENT_PROCEEDING_DATE ise başlangıç takip tarihi', async () => {
+    const takipTarihli = { ...belirli, interestStartDate: null, interestStartDateProvenance: 'ENFORCEMENT_PROCEEDING_DATE' };
+    const { service } = setup({
+      claimItems: [
+        vekalet(takipTarihli),
+        yargilama({ interestAccrualStatus: 'NO_INTEREST', interestType: null, interestTypeCode: null, interestStartDate: null, noInterestReason: 'Sentetik', noInterestConfirmedById: 'u1', noInterestConfirmedAt: new Date('2025-01-02') }),
+      ],
+      rates: legalRate(),
+    });
+    const res = await service.computeCaseBalance('t1', 'case1', AS_OF);
+    const vu = res.principalFreeBasis![0].items.find((i) => i.claimItemId === 'ci-vu')!.interest!;
+    expect(vu).toMatchObject({ status: 'COMPUTED', startDate: '2025-02-01', preEnforcementInterest: 0 });
+    expect(yakinMi(vu.postEnforcementInterest, 4321.1, 120)).toBe(true);
+    const pb = buildAnaparasizKalemDokumu(display(res))!.paraBirimleri[0];
+    expect(pb.kalemler.find((k) => k.claimItemId === 'ci-yg')).toMatchObject({ faizDurumu: 'ISLEMEZ_KAYITLI' });
+    expect(pb.faizToplami).toBe(vu.totalInterest);
+    expect(Math.round(pb.kalemVeFaizToplami! * 100)).toBe(Math.round(5555.66 * 100) + Math.round(vu.totalInterest! * 100));
+  });
+
+  it('T18: ödemeli anaparasız dosya → mevcut güvenli yol AYNEN (NO_BUCKETS); belirlenmiş kalem için motor ÇALIŞMAZ', async () => {
+    const { service, computeBalanceSpy } = setup({ claimItems: [vekalet(belirli), yargilama(belirli)], collections: [collection()], rates: legalRate() });
+    const res = await service.computeCaseBalance('t1', 'case1', AS_OF);
+    expect(computeBalanceSpy).not.toHaveBeenCalled();
+    expect(res.currencyResults).toEqual([{ currency: 'TRY', result: null, skippedReason: 'NO_BUCKETS', grossPrincipal: 0 }]);
+    expect(res.principalFreeBasis).toBeUndefined();
+    expect(buildAnaparasizKalemDokumu(display(res))).toBeUndefined();
+  });
+
+  it('T19: anaparalı dosyada belirlenmiş fer\'i → mevcut davranış (desteklenmiyor tanısı); motor yalnız anapara kovasıyla', async () => {
+    const { service, computeBalanceSpy } = setup({ claimItems: [principal(), vekalet(belirli)], rates: legalRate() });
+    const res = await service.computeCaseBalance('t1', 'case1', AS_OF);
+    expect(computeBalanceSpy).toHaveBeenCalledTimes(1);
+    expect(computeBalanceSpy.mock.calls[0][0].claimBuckets.map((b) => b.id)).toEqual(['ci-p']);
+    expect(res.diagnostics.assembler.map((d) => d.code)).toContain('ACCRUAL_ENGINE_UNSUPPORTED');
+    expect(res.principalFreeBasis).toBeUndefined();
   });
 });
