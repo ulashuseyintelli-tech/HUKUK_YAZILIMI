@@ -110,6 +110,12 @@ export interface CaseCalculationResult {
   /** K3-L KP-3 / TK-7: talep edilmiş işlemiş faiz — hesaba DAHİL DEĞİL (kayıt yoksa null) */
   talepEdilenIslemisFaiz?: TalepEdilenIslemisFaiz | null;
   /**
+   * Anaparasız dosya (yalnız masraf / fer'i; örn. ilam vekâlet ücreti + yargılama gideri) — sunucu kararı, AÇIKLAYICI
+   * döküm (kanonik gölge; nihai borç DEĞİL). Varken eski toplamlar (takip tutarı, toplam / son / kalan borç, tahsil
+   * oranları) nihai borç gibi gösterilmez. Yoksa gösterim değişmez.
+   */
+  anaparasizKalemDokumu?: AnaparasizKalemDokumu;
+  /**
    * K3-L KP-7: yalnız kanonik pilot (guarded primary) doldurur — Toplam tahsilat / Borca uygulanan / Dağıtım bekleyen,
    * hesap tarihi kapsamlı. Legacy yanıtta YOK (legacy panel "Tahsilat Düşümü" satırını gösterir).
    */
@@ -163,6 +169,33 @@ export interface TalepEdilenIslemisFaiz {
   gerekce: 'TALEP_EDILEN_ISLEMIS_FAIZ_HESAPLAMAYA_DAHIL_DEGIL';
   toplamParaBirimiBazinda: Record<string, number>;
   kalemler: Array<{ claimItemId: string; kalemTuru: string; paraBirimi: string; tutar: number }>;
+}
+
+/**
+ * Anaparasız dosya açıklayıcı dökümü (sunucu: case-calculation-summary.principal-free.ts; istemci hesabı ve çevirme YOK).
+ * Tutar kayıtlı kalem tutarıdır; toplam sunucunun para birimi bazlı projeksiyon toplamıdır; nihai borç her zaman null.
+ */
+export type AnaparasizKalemFaizDurumu = 'BELIRLENEMEDI' | 'HESAPLANMADI' | 'ISLEMEZ_KAYITLI';
+export interface AnaparasizKalemDokumu {
+  durum: 'NIHAI_TOPLAM_HESAPLANAMADI';
+  otorite: 'ACIKLAYICI_DOKUM';
+  kanonikOtorite: string;
+  gerekce: 'NO_PRINCIPAL_BASIS';
+  paraBirimleri: Array<{
+    paraBirimi: string;
+    kalemler: Array<{
+      claimItemId: string;
+      kod: string;
+      kalemTuru: string;
+      etiket: string;
+      tutar: number | null;
+      faizDurumu: AnaparasizKalemFaizDurumu;
+    }>;
+    kalemTutarlariToplami: number | null;
+  }>;
+  faizDurumu: 'BELIRLENEMEDI' | 'HESAPLANMADI';
+  nihaiBorcToplami: null;
+  mesaj: string;
 }
 
 /** K3-L KP-7 — kanonik tahsilat gösterimi (sunucu değerleri; istemci hesabı YOK). */

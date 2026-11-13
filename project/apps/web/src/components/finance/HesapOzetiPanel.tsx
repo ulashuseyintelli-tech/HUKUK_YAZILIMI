@@ -24,7 +24,7 @@ import {
   AlertCircle,
   RefreshCw,
 } from "lucide-react";
-import { useCaseCalculation, formatTL, formatDate, CaseCalculationResult, CheckPenaltySummary, FaizSegment, MahsupDetay, ParaBirimiAlani, TahsilatGosterimi, TalepEdilenIslemisFaiz } from "@/hooks/useCaseCalculation";
+import { useCaseCalculation, formatTL, formatDate, CaseCalculationResult, CheckPenaltySummary, FaizSegment, MahsupDetay, ParaBirimiAlani, TahsilatGosterimi, TalepEdilenIslemisFaiz, AnaparasizKalemDokumu, AnaparasizKalemFaizDurumu } from "@/hooks/useCaseCalculation";
 import { useBalanceShadowDiff } from "@/hooks/useBalanceShadowDiff";
 import { turkeyToday } from "@/lib/turkey-calendar";
 import { OpeningExpenseNotice } from "@/components/expense/OpeningExpenseNotice";
@@ -200,9 +200,14 @@ export function HesapOzetiPanel({
   const asilAlacakAyrik = paraBirimiKisitli && alan('asilAlacak')?.durum !== 'GECERLI';
   const tahsilatAyrik = paraBirimiKisitli && alan('toplamTahsilat')?.durum !== 'GECERLI';
   const tahsilOranlariGecerli = !paraBirimiKisitli || alan('tahsilOranlari')?.durum === 'GECERLI';
+  // Anaparasız dosya (sunucu kararı): kayıtlı kalem tutarları açıklayıcı dökümde; eski özetin toplamları bu dosyada
+  // nihai borç değildir → rakam yerine "hesaplanamadı" (istemci hesabı YOK; kanonik gölge yükseltilmez).
+  const anaparasizDokum = hesap.anaparasizKalemDokumu;
+  const nihaiToplamYok = Boolean(anaparasizDokum);
+  const toplamMetni = (ad: string, deger: number): string => (nihaiToplamYok ? 'hesaplanamadı' : tutar(ad, deger));
   // Tutar yerine "gösterilemez" yazılan toplam satırı vurgulu tutar biçimiyle (büyük, renkli) basılmaz
   const toplamSinifi = (ad: string, vurgulu: string): string =>
-    paraBirimiKisitli && alan(ad)?.durum !== 'GECERLI' ? 'font-medium text-gray-500' : vurgulu;
+    nihaiToplamYok || (paraBirimiKisitli && alan(ad)?.durum !== 'GECERLI') ? 'font-medium text-gray-500' : vurgulu;
 
   return (
     <div className={`bg-white border rounded-lg flex flex-col ${className}`}>
@@ -286,6 +291,9 @@ export function HesapOzetiPanel({
       
       {/* İçerik */}
       <div ref={scrollRef} className="px-3 py-2 space-y-0.5 text-xs">
+        {/* Anaparasız dosya: kalem tutarları + faiz belirsiz + nihai toplam hesaplanamadı (sunucu dökümü) */}
+        {anaparasizDokum && <AnaparasizKalemDokumuPanel dokum={anaparasizDokum} />}
+
         {/* Asıl Alacak — birden fazla para birimindeyse tek sayıya toplanmaz; para birimi bazında ayrı satır (sunucu değerleri) */}
         {asilAlacakAyrik
           ? paraBirimiDurumu?.asilAlacakParaBirimiBazinda.map((kalem) => (
@@ -313,7 +321,7 @@ export function HesapOzetiPanel({
         {/* TAKİP TUTARI */}
         <div className="flex justify-between py-1.5 px-2 -mx-2 mt-1.5 border-t-2 border-blue-300 bg-blue-50 rounded">
           <span className="font-semibold text-blue-800">TAKİP TUTARI</span>
-          <span data-testid="hesap-deger-takipTutari" className={toplamSinifi('takipTutari', 'font-bold text-blue-700')}>{tutar('takipTutari', displayHesap.takipTutari)}</span>
+          <span data-testid="hesap-deger-takipTutari" className={toplamSinifi('takipTutari', 'font-bold text-blue-700')}>{toplamMetni('takipTutari', displayHesap.takipTutari)}</span>
         </div>
         
         {/* İcra Masrafları Detay */}
@@ -336,7 +344,8 @@ export function HesapOzetiPanel({
         
         {/* Vekalet Ücreti */}
         <div className="flex justify-between py-1 border-t border-gray-200 mt-1">
-          <span className="font-medium text-gray-700">Vekalet Ücreti =</span>
+          {/* Anaparasız dosyada bu satır eski özetin TAKİP vekâlet ücreti tarife hesabıdır; ilam / kayıtlı vekâlet ücretinin yerine geçmez */}
+          <span className="font-medium text-gray-700">{nihaiToplamYok ? 'Takip Vekâlet Ücreti (tarife) =' : 'Vekalet Ücreti ='}</span>
           <span data-testid="hesap-deger-vekaletUcreti" className="font-semibold">{tutar('vekaletUcreti', displayHesap.vekaletUcreti)}</span>
         </div>
         
@@ -356,7 +365,7 @@ export function HesapOzetiPanel({
               </span>
             )}
           </span>
-          <span data-testid="hesap-deger-toplamBorc" className={toplamSinifi('toplamBorc', 'font-bold text-blue-800')}>{tutar('toplamBorc', displayHesap.toplamBorc)}</span>
+          <span data-testid="hesap-deger-toplamBorc" className={toplamSinifi('toplamBorc', 'font-bold text-blue-800')}>{toplamMetni('toplamBorc', displayHesap.toplamBorc)}</span>
         </div>
 
         {/* SON BORÇ */}
@@ -369,7 +378,7 @@ export function HesapOzetiPanel({
               </span>
             )}
           </span>
-          <span data-testid="hesap-deger-sonBorc" className={toplamSinifi('sonBorc', 'font-bold text-xl text-green-700')}>{tutar('sonBorc', displayHesap.sonBorc)}</span>
+          <span data-testid="hesap-deger-sonBorc" className={toplamSinifi('sonBorc', 'font-bold text-xl text-green-700')}>{toplamMetni('sonBorc', displayHesap.sonBorc)}</span>
         </div>
         
         {/* K3-L KP-7: kanonik pilotta Toplam tahsilat / Borca uygulanan / Dağıtım bekleyen (hesap tarihi kapsamlı) */}
@@ -378,7 +387,7 @@ export function HesapOzetiPanel({
           <TahsilatGosterimiPanel
             gosterim={displayHesap.tahsilatGosterimi}
             kalanBorc={displayHesap.kalanBorc}
-            kalanBorcMetni={tutar('kalanBorc', displayHesap.kalanBorc)}
+            kalanBorcMetni={toplamMetni('kalanBorc', displayHesap.kalanBorc)}
             partial={guardedPrimaryPartial}
           >
             {/* TBK m.100 Mahsup Detayları (legacy diagnostic; mevcut davranış korunur) */}
@@ -439,7 +448,7 @@ export function HesapOzetiPanel({
                   </span>
                 )}
               </span>
-              <span data-testid="hesap-deger-kalanBorc" className={toplamSinifi('kalanBorc', 'font-bold text-orange-700')}>{tutar('kalanBorc', displayHesap.kalanBorc)}</span>
+              <span data-testid="hesap-deger-kalanBorc" className={toplamSinifi('kalanBorc', 'font-bold text-orange-700')}>{toplamMetni('kalanBorc', displayHesap.kalanBorc)}</span>
             </div>
           </div>
         )}
@@ -462,7 +471,11 @@ export function HesapOzetiPanel({
         {/* Tahsil Harcı Oranlarına Göre Son Borç */}
         <div className="pt-2 mt-2 border-t-2 border-gray-300">
           <p className="text-[10px] font-medium text-gray-500 mb-1">Tahsil Harcı Oranlarına Göre Son Borç</p>
-          {tahsilOranlariGecerli
+          {nihaiToplamYok
+            ? (
+              <div data-testid="hesap-tahsil-oranlari-durum" className="py-0.5 text-gray-500">hesaplanamadı</div>
+            )
+            : tahsilOranlariGecerli
             ? displayHesap.tahsilOranlari.map((t, i) => (
                 <div key={i} className="flex justify-between py-0.5 text-gray-500">
                   <span>%{t.label}</span>
@@ -510,6 +523,54 @@ export function HesapOzetiPanel({
 // ============================================================================
 // PARA BİRİMİ GÖSTERİMİ (sunucu kararına göre; hesap ve çevirme YOK)
 // ============================================================================
+
+const FAIZ_DURUMU_METNI: Record<AnaparasizKalemFaizDurumu, string> = {
+  BELIRLENEMEDI: 'faiz durumu belirlenmedi',
+  HESAPLANMADI: 'faiz hesaplanmadı',
+  ISLEMEZ_KAYITLI: 'faiz işlemez (kayıtlı)',
+};
+
+/**
+ * Anaparasız dosya açıklayıcı dökümü — kayıtlı kalem tutarları (sunucu değerleri), "Kalem tutarları toplamı" ile
+ * "Nihai borç toplamı" AYRI; faiz belirlenemedi; nihai borç hesaplanamadı. Kesin hesap / nihai mali kabul DEĞİLDİR.
+ */
+export function AnaparasizKalemDokumuPanel({ dokum }: { dokum: AnaparasizKalemDokumu }) {
+  return (
+    <div data-testid="hesap-anaparasiz-dokum" className="mb-2 rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-amber-900">
+      <div className="font-semibold">Kalem tutarları (açıklayıcı döküm)</div>
+      <p data-testid="hesap-anaparasiz-dokum-mesaj" className="mb-1 text-[10px] text-amber-800">{dokum.mesaj}</p>
+      {dokum.paraBirimleri.map((pb) => (
+        <div key={pb.paraBirimi} data-testid={`hesap-anaparasiz-dokum-${pb.paraBirimi}`} className="mb-1">
+          {pb.kalemler.map((kalem) => (
+            <div key={kalem.claimItemId} className="flex justify-between gap-2 py-0.5">
+              <span>
+                {kalem.etiket}
+                <span className="ml-1 text-[10px] font-normal text-amber-700">({FAIZ_DURUMU_METNI[kalem.faizDurumu]})</span>
+              </span>
+              <span data-testid={`hesap-anaparasiz-kalem-${kalem.kod}`} className="font-medium">
+                {kalem.tutar == null ? 'hesaplanamadı' : formatParaBirimli(kalem.tutar, pb.paraBirimi)}
+              </span>
+            </div>
+          ))}
+          <div className="flex justify-between border-t border-amber-200 py-0.5 font-semibold">
+            <span>Kalem tutarları toplamı{dokum.paraBirimleri.length > 1 ? ` (${pb.paraBirimi})` : ''}</span>
+            <span data-testid={`hesap-anaparasiz-kalem-toplami-${pb.paraBirimi}`}>
+              {pb.kalemTutarlariToplami == null ? 'hesaplanamadı' : formatParaBirimli(pb.kalemTutarlariToplami, pb.paraBirimi)}
+            </span>
+          </div>
+        </div>
+      ))}
+      <div className="flex justify-between py-0.5">
+        <span>Faiz</span>
+        <span data-testid="hesap-anaparasiz-faiz">{dokum.faizDurumu === 'BELIRLENEMEDI' ? 'belirlenemedi' : 'hesaplanmadı'}</span>
+      </div>
+      <div className="flex justify-between border-t border-amber-300 py-0.5 font-bold">
+        <span>Nihai borç toplamı</span>
+        <span data-testid="hesap-anaparasiz-nihai-toplam">hesaplanamadı</span>
+      </div>
+    </div>
+  );
+}
 
 /** Kısıtlı durumda sunucunun karar vermediği alan: tutar güvenle etiketlenemez → gösterilmez (fail-closed). */
 const GOSTERILEMEZ_ALAN: ParaBirimiAlani = { paraBirimi: null, durum: 'GOSTERILEMEZ' };
