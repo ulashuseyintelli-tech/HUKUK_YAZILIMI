@@ -662,6 +662,7 @@ function buildDiagnostics(
             amount: round2(item.amount),
             interestAccrualStatus: item.interestAccrualStatus,
             description: item.description,
+            attorneyFeeBasis: item.attorneyFeeBasis ?? null,
             accruedInterest: null,
           }))),
       },

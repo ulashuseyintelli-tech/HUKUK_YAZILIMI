@@ -163,8 +163,8 @@ describe('Anaparasız dosya — servis + görünüm + eski özet uyumluluğu', (
       currency: 'TRY',
       projectedAmount: 5555.66,
       items: [
-        { claimItemId: 'ci-vu', itemType: 'ATTORNEY_FEE', category: 'ANCILLARY', code: AncillaryType.VEKALET_UCRETI, amount: 4321.1, interestAccrualStatus: 'UNKNOWN', description: 'İLAM VEKALET ÜCRETİ' },
-        { claimItemId: 'ci-yg', itemType: 'YARGILAMA_GIDERI', category: 'COST', code: AncillaryType.YARGILAMA_GIDERI, amount: 1234.56, interestAccrualStatus: 'UNKNOWN', description: 'YARGILAMA GİDERİ' },
+        { claimItemId: 'ci-vu', itemType: 'ATTORNEY_FEE', category: 'ANCILLARY', code: AncillaryType.VEKALET_UCRETI, amount: 4321.1, interestAccrualStatus: 'UNKNOWN', description: 'İLAM VEKALET ÜCRETİ', attorneyFeeBasis: null },
+        { claimItemId: 'ci-yg', itemType: 'YARGILAMA_GIDERI', category: 'COST', code: AncillaryType.YARGILAMA_GIDERI, amount: 1234.56, interestAccrualStatus: 'UNKNOWN', description: 'YARGILAMA GİDERİ', attorneyFeeBasis: null },
       ],
     }]);
     // İki kalem AYRI kodlarla (yargılama gideri tebligat masrafı değil; vekâlet ücreti fer'i)
@@ -224,7 +224,8 @@ describe('Anaparasız dosya — servis + görünüm + eski özet uyumluluğu', (
       paraBirimleri: [{
         paraBirimi: 'TRY',
         kalemler: [
-          { claimItemId: 'ci-vu', kod: 'VEKALET_UCRETI', kalemTuru: 'ATTORNEY_FEE', etiket: 'Vekâlet Ücreti (alacak kalemi) — İLAM VEKALET ÜCRETİ', tutar: 4321.1, faizDurumu: 'BELIRLENEMEDI' },
+          // owner K1: kaynak kaydı NULL → açıklama "İLAM …" olsa da tür ÇIKARILMAZ; "türü belirtilmemiş" + BILINMIYOR
+          { claimItemId: 'ci-vu', kod: 'VEKALET_UCRETI', kalemTuru: 'ATTORNEY_FEE', etiket: 'Vekâlet Ücreti (alacak kalemi; türü belirtilmemiş) — İLAM VEKALET ÜCRETİ', tutar: 4321.1, faizDurumu: 'BELIRLENEMEDI', vekaletUcretiKaynagi: 'BILINMIYOR' },
           { claimItemId: 'ci-yg', kod: 'YARGILAMA_GIDERI', kalemTuru: 'YARGILAMA_GIDERI', etiket: 'Yargılama Gideri', tutar: 1234.56, faizDurumu: 'BELIRLENEMEDI' },
         ],
         kalemTutarlariToplami: 5555.66,
@@ -235,6 +236,31 @@ describe('Anaparasız dosya — servis + görünüm + eski özet uyumluluğu', (
     });
     // Takip vekâlet ücreti (eski özetin tarife hesabı 9000) dökümde YOK; ilam kalemi yerine geçmez
     expect(JSON.stringify(dokum)).not.toContain('9000');
+  });
+
+  it('T6b (owner K1): vekâlet ücreti kaynağı YALNIZ kayıtlı alandan — ILAM / TAKIP etiketi; açıklama türü değiştirmez', async () => {
+    const run = async (attorneyFeeBasis: string | null, description: string) => {
+      const { service } = setup({ claimItems: [vekalet({ attorneyFeeBasis, description }), yargilama({ attorneyFeeBasis: null })] });
+      const res = await service.computeCaseBalance('t1', 'case1', AS_OF);
+      const view = display(res);
+      const obs = (view.diagnostics.find((d) => d.code === 'NO_PRINCIPAL_BASIS')?.details?.observations ?? []) as Array<Record<string, unknown>>;
+      return { res, obs, kalemler: buildAnaparasizKalemDokumu(view)!.paraBirimleri[0].kalemler };
+    };
+
+    const ilam = await run('JUDGMENT_AWARDED', 'Sentetik açıklama');
+    expect(ilam.res.principalFreeBasis?.[0].items.find((i) => i.claimItemId === 'ci-vu')?.attorneyFeeBasis).toBe('JUDGMENT_AWARDED');
+    expect(ilam.obs.find((o) => o.claimItemId === 'ci-vu')?.attorneyFeeBasis).toBe('JUDGMENT_AWARDED');
+    expect(ilam.kalemler[0]).toMatchObject({ etiket: 'İlam Vekâlet Ücreti (alacak kalemi) — Sentetik açıklama', vekaletUcretiKaynagi: 'ILAM' });
+    // Vekâlet ücreti dışı kalem kaynak alanı taşımaz
+    expect(ilam.kalemler[1]).not.toHaveProperty('vekaletUcretiKaynagi');
+
+    // Açıklama "TAKİP" dese de kayıt JUDGMENT_AWARDED ise ILAM; açıklama "İLAM" dese de kayıt ENFORCEMENT_TARIFF ise TAKIP
+    expect((await run('JUDGMENT_AWARDED', 'TAKİP VEKALET ÜCRETİ')).kalemler[0].vekaletUcretiKaynagi).toBe('ILAM');
+    const takip = await run('ENFORCEMENT_TARIFF', 'İLAM VEKALET ÜCRETİ');
+    expect(takip.kalemler[0]).toMatchObject({ etiket: 'Takip Vekâlet Ücreti (kayıtlı kalem) — İLAM VEKALET ÜCRETİ', vekaletUcretiKaynagi: 'TAKIP' });
+    // Kaynak hesabı değiştirmez: tutar, faiz durumu ve toplam aynı
+    expect(takip.res.feeProjection.groups[0].totalProjectedAmount).toBe(ilam.res.feeProjection.groups[0].totalProjectedAmount);
+    expect(takip.kalemler[0].faizDurumu).toBe('BELIRLENEMEDI');
   });
 
   it('T7: anaparasız çok para birimi (TRY yargılama gideri + USD vekâlet ücreti) → iki ayrı grup; çapraz toplam yok; MULTI', async () => {

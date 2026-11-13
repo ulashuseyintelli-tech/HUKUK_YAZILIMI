@@ -6302,6 +6302,11 @@ model ClaimItem {
   interestAccrualStatus       InterestAccrualStatus        @default(UNKNOWN)
   interestStartDateProvenance InterestStartDateProvenance?
 
+  // Vekâlet ücretinin hukuki kaynağı (owner K1, 13.11.2026). YALNIZ itemType=ATTORNEY_FEE kalemde dolu olabilir
+  // (DB CHECK kısıtı). NULL = bilinmiyor: açıklama / etiket / belge türünden ÇIKARIM yapılmaz, eski kayıtlar
+  // toplu dönüştürülmez; değer yalnız açık girdiyle (yüksek etkili alan → onay kapısı) yazılır.
+  attorneyFeeBasis AttorneyFeeBasis?
+
   // NO_INTEREST manuel onayı için audit (yalnız PRINCIPAL kalem elle NO_INTEREST'e çevrilirse zorunlu;
   // itemType-bazlı otomatik NO_INTEREST varsayımında — COST/ANCILLARY/TAX/ATTORNEY_FEE — boş kalır,
   // çünkü bu yeni bir karar değil, mevcut davranışın (sabit tutar) açık hale getirilmesidir).
@@ -6700,6 +6705,14 @@ enum InterestStartDateProvenance {
   JUDGMENT_FINALIZATION_DATE
   ENFORCEMENT_PROCEEDING_DATE
   MANUAL_LAWYER_CONFIRMED
+}
+
+// ClaimItem.attorneyFeeBasis — vekâlet ücretinin hukuki kaynağı (owner K1, 13.11.2026).
+// İlamda hükmedilen vekâlet ücreti takibin KONUSU olan alacaktır; takip (icra) vekâlet ücreti tarifeden doğan
+// takip gideridir. İki tür aynı ClaimItemType.ATTORNEY_FEE altında kalır; ayrım yalnız bu alanla yapılır.
+enum AttorneyFeeBasis {
+  JUDGMENT_AWARDED // İlamda hükmedilen vekâlet ücreti
+  ENFORCEMENT_TARIFF // Takip (icra) vekâlet ücreti — tarifeden
 }
 
 // Kaynak Belge Türü

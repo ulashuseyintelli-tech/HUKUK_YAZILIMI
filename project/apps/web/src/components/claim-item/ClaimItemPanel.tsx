@@ -37,9 +37,24 @@ interface ClaimItem {
   interestEndDate?: string;
   dueDate?: string;
   sourceDocumentType?: string;
+  /** Vekâlet ücretinin kayıtlı hukuki kaynağı (owner K1); yalnız ATTORNEY_FEE; null = bilinmiyor (çıkarım yok). */
+  attorneyFeeBasis?: AttorneyFeeBasis | null;
   sortOrder?: number;
   status: string;
   isCalculated: boolean;
+}
+
+export type AttorneyFeeBasis = "JUDGMENT_AWARDED" | "ENFORCEMENT_TARIFF";
+
+/** Vekâlet ücreti kaynağı metni — YALNIZ kayıtlı alandan; açıklama metnine bakılmaz. */
+export const ATTORNEY_FEE_BASIS_LABELS: Record<AttorneyFeeBasis | "UNKNOWN", string> = {
+  JUDGMENT_AWARDED: "İlam vekâlet ücreti",
+  ENFORCEMENT_TARIFF: "Takip vekâlet ücreti",
+  UNKNOWN: "Türü belirtilmemiş",
+};
+
+export function attorneyFeeBasisLabel(basis: AttorneyFeeBasis | null | undefined): string {
+  return basis ? ATTORNEY_FEE_BASIS_LABELS[basis] : ATTORNEY_FEE_BASIS_LABELS.UNKNOWN;
 }
 
 interface ClaimSummaryTotals {
@@ -443,6 +458,16 @@ export function ClaimItemPanel({
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{typeInfo.label}</span>
+                      {item.itemType === "ATTORNEY_FEE" && (
+                        <span
+                          data-testid={`claim-item-attorney-fee-basis-${item.id}`}
+                          className={`px-2 py-0.5 text-xs rounded ${
+                            item.attorneyFeeBasis ? "bg-purple-50 text-purple-700" : "bg-amber-50 text-amber-700"
+                          }`}
+                        >
+                          {attorneyFeeBasisLabel(item.attorneyFeeBasis)}
+                        </span>
+                      )}
                       {item.isCalculated && (
                         <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">
                           Otomatik
@@ -819,7 +844,10 @@ function EditMetadataModal({
     interestEndDate: item.interestEndDate ? item.interestEndDate.slice(0, 10) : "",
     interestRate: item.interestRate != null ? String(item.interestRate) : "",
     sortOrder: item.sortOrder != null ? String(item.sortOrder) : "",
+    attorneyFeeBasis: item.attorneyFeeBasis ?? "",
   });
+  const isAttorneyFee = item.itemType === "ATTORNEY_FEE";
+  const initialAttorneyFeeBasis = item.attorneyFeeBasis ?? "";
 
   const typeInfo = itemTypeLabels[item.itemType] || itemTypeLabels.OTHER;
   const lockNote = "Tutar ve kalem tipi, bakiye cutover tamamlanana kadar düzenlenemez.";
@@ -833,11 +861,13 @@ function EditMetadataModal({
     interestEndDate: item.interestEndDate ? item.interestEndDate.slice(0, 10) : "",
     interestRate: item.interestRate != null ? String(item.interestRate) : "",
   };
+  const attorneyFeeBasisChanged = isAttorneyFee && form.attorneyFeeBasis !== initialAttorneyFeeBasis;
   const hasHighImpactChanges =
     form.dueDate !== initialHighImpact.dueDate ||
     form.interestStartDate !== initialHighImpact.interestStartDate ||
     form.interestEndDate !== initialHighImpact.interestEndDate ||
-    form.interestRate !== initialHighImpact.interestRate;
+    form.interestRate !== initialHighImpact.interestRate ||
+    attorneyFeeBasisChanged;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -858,6 +888,10 @@ function EditMetadataModal({
       }
       if (form.interestRate !== initialHighImpact.interestRate) {
         payload.interestRate = form.interestRate !== "" ? parseFloat(form.interestRate) : undefined;
+      }
+      // Vekâlet ücreti kaynağı yüksek etkilidir (onaya gider); "Belirtilmemiş" seçimi açık null gönderir.
+      if (attorneyFeeBasisChanged) {
+        payload.attorneyFeeBasis = form.attorneyFeeBasis === "" ? null : form.attorneyFeeBasis;
       }
 
       const res = await api.put(`/claim-items/${item.id}`, payload);
@@ -913,6 +947,28 @@ function EditMetadataModal({
               />
             </div>
           </div>
+
+          {isAttorneyFee && (
+            <div>
+              <label htmlFor="claim-item-attorney-fee-basis" className="block text-sm font-medium mb-1">
+                Vekâlet Ücreti Türü
+              </label>
+              <select
+                id="claim-item-attorney-fee-basis"
+                data-testid="claim-item-attorney-fee-basis-select"
+                value={form.attorneyFeeBasis}
+                onChange={(e) => setForm((p) => ({ ...p, attorneyFeeBasis: e.target.value as AttorneyFeeBasis | "" }))}
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
+              >
+                <option value="">{ATTORNEY_FEE_BASIS_LABELS.UNKNOWN}</option>
+                <option value="JUDGMENT_AWARDED">{ATTORNEY_FEE_BASIS_LABELS.JUDGMENT_AWARDED} (ilamda hükmedilen)</option>
+                <option value="ENFORCEMENT_TARIFF">{ATTORNEY_FEE_BASIS_LABELS.ENFORCEMENT_TARIFF} (tarifeden)</option>
+              </select>
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Belgeye göre seçin; açıklamadan çıkarılmaz. Değişiklik onaya gönderilir.
+              </p>
+            </div>
+          )}
 
           {/* Düzenlenebilir metadata */}
           <div>

@@ -1,5 +1,6 @@
 import { ClaimItemType, InterestType as PrismaInterestType, Prisma } from '@prisma/client';
 import { DueType, DueDto } from './dto/case.dto';
+import { assertAttorneyFeeBasisMatchesItemType } from '../claim-item/attorney-fee-basis';
 
 /**
  * G1 KÖPRÜSÜ — DueType → ClaimItemType eşlemesi.
@@ -145,6 +146,8 @@ export function buildClaimItemData(
   const hasMetadata = Object.keys(metadata).length > 0;
   // PR-2c — referenceNo: İLAM ise "esasNo E. / kararNo K." birleşik; değilse belge no (FATURA faturaNo vb.).
   const referenceNo = composeIlamReference(due.ilamEsasNo, due.ilamKararNo) ?? due.sourceDocumentNo;
+  // Vekâlet ücreti kaynağı (owner K1): yalnız açık girdi, yalnız ATTORNEY_FEE; açıklamadan çıkarım YOK.
+  assertAttorneyFeeBasisMatchesItemType(itemType, due.attorneyFeeBasis);
   return {
     tenantId,
     caseId,
@@ -167,6 +170,7 @@ export function buildClaimItemData(
     // FATURA (G2a) + İLAM (PR-2c): belge referansı → ClaimItem.referenceNo (faturaNo / "esasNo E. / kararNo K.").
     ...(referenceNo ? { referenceNo } : {}),
     ...(due.sourceDocumentType ? { sourceDocumentType: due.sourceDocumentType } : {}),
+    ...(due.attorneyFeeBasis ? { attorneyFeeBasis: due.attorneyFeeBasis } : {}),
     ...(hasMetadata ? { metadata: metadata as Prisma.InputJsonObject } : {}),
   };
 }

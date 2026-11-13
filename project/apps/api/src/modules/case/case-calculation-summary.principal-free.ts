@@ -19,6 +19,9 @@ import type { CaseBalanceDisplay } from '../interest-engine/orchestration/case-b
  */
 export type AnaparasizKalemFaizDurumu = 'BELIRLENEMEDI' | 'HESAPLANMADI' | 'ISLEMEZ_KAYITLI';
 
+/** Vekâlet ücreti kaleminin kayıtlı hukuki kaynağı (owner K1); NULL kayıt → BILINMIYOR. Vekâlet ücreti dışı kalemde yok. */
+export type AnaparasizVekaletUcretiKaynagi = 'ILAM' | 'TAKIP' | 'BILINMIYOR';
+
 export interface AnaparasizKalemDokumuKalem {
   claimItemId: string;
   kod: string;
@@ -26,6 +29,8 @@ export interface AnaparasizKalemDokumuKalem {
   etiket: string;
   tutar: number | null;
   faizDurumu: AnaparasizKalemFaizDurumu;
+  /** Yalnız vekâlet ücreti (ATTORNEY_FEE) kaleminde; açıklamadan ÇIKARILMAZ, yalnız kayıtlı alandan gelir. */
+  vekaletUcretiKaynagi?: AnaparasizVekaletUcretiKaynagi;
 }
 
 export interface AnaparasizKalemDokumuParaBirimi {
@@ -57,9 +62,23 @@ function faizDurumu(status: unknown): AnaparasizKalemFaizDurumu {
   return 'BELIRLENEMEDI';
 }
 
-function etiket(kod: string, description: unknown): string {
+/** Kayıtlı `attorneyFeeBasis` → döküm değeri. Açıklama metnine BAKILMAZ (owner K1: çıkarım yok). */
+function vekaletUcretiKaynagi(itemType: unknown, basis: unknown): AnaparasizVekaletUcretiKaynagi | undefined {
+  if (itemType !== 'ATTORNEY_FEE') return undefined;
+  if (basis === 'JUDGMENT_AWARDED') return 'ILAM';
+  if (basis === 'ENFORCEMENT_TARIFF') return 'TAKIP';
+  return 'BILINMIYOR';
+}
+
+const VEKALET_KAYNAK_ETIKET: Record<AnaparasizVekaletUcretiKaynagi, string> = {
+  ILAM: 'İlam Vekâlet Ücreti (alacak kalemi)',
+  TAKIP: 'Takip Vekâlet Ücreti (kayıtlı kalem)',
+  BILINMIYOR: 'Vekâlet Ücreti (alacak kalemi; türü belirtilmemiş)',
+};
+
+function etiket(kod: string, description: unknown, kaynak: AnaparasizVekaletUcretiKaynagi | undefined): string {
   const kayitli = typeof description === 'string' ? description.trim() : '';
-  const temel = KOD_ETIKET[kod] ?? "Masraf / fer'i kalemi";
+  const temel = (kaynak ? VEKALET_KAYNAK_ETIKET[kaynak] : undefined) ?? KOD_ETIKET[kod] ?? "Masraf / fer'i kalemi";
   return kayitli.length > 0 && kayitli.toLocaleUpperCase('tr-TR') !== temel.toLocaleUpperCase('tr-TR')
     ? `${temel} — ${kayitli}`
     : temel;
@@ -80,13 +99,15 @@ export function buildAnaparasizKalemDokumu(display: CaseBalanceDisplay | null): 
       paraBirimi: group.currency,
       kalemler: group.lines.map((line) => {
         const gozlem = gozlemById.get(line.sourceItemId);
+        const kaynak = vekaletUcretiKaynagi(line.itemType, gozlem?.attorneyFeeBasis);
         return {
           claimItemId: line.sourceItemId,
           kod: line.code,
           kalemTuru: line.itemType,
-          etiket: etiket(line.code, gozlem?.description),
+          etiket: etiket(line.code, gozlem?.description, kaynak),
           tutar: line.status === 'AVAILABLE' ? line.amount : null,
           faizDurumu: faizDurumu(gozlem?.interestAccrualStatus),
+          ...(kaynak ? { vekaletUcretiKaynagi: kaynak } : {}),
         };
       }),
       kalemTutarlariToplami: group.status === 'AVAILABLE' ? group.totalProjectedAmount : null,

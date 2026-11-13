@@ -21,6 +21,7 @@ import { maskIban } from "@/common/pii-mask.util";
 import { CreateCaseDto, CreateDueDto, UpdateCaseDto, UpdateDueDto, CaseSubCategory, Currency, DueDto, DueType, InterestType, CaseInstrumentInputDto, CaseInstrumentSource, CaseStaffInputDto } from "./dto/case.dto";
 import { Prisma, LegalCaseStatus, InterestType as PrismaInterestType, DocumentSourceType, InterestAccrualStatus, InterestTypeCode } from "@prisma/client";
 import { mapDueTypeToClaimItemType, buildClaimItemData } from "./due-to-claim-item.mapper";
+import { AttorneyFeeBasis, assertAttorneyFeeBasisMatchesItemType } from "../claim-item/attorney-fee-basis";
 import { claimItemNormalUpdateAmounts } from "../claim-item/claim-item-amount-contract";
 import { interestWriteData, normalizeInterestWriteIntent } from "../claim-item/interest-write-admission";
 import { assertGenericDueTypeTransition } from "./due-type-transition.policy";
@@ -449,6 +450,8 @@ export type DueForClaimItemSync = {
   issueDate?: string | null;
   kiraDonemBaslangic?: string | null;
   kiraDonemBitis?: string | null;
+  // Vekâlet ücretinin hukuki kaynağı (owner K1) — Due kolonu DEĞİL; istekten in-memory taşınır.
+  attorneyFeeBasis?: AttorneyFeeBasis | null;
 };
 
 function normalizeDueInterestRate(value: unknown): number | null | undefined {
@@ -503,6 +506,7 @@ export function buildSyncDueDto(due: DueForClaimItemSync): DueDto {
     issueDate: due.issueDate ?? undefined,
     kiraDonemBaslangic: due.kiraDonemBaslangic ?? undefined,
     kiraDonemBitis: due.kiraDonemBitis ?? undefined,
+    attorneyFeeBasis: due.attorneyFeeBasis ?? undefined,
   };
 }
 
@@ -730,12 +734,17 @@ export class CaseService {
     return this.claimItemWriterRouter;
   }
 
-  private assertDueCreationAdmission(dues: ReadonlyArray<Pick<DueDto, "type">>): void {
+  private assertDueCreationAdmission(dues: ReadonlyArray<Pick<DueDto, "type" | "attorneyFeeBasis">>): void {
     if (dues.some((due) => due.type === DueType.OTHER)) {
       throw new BadRequestException({
         code: "UNSUPPORTED_COMPONENT",
         message: "Due component is not supported for new ClaimItem formation.",
       });
+    }
+    // Vekâlet ücreti kaynağı yalnız VEKALET_UCRETI Due'sunda (→ ATTORNEY_FEE kalem); yazımdan ÖNCE fail-closed.
+    for (const due of dues) {
+      const itemType = due.attorneyFeeBasis == null ? null : mapDueTypeToClaimItemType(due.type as DueType);
+      assertAttorneyFeeBasisMatchesItemType(itemType, due.attorneyFeeBasis);
     }
   }
 
@@ -2848,6 +2857,8 @@ export class CaseService {
               issueDate: dueDto.issueDate,
               kiraDonemBaslangic: dueDto.kiraDonemBaslangic,
               kiraDonemBitis: dueDto.kiraDonemBitis,
+              // Vekâlet ücreti kaynağı (owner K1): Due kolonu değil → in-memory, yalnız açık girdi.
+              attorneyFeeBasis: dueDto.attorneyFeeBasis,
             });
           }
 
@@ -4593,6 +4604,7 @@ export class CaseService {
       const claimItemData = this.buildDueSyncClaimItemData(tenantId, caseId, {
         ...due,
         ...normalizedInterest.bridge,
+        attorneyFeeBasis: data.attorneyFeeBasis ?? null,
       });
       if (claimItemData) {
         await this.requireClaimItemWriterRouter().createSystemClaimItem(

@@ -26,6 +26,8 @@ export const CLAIM_ITEM_HIGH_IMPACT_USER_FIELDS = [
   'dueDate',
   'interestAccrualStatus',
   'interestStartDateProvenance',
+  // Vekâlet ücretinin hukuki kaynağı (owner K1, 13.11.2026): alacağın niteliğini değiştirir → onaylı yol.
+  'attorneyFeeBasis',
   'noInterestReason',
   'noInterestConfirmedById',
   'isAllDebtorsLiable',

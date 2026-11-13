@@ -136,6 +136,8 @@ export interface CaseBalancePrincipalFreeBasis {
     interestAccrualStatus: string | null;
     /** Kalemin kayıtlı açıklaması (örn. "İLAM VEKALET ÜCRETİ"); gösterim etiketi içindir, hesaba girmez. */
     description: string | null;
+    /** Vekâlet ücretinin kayıtlı hukuki kaynağı (owner K1); yalnız ATTORNEY_FEE'de dolu olabilir, NULL = bilinmiyor. */
+    attorneyFeeBasis: string | null;
   }>;
 }
 
@@ -270,6 +272,7 @@ function buildPrincipalFreeBasis(
   }>,
   interestStatusById: ReadonlyMap<string, string | null>,
   descriptionById: ReadonlyMap<string, string | null>,
+  attorneyFeeBasisById: ReadonlyMap<string, string | null>,
 ): CaseBalancePrincipalFreeBasis[] {
   const byCurrency = new Map<string, CaseBalancePrincipalFreeBasis>();
   for (const item of projectionItems) {
@@ -285,6 +288,7 @@ function buildPrincipalFreeBasis(
       amount: fromCents(toCents(item.amount)),
       interestAccrualStatus: interestStatusById.get(item.sourceItemId) ?? null,
       description: descriptionById.get(item.sourceItemId) ?? null,
+      attorneyFeeBasis: attorneyFeeBasisById.get(item.sourceItemId) ?? null,
     });
     byCurrency.set(classified.currency, entry);
   }
@@ -771,8 +775,11 @@ export class CaseBalanceService {
     const descriptionById = new Map<string, string | null>(
       claimItems.map((ci) => [ci.id, (ci.description as string | null) ?? null] as [string, string | null]),
     );
+    const attorneyFeeBasisById = new Map<string, string | null>(
+      claimItems.map((ci) => [ci.id, (ci.attorneyFeeBasis as string | null) ?? null] as [string, string | null]),
+    );
     const principalFreeBasis = grouped.groups.length === 0 && carryByCurrency.size === 0
-      ? buildPrincipalFreeBasis(asm.projectionItems, interestStatusById, descriptionById)
+      ? buildPrincipalFreeBasis(asm.projectionItems, interestStatusById, descriptionById, attorneyFeeBasisById)
       : [];
     for (const basis of principalFreeBasis) {
       currencyResults.push({ currency: basis.currency, result: null, skippedReason: 'NO_PRINCIPAL_BASIS', grossPrincipal: 0 });
