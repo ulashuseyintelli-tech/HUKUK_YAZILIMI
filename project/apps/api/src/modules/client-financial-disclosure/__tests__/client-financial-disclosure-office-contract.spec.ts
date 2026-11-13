@@ -339,6 +339,19 @@ describe('CODEX-X1 PRE01 — office financial disclosure contract', () => {
     expect(partnerDetail.actions.canPublish).toBe(true);
   });
 
+  it('CL-Z04 correction capability requires preparation eligibility, write flag and an unclaimed published version', async () => {
+    const read = async (actor: typeof partner | typeof staff, hasSuccessor = false) => {
+      const row = version(ClientFinancialDisclosureStatus.PUBLISHED);
+      const prisma = buildPrisma({ actor, versions: [{ ...row, supersededByVersion: hasSuccessor ? { id: 'next' } : null } as any] });
+      return (await new ClientFinancialDisclosureOfficeService(prisma as any).getDetail({ tenantId: T, actorUserId: U, clientId: C }, V)).actions;
+    };
+    expect((await read(partner)).canCreateCorrection).toBe(true);
+    expect((await read(staff)).canCreateCorrection).toBe(false);
+    expect((await read(partner, true)).canCreateCorrection).toBe(false);
+    process.env[CLIENT_FINANCIAL_DISCLOSURE_WRITE_FLAG] = 'false';
+    expect((await read(partner)).canCreateCorrection).toBe(false);
+  });
+
   it('kanıtsız eski SEND_FAILED retry capability üretmez ve ham provider hata kodu/detayı sızdırmaz', async () => {
     const prisma = buildPrisma({ versions: [version(ClientFinancialDisclosureStatus.SEND_FAILED)] });
     const result = await new ClientFinancialDisclosureOfficeService(prisma as any).getDetail(

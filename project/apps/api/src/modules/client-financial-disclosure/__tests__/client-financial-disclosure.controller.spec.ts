@@ -9,6 +9,7 @@ import {
   CLIENT_FINANCIAL_DISCLOSURE_WRITE_FLAG,
 } from '../client-financial-disclosure-activation';
 import { ClientFinancialDisclosureController } from '../client-financial-disclosure.controller';
+import { ClientFinancialDisclosureWriterService } from '../client-financial-disclosure-writer.service';
 import { RequestDisclosureContentApprovalDto } from '../dto/client-financial-disclosure.dto';
 
 const TENANT_ID = 'tenant-1';
@@ -16,6 +17,9 @@ const ACTOR_ID = 'user-1';
 const VERSION_ID = 'version-1';
 
 function buildController() {
+  const writer = { createCorrectionVersion: jest.fn().mockResolvedValue({
+    disclosureId: 'root-1', versionId: 'version-2', version: 2, status: 'DRAFT', replayed: false,
+  }) };
   const approval = {
     requestOfficeApproval: jest.fn().mockResolvedValue({ status: 'OFFICE_APPROVAL_PENDING' }),
     completeOfficeApproval: jest.fn().mockResolvedValue({ status: 'OFFICE_APPROVED' }),
@@ -48,10 +52,13 @@ function buildController() {
       approval as any,
       publication as any,
       office as any,
+      undefined,
+      writer as any,
     ),
     approval,
     publication,
     office,
+    writer,
   };
 }
 
@@ -80,6 +87,26 @@ describe('CODEX-CLIENT-X2-B05 — Financial Disclosure HTTP adapter', () => {
     );
     const guards = Reflect.getMetadata('__guards__', ClientFinancialDisclosureController) || [];
     expect(guards).toContain(JwtAuthGuard);
+  });
+
+  it('CL-Z04 forwards only JWT actor, canonical parent, reason and case scope to the writer', async () => {
+    const { controller, writer } = buildController();
+    const result = await controller.createCorrection(TENANT_ID, ACTOR_ID, 'client-1', VERSION_ID, { correctionReason: 'Düzeltme' });
+    expect(writer.createCorrectionVersion).toHaveBeenCalledWith({ tenantId: TENANT_ID, actorUserId: ACTOR_ID,
+      clientId: 'client-1', disclosureVersionId: VERSION_ID, correctionReason: 'Düzeltme', caseFilter: undefined });
+    expect(result).toEqual({ disclosureId: 'root-1', disclosureVersionId: 'version-2', version: 2, status: 'DRAFT', replayed: false });
+  });
+
+  it('CL-Z04 write flag closes the new endpoint before any writer call', async () => {
+    const { controller, writer } = buildController();
+    process.env[CLIENT_FINANCIAL_DISCLOSURE_WRITE_FLAG] = 'false';
+    await expect(controller.createCorrection(TENANT_ID, ACTOR_ID, 'client-1', VERSION_ID, { correctionReason: 'Düzeltme' })).rejects.toBeInstanceOf(ForbiddenException);
+    expect(writer.createCorrectionVersion).not.toHaveBeenCalled();
+  });
+
+  it('CL-Z04 writer dependency has an explicit production DI token', () => {
+    expect(Reflect.getMetadata('self:paramtypes', ClientFinancialDisclosureController))
+      .toEqual(expect.arrayContaining([{ index: 4, param: ClientFinancialDisclosureWriterService }]));
   });
 
   it('office GET adapterleri JWT tenant/actor ve object selector bağlamını curated servise taşır', async () => {

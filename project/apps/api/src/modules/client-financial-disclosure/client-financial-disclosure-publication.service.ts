@@ -343,13 +343,18 @@ export class ClientFinancialDisclosurePublicationService {
         await this.lockVersion(tx, input.tenantId, input.disclosureVersionId);
         const version = await this.loadVersion(tx, input.tenantId, input.disclosureVersionId);
 
+        await this.assertEligibleActor(tx, input.actorUserId, version.tenantId);
         if (version.status === ClientFinancialDisclosureStatus.REVERSED) {
           return this.result(version, version.status, version.status, true);
         }
         this.assertNotTerminal(version);
         // Yalnız PUBLISHED'ten ulaşılabilir (§35.7).
         this.assertExactStatus(version, ClientFinancialDisclosureStatus.PUBLISHED);
-        await this.assertEligibleActor(tx, input.actorUserId, version.tenantId);
+        const sendingCorrection = await tx.clientFinancialDisclosureVersion.findFirst({
+          where: { tenantId: version.tenantId, supersedesVersionId: version.id, status: ClientFinancialDisclosureStatus.SEND_PENDING },
+          select: { id: true },
+        });
+        if (sendingCorrection) throw new ClientFinancialDisclosurePublicationError('DISCLOSURE_PUBLICATION_CONCURRENT_TRANSITION');
         if (reason.length === 0) {
           throw new ClientFinancialDisclosurePublicationError(
             'DISCLOSURE_PUBLICATION_STATUS_INVALID',
@@ -405,7 +410,11 @@ export class ClientFinancialDisclosurePublicationService {
         const old = await this.loadVersion(tx, input.tenantId, input.supersededVersionId);
         const fresh = await this.loadVersion(tx, input.tenantId, input.supersedingVersionId);
 
+        await this.assertEligibleActor(tx, input.actorUserId, old.tenantId);
         if (old.status === ClientFinancialDisclosureStatus.SUPERSEDED) {
+          if (fresh.supersedesVersionId !== old.id || fresh.disclosureId !== old.disclosureId || !fresh.publishedAt) {
+            throw new ClientFinancialDisclosurePublicationError('DISCLOSURE_PUBLICATION_SUPERSESSION_INVALID');
+          }
           return this.result(old, old.status, old.status, true);
         }
         if (
@@ -413,7 +422,8 @@ export class ClientFinancialDisclosurePublicationService {
           old.disclosureId !== fresh.disclosureId ||
           old.status !== ClientFinancialDisclosureStatus.PUBLISHED ||
           fresh.version <= old.version ||
-          TERMINAL_STATUSES.includes(fresh.status) ||
+          fresh.status !== ClientFinancialDisclosureStatus.PUBLISHED ||
+          fresh.publishedAt === null ||
           fresh.contentApprovedById === null ||
           fresh.officeApprovedById === null
         ) {
@@ -421,7 +431,8 @@ export class ClientFinancialDisclosurePublicationService {
             'DISCLOSURE_PUBLICATION_SUPERSESSION_INVALID',
           );
         }
-        await this.assertEligibleActor(tx, input.actorUserId, old.tenantId);
+        const evidence = (await loadDisclosureDeliveryEvidence(tx, [fresh], this.dispatcher.providerName)).get(fresh.id);
+        if (evidence !== 'ACCEPTED') throw new ClientFinancialDisclosurePublicationError('DISCLOSURE_PUBLICATION_SUPERSESSION_INVALID');
         if (reason.length === 0) {
           throw new ClientFinancialDisclosurePublicationError(
             'DISCLOSURE_PUBLICATION_STATUS_INVALID',
@@ -432,7 +443,7 @@ export class ClientFinancialDisclosurePublicationService {
           where: {
             id: fresh.id,
             tenantId: fresh.tenantId,
-            supersedesVersionId: null,
+            OR: [{ supersedesVersionId: null }, { supersedesVersionId: old.id }],
           },
           data: { supersedesVersionId: old.id, correctionReason: reason },
         });
@@ -448,9 +459,15 @@ export class ClientFinancialDisclosurePublicationService {
           data: {
             status: ClientFinancialDisclosureStatus.SUPERSEDED,
             supersededAt: new Date(),
+            correctionReason: reason,
           },
         });
         this.assertSingleTransition(moved.count);
+        const current = await tx.clientFinancialDisclosure.updateMany({
+          where: { id: old.disclosureId, tenantId: old.tenantId, currentVersionId: old.id },
+          data: { currentVersionId: fresh.id },
+        });
+        this.assertSingleTransition(current.count);
         await this.writeAudit(tx, old, CLIENT_FINANCIAL_DISCLOSURE_AUDIT_ACTIONS.SUPERSEDED, {
           provider: this.dispatcher.providerName,
           supersedingVersion: fresh.version,
@@ -484,7 +501,12 @@ export class ClientFinancialDisclosurePublicationService {
     tenantId: string,
     versionId: string,
   ): Promise<void> {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`client-financial-disclosure-publication:${tenantId}:${versionId}`}, 0))`;
+    const located = await tx.clientFinancialDisclosureVersion.findFirst({
+      where: { id: versionId, tenantId }, select: { disclosure: { select: { collectionDispositionId: true } } },
+    });
+    const key = located ? `client-financial-disclosure:${tenantId}:${located.disclosure.collectionDispositionId}`
+      : `client-financial-disclosure-publication:${tenantId}:${versionId}`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
   }
 
   private async loadVersion(
@@ -534,6 +556,16 @@ export class ClientFinancialDisclosurePublicationService {
     tx: Prisma.TransactionClient,
     version: LoadedVersion,
   ): Promise<void> {
+    if (version.supersedesVersionId) {
+      const previous = await this.loadVersion(tx, version.tenantId, version.supersedesVersionId);
+      const root = await tx.clientFinancialDisclosure.findFirst({
+        where: { id: version.disclosureId, tenantId: version.tenantId }, select: { currentVersionId: true },
+      });
+      if (previous.disclosureId !== version.disclosureId || previous.version >= version.version || previous.status !== ClientFinancialDisclosureStatus.PUBLISHED ||
+          root?.currentVersionId !== previous.id) {
+        throw new ClientFinancialDisclosurePublicationError('DISCLOSURE_PUBLICATION_SUPERSESSION_INVALID');
+      }
+    }
     if (
       !version.notificationContent ||
       !version.notificationContentHash ||
@@ -652,6 +684,22 @@ export class ClientFinancialDisclosurePublicationService {
         data: { status: ClientFinancialDisclosureStatus.PUBLISHED, publishedAt: new Date() },
       });
       this.assertSingleTransition(moved.count);
+      if (version.supersedesVersionId) {
+        const previous = await tx.clientFinancialDisclosureVersion.updateMany({
+          where: { id: version.supersedesVersionId, tenantId: version.tenantId, disclosureId: version.disclosureId,
+            status: ClientFinancialDisclosureStatus.PUBLISHED, supersededAt: null },
+          data: { status: ClientFinancialDisclosureStatus.SUPERSEDED, supersededAt: new Date(), correctionReason: version.correctionReason },
+        });
+        this.assertSingleTransition(previous.count);
+        const current = await tx.clientFinancialDisclosure.updateMany({
+          where: { id: version.disclosureId, tenantId: version.tenantId, currentVersionId: version.supersedesVersionId },
+          data: { currentVersionId: version.id },
+        });
+        this.assertSingleTransition(current.count);
+        const old = await this.loadVersion(tx, version.tenantId, version.supersedesVersionId);
+        await this.writeAudit(tx, old, CLIENT_FINANCIAL_DISCLOSURE_AUDIT_ACTIONS.SUPERSEDED,
+          { provider: this.dispatcher.providerName, supersedingVersion: version.version }, { actorType: 'USER', userId: input.actorUserId });
+      }
       await this.writeAudit(tx, version, CLIENT_FINANCIAL_DISCLOSURE_AUDIT_ACTIONS.PUBLISHED, {
         provider: this.dispatcher.providerName, providerMessageId: version.providerMessageId!,
       }, { actorType: 'USER', userId: input.actorUserId });

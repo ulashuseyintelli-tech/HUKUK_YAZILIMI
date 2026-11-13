@@ -35,6 +35,7 @@ export interface OfficeDisclosureActionCapabilities {
   readonly canRetryPublication: boolean;
   readonly canReverse: boolean;
   readonly canSupersede: boolean;
+  readonly canCreateCorrection?: boolean;
 }
 
 export interface OfficeDisclosureRecipientSelection {
@@ -194,6 +195,30 @@ function publicationResult(value: unknown, versionId: string): DisclosurePublica
 }
 
 export const clientFinancialDisclosureApi = {
+  /** Creates a new source-bound draft; never publishes or replaces the current version. */
+  async createCorrection(clientId: string, versionId: string, correctionReason: string) {
+    const response = await apiClient.post<{
+      disclosureId: string; disclosureVersionId: string; version: number; status: OfficeDisclosureStatus; replayed: boolean;
+    }>(`/client-financial-disclosures/office/clients/${encodeURIComponent(clientId)}/versions/${encodeURIComponent(versionId)}/corrections`, { correctionReason });
+    const result = response.data;
+    if (!result || typeof result.disclosureId !== 'string' || typeof result.disclosureVersionId !== 'string' ||
+        result.disclosureVersionId === versionId || !Number.isInteger(result.version) || result.version < 2 ||
+        !OFFICE_DISCLOSURE_STATUSES.includes(result.status) || typeof result.replayed !== 'boolean') {
+      throw new Error('Disclosure correction result unavailable');
+    }
+    return result;
+  },
+
+  async reverse(versionId: string, correctionReason: string) {
+    const response = await apiClient.post<{ disclosureVersionId: string; status: string; replayed: boolean }>(
+      `/client-financial-disclosures/${encodeURIComponent(versionId)}/reverse`, { correctionReason });
+    const result = response.data;
+    if (!result || result.disclosureVersionId !== versionId || result.status !== 'REVERSED' || typeof result.replayed !== 'boolean') {
+      throw new Error('Disclosure reversal result unavailable');
+    }
+    return { disclosureVersionId: versionId, status: 'REVERSED' as const, replayed: result.replayed };
+  },
+
   /** Office workspace -> GET curated list for the JWT tenant and client scope. */
   async list(clientId: string): Promise<OfficeDisclosureListSurface> {
     const response = await apiClient.get<OfficeDisclosureListSurface>(

@@ -78,6 +78,7 @@ const OFFICE_SUMMARY_SELECT = {
   officeApprovedAt: true,
   officeApprovedById: true,
   publishedAt: true,
+  supersededByVersion: { select: { id: true } },
   updatedAt: true,
   disclosure: {
     select: {
@@ -599,7 +600,7 @@ export class ClientFinancialDisclosureOfficeService {
   private actions(
     status: OfficeDisclosureStatus,
     request: ApprovalRequestProjection | undefined,
-    version: { officeApprovedById: string | null },
+    version: { officeApprovedById: string | null; supersededByVersion?: { id: string } | null },
     resolved: ResolvedOfficeScope,
     actorUserId: string,
     evidence: DisclosureDeliveryEvidence = 'UNKNOWN',
@@ -640,6 +641,7 @@ export class ClientFinancialDisclosureOfficeService {
         ((status === 'SEND_FAILED' && evidence === 'REJECTED') || (status === 'SEND_PENDING' && evidence === 'ACCEPTED')),
       canReverse: publish && eligible && status === 'PUBLISHED',
       canSupersede: publish && eligible && status === 'PUBLISHED',
+      canCreateCorrection: write && resolved.prepareEligible && status === 'PUBLISHED' && !version.supersededByVersion,
     };
   }
 

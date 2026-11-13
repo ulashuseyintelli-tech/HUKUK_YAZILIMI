@@ -407,6 +407,110 @@ describeDb('CLIENT-FD-ACT-R01-I06 — uçtan uca kabul (gerçek Nest composition
   const postRecovery = (http: INestApplication, id: string, actor = uP1) =>
     request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/retry-publication`).set('x-test-user', actor);
 
+  it('CL-Z04 real HTTP creates v2, requires two fresh approvals and atomically replaces v1 after accepted delivery', async () => {
+    await withHttp('clz04-chain', OK, async ({ module, http }) => {
+      const key = `clz04-chain-${S}`;
+      const id = await upToSendPending(module, key);
+      await request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/publish`).set('x-test-user', uP1).expect(201);
+      const original = await prisma.clientFinancialDisclosureVersion.findUniqueOrThrow({ where: { id }, include: { lines: true } });
+      const correctionPath = `/client-financial-disclosures/office/clients/${clA}/versions/${id}/corrections`;
+      const beforeCount = await prisma.clientFinancialDisclosureVersion.count({ where: { disclosureId: original.disclosureId } });
+      await request(http.getHttpServer()).post(correctionPath).send({ correctionReason: 'Düzeltme' }).expect(403);
+      await request(http.getHttpServer()).post(correctionPath.replace(clA, 'other-client')).set('x-test-user', uP1).send({ correctionReason: 'Düzeltme' }).expect(404);
+      await request(http.getHttpServer()).post(correctionPath).set('x-test-user', uP1).send({ correctionReason: '   ' }).expect(409);
+      await request(http.getHttpServer()).post(correctionPath).set('x-test-user', uReq).send({ correctionReason: 'Düzeltme' }).expect(403);
+      await request(http.getHttpServer()).post(correctionPath).set('x-test-user', uP1).send({ correctionReason: 'Düzeltme', totalCollected: '1', actorUserId: uP2 }).expect(400);
+      expect(await prisma.clientFinancialDisclosureVersion.count({ where: { disclosureId: original.disclosureId } })).toBe(beforeCount);
+      const creates = await Promise.all([uP1, uP2].map(actor => request(http.getHttpServer()).post(correctionPath)
+        .set('x-test-user', actor).send({ correctionReason: 'Bildirim düzeltmesi' }).expect(201)));
+      const result = creates.find(r => r.body.replayed === false)!;
+      expect(creates.map(r => r.body.replayed).sort()).toEqual([false, true]);
+      expect(result.body).toMatchObject({ disclosureId: original.disclosureId, version: 2, status: 'DRAFT', replayed: false });
+      const next = result.body.disclosureVersionId as string;
+      expect(creates.every(r => r.body.disclosureVersionId === next)).toBe(true);
+      expect(await prisma.clientFinancialDisclosureVersion.count({ where: { disclosureId: original.disclosureId } })).toBe(beforeCount + 1);
+      const projection = new ClientFinancialDisclosureProjectionService(module.get<PrismaClient>(PrismaService));
+      const scope = { tenantId: tA, portalUserId: puA };
+      const pendingCurrent = await projection.getCurrentSurface(scope);
+      expect(pendingCurrent.items.find(x => x.disclosureId === id)?.supersededByDisclosureId).toBeNull();
+      expect(JSON.stringify(pendingCurrent)).not.toContain(next);
+      expect(JSON.stringify(await projection.getHistorySurface(scope))).not.toContain(next);
+      expect((await prisma.clientFinancialDisclosure.findUniqueOrThrow({ where: { id: original.disclosureId } })).currentVersionId).toBe(id);
+      expect(providerCalls).toHaveLength(1);
+      const req = await request(http.getHttpServer()).post(`/client-financial-disclosures/${next}/request-office-approval`).set('x-test-user', uReq).expect(201);
+      await request(http.getHttpServer()).post(`/client-financial-disclosures/${next}/complete-office-approval`).set('x-test-user', uReq).send({ approvalRequestId: req.body.approvalRequestId }).expect(403);
+      await request(http.getHttpServer()).post(`/client-financial-disclosures/${next}/complete-office-approval`).set('x-test-user', uP1).send({ approvalRequestId: req.body.approvalRequestId }).expect(201);
+      await request(http.getHttpServer()).post(`/client-financial-disclosures/${next}/request-content-approval`).set('x-test-user', uReq)
+        .send({ approvedRecipientEmail: `client-${key}@example.test` }).expect(201);
+      await request(http.getHttpServer()).post(`/client-financial-disclosures/${next}/complete-content-approval`).set('x-test-user', uP1).expect(403);
+      await request(http.getHttpServer()).post(`/client-financial-disclosures/${next}/complete-content-approval`).set('x-test-user', uP2).expect(201);
+      await request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/supersede`).set('x-test-user', uP1)
+        .send({ supersedingVersionId: next, correctionReason: 'Bildirim düzeltmesi' }).expect(409);
+      expect((await read(id)).status).toBe('PUBLISHED');
+      const publication = module.get(ClientFinancialDisclosurePublicationService);
+      await publication.beginSend({ tenantId: tA, disclosureVersionId: next, actorUserId: uP1 });
+      const beforeReverse = await persisted(id);
+      await request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/reverse`).set('x-test-user', uP1)
+        .send({ correctionReason: 'Eşzamanlı ters çevirme' }).expect(409);
+      expect(await persisted(id)).toEqual(beforeReverse); expect(providerCalls).toHaveLength(1);
+      const publishes = await Promise.all([uP1, uP2].map(actor => request(http.getHttpServer())
+        .post(`/client-financial-disclosures/${next}/publish`).set('x-test-user', actor)));
+      expect(publishes.some(r => r.status === 201 && r.body.status === 'PUBLISHED')).toBe(true);
+      expect(publishes.every(r => [201, 409].includes(r.status))).toBe(true);
+      expect(providerCalls).toHaveLength(2);
+      expect((await read(id)).status).toBe('SUPERSEDED'); expect((await read(next)).status).toBe('PUBLISHED');
+      expect((await prisma.clientFinancialDisclosure.findUniqueOrThrow({ where: { id: original.disclosureId } })).currentVersionId).toBe(next);
+      const old = await prisma.clientFinancialDisclosureVersion.findUniqueOrThrow({ where: { id }, include: { lines: true } });
+      for (const field of ['snapshotHash', 'sourceFingerprint', 'notificationContent', 'notificationContentHash', 'approvedRecipientEmail'] as const) expect(old[field]).toEqual(original[field]);
+      expect(old.lines).toEqual(original.lines);
+      expect((await projection.getCurrentSurface(scope)).items.some(x => x.disclosureId === next)).toBe(true);
+      expect((await projection.getCurrentSurface(scope)).items.some(x => x.disclosureId === id)).toBe(false);
+      expect((await projection.getHistorySurface(scope)).items.find(x => x.disclosureId === id)).toMatchObject({ remittanceStatus: 'CORRECTED', correctionReason: 'Bildirim düzeltmesi', supersededByDisclosureId: next });
+      const audits = await prisma.auditLog.findMany({ where: { tenantId: tA, entityId: { in: [id, next] } } });
+      expect(audits.filter(x => x.action === 'CLIENT_FINANCIAL_DISCLOSURE_SUPERSEDED')).toHaveLength(1);
+      const successfulActor = publishes[0].status === 201 && !publishes[0].body.replayed ? uP1 : uP2;
+      expect(audits.find(x => x.action === 'CLIENT_FINANCIAL_DISCLOSURE_SUPERSEDED')).toMatchObject({ actorType: 'USER', userId: successfulActor });
+      const immutable = await persisted(next);
+      await request(http.getHttpServer()).post(correctionPath).set('x-test-user', uP1).send({ correctionReason: 'Bildirim düzeltmesi' }).expect(201)
+        .expect(r => expect(r.body).toMatchObject({ disclosureVersionId: next, status: 'PUBLISHED', replayed: true }));
+      await request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/supersede`).set('x-test-user', uP2)
+        .send({ supersedingVersionId: next, correctionReason: 'Bildirim düzeltmesi' }).expect(201).expect(r => expect(r.body.replayed).toBe(true));
+      expect(await persisted(next)).toEqual(immutable); expect(providerCalls).toHaveLength(2);
+    });
+  });
+
+  it('CL-Z04 preserves v1 and durable SENT proof on publication audit failure, then completes without resending', async () => {
+    await withHttp('clz04-audit', OK, async ({ module, http }) => {
+      const key = `clz04-audit-${S}`, id = await upToSendPending(module, key);
+      await request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/publish`).set('x-test-user', uP1).expect(201);
+      const created = await request(http.getHttpServer()).post(`/client-financial-disclosures/office/clients/${clA}/versions/${id}/corrections`)
+        .set('x-test-user', uP1).send({ correctionReason: 'Düzeltme' }).expect(201);
+      const next = created.body.disclosureVersionId as string;
+      const approval = module.get(ClientFinancialDisclosureApprovalService);
+      const req = await approval.requestOfficeApproval({ tenantId: tA, disclosureVersionId: next, requesterUserId: uReq });
+      await approval.completeOfficeApproval({ tenantId: tA, disclosureVersionId: next, approvalRequestId: req.approvalRequestId!, approverUserId: uP1 });
+      await approval.requestContentApproval({ tenantId: tA, disclosureVersionId: next, requesterUserId: uReq, approvedRecipientEmail: `client-${key}@example.test` });
+      await approval.completeContentApproval({ tenantId: tA, disclosureVersionId: next, contentApproverUserId: uP2 });
+      const service = module.get(ClientFinancialDisclosurePublicationService);
+      const original = (service as any).writeAudit.bind(service);
+      const fault = jest.spyOn(service as any, 'writeAudit').mockImplementation(async (...args: any[]) => {
+        if (args[2] === 'CLIENT_FINANCIAL_DISCLOSURE_SUPERSEDED') throw new Error('isolated supersession audit failure');
+        return original(...args);
+      });
+      try {
+        await request(http.getHttpServer()).post(`/client-financial-disclosures/${next}/publish`).set('x-test-user', uP1).expect(500);
+        expect(fault).toHaveBeenCalledWith(expect.anything(), expect.anything(), 'CLIENT_FINANCIAL_DISCLOSURE_SUPERSEDED', expect.anything(), { actorType: 'USER', userId: uP1 });
+      } finally { fault.mockRestore(); }
+      expect((await read(id)).status).toBe('PUBLISHED'); expect((await read(next)).status).toBe('SEND_PENDING');
+      const before = await persisted(next);
+      expect(before.audits.filter(a => a.action === 'CLIENT_FINANCIAL_DISCLOSURE_SENT')).toHaveLength(1);
+      expect(providerCalls).toHaveLength(2);
+      await postRecovery(http, next, uP2).expect(201).expect(r => expect(r.body.status).toBe('PUBLISHED'));
+      expect(providerCalls).toHaveLength(2); expect((await read(id)).status).toBe('SUPERSEDED');
+      expect((await persisted(next)).audits.find(a => a.action === 'CLIENT_FINANCIAL_DISCLOSURE_PUBLISHED')).toMatchObject({ actorType: 'USER', userId: uP2 });
+    });
+  });
+
   it.each(['reverse', 'supersede'])('KI-230 HTTP %s binds the actual principal and preserves the original replay attribution', async operation => {
     await withHttp(`ki230-http-${operation}`, OK, async ({ module, http }) => {
       const id = await upToSendPending(module, `ki230-http-${operation}-${S}`);
@@ -423,14 +527,18 @@ describeDb('CLIENT-FD-ACT-R01-I06 — uçtan uca kabul (gerçek Nest composition
         .toMatchObject({ actorType: 'SYSTEM', userId: null });
       const body: { correctionReason: string; supersedingVersionId?: string } = { correctionReason: 'Düzeltme' };
       if (operation === 'supersede') {
-        const original = await prisma.clientFinancialDisclosureVersion.findUniqueOrThrow({ where: { id } });
-        const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...fields } = original;
-        const next = `e2e-ki230-next-${S}`;
-        await prisma.clientFinancialDisclosureVersion.create({ data: {
-          ...fields, id: next, version: 2, status: 'CONTENT_APPROVED',
-          officeApprovalRequestId: null, sendIdempotencyKey: `e2e-ki230-next-send-${S}`,
-          sendRequestedAt: null, providerMessageId: null, providerAcceptedAt: null, publishedAt: null,
-        } });
+        const writer = module.get(ClientFinancialDisclosureWriterService);
+        const next = (await writer.createCorrectionVersion({ tenantId: tA, clientId: clA, actorUserId: uP2,
+          disclosureVersionId: id, correctionReason: 'Düzeltme' })).versionId;
+        const approval = module.get(ClientFinancialDisclosureApprovalService);
+        const req = await approval.requestOfficeApproval({ tenantId: tA, disclosureVersionId: next, requesterUserId: uReq });
+        await approval.completeOfficeApproval({ tenantId: tA, disclosureVersionId: next, approvalRequestId: req.approvalRequestId!, approverUserId: uP1 });
+        await approval.requestContentApproval({ tenantId: tA, disclosureVersionId: next, requesterUserId: uReq,
+          approvedRecipientEmail: state.version.approvedRecipientEmail! });
+        await approval.completeContentApproval({ tenantId: tA, disclosureVersionId: next, contentApproverUserId: uP2 });
+        const publication = module.get(ClientFinancialDisclosurePublicationService);
+        await publication.beginSend({ tenantId: tA, disclosureVersionId: next, actorUserId: uP2 });
+        await publication.dispatchAndPublish({ tenantId: tA, disclosureVersionId: next, actorUserId: uP2 });
         body.supersedingVersionId = next;
       }
       const beforeCommand = await persisted(id);
@@ -454,7 +562,7 @@ describeDb('CLIENT-FD-ACT-R01-I06 — uçtan uca kabul (gerçek Nest composition
       await request(http.getHttpServer()).post(`/client-financial-disclosures/${id}/${operation}`)
         .set('x-test-user', uP1).send(body).expect(201).expect(r => expect(r.body.replayed).toBe(true));
       expect(await persisted(id)).toEqual(state);
-      expect(providerCalls).toHaveLength(1);
+      expect(providerCalls).toHaveLength(operation === 'supersede' ? 2 : 1);
     });
   });
 

@@ -8,6 +8,7 @@ import {
   clientFinancialDisclosureApi,
   type OfficeDisclosureSummary,
 } from '@/lib/api/client-financial-disclosure';
+import { DisclosureCorrectionPanel } from './DisclosureCorrectionPanel';
 import { DisclosureStatusBadge } from './DisclosureStatusBadge';
 import { DisclosurePreparationPanel } from './DisclosurePreparationPanel';
 import { DisclosurePreviewPanel } from './DisclosurePreviewPanel';
@@ -154,6 +155,12 @@ export function FinancialDisclosureWorkspace({ clientId }: { clientId: string })
         <DisclosurePreviewPanel clientId={clientId} versionId={selection.versionId} />
       ) : null}
 
+      {detail.isSuccess && (detail.data.actions.canReverse || detail.data.actions.canCreateCorrection || detail.data.supersededByVersionId) ? (
+        <DisclosureCorrectionPanel key={`correction-${clientId}-${detail.data.versionId}`} clientId={clientId}
+          versionId={detail.data.versionId} actions={detail.data.actions} successorVersionId={detail.data.supersededByVersionId}
+          onSelectVersion={setSelectedVersionId} />
+      ) : null}
+
       {detail.isSuccess ? (
         <DisclosureApprovalPanel
           key={detail.data.versionId}
@@ -231,7 +238,7 @@ export function FinancialDisclosureWorkspace({ clientId }: { clientId: string })
                   return (
                     <li key={item.versionId} className="rounded-md border p-3 text-sm">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="font-medium">Sürüm {item.version}</span>
+                        <button type="button" className="font-medium underline" onClick={() => setSelectedVersionId(item.versionId)}>Sürüm {item.version}</button>
                         <div className="flex flex-wrap gap-1">
                           <DisclosureStatusBadge status={item.status} />
                           <CurrentEffectiveMark active={isCurrentEffective} />

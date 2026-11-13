@@ -24,6 +24,13 @@ export class ReverseClientFinancialDisclosureDto {
   correctionReason: string;
 }
 
+/** Only a client-safe reason is accepted; financial values, ownership and actor are server-derived. */
+export class CreateClientFinancialDisclosureCorrectionDto {
+  @IsString()
+  @MinLength(1)
+  correctionReason: string;
+}
+
 /** PUBLISHED -> SUPERSEDED için mevcut ve yeni versiyon bağı. */
 export class SupersedeClientFinancialDisclosureDto {
   @IsString()
