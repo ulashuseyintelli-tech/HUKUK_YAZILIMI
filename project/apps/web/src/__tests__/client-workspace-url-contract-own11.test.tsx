@@ -23,6 +23,11 @@ const routerPush = vi.fn();
 const routerReplace = vi.fn();
 let currentSearchParams = new URLSearchParams();
 
+// The mounted info-request tab consumes the same authenticated workspace context.
+vi.mock('@/lib/auth-context', () => ({
+  useAuth: () => ({ user: { id: 'user-1', tenantId: 'tenant-1', role: 'USER' } }),
+}));
+
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: routerPush, replace: routerReplace }),
   usePathname: () => '/clients/client-1',
@@ -43,6 +48,7 @@ vi.mock('@/lib/api', () => ({
     restoreClientAddress: vi.fn(),
     listIntakeLinks: vi.fn(),
     listIntakeSubmissions: vi.fn(),
+    getClientInfoRequestsForCase: vi.fn(),
     get: vi.fn(),
   },
 }));
@@ -126,12 +132,26 @@ beforeEach(() => {
   apiMock.getClientAddresses.mockResolvedValue([]);
   apiMock.listIntakeLinks.mockResolvedValue({ data: [] });
   apiMock.listIntakeSubmissions.mockResolvedValue({ data: [] });
+  apiMock.getClientInfoRequestsForCase.mockResolvedValue([]);
   // Activity/Bilgi Talepleri sekmeleri generic `api.get` üzerinden besleniyor; bu suite
   // sekme SEÇİMİNİ test ediyor, sekme içeriğini değil — boş ama geçerli yanıt yeterli.
   apiMock.get.mockResolvedValue({ data: { data: [], nextCursor: null } });
 });
 
 describe('[1-6] sekme başlatma — query parametresi', () => {
+  it('CL-Z03 mounts the existing actions from the canonical client workspace with both parents', async () => {
+    apiMock.getCases.mockResolvedValue({ data: [{ id: 'case-1', fileNumber: '2026/1', caseStatus: 'DERDEST' }] });
+    apiMock.getClientInfoRequestsForCase.mockResolvedValue([{ id: 'request-1', clientId: 'client-1', caseId: 'case-1',
+      status: 'SENT', emailTo: 'synthetic@example.test', emailSubject: 'Synthetic info request',
+      sentAt: '2026-11-13T00:00:00Z', reminderCount: 0,
+      actions: { canSendReminder: false, canMarkResponded: true, canMarkNoResponse: true } }]);
+    await renderWorkspace('tab=info-requests');
+    await screen.findByRole('button', { name: 'Yanıtlandı' });
+    expect(apiMock.getClientInfoRequestsForCase).toHaveBeenCalledWith('case-1', 'client-1');
+    expect(screen.queryByRole('button', { name: 'Hatırlat' })).toBeNull();
+    expect(activeTabName()).toContain('Bilgi Talepleri');
+  });
+
   it('[1] query parametresi YOKken varsayılan `overview` seçilir', async () => {
     await renderWorkspace('');
     expect(activeTabName()).toContain('Genel');

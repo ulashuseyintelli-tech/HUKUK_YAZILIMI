@@ -573,7 +573,7 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
           )}
 
           {/* Bilgi Talepleri */}
-          {tab === 'info-requests' && <ClientInfoRequestsTab cases={cases} />}
+          {tab === 'info-requests' && <ClientInfoRequestsTab clientId={clientId} cases={cases} />}
 
           {/* İstihbarat */}
           {tab === 'intelligence' && <ClientIntelligenceTab cases={cases} />}

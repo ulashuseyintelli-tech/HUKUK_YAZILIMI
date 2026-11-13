@@ -4,13 +4,13 @@
  * ClientInfoRequestsTab — "Bilgi Talepleri" (Task 5).
  *
  * ClientInfoRequest = legacy/email adapter kanalı (kanonik değil; ClientIntake canonical'dır —
- * bkz. ClientIntakeTab). Bu sekme YALNIZ okuma: address-discovery modülünün mevcut dosya-bazlı
- * endpoint'i (GET /address-discovery/client-info-request/case/:caseId) müvekkilin dosyaları
- * üzerinden dolaşılarak gösterilir. Yeni endpoint/mutation YOK; respond/reminder/no-response
- * aksiyonları case detayında (address-discovery) zaten var — burada tekrarlanmaz (read-only v1).
+ * bkz. ClientIntakeTab). Mevcut dosya-bazlı okuma ve üç işlem ucu tüketilir.
+ * CL-Z03 işlem görünürlüğü sunucu sinyalinden gelir; tarayıcı yeni bir yetki üretmez.
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type ClientInfoRequestDTO, type ClientInfoRequestStatus } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
+import { ClientInfoRequestActions } from '@/components/address-discovery/ClientInfoRequestCard';
 
 export interface ClientInfoRequestsCase {
   id: string;
@@ -20,6 +20,7 @@ export interface ClientInfoRequestsCase {
 
 interface ClientInfoRequestsTabProps {
   cases: ClientInfoRequestsCase[];
+  clientId?: string;
 }
 
 const STATUS_LABELS: Record<ClientInfoRequestStatus, string> = {
@@ -57,10 +58,18 @@ function StatusBadge({ status }: { status: ClientInfoRequestStatus }) {
   );
 }
 
-export function ClientInfoRequestsTab({ cases }: ClientInfoRequestsTabProps) {
+export function ClientInfoRequestsTab({ cases, clientId }: ClientInfoRequestsTabProps) {
+  const { user } = useAuth();
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(cases[0]?.id ?? null);
-  const [requests, setRequests] = useState<ClientInfoRequestDTO[] | null>(null);
-  const [error, setError] = useState('');
+  const effectiveCaseId = cases.some(c => c.id === selectedCaseId) ? selectedCaseId : cases[0]?.id ?? null;
+  const context = `${user?.tenantId}:${user?.id}:${user?.role}:${clientId ?? ''}:${effectiveCaseId ?? ''}`;
+  const current = useRef(context); current.current = context;
+  const sequence = useRef(0), mounted = useRef(true);
+  const [result, setResult] = useState<{ context: string; requests: ClientInfoRequestDTO[] | null; error: string }>({ context: '', requests: null, error: '' });
+  const [notice, setNotice] = useState<{ context: string; text: string } | null>(null);
+  const requests = result.context === context ? result.requests : null;
+  const error = result.context === context ? result.error : '';
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   useEffect(() => {
     if (cases.length === 0) {
@@ -71,39 +80,30 @@ export function ClientInfoRequestsTab({ cases }: ClientInfoRequestsTabProps) {
     setSelectedCaseId((current) => (current && cases.some((c) => c.id === current) ? current : cases[0].id));
   }, [cases]);
 
-  useEffect(() => {
-    if (!selectedCaseId) {
-      setRequests([]);
-      setError('');
-      return;
+  const reload = useCallback(async () => {
+    const run = ++sequence.current;
+    const active = () => mounted.current && current.current === context && sequence.current === run;
+    setResult({ context, requests: null, error: '' });
+    if (!effectiveCaseId) { if (active()) setResult({ context, requests: [], error: '' }); return; }
+    try {
+      const list = await (clientId === undefined ? api.getClientInfoRequestsForCase(effectiveCaseId)
+        : api.getClientInfoRequestsForCase(effectiveCaseId, clientId));
+      if (!Array.isArray(list) || list.some(row => row.caseId !== effectiveCaseId || (clientId !== undefined && row.clientId !== clientId))) {
+        throw new Error('Info request context mismatch');
+      }
+      if (active()) setResult({ context, requests: [...list].sort((a, b) => ts(b.sentAt) - ts(a.sentAt)), error: '' });
+    } catch (failure) {
+      if (active()) setResult({ context, requests: [], error: 'Bilgi talepleri yüklenemedi.' });
+      throw failure;
     }
-
-    let active = true;
-    setRequests(null);
-    setError('');
-
-    api
-      .getClientInfoRequestsForCase(selectedCaseId)
-      .then((list) => {
-        if (!active) return;
-        setRequests([...list].sort((a, b) => ts(b.sentAt) - ts(a.sentAt)));
-      })
-      .catch(() => {
-        if (!active) return;
-        setRequests([]);
-        setError('Bilgi talepleri yüklenemedi.');
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [selectedCaseId]);
+  }, [effectiveCaseId, clientId, context]);
+  useEffect(() => { void reload().catch(() => undefined); return () => { sequence.current++; }; }, [reload]);
 
   if (cases.length === 0) {
     return <p className="text-center py-6 text-gray-500">Bilgi talepleri dosya üzerinden gönderilir; bu müvekkile bağlı dosya yok.</p>;
   }
 
-  const selectedCase = cases.find((c) => c.id === selectedCaseId) ?? cases[0];
+  const selectedCase = cases.find((c) => c.id === effectiveCaseId) ?? cases[0];
   const loading = requests === null;
 
   return (
@@ -131,8 +131,9 @@ export function ClientInfoRequestsTab({ cases }: ClientInfoRequestsTabProps) {
       )}
 
       {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {notice?.context === context && <p role="status" className="text-sm">{notice.text}</p>}
 
-      {loading ? (
+      {error ? null : loading ? (
         <p className="text-center py-6 text-sm text-gray-400">Bilgi talepleri yükleniyor…</p>
       ) : requests.length === 0 ? (
         <p className="rounded-lg border border-dashed p-4 text-center text-sm text-gray-400">
@@ -150,6 +151,7 @@ export function ClientInfoRequestsTab({ cases }: ClientInfoRequestsTabProps) {
                 <th className="px-3 py-2 font-medium">Gönderim</th>
                 <th className="px-3 py-2 font-medium">Yanıt</th>
                 <th className="px-3 py-2 font-medium">Hatırlatma</th>
+                {clientId && <th className="px-3 py-2 font-medium">İşlemler</th>}
               </tr>
             </thead>
             <tbody>
@@ -164,6 +166,17 @@ export function ClientInfoRequestsTab({ cases }: ClientInfoRequestsTabProps) {
                   <td className="px-3 py-2 text-gray-600">{fmtDate(req.sentAt)}</td>
                   <td className="px-3 py-2 text-gray-600">{fmtDate(req.respondedAt)}</td>
                   <td className="px-3 py-2 text-gray-600">{req.reminderCount}</td>
+                  {clientId && <td className="px-3 py-2">
+                    {req.actions ? <ClientInfoRequestActions key={`${context}:${req.id}`} request={req} onUpdate={async () => {
+                      try {
+                        await reload();
+                        if (mounted.current && current.current === context) setNotice({ context, text: 'Bilgi talebi işlemi tamamlandı.' });
+                      } catch (failure) {
+                        if (mounted.current && current.current === context) setNotice({ context, text: 'İşlem tamamlandı; liste yenilenemedi. Tekrar işlem yapmadan güncel kaydı kontrol edin.' });
+                        throw failure;
+                      }
+                    }} /> : <span className="text-xs text-gray-500">İşlem kullanılamıyor.</span>}
+                  </td>}
                 </tr>
               ))}
             </tbody>
