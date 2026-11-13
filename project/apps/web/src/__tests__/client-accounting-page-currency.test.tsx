@@ -146,6 +146,7 @@ describe('Müvekkil Muhasebesi sayfası — para birimi', () => {
     });
     accounting.getExpenseSummary.mockImplementation(async (caseId: string) => ({
       ...EXPENSE[caseId], requestCount: 1, paidCount: 0, pendingCount: 1, blockingUnpaid: EXPENSE[caseId].totalPending,
+      expenseUnpaid: String(EXPENSE[caseId].totalPending), expenseUnpaidCurrency: 'TRY',
     }));
     accounting.getCaseBalance.mockImplementation(async (caseId: string) => ({ balance: BALANCE[caseId], currency: 'TRY' }));
     accounting.getDebtorCollectionTotal.mockImplementation(async (caseId: string) => COLLECTED[caseId]);

@@ -267,9 +267,11 @@ export class ExpenseRequestController {
     @Req() req: AuthRequest,
     @Param('caseId') caseId: string,
     @Query('clientId') clientId?: string,
+    @Query('remainingCurrency') remainingCurrency?: string,
   ) {
     // clientId opsiyonel → seçili müvekkile filtreli masraf özeti (TM3 Faz7-V). Salt-okuma.
     await this.service.assertCaseExpensesVisible(req.user.tenantId, caseId, req.user.id); // S2: eksik taleplerle özet üretilmez
+    if (remainingCurrency !== undefined) return this.service.getExpenseSummaryForCase(req.user.tenantId, caseId, clientId, remainingCurrency);
     return this.service.getExpenseSummaryForCase(req.user.tenantId, caseId, clientId);
   }
 

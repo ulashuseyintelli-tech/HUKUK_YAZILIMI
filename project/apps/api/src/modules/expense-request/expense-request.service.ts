@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException, ForbiddenException, Inject, forwardRef, Logger, Optional } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, ForbiddenException, Inject, forwardRef, Logger, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { ExpenseRequestStatus, ExpenseGateType, Prisma, BalanceLedgerType } from '@prisma/client';
 import { CaseBalanceService } from '@/modules/case-balance/case-balance.service';
 import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
 import { OfficeService } from '@/modules/office/office.service';
+import { ClientSettlementReadService } from '@/modules/client-settlement/client-settlement-read.service';
 import { WorkScopePermissionService } from '@/modules/work-scope-permission/work-scope-permission.service';
 import { EXPENSE_VIEW_ALL_KEY, assertCaseExpensesVisible, expenseViewWhereFor, isExpenseViewScopeEnabled } from './expense-view-scope';
 import { ExpenseCalculatorService, CaseData, EXPENSE_SET_TEMPLATES } from './expense-calculator.service';
@@ -136,6 +137,9 @@ export interface ExpenseSummary {
   paidCount: number;
   pendingCount: number;
   blockingUnpaid: number;
+  /** Opt-in only: same existing remaining computation, scoped to the explicitly requested currency. */
+  expenseUnpaid?: string;
+  expenseUnpaidCurrency?: string;
 }
 
 @Injectable()
@@ -162,6 +166,7 @@ export class ExpenseRequestService {
     @Optional()
     private readonly officeApproval?: OfficeApprovalService,
     @Optional() private readonly sendApproval?: ExpenseSendApprovalService,
+    @Optional() @Inject(ClientSettlementReadService) private readonly settlementRead?: ClientSettlementReadService,
   ) {}
 
   async findAll(tenantId: string, params?: { caseId?: string; clientId?: string; status?: ExpenseRequestStatus }, actorUserId?: string) {
@@ -2048,8 +2053,18 @@ export class ExpenseRequestService {
 
   /**
    * Dosya için masraf özeti getir
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ExpenseRequestController.getExpenseSummary() → GET /expense-requests/case/:caseId/summary.
+   * </remarks>
    */
-  async getExpenseSummaryForCase(tenantId: string, caseId: string, clientId?: string): Promise<ExpenseSummary> {
+  async getExpenseSummaryForCase(tenantId: string, caseId: string, clientId?: string, remainingCurrency?: string): Promise<ExpenseSummary> {
+    if (remainingCurrency !== undefined) {
+      if (typeof remainingCurrency !== 'string' || !/^[A-Z]{3}$/.test(remainingCurrency) || typeof clientId !== 'string' || !clientId.trim()) {
+        throw new BadRequestException('Kalan masraf okuması için müvekkil ve açık para birimi zorunludur.');
+      }
+      if (!this.settlementRead) throw new ServiceUnavailableException('Kalan masraf hesabı kullanılamıyor.');
+    }
     // TM3 Faz7-V: opsiyonel clientId → seçili müvekkile filtreli özet (çoklu-alacaklı dosyada
     // dosya-geneli yerine müvekkil-bazlı "talep/tahsil edilen masraf"). Salt-okuma; varsayılan
     // davranış (clientId yok) dosya-geneli kalır → mevcut çağıranlar etkilenmez.
@@ -2085,6 +2100,15 @@ export class ExpenseRequestService {
       }
     }
 
+    if (remainingCurrency !== undefined) {
+      let unpaid = new Prisma.Decimal(0);
+      for (const req of requests) {
+        if (req.currency !== remainingCurrency) continue;
+        unpaid = unpaid.plus(await this.settlementRead!.computeExpenseRemaining(this.prisma, tenantId, req.id, req.totalAmount, req.paidTotal));
+      }
+      summary.expenseUnpaid = unpaid.toString();
+      summary.expenseUnpaidCurrency = remainingCurrency;
+    }
     return summary;
   }
 

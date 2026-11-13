@@ -6,7 +6,7 @@ jest.mock("pdf-poppler", () => ({
 }));
 
 import { INestApplication } from "@nestjs/common";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import * as request from "supertest";
 import { A_CASE_KEYS, ACaseKey, ScopeWorld, buildScopeApp, createScopeWorld, expectHiddenResponse, scopeFlag, scopeHttp } from "../../../../test/p3-scope-world";
 import { resolveTestDatabaseUrl } from "../../../../test/test-db-env";
@@ -17,6 +17,8 @@ import { ExpenseNotificationService } from "../expense-notification.service";
 import { ExpenseRequestModule } from "../expense-request.module";
 import { ExpenseRequestService } from "../expense-request.service";
 import { ExpenseViewService } from "../expense-view.service";
+import { ClientSettlementReadService } from "../../client-settlement/client-settlement-read.service";
+import { linkClient } from "../../../../test/client-currency-fixture";
 
 /**
  * F02 P3 tarama S2 (owner kararı 09.11.2026) — MEVCUT masraf görünüm kapsamı (OFFICE_EXPENSE_VIEW_SCOPE_ENABLED;
@@ -325,6 +327,135 @@ describeDb("F02 P3 tarama S2 — masraf okuma uçlarında masraf görünüm kaps
         expect([label, (await http.get(actor(), `/expense-requests/${req.c4}`)).status, await summary(actor(), "c4")]).toEqual([label, offRow, offCase]);
         expect([label, offRow === 200, offCase === 200]).toEqual([label, visible.includes("c4"), cases.includes("c4")]);
       }
+    });
+  });
+
+  describe("CL-R12 — existing remaining in the opt-in case summary (real HTTP/DB/DI)", () => {
+    const ownClients: string[] = [];
+    let selectedClient: string;
+    let otherClient: string;
+    let selectedRequest: string;
+    let collectionId: string;
+    let dispositionId: string;
+    const D = (value: string | number) => new Prisma.Decimal(value);
+    const url = (caseId = w.c.c4, clientId = selectedClient, currency?: string) =>
+      `/expense-requests/case/${caseId}/summary?clientId=${clientId}${currency === undefined ? '' : `&remainingCurrency=${currency}`}`;
+    const totals = async () => ({
+      requests: await db.expenseRequest.count({ where: { tenantId: w.tA } }),
+      offsets: await db.clientOffset.count({ where: { tenantId: w.tA } }),
+      applications: await db.collectionDispositionExpenseApplication.count({ where: { tenantId: w.tA } }),
+      audits: await db.auditLog.count({ where: { tenantId: w.tA } }),
+      tasks: await db.task.count({ where: { tenantId: w.tA } }),
+    });
+
+    beforeAll(async () => {
+      flag.on(); p3.on();
+      const makeClient = async (label: string) => {
+        const row = await db.client.create({ data: { tenantId: w.tA, type: 'COMPANY', name: `CLR12-${label}-${w.suffix}` } as never });
+        ownClients.push(row.id); return row.id;
+      };
+      selectedClient = await makeClient('selected'); otherClient = await makeClient('other');
+      const cc = await linkClient(db, w.c.c4, selectedClient, w.u.admin);
+      await linkClient(db, w.c.c6, selectedClient, w.u.admin);
+      await linkClient(db, w.c.c4, otherClient, w.u.admin, 'ORTAK_ALACAKLI');
+      const makeExpense = async (caseId: string, clientId: string, amount: number, currency = 'TRY', paid = 0, status = 'SENT') =>
+        (await db.expenseRequest.create({ data: { tenantId: w.tA, caseId, clientId, totalAmount: D(amount), paidTotal: D(paid), currency, status, gateType: 'BLOCKING', createdById: w.u.admin } as never })).id;
+      selectedRequest = await makeExpense(w.c.c4, selectedClient, 1000, 'TRY', 200, 'PARTIAL');
+      await makeExpense(w.c.c4, selectedClient, 500, 'USD');
+      await makeExpense(w.c.c4, selectedClient, 999, 'TRY', 0, 'CANCELLED');
+      await makeExpense(w.c.c4, otherClient, 700);
+      await makeExpense(w.c.c6, selectedClient, 600);
+
+      // Valid full-reversal pairs: offset APPLY 250+50, REVERSAL 50; reimbursement APPLY 80+20, REVERSAL 20.
+      const offset = async (amount: number, key: string, kind: 'APPLY' | 'REVERSAL', reversesOffsetId?: string) =>
+        db.clientOffset.create({ data: { tenantId: w.tA, clientId: selectedClient, amount: D(amount), currency: 'TRY', kind, payableCaseId: w.c.c4, payableCaseClientId: cc, expenseCaseId: w.c.c4, expenseRequestId: selectedRequest, idempotencyKey: `clr12-${key}-${w.suffix}`, createdById: w.u.admin, reversesOffsetId, reason: kind === 'REVERSAL' ? 'CL-R12 full reversal fixture' : undefined } });
+      await offset(250, 'apply-a', 'APPLY');
+      const off = await offset(50, 'apply-b', 'APPLY'); await offset(50, 'reverse-b', 'REVERSAL', off.id);
+      const collection = await db.collection.create({ data: { tenantId: w.tA, caseId: w.c.c4, idempotencyKey: `clr12-${w.suffix}`, amount: D(1000), currency: 'TRY', type: 'TAHSILAT', channel: 'BANKA', sourceType: 'MANUAL', status: 'CONFIRMED', confirmedAt: new Date(), date: new Date(), createdById: w.u.admin } as never });
+      collectionId = collection.id;
+      const disp = await db.collectionDisposition.create({ data: { tenantId: w.tA, caseId: w.c.c4, collectionId, caseClientId: cc, beneficiaryScope: 'SINGLE_CASE_CLIENT', status: 'POSTED', totalAmount: D(1000), currency: 'TRY', createdById: w.u.admin, postedById: w.u.admin, postedAt: new Date() } as never });
+      dispositionId = disp.id;
+      await db.collectionDispositionLine.create({ data: { dispositionId, type: 'CLIENT_PAYABLE', amount: D(900), caseClientId: cc } });
+      for (const amount of [80, 20]) {
+        const line = await db.collectionDispositionLine.create({ data: { dispositionId, type: 'FIRM_EXPENSE_REIMBURSEMENT', amount: D(amount), expenseRequestId: selectedRequest } });
+        const application = await db.collectionDispositionExpenseApplication.create({ data: { tenantId: w.tA, caseId: w.c.c4, expenseRequestId: selectedRequest, collectionDispositionId: dispositionId, collectionDispositionLineId: line.id, kind: 'APPLY', amount: D(amount), currency: 'TRY', reimbursementScope: 'FIRM_FRONTED', createdById: w.u.admin } });
+        if (amount === 20) await db.collectionDispositionExpenseApplication.create({ data: { tenantId: w.tA, caseId: w.c.c4, expenseRequestId: selectedRequest, collectionDispositionId: dispositionId, collectionDispositionLineId: line.id, kind: 'REVERSAL', amount: D(20), currency: 'TRY', reimbursementScope: 'FIRM_FRONTED', createdById: w.u.admin, reversesApplicationId: application.id, reason: 'CL-R12 full reversal fixture' } });
+      }
+    });
+
+    afterAll(async () => {
+      if (dispositionId) {
+        await db.collectionDispositionExpenseApplication.deleteMany({ where: { collectionDispositionId: dispositionId } });
+        await db.collectionDispositionLine.deleteMany({ where: { dispositionId } });
+        await db.collectionDisposition.deleteMany({ where: { id: dispositionId } });
+      }
+      if (collectionId) await db.collection.deleteMany({ where: { id: collectionId } });
+      await db.clientOffset.deleteMany({ where: { tenantId: w.tA, clientId: { in: ownClients } } });
+      await db.expenseRequest.deleteMany({ where: { tenantId: w.tA, clientId: { in: ownClients } } });
+      await db.caseClient.deleteMany({ where: { clientId: { in: ownClients } } });
+      await db.client.deleteMany({ where: { id: { in: ownClients } } });
+      flag.off(); p3.off();
+    });
+
+    it('legacy response stays exact; the explicit TRY read adds canonical 470 without changing any legacy field', async () => {
+      const before = await totals();
+      const legacy = await http.get(w.u.link, url());
+      expect(legacy.status).toBe(200);
+      expect(legacy.body).toEqual({ totalRequested: 1500, totalPaid: 200, totalPending: 1300, requestCount: 2, paidCount: 0, pendingCount: 2, blockingUnpaid: 1300 });
+      const current = await http.get(w.u.link, url(w.c.c4, selectedClient, 'TRY'));
+      expect(current.status).toBe(200);
+      expect(current.body).toEqual({ ...legacy.body, expenseUnpaid: '470', expenseUnpaidCurrency: 'TRY' });
+      expect((app.get(ExpenseRequestService) as any).settlementRead).toBe(app.get(ClientSettlementReadService));
+      expect(await totals()).toEqual(before);
+      const stored = await db.expenseRequest.findUniqueOrThrow({ where: { id: selectedRequest } });
+      expect([stored.paidTotal.toString(), stored.status]).toEqual(['200', 'PARTIAL']);
+    });
+
+    it('global total and case rows reuse the same remaining; single-case reads do not gain a global-client access requirement', async () => {
+      const path = `/clients/${selectedClient}/accounting/summary?currency=TRY`;
+      const global = await http.get(w.u.allow, path);
+      expect(global.status).toBe(200);
+      expect(global.body.data.clientScoped.expenseUnpaid).toBe('1070');
+      expect(global.body.data.caseBreakdown.find((r: any) => r.caseId === w.c.c4).expenseUnpaid).toBe('470');
+      expect(global.body.data.caseBreakdown.find((r: any) => r.caseId === w.c.c6).expenseUnpaid).toBe('600');
+      expect((await http.get(w.u.link, path)).status).toBe(403);
+      expect((await http.get(w.u.link, url(w.c.c4, selectedClient, 'TRY'))).body.expenseUnpaid).toBe('470');
+    });
+
+    it('currency, client and real case remain separate; CANCELLED and other currencies are excluded from the new remaining', async () => {
+      for (const [caseId, clientId, currency, expected] of [[w.c.c4, selectedClient, 'USD', '500'], [w.c.c6, selectedClient, 'TRY', '600'], [w.c.c4, otherClient, 'TRY', '700']] as const) {
+        const res = await http.get(expAll, url(caseId, clientId, currency));
+        expect([res.status, res.body.expenseUnpaid, res.body.expenseUnpaidCurrency]).toEqual([200, expected, currency]);
+      }
+      const empty = await http.get(expAll, url(w.c.c4, selectedClient, 'EUR'));
+      expect([empty.status, empty.body.expenseUnpaid]).toEqual([200, '0']);
+    });
+
+    it('existing expense-view denials and tenant boundaries remain identical, without a new write or success audit', async () => {
+      const before = await totals();
+      const legacy = await http.get(w.u.nobody, url());
+      const current = await http.get(w.u.nobody, url(w.c.c4, selectedClient, 'TRY'));
+      expect([legacy.status, current.status, current.body]).toEqual([404, 404, legacy.body]);
+      // Existing GLOBAL expense permission short-circuits the visibility check in the actor's own tenant.
+      // Cross-tenant aggregate reads therefore retain legacy empty 200, indistinguishable from a missing case.
+      const foreignLegacy = await http.get(expAllB, url());
+      const foreign = await http.get(expAllB, url(w.c.c4, selectedClient, 'TRY'));
+      const missing = await http.get(expAllB, url('missing-clr12-case', selectedClient, 'TRY'));
+      expect([foreignLegacy.status, foreignLegacy.body.totalRequested, foreignLegacy.body.requestCount]).toEqual([200, 0, 0]);
+      expect([foreign.status, foreign.body]).toEqual([200, { ...foreignLegacy.body, expenseUnpaid: '0', expenseUnpaidCurrency: 'TRY' }]);
+      expect([missing.status, missing.body]).toEqual([foreign.status, foreign.body]);
+      const wrongCase = await http.get(w.u.link, url(w.c.c6, selectedClient, 'TRY'));
+      expect(wrongCase.status).toBe(404);
+      expect(await totals()).toEqual(before);
+    });
+
+    it('invalid opt-in currency or missing client is explicit 400, not legacy success', async () => {
+      const before = await totals();
+      for (const suffix of [`?clientId=${selectedClient}&remainingCurrency=`, `?clientId=${selectedClient}&remainingCurrency=try`, '?remainingCurrency=TRY']) {
+        const res = await http.get(w.u.link, `/expense-requests/case/${w.c.c4}/summary${suffix}`);
+        expect(res.status).toBe(400);
+      }
+      expect(await totals()).toEqual(before);
     });
   });
 });

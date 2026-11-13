@@ -2162,4 +2162,49 @@ describe('getExpenseSummaryForCase - clientId filtresi (TM3 Faz7-V)', () => {
     expect(where).toMatchObject({ tenantId: 't1', caseId: 'case-1' });
     expect(where.clientId).toBeUndefined();
   });
+
+  it('CL-R12: legacy response remains exact and never calls the remaining reader', async () => {
+    mockPrismaService.expenseRequest.findMany.mockResolvedValue([
+      { id: 'er', currency: 'TRY', totalAmount: new Decimal(1000), paidTotal: new Decimal(200), status: 'PARTIAL', gateType: 'BLOCKING' },
+    ]);
+    expect(await service.getExpenseSummaryForCase('t1', 'case-1', 'client-1')).toEqual({
+      totalRequested: 1000, totalPaid: 200, totalPending: 800, requestCount: 1, paidCount: 0, pendingCount: 1, blockingUnpaid: 800,
+    });
+    expect(mockClientSettlementReadService.computeExpenseRemaining).not.toHaveBeenCalled();
+  });
+
+  it('CL-R12: real Nest DI resolves the canonical reader; opt-in adds only the explicit-currency remaining', async () => {
+    const a = { id: 'er-a', currency: 'TRY', totalAmount: new Decimal(1000), paidTotal: new Decimal(200), status: 'PARTIAL', gateType: 'BLOCKING' };
+    mockPrismaService.expenseRequest.findMany.mockResolvedValue([
+      a, { ...a, id: 'er-usd', currency: 'USD', totalAmount: new Decimal(500), paidTotal: new Decimal(0) },
+    ]);
+    mockClientSettlementReadService.computeExpenseRemaining.mockResolvedValueOnce(new Decimal(470));
+    const res = await service.getExpenseSummaryForCase('t1', 'case-1', 'client-1', 'TRY');
+    expect(res).toEqual({ totalRequested: 1500, totalPaid: 200, totalPending: 1300, requestCount: 2, paidCount: 0, pendingCount: 2, blockingUnpaid: 1300, expenseUnpaid: '470', expenseUnpaidCurrency: 'TRY' });
+    expect(mockClientSettlementReadService.computeExpenseRemaining).toHaveBeenCalledTimes(1);
+    expect(mockClientSettlementReadService.computeExpenseRemaining).toHaveBeenCalledWith(mockPrismaService, 't1', 'er-a', a.totalAmount, a.paidTotal);
+    expect(Reflect.getMetadata('self:paramtypes', ExpenseRequestService)).toContainEqual(expect.objectContaining({ param: ClientSettlementReadService }));
+  });
+
+  it.each(['0', '-10', '66.66'])('CL-R12: preserves raw canonical remaining %s', async (amount) => {
+    mockPrismaService.expenseRequest.findMany.mockResolvedValue([
+      { id: 'er', currency: 'TRY', totalAmount: new Decimal(100), paidTotal: new Decimal(0), status: 'SENT', gateType: 'BLOCKING' },
+    ]);
+    mockClientSettlementReadService.computeExpenseRemaining.mockResolvedValueOnce(new Decimal(amount));
+    expect((await service.getExpenseSummaryForCase('t1', 'case-1', 'client-1', 'TRY')).expenseUnpaid).toBe(amount);
+  });
+
+  it.each(['', 'try', 'TRY,USD', undefined])('CL-R12: invalid opt-in currency/client fails before reads (%s)', async (currency) => {
+    await expect(service.getExpenseSummaryForCase('t1', 'case-1', currency === undefined ? undefined : 'client-1', currency ?? 'TRY')).rejects.toMatchObject({ status: 400 });
+    expect(mockPrismaService.expenseRequest.findMany).not.toHaveBeenCalled();
+    expect(mockClientSettlementReadService.computeExpenseRemaining).not.toHaveBeenCalled();
+  });
+
+  it('CL-R12: missing canonical reader fails closed only for opt-in, not the legacy call', async () => {
+    (service as any).settlementRead = undefined;
+    mockPrismaService.expenseRequest.findMany.mockResolvedValue([]);
+    await expect(service.getExpenseSummaryForCase('t1', 'case-1', 'client-1', 'TRY')).rejects.toMatchObject({ status: 503 });
+    expect(mockPrismaService.expenseRequest.findMany).not.toHaveBeenCalled();
+    expect((await service.getExpenseSummaryForCase('t1', 'case-1', 'client-1')).totalPending).toBe(0);
+  });
 });

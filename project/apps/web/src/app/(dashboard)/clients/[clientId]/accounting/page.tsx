@@ -84,8 +84,8 @@ export default function ClientAccountingPage() {
 
   // Kart 2/3 — Seçili müvekkilin masraf özeti (ExpenseRequest, clientId filtreli)
   const expenseQ = useQuery({
-    queryKey: ['client-accounting-expense', caseId, clientId],
-    queryFn: () => clientAccountingApi.getExpenseSummary(caseId!, clientId),
+    queryKey: ['client-accounting-expense', caseId, clientId, EXPENSE_CURRENCY],
+    queryFn: () => clientAccountingApi.getExpenseSummary(caseId!, clientId, EXPENSE_CURRENCY),
     enabled: !!caseId && !!clientId,
   });
 
@@ -236,7 +236,11 @@ export default function ClientAccountingPage() {
           error={expenseQ.isError}
           fetching={expenseQ.isFetching}
           value={expenseQ.data ? formatMoneyString(String(expenseQ.data.totalRequested), EXPENSE_CURRENCY) : null}
-          sub={expenseQ.data ? `Ödenmemiş: ${formatMoneyString(String(expenseQ.data.totalPending), EXPENSE_CURRENCY)}` : undefined}
+          sub={expenseQ.data
+            ? typeof expenseQ.data.expenseUnpaid === 'string' && expenseQ.data.expenseUnpaid !== '' && expenseQ.data.expenseUnpaidCurrency === EXPENSE_CURRENCY
+              ? `Ödenmemiş: ${formatMoneyString(expenseQ.data.expenseUnpaid, EXPENSE_CURRENCY)}`
+              : 'Ödenmemiş: doğrulanamadı.'
+            : undefined}
           note="Müvekkilden istenen masraf/avans tutarı. Müvekkile borç değildir."
         />
 

@@ -376,6 +376,30 @@ function buildSummaryPrisma(o: {
 }
 
 describe('ClientSettlementReadService.getClientAccountingSummary (Faz A)', () => {
+  it('CL-R12: reuses each canonical remaining exactly once for the total and the correct case row', async () => {
+    const prisma = buildSummaryPrisma({
+      ccRows: [
+        { id: 'ccA', caseId: 'caseA', role: 'ALACAKLI', case: { fileNumber: 'A' } },
+        { id: 'ccB', caseId: 'caseB', role: 'ALACAKLI', case: { fileNumber: 'B' } },
+        { id: 'ccC', caseId: 'caseC', role: 'ALACAKLI', case: { fileNumber: 'C' } },
+      ],
+      expenseRows: [
+        { id: 'er1', caseId: 'caseA', totalAmount: D(1000), paidTotal: D(200) },
+        { id: 'er2', caseId: 'caseA', totalAmount: D(100), paidTotal: D(0) },
+        { id: 'er3', caseId: 'caseB', totalAmount: D(100), paidTotal: D(0) },
+      ],
+    });
+    const svc = read(prisma);
+    jest.spyOn(svc, 'computeOutstanding').mockResolvedValue(D(0));
+    const remaining = jest.spyOn(svc, 'computeExpenseRemaining').mockImplementation(async (_db, _tenant, id) => new Prisma.Decimal(({ er1: '470', er2: '-10', er3: '66.66' } as Record<string, string>)[id]));
+    const res = await svc.getClientAccountingSummary('t1', 'client-1', 'TRY');
+    expect(res.clientScoped.expenseUnpaid).toBe('526.66');
+    expect(res.caseBreakdown.map(r => [r.caseId, r.expenseUnpaid])).toEqual([['caseA', '460'], ['caseB', '66.66'], ['caseC', '0']]);
+    expect(remaining).toHaveBeenCalledTimes(3);
+    expect(remaining.mock.calls.map(args => args[2])).toEqual(['er1', 'er2', 'er3']);
+    expect(prisma.expenseRequest.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { tenantId: 't1', clientId: 'client-1', status: { not: 'CANCELLED' }, currency: 'TRY' } }));
+  });
+
   it('A/B grup toplamı + caseBreakdown + netPosition (2 dosya)', async () => {
     const prisma = buildSummaryPrisma({
       ccRows: [
