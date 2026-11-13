@@ -18,6 +18,7 @@ import {
 } from "./debtor-ledger-balance";
 import { OfficeApprovalService } from "../office-approval/office-approval.service";
 import { maskIban } from "@/common/pii-mask.util";
+import { resolveClientAddress } from "../client/client-address-resolver";
 import { CreateCaseDto, CreateDueDto, UpdateCaseDto, UpdateDueDto, CaseSubCategory, Currency, DueDto, DueType, InterestType, CaseInstrumentInputDto, CaseInstrumentSource, CaseStaffInputDto } from "./dto/case.dto";
 import { Prisma, LegalCaseStatus, InterestType as PrismaInterestType, DocumentSourceType, InterestAccrualStatus, InterestTypeCode } from "@prisma/client";
 import { mapDueTypeToClaimItemType, buildClaimItemData } from "./due-to-claim-item.mapper";
@@ -1564,13 +1565,42 @@ export class CaseService {
 
   /**
    * F02 P3-D1 — GET /cases/:id: aktörün görünüm kapsamıyla detay. Kapsam dışı dosya `findOne` ile AYNI 404'ü alır
-   * (varlık sızmaz). Bayrak kapalıyken davranış `findOne(tenantId, id)` ile birebir aynıdır.
+   * (varlık sızmaz). Bayrak kapalıyken mevcut dosya erişimi korunur; CL-Z05 yalnız adres okuma alanı ekler.
    *
    * @remarks Çağrıldığı yer: CaseController.findOne → GET /cases/:id.
    */
   async findOneVisible(tenantId: string, id: string, actorUserId?: string) {
     const viewScope = await this.caseViewScope(tenantId, actorUserId);
-    return this.findOne(tenantId, id, viewScope);
+    const caseItem = await this.findOne(tenantId, id, viewScope);
+    const clientIds = [...new Set([
+      ...(caseItem.client ? [caseItem.client.id] : []),
+      ...caseItem.caseClients.map(row => row.client.id),
+    ])];
+    // ClientAddress inherits tenant scope from its parent; archived/history rows stay private.
+    const clients = clientIds.length ? await this.prisma.client.findMany({
+      where: { tenantId, id: { in: clientIds } },
+      select: {
+        id: true, address: true, city: true, district: true, region: true, postalCode: true,
+        addresses: {
+          where: { isCurrent: true },
+          orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }],
+          select: { street: true, city: true, district: true, region: true, postalCode: true, isPrimary: true },
+        },
+      },
+    }) : [];
+    const addressByClient = new Map(clients.map(client => {
+      const { line, source } = resolveClientAddress(client);
+      return [client.id, { line, source }] as const;
+    }));
+    const withAddress = <T extends { id: string }>(client: T) => ({
+      ...client,
+      resolvedAddress: addressByClient.get(client.id) ?? { line: null, source: "none" as const },
+    });
+    return {
+      ...caseItem,
+      client: caseItem.client ? withAddress(caseItem.client) : caseItem.client,
+      caseClients: caseItem.caseClients.map(row => ({ ...row, client: withAddress(row.client) })),
+    };
   }
 
   /** `viewScope` yalnız findOneVisible'dan gelir; iç çağıranlar (güncelleme / sayaç yolları) kapsamsız okur. */

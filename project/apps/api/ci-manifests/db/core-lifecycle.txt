@@ -391,3 +391,4 @@ src/modules/case/__tests__/case-historical-import-attorney-fee-basis.http.db-gat
 # Anaparasiz dosya (owner 13.11.2026 GO-COMPLETE): yalniz ilam vekalet ucreti + yargilama gideri - kanonik gorunum kalem tutarlari, faiz / anapara null, nihai toplam yok; hesap ozetinde aciklayici dokum; anaparali dosya degismez - gercek HTTP + disposable PostgreSQL.
 src/modules/case/__tests__/case-principal-free-balance.http.db-gated.integration.spec.ts
 src/modules/interest-engine/__tests__/rate-provider-office-key.http.db-gated.integration.spec.ts
+src/modules/case/__tests__/case-client-address-clz05.http.db-gated.integration.spec.ts
