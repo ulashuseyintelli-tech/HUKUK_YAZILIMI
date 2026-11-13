@@ -44,6 +44,7 @@ import { applyCaseStatusChange } from '../case-status/case-status.service';
 import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-json';
 import { interestWriteData, normalizeInterestWriteIntent } from '../claim-item/interest-write-admission';
 import { validateInterestAccrualState } from '../claim-item/interest-accrual-policy';
+import { assertAttorneyFeeBasisMatchesItemType, effectiveField } from '../claim-item/attorney-fee-basis';
 import { AuditService } from '../audit/audit.service';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { createCollectionMutationTrace } from '../collection/collection-audit';
@@ -516,6 +517,7 @@ export class OfficeApprovalDomainSyncService {
       throw new ConflictException('CLAIM_ITEM create hedef bilgisi gecersiz.');
     }
     assertInvoiceClaimItemCreateAllowed(patch);
+    assertAttorneyFeeBasisMatchesItemType(patch.itemType, patch.attorneyFeeBasis);
     const caseExists = await tx.case.findFirst({
       where: { id: intent.caseId, tenantId: req.tenantId },
       select: { id: true },
@@ -626,6 +628,14 @@ export class OfficeApprovalDomainSyncService {
     const normalizedPatch = intent.operation === 'DELETE'
       ? intent.proposedPatch
       : this.normalizeApprovedInterestPatch(intent.proposedPatch, current, req.requesterUserId);
+    if (intent.operation !== 'DELETE') {
+      // Onay anındaki etkin tür + etkin vekâlet ücreti kaynağı uyumlu olmalı (DB CHECK kısıtıyla aynı kural).
+      const approvedPatch = normalizedPatch as Record<string, unknown>;
+      assertAttorneyFeeBasisMatchesItemType(
+        effectiveField(approvedPatch, current as Record<string, unknown>, 'itemType'),
+        effectiveField(approvedPatch, current as Record<string, unknown>, 'attorneyFeeBasis'),
+      );
+    }
     const data = intent.operation === 'DELETE'
       ? { status: 'CANCELLED' }
       : this.buildClaimItemUpdateData(normalizedPatch as Record<string, unknown>);
@@ -771,6 +781,7 @@ export class OfficeApprovalDomainSyncService {
       issueDate: patch.issueDate ? new Date(patch.issueDate) : null,
       interestAccrualStatus: patch.interestAccrualStatus ?? 'UNKNOWN',
       interestStartDateProvenance: patch.interestStartDateProvenance ?? null,
+      attorneyFeeBasis: patch.attorneyFeeBasis ?? null,
       noInterestReason: patch.noInterestReason ?? null,
       noInterestConfirmedById: patch.noInterestConfirmedById ?? null,
       noInterestConfirmedAt: patch.noInterestConfirmedById ? new Date() : null,
@@ -795,6 +806,8 @@ export class OfficeApprovalDomainSyncService {
     if (patch.dueDate) data.dueDate = new Date(String(patch.dueDate));
     if (patch.interestAccrualStatus) data.interestAccrualStatus = patch.interestAccrualStatus;
     if (patch.interestStartDateProvenance) data.interestStartDateProvenance = patch.interestStartDateProvenance;
+    // Açık null = "bilinmiyor"a dönüş (onaylı); alan yamada yoksa dokunulmaz.
+    if (Object.prototype.hasOwnProperty.call(patch, 'attorneyFeeBasis')) data.attorneyFeeBasis = patch.attorneyFeeBasis ?? null;
     if (patch.interestAccrualStatus === 'NO_INTEREST') {
       data.noInterestReason = patch.noInterestReason;
       data.noInterestConfirmedById = patch.noInterestConfirmedById;
@@ -835,6 +848,7 @@ export class OfficeApprovalDomainSyncService {
       dueDate: this.dateScalar(item.dueDate),
       interestAccrualStatus: item.interestAccrualStatus ?? null,
       interestStartDateProvenance: item.interestStartDateProvenance ?? null,
+      attorneyFeeBasis: item.attorneyFeeBasis ?? null,
       noInterestReason: item.noInterestReason ?? null,
       noInterestConfirmedById: item.noInterestConfirmedById ?? null,
       noInterestConfirmedAt: this.dateScalar(item.noInterestConfirmedAt),

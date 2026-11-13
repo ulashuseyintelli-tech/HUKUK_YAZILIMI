@@ -17,6 +17,7 @@ import {
 } from './dto/claim-item.dto';
 import { ClaimEngineService } from '../claim-engine/claim-engine.service';
 import { defaultInterestAccrualStatusForItemType, validateInterestAccrualState } from './interest-accrual-policy';
+import { assertAttorneyFeeBasisMatchesItemType, effectiveField } from './attorney-fee-basis';
 import {
   CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE,
   CLAIM_ITEM_HIGH_IMPACT_USER_FIELDS,
@@ -79,6 +80,7 @@ export class ClaimItemService {
   // Alacak kalemi oluştur
   async create(tenantId: string, dto: CreateClaimItemDto, actorUserId?: string) {
     assertInvoiceClaimItemCreateAllowed(dto);
+    assertAttorneyFeeBasisMatchesItemType(dto.itemType, dto.attorneyFeeBasis);
 
     // Dosya kontrolü
     const caseExists = await this.prisma.case.findFirst({
@@ -131,6 +133,7 @@ export class ClaimItemService {
         issueDate: dto.issueDate ? new Date(dto.issueDate) : null,
         interestAccrualStatus,
         interestStartDateProvenance: dto.interestStartDateProvenance ?? null,
+        attorneyFeeBasis: dto.attorneyFeeBasis ?? null,
         noInterestReason: noInterestExplicitlyRequested ? normalizedPatch.noInterestReason : null,
         noInterestConfirmedById: noInterestExplicitlyRequested ? normalizedPatch.noInterestConfirmedById : null,
         noInterestConfirmedAt: noInterestExplicitlyRequested ? new Date() : null,
@@ -145,6 +148,7 @@ export class ClaimItemService {
 
   async createFromUser(tenantId: string, actorUserId: string, dto: CreateClaimItemDto): Promise<ClaimItemMutationResult> {
     assertInvoiceClaimItemCreateAllowed(dto);
+    assertAttorneyFeeBasisMatchesItemType(dto.itemType, dto.attorneyFeeBasis);
 
     const caseExists = await this.prisma.case.findFirst({
       where: { id: dto.caseId, tenantId },
@@ -191,6 +195,7 @@ export class ClaimItemService {
   async update(tenantId: string, id: string, dto: UpdateClaimItemDto, actorUserId?: string) {
     const existing = await this.findOne(tenantId, id);
     this.assertNoNewOtherAdmission(existing, dto.itemType);
+    this.assertAttorneyFeeBasisInvariant(existing, dto);
     const normalizedPatch = this.normalizeInterestPatch(
       this.stripUndefined({ ...dto }),
       existing,
@@ -220,6 +225,9 @@ export class ClaimItemService {
     if (dto.dueDate) updateData.dueDate = new Date(dto.dueDate);
     if (normalizedPatch.interestAccrualStatus) updateData.interestAccrualStatus = normalizedPatch.interestAccrualStatus;
     if (dto.interestStartDateProvenance) updateData.interestStartDateProvenance = dto.interestStartDateProvenance;
+    if (Object.prototype.hasOwnProperty.call(dto, 'attorneyFeeBasis') && dto.attorneyFeeBasis !== undefined) {
+      updateData.attorneyFeeBasis = dto.attorneyFeeBasis ?? null;
+    }
     if (normalizedPatch.interestAccrualStatus === 'NO_INTEREST') {
       updateData.noInterestReason = normalizedPatch.noInterestReason;
       updateData.noInterestConfirmedById = normalizedPatch.noInterestConfirmedById;
@@ -1242,8 +1250,18 @@ export class ClaimItemService {
     return updateData;
   }
 
+  /** Yazımdan sonraki etkin tür + etkin vekâlet ücreti kaynağı uyumlu olmalı (tür değişip kaynak kalırsa da 400). */
+  private assertAttorneyFeeBasisInvariant(existing: any, dto: Partial<UpdateClaimItemDto>): void {
+    const patch = this.stripUndefined(dto as Record<string, unknown>);
+    assertAttorneyFeeBasisMatchesItemType(
+      effectiveField(patch, existing, 'itemType'),
+      effectiveField(patch, existing, 'attorneyFeeBasis'),
+    );
+  }
+
   private assertUpdateInvariants(existing: any, dto: Partial<UpdateClaimItemDto>): void {
     this.assertNoNewOtherAdmission(existing, dto.itemType);
+    this.assertAttorneyFeeBasisInvariant(existing, dto);
     const collected = Number(existing.collectedAmount) || 0;
     if (dto.amount !== undefined && Number(dto.amount) < collected) {
       throw new BadRequestException(`Tutar tahsil edilen tutardan (${collected}) düşük olamaz.`);
@@ -1313,6 +1331,7 @@ export class ClaimItemService {
       dueDate: this.toSnapshotDate(item.dueDate),
       interestAccrualStatus: item.interestAccrualStatus ?? null,
       interestStartDateProvenance: item.interestStartDateProvenance ?? null,
+      attorneyFeeBasis: item.attorneyFeeBasis ?? null,
       noInterestReason: item.noInterestReason ?? null,
       noInterestConfirmedById: item.noInterestConfirmedById ?? null,
       noInterestConfirmedAt: this.toSnapshotDate(item.noInterestConfirmedAt),

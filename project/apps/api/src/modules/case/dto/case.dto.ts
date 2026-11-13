@@ -12,6 +12,7 @@ import {
 } from "class-validator";
 import { Type } from "class-transformer";
 import { DocumentSourceType, InterestAccrualStatus, InterestTypeCode } from "@prisma/client";
+import { AttorneyFeeBasis } from "../../claim-item/attorney-fee-basis";
 
 export enum CaseType {
   GENERAL_EXECUTION = "GENERAL_EXECUTION",
@@ -312,6 +313,12 @@ export class DueDto {
   @IsOptional()
   interestEndDate?: string;
 
+  // Vekâlet ücretinin hukuki kaynağı (owner K1, 13.11.2026). Yalnız VEKALET_UCRETI Due'sunda; Due'da SAKLANMAZ,
+  // üretilen ATTORNEY_FEE alacak kalemine taşınır. Verilmezse kalemde NULL (= bilinmiyor) kalır.
+  @IsEnum(AttorneyFeeBasis)
+  @IsOptional()
+  attorneyFeeBasis?: AttorneyFeeBasis;
+
   @IsNumber()
   @IsOptional()
   interestAmount?: number;
@@ -427,6 +434,11 @@ export class UpdateDueDto {
   @IsDateString()
   @IsOptional()
   interestEndDate?: string;
+
+  // Vekâlet ücretinin hukuki kaynağı (owner K1). Yalnız VEKALET_UCRETI; Due'da saklanmaz, alacak kalemine taşınır.
+  @IsEnum(AttorneyFeeBasis)
+  @IsOptional()
+  attorneyFeeBasis?: AttorneyFeeBasis;
 
   @IsString()
   @IsOptional()

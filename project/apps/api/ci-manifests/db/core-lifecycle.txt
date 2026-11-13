@@ -385,6 +385,9 @@ src/modules/bank/__tests__/bank-movement-reads-admin.http.db-gated.integration.s
 src/modules/case/__tests__/case-historical-import.http.db-gated.integration.spec.ts
 # Yargilama Gideri turu (owner 12.11.2026 GO-COMPLETE P02): tarihsel aktarimda Due / ClaimItem YARGILAMA_GIDERI, masraf kaydi yok, faiz karari turden cikmaz, tekrar 409, eski EXPENSE AYNEN - gercek HTTP + disposable PostgreSQL.
 src/modules/case/__tests__/case-historical-import-yargilama-gideri.http.db-gated.integration.spec.ts
+# Vekalet ucreti hukuki kaynagi (owner K1 13.11.2026): PUT /claim-items yuksek etkili -> K4 onay, yalniz ATTORNEY_FEE (400 + DB CHECK), kiraci siniri; tarihsel aktarimda acik deger tasinir, bos deger NULL, dokum ILAM / BILINMIYOR - gercek HTTP + disposable PostgreSQL.
+src/modules/claim-item/__tests__/claim-item-attorney-fee-basis.http.db-gated.integration.spec.ts
+src/modules/case/__tests__/case-historical-import-attorney-fee-basis.http.db-gated.integration.spec.ts
 # Anaparasiz dosya (owner 13.11.2026 GO-COMPLETE): yalniz ilam vekalet ucreti + yargilama gideri - kanonik gorunum kalem tutarlari, faiz / anapara null, nihai toplam yok; hesap ozetinde aciklayici dokum; anaparali dosya degismez - gercek HTTP + disposable PostgreSQL.
 src/modules/case/__tests__/case-principal-free-balance.http.db-gated.integration.spec.ts
 src/modules/interest-engine/__tests__/rate-provider-office-key.http.db-gated.integration.spec.ts

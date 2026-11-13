@@ -11,6 +11,9 @@ import {
 import { Type } from 'class-transformer';
 import { InterestTypeCode } from '@prisma/client';
 import type { ClaimSummaryCurrencyStatus, ClaimSummaryTotals } from '../claim-summary-currency';
+import { AttorneyFeeBasis } from '../attorney-fee-basis';
+
+export { AttorneyFeeBasis };
 
 // Alacak Kalemi Türü
 export enum ClaimItemType {
@@ -146,6 +149,11 @@ export class CreateClaimItemDto {
   @IsEnum(InterestStartDateProvenance)
   interestStartDateProvenance?: InterestStartDateProvenance;
 
+  // Vekâlet ücretinin hukuki kaynağı (owner K1). Yalnız ATTORNEY_FEE; verilmezse NULL (= bilinmiyor).
+  @IsOptional()
+  @IsEnum(AttorneyFeeBasis)
+  attorneyFeeBasis?: AttorneyFeeBasis | null;
+
   @IsOptional()
   @IsString()
   noInterestReason?: string;
@@ -217,6 +225,12 @@ export class UpdateClaimItemDto {
   @IsOptional()
   @IsEnum(InterestStartDateProvenance)
   interestStartDateProvenance?: InterestStartDateProvenance;
+
+  // Vekâlet ücretinin hukuki kaynağı (owner K1). Yüksek etkili alan: kullanıcı yolunda onaya gider.
+  // `null` açıkça gönderilirse değer "bilinmiyor"a döner (o da onaydan geçer).
+  @IsOptional()
+  @IsEnum(AttorneyFeeBasis)
+  attorneyFeeBasis?: AttorneyFeeBasis | null;
 
   @IsOptional()
   @IsString()

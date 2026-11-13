@@ -117,6 +117,8 @@ src/modules/claim-item/__tests__/claim-item-writer-router.spec.ts
 src/modules/claim-item/__tests__/claim-item-writer-routing.static.spec.ts
 src/modules/claim-item/__tests__/fatura-kdv-metadata.spec.ts
 src/modules/claim-item/__tests__/interest-accrual-policy.spec.ts
+# Vekalet ucreti hukuki kaynagi (owner K1 13.11.2026): attorneyFeeBasis yalniz ATTORNEY_FEE, tur guvenli DTO, yuksek etkili alan, Due -> ClaimItem acik deger, aciklamadan cikarim yok.
+src/modules/claim-item/__tests__/attorney-fee-basis.spec.ts
 src/modules/claim-item/__tests__/interest-write-admission.spec.ts
 src/modules/claim-item/__tests__/invoice-tax-kdv-writer.static.spec.ts
 

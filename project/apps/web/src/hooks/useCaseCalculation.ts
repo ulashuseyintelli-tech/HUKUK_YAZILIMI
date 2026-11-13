@@ -190,6 +190,8 @@ export interface AnaparasizKalemDokumu {
       etiket: string;
       tutar: number | null;
       faizDurumu: AnaparasizKalemFaizDurumu;
+      /** Yalnız vekâlet ücreti kaleminde: kayıtlı hukuki kaynak (owner K1); etiket sunucuda bundan kurulur. */
+      vekaletUcretiKaynagi?: 'ILAM' | 'TAKIP' | 'BILINMIYOR';
     }>;
     kalemTutarlariToplami: number | null;
   }>;
