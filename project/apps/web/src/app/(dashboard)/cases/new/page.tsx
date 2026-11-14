@@ -8,6 +8,7 @@ import { ProfessionalClaimItemForm } from "@/components/claim-item";
 import { api } from "@/lib/api";
 import { runMutation } from "@/lib/mutation-outcome";
 import { toActionErrorMessage } from "@/lib/action-error";
+import { readClientCreateResult, CLIENT_EXISTING_RETURNED_MESSAGE } from "@/lib/client-create-result";
 import { buildCreateCaseDuesPayload, buildClaimDocumentFields, ClaimKalemTuruValidationError, mapClaimKalemTuruToDueType, flattenNestedYanAlacaklarRaws, formatCaseDueValidationError, formatCaseCreateAdmissionError } from "@/lib/case-due-payload";
 import { buildUiInterestWriteIntent, type InterestTypeCode as UiInterestTypeCode } from "@/lib/interest-type-resolver";
 import { aggregateListedClaimItems } from "@/lib/case-claim-live-aggregate";
@@ -1088,12 +1089,8 @@ export default function NewCasePage() {
       };
       
       const clientResponse = await api.post("/clients", clientData);
-      // API { data: client } döndürüyor, axios da { data: ... } sarıyor
-      const savedClient = clientResponse.data?.data || clientResponse.data || clientResponse;
-      
-      if (!savedClient?.id) {
-        throw new Error("Müvekkil kaydedilemedi - ID alınamadı");
-      }
+      const savedClient = readClientCreateResult(clientResponse);
+      if (savedClient._existingReturned) alert(CLIENT_EXISTING_RETURNED_MESSAGE);
       
       console.log("Müvekkil kaydedildi:", savedClient.id, savedClient.displayName);
       
@@ -1133,17 +1130,25 @@ export default function NewCasePage() {
         poaFailure = poaErr;
       }
 
-      // 3. Müvekkil listesini yenile ve seçili olarak ekle
-      const clientsRes = await api.get("/clients");
-      setExistingClients(clientsRes.data?.data || []);
+      // Client sonucu kesindir; sonraki okuma hatasi yeni POST gerektirmez.
       addExistingCreditor(savedClient);
+      try {
+        const clientsRes = await api.get("/clients");
+        setExistingClients(clientsRes.data?.data || []);
+      } catch (refreshErr: any) {
+        alert(`Müvekkil işlemi tamamlandı, ancak liste yenilenemedi: ${refreshErr.message || "Bilinmeyen hata"}`);
+      }
 
       // 4. Bilgi mesajı göster — vekalet reddi SESSİZ geçilmez
       if (poaFailure) {
         alert(poaCreateFailureMessage(poaFailure, savedClient.displayName));
         return;
       }
-      alert(poaSuppressed
+      alert(savedClient._existingReturned
+        ? (poaSuppressed
+          ? "Mevcut müvekkil kullanıldı. Bu vekalet zaten kayıtlıydı; yeni vekalet açılmadı."
+          : "Mevcut müvekkil kullanıldı; vekalet kaydı başarıyla oluşturuldu.")
+        : poaSuppressed
         ? `✅ Müvekkil "${savedClient.displayName}" kaydedildi.\n\nBu vekalet zaten kayıtlıydı; yeni kayıt açılmadı, mevcut kayıt kullanıldı.\n\nŞimdi takip türünü seçebilirsiniz.`
         : `✅ Müvekkil "${savedClient.displayName}" ve vekalet kaydı başarıyla oluşturuldu!\n\nŞimdi takip türünü seçebilirsiniz.`);
       
@@ -2403,8 +2408,8 @@ export default function NewCasePage() {
                         canRelease: result.canRelease,
                       };
                       const response = await api.post("/clients", clientData);
-                      const savedClient = response.data?.data || response.data || response;
-                      if (!savedClient?.id) throw new Error("Müvekkil kaydedilemedi - ID alınamadı");
+                      const savedClient = readClientCreateResult(response);
+                      if (savedClient._existingReturned) alert(CLIENT_EXISTING_RETURNED_MESSAGE);
                       // Taranan vekaletname bilgisi varsa kanonik /poa ile kaydet
                       // (avukat eşleştirmesi tarama akışındaki #1 ile aynı).
                       if (savedClient?.id && hasPoaInput(result)) {
@@ -2967,7 +2972,8 @@ export default function NewCasePage() {
               // Vekaletname alanları /clients gövdesine konmaz; vekalet ayrı
               // kanonik POST /poa ile kaydedilir (giriliyor ama düşüyor tuzağını kapatır).
               const response = await api.post("/clients", stripPoaFields(data));
-              const savedClient = response.data?.data || response.data || response;
+              const savedClient = readClientCreateResult(response);
+              if (savedClient._existingReturned) alert(CLIENT_EXISTING_RETURNED_MESSAGE);
               if (savedClient?.id && hasPoaInput(data)) {
                 try {
                   await api.post("/poa", buildPoaCreatePayload(savedClient.id, data));
@@ -2977,12 +2983,15 @@ export default function NewCasePage() {
                   alert(poaCreateFailureMessage(poaErr, savedClient.displayName));
                 }
               }
-              // Listeyi yenile
-              const clientsRes = await api.get("/clients");
-              setExistingClients(clientsRes.data?.data || []);
-              // Yeni müvekkili seçili olarak ekle
+              // Client secimi, bagimsiz liste yenileme hatasinda da korunur.
               addExistingCreditor(savedClient);
               setShowNewClientModal(false);
+              try {
+                const clientsRes = await api.get("/clients");
+                setExistingClients(clientsRes.data?.data || []);
+              } catch (refreshErr: any) {
+                alert(`Müvekkil işlemi tamamlandı, ancak liste yenilenemedi: ${refreshErr.message || "Bilinmeyen hata"}`);
+              }
             } catch (err: any) {
               alert(err.message || "Müvekkil kaydedilemedi");
             }

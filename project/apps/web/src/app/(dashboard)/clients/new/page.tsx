@@ -16,6 +16,7 @@ import { api } from '@/lib/api';
 import { ClientForm } from '@/components/client/client-form';
 import { buildCreateClientPayload, type ClientFormValues } from '@/lib/client-write';
 import { useClientMutationCapabilities } from '@/lib/client-mutation-capabilities';
+import { readClientCreateResult, CLIENT_EXISTING_RETURNED_MESSAGE } from '@/lib/client-create-result';
 
 export default function NewClientPage() {
   const router = useRouter();
@@ -30,10 +31,9 @@ export default function NewClientPage() {
     try {
       const payload = buildCreateClientPayload(values);
       const res = await api.post('/clients', payload);
-      const client = (res?.data as any)?.data ?? res?.data;
-      const id = client?.id;
-      if (!id) throw new Error('Müvekkil oluşturuldu ama kimlik alınamadı.');
-      router.push(`/clients/${id}`);
+      const client = readClientCreateResult(res);
+      if (client._existingReturned) alert(CLIENT_EXISTING_RETURNED_MESSAGE);
+      router.push(`/clients/${client.id}`);
     } catch (e: any) {
       setError(e?.body?.message || e?.message || 'Müvekkil oluşturulamadı.');
     } finally {
