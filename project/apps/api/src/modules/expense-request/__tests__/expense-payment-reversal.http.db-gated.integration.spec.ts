@@ -6,6 +6,7 @@ import * as http from 'supertest';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
 import { AccountingJournalWriterService, reverseAccountingJournalEntryInTransaction } from '../../accounting-journal';
+import { CaseBalanceController } from '../../case-balance/case-balance.controller';
 import { CaseBalanceService } from '../../case-balance/case-balance.service';
 import { CpeRequiredGuard } from '../../policy-engine';
 import { CasePolicyEngine } from '../../policy-engine/case-policy-engine.service';
@@ -21,7 +22,7 @@ if (process.env.CI && !url) throw new Error('3c full reversal requires disposabl
 const dbDescribe = url ? describe : describe.skip;
 
 dbDescribe('3c source-bound full reversal (real HTTP + disposable PostgreSQL)', () => {
-  let db: PrismaService, other: PrismaService, app: INestApplication, active: ExpenseRequestService;
+  let db: PrismaService, other: PrismaService, app: INestApplication, active: ExpenseRequestService, directBalance: CaseBalanceService;
   let tenantId: string, foreignTenant: string, actorId: string, lawyerId: string, clientId: string, caseId: string;
   let requestId: string, paymentId: string, balanceId: string;
   let injectedWrite: string | null = null;
@@ -64,8 +65,9 @@ dbDescribe('3c source-bound full reversal (real HTTP + disposable PostgreSQL)', 
         if (!user?.isActive) throw new UnauthorizedException(); req.user = user; return true;
       }
     }
-    const module = await Test.createTestingModule({ controllers: [ExpenseRequestController], providers: [
-      CpeRequiredGuard, { provide: PrismaService, useValue: db }, { provide: CasePolicyEngine, useValue: policy },
+    directBalance = new CaseBalanceService(db, new AccountingJournalWriterService(db));
+    const module = await Test.createTestingModule({ controllers: [ExpenseRequestController, CaseBalanceController], providers: [
+      CpeRequiredGuard, { provide: CaseBalanceService, useValue: directBalance }, { provide: PrismaService, useValue: db }, { provide: CasePolicyEngine, useValue: policy },
       { provide: ExpenseRequestService, useValue: {
         getPaymentReversalOptions: (...args: Parameters<ExpenseRequestService['getPaymentReversalOptions']>) => active.getPaymentReversalOptions(...args),
         reversePaymentForActor: (...args: Parameters<ExpenseRequestService['reversePaymentForActor']>) => active.reversePaymentForActor(...args),
@@ -288,4 +290,23 @@ dbDescribe('3c source-bound full reversal (real HTTP + disposable PostgreSQL)', 
     expect((await db.caseBalance.findUniqueOrThrow({ where: { id: balanceId } })).balance.toFixed(2)).toBe('300.00');
     expect(await db.expensePaymentReversal.count({ where: { tenantId } })).toBe(1);
   });
+  it('CL-R13: a direct debit cannot overdraw after the actual 3c HTTP correction commits between its read and write', async () => {
+    const original=(directBalance as any).resolveCurrencyBalance.bind(directBalance);
+    let corrected=false;
+    const spy=jest.spyOn(directBalance as any,'resolveCurrencyBalance').mockImplementationOnce(async(...args:unknown[])=>{
+      const before=await original(...args);
+      expect(before.balance.toString()).toBe('800');
+      const reversal=await post();expect(reversal.status).toBe(201);corrected=true;
+      expect((await db.caseBalance.findUniqueOrThrow({where:{id:balanceId}})).balance.toString()).toBe('200');
+      return before;
+    });
+    try {
+      const debit=await http(app.getHttpServer()).post('/cases/'+caseId+'/balance/debit').set('x-test-user-id',actorId).send({amount:500,currency:'TRY',source:'manual'});
+      expect(corrected).toBe(true);expect(debit.status).toBe(400);
+      expect((await db.caseBalance.findUniqueOrThrow({where:{id:balanceId}})).balance.toString()).toBe('200');
+      expect(await db.balanceLedger.count({where:{tenantId,source:'manual'}})).toBe(0);
+      expect(await db.expensePaymentReversal.count({where:{tenantId,status:'COMPLETED'}})).toBe(1);
+    } finally {spy.mockRestore();}
+  });
+
 });

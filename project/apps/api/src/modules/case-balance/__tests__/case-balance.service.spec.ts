@@ -15,8 +15,8 @@ function buildHarness(options: { balance?: Prisma.Decimal } = {}) {
     lowThreshold: D(500),
   };
   const tx = {
-    balanceLedger: { create: jest.fn() },
-    caseBalance: { update: jest.fn() },
+    balanceLedger: { create: jest.fn(), findUnique: jest.fn().mockResolvedValue(null) },
+    caseBalance: { update: jest.fn(), updateMany: jest.fn().mockResolvedValue({count:1}), findUniqueOrThrow: jest.fn().mockResolvedValue({balance:D(960),lowThreshold:D(500)}) },
   };
   const prisma = {
     case: {
@@ -40,7 +40,7 @@ function buildHarness(options: { balance?: Prisma.Decimal } = {}) {
       },
     }),
   };
-  Object.assign(tx, { case: prisma.case, $executeRaw: jest.fn().mockResolvedValue(1) });
+  Object.assign(tx, { user: { findFirst: jest.fn().mockResolvedValue({role:'USER',lawyer:{tenantId:'tenant-1',isActive:true,lawyerRank:'PARTNER'},staffMember:null}) }, case: prisma.case, $executeRaw: jest.fn().mockResolvedValue(1) });
   Object.assign(tx.caseBalance, { findUnique: prisma.caseBalance.findUnique, create: prisma.caseBalance.create });
   const service = new CaseBalanceService(prisma as never, journalWriter as never);
 
@@ -48,9 +48,45 @@ function buildHarness(options: { balance?: Prisma.Decimal } = {}) {
 }
 
 describe('CaseBalanceService ACCT-1D-1 BalanceLedger journal wiring', () => {
+  describe('CL-R13: direct command boundaries', () => {
+    it.each([null, { lawyer: null, staffMember: null }, { lawyer: {tenantId:'tenant-1',isActive:true,lawyerRank:'LAWYER'},staffMember:null }, {lawyer:{tenantId:'other',isActive:true,lawyerRank:'PARTNER'},staffMember:null}, {lawyer:{tenantId:'tenant-1',isActive:false,lawyerRank:'PARTNER'},staffMember:null}])('rejects missing/ineligible actor context without writes (%j)', async actor => {
+      const h=buildHarness(); (h.tx as any).user.findFirst.mockResolvedValue(actor);
+      await expect(h.service.credit('tenant-1','case-1',{amount:100,currency:'TRY',source:'manual'},'user-1',undefined,'key')).rejects.toMatchObject({status:403});
+      expect(h.tx.balanceLedger.create).not.toHaveBeenCalled(); expect(h.tx.caseBalance.update).not.toHaveBeenCalled(); expect(h.journalWriter.write).not.toHaveBeenCalled();
+    });
+    it('requires a stable direct credit key; trusted expense context is a separate path', async () => {
+      const h=buildHarness();
+      await expect(h.service.credit('tenant-1','case-1',{amount:100,currency:'TRY',source:'manual'},'user-1')).rejects.toMatchObject({status:400,response:{code:'ADVANCE_CREDIT_KEY_REQUIRED'}});
+      expect(h.tx.balanceLedger.create).not.toHaveBeenCalled();
+    });
+    it('replays one matching credit without a second ledger, balance increment or journal', async () => {
+      const h=buildHarness(); h.tx.balanceLedger.findUnique.mockResolvedValue({id:'original',caseBalanceId:h.balance.id,type:'CREDIT',amount:D(100),currency:'TRY',source:'manual',sourceId:null,description:'Masraf avansı alındı',createdById:'user-1'} as any);
+      await expect(h.service.credit('tenant-1','case-1',{amount:100,currency:'TRY',source:'manual'},'user-1',undefined,'same')).resolves.toMatchObject({success:true,ledgerId:'original'});
+      expect(h.tx.balanceLedger.findUnique).toHaveBeenCalledWith({where:{tenantId_postingKey:{tenantId:'tenant-1',postingKey:'advance-credit|same'}}});
+      expect(h.tx.balanceLedger.create).not.toHaveBeenCalled(); expect(h.tx.caseBalance.update).not.toHaveBeenCalled(); expect(h.journalWriter.write).not.toHaveBeenCalled();
+    });
+    it('rejects key reuse with different content', async () => {
+      const h=buildHarness(); h.tx.balanceLedger.findUnique.mockResolvedValue({id:'original',caseBalanceId:h.balance.id,type:'CREDIT',amount:D(99),currency:'TRY',source:'manual',sourceId:null,description:'Masraf avansı alındı',createdById:'user-1'} as any);
+      await expect(h.service.credit('tenant-1','case-1',{amount:100,currency:'TRY',source:'manual'},'user-1',undefined,'same')).rejects.toMatchObject({status:409});
+      expect(h.tx.balanceLedger.create).not.toHaveBeenCalled(); expect(h.journalWriter.write).not.toHaveBeenCalled();
+    });
+    it('rejects a stale debit at the conditional write, before journaling', async () => {
+      const h=buildHarness(); h.tx.caseBalance.updateMany.mockResolvedValue({count:0});
+      await expect(h.service.debit('tenant-1','case-1',{amount:100,currency:'TRY',source:'manual'},'user-1')).rejects.toMatchObject({status:400});
+      expect(h.journalWriter.write).not.toHaveBeenCalled();
+    });
+    it.each([0,-1,NaN,Infinity,1.001,10000000000000])('rejects invalid direct monetary input %s', async amount => {
+      const h=buildHarness(); await expect(h.service.credit('tenant-1','case-1',{amount,currency:'TRY',source:'manual'},'user-1',undefined,'invalid')).rejects.toMatchObject({status:400});
+      expect(h.tx.balanceLedger.create).not.toHaveBeenCalled();
+    });
+    it.each(['expense_payment:forged','disposition_line:forged'])('cannot suppress a direct journal through a forged internal source %s', async source => {
+      const h=buildHarness(); await expect(h.service.credit('tenant-1','case-1',{amount:100,currency:'TRY',source},'user-1',undefined,'forged')).rejects.toMatchObject({status:400});
+      expect(h.tx.balanceLedger.create).not.toHaveBeenCalled();
+    });
+  });
   it.each(['USD', '', undefined, 'try'])('H07 rejects mismatched/missing currency %s before any financial write', async currency => {
     const { service, tx, prisma, journalWriter } = buildHarness();
-    await expect(service.credit('tenant-1', 'case-1', { amount: 100, currency: currency as any, source: 'manual' }, 'user-1')).rejects.toMatchObject({ status: currency === 'USD' ? 409 : 400 });
+    await expect(service.credit('tenant-1', 'case-1', { amount: 100, currency: currency as any, source: 'manual' }, 'user-1', undefined, 'unit-credit')).rejects.toMatchObject({ status: currency === 'USD' ? 409 : 400 });
     expect(tx.balanceLedger.create).not.toHaveBeenCalled();
     expect(tx.caseBalance.update).not.toHaveBeenCalled();
     expect(prisma.caseBalance.create).not.toHaveBeenCalled();
@@ -81,7 +117,7 @@ describe('CaseBalanceService ACCT-1D-1 BalanceLedger journal wiring', () => {
     });
     tx.caseBalance.update.mockResolvedValue({ balance: D(1100), lowThreshold: D(500) });
 
-    const result = await service.credit('tenant-1', 'case-1', { currency: 'TRY', amount: 100, source: 'expense_request:expense-1', sourceId: 'expense-1' }, 'user-1');
+    const result = await service.credit('tenant-1', 'case-1', { currency: 'TRY', amount: 100, source: 'expense_request:expense-1', sourceId: 'expense-1' }, 'user-1', undefined, 'unit-credit');
 
     expect(result).toEqual(expect.objectContaining({ success: true, newBalance: 1100, ledgerId: 'bl-credit' }));
     expect(journalWriter.write).toHaveBeenCalledTimes(1);
@@ -155,7 +191,7 @@ describe('CaseBalanceService ACCT-1D-1 BalanceLedger journal wiring', () => {
     });
     tx.caseBalance.update.mockResolvedValue({ balance: D(1050), lowThreshold: D(500) });
 
-    await service.credit('tenant-1', 'case-1', { currency: 'TRY', amount: 50, source: 'disposition_line:line-1', sourceId: 'line-1' }, 'user-1');
+    await service.credit('tenant-1', 'case-1', { currency: 'TRY', amount: 50, source: 'disposition_line:line-1', sourceId: 'line-1' }, 'user-1', { tx: tx as any, currency: 'TRY', kind: 'EXPENSE_REQUEST' });
 
     expect(journalWriter.write).not.toHaveBeenCalled();
   });
@@ -176,7 +212,7 @@ describe('CaseBalanceService ACCT-1D-1 BalanceLedger journal wiring', () => {
     });
     tx.caseBalance.update.mockResolvedValue({ balance: D(1075), lowThreshold: D(500) });
 
-    const result = await service.credit('tenant-1', 'case-1', { currency: 'TRY', amount: 75, source: 'expense_payment:pay-1', sourceId: 'pay-1' }, 'user-1');
+    const result = await service.credit('tenant-1', 'case-1', { currency: 'TRY', amount: 75, source: 'expense_payment:pay-1', sourceId: 'pay-1' }, 'user-1', { tx: tx as any, currency: 'TRY', kind: 'EXPENSE_REQUEST' });
 
     expect(result).toEqual(expect.objectContaining({ success: true, newBalance: 1075, ledgerId: 'bl-expense-payment' }));
     expect(tx.balanceLedger.create).toHaveBeenCalledWith(expect.objectContaining({
@@ -254,7 +290,7 @@ describe('CaseBalanceService ACCT-1D-1 BalanceLedger journal wiring', () => {
     });
     tx.caseBalance.update.mockResolvedValue({ balance: D(1050), lowThreshold: D(500) });
 
-    await service.credit('tenant-1', 'case-1', { currency: 'TRY', amount: 50, source: 'manual', sourceId: 'disposition_line:line-1' }, 'user-1');
+    await service.credit('tenant-1', 'case-1', { currency: 'TRY', amount: 50, source: 'manual', sourceId: 'disposition_line:line-1' }, 'user-1', { tx: tx as any, currency: 'TRY', kind: 'EXPENSE_REQUEST' });
 
     expect(journalWriter.write).not.toHaveBeenCalled();
   });
@@ -307,7 +343,7 @@ describe('CaseBalanceService ACCT-1D-1 BalanceLedger journal wiring', () => {
     });
     journalWriter.write.mockResolvedValueOnce({ ok: false, errors: [{ code: 'DB_WRITE_FAILED' }] });
 
-    await expect(service.credit('tenant-1', 'case-1', { currency: 'TRY', amount: 10, source: 'manual' }, 'user-1')).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.credit('tenant-1', 'case-1', { currency: 'TRY', amount: 10, source: 'manual' }, 'user-1', undefined, 'unit-credit')).rejects.toBeInstanceOf(ConflictException);
 
     tx.balanceLedger.create.mockResolvedValue({
       id: 'bl-credit-throw',
@@ -324,6 +360,6 @@ describe('CaseBalanceService ACCT-1D-1 BalanceLedger journal wiring', () => {
     });
     journalWriter.write.mockRejectedValueOnce(new Error('journal writer down'));
 
-    await expect(service.credit('tenant-1', 'case-1', { currency: 'TRY', amount: 10, source: 'manual' }, 'user-1')).rejects.toThrow('journal writer down');
+    await expect(service.credit('tenant-1', 'case-1', { currency: 'TRY', amount: 10, source: 'manual' }, 'user-1', undefined, 'unit-credit')).rejects.toThrow('journal writer down');
   });
 });

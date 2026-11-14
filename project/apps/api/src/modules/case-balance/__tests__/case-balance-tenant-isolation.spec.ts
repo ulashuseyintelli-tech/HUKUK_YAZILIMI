@@ -29,6 +29,7 @@ function buildHarness(options: HarnessOptions = {}) {
 
   const tx = {
     balanceLedger: {
+      findUnique: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({
         id: 'ledger-new',
         tenantId: 'tenant-A',
@@ -43,7 +44,7 @@ function buildHarness(options: HarnessOptions = {}) {
         createdAt: CREATED_AT,
       }),
     },
-    caseBalance: { update: jest.fn().mockResolvedValue({ balance: D(1100), lowThreshold: D(500) }) },
+    caseBalance: { update: jest.fn().mockResolvedValue({ balance: D(1100), lowThreshold: D(500) }), updateMany: jest.fn().mockResolvedValue({count:1}), findUniqueOrThrow: jest.fn().mockResolvedValue({balance:D(900),lowThreshold:D(500)}) },
   };
 
   const prisma = {
@@ -72,7 +73,7 @@ function buildHarness(options: HarnessOptions = {}) {
     }),
   };
 
-  Object.assign(tx, { case: prisma.case, $executeRaw: jest.fn().mockResolvedValue(1) });
+  Object.assign(tx, { user: { findFirst: jest.fn(async (q:any)=>({role:'USER',lawyer:{tenantId:q.where.tenantId,isActive:true,lawyerRank:'PARTNER'},staffMember:null})) }, case: prisma.case, $executeRaw: jest.fn().mockResolvedValue(1) });
   Object.assign(tx.caseBalance, { findUnique: prisma.caseBalance.findUnique, create: prisma.caseBalance.create });
   const service = new CaseBalanceService(prisma as never, journalWriter as never);
   return { tx, prisma, journalWriter, service };
@@ -83,6 +84,7 @@ function expectNoFinancialSideEffect(h: ReturnType<typeof buildHarness>) {
   // Ownership/currency reads now share the write transaction; the denied path still writes nothing.
   expect(h.tx.balanceLedger.create).not.toHaveBeenCalled();
   expect(h.tx.caseBalance.update).not.toHaveBeenCalled();
+  expect(h.tx.caseBalance.updateMany).not.toHaveBeenCalled();
   expect(h.journalWriter.write).not.toHaveBeenCalled();
   // Yabancı/uyumsuz CaseBalance satırı oluşturulmamalı.
   expect(h.prisma.caseBalance.create).not.toHaveBeenCalled();
@@ -131,7 +133,7 @@ describe('CaseBalanceService CLIENT-P0-T04-C1 tenant fail-closed containment', (
 
     it('own case missing balance can be created by a WRITE (ownership verified before create)', async () => {
       const h = buildHarness(OWNED); // sahip var, mevcut bakiye yok
-      await h.service.credit('tenant-A', 'case-A', { currency: 'TRY', amount: 100, source: 'manual' }, 'user-A');
+      await h.service.credit('tenant-A', 'case-A', { currency: 'TRY', amount: 100, source: 'manual' }, 'user-A', undefined, 'unit-credit');
       expect(h.prisma.case.findFirst).toHaveBeenCalled();
       expect(h.prisma.caseBalance.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ tenantId: 'tenant-A', caseId: 'case-A', balance: 0 }) }),
@@ -140,7 +142,7 @@ describe('CaseBalanceService CLIENT-P0-T04-C1 tenant fail-closed containment', (
 
     it('own case credit succeeds', async () => {
       const h = buildHarness(OWNED_WITH_BALANCE);
-      const res = await h.service.credit('tenant-A', 'case-A', { currency: 'TRY', amount: 100, source: 'manual' }, 'user-A');
+      const res = await h.service.credit('tenant-A', 'case-A', { currency: 'TRY', amount: 100, source: 'manual' }, 'user-A', undefined, 'unit-credit');
       expect(res).toEqual(expect.objectContaining({ success: true }));
       expect(h.tx.balanceLedger.create).toHaveBeenCalledTimes(1);
     });
@@ -149,7 +151,7 @@ describe('CaseBalanceService CLIENT-P0-T04-C1 tenant fail-closed containment', (
       const h = buildHarness(OWNED_WITH_BALANCE);
       const res = await h.service.debit('tenant-A', 'case-A', { currency: 'TRY', amount: 100, source: 'operation:haciz' }, 'user-A');
       expect(res).toEqual(expect.objectContaining({ success: true }));
-      expect(h.tx.caseBalance.update).toHaveBeenCalledTimes(1);
+      expect(h.tx.caseBalance.updateMany).toHaveBeenCalledWith(expect.objectContaining({where:expect.objectContaining({tenantId:'tenant-A',currency:'TRY',balance:{gte:100}}),data:{balance:{decrement:100}}}));
     });
   });
 
@@ -173,7 +175,7 @@ describe('CaseBalanceService CLIENT-P0-T04-C1 tenant fail-closed containment', (
 
     it('foreign case credit denied — CaseBalance/BalanceLedger/AccountingJournal unchanged', async () => {
       const h = buildHarness(OWNED_WITH_BALANCE);
-      await expect(h.service.credit('tenant-B', 'case-A', { currency: 'TRY', amount: 500, source: 'manual' }, 'attacker')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(h.service.credit('tenant-B', 'case-A', { currency: 'TRY', amount: 500, source: 'manual' }, 'attacker', undefined, 'unit-credit')).rejects.toBeInstanceOf(NotFoundException);
       expectNoFinancialSideEffect(h);
     });
 
@@ -185,7 +187,7 @@ describe('CaseBalanceService CLIENT-P0-T04-C1 tenant fail-closed containment', (
 
     it('cross-tenant credit on a case with NO existing balance does not create a foreign balance row', async () => {
       const h = buildHarness(OWNED); // case-A tenant-A'ya ait, henüz bakiye satırı yok
-      await expect(h.service.credit('tenant-B', 'case-A', { currency: 'TRY', amount: 500, source: 'manual' }, 'attacker')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(h.service.credit('tenant-B', 'case-A', { currency: 'TRY', amount: 500, source: 'manual' }, 'attacker', undefined, 'unit-credit')).rejects.toBeInstanceOf(NotFoundException);
       expectNoFinancialSideEffect(h); // create() çağrılmaz → yabancı/uyumsuz satır oluşmaz
     });
   });
@@ -199,7 +201,7 @@ describe('CaseBalanceService CLIENT-P0-T04-C1 tenant fail-closed containment', (
 
     it('legit owner credit on tenant-mismatched balance row fails closed with no mutation and no auto-repair', async () => {
       const h = buildHarness(CORRUPT);
-      await expect(h.service.credit('tenant-A', 'case-A', { currency: 'TRY', amount: 100, source: 'manual' }, 'user-A')).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(h.service.credit('tenant-A', 'case-A', { currency: 'TRY', amount: 100, source: 'manual' }, 'user-A', undefined, 'unit-credit')).rejects.toBeInstanceOf(ForbiddenException);
       expectNoFinancialSideEffect(h);
     });
 
@@ -220,7 +222,7 @@ describe('CaseBalanceService CLIENT-P0-T04-C1 tenant fail-closed containment', (
 
     it('unknown caseId credit denied — no financial side effect', async () => {
       const h = buildHarness({ caseOwner: {} });
-      await expect(h.service.credit('tenant-A', 'case-unknown', { currency: 'TRY', amount: 100, source: 'manual' }, 'user-A')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(h.service.credit('tenant-A', 'case-unknown', { currency: 'TRY', amount: 100, source: 'manual' }, 'user-A', undefined, 'unit-credit')).rejects.toBeInstanceOf(NotFoundException);
       expectNoFinancialSideEffect(h);
     });
   });

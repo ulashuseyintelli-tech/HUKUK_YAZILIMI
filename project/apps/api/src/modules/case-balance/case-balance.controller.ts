@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards, Req, Headers } from '@nestjs/common';
 import { CaseBalanceService, CreditBalanceDto, DebitBalanceDto, PostExpenseActualDto } from './case-balance.service';
 import { AuthGuard } from '@nestjs/passport';
 import { AdminGuard } from '@/modules/auth/guards/admin.guard';
@@ -57,8 +57,9 @@ export class CaseBalanceController {
     @Param('caseId') caseId: string,
     @Body() dto: CreditBalanceDto,
     @Req() req: AuthRequest,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.caseBalanceService.credit(req.user.tenantId, caseId, dto, req.user.id);
+    return this.caseBalanceService.credit(req.user.tenantId, caseId, dto, req.user.id, undefined, idempotencyKey);
   }
 
   /**

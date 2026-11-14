@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { ClientNotificationService } from '@/modules/client-notification/client-notification.service';
 import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
+import { capacityFromUser, isOfficeAdminCapacity } from '@/modules/policy-engine/effective-permission-mapping';
 import {
   AccountingJournalWriterService,
   buildAccountingJournal,
@@ -333,14 +334,39 @@ export class CaseBalanceService {
   /// - ExpenseRequestService.createFromPackage() → paidByLawyer package expense_request kredi yolu
   /// - ExpenseRequestService.recordPayment() → expense_payment kredi yolu (receive aynı komuta delege eder)
   /// </remarks>
-  async credit(tenantId: string, caseId: string, dto: CreditBalanceDto, userId: string, context?: ExpensePaymentCreditContext | ExpenseRequestCreditContext) {
+  async credit(tenantId: string, caseId: string, dto: CreditBalanceDto, userId: string, context?: ExpensePaymentCreditContext | ExpenseRequestCreditContext, directIdempotencyKey?: string) {
+    let directPostingKey: string | undefined;
+    if (!context) {
+      this.validateDirectInput(dto);
+      if (typeof directIdempotencyKey !== 'string' || !/^[A-Za-z0-9._:-]{1,96}$/.test(directIdempotencyKey)) {
+        throw new BadRequestException({ code: 'ADVANCE_CREDIT_KEY_REQUIRED', message: 'Geçerli Idempotency-Key zorunludur.' });
+      }
+      directPostingKey = `advance-credit|${directIdempotencyKey}`;
+    }
     const currency = this.requireAdvanceCurrency(context?.currency ?? dto.currency);
     if (context && dto.currency !== currency) {
       throw new ConflictException({ code: 'EXPENSE_PAYMENT_CURRENCY_MISMATCH', message: 'Kaynak para birimleri aynı olmalıdır' });
     }
     const writeCredit = async (tx: Prisma.TransactionClient) => {
+      if (!context) {
+        await this.assertDirectActor(tx, tenantId, userId);
+        const keyLock = `advance-credit-key|${tenantId}|${directPostingKey}`;
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${keyLock}, 0))`;
+      }
       const payment = context && !('kind' in context);
       const balance = await this.resolveCurrencyBalance(tx, tenantId, caseId, currency, !payment, !!payment);
+      if (directPostingKey) {
+        const existing = await tx.balanceLedger.findUnique({ where: { tenantId_postingKey: { tenantId, postingKey: directPostingKey } } });
+        if (existing) {
+          if (existing.caseBalanceId !== balance.id || existing.type !== 'CREDIT' || existing.currency !== currency
+            || !new Prisma.Decimal(existing.amount).eq(dto.amount) || existing.source !== dto.source
+            || existing.sourceId !== (dto.sourceId ?? null) || existing.description !== (dto.description || 'Masraf avansı alındı')
+            || existing.createdById !== userId) {
+            throw new ConflictException({ code: 'ADVANCE_CREDIT_KEY_CONFLICT', message: 'Aynı kredi anahtarı farklı içerikle kullanılamaz.' });
+          }
+          return { balance, ledger: existing };
+        }
+      }
       // Ledger kaydı oluştur
       const ledger = await tx.balanceLedger.create({
         data: {
@@ -349,7 +375,7 @@ export class CaseBalanceService {
           type: BalanceLedgerType.CREDIT,
           amount: dto.amount,
           currency,
-          ...(context && 'postingKey' in context ? { postingKey: context.postingKey } : {}),
+          ...(context && 'postingKey' in context ? { postingKey: context.postingKey } : directPostingKey ? { postingKey: directPostingKey } : {}),
           source: dto.source,
           sourceId: dto.sourceId,
           description: dto.description || 'Masraf avansı alındı',
@@ -387,9 +413,11 @@ export class CaseBalanceService {
   /// - CaseBalanceController.debit() → POST /cases/:caseId/balance/debit (direct masraf/avans debit)
   /// </remarks>
   async debit(tenantId: string, caseId: string, dto: DebitBalanceDto, userId: string) {
+    this.validateDirectInput(dto);
     const currency = this.requireAdvanceCurrency(dto.currency);
     // Transaction ile güncelle
     const result = await this.prisma.$transaction(async (tx) => {
+      await this.assertDirectActor(tx, tenantId, userId);
       const balance = await this.resolveCurrencyBalance(tx, tenantId, caseId, currency, false);
       if (new Prisma.Decimal(balance.balance).lt(dto.amount)) {
         throw new BadRequestException(`Yetersiz bakiye. Mevcut: ${balance.balance} ${currency}, Gerekli: ${dto.amount} ${currency}`);
@@ -410,12 +438,16 @@ export class CaseBalanceService {
       });
 
       // Bakiyeyi güncelle
-      const updatedBalance = await tx.caseBalance.update({
-        where: { id: balance.id },
+      // The H07 advisory lock is preserved; the conditional write also protects
+      // against writers using a row lock instead (for example the existing 3c correction).
+      const changed = await tx.caseBalance.updateMany({
+        where: { id: balance.id, tenantId, currency, balance: { gte: dto.amount } },
         data: {
           balance: { decrement: dto.amount },
         },
       });
+      if (changed.count !== 1) throw new BadRequestException('Yetersiz bakiye veya işlem sırasında bakiye değişti.');
+      const updatedBalance = await tx.caseBalance.findUniqueOrThrow({ where: { id: balance.id } });
       const journalDraft = this.buildBalanceLedgerJournalDraft(tenantId, caseId, ledger as JournalableBalanceLedgerRow);
       if (journalDraft) {
         await this.writeBalanceLedgerJournal(tx, journalDraft);
@@ -429,6 +461,31 @@ export class CaseBalanceService {
       ledgerId: result.ledger.id,
       isLow: Number(result.balance.balance) < Number(result.lowThreshold || 500),
     };
+  }
+
+  /** Direct API/service writes only; trusted expense contexts retain their own action authority. */
+  private async assertDirectActor(tx: Prisma.TransactionClient, tenantId: string, userId: string): Promise<void> {
+    if (!tenantId || !userId) throw new ForbiddenException({ code: 'ADVANCE_WRITE_FORBIDDEN' });
+    const actor = await tx.user.findFirst({
+      where: { id: userId, tenantId, isActive: true, role: { in: ['USER', 'ADMIN'] } },
+      include: { lawyer: true, staffMember: true },
+    });
+    const profile = actor?.lawyer ?? actor?.staffMember;
+    if (!actor || !profile || profile.tenantId !== tenantId || !profile.isActive || !isOfficeAdminCapacity(capacityFromUser(actor))) {
+      throw new ForbiddenException({ code: 'ADVANCE_WRITE_FORBIDDEN', message: 'Masraf avansı yazımı için PARTNER/MANAGER yetkisi gerekir.' });
+    }
+  }
+
+  private validateDirectInput(dto: CreditBalanceDto | DebitBalanceDto): void {
+    if (!Number.isFinite(dto?.amount) || dto.amount <= 0 || new Prisma.Decimal(dto.amount).decimalPlaces() > 2
+      || new Prisma.Decimal(dto.amount).gt('9999999999999.99') || typeof dto.source !== 'string' || !dto.source.trim()
+      || (dto.sourceId !== undefined && typeof dto.sourceId !== 'string')
+      || (dto.description !== undefined && typeof dto.description !== 'string')) {
+      throw new BadRequestException({ code: 'ADVANCE_INVALID_COMMAND', message: 'Geçerli pozitif tutar ve işlem kaynağı zorunludur.' });
+    }
+    if (this.isSuppressedBalanceLedgerJournalSource(dto.source, dto.sourceId ?? null)) {
+      throw new BadRequestException({ code: 'ADVANCE_DIRECT_SOURCE_FORBIDDEN', message: 'İç ödeme veya dağıtım kaynağı doğrudan kullanılamaz.' });
+    }
   }
 
   /**
