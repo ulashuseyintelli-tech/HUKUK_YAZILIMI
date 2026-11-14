@@ -82,6 +82,7 @@ describeWithDisposableDb('UYAP hazırlığı — büro / kullanıcı bağlamı v
   let tenantId: string;
   let otherTenantId: string;
   let adminId: string;
+  let advanceUserId: string;
   let otherAdminId: string;
   let lawyerUserId: string;
   let noPoaLawyerUserId: string;
@@ -121,6 +122,9 @@ describeWithDisposableDb('UYAP hazırlığı — büro / kullanıcı bağlamı v
     await prisma.tenant.create({ data: { id: tenantId, name: 'CI UPC', slug: tenantId } });
     await prisma.tenant.create({ data: { id: otherTenantId, name: 'CI UPC B', slug: otherTenantId } });
     adminId = (await prisma.user.create({ data: { tenantId, email: `admin-${suffix}@example.test`, name: 'admin', surname: 'UPC', role: 'ADMIN' } })).id;
+    // CL-R13: only balance setup uses this separate eligible actor; UYAP actors remain unchanged.
+    advanceUserId = (await prisma.user.create({data:{tenantId,email:`advance-${suffix}@example.test`,name:'Synthetic',surname:'Advance',role:'USER'}})).id;
+    await prisma.lawyer.create({data:{tenantId,userId:advanceUserId,name:'Synthetic',surname:'Advance',lawyerRank:'PARTNER'}});
     otherAdminId = (await prisma.user.create({ data: { tenantId: otherTenantId, email: `b-${suffix}@example.test`, name: 'b', surname: 'UPC', role: 'ADMIN' } })).id;
     const office = await prisma.office.create({ data: { tenantId, name: 'UPC Bürosu' } });
     lawyerUserId = (await prisma.user.create({ data: { tenantId, email: `av-${suffix}@example.test`, name: 'av', surname: 'UPC', role: 'USER' } })).id;
@@ -171,7 +175,7 @@ describeWithDisposableDb('UYAP hazırlığı — büro / kullanıcı bağlamı v
   });
 
   const as = (userId: string) => ({
-    post: (path: string, body: object = {}) => request(app.getHttpServer()).post(path).set('x-test-user-id', userId).send(body),
+    post: (path: string, body: object = {}) => request(app.getHttpServer()).post(path).set('x-test-user-id', userId).set('Idempotency-Key', randomUUID()).send(body),
     get: (path: string) => request(app.getHttpServer()).get(path).set('x-test-user-id', userId),
   });
 
@@ -305,7 +309,7 @@ describeWithDisposableDb('UYAP hazırlığı — büro / kullanıcı bağlamı v
 
     it('avans satırı VAR ve yetersiz → gerçek tutar yazılır; yeterli → hazır', async () => {
       const caseId = await openPaidCase('avansli');
-      const credit = (amount: number) => as(adminId).post(`/cases/${caseId}/balance/credit`, { amount, currency: 'TRY', source: 'manual', description: 'masraf avansı' });
+      const credit = (amount: number) => as(advanceUserId).post(`/cases/${caseId}/balance/credit`, { amount, currency: 'TRY', source: 'manual', description: 'masraf avansı' });
 
       expect((await credit(100)).status).toBe(201);
       expect((await prepare(caseId)).body).toMatchObject({ action: 'OPEN_EXPENSE_MODAL', blockReason: 'Yetersiz bakiye. Gerekli: 957.9 TL, Mevcut: 100 TL' });
@@ -377,7 +381,7 @@ describeWithDisposableDb('UYAP hazırlığı — büro / kullanıcı bağlamı v
 
   describe('KARAR MADDESİ senaryosu ve BİLİNEN AÇIKLAR (mevcut davranış sabitlenir; ürün kararı gelince ilgili test bilinçle güncellenir)', () => {
     const credit = async (caseId: string, amount: number) => {
-      const res = await as(adminId).post(`/cases/${caseId}/balance/credit`, { amount, currency: 'TRY', source: 'manual', description: 'masraf avansı' });
+      const res = await as(advanceUserId).post(`/cases/${caseId}/balance/credit`, { amount, currency: 'TRY', source: 'manual', description: 'masraf avansı' });
       expect(res.status).toBe(201);
     };
 
@@ -453,7 +457,7 @@ describeWithDisposableDb('UYAP hazırlığı — büro / kullanıcı bağlamı v
     it('ret ve hazır yollarında UYAP isteği, muhasebe, bakiye, bildirim ya da yeni masraf kaydı YAZILMAZ (karar günlüğü hariç)', async () => {
       const unpaidId = await openCase('yan-etki-ret');
       const readyId = await openPaidCase('yan-etki-hazir');
-      const credited = await as(adminId).post(`/cases/${readyId}/balance/credit`, { amount: 1000, currency: 'TRY', source: 'manual', description: 'masraf avansı' });
+      const credited = await as(advanceUserId).post(`/cases/${readyId}/balance/credit`, { amount: 1000, currency: 'TRY', source: 'manual', description: 'masraf avansı' });
       expect(credited.status).toBe(201);
       const beforeUnpaid = await sideEffectsOf(unpaidId);
       const beforeReady = await sideEffectsOf(readyId);
