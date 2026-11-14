@@ -6,7 +6,7 @@ jest.mock('../client-object-scope', () => ({
   clientObjectScope: jest.fn(async () => ({})),
   isClientObjectInScope: jest.fn(async () => true),
 }));
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { ClientService } from '../client.service';
 
 const d = (value: string) => new Date(value);
@@ -42,8 +42,9 @@ function buildHarness(
     },
   };
   const audit = { logInTransaction: jest.fn(), log: jest.fn() };
-  const svc = new ClientService(prisma, audit as any, {} as any);
-  return { svc, prisma };
+  const history = { readForTimeline: jest.fn().mockResolvedValue(opts.notifications ?? []) };
+  const svc = new ClientService(prisma, audit as any, {} as any, undefined, undefined, history as any);
+  return { svc, prisma, history };
 }
 
 const notification = (overrides: Record<string, any> = {}) => ({
@@ -130,18 +131,16 @@ const poaDelivery = (overrides: Record<string, any> = {}) => ({
 
 describe('ClientService.getTimeline', () => {
   it('validates client inside tenant before reading source rows', async () => {
-    const { svc, prisma } = buildHarness();
+    const { svc, prisma, history } = buildHarness();
 
-    await svc.getTimeline('client-1', 'tenant-1');
+    await svc.getTimeline('client-1', 'tenant-1', {}, 'actor-1');
 
     expect(prisma.client.findFirst).toHaveBeenCalledWith({
       where: { id: 'client-1', tenantId: 'tenant-1', isActive: true },
       select: { id: true },
     });
-    expect(prisma.clientNotification.findMany.mock.calls[0][0].where).toEqual({
-      tenantId: 'tenant-1',
-      clientId: 'client-1',
-    });
+    expect(history.readForTimeline).toHaveBeenCalledWith('tenant-1', 'actor-1', 'client-1', { limit: 100, cursor: null });
+    expect(prisma.clientNotification.findMany).not.toHaveBeenCalled();
     expect(prisma.clientIntakeSubmission.findMany.mock.calls[0][0].where).toEqual({
       tenantId: 'tenant-1',
       clientId: 'client-1',
@@ -163,13 +162,14 @@ describe('ClientService.getTimeline', () => {
   });
 
   it('filters requested sources', async () => {
-    const { svc, prisma } = buildHarness({ notifications: [notification()] });
+    const { svc, prisma, history } = buildHarness({ notifications: [notification()] });
 
     const result = await svc.getTimeline('client-1', 'tenant-1', { sources: 'client_notification' });
 
     expect(result.data).toHaveLength(1);
     expect(result.data[0].source).toBe('client_notification');
-    expect(prisma.clientNotification.findMany).toHaveBeenCalledTimes(1);
+    expect(history.readForTimeline).toHaveBeenCalledTimes(1);
+    expect(prisma.clientNotification.findMany).not.toHaveBeenCalled();
     expect(prisma.clientIntakeSubmission.findMany).not.toHaveBeenCalled();
     expect(prisma.clientIntakeLinkDelivery.findMany).not.toHaveBeenCalled();
     expect(prisma.clientDocumentRequest.findMany).not.toHaveBeenCalled();
@@ -366,4 +366,19 @@ describe('ClientService.getTimeline', () => {
       eventType: 'NOTIFICATION_SENT',
     });
   });
+
+  it('CL-R11 fails closed when its required history reader is absent', async () => {
+    const { prisma } = buildHarness();
+    const svc = new ClientService(prisma, {} as any, {} as any);
+    await expect(svc.getTimeline('client-1', 'tenant-1', { sources: 'client_notification' }, 'actor-1')).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(prisma.clientNotification.findMany).not.toHaveBeenCalled();
+    await expect(svc.getTimeline('client-1', 'tenant-1', { sources: 'intake_submission' }, 'actor-1')).resolves.toMatchObject({data:[]});
+  });
+  it('CL-R11 maps an authorized status-only row without inventing content', async () => {
+    const { svc } = buildHarness({ notifications: [notification({subject:undefined,type:'MASRAF_ISTEK',body:undefined,metadata:undefined})] });
+    const result = await svc.getTimeline('client-1','tenant-1',{sources:'client_notification'},'actor-1');
+    expect(result.data).toHaveLength(1); expect(result.data[0].title).toBeTruthy();
+    expect(JSON.stringify(result)).not.toContain('Status update'); expect(result.data[0]).not.toHaveProperty('body');
+  });
+
 });

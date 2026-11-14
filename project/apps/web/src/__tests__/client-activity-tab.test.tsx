@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClientActivityTab } from '@/components/client/client-activity-tab';
 import { api } from '@/lib/api';
@@ -75,7 +75,7 @@ describe('ClientActivityTab', () => {
     render(<ClientActivityTab clientId="client-1" />);
 
     await waitFor(() => {
-      expect(screen.getByText('Bu müvekkil için kayıtlı bildirim aktivitesi yok.')).toBeTruthy();
+      expect(screen.getByText('Bu müvekkil için görüntülenebilir etkinlik yok.')).toBeTruthy();
     });
     expect(apiMock.get).toHaveBeenCalledWith(
       '/clients/client-1/timeline?limit=25&sources=client_notification,intake_submission,client_intake_link_delivery,client_document_request,poa_expiry_notification_delivery',
@@ -338,4 +338,36 @@ describe('ClientActivityTab', () => {
     // FAZLADAN bir cagri URETMEDI.
     expect(apiMock.get).toHaveBeenCalledTimes(2);
   });
+
+  it('CL-R11 renders the server-authorized status projection without fetching content', async () => {
+    apiMock.get.mockResolvedValue(timelineResponse([notificationItem({title:'Masraf isteği',summary:'Email notification: sent',metadataSafe:{channel:'EMAIL',notificationType:'MASRAF_ISTEK'},body:undefined})]));
+    render(<ClientActivityTab clientId="client-1" />);
+    await screen.findByText('Masraf isteği',{selector:'p'}); expect(screen.queryByText('Dosya bilgilendirmesi')).toBeNull();
+    expect(apiMock.get).toHaveBeenCalledTimes(1); expect(apiMock.get.mock.calls[0][0]).toContain('/clients/client-1/timeline');
+  });
+  it.each(['resolve','reject'])('CL-R11 ignores an old Client load-more %s after another Client loads', async completion => {
+    apiMock.get.mockResolvedValueOnce({data:{data:[notificationItem()],pageInfo:{nextCursor:'old-cursor',hasNextPage:true,limit:25}}});
+    const view=render(<ClientActivityTab clientId="client-1" />); await screen.findByText('Dosya bilgilendirmesi');
+    let finish!:(value:any)=>void; let fail!:(value:any)=>void;
+    apiMock.get.mockReturnValueOnce(new Promise((resolve,reject)=>{finish=resolve;fail=reject;}));
+    fireEvent.click(screen.getByRole('button',{name:'Daha fazla göster'}));
+    apiMock.get.mockResolvedValueOnce(timelineResponse([intakeItem({id:'client-2-item',title:'Second Client event'})]));
+    view.rerender(<ClientActivityTab clientId="client-2" />); await screen.findByText('Second Client event');
+    await act(async()=>{
+      if(completion==='resolve')finish(timelineResponse([notificationItem({title:'OLD PRIVATE SUBJECT'})]));else fail(new Error('OLD PRIVATE ERROR'));
+    });
+    await waitFor(()=>expect(screen.getAllByRole('listitem')).toHaveLength(1));
+    expect(screen.queryByText('OLD PRIVATE SUBJECT')).toBeNull(); expect(screen.queryByText('OLD PRIVATE ERROR')).toBeNull(); expect(screen.queryByText('Dosya bilgilendirmesi')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(apiMock.get).toHaveBeenCalledTimes(3);
+  });
+  it('CL-R11 shows a new Client denial instead of the previous Client rows or a false empty success', async () => {
+    apiMock.get.mockResolvedValueOnce(timelineResponse([notificationItem()]));
+    const view=render(<ClientActivityTab clientId="client-1" />); await screen.findByText('Dosya bilgilendirmesi');
+    apiMock.get.mockRejectedValueOnce(Object.assign(new Error('Denied'),{status:403}));
+    view.rerender(<ClientActivityTab clientId="client-2" />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Bildirim aktivitesi yüklenemedi.');
+    expect(screen.queryByText('Dosya bilgilendirmesi')).toBeNull(); expect(screen.queryByText('Bu müvekkil için görüntülenebilir etkinlik yok.')).toBeNull();
+  });
+
 });

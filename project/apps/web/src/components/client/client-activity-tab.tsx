@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertCircle, Bell, CheckCircle2, Clock, FileText, Link2, Mail, MessageSquare, XCircle } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toActionErrorMessage } from '@/lib/action-error';
@@ -153,6 +153,8 @@ function timelineMeta(item: ClientTimelineItem): string[] {
 }
 
 export function ClientActivityTab({ clientId }: ClientActivityTabProps) {
+  const requestGeneration = useRef(0);
+  const [resultClientId, setResultClientId] = useState<string | null>(null);
   const [items, setItems] = useState<ClientTimelineItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -166,19 +168,27 @@ export function ClientActivityTab({ clientId }: ClientActivityTabProps) {
 
   useEffect(() => {
     let active = true;
+    const generation = ++requestGeneration.current;
     setLoading(true);
     setError(false);
+    setItems([]);
+    setNextCursor(null);
+    setHasNextPage(false);
+    setLoadMoreError(null);
+    setLoadingMore(false);
 
     api
       .get<ClientTimelineResponse>(timelineEndpoint(clientId))
       .then((res) => {
         if (!active) return;
+        setResultClientId(clientId);
         setItems(unwrapTimeline(res.data));
         setNextCursor(res.data?.pageInfo?.nextCursor ?? null);
         setHasNextPage(Boolean(res.data?.pageInfo?.hasNextPage));
       })
       .catch(() => {
         if (active) {
+          setResultClientId(clientId);
           setItems([]);
           setError(true);
         }
@@ -189,31 +199,37 @@ export function ClientActivityTab({ clientId }: ClientActivityTabProps) {
 
     return () => {
       active = false;
+      if (requestGeneration.current === generation) requestGeneration.current++;
     };
   }, [clientId]);
 
   const loadMore = () => {
     if (!nextCursor || loadingMore) return;
+    const generation = requestGeneration.current;
     setLoadingMore(true);
     setLoadMoreError(null);
     api
       .get<ClientTimelineResponse>(timelineEndpoint(clientId, nextCursor))
       .then((res) => {
+        if (requestGeneration.current !== generation) return;
         setItems((prev) => [...prev, ...unwrapTimeline(res.data)]);
         setNextCursor(res.data?.pageInfo?.nextCursor ?? null);
         setHasNextPage(Boolean(res.data?.pageInfo?.hasNextPage));
       })
       .catch((e) => {
+        if (requestGeneration.current !== generation) return;
         // WSMR-A4u: eskiden `setHasNextPage(false)` cagriliyordu — bu,
         // "listenin sonuna gelindi" YALANINI uretiyordu VE tek retry yolu
         // olan "Daha fazla goster" dugmesini kendisi GIZLIYORDU.
         // `hasNextPage`/`nextCursor` DEGISTIRILMEZ; dugme yerinde kalir.
         setLoadMoreError(toActionErrorMessage(e, 'Daha fazla kayıt yüklenemedi.'));
       })
-      .finally(() => setLoadingMore(false));
+      .finally(() => {
+        if (requestGeneration.current === generation) setLoadingMore(false);
+      });
   };
 
-  if (loading) {
+  if (loading || resultClientId !== clientId) {
     return (
       <div className="flex items-center justify-center rounded-lg border bg-gray-50 py-8 text-sm text-gray-500" role="status" aria-label="Aktivite yukleniyor">
         <Clock className="mr-2 h-4 w-4 animate-spin" />
@@ -234,7 +250,7 @@ export function ClientActivityTab({ clientId }: ClientActivityTabProps) {
   if (items.length === 0) {
     return (
       <p className="rounded-lg border bg-gray-50 px-4 py-6 text-center text-sm text-gray-500" role="status">
-        Bu müvekkil için kayıtlı bildirim aktivitesi yok.
+        Bu müvekkil için görüntülenebilir etkinlik yok.
       </p>
     );
   }
