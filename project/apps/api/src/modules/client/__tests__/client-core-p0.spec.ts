@@ -24,16 +24,16 @@ function buildHarness(
     $queryRaw: jest.fn(async (_sql: unknown, clientId: unknown) => [{ id: clientId, isActive: true, hasPortalAccess: false, portalUserId: null }]),
     clientPortalUser: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
     client: {
-      create: jest.fn().mockResolvedValue({ id: "c1" }),
+      create: jest.fn().mockResolvedValue({ id: "c1", version: 0 }),
       updateMany: jest.fn().mockResolvedValue({ count: opts.updateCount ?? 1 }),
-      findFirst: jest.fn().mockResolvedValue(opts.updated ?? { id: "c1", isActive: true }),
+      findFirst: jest.fn().mockResolvedValue(opts.updated ?? { id: "c1", isActive: true, version: 0 }),
     },
     clientContact: { createMany: jest.fn().mockResolvedValue({}), deleteMany: jest.fn().mockResolvedValue({}) },
   };
   const prisma: any = {
     client: {
       findFirst: jest.fn().mockResolvedValue(
-        opts.existing ?? { id: "c1", tenantId: "t1", isActive: true, contacts: [] },
+        opts.existing ?? { version: 0, id: "c1", tenantId: "t1", isActive: true, contacts: [] },
       ),
     },
     $transaction: jest.fn().mockImplementation(async (cb: any) => cb(tx)),
@@ -52,9 +52,9 @@ function buildHarness(
 describe("ClientService.update — P0.5 tenant-scoped + P0.7 parity", () => {
   it("P0.5: updateMany where {id, tenantId} ile yazar (tenant-scoped write)", async () => {
     const { svc, tx } = buildHarness();
-    await svc.update("c1", "t1", { type: "PERSON", firstName: "A", lastName: "B" }, { userId: "u1", tenantId: "t1", role: 'ADMIN' });
+    await svc.update("c1", "t1", { expectedVersion: 0, ...({ type: "PERSON", firstName: "A", lastName: "B" }) }, { userId: "u1", tenantId: "t1", role: 'ADMIN' });
     expect(tx.client.updateMany).toHaveBeenCalledTimes(1);
-    expect(tx.client.updateMany.mock.calls[0][0].where).toEqual({ id: "c1", tenantId: "t1", AND: [{}] });
+    expect(tx.client.updateMany.mock.calls[0][0].where).toEqual({ id: "c1", tenantId: "t1", AND: [{}], version: 0 });
   });
 
   // C2-I08 E1: postalCode flat adres ailesindendir ve artık YAZILMAZ — parite listesi 7 alan.
@@ -63,7 +63,7 @@ describe("ClientService.update — P0.5 tenant-scoped + P0.7 parity", () => {
     await svc.update(
       "c1",
       "t1",
-      {
+      { expectedVersion: 0, ...({
         type: "COMPANY",
         companyName: "ACME",
         postalCode: "34000",
@@ -74,7 +74,7 @@ describe("ClientService.update — P0.5 tenant-scoped + P0.7 parity", () => {
         ticaretSicilNo: "TS1",
         gender: "E",
         detsisNo: "D1",
-      }, { userId: "u1", tenantId: "t1", role: 'ADMIN' },
+      }) }, { userId: "u1", tenantId: "t1", role: 'ADMIN' },
     );
     const data = tx.client.updateMany.mock.calls[0][0].data;
     expect(data.postalCode).toBeUndefined();
@@ -90,7 +90,7 @@ describe("ClientService.update — P0.5 tenant-scoped + P0.7 parity", () => {
   it("P0.4/P0.5: updateMany count=0 (cross-tenant/yarış) → NotFoundException", async () => {
     const { svc } = buildHarness({ updateCount: 0 });
     await expect(
-      svc.update("c1", "t1", { type: "PERSON", firstName: "A", lastName: "B" }, { userId: "u1", tenantId: "t1", role: 'ADMIN' }),
+      svc.update("c1", "t1", { expectedVersion: 0, ...({ type: "PERSON", firstName: "A", lastName: "B" }) }, { userId: "u1", tenantId: "t1", role: 'ADMIN' }),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -98,7 +98,7 @@ describe("ClientService.update — P0.5 tenant-scoped + P0.7 parity", () => {
     const { svc, prisma } = buildHarness();
     (prisma.client.findFirst as jest.Mock).mockResolvedValueOnce(null);
     await expect(
-      svc.update("cX", "t1", { type: "PERSON" }, { userId: "u1", tenantId: "t1", role: 'ADMIN' }),
+      svc.update("cX", "t1", { expectedVersion: 0, ...({ type: "PERSON" }) }, { userId: "u1", tenantId: "t1", role: 'ADMIN' }),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
@@ -106,11 +106,11 @@ describe("ClientService.update — P0.5 tenant-scoped + P0.7 parity", () => {
 describe("ClientService.update — CBND-6 (H5) isActive lifecycle gate (generic update yan-kapısı kapalı)", () => {
   it("deaktivasyon (true→false), ineligible aktör → ForbiddenException, updateMany HİÇ çağrılmaz", async () => {
     const { svc, tx, officeApproval } = buildHarness({
-      existing: { id: "c1", tenantId: "t1", isActive: true, contacts: [] },
+      existing: { version: 0, id: "c1", tenantId: "t1", isActive: true, contacts: [] },
       officeApprovalEligible: false,
     });
     await expect(
-      svc.update("c1", "t1", { type: "PERSON", isActive: false }, { userId: "u2", tenantId: "t1", role: 'ADMIN' }),
+      svc.update("c1", "t1", { expectedVersion: 0, ...({ type: "PERSON", isActive: false }) }, { userId: "u2", tenantId: "t1", role: 'ADMIN' }),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(officeApproval.isApproverEligible).toHaveBeenCalledWith("u2", "t1");
     expect(tx.client.updateMany).not.toHaveBeenCalled();
@@ -118,11 +118,11 @@ describe("ClientService.update — CBND-6 (H5) isActive lifecycle gate (generic 
 
   it("reaktivasyon (false→true), ineligible aktör → ForbiddenException, updateMany HİÇ çağrılmaz", async () => {
     const { svc, tx, officeApproval } = buildHarness({
-      existing: { id: "c1", tenantId: "t1", isActive: false, contacts: [] },
+      existing: { version: 0, id: "c1", tenantId: "t1", isActive: false, contacts: [] },
       officeApprovalEligible: false,
     });
     await expect(
-      svc.update("c1", "t1", { type: "PERSON", isActive: true }, { userId: "u2", tenantId: "t1", role: 'ADMIN' }),
+      svc.update("c1", "t1", { expectedVersion: 0, ...({ type: "PERSON", isActive: true }) }, { userId: "u2", tenantId: "t1", role: 'ADMIN' }),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(officeApproval.isApproverEligible).toHaveBeenCalledWith("u2", "t1");
     expect(tx.client.updateMany).not.toHaveBeenCalled();
@@ -130,21 +130,21 @@ describe("ClientService.update — CBND-6 (H5) isActive lifecycle gate (generic 
 
   it("reaktivasyon (false→true), eligible aktör → başarıyla yazılır", async () => {
     const { svc, tx } = buildHarness({
-      existing: { id: "c1", tenantId: "t1", isActive: false, contacts: [] },
+      existing: { version: 0, id: "c1", tenantId: "t1", isActive: false, contacts: [] },
       updated: { id: "c1", isActive: true },
       officeApprovalEligible: true,
     });
-    const result = await svc.update("c1", "t1", { type: "PERSON", isActive: true }, { userId: "u1", tenantId: "t1", role: 'ADMIN' });
+    const result = await svc.update("c1", "t1", { expectedVersion: 0, ...({ type: "PERSON", isActive: true }) }, { userId: "u1", tenantId: "t1", role: 'ADMIN' });
     expect(result).toBeTruthy();
     expect(tx.client.updateMany.mock.calls[0][0].data.isActive).toBe(true);
   });
 
   it("isActive gönderilmiş ama AYNI değer (no-op) → gate hiç çalışmaz, officeApproval çağrılmaz", async () => {
     const { svc, tx, officeApproval } = buildHarness({
-      existing: { id: "c1", tenantId: "t1", isActive: true, contacts: [] },
+      existing: { version: 0, id: "c1", tenantId: "t1", isActive: true, contacts: [] },
       officeApprovalEligible: false, // ineligible olsa BİLE no-op olduğu için gate tetiklenmemeli
     });
-    const result = await svc.update("c1", "t1", { type: "PERSON", isActive: true }, { userId: "u2", tenantId: "t1", role: 'ADMIN' });
+    const result = await svc.update("c1", "t1", { expectedVersion: 0, ...({ type: "PERSON", isActive: true }) }, { userId: "u2", tenantId: "t1", role: 'ADMIN' });
     expect(result).toBeTruthy();
     expect(officeApproval.isApproverEligible).not.toHaveBeenCalled();
     expect(tx.client.updateMany).toHaveBeenCalled();
@@ -152,7 +152,7 @@ describe("ClientService.update — CBND-6 (H5) isActive lifecycle gate (generic 
 
   it("isActive gönderilmemiş (undefined) → gate hiç çalışmaz (mevcut davranış korunur)", async () => {
     const { svc, officeApproval } = buildHarness({ officeApprovalEligible: false });
-    await svc.update("c1", "t1", { type: "PERSON", firstName: "A" }, { userId: "u2", tenantId: "t1", role: 'ADMIN' });
+    await svc.update("c1", "t1", { expectedVersion: 0, ...({ type: "PERSON", firstName: "A" }) }, { userId: "u2", tenantId: "t1", role: 'ADMIN' });
     expect(officeApproval.isApproverEligible).not.toHaveBeenCalled();
   });
 
@@ -161,10 +161,10 @@ describe("ClientService.update — CBND-6 (H5) isActive lifecycle gate (generic 
   // Testin ASIL İDDİASI korunur: aktörsüz istek hiçbir yazma yapamaz.
   it("userId yoksa (actor eksik) ve isActive değişiyorsa → ForbiddenException (fail-closed, remove() ile tutarlı)", async () => {
     const { svc, tx } = buildHarness({
-      existing: { id: "c1", tenantId: "t1", isActive: true, contacts: [] },
+      existing: { version: 0, id: "c1", tenantId: "t1", isActive: true, contacts: [] },
     });
     await expect(
-      svc.update("c1", "t1", { type: "PERSON", isActive: false }, { userId: "", tenantId: "t1", role: "" }),
+      svc.update("c1", "t1", { expectedVersion: 0, ...({ type: "PERSON", isActive: false }) }, { userId: "", tenantId: "t1", role: "" }),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(tx.client.updateMany).not.toHaveBeenCalled();
   });
@@ -176,7 +176,7 @@ describe("ClientService.remove — P0.5 tenant-scoped soft-delete", () => {
     await svc.remove("c1", "t1", { userId: "u1" });
     expect(tx.client.updateMany).toHaveBeenCalledWith({
       where: { id: "c1", tenantId: "t1" },
-      data: { isActive: false },
+      data: { isActive: false, version: { increment: 1 } },
     });
   });
 
@@ -194,7 +194,7 @@ describe("ClientService.remove — Task 8A capability gate (owner-locked 2026-07
     expect(officeApproval.isApproverEligible).toHaveBeenCalledWith("u1", "t1");
     expect(tx.client.updateMany).toHaveBeenCalledWith({
       where: { id: "c1", tenantId: "t1" },
-      data: { isActive: false },
+      data: { isActive: false, version: { increment: 1 } },
     });
   });
 
@@ -278,7 +278,7 @@ describe("ClientService.findOne — Task 4A soft-delete default-exclude (owner k
 
   it("update() arşivleme (isActive:false) sonrası kaydı yine döndürür (includeInactive ile)", async () => {
     const { svc, prisma } = buildHarness({ updated: { id: "c1", isActive: false } });
-    const result = await svc.update("c1", "t1", { type: "PERSON", isActive: false }, { userId: "u1", tenantId: "t1", role: 'ADMIN' });
+    const result = await svc.update("c1", "t1", { expectedVersion: 0, ...({ type: "PERSON", isActive: false }) }, { userId: "u1", tenantId: "t1", role: 'ADMIN' });
     // update sonu findOne(includeInactive:true) → soft-deleted kaydı döndürür (null değil).
     expect(result).toBeTruthy();
     const lastWhere = (prisma.client.findFirst as jest.Mock).mock.calls.at(-1)[0].where;

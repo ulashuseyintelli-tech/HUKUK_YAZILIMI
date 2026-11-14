@@ -28,6 +28,7 @@ import {
 // C3-B01 (§13/5 K5.5): rıza-kapılı tercih bayrakları için fail-closed kapı (DI'sız tüketim).
 import { assertClientConsentGateForWrite } from './client-consent.service';
 import { presentInternalClient } from './client-internal-read.presenter';
+import { clientUpdateBusinessPayload, requireClientUpdateVersion, clientVersionConflict } from './client-update-version';
 import { disableClientPortalAccessInTx } from './client-portal-access-state';
 
 /** C0-a: audit actor — YALNIZ auth context'ten (req.user.id); body/data'dan ASLA türetilmez. */
@@ -503,14 +504,15 @@ export class ClientService {
     data: any,
     actor?: AuditActor,
   ): Promise<void> {
-    const classification = classifyClientPayload(data);
+    const payload = clientUpdateBusinessPayload(data);
+    const classification = classifyClientPayload(payload);
     let elevatedAuthority = false;
     if (classification.hasSensitive && actor?.role !== 'ADMIN' && actor?.userId) {
       elevatedAuthority = await this.officeApproval.isApproverEligible(actor.userId, tenantId);
     }
     const decision = decideClientUpdate(
       { userId: actor?.userId, role: actor?.role, elevatedAuthority },
-      data,
+      payload,
     );
     if (!decision.allowed) this.denyMutation(decision);
   }
@@ -1750,6 +1752,8 @@ export class ClientService {
     this.assertActorTenantMatches(tenantId, actor);
     await this.assertCanUpdateClient(tenantId, data, actor);
     await assertClientObjectScope(this.prisma, tenantId, actor?.userId, id);
+    const expectedVersion = requireClientUpdateVersion(data);
+    data = clientUpdateBusinessPayload(data);
     // Lifecycle kapısı (assertCanManageLifecycle) AŞAĞIDA, kendi yerinde AYNEN korunur;
     // OWN-13 onu ne gevşetir ne değiştirir.
     // C0-a (acceptance #2): contacts diff için old snapshot CONTACTS ile alınır.
@@ -1758,6 +1762,8 @@ export class ClientService {
       include: { contacts: true },
     });
     if (!existing) throw new NotFoundException('Müvekkil bulunamadı');
+
+    if (existing.version !== expectedVersion) throw clientVersionConflict();
 
     // C3-B01 (§13/5 K5.5): rıza-kapılı tercih bayrağını AÇAN update, geçerli opt-in kaydı
     // yoksa RED — transaction'dan ÖNCE (yetkisiz/dayanaksız istek hiçbir şey yazmaz).
@@ -1922,10 +1928,26 @@ export class ClientService {
       // `undefined` = DOKUNMA; `null`, `false`, `0` ve `''` ise GERCEK yazilacak degerlerdir
       // ve bu testte VAR sayilirlar (owner: gercek degerleri undefined ile karistirma).
       const hasEffectiveUpdateField = Object.values(clientUpdateData).some((v) => v !== undefined);
-      const { count } = await tx.client.updateMany({
-        where: { id, tenantId, AND: [objectScope], ...lifecycleGuard },
-        data: clientUpdateData,
-      });
+      const hasRelatedWriteIntent = data.phones !== undefined || data.emails !== undefined || data.addresses !== undefined;
+      let count = 0;
+      if (hasEffectiveUpdateField || hasRelatedWriteIntent) {
+        const write = await tx.client.updateMany({
+          where: { id, tenantId, AND: [objectScope], ...lifecycleGuard, version: expectedVersion },
+          data: { ...clientUpdateData, version: { increment: 1 } },
+        });
+        count = write.count;
+        if (count === 0) {
+          const current = await tx.client.findFirst({
+            where: { id, tenantId, AND: [objectScope] }, select: { version: true },
+          });
+          if (current && current.version !== expectedVersion) throw clientVersionConflict();
+        }
+      } else {
+        // A genuine no-op validates and locks its snapshot without a synthetic UPDATE.
+        const rows = await tx.$queryRaw<Array<{ version: number }>>(Prisma.sql`
+          SELECT "version" FROM "Client" WHERE "id" = ${id} AND "tenantId" = ${tenantId} FOR UPDATE`);
+        if (rows[0] && rows[0].version !== expectedVersion) throw clientVersionConflict();
+      }
       if (count === 0) {
         // Lifecycle gecişinde sıfır sonuç, kaydın eşzamanlı değiştiği anlamına gelir
         // (kayıt yok değil) → doğrulama/yetki geçersiz kılınamaz; istek çakışma ile reddedilir.
@@ -1957,7 +1979,7 @@ export class ClientService {
         // audit'e YAPAY YAZMA EKLENMEZ — no-op gerçekten hiçbir alanı yazmaz.
         if (hasEffectiveUpdateField) throw new NotFoundException('Müvekkil bulunamadı');
         const stillPresent = await tx.client.findFirst({
-          where: { id, tenantId, AND: [objectScope] },
+          where: { id, tenantId, AND: [objectScope], version: expectedVersion },
           select: { id: true },
         });
         if (!stillPresent) throw new NotFoundException('Müvekkil bulunamadı');
@@ -2142,7 +2164,7 @@ export class ClientService {
       if (client.contactFollowUpStatus === 'ACTIVE') {
         await this.prisma.client.update({
           where: { id: client.id },
-          data: { contactFollowUpStatus: 'COMPLETED' },
+          data: { contactFollowUpStatus: 'COMPLETED', version: { increment: 1 } },
         });
       }
       return;
@@ -2189,7 +2211,7 @@ export class ClientService {
     if (client.contactFollowUpStatus !== 'ACTIVE') {
       await this.prisma.client.update({
         where: { id: client.id },
-        data: { contactFollowUpStatus: 'ACTIVE' },
+        data: { contactFollowUpStatus: 'ACTIVE', version: { increment: 1 } },
       });
     }
   }
@@ -2271,7 +2293,7 @@ export class ClientService {
     return this.prisma.$transaction(async (tx) => {
       await assertClientObjectScope(tx, tenantId, actor?.userId, id);
       // P0.5: tenant-scoped soft-delete (updateMany {id,tenantId}).
-      const { count } = await tx.client.updateMany({ where: { id, tenantId }, data: { isActive: false } });
+      const { count } = await tx.client.updateMany({ where: { id, tenantId }, data: { isActive: false, version: { increment: 1 } } });
       if (count === 0) throw new NotFoundException('Müvekkil bulunamadı');
       await disableClientPortalAccessInTx(tx, this.audit, tenantId, id, actor?.userId, 'CLIENT_DEACTIVATION');
       await this.audit.logInTransaction(tx, {

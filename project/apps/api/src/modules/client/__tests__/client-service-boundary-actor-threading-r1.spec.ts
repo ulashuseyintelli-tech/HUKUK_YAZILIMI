@@ -42,7 +42,7 @@ const actor = (role: string, tenantId = 't1', userId = 'u1'): ClientMutationActo
 });
 
 /** Kayıt-okuma (findOne) için varsayılan satır; duplicate taraması (OR) ayrı yönetilir. */
-const DEFAULT_ROW = { id: 'c1', tenantId: 't1', isActive: true, contacts: [] };
+const DEFAULT_ROW = { version: 0, id: 'c1', tenantId: 't1', isActive: true, contacts: [] };
 
 /** Yazma yüzeylerinin TAMAMINI sayan prisma sahtesi. */
 const buildPrisma = (existing: any = DEFAULT_ROW) => {
@@ -118,9 +118,9 @@ describe('R1 — CLIENT servis sınırı', () => {
   });
 
   it('2. VIEWER update → 403, hiçbir sorgu/yazma yok', async () => {
-    const { svc, prisma } = buildClientService({ existing: { id: 'c1', tenantId: 't1', isActive: true, contacts: [] } });
+    const { svc, prisma } = buildClientService({ existing: { version: 0, id: 'c1', tenantId: 't1', isActive: true, contacts: [] } });
 
-    const body = await forbiddenBody(() => svc.update('c1', 't1', { notes: 'x' }, actor('VIEWER')));
+    const body = await forbiddenBody(() => svc.update('c1', 't1', { expectedVersion: 0, ...({ notes: 'x' }) }, actor('VIEWER')));
 
     expect(body.code).toBe(CLIENT_MUTATION_REASON.VIEWER_DENIED);
     expect(prisma.$transaction).not.toHaveBeenCalled();
@@ -226,10 +226,10 @@ describe('R1 — fail-closed bağlam kuralları', () => {
   });
 
   it('9b. actor tenant ≠ hedef tenant → 403 TENANT_MISMATCH (update)', async () => {
-    const { svc, prisma } = buildClientService({ existing: { id: 'c1', tenantId: 'tenant-A', isActive: true, contacts: [] } });
+    const { svc, prisma } = buildClientService({ existing: { version: 0, id: 'c1', tenantId: 'tenant-A', isActive: true, contacts: [] } });
 
     const body = await forbiddenBody(() =>
-      svc.update('c1', 'tenant-A', { notes: 'x' }, actor('ADMIN', 'tenant-B')),
+      svc.update('c1', 'tenant-A', { expectedVersion: 0, ...({ notes: 'x' }) }, actor('ADMIN', 'tenant-B')),
     );
 
     expect(body.code).toBe(CLIENT_MUTATION_REASON.TENANT_MISMATCH);
@@ -291,9 +291,9 @@ describe('R1 — opsiyonel bypass yolu YOK', () => {
 // =========================================================================================
 describe('R1 — korunan davranışlar', () => {
   it('12. izin verilen update sonrası HER client okuması tenantId ile daraltılır', async () => {
-    const { svc, prisma } = buildClientService({ existing: { id: 'c1', tenantId: 't1', isActive: true, contacts: [] } });
+    const { svc, prisma } = buildClientService({ existing: { version: 0, id: 'c1', tenantId: 't1', isActive: true, contacts: [] } });
 
-    await svc.update('c1', 't1', { notes: 'x' }, actor('ADMIN'));
+    await svc.update('c1', 't1', { expectedVersion: 0, ...({ notes: 'x' }) }, actor('ADMIN'));
 
     const reads = prisma.client.findFirst.mock.calls;
     expect(reads.length).toBeGreaterThan(0);
@@ -303,10 +303,10 @@ describe('R1 — korunan davranışlar', () => {
   it('13. lifecycle eşiği DEĞİŞMEDİ: ADMIN bile isActive değişimi için eligibility ister', async () => {
     const { svc, office, prisma } = buildClientService({
       eligible: false,
-      existing: { id: 'c1', tenantId: 't1', isActive: true, contacts: [] },
+      existing: { version: 0, id: 'c1', tenantId: 't1', isActive: true, contacts: [] },
     });
 
-    await expect(svc.update('c1', 't1', { isActive: false }, actor('ADMIN'))).rejects.toBeInstanceOf(
+    await expect(svc.update('c1', 't1', { expectedVersion: 0, ...({ isActive: false }) }, actor('ADMIN'))).rejects.toBeInstanceOf(
       ForbiddenException,
     );
     expect(office.isApproverEligible).toHaveBeenCalledWith('u1', 't1');

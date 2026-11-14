@@ -4286,7 +4286,7 @@ function ClientDetailModal({ client, onClose }: { client: any; onClose: () => vo
   const handleSave = async () => {
     setSaving(true);
     try {
-      await api.put(`/clients/${client.id}`, form);
+      await api.put(`/clients/${client.id}`, { ...form, expectedVersion: client.version });
       alert("Müvekkil bilgileri güncellendi");
       onClose();
     } catch (err: any) {

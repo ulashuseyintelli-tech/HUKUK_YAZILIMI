@@ -98,11 +98,11 @@ describe("ClientService.create — audit", () => {
 
 describe("ClientService.update — audit", () => {
   it("CLIENT_UPDATE; field + contact diff; ham telefon audit'te YOK", async () => {
-    const existing = { id: "c1", type: "PERSON", tckn: "11111111111", displayName: "ESKI AD", phone: "05550000000", isActive: true, contacts: [] };
+    const existing = { version: 0, id: "c1", type: "PERSON", tckn: "11111111111", displayName: "ESKI AD", phone: "05550000000", isActive: true, contacts: [] };
     const updated = { id: "c1", type: "PERSON", tckn: RAW_TCKN, displayName: "YENI AD", phone: RAW_PHONE, isActive: true };
     const { svc, audit } = buildHarness({ existing, updated });
 
-    await svc.update("c1", "t1", { type: "PERSON", tckn: RAW_TCKN, firstName: "Yeni", lastName: "Ad", phones: [{ value: RAW_PHONE }] }, { userId: "u-real", tenantId: "t1", role: 'ADMIN' });
+    await svc.update("c1", "t1", { expectedVersion: 0, ...({ type: "PERSON", tckn: RAW_TCKN, firstName: "Yeni", lastName: "Ad", phones: [{ value: RAW_PHONE }] }) }, { userId: "u-real", tenantId: "t1", role: 'ADMIN' });
 
     const input = auditInput(audit);
     expect(input.action).toBe("CLIENT_UPDATE");
@@ -121,7 +121,7 @@ describe("ClientService.remove — audit", () => {
 
     await svc.remove("c1", "t1", { userId: "u-real" });
 
-    expect(tx.client.updateMany).toHaveBeenCalledWith({ where: { id: "c1", tenantId: "t1" }, data: { isActive: false } });
+    expect(tx.client.updateMany).toHaveBeenCalledWith({ where: { id: "c1", tenantId: "t1" }, data: { isActive: false, version: { increment: 1 } } });
     const input = auditInput(audit);
     expect(input.action).toBe("CLIENT_DELETE");
     expect(input.userId).toBe("u-real");

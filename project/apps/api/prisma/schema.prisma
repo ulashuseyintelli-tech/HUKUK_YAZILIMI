@@ -608,6 +608,9 @@ model Client {
   isActive  Boolean @default(true)
   sortOrder Int     @default(0)
 
+  // FIND-C4: invalidates stale Client edit snapshots across existing writers.
+  version Int @default(0)
+
   // Eski alanlar (geriye uyumluluk)
   name       String? // @deprecated - displayName kullan
   identityNo String? // @deprecated - tckn veya vkn kullan

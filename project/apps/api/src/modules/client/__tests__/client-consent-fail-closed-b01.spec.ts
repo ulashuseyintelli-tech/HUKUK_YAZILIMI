@@ -61,7 +61,7 @@ const buildTx = () => ({
 const buildPrisma = (opts: { existing?: any; activeConsent?: any } = {}) => {
   const existing =
     opts.existing ??
-    ({ id: 'c1', tenantId: 't1', isActive: true, contacts: [], sendBirthdayGreeting: false } as any);
+    ({ version: 0, id: 'c1', tenantId: 't1', isActive: true, contacts: [], sendBirthdayGreeting: false } as any);
   const tx = buildTx();
   const prisma: any = {
     client: {
@@ -196,14 +196,14 @@ describe('ClientService — rıza kapısı entegrasyonu', () => {
   it('update bayrak açma + opt-in yok → RED ve $transaction HİÇ açılmaz', async () => {
     const { svc, prisma } = buildSvc();
     await expect(
-      svc.update('c1', 't1', { sendBirthdayGreeting: true }, actorOf('USER')),
+      svc.update('c1', 't1', { expectedVersion: 0, ...({ sendBirthdayGreeting: true }) }, actorOf('USER')),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it('update bayrak açma + geçerli opt-in → yazma yürür', async () => {
     const { svc, prisma } = buildSvc({ activeConsent: { id: 'cons-1', status: 'GRANTED' } });
-    await svc.update('c1', 't1', { sendBirthdayGreeting: true }, actorOf('USER'));
+    await svc.update('c1', 't1', { expectedVersion: 0, ...({ sendBirthdayGreeting: true }) }, actorOf('USER'));
     expect(prisma.$transaction).toHaveBeenCalled();
   });
 });
@@ -279,7 +279,7 @@ describe('ClientConsentService (K5.3-K5.4)', () => {
       data: {
         sendBirthdayGreeting: false,
         sendAnniversaryGreeting: false,
-        sendHolidayGreeting: false,
+        sendHolidayGreeting: false, version: { increment: 1 },
       },
     });
     expect(audit.logInTransaction).toHaveBeenCalledWith(

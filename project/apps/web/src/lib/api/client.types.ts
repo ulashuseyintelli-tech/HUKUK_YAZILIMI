@@ -69,6 +69,8 @@ export interface ClientAddress {
  * Prisma nullable scalar'lar `string | null` (backend null döndürebilir).
  */
 export interface Client {
+  /** Read snapshot used by FIND-C4 core updates; never an authorization signal. */
+  version?: number;
   id: string;
   tenantId?: string;
   type: ClientType;

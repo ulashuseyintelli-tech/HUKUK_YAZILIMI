@@ -143,7 +143,7 @@ function buildService(existing: any, opts: { updateCount?: number } = {}) {
 }
 
 describe('D-1b — ClientService.update() kimlik kapilari', () => {
-  const base = {
+  const base = { version: 0,
     id: ID,
     tenantId: TENANT,
     isActive: true,
@@ -157,13 +157,13 @@ describe('D-1b — ClientService.update() kimlik kapilari', () => {
 
   it('degismeyen legacy gecersiz TCKN ile standart alan guncellemesi CALISIR (kilitlenme yok)', async () => {
     const h = buildService(base);
-    await h.service.update(ID, TENANT, { phone: '5551112233' }, ACTOR);
+    await h.service.update(ID, TENANT, { expectedVersion: 0, ...({ phone: '5551112233' }) }, ACTOR);
     expect(h.tx.client.updateMany).toHaveBeenCalledTimes(1);
   });
 
   it('DEGISEN gecersiz TCKN -> 400, hicbir yazma YOK', async () => {
     const h = buildService({ ...base, tckn: VALID_TCKN });
-    await expect(h.service.update(ID, TENANT, { tckn: INVALID_TCKN }, ACTOR)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(h.service.update(ID, TENANT, { expectedVersion: 0, ...({ tckn: INVALID_TCKN }) }, ACTOR)).rejects.toBeInstanceOf(BadRequestException);
     expect(h.prisma.$transaction).not.toHaveBeenCalled();
   });
 
@@ -171,7 +171,7 @@ describe('D-1b — ClientService.update() kimlik kapilari', () => {
     const h = buildService({ ...base, isActive: false });
     let caught: any;
     try {
-      await h.service.update(ID, TENANT, { isActive: true }, ACTOR);
+      await h.service.update(ID, TENANT, { expectedVersion: 0, ...({ isActive: true }) }, ACTOR);
     } catch (e) {
       caught = e;
     }
@@ -182,7 +182,7 @@ describe('D-1b — ClientService.update() kimlik kapilari', () => {
 
   it('kimlik duzeltmesi + aktivasyon AYNI istekte: YAZILACAK SON degerler esas alinir -> gecer', async () => {
     const h = buildService({ ...base, isActive: false });
-    await h.service.update(ID, TENANT, { isActive: true, tckn: VALID_TCKN }, ACTOR);
+    await h.service.update(ID, TENANT, { expectedVersion: 0, ...({ isActive: true, tckn: VALID_TCKN }) }, ACTOR);
     expect(h.tx.client.updateMany).toHaveBeenCalledTimes(1);
     // Reaktivasyon guard'i: yalniz isActive:false kosulu (tckn gonderildigi icin ona kosul EKLENMEZ)
     expect(h.tx.client.updateMany.mock.calls[0][0].where).toMatchObject({ id: ID, tenantId: TENANT, isActive: false });
@@ -190,7 +190,7 @@ describe('D-1b — ClientService.update() kimlik kapilari', () => {
 
   it('aktivasyon yazimi DOGRULANAN duruma kosulludur (tckn gonderilmediyse mevcut deger where\'e girer)', async () => {
     const h = buildService({ ...base, isActive: false, tckn: VALID_TCKN });
-    await h.service.update(ID, TENANT, { isActive: true }, ACTOR);
+    await h.service.update(ID, TENANT, { expectedVersion: 0, ...({ isActive: true }) }, ACTOR);
     expect(h.tx.client.updateMany.mock.calls[0][0].where).toMatchObject({
       id: ID,
       tenantId: TENANT,
@@ -204,7 +204,7 @@ describe('D-1b — ClientService.update() kimlik kapilari', () => {
     const h = buildService({ ...base, isActive: false, tckn: VALID_TCKN }, { updateCount: 0 });
     let caught: any;
     try {
-      await h.service.update(ID, TENANT, { isActive: true }, ACTOR);
+      await h.service.update(ID, TENANT, { expectedVersion: 0, ...({ isActive: true }) }, ACTOR);
     } catch (e) {
       caught = e;
     }
@@ -214,7 +214,7 @@ describe('D-1b — ClientService.update() kimlik kapilari', () => {
 
   it('normal update identity/lifecycle koşullarını korur ve object scope ekler', async () => {
     const h = buildService({ ...base, tckn: VALID_TCKN });
-    await h.service.update(ID, TENANT, { notes: 'x' }, ACTOR);
-    expect(h.tx.client.updateMany.mock.calls[0][0].where).toEqual({ id: ID, tenantId: TENANT, AND: [{}] });
+    await h.service.update(ID, TENANT, { expectedVersion: 0, ...({ notes: 'x' }) }, ACTOR);
+    expect(h.tx.client.updateMany.mock.calls[0][0].where).toEqual({ id: ID, tenantId: TENANT, AND: [{}], version: 0 });
   });
 });

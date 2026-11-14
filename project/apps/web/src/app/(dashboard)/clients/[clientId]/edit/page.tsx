@@ -71,7 +71,7 @@ export default function EditClientPage() {
     setSubmitError(null);
     try {
       const payload = buildEditClientPayload(values, { addressManagedExternally, readBaseline: client ?? undefined });
-      await api.put(`/clients/${clientId}`, payload);
+      await api.put(`/clients/${clientId}`, { ...payload, expectedVersion: client?.version });
       router.push(`/clients/${clientId}`);
     } catch (e: any) {
       const message = e?.body?.message || e?.message || 'Müvekkil güncellenemedi.';

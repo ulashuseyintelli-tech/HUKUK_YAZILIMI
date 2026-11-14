@@ -222,20 +222,18 @@ describeWithDatabase('LIFECYCLE aktivasyon yarisi (gercek PostgreSQL, bariyer si
     };
 
     // Gecikmis istek: amaci telefonu guncellemek; payload'inda okundugu andaki `isActive` de var.
-    await service.update(id, tenantId, { phone: '5551112233', isActive: true }, actor() as any);
+    await expect(service.update(id, tenantId, { expectedVersion: 0, ...({ phone: '5551112233', isActive: true }) }, actor() as any)).rejects.toMatchObject({ response: { code: 'CLIENT_VERSION_CONFLICT' } });
 
     const after = await prisma.client.findUniqueOrThrow({
       where: { id },
       select: { isActive: true, phone: true },
     });
     expect(after.isActive).toBe(false); // pasiflestirme KORUNDU
-    expect(after.phone).toBe('5551112233'); // gecerli istemci davranisi KORUNDU
+    expect(after.phone).toBeNull(); // FIND-C4 rejects the entire stale snapshot, including its phone change.
 
     // Lifecycle alanina hic yazilmadi (gereksiz yazma YOK).
-    expect(updateManyData.length).toBeGreaterThan(0);
-    for (const data of updateManyData) {
-      expect(data.isActive).toBeUndefined();
-    }
+    expect(updateManyData).toHaveLength(1); // A conditional CAS is attempted, but matches no row.
+    expect(updateManyData[0].isActive).toBeUndefined();
   });
 
   it('YARIS (GERCEK GECIS): pasif okunan kayit arada aktiflestirilirse gecikmis update CATISMA doner', async () => {
@@ -245,15 +243,15 @@ describeWithDatabase('LIFECYCLE aktivasyon yarisi (gercek PostgreSQL, bariyer si
 
     barrier = async () => {
       // Rakip islem de GERCEK servis yolu: pasif → aktif gecisi.
-      await activator.update(id, tenantId, { isActive: true }, actor() as any);
+      await activator.update(id, tenantId, { expectedVersion: 0, ...({ isActive: true }) }, actor() as any);
       const mid = await prisma.client.findUniqueOrThrow({ where: { id }, select: { isActive: true } });
       expect(mid.isActive).toBe(true);
     };
 
     // Gecikmis istek pasif duruma gore karar vermisti; kosullu yazma onu YAKALAR.
     await expect(
-      service.update(id, tenantId, { isActive: true, phone: '5559998877' }, actor() as any),
-    ).rejects.toMatchObject({ response: { code: 'CLIENT_STATE_CHANGED' } });
+      service.update(id, tenantId, { expectedVersion: 0, ...({ isActive: true, phone: '5559998877' }) }, actor() as any),
+    ).rejects.toMatchObject({ response: { code: 'CLIENT_VERSION_CONFLICT' } });
 
     const after = await prisma.client.findUniqueOrThrow({
       where: { id },
@@ -267,7 +265,7 @@ describeWithDatabase('LIFECYCLE aktivasyon yarisi (gercek PostgreSQL, bariyer si
     const id = await createClient();
     const service = buildService();
 
-    await service.update(id, tenantId, { isActive: true, phone: '5551110000' }, actor() as any);
+    await service.update(id, tenantId, { expectedVersion: 0, ...({ isActive: true, phone: '5551110000' }) }, actor() as any);
 
     const after = await prisma.client.findUniqueOrThrow({
       where: { id },
@@ -310,14 +308,14 @@ describeWithDatabase('LIFECYCLE aktivasyon yarisi (gercek PostgreSQL, bariyer si
     const service = buildService();
 
     // Yama oncesi bu cagri NotFoundException firlatiyordu (kusurun yeniden uretimi).
-    const result: any = await service.update(id, tenantId, { isActive: true }, actor() as any);
+    const result: any = await service.update(id, tenantId, { expectedVersion: 0, ...({ isActive: true }) }, actor() as any);
 
     // 1) Mevcut yanit sozlesmesi: guncellenen kayit dondurulur (findOne ciktisi).
     expect(result).toBeTruthy();
     expect(result.id).toBe(id);
 
     // 2) Lifecycle alanina YAZILMAZ — `updateMany` cagrilarinin hicbiri isActive tasimaz.
-    expect(updateManyData.length).toBeGreaterThan(0);
+    expect(updateManyData).toHaveLength(0);
     for (const data of updateManyData) {
       expect(data.isActive).toBeUndefined();
     }
@@ -358,7 +356,7 @@ describeWithDatabase('LIFECYCLE aktivasyon yarisi (gercek PostgreSQL, bariyer si
     const service = buildService();
 
     // Gercek yazma NIYETI var (phone) → pureNoOp DEGIL → senkron calismali.
-    await service.update(id, tenantId, { phone: '5551112233' }, actor() as any);
+    await service.update(id, tenantId, { expectedVersion: 0, ...({ phone: '5551112233' }) }, actor() as any);
 
     const after = await prisma.client.findUniqueOrThrow({
       where: { id },
@@ -380,7 +378,7 @@ describeWithDatabase('LIFECYCLE aktivasyon yarisi (gercek PostgreSQL, bariyer si
     const ghostId = randomUUID();
 
     await expect(
-      service.update(ghostId, tenantId, { isActive: true }, actor() as any),
+      service.update(ghostId, tenantId, { expectedVersion: 0, ...({ isActive: true }) }, actor() as any),
     ).rejects.toThrow(/bulunamadı/i);
 
     // Hicbir yazma denemesi yapilmadi.
@@ -404,7 +402,7 @@ describeWithDatabase('LIFECYCLE aktivasyon yarisi (gercek PostgreSQL, bariyer si
       const foreignActor = await prisma.user.create({ data: { tenantId: foreign.id, role: 'ADMIN', email: `${randomUUID()}@test.invalid`, name: 'Foreign', surname: 'Actor' } });
       // Aktor KENDI tenant'inda; hedef BASKA tenant'ta → tenant yuklemi eslesmez.
       await expect(
-        service.update(id, foreign.id, { isActive: true }, { userId: foreignActor.id, tenantId: foreign.id, role: 'ADMIN' } as any),
+        service.update(id, foreign.id, { expectedVersion: 0, ...({ isActive: true }) }, { userId: foreignActor.id, tenantId: foreign.id, role: 'ADMIN' } as any),
       ).rejects.toThrow(/bulunamadı/i);
 
       const after = await prisma.client.findUniqueOrThrow({
@@ -426,7 +424,7 @@ describeWithDatabase('LIFECYCLE aktivasyon yarisi (gercek PostgreSQL, bariyer si
 
     // (a) GERCEK gecis (false→true): yetki kapisi CALISIR ve reddeder.
     await expect(
-      service.update(id, tenantId, { isActive: true }, actor() as any),
+      service.update(id, tenantId, { expectedVersion: 0, ...({ isActive: true }) }, actor() as any),
     ).rejects.toThrow(/yetki yok/i);
     expect(updateManyData).toHaveLength(0);
 
@@ -438,7 +436,7 @@ describeWithDatabase('LIFECYCLE aktivasyon yarisi (gercek PostgreSQL, bariyer si
       select: { isActive: true, updatedAt: true, contactFollowUpStatus: true },
     });
     const taskCountBefore = await prisma.task.count({ where: { clientId: id } });
-    const result: any = await service.update(id, tenantId, { isActive: false }, actor() as any);
+    const result: any = await service.update(id, tenantId, { expectedVersion: 0, ...({ isActive: false }) }, actor() as any);
     expect(result.id).toBe(id);
     for (const data of updateManyData) {
       expect(data.isActive).toBeUndefined();
@@ -460,7 +458,7 @@ describeWithDatabase('LIFECYCLE aktivasyon yarisi (gercek PostgreSQL, bariyer si
     const service = buildService();
 
     await expect(
-      service.update(id, tenantId, { isActive: true, phone: '5554443322' }, actor() as any),
+      service.update(id, tenantId, { expectedVersion: 0, ...({ isActive: true, phone: '5554443322' }) }, actor() as any),
     ).rejects.toThrow(/yetki yok/i);
 
     const after = await prisma.client.findUniqueOrThrow({
@@ -477,7 +475,7 @@ describeWithDatabase('LIFECYCLE aktivasyon yarisi (gercek PostgreSQL, bariyer si
     const service = buildService();
 
     await expect(
-      service.update(id, tenantId, { isActive: true }, actor() as any),
+      service.update(id, tenantId, { expectedVersion: 0, ...({ isActive: true }) }, actor() as any),
     ).rejects.toMatchObject({
       response: { reasonCode: 'CLIENT_IDENTITY_CHECKSUM_INVALID', offendingFields: ['tckn'] },
     });
@@ -491,7 +489,7 @@ describeWithDatabase('LIFECYCLE aktivasyon yarisi (gercek PostgreSQL, bariyer si
     const id = await createClient();
     const service = buildService();
 
-    await service.update(id, tenantId, { isActive: false }, actor() as any);
+    await service.update(id, tenantId, { expectedVersion: 0, ...({ isActive: false }) }, actor() as any);
 
     const after = await prisma.client.findUniqueOrThrow({ where: { id }, select: { isActive: true } });
     expect(after.isActive).toBe(false);
