@@ -84,7 +84,7 @@ describe("ClientController - Task 2 lenient validation", () => {
 
   it("update: UpdateClientDto isActive kabul + fazla alan duser", async () => {
     const { ctrl, service, req } = build();
-    await ctrl.update(req, "c1", { type: "PERSON", isActive: false, extra: "y" } as any);
+    await ctrl.update(req, "c1", { expectedVersion: 0, type: "PERSON", isActive: false, extra: "y" } as any);
     expect(service.update).toHaveBeenCalledTimes(1);
     const dtoArg = service.update.mock.calls[0][2];
     expect(dtoArg.isActive).toBe(false);

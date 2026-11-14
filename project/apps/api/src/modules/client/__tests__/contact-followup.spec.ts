@@ -75,7 +75,7 @@ describe('ClientService.syncContactFollowUpTask', () => {
     expect(data.nextFollowUpAt).toBeInstanceOf(Date);
     expect(prisma.client.update).toHaveBeenCalledWith({
       where: { id: 'c1' },
-      data: { contactFollowUpStatus: 'ACTIVE' },
+      data: { contactFollowUpStatus: 'ACTIVE', version: { increment: 1 } },
     });
   });
 
@@ -105,7 +105,7 @@ describe('ClientService.syncContactFollowUpTask', () => {
     });
     expect(prisma.client.update).toHaveBeenCalledWith({
       where: { id: 'c1' },
-      data: { contactFollowUpStatus: 'COMPLETED' },
+      data: { contactFollowUpStatus: 'COMPLETED', version: { increment: 1 } },
     });
   });
 
