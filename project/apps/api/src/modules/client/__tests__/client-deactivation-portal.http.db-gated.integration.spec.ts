@@ -122,7 +122,7 @@ dbDescribe('4a Client deactivation / portal revocation — real HTTP, JWT and Po
       audits: await db.auditLog.findMany({ where: { tenantId: tenant, entityId: clientId }, select: { action: true, userId: true, metadata: true }, orderBy: { id: 'asc' } }),
     };
   }
-  const deactivate = (route: 'delete' | 'put', who = partner) => req(route, `/clients/${clientId}`, who, route === 'put' ? { isActive: false } : undefined);
+  const deactivate = (route: 'delete' | 'put', who = partner) => req(route, `/clients/${clientId}`, who, route === 'put' ? { expectedVersion: 0, isActive: false } : undefined);
 
   it.each(['delete', 'put'] as const)('%s atomically closes access, revokes old JWT and reset link, preserves rows', async (route) => {
     const signed = await login().expect(201); await access(signed.body.token).expect(200);
@@ -142,7 +142,7 @@ dbDescribe('4a Client deactivation / portal revocation — real HTTP, JWT and Po
   });
   it('Client reactivation never opens the account; separate authorized portal enable is required', async () => {
     const signed = await login().expect(201); await deactivate('delete').expect(200);
-    await req('put', `/clients/${clientId}`, partner, { isActive: true }).expect(200);
+    await req('put', `/clients/${clientId}`, partner, { expectedVersion: (await db.client.findUniqueOrThrow({ where: { id: clientId } })).version, isActive: true }).expect(200);
     expect((await snapshot()).account?.isActive).toBe(false); await login().expect(401); await access(signed.body.token).expect(401);
     await req('post', '/portal/admin/create-user', partner, { clientId, email, password: PASSWORD }).expect(201);
     const newLogin = await login().expect(201); await access(newLogin.body.token).expect(200); await access(signed.body.token).expect(401);
@@ -154,7 +154,7 @@ dbDescribe('4a Client deactivation / portal revocation — real HTTP, JWT and Po
     expect(await snapshot()).toEqual(before);
   });
   it('unchanged isActive echo preserves portal state and the existing empty CLIENT_UPDATE audit', async () => {
-    const before = await snapshot(); await req('put', `/clients/${clientId}`, partner, { isActive: true }).expect(200);
+    const before = await snapshot(); await req('put', `/clients/${clientId}`, partner, { expectedVersion: 0, isActive: true }).expect(200);
     const after = await snapshot();
     expect(after.client).toEqual(before.client); expect(after.account).toEqual(before.account);
     expect(after.audits).toEqual([{ action: 'CLIENT_UPDATE', userId: partner, metadata: { fieldDiff: [], contactsDiff: { changed: false } } }]);
