@@ -45,12 +45,6 @@ interface ClientCariViewProps {
   currency?: string;
 }
 
-/** Decimal-string farkı (req−paid) — yalnız GÖSTERİM (per-satır ödenmemiş). */
-function diffMoney(a: string, b: string, currency: string): string {
-  const n = Number(a) - Number(b);
-  return formatMoneyString(String(Number.isFinite(n) ? n : 0), currency);
-}
-
 export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewProps) {
   const summaryQ = useQuery({
     queryKey: ['client-cari-summary', clientId, currency],
@@ -247,7 +241,9 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
                   <td className="text-right">{outOfScope(r) ? <OutOfScopeCell scope={r.paraBirimiKapsami} /> : M(r.paidToClient)}</td>
                   <td className="text-right">{M(r.expenseRequested)}</td>
                   <td className="text-right">{M(r.expensePaid)}</td>
-                  <td className="text-right">{diffMoney(r.expenseRequested, r.expensePaid, cur)}</td>
+                  <td className="text-right" title={typeof r.expenseUnpaid === 'string' && r.expenseUnpaid !== '' ? undefined : 'Ödenmemiş masraf doğrulanamadı.'}>
+                    {typeof r.expenseUnpaid === 'string' && r.expenseUnpaid !== '' ? M(r.expenseUnpaid) : '—'}
+                  </td>
                   {/* B — dosya geneli (nötr renk) */}
                   <td className="text-right text-gray-500">{outOfScope(r) ? <OutOfScopeCell scope={r.paraBirimiKapsami} /> : M(r.debtorCollection)}</td>
                   <td className="text-right text-gray-500">

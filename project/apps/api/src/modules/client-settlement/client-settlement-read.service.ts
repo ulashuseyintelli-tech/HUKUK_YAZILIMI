@@ -48,6 +48,8 @@ export interface ClientCaseBreakdownItem {
   paidToClient: string;
   expenseRequested: string;
   expensePaid: string;
+  /** CL-R12: same per-request remaining projection as the client total; additive read field. */
+  expenseUnpaid?: string;
   /** TM3 Faz C C-1 — net ClientOffset (APPLY−REVERSAL) payable bacağı (payableCaseId). payableNet'e ZATEN yansıdı (bilgi). */
   offsetPayableApplied: string;
   /** TM3 Faz C C-1 — net ClientOffset (APPLY−REVERSAL) masraf bacağı (expenseCaseId). expense unpaid'i düşürür. */
@@ -269,7 +271,8 @@ export class ClientSettlementReadService {
   /**
    * S8-B FAZ-1b — ExpenseRequest kalan ödenmemiş (TEK KAYNAK · drift yok). ClientOffsetService'teki private
    * computeExpenseRequestUnpaid'i REPLACE eder + reimbursement application terimlerini ekler. Tüketiciler:
-   * offset eligibility/availability, dağıtım öneri motoru, UYAP gate, summary, expense detail, distribution preview.
+   * offset eligibility/availability, dağıtım öneri motoru, UYAP gate, summary, expense detail, distribution preview;
+   * ExpenseRequestService.getExpenseSummaryForCase (yalnız açık remainingCurrency okuması).
    *
    * remaining = totalAmount − paidTotal
    *   − Σ ClientOffset(APPLY) + Σ ClientOffset(REVERSAL)
@@ -489,12 +492,12 @@ export class ClientSettlementReadService {
     });
     let expRequested = ZERO;
     let expPaid = ZERO;
-    const expByCase = new Map<string, { requested: Prisma.Decimal; paid: Prisma.Decimal }>();
+    const expByCase = new Map<string, { requested: Prisma.Decimal; paid: Prisma.Decimal; unpaid: Prisma.Decimal }>();
     for (const e of expRows) {
       expRequested = expRequested.plus(e.totalAmount);
       expPaid = expPaid.plus(e.paidTotal);
-      const prev = expByCase.get(e.caseId) ?? { requested: ZERO, paid: ZERO };
-      expByCase.set(e.caseId, { requested: prev.requested.plus(e.totalAmount), paid: prev.paid.plus(e.paidTotal) });
+      const prev = expByCase.get(e.caseId) ?? { requested: ZERO, paid: ZERO, unpaid: ZERO };
+      expByCase.set(e.caseId, { requested: prev.requested.plus(e.totalAmount), paid: prev.paid.plus(e.paidTotal), unpaid: prev.unpaid });
     }
 
     // TM3 Faz C C-1 — net ClientOffset (APPLY−REVERSAL). Payable bacağı ZATEN computeOutstanding üzerinden
@@ -517,7 +520,10 @@ export class ClientSettlementReadService {
     // application terimleri dahil). offsetNet/byCase YALNIZ offsetApplied breakdown display için korunur (client-level toplam DEĞİL).
     let expUnpaid = ZERO;
     for (const e of expRows) {
-      expUnpaid = expUnpaid.plus(await this.computeExpenseRemaining(this.prisma, tenantId, e.id, e.totalAmount, e.paidTotal));
+      const remaining = await this.computeExpenseRemaining(this.prisma, tenantId, e.id, e.totalAmount, e.paidTotal);
+      expUnpaid = expUnpaid.plus(remaining);
+      const bucket = expByCase.get(e.caseId)!;
+      bucket.unpaid = bucket.unpaid.plus(remaining);
     }
 
     // G1 — para birimi kapsamı: istenen para biriminin DIŞINDAKİ kayıtlar / dosyalar (sunucu, tenant + müvekkil kapsamından).
@@ -547,7 +553,7 @@ export class ClientSettlementReadService {
     const caseBreakdown: ClientCaseBreakdownItem[] = distinctCaseIds.map((caseId) => {
       const a = aByCase.get(caseId) ?? { payableNet: ZERO, paid: ZERO };
       const b = bByCase.get(caseId) ?? { debtorCollection: ZERO, pendingDist: ZERO, allocationHeld: ZERO, advance: ZERO, needsReview: false };
-      const e = expByCase.get(caseId) ?? { requested: ZERO, paid: ZERO };
+      const e = expByCase.get(caseId) ?? { requested: ZERO, paid: ZERO, unpaid: ZERO };
       const m = caseMeta.get(caseId) ?? { caseNumber: '', executionFileNumber: null, role: '' };
       return {
         caseId,
@@ -558,6 +564,7 @@ export class ClientSettlementReadService {
         paidToClient: a.paid.toString(),
         expenseRequested: e.requested.toString(),
         expensePaid: e.paid.toString(),
+        expenseUnpaid: e.unpaid.toString(),
         offsetPayableApplied: (offPayableByCase.get(caseId) ?? ZERO).toString(),
         offsetExpenseApplied: (offExpenseByCase.get(caseId) ?? ZERO).toString(),
         debtorCollection: b.debtorCollection.toString(),

@@ -97,7 +97,7 @@ export interface RequestPayoutResult {
   status: string;
 }
 
-/** ExpenseRequest dosya/müvekkil masraf özeti. Tutarlar number (backend toplar; UI hesaplamaz). */
+/** ExpenseRequest özeti: legacy tutarlar number; eklemeli kalan Decimal string. UI hesaplamaz. */
 export interface ExpenseCaseSummary {
   totalRequested: number;
   totalPaid: number;
@@ -106,6 +106,9 @@ export interface ExpenseCaseSummary {
   paidCount: number;
   pendingCount: number;
   blockingUnpaid: number;
+  /** Optional additive remaining projection; legacy totalPending keeps its original meaning. */
+  expenseUnpaid?: string;
+  expenseUnpaidCurrency?: string;
 }
 
 /**
@@ -151,6 +154,8 @@ export interface ClientCaseBreakdownItem {
   paidToClient: string;
   expenseRequested: string;
   expensePaid: string;
+  /** Absent on older servers; the UI must not derive a replacement. */
+  expenseUnpaid?: string;
   // B — dosya geneli / paylaşılan bağlam (müvekkile atfedilmez)
   debtorCollection: string;
   pendingDistribution: string;
@@ -343,8 +348,9 @@ export const clientAccountingApi = {
    * liste çekip kendi toplamını HESAPLAMAZ. NOT: expense-request controller payload'u DOĞRUDAN
    * döner → tek zarf (response.data), client-settlement'taki çift zarf DEĞİL.
    */
-  async getExpenseSummary(caseId: string, clientId: string): Promise<ExpenseCaseSummary> {
+  async getExpenseSummary(caseId: string, clientId: string, remainingCurrency?: string): Promise<ExpenseCaseSummary> {
     const qs = new URLSearchParams({ clientId });
+    if (remainingCurrency !== undefined) qs.set('remainingCurrency', remainingCurrency);
     const resp = await apiClient.get<ExpenseCaseSummary>(
       `/expense-requests/case/${caseId}/summary?${qs.toString()}`,
     );
