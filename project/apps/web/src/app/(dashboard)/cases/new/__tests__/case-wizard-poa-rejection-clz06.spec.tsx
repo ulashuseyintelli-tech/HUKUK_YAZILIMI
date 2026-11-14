@@ -4,6 +4,7 @@ import NewCasePage from '../page';
 import { api } from '@/lib/api';
 import { loadCaseWizardDraftState, saveCaseWizardDraftState } from '@/lib/case-wizard-draft';
 import { POA_AUTHORIZATION_DENIED_MESSAGE } from '@/lib/poa-ux';
+import { CLIENT_CREATE_RESULT_INVALID_MESSAGE } from '@/lib/client-create-result';
 
 const fixture = vi.hoisted(() => ({ scan: {} as Record<string, unknown> }));
 vi.mock('@/lib/api', () => ({ api: { getLawyers: vi.fn(), searchDebtors: vi.fn(), getNextFileNumber: vi.fn(), createCase: vi.fn(), get: vi.fn(), post: vi.fn(), put: vi.fn() } }));
@@ -126,7 +127,7 @@ describe('CL-Z06 — the actual step-3 scan callback exposes partial success', (
   it('does not attempt POA or select an invalid client response without an id', async () => {
     vi.mocked(api.post).mockResolvedValue({ data: { data: { name: saved.name } } } as any);
     await scan();
-    await waitFor(() => expect(window.alert).toHaveBeenCalledWith('Müvekkil kaydedilemedi - ID alınamadı'));
+    await waitFor(() => expect(window.alert).toHaveBeenCalledWith(CLIENT_CREATE_RESULT_INVALID_MESSAGE));
     expect(api.post).toHaveBeenCalledTimes(1);
     expect(loadCaseWizardDraftState(scope).creditors).toEqual([]);
     expect(api.createCase).not.toHaveBeenCalled();

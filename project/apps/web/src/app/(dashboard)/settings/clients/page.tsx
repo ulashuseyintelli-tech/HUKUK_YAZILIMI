@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Plus, X, Search, Building2, User, Landmark, Edit2, Trash2, Loader2, Mail, Send, MessageSquare, Download, Upload, FileSpreadsheet, FileText, FileCheck, AlertTriangle, Clock, CheckCircle, Globe, Users, ChevronUp, ChevronDown, ChevronsUpDown, Wallet, ExternalLink } from "lucide-react";
 import { api } from "@/lib/api";
 import { toActionErrorMessage } from "@/lib/action-error";
+import { readClientCreateResult, CLIENT_EXISTING_RETURNED_MESSAGE } from "@/lib/client-create-result";
 import { isPoaDuplicateSuppressed, POA_DUPLICATE_MESSAGE, stripPoaFields, isPoaAuthorizationDenied, poaCreateFailureMessage } from "@/lib/poa-ux";
 import { hasStructuredAddresses } from "@/lib/client-write";
 import { isUnchangedClientIdentityMask, preserveMaskedClientFields } from "@/lib/client-masked-edit";
@@ -192,17 +193,15 @@ export default function ClientsSettingsPage() {
         clientId = editingClient.id;
       } else {
         const res = await api.post("/clients", clientPayload);
-        clientId = res.data?.id || res.data?.data?.id;
         // PR-AUDIT-1 / CL-R04: mevcut TCKN/VKN ile manuel ekleme → backend yeni açmaz; kapsam İÇİ aktif kart maskeli
         // döner (`_existingReturned`), kapsam dışı ya da pasif kayıt 409 fırlatır (catch'te API mesajı gösterilir).
         // Create üzerinden "geri getirme" artık YOK (yaşam döngüsü yalnız yetkili pasif/aktif işlemiyle).
-        const body = res.data?.data ?? res.data;
+        const body = readClientCreateResult(res);
+        clientId = body.id;
         savedClientLabel = body?.displayName || body?.name || clientId;
         if (body?._existingReturned) {
           clientExisting = true;
-          alert(
-            "Bu müvekkil zaten kayıtlı; yeni kayıt açılmadı, mevcut kart kullanıldı."
-          );
+          alert(CLIENT_EXISTING_RETURNED_MESSAGE);
         }
       }
       
