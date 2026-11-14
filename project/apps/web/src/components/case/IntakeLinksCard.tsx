@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { runMutation, runRefreshOnly } from "@/lib/mutation-outcome";
 import { useKeyedSubmitLock } from "@/lib/use-submit-lock";
+import { intakeLinkDisplayStatus, intakeLinkEmailMessage, useIntakeLinkDisplayClock } from "@/lib/intake-link-presentation";
 import {
   api,
   IntakeLink,
   IntakeLinkStatus,
   IntakeFieldCategory,
+  CreateIntakeLinkResult,
 } from "@/lib/api";
 
 /**
@@ -99,6 +101,7 @@ export default function IntakeLinksCard({
   }, [client, caseClients]);
 
   const [links, setLinks] = useState<IntakeLink[] | null>(null);
+  const displayNow = useIntakeLinkDisplayClock(links);
   const [listError, setListError] = useState("");
   const [formOpen, setFormOpen] = useState(false);
 
@@ -111,7 +114,7 @@ export default function IntakeLinksCard({
   const [formError, setFormError] = useState("");
 
   // Üretim sonrası TEK seferlik URL gösterimi
-  const [created, setCreated] = useState<{ url: string } | null>(null);
+  const [created, setCreated] = useState<{ caseId: string; url: string; emailDispatchStatus: CreateIntakeLinkResult['emailDispatchStatus'] } | null>(null);
   const [copied, setCopied] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [revokeError, setRevokeError] = useState("");
@@ -176,6 +179,7 @@ export default function IntakeLinksCard({
       return;
     }
     setCreating(true);
+    setCreated(null);
     try {
       const res = await api.createIntakeLink(caseId, {
         clientId,
@@ -183,7 +187,7 @@ export default function IntakeLinksCard({
         expiresAt: expiresAt ? endOfDayIso(expiresAt) : undefined,
         maxUses: parsedMax,
       });
-      setCreated({ url: res.intakeUrl });
+      setCreated({ caseId, url: res.intakeUrl, emailDispatchStatus: res.emailDispatchStatus });
       setCopied(false);
       setFormOpen(false);
       resetForm();
@@ -249,17 +253,18 @@ export default function IntakeLinksCard({
         </button>
       </div>
       <p className="text-xs text-slate-500 mb-4">
-        Müvekkile gönderilen güvenli link ile dış bilgi formu doldurulur. Link üretildiğinde
-        müvekkile e-posta ile de gönderilir.
+        Güvenli link ile dış bilgi formu doldurulur. Linkin oluşturulması ve e-posta
+        gönderim sonucu ayrı gösterilir.
       </p>
 
       {/* Üretim sonrası TEK seferlik URL kutusu */}
-      {created && (
+      {created && created.caseId === caseId && (
         <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-3">
           <p className="text-sm font-medium text-green-800 mb-1">Link üretildi</p>
           <p className="text-xs text-green-700 mb-2">
-            Bu link yalnız şimdi gösterilir; müvekkile e-posta ile de gönderildi. Kopyalayıp saklayın.
+            Bu link yalnız şimdi gösterilir. Kopyalayıp saklayın.
           </p>
+          <p role="status" className="text-xs text-slate-700 mb-2">{intakeLinkEmailMessage(created.emailDispatchStatus)}</p>
           <div className="flex items-center gap-2">
             <code className="flex-1 truncate rounded bg-white border border-green-200 px-2 py-1 text-xs text-slate-700">
               {created.url}
@@ -391,11 +396,13 @@ export default function IntakeLinksCard({
                 </tr>
               </thead>
               <tbody>
-                {links.map((l) => (
+                {links.map((l) => {
+                  const displayStatus = intakeLinkDisplayStatus(l, displayNow);
+                  return (
                   <tr key={l.id} className="border-b border-slate-100">
                     <td className="py-2 pr-3">
-                      <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${STATUS_CLASSES[l.status]}`}>
-                        {STATUS_LABELS[l.status]}
+                      <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${STATUS_CLASSES[displayStatus]}`}>
+                        {STATUS_LABELS[displayStatus]}
                       </span>
                     </td>
                     <td className="py-2 pr-3 text-slate-600">{l.scope.length} kategori</td>
@@ -417,7 +424,8 @@ export default function IntakeLinksCard({
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

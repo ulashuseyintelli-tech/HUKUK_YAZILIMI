@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { intakeLinkDisplayStatus, useIntakeLinkDisplayClock } from '@/lib/intake-link-presentation';
 import {
   api,
   type IntakeFieldCategory,
@@ -102,6 +103,7 @@ function StatusBadge({ label, className }: { label: string; className: string })
 export function ClientIntakeTab({ cases }: ClientIntakeTabProps) {
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(cases[0]?.id ?? null);
   const [links, setLinks] = useState<IntakeLink[] | null>(null);
+  const displayNow = useIntakeLinkDisplayClock(links);
   const [submissions, setSubmissions] = useState<IntakeSubmission[] | null>(null);
   const [error, setError] = useState('');
 
@@ -212,12 +214,14 @@ export function ClientIntakeTab({ cases }: ClientIntakeTabProps) {
                     </tr>
                   </thead>
                   <tbody>
-                    {links.map((link) => (
+                    {links.map((link) => {
+                      const displayStatus = intakeLinkDisplayStatus(link, displayNow);
+                      return (
                       <tr key={link.id} className="border-b last:border-0">
                         <td className="px-3 py-2">
                           <StatusBadge
-                            label={LINK_STATUS_LABELS[link.status]}
-                            className={LINK_STATUS_CLASSES[link.status]}
+                            label={LINK_STATUS_LABELS[displayStatus]}
+                            className={LINK_STATUS_CLASSES[displayStatus]}
                           />
                         </td>
                         <td className="px-3 py-2 text-gray-600">
@@ -229,7 +233,8 @@ export function ClientIntakeTab({ cases }: ClientIntakeTabProps) {
                           {link.useCount}/{link.maxUses}
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

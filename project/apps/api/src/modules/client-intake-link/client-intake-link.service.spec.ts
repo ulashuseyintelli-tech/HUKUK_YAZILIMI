@@ -141,6 +141,26 @@ describe('ClientIntakeLinkService', () => {
       expect(res.intakeUrl).toBe(`https://form.example.com/intake/${res.rawToken}`);
     });
 
+    it.each(['sent', 'failed', 'skipped'] as const)('CL-R15 exposes only the safe dispatch status: %s', async status => {
+      mockDispatcher.dispatch.mockResolvedValue({ status, dedupeKey: 'private-key', error: 'unsafe https://x/intake/raw-secret' });
+      const result = await service.create(TENANT, CASE, USER, dto);
+      expect(result).toMatchObject({ link: { id: 'lnk-1' }, emailDispatchStatus: status });
+      expect(mockPrisma.clientIntakeLink.create).toHaveBeenCalledTimes(1);
+      expect(mockDispatcher.dispatch).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(result)).not.toContain('private-key');
+      expect(JSON.stringify(result)).not.toContain('raw-secret');
+      expect(result).not.toHaveProperty('error');
+    });
+
+    it('CL-R15 leaves a created link intact when dispatch throws, without claiming email failure or success', async () => {
+      mockDispatcher.dispatch.mockRejectedValue(new Error('unsafe https://x/intake/raw-secret'));
+      const result = await service.create(TENANT, CASE, USER, dto);
+      expect(result).toMatchObject({ link: { id: 'lnk-1' }, emailDispatchStatus: 'unknown' });
+      expect(result.rawToken).toBeDefined();
+      expect(JSON.stringify(result)).not.toContain('raw-secret');
+      expect(mockDispatcher.dispatch).toHaveBeenCalledTimes(1);
+    });
+
     it('INTAKE_LINK maili dispatcher ile tetiklenir (best-effort)', async () => {
       await service.create(TENANT, CASE, USER, dto);
       expect(mockDispatcher.dispatch).toHaveBeenCalledWith(

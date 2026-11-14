@@ -28,6 +28,14 @@ describe("intake link api (staff, AUTH VAR)", () => {
     expect(body.clientId).toBe("cl1");
     expect(body.scope).toEqual(["ADDRESS", "INCOME_SOURCE"]);
   });
+  it.each(['sent', 'failed', 'skipped', 'unknown', undefined])('CL-R15 carries the optional email result without retry: %s', async status => {
+    const payload = { link: { id: 'l1' }, rawToken: 'r', intakeUrl: 'u', emailDispatchStatus: status };
+    const fetch = mockFetch(true, payload);
+    const result = await api.createIntakeLink('c1', { clientId: 'cl1', scope: ['ADDRESS'] });
+    expect(result).toEqual(payload);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch.mock.calls[0][1].headers.Authorization).toBe('Bearer test-token');
+  });
   it("createClientWorkspaceIntakeLink → POST workspace URL + Authorization Bearer + gövdede clientId yok", async () => {
     const fn = mockFetch(true, { data: { link: { id: "l2" }, rawToken: "r2", intakeUrl: "u2" } });
     const result = await api.createClientWorkspaceIntakeLink("cl1", "c1", { scope: ["ADDRESS"] });

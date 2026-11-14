@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClientIntakeTab } from '@/components/client/client-intake-tab';
 import { api, type IntakeSubmissionStatus } from '@/lib/api';
 
@@ -78,6 +78,41 @@ describe('ClientIntakeTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockIntakeData();
+  });
+  afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
+
+  it.each([
+    ['ACTIVE', '2026-11-14T11:59:59Z', 'Süresi doldu'],
+    ['ACTIVE', '2026-11-14T12:00:00Z', 'Süresi doldu'],
+    ['ACTIVE', '2026-11-14T12:00:01Z', 'Aktif'],
+    ['ACTIVE', null, 'Aktif'],
+    ['USED', '2026-11-14T11:59:59Z', 'Kullanıldı'],
+    ['REVOKED', '2026-11-14T11:59:59Z', 'İptal edildi'],
+  ])('CL-R15 presents validity without replacing terminal status: %s / %s', async (status, expiresAt, label) => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-14T12:00:00Z'));
+    apiMock.listIntakeLinks.mockResolvedValue([link({ status, expiresAt })]);
+    render(<ClientIntakeTab cases={[CASES[0]]} />);
+    expect(await screen.findByText(label as string)).toBeTruthy();
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
+  });
+
+  it('CL-R15 updates the read-only tab at expiry and removes the old case timer', async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-11-14T12:00:00Z'));
+    apiMock.listIntakeLinks.mockImplementation(async (caseId: string) => [link({ caseId, expiresAt: caseId === 'case-1' ? '2026-11-14T12:00:01Z' : null })]);
+    let view: ReturnType<typeof render>;
+    await act(async () => { view = render(<ClientIntakeTab cases={CASES} />); });
+    expect(screen.getByText('Aktif')).toBeTruthy();
+    act(() => vi.advanceTimersByTime(1000));
+    expect(screen.getByText('Süresi doldu')).toBeTruthy();
+    expect(apiMock.listIntakeLinks).toHaveBeenCalledTimes(1);
+    await act(async () => { fireEvent.change(screen.getByLabelText('Dosya'), { target: { value: 'case-2' } }); });
+    expect(screen.getByText('Aktif')).toBeTruthy();
+    expect(screen.queryByText('Süresi doldu')).toBeNull();
+    // Next Link schedules a separate 1ms idle callback when the new case links mount.
+    await act(async () => { vi.advanceTimersByTime(1); });
+    expect(vi.getTimerCount()).toBe(0);
+    view!.unmount();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('no cases empty state and does not fetch intake data', () => {

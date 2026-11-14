@@ -8,6 +8,8 @@ import { OfficeService } from '@/modules/office/office.service';
 import { CreateClientIntakeLinkDto, CreateClientWorkspaceIntakeLinkDto } from './dto/client-intake-link.dto';
 import { AuditService } from '../audit/audit.service';
 
+type IntakeLinkEmailDispatchStatus = 'sent' | 'failed' | 'skipped' | 'unknown';
+
 // Liste/detayda DÖNDÜRÜLECEK alanlar — tokenHash ASLA dışa verilmez.
 const PUBLIC_SELECT = {
   id: true,
@@ -87,10 +89,10 @@ export class ClientIntakeLinkService {
     const result = await this.createLinkRecord(this.prisma, tenantId, dto.clientId, caseId, userId, dto);
 
     // best-effort mail (state'i bozmaz)
-    await this.notifyLink(tenantId, userId, result.link.id, dto.clientId, caseId, result.intakeUrl, result.link.expiresAt);
+    const emailDispatchStatus = await this.notifyLink(tenantId, userId, result.link.id, dto.clientId, caseId, result.intakeUrl, result.link.expiresAt);
 
     // rawToken + intakeUrl YALNIZ burada (tek sefer) döner; sonra erişilemez.
-    return result;
+    return { ...result, emailDispatchStatus };
   }
 
   /**
@@ -475,11 +477,11 @@ export class ClientIntakeLinkService {
     caseId: string,
     intakeUrl: string,
     expiresAt: Date | null,
-  ): Promise<void> {
+  ): Promise<IntakeLinkEmailDispatchStatus> {
     try {
       const tokens = await this.buildLinkNotificationTokens(tenantId, clientId, caseId, intakeUrl, expiresAt);
 
-      await this.dispatcher.dispatch(tenantId, userId, {
+      const result = await this.dispatcher.dispatch(tenantId, userId, {
         clientId,
         caseId,
         templateCode: 'INTAKE_LINK',
@@ -489,9 +491,13 @@ export class ClientIntakeLinkService {
         refType: 'ClientIntakeLink',
         refId: linkId,
       });
+      // Dispatch failure can include an uncertain provider outcome. Do not expose its raw error.
+      return result?.status === 'sent' || result?.status === 'failed' || result?.status === 'skipped'
+        ? result.status : 'unknown';
     } catch (e: any) {
       // Token/URL HATA MESAJINA KOYULMAZ (sızıntı önleme).
       this.logger.warn(`Intake link maili tetiklenemedi (link=${linkId}): ${this.sanitizeDeliveryError(e.message)}`);
+      return 'unknown';
     }
   }
 }
