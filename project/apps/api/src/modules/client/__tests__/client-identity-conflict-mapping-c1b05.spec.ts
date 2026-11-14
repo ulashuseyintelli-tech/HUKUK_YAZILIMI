@@ -42,7 +42,7 @@ const build = (opts: { probeResult?: any; txError?: any } = {}) => {
     user: { findFirst: jest.fn().mockResolvedValue({ id: "u1" }) },
     client: {
       findFirst: jest.fn().mockImplementation(({ where }: any) =>
-        Promise.resolve(where?.OR ? opts.probeResult ?? null : where?.AND ? { id: "self" } : {
+        Promise.resolve(where?.OR ? opts.probeResult ?? null : where?.AND ? { id: "self" } : { version: 0,
           id: "self", type: "PERSON", firstName: "Ali", lastName: "Veli",
           tckn: "11111111111", vkn: null, identityNo: "11111111111",
           name: "Ali Veli", displayName: "Ali Veli", isActive: true,
@@ -99,7 +99,7 @@ describe("C1-B05 — P2002 → DUPLICATE_IDENTITY sözleşme çevirisi", () => {
     const { svc } = build({ txError: p2002() });
     expect.assertions(2);
     try {
-      await svc.update("self", "t1", { type: "PERSON", tckn: "12345678028" }, actorAdmin);
+      await svc.update("self", "t1", { expectedVersion: 0, ...({ type: "PERSON", tckn: "12345678028" }) }, actorAdmin);
     } catch (e: any) {
       expect(e).toBeInstanceOf(ConflictException);
       expect(e.getResponse().code).toBe("DUPLICATE_IDENTITY");
@@ -110,7 +110,7 @@ describe("C1-B05 — P2002 → DUPLICATE_IDENTITY sözleşme çevirisi", () => {
     const boom = new Error("timeout");
     const { svc } = build({ txError: boom });
     await expect(
-      svc.update("self", "t1", { phone: "05551112233" }, actor),
+      svc.update("self", "t1", { expectedVersion: 0, ...({ phone: "05551112233" }) }, actor),
     ).rejects.toBe(boom);
   });
 
@@ -124,7 +124,7 @@ describe("C1-B05 — P2002 → DUPLICATE_IDENTITY sözleşme çevirisi", () => {
     expect(tx.client.create).toHaveBeenCalledTimes(1);
     expect(created?._existingReturned).toBeUndefined();
 
-    await svc.update("self", "t1", { phone: "05551112233" }, actor);
+    await svc.update("self", "t1", { expectedVersion: 0, ...({ phone: "05551112233" }) }, actor);
     expect(tx.client.updateMany).toHaveBeenCalled();
   });
 });

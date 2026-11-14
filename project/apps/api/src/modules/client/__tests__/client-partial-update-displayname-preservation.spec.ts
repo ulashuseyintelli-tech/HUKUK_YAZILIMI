@@ -27,7 +27,7 @@ jest.mock('../client-object-scope', () => ({
 import { ClientService } from "../client.service";
 
 describe("ClientService.update — FIND-C1 displayName/name koruması (C1-B02)", () => {
-  const existingPerson = {
+  const existingPerson = { version: 0,
     id: "self",
     type: "PERSON",
     firstName: "Ali",
@@ -42,7 +42,7 @@ describe("ClientService.update — FIND-C1 displayName/name koruması (C1-B02)",
     contactFollowUpStatus: null,
     contacts: [],
   };
-  const existingCompany = {
+  const existingCompany = { version: 0,
     id: "self",
     type: "COMPANY",
     firstName: null,
@@ -92,7 +92,7 @@ describe("ClientService.update — FIND-C1 displayName/name koruması (C1-B02)",
 
   it("standart-only update ({phone}): displayName ve name YAZILMAZ (undefined → dokunma)", async () => {
     const { svc, writtenData } = build(existingPerson);
-    await svc.update("self", "t1", { phone: "05551112233" }, actorUser);
+    await svc.update("self", "t1", { expectedVersion: 0, ...({ phone: "05551112233" }) }, actorUser);
     const data = writtenData();
     expect(data.displayName).toBeUndefined();
     expect(data.name).toBeUndefined();
@@ -100,7 +100,7 @@ describe("ClientService.update — FIND-C1 displayName/name koruması (C1-B02)",
 
   it("lifecycle-only update ({isActive:false}): displayName ve name YAZILMAZ", async () => {
     const { svc, writtenData } = build(existingPerson);
-    await svc.update("self", "t1", { isActive: false }, actorAdmin);
+    await svc.update("self", "t1", { expectedVersion: 0, ...({ isActive: false }) }, actorAdmin);
     const data = writtenData();
     expect(data.displayName).toBeUndefined();
     expect(data.name).toBeUndefined();
@@ -109,7 +109,7 @@ describe("ClientService.update — FIND-C1 displayName/name koruması (C1-B02)",
 
   it("kısmi kimlik ({firstName}): eksik bileşen MEVCUT kayıttan tamamlanır → 'Yeni Veli'", async () => {
     const { svc, writtenData } = build(existingPerson);
-    await svc.update("self", "t1", { firstName: "Yeni" }, actorAdmin);
+    await svc.update("self", "t1", { expectedVersion: 0, ...({ firstName: "Yeni" }) }, actorAdmin);
     const data = writtenData();
     expect(data.displayName).toBe("Yeni Veli");
     expect(data.name).toBe("Yeni Veli");
@@ -117,7 +117,7 @@ describe("ClientService.update — FIND-C1 displayName/name koruması (C1-B02)",
 
   it("kısmi kimlik ({companyName}, type GÖNDERİLMEDEN): mevcut COMPANY tipiyle hesaplanır", async () => {
     const { svc, writtenData } = build(existingCompany);
-    await svc.update("self", "t1", { companyName: "Yeni Delta A.Ş." }, actorAdmin);
+    await svc.update("self", "t1", { expectedVersion: 0, ...({ companyName: "Yeni Delta A.Ş." }) }, actorAdmin);
     const data = writtenData();
     expect(data.displayName).toBe("Yeni Delta A.Ş.");
     expect(data.name).toBe("Yeni Delta A.Ş.");
@@ -128,7 +128,7 @@ describe("ClientService.update — FIND-C1 displayName/name koruması (C1-B02)",
     await svc.update(
       "self",
       "t1",
-      { type: "PERSON", firstName: "Mehmet", lastName: "Akın", tckn: "11111111111" },
+      { expectedVersion: 0, ...({ type: "PERSON", firstName: "Mehmet", lastName: "Akın", tckn: "11111111111" }) },
       actorAdmin,
     );
     const data = writtenData();
@@ -141,7 +141,7 @@ describe("ClientService.update — FIND-C1 displayName/name koruması (C1-B02)",
     await svc.update(
       "self",
       "t1",
-      { type: "COMPANY", companyName: "Delta İnşaat A.Ş.", vkn: "1234567912" },
+      { expectedVersion: 0, ...({ type: "COMPANY", companyName: "Delta İnşaat A.Ş.", vkn: "1234567912" }) },
       actorAdmin,
     );
     const data = writtenData();
@@ -151,7 +151,7 @@ describe("ClientService.update — FIND-C1 displayName/name koruması (C1-B02)",
 
   it("yalnız {name} gönderilirse: name yazılır, displayName'e DOKUNULMAZ", async () => {
     const { svc, writtenData } = build(existingPerson);
-    await svc.update("self", "t1", { name: "Serbest Ad" }, actorAdmin);
+    await svc.update("self", "t1", { expectedVersion: 0, ...({ name: "Serbest Ad" }) }, actorAdmin);
     const data = writtenData();
     expect(data.displayName).toBeUndefined();
     expect(data.name).toBe("Serbest Ad");

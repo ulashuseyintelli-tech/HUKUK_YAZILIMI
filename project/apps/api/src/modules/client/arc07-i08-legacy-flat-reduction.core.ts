@@ -138,7 +138,7 @@ export async function applyI08ReductionForTenant(
           { postalCode: { not: null } },
         ],
       },
-      data: { address: null, city: null, district: null, region: null, postalCode: null },
+      data: { address: null, city: null, district: null, region: null, postalCode: null, version: { increment: 1 } },
     });
     if (count === 0) {
       skipped.push(id);

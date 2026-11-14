@@ -7,8 +7,8 @@ vi.mock('next/navigation', () => ({ useParams: () => ({ clientId: state.id }), u
 vi.mock('next/link', () => ({ default: ({ children, href }: any) => <a href={href}>{children}</a> }));
 vi.mock('@/lib/api', () => ({ api: { getClient: state.get, put: state.put } }));
 vi.mock('@/lib/client-mutation-capabilities', () => ({ useClientMutationCapabilities: () => ({ loading: false, error: null, canUpdateStandard: true, canUpdateSensitive: true }) }));
-vi.mock('@/components/client/client-form', () => ({ ClientForm: ({ initialValues, onSubmit }: any) => <div>
-  <span>{initialValues.firstName}</span><button onClick={() => onSubmit(initialValues)}>Submit</button>
+vi.mock('@/components/client/client-form', () => ({ ClientForm: ({ initialValues, onSubmit, submitError }: any) => <div>
+  <span>{initialValues.firstName}</span><span>{submitError}</span><button onClick={() => onSubmit(initialValues)}>Submit</button>
 </div> }));
 const client = (id: string, firstName: string) => ({ id, firstName, lastName: 'Test', displayName: firstName, name: firstName, type: 'PERSON', contacts: [], addresses: [], bankAccounts: [] });
 
@@ -40,5 +40,25 @@ describe('1b client edit object rejection and stale data', () => {
     render(<EditClientPage />); await screen.findByText('InitiallyAllowed'); fireEvent.click(screen.getByText('Submit'));
     expect(await screen.findByText('Object scope denied')).toBeInTheDocument();
     expect(screen.queryByText('InitiallyAllowed')).not.toBeInTheDocument(); expect(state.push).not.toHaveBeenCalled();
+  });
+});
+
+describe('FIND-C4 native edit snapshot', () => {
+  beforeEach(() => { vi.clearAllMocks(); state.id = 'client-A'; });
+  it.each([undefined, 7])('carries only the loaded revision (%s) and keeps conflict visible without navigation', async version => {
+    state.get.mockResolvedValue({ data: { ...client('client-A', 'PreservedDraft'), version } });
+    state.put.mockRejectedValue({ status: 409, message: 'Concurrent edit rejected' });
+    render(<EditClientPage />); await screen.findByText('PreservedDraft'); fireEvent.click(screen.getByText('Submit'));
+    expect(await screen.findByText('Concurrent edit rejected')).toBeInTheDocument();
+    expect(state.put).toHaveBeenCalledTimes(1);
+    expect(state.put).toHaveBeenCalledWith('/clients/client-A', expect.objectContaining({ expectedVersion: version }));
+    expect(screen.getByText('PreservedDraft')).toBeInTheDocument(); expect(state.push).not.toHaveBeenCalled();
+    expect(state.get).toHaveBeenCalledTimes(1); // no silent latest-version refresh/retry
+  });
+  it('navigates only after the versioned edit succeeds', async () => {
+    state.get.mockResolvedValue({ data: { ...client('client-A', 'Allowed'), version: 9 } }); state.put.mockResolvedValue({});
+    render(<EditClientPage />); await screen.findByText('Allowed'); fireEvent.click(screen.getByText('Submit'));
+    await waitFor(() => expect(state.push).toHaveBeenCalledWith('/clients/client-A'));
+    expect(state.put).toHaveBeenCalledWith('/clients/client-A', expect.objectContaining({ expectedVersion: 9 }));
   });
 });

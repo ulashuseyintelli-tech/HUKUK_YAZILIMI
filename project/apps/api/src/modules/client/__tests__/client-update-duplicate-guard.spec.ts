@@ -18,9 +18,11 @@ jest.mock('../client-object-scope', () => ({
 // dogrulanmis GECERLI degerlerle guncellendi; olculen davranis (409 DUPLICATE_IDENTITY) AYNI.
 import { ConflictException } from "@nestjs/common";
 import { ClientService } from "../client.service";
+import { clientUpdateBusinessPayload, requireClientUpdateVersion } from '../client-update-version';
+import { classifyClientPayload } from '../client-mutation-policy';
 
 describe("ClientService.update — kimlik-block (PR-U4)", () => {
-  const existing = {
+  const existing = { version: 0,
     id: "self", type: "INDIVIDUAL", tckn: "10000000146", vkn: null,
     identityNo: "11111111111", name: "Ali Veli", displayName: "Ali Veli", contactFollowUpStatus: null,
     contacts: [],
@@ -49,7 +51,7 @@ describe("ClientService.update — kimlik-block (PR-U4)", () => {
 
   it("TCKN değişti + başka aktif müvekkilde var → 409 DUPLICATE_IDENTITY (mutation yok)", async () => {
     const { svc, prisma } = build({ id: "o1", displayName: "Başka Müvekkil" });
-    await expect(svc.update("self", "t1", { type: "INDIVIDUAL", tckn: "12345678028" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' })).rejects.toThrow(ConflictException);
+    await expect(svc.update("self", "t1", { expectedVersion: 0, ...({ type: "INDIVIDUAL", tckn: "12345678028" }) }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' })).rejects.toThrow(ConflictException);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
@@ -57,7 +59,7 @@ describe("ClientService.update — kimlik-block (PR-U4)", () => {
     const { svc } = build({ id: "o1", displayName: "Başka Müvekkil" });
     expect.assertions(2);
     try {
-      await svc.update("self", "t1", { type: "INDIVIDUAL", tckn: "12345678028" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' });
+      await svc.update("self", "t1", { expectedVersion: 0, ...({ type: "INDIVIDUAL", tckn: "12345678028" }) }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' });
     } catch (e: any) {
       const body = e.getResponse();
       expect(body.code).toBe("DUPLICATE_IDENTITY");
@@ -67,13 +69,13 @@ describe("ClientService.update — kimlik-block (PR-U4)", () => {
 
   it("VKN değişti + başka aktif müvekkilde var → 409 DUPLICATE_IDENTITY (mutation yok)", async () => {
     const { svc, prisma } = build({ id: "o2", displayName: "Şirket A.Ş." });
-    await expect(svc.update("self", "t1", { type: "COMPANY", vkn: "4540536920" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' })).rejects.toThrow(ConflictException);
+    await expect(svc.update("self", "t1", { expectedVersion: 0, ...({ type: "COMPANY", vkn: "4540536920" }) }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' })).rejects.toThrow(ConflictException);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it("kimlik değişti ama başka eşleşme yok (self hariç) → güncellenir (tx + audit)", async () => {
     const { svc, tx, audit } = build(null);
-    await svc.update("self", "t1", { type: "INDIVIDUAL", tckn: "12345678028" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' });
+    await svc.update("self", "t1", { expectedVersion: 0, ...({ type: "INDIVIDUAL", tckn: "12345678028" }) }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' });
     expect(tx.client.updateMany).toHaveBeenCalled();
     expect(audit.logInTransaction).toHaveBeenCalledWith(
       tx,
@@ -83,13 +85,28 @@ describe("ClientService.update — kimlik-block (PR-U4)", () => {
 
   it("kimlik değişmedi (yalnız telefon) → guard tetiklenmez, güncellenir", async () => {
     const { svc, tx } = build({ id: "o1" });
-    await svc.update("self", "t1", { type: "INDIVIDUAL", phone: "05551112233" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' });
+    await svc.update("self", "t1", { expectedVersion: 0, ...({ type: "INDIVIDUAL", phone: "05551112233" }) }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' });
     expect(tx.client.updateMany).toHaveBeenCalled();
   });
 
   it("isim değişti ama kimlik aynı → MÜVEKKİLDE isim-review YOK → güncellenir", async () => {
     const { svc, tx } = build({ id: "o1" });
-    await svc.update("self", "t1", { type: "INDIVIDUAL", firstName: "Yeni", lastName: "Isim", tckn: "10000000146" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' });
+    await svc.update("self", "t1", { expectedVersion: 0, ...({ type: "INDIVIDUAL", firstName: "Yeni", lastName: "Isim", tckn: "10000000146" }) }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' });
     expect(tx.client.updateMany).toHaveBeenCalled();
+  });
+});
+
+describe('FIND-C4 update precondition metadata', () => {
+  it.each([undefined, null, '0', -1, 0.5, NaN, Infinity, 2147483648, {}, []])('rejects invalid version %p', value => {
+    expect(() => requireClientUpdateVersion({ expectedVersion: value })).toThrow('Geçerli müvekkil sürümü gerekli');
+  });
+  it.each([0, 1, 2147483647])('accepts integer version %p without coercion', expectedVersion => {
+    expect(requireClientUpdateVersion({ expectedVersion })).toBe(expectedVersion);
+  });
+  it('keeps version metadata out of business capability classification and preserves unknown-field sensitivity', () => {
+    const payload = clientUpdateBusinessPayload({ expectedVersion: 4, phone: 'fixture', arbitraryField: true });
+    expect(payload).toEqual({ phone: 'fixture', arbitraryField: true });
+    expect(classifyClientPayload(payload)).toMatchObject({ standard: ['phone'], sensitive: ['arbitraryField'], hasSensitive: true });
+    expect(classifyClientPayload({ expectedVersion: 4 }).hasSensitive).toBe(true);
   });
 });

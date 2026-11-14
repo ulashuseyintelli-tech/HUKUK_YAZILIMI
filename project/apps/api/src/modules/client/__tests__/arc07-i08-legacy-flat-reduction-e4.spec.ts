@@ -87,7 +87,7 @@ describe('E4 — applyI08ReductionForTenant (injected tx)', () => {
     expect(res).toEqual({ cleared: 1, audited: 1, skipped: [] });
     const upd = (tx.client.updateMany as jest.Mock).mock.calls[0][0];
     expect(upd.where).toMatchObject({ id: 'c1', tenantId: 't1' });
-    expect(upd.data).toEqual({ address: null, city: null, district: null, region: null, postalCode: null });
+    expect(upd.data).toEqual({ address: null, city: null, district: null, region: null, postalCode: null, version: { increment: 1 } });
     const audit = (tx.auditLog.create as jest.Mock).mock.calls[0][0].data;
     expect(audit).toMatchObject({
       tenantId: 't1', action: 'CLIENT_FLAT_ADDRESS_REDUCED_I08', entityType: 'CLIENT', entityId: 'c1',

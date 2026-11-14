@@ -9,6 +9,10 @@ import {
   ValidateNested,
   ValidateIf,
   MaxLength,
+  IsDefined,
+  IsInt,
+  Min,
+  Max,
 } from "class-validator";
 import { Type } from "class-transformer";
 
@@ -137,5 +141,8 @@ export class CreateClientDto {
 }
 
 export class UpdateClientDto extends CreateClientDto {
+  @IsDefined() @IsInt() @Min(0) @Max(2147483647)
+  expectedVersion!: number;
+
   @IsOptional() @IsBoolean() isActive?: boolean;
 }

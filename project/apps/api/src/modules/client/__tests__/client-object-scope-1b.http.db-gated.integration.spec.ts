@@ -41,6 +41,7 @@ import { NotificationDispatcherService } from '../../client-notification/notific
 import { PoaExpiryDeliveryService } from '../../automation/poa-expiry-delivery.service';
 import { ClientNotificationModule } from '../../client-notification/client-notification.module';
 import { assertClientObjectScope } from '../client-object-scope';
+import { disableClientPortalAccessInTx } from '../client-portal-access-state';
 
 const url = resolveTestDatabaseUrl(process.env);
 if (process.env.CI && !url) throw new Error('1b acceptance requires disposable TEST_DATABASE_URL; integration SKIP is not acceptance');
@@ -148,7 +149,7 @@ dbDescribe('1b canonical Client object boundary — real Nest HTTP and PostgreSQ
     const r = http(app.getHttpServer())[method](path).set('x-test-user-id', who);
     return body === undefined ? r : r.send(body);
   };
-  const update = (body: object, who = admin, id = clientId) => req('put', `/clients/${id}`, who, body);
+  const update = (body: object, who = admin, id = clientId) => req('put', `/clients/${id}`, who, { expectedVersion: 0, ...body });
   async function snapshot() {
     const where = { tenantId: tenant }; const child = { client: { tenantId: tenant } };
     const models: [string, any][] = [
@@ -207,7 +208,7 @@ dbDescribe('1b canonical Client object boundary — real Nest HTTP and PostgreSQ
     expect(await db.client.findUniqueOrThrow({ where: { id: clientId } })).toEqual(before);
     await update({ isActive: false }, partner).expect(200);
     expect((await db.client.findUniqueOrThrow({ where: { id: clientId } })).isActive).toBe(false);
-    await update({ isActive: true }, partner).expect(200);
+    await update({ isActive: true, expectedVersion: (await db.client.findUniqueOrThrow({ where: { id: clientId } })).version }, partner).expect(200);
     expect((await db.client.findUniqueOrThrow({ where: { id: clientId } })).isActive).toBe(true);
   });
   it('update duplicate outside scope exposes neither the other id nor name', async () => {
@@ -255,12 +256,19 @@ dbDescribe('1b canonical Client object boundary — real Nest HTTP and PostgreSQ
           reached = true;
           await db.caseLawyer.deleteMany({ where: { caseId, lawyer: { userId: admin } } });
           const result = await target.updateMany(args);
-          expect(result.count).toBe(0); // Reach the real Prisma empty-data fallback, not an earlier rejection.
+          expect(result.count).toBe(0); // Reach the real guarded write, not an earlier rejection.
           return result;
         };
       } });
       return callback(new Proxy(tx, { get(target, property, receiver) {
-        return property === 'client' ? client : Reflect.get(target, property, receiver);
+        if (property === 'client') return client;
+        if (property === '$queryRaw' && kind === 'NO_OP') return async (...args: any[]) => {
+          reached = true;
+          await db.caseLawyer.deleteMany({ where: { caseId, lawyer: { userId: admin } } });
+          return (target.$queryRaw as any)(...args);
+        };
+        const value = Reflect.get(target, property, receiver);
+        return typeof value === 'function' ? value.bind(target) : value;
       } }));
     }, ...rest)) as any);
     await update(kind === 'NO_OP' ? { isActive: true } : { phones: [{ type: 'MOBILE', value: '5558887799' }] }).expect(404);
@@ -399,6 +407,104 @@ dbDescribe('1b canonical Client object boundary — real Nest HTTP and PostgreSQ
     await req('post', `/client-intake-links/${created.body.link.id}/revoke`, admin, {}).expect(201);
     const workspace = await req('post', `/clients/${clientId}/cases/${caseId}/intake-links`, admin, { scope: ['ADDRESS'] }).expect(201);
     expect(workspace.body.data.link.clientId).toBe(clientId);
+  });
+
+
+  describe('FIND-C4 model A — real HTTP, CAS and PostgreSQL rollback', () => {
+    beforeEach(async () => {
+      // Fixture only: prevent an unrelated contact-follow-up transition from adding another revision.
+      await db.client.update({ where: { id: clientId }, data: { email: 'cas@example.invalid', contactFollowUpStatus: 'WAIVED' } });
+    });
+    const cas = (body: object, who = admin) => req('put', '/clients/' + clientId, who, body);
+    const readVersion = async () => (await db.client.findUniqueOrThrow({ where: { id: clientId } })).version;
+    it('detail and list expose the same read snapshot without granting mutation authority', async () => {
+      const detail = await req('get', '/clients/' + clientId).expect(200);
+      const list = await req('get', '/clients').expect(200);
+      expect(detail.body.data.version).toBe(0);
+      const rows = Array.isArray(list.body) ? list.body : list.body.data;
+      expect(rows.find((r: any) => r.id === clientId).version).toBe(detail.body.data.version);
+      await cas({ phone: 'denied', expectedVersion: 0 }, outsider).expect(404);
+    });
+    it.each([undefined, null, '0', -1, 0.5, {}, [], 2147483648])('rejects invalid expectedVersion %p with 400 and zero effects', async expectedVersion => {
+      const before = await snapshot();
+      await cas({ phone: 'never written', expectedVersion }).expect(400);
+      expect(await snapshot()).toEqual(before);
+    });
+    it('direct service entry rejects missing version without a write or successful audit', async () => {
+      const before = await snapshot();
+      await expect(core.update(clientId, tenant, { phone: 'never written' }, { userId: admin, tenantId: tenant, role: 'ADMIN' })).rejects.toMatchObject({ status: 400 });
+      expect(await snapshot()).toEqual(before);
+    });
+    it('rejects stale full or contact payload and accepts an explicitly reread fresh revision', async () => {
+      await cas({ expectedVersion: 0, phone: '5559998877' }).expect(200);
+      const before = await snapshot();
+      const stale = await cas({ expectedVersion: 0, phone: 'lost update', emails: [{ type: 'EMAIL', value: 'lost@example.invalid' }] }).expect(409);
+      expect(stale.body.code).toBe('CLIENT_VERSION_CONFLICT');
+      expect(await snapshot()).toEqual(before);
+      await cas({ expectedVersion: await readVersion(), phone: '5558887766' }).expect(200);
+      expect((await db.client.findUniqueOrThrow({ where: { id: clientId } })).phone).toBe('5558887766');
+    });
+    it.each(['CORE', 'CONTACTS_ONLY'] as const)('%s concurrent actors have one winner, one 409 and one atomic audit', async kind => {
+      const original = db.$transaction.bind(db);
+      let arrived = 0; let release!: () => void;
+      const rendezvous = new Promise<void>(resolve => { release = resolve; });
+      const timer = setTimeout(() => release(), 10_000);
+      jest.spyOn(db, '$transaction').mockImplementation((async (callback: any, ...rest: any[]) => {
+        if (typeof callback === 'function' && arrived < 2) {
+          arrived++; if (arrived === 2) release(); await rendezvous;
+        }
+        return original(callback, ...rest);
+      }) as any);
+      const payload = (value: string) => kind === 'CORE'
+        ? { expectedVersion: 0, phone: value }
+        : { expectedVersion: 0, phones: [{ type: 'MOBILE', value }], emails: [] };
+      try {
+        const results = await Promise.all([cas(payload('5551118877'), admin), cas(payload('5552228877'), staffUser)]);
+        expect(arrived).toBe(2);
+        expect(results.map(r => r.status).sort()).toEqual([200, 409]);
+        expect(results.find(r => r.status === 409)!.body.code).toBe('CLIENT_VERSION_CONFLICT');
+        const winner = results[0].status === 200 ? 0 : 1;
+        const value = winner === 0 ? '5551118877' : '5552228877';
+        const client = await db.client.findUniqueOrThrow({ where: { id: clientId }, include: { contacts: true } });
+        expect(client.version).toBe(1);
+        if (kind === 'CORE') expect(client.phone).toBe(value);
+        else expect(client.contacts.filter(c => c.type === 'MOBILE').map(c => c.value)).toEqual([value]);
+        const logs = await db.auditLog.findMany({ where: { tenantId: tenant, action: 'CLIENT_UPDATE' } });
+        expect(logs).toHaveLength(1); expect(logs[0].userId).toBe(winner === 0 ? admin : staffUser);
+      } finally { clearTimeout(timer); }
+    });
+    it('fresh true no-op preserves the Client row; stale no-op is a zero-effect 409', async () => {
+      const before = await db.client.findUniqueOrThrow({ where: { id: clientId } });
+      const sync = jest.spyOn(core as any, 'syncContactFollowUpTask');
+      await cas({ expectedVersion: 0, isActive: true }, staffUser).expect(200);
+      expect(await db.client.findUniqueOrThrow({ where: { id: clientId } })).toEqual(before);
+      expect(sync).not.toHaveBeenCalled();
+      await cas({ expectedVersion: 0, phone: '5559998877' }).expect(200);
+      const afterWinner = await snapshot();
+      await cas({ expectedVersion: 0, isActive: true }, staffUser).expect(409);
+      expect(await snapshot()).toEqual(afterWinner);
+    });
+    it('consent revocation invalidates an earlier read version before any subsequent edit', async () => {
+      const activity = 'GREETING_AND_OPTIONAL_COMMUNICATION';
+      await req('post', '/clients/' + clientId + '/consents', admin, { activity }).expect(201);
+      await db.client.update({ where: { id: clientId }, data: { sendBirthdayGreeting: true } });
+      const old = await readVersion();
+      await req('post', '/clients/' + clientId + '/consents/revoke', admin, { activity }).expect(201);
+      expect(await readVersion()).toBe(old + 1);
+      const before = await snapshot();
+      await cas({ expectedVersion: old, sendBirthdayGreeting: true }).expect(409);
+      expect(await snapshot()).toEqual(before);
+    });
+    it('existing portal-disable writer invalidates stale Client edits without changing session policy', async () => {
+      const account = await db.clientPortalUser.create({ data: { clientId, email: 'portal-' + randomUUID() + '@example.invalid', passwordHash: 'synthetic-only' } });
+      await db.client.update({ where: { id: clientId }, data: { hasPortalAccess: true, portalUserId: account.id } });
+      const old = await readVersion();
+      await db.$transaction(tx => disableClientPortalAccessInTx(tx, audit, tenant, clientId, admin, 'PORTAL_DISABLE'));
+      expect(await readVersion()).toBe(old + 1);
+      const before = await snapshot();
+      await cas({ expectedVersion: old, phone: 'never written' }).expect(409);
+      expect(await snapshot()).toEqual(before);
+    });
   });
 
   describe('CL-R11 K16 and K17 timeline intersection — actual reader and SQL', () => {

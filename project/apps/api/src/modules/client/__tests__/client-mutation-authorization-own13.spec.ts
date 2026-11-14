@@ -50,10 +50,11 @@ const actorOf = (role: ActorRole, userId = 'u1') => ({ userId, role });
  * kanıtlanır (yazma yalnız transaction içinde olur).
  */
 const buildPrisma = (
-  existing: any = { id: 'c1', tenantId: 't1', isActive: true, tckn: SYNTHETIC_TCKN, contacts: [] },
+  existing: any = { id: 'c1', tenantId: 't1', version: 0, isActive: true, tckn: SYNTHETIC_TCKN, contacts: [] },
 ) => {
+  if (existing) existing = { version: 0, ...existing };
   const tx = {
-    $queryRaw: jest.fn(async (_sql: unknown, clientId: unknown) => [{ id: clientId, isActive: true, hasPortalAccess: false, portalUserId: null }]),
+    $queryRaw: jest.fn(async (_sql: unknown, clientId: unknown) => [{ id: clientId, version: 0, isActive: true, hasPortalAccess: false, portalUserId: null }]),
     clientPortalUser: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
     client: {
       update: jest.fn().mockResolvedValue({ id: 'c1' }),
@@ -129,7 +130,7 @@ const buildService = (opts: { eligible?: boolean; existing?: any } = {}) => {
     tenantId: string,
     body: any,
     actor?: { userId: string; role: string },
-  ) => controller.update(actor ? reqOf(actor, tenantId) : ({ user: { tenantId } } as any), id, body);
+  ) => controller.update(actor ? reqOf(actor, tenantId) : ({ user: { tenantId } } as any), id, { expectedVersion: 0, ...body });
 
   return { svc, controller, routeCreate, routeUpdate, prisma, tx, audit, office };
 };

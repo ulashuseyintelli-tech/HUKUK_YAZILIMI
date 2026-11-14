@@ -105,7 +105,7 @@ dbDescribe('CL-R04 — POST /clients dedup dönüşü: K16 kapsamı, genel 409, 
   }
   const get = (uid: string, path: string) => http(app.getHttpServer()).get(path).set('x-test-user-id', uid);
   const post = (uid: string, body: Record<string, unknown>) => http(app.getHttpServer()).post('/clients').set('x-test-user-id', uid).send(body);
-  const put = (uid: string, id: string, body: Record<string, unknown>) => http(app.getHttpServer()).put('/clients/' + id).set('x-test-user-id', uid).send(body);
+  const put = (uid: string, id: string, body: Record<string, unknown>) => http(app.getHttpServer()).put('/clients/' + id).set('x-test-user-id', uid).send({ expectedVersion: 0, ...body });
   const payload = (tckn: string) => ({ type: 'PERSON', firstName: 'Yeni', lastName: 'Kayıt', tckn, phone: '+905551110000', email: 'yeni-kayit@example.test' });
 
   const snapshot = async () => JSON.parse(JSON.stringify({

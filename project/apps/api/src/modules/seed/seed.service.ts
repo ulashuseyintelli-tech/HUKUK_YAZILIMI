@@ -509,6 +509,7 @@ export class SeedService {
                 name,
                 displayName: client.displayName || name,
                 identityNo,
+                version: { increment: 1 },
               },
             });
             if (count === 0) return false; // eşzamanlı değişim — audit de yazılmaz

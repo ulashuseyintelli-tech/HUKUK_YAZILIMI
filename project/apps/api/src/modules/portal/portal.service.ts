@@ -396,7 +396,7 @@ export class PortalService {
         });
         const after = await tx.client.update({
           where: { id: clientId },
-          data: { hasPortalAccess: true, portalUserId: existing.id },
+          data: { hasPortalAccess: true, portalUserId: existing.id, version: { increment: 1 } },
         });
         await this.audit.logInTransaction(tx, {
           tenantId,
@@ -432,7 +432,7 @@ export class PortalService {
       });
       const after = await tx.client.update({
         where: { id: clientId },
-        data: { hasPortalAccess: true, portalUserId: portalUser.id },
+        data: { hasPortalAccess: true, portalUserId: portalUser.id, version: { increment: 1 } },
       });
       await this.audit.logInTransaction(tx, {
         tenantId,

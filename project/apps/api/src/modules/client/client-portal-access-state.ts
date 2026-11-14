@@ -31,7 +31,7 @@ export async function disableClientPortalAccessInTx(
     data: { isActive: false, tokenVersion: { increment: 1 }, resetToken: null, resetTokenExp: null },
   });
   if (before.hasPortalAccess || source === 'PORTAL_DISABLE') {
-    await tx.client.updateMany({ where: { id: clientId, tenantId }, data: { hasPortalAccess: false } });
+    await tx.client.updateMany({ where: { id: clientId, tenantId }, data: { hasPortalAccess: false, version: { increment: 1 } } });
   }
   // No account is invented for a Client without portal access. Manual disable keeps its existing audit.
   if (revoked.count > 0 || before.hasPortalAccess || source === 'PORTAL_DISABLE') {

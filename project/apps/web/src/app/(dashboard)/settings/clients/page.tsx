@@ -181,7 +181,7 @@ export default function ClientsSettingsPage() {
         // projeksiyonu `addresses` İÇERMEZ (findAll ≠ findOne) → yapısal adresin varlığını
         // submit'ten önce bilemez. Backend `_addressesSkipped` ile gerçeği bildirir; sessiz
         // kalırsa kullanıcı adresi kaydettiğini sanır (yanıltıcı başarı).
-        const putRes = await api.put(`/clients/${editingClient.id}`, clientPayload);
+        const putRes = await api.put(`/clients/${editingClient.id}`, { ...clientPayload, expectedVersion: editingClient.version });
         const putBody = putRes?.data?.data ?? putRes?.data;
         if (putBody?._addressesSkipped) {
           alert(

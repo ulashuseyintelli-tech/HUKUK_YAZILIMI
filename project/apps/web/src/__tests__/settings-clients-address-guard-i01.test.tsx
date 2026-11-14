@@ -320,3 +320,18 @@ describe('[12-13] structured belirleme kaynağı ve fail-safe', () => {
     expect(screen.queryByTestId('settings-client-address-managed')).toBeNull();
   });
 });
+
+describe('FIND-C4 settings edit snapshot', () => {
+  it.each([undefined, 11])('uses loaded revision %s, preserves conflict draft and avoids refresh/success', async version => {
+    const row = { ...NO_STRUCTURED, version }; mockGetRouter({ 'client-1': row }, [toListRow(row)]);
+    apiMock.put.mockRejectedValue(Object.assign(new Error('Concurrent edit rejected'), { status: 409 }));
+    const { container } = render(<ClientsSettingsPage />); await clickEditFor('Ada Müvekkil');
+    fireEvent.change(modalInputs(container)[0], { target: { value: 'Retained draft' } });
+    const reads = apiMock.get.mock.calls.length; fireEvent.click(screen.getByText('Kaydet'));
+    await waitFor(() => expect(window.alert).toHaveBeenCalledWith('Concurrent edit rejected'));
+    expect(apiMock.put).toHaveBeenCalledTimes(1);
+    expect(apiMock.put).toHaveBeenCalledWith('/clients/client-1', expect.objectContaining({ expectedVersion: version, firstName: 'Retained draft' }));
+    expect(screen.getByText('Müvekkil Düzenle')).toBeInTheDocument();
+    expect(modalInputs(container)[0]).toHaveValue('Retained draft'); expect(apiMock.get).toHaveBeenCalledTimes(reads);
+  });
+});

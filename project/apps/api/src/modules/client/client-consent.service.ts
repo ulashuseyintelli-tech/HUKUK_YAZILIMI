@@ -232,7 +232,7 @@ export class ClientConsentService {
         const off: Record<string, boolean> = {};
         for (const f of gatedFlags) off[f] = false;
         // tenant-scoped yazım (P0.5 deseni)
-        await tx.client.updateMany({ where: { id: clientId, tenantId }, data: off });
+        await tx.client.updateMany({ where: { id: clientId, tenantId }, data: { ...off, version: { increment: 1 } } });
       }
       await this.audit.logInTransaction(tx, {
         tenantId,
