@@ -35,6 +35,7 @@ describeDb('C1-B05-B typed EXPENSE_ACTUAL posting (gerçek PostgreSQL + local ma
   const suffix = Math.random().toString(36).slice(2, 10);
   const tenantId = `b05b-${suffix}`;
   const tenantBId = `b05b2-${suffix}`;
+  const actorId=`b05b-actor-${suffix}`,otherActorId=`b05b2-actor-${suffix}`;
   let caseId = '';
   let clientId = '';
   let ambiguousCaseId = '';
@@ -53,6 +54,10 @@ describeDb('C1-B05-B typed EXPENSE_ACTUAL posting (gerçek PostgreSQL + local ma
       await prisma.tenant.create({ data: { id: tid, name, slug: tid } });
       await prisma.office.create({ data: { tenantId: tid, name: 'Deneme Hukuk Bürosu', phone: '0212 000 00 00' } });
       await messageTemplateSeed(tid);
+    }
+    for(const [id,actorTenant] of [[actorId,tenantId],[otherActorId,tenantBId]]) {
+      await prisma.user.create({data:{id,tenantId:actorTenant,email:id+'@example.test',name:'Synthetic',surname:'Capacity',role:'USER'}});
+      await prisma.lawyer.create({data:{tenantId:actorTenant,userId:id,name:'Synthetic',surname:'Capacity',lawyerRank:'PARTNER'}});
     }
     const client = await prisma.client.create({
       data: { tenantId, displayName: 'B05B Müvekkil', type: 'INDIVIDUAL', email: 'muvekkil@local.test' },
@@ -78,7 +83,7 @@ describeDb('C1-B05-B typed EXPENSE_ACTUAL posting (gerçek PostgreSQL + local ma
     await prisma.caseClient.create({ data: { caseId: ambiguousCaseId, clientId: clientB.id } });
     // Avans bakiyesi (iki dosyaya da yüklü kredi)
     for (const cid of [caseId, ambiguousCaseId]) {
-      await service.credit(tenantId, cid, { currency: 'TRY', amount: 100000, source: 'manual', description: 'test avans' }, 'user-b05b');
+      await service.credit(tenantId, cid, { currency: 'TRY', amount: 100000, source: 'manual', description: 'test avans' }, actorId, undefined, 'seed-'+cid);
     }
   });
 
@@ -102,6 +107,8 @@ describeDb('C1-B05-B typed EXPENSE_ACTUAL posting (gerçek PostgreSQL + local ma
       await prisma.client.deleteMany({ where: { tenantId: tid } }).catch(() => undefined);
       await prisma.messageTemplate.deleteMany({ where: { tenantId: tid } }).catch(() => undefined);
       await prisma.office.deleteMany({ where: { tenantId: tid } }).catch(() => undefined);
+      await prisma.lawyer.deleteMany({where:{tenantId:tid}});
+      await prisma.user.deleteMany({where:{tenantId:tid}});
       await prisma.tenant.delete({ where: { id: tid } }).catch(() => undefined);
     }
     await prisma.$disconnect();
@@ -254,7 +261,7 @@ describeDb('C1-B05-B typed EXPENSE_ACTUAL posting (gerçek PostgreSQL + local ma
 
   it('generic DEBIT + reversal → typed sınıflandırma YOK, intent/mail YOK (yanlış-pozitif kapalı)', async () => {
     const before = await prisma.clientNotification.count({ where: { tenantId } });
-    const deb = await service.debit(tenantId, caseId, { currency: 'TRY', amount: 50, source: 'operation:haciz', sourceId: 'op-x' }, 'user-b05b');
+    const deb = await service.debit(tenantId, caseId, { currency: 'TRY', amount: 50, source: 'operation:haciz', sourceId: 'op-x' }, actorId);
     const debRow = await prisma.balanceLedger.findFirst({ where: { id: deb.ledgerId } });
     expect(debRow?.entryKind).toBeNull();
     expect(debRow?.postingKey).toBeNull();
@@ -280,7 +287,7 @@ describeDb('C1-B05-B typed EXPENSE_ACTUAL posting (gerçek PostgreSQL + local ma
     const caseB = await prisma.case.create({
       data: { tenantId: tenantBId, clientId: clientB.id, fileNumber: `T2-${suffix}`, type: 'GENERAL_EXECUTION', caseStatus: 'DERDEST', status: 'ACTIVE', currency: 'TRY', interestType: 'YASAL' },
     });
-    await service.credit(tenantBId, caseB.id, { currency: 'TRY', amount: 5000, source: 'manual' }, 'user-t2');
+    await service.credit(tenantBId, caseB.id, { currency: 'TRY', amount: 5000, source: 'manual' }, otherActorId, undefined, 'seed-other');
 
     const r1 = await service.postExpenseActual(tenantId, caseId, { currency: 'TRY', amount: 60, postingKey: pk }, 'user-b05b');
     const r2 = await service.postExpenseActual(tenantBId, caseB.id, { currency: 'TRY', amount: 70, postingKey: pk }, 'user-t2');

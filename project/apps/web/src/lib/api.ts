@@ -2799,9 +2799,10 @@ class ApiClient {
     source: string;
     sourceId?: string;
     description?: string;
-  }) {
+  }, idempotencyKey: string) {
     return this.request<{ success: boolean; newBalance: number; ledgerId: string }>(`/cases/${caseId}/balance/credit`, {
       method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify(data),
     });
   }

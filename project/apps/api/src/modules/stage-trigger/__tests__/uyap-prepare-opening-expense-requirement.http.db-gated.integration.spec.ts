@@ -91,6 +91,7 @@ describeWithDisposableDb('Açılış masrafı şartı — belirlenemeyen masraf 
   let app: INestApplication;
   let tenantId: string;
   let adminId: string;
+  let advanceUserId: string;
   let clientId: string;
   let otherTenantId: string;
   let otherAdminId: string;
@@ -126,6 +127,9 @@ describeWithDisposableDb('Açılış masrafı şartı — belirlenemeyen masraf 
     tenantId = `test-ci-uoer-${suffix}`;
     await prisma.tenant.create({ data: { id: tenantId, name: 'CI UOER', slug: tenantId } });
     adminId = (await prisma.user.create({ data: { tenantId, email: `admin-${suffix}@example.test`, name: 'admin', surname: 'UOER', role: 'ADMIN' } })).id;
+    // CL-R13: only balance setup uses this separate eligible actor; UYAP actors remain unchanged.
+    advanceUserId = (await prisma.user.create({data:{tenantId,email:`advance-${suffix}@example.test`,name:'Synthetic',surname:'Advance',role:'USER'}})).id;
+    await prisma.lawyer.create({data:{tenantId,userId:advanceUserId,name:'Synthetic',surname:'Advance',lawyerRank:'PARTNER'}});
     clientId = (await prisma.client.create({ data: { tenantId, type: 'COMPANY', companyName: 'UOER müvekkil', displayName: 'UOER müvekkil' } })).id;
 
     otherTenantId = `test-ci-uoer-b-${suffix}`;
@@ -182,7 +186,7 @@ describeWithDisposableDb('Açılış masrafı şartı — belirlenemeyen masraf 
   });
 
   const http = () => request(app.getHttpServer());
-  const post = (path: string, body: object = {}, userId = adminId) => http().post(path).set('x-test-user-id', userId).send(body);
+  const post = (path: string, body: object = {}, userId = adminId) => http().post(path).set('x-test-user-id', userId).set('Idempotency-Key', randomUUID()).send(body);
   const get = (path: string, userId = adminId) => http().get(path).set('x-test-user-id', userId);
 
   const principal = (amount: number) => ({ type: 'PRINCIPAL', description: 'Asıl alacak', amount, dueDate: '2026-01-15' });
@@ -660,7 +664,7 @@ describeWithDisposableDb('Açılış masrafı şartı — belirlenemeyen masraf 
     });
 
     const credit = async (caseId: string, amount: number) => {
-      const res = await post(`/cases/${caseId}/balance/credit`, { amount, currency: 'TRY', source: 'manual', description: 'masraf avansı' });
+      const res = await post(`/cases/${caseId}/balance/credit`, { amount, currency: 'TRY', source: 'manual', description: 'masraf avansı' }, advanceUserId);
       expect(res.status).toBe(201);
     };
 

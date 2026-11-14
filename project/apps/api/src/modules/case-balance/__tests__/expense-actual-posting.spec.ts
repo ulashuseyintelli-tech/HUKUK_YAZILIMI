@@ -68,7 +68,8 @@ function buildHarness(options: {
   const dispatcher = {
     dispatchQueuedIntent: jest.fn().mockResolvedValue({ status: 'sent', notificationId: 'intent-1', dedupeKey: 'x' }),
   };
-  Object.assign(tx, { case: prisma.case });
+  Object.assign(tx, { user:{findFirst:jest.fn().mockResolvedValue({lawyer:{tenantId:'tenant-1',isActive:true,lawyerRank:'PARTNER'},staffMember:null})}, case: prisma.case });
+  Object.assign(tx.caseBalance,{updateMany:jest.fn().mockResolvedValue({count:1}),findUniqueOrThrow:jest.fn().mockResolvedValue({balance:D(960),lowThreshold:D(500)})});
   Object.assign(tx.caseBalance, { findUnique: prisma.caseBalance.findUnique, create: prisma.caseBalance.create });
   const service = new CaseBalanceService(prisma as never, journalWriter as never, clientNotification as never, dispatcher as never);
   return { balance, tx, prisma, journalWriter, clientNotification, dispatcher, service };
