@@ -4,6 +4,7 @@ import { maskIban } from "../../common/pii-mask.util";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CASE_ASSIGNMENT_COUNTED_ROLES } from "../lawyer/acting-lawyer-resolver.service";
 import { NOTIFICATION_HISTORY_AUDIT_PERMISSION } from "./notification-history-permission.service";
+import { assertClientObjectScope } from "../client/client-object-scope";
 
 type HistoryTarget = { kind: "client" | "case"; id: string };
 type HistoryQuery = { limit?: unknown; cursor?: unknown };
@@ -26,58 +27,10 @@ export class ClientNotificationHistoryAccessService {
 
     // Actor, grants, assignments, page keys and field projection share one read snapshot.
     return this.prisma.$transaction(async tx => {
-      const actor = await tx.user.findUnique({
-        where: { id: userId },
-        select: {
-          tenantId: true, role: true, isActive: true,
-          lawyer: { select: { id: true, tenantId: true, isActive: true, lawyerRank: true, role: true } },
-          staffMember: { select: { id: true, tenantId: true, isActive: true } },
-        },
-      });
-      if (!actor?.isActive || actor.tenantId !== tenantId || actor.role === "VIEWER") return empty;
-      let global = actor.role === "ADMIN";
-      if (!global) {
-        if (Boolean(actor.lawyer) === Boolean(actor.staffMember)) return empty;
-        const profile = actor.lawyer ?? actor.staffMember;
-        if (!profile?.isActive || profile.tenantId !== tenantId) return empty;
-        const now = new Date();
-        const grants = await tx.permissionGrant.findMany({ where: {
-          tenantId, subjectUserId: userId, permissionKey: NOTIFICATION_HISTORY_AUDIT_PERMISSION,
-          scope: "GLOBAL", validFrom: { lte: now },
-          OR: [{ validUntil: null }, { validUntil: { gt: now } }],
-        }, select: { effect: true } });
-        global = grants.some(g => g.effect === "ALLOW") && !grants.some(g => g.effect === "DENY");
-      }
-
-      const lawyer = actor.lawyer;
-      const full = global ? Prisma.sql`TRUE` : lawyer && lawyer.lawyerRank !== "INTERN" && lawyer.role !== "INTERN"
-        ? Prisma.sql`EXISTS (SELECT 1 FROM "CaseLawyer" cl WHERE cl."caseId" = n."caseId"
-            AND cl."lawyerId" = ${lawyer.id} AND cl."role"::text IN (${Prisma.join([...CASE_ASSIGNMENT_COUNTED_ROLES])}))`
-        : Prisma.sql`FALSE`;
-      const statusOnly = !global && actor.staffMember
-        ? Prisma.sql`(n."type" = 'MASRAF_ISTEK' AND EXISTS (SELECT 1 FROM "CaseStaff" cs
-            WHERE cs."caseId" = n."caseId" AND cs."staffMemberId" = ${actor.staffMember.id}
-            AND cs."roleOnCase" = 'MUHASEBE'))`
-        : Prisma.sql`FALSE`;
-      const objectFilter = target.kind === "client"
-        ? Prisma.sql`n."clientId" = ${target.id}` : Prisma.sql`n."caseId" = ${target.id}`;
       const after = cursor ? Prisma.sql`AND (n."createdAt" < ${cursor.createdAt}
         OR (n."createdAt" = ${cursor.createdAt} AND n."id" < ${cursor.id}))` : Prisma.empty;
 
-      // ClientNotification.caseId has no FK. Validate its tenant AND client association
-      // before pagination. Select only keys here; restricted readers never fetch content.
-      const keys = await tx.$queryRaw<HistoryKey[]>(Prisma.sql`
-        SELECT n."id", n."createdAt", (${full}) AS "full"
-        FROM "ClientNotification" n
-        JOIN "Client" client ON client."id" = n."clientId" AND client."tenantId" = ${tenantId}
-        WHERE n."tenantId" = ${tenantId} AND ${objectFilter}
-          AND ((${full}) OR (${statusOnly}))
-          AND ((n."caseId" IS NULL AND ${global}) OR EXISTS (
-            SELECT 1 FROM "Case" c WHERE c."id" = n."caseId" AND c."tenantId" = ${tenantId}
-              AND (c."clientId" = n."clientId" OR EXISTS (SELECT 1 FROM "CaseClient" cc
-                WHERE cc."caseId" = c."id" AND cc."clientId" = n."clientId"))))
-          ${after}
-        ORDER BY n."createdAt" DESC, n."id" DESC LIMIT ${limit + 1}`);
+      const keys = await this.visibleKeys(tx, tenantId, userId, target, after, Prisma.sql`n."createdAt" DESC, n."id" DESC`, limit + 1);
       const page = keys.slice(0, limit);
       const fullIds = page.filter(k => k.full).map(k => k.id);
       const restrictedIds = page.filter(k => !k.full).map(k => k.id);
@@ -99,6 +52,99 @@ export class ClientNotificationHistoryAccessService {
         })).toString("base64url") : null,
       };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+  }
+
+  /** Internal caller: ClientService.getTimeline; the HTTP history cursor/limit is unchanged. */
+  async readForTimeline(tenantId: string, userId: string, clientId: string, query: {
+    limit: number;
+    cursor?: { occurredAt: string; source: string; id: string } | null;
+  }) {
+    if (!Number.isSafeInteger(query.limit) || query.limit < 1 || query.limit > 400) {
+      throw new BadRequestException("Invalid internal notification timeline limit");
+    }
+    const occurredAt = Prisma.sql`COALESCE(n."deliveredAt", n."sentAt", n."createdAt")`;
+    let after = Prisma.empty;
+    if (query.cursor) {
+      const cursor = query.cursor;
+      const stamp = new Date(cursor.occurredAt);
+      if (!Number.isFinite(stamp.getTime()) || !cursor.id || typeof cursor.source !== "string") {
+        throw new BadRequestException("Invalid internal notification timeline cursor");
+      }
+      // Existing mixed-source order: time DESC, source ASC, id DESC.
+      const bySource = "client_notification".localeCompare(cursor.source);
+      const tie = bySource > 0 ? Prisma.sql`TRUE` : bySource < 0 ? Prisma.sql`FALSE` : Prisma.sql`n."id" < ${cursor.id}`;
+      after = Prisma.sql`AND (${occurredAt} < ${stamp} OR (${occurredAt} = ${stamp} AND (${tie})))`;
+    }
+    if (!tenantId || !userId || !clientId) return [];
+    return this.prisma.$transaction(async tx => {
+      await assertClientObjectScope(tx, tenantId, userId, clientId);
+      const keys = await this.visibleKeys(tx, tenantId, userId, { kind: "client", id: clientId }, after,
+        Prisma.sql`${occurredAt} DESC, n."id" DESC`, query.limit);
+      const fullIds = keys.filter(key => key.full).map(key => key.id);
+      const restrictedIds = keys.filter(key => !key.full).map(key => key.id);
+      const fullRows = fullIds.length ? await tx.clientNotification.findMany({
+        where: { tenantId, id: { in: fullIds } }, select: { ...STATUS_FIELDS, subject: true },
+      }) : [];
+      const restrictedRows = restrictedIds.length ? await tx.clientNotification.findMany({
+        where: { tenantId, id: { in: restrictedIds } }, select: STATUS_FIELDS,
+      }) : [];
+      const rows = new Map([...fullRows, ...restrictedRows].map(row => [row.id, row]));
+      return keys.map(key => rows.get(key.id)!);
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+  }
+
+  /** Single K17 actor/row policy, applied before either consumer's cursor and limit. */
+  private async visibleKeys(tx: Prisma.TransactionClient, tenantId: string, userId: string,
+    target: HistoryTarget, after: Prisma.Sql, order: Prisma.Sql, take: number): Promise<HistoryKey[]> {
+    const actor = await tx.user.findUnique({
+      where: { id: userId },
+      select: {
+        tenantId: true, role: true, isActive: true,
+        lawyer: { select: { id: true, tenantId: true, isActive: true, lawyerRank: true, role: true } },
+        staffMember: { select: { id: true, tenantId: true, isActive: true } },
+      },
+    });
+    if (!actor?.isActive || actor.tenantId !== tenantId || actor.role === "VIEWER") return [];
+    let global = actor.role === "ADMIN";
+    if (!global) {
+      if (Boolean(actor.lawyer) === Boolean(actor.staffMember)) return [];
+      const profile = actor.lawyer ?? actor.staffMember;
+      if (!profile?.isActive || profile.tenantId !== tenantId) return [];
+      const now = new Date();
+      const grants = await tx.permissionGrant.findMany({ where: {
+        tenantId, subjectUserId: userId, permissionKey: NOTIFICATION_HISTORY_AUDIT_PERMISSION,
+        scope: "GLOBAL", validFrom: { lte: now },
+        OR: [{ validUntil: null }, { validUntil: { gt: now } }],
+      }, select: { effect: true } });
+      global = grants.some(g => g.effect === "ALLOW") && !grants.some(g => g.effect === "DENY");
+    }
+
+    const lawyer = actor.lawyer;
+    const full = global ? Prisma.sql`TRUE` : lawyer && lawyer.lawyerRank !== "INTERN" && lawyer.role !== "INTERN"
+      ? Prisma.sql`EXISTS (SELECT 1 FROM "CaseLawyer" cl WHERE cl."caseId" = n."caseId"
+          AND cl."lawyerId" = ${lawyer.id} AND cl."role"::text IN (${Prisma.join([...CASE_ASSIGNMENT_COUNTED_ROLES])}))`
+      : Prisma.sql`FALSE`;
+    const statusOnly = !global && actor.staffMember
+      ? Prisma.sql`(n."type" = 'MASRAF_ISTEK' AND EXISTS (SELECT 1 FROM "CaseStaff" cs
+          WHERE cs."caseId" = n."caseId" AND cs."staffMemberId" = ${actor.staffMember.id}
+          AND cs."roleOnCase" = 'MUHASEBE'))`
+      : Prisma.sql`FALSE`;
+    const objectFilter = target.kind === "client"
+      ? Prisma.sql`n."clientId" = ${target.id}` : Prisma.sql`n."caseId" = ${target.id}`;
+    // ClientNotification.caseId has no FK. Validate its tenant AND client association
+    // before pagination. Select only keys here; restricted readers never fetch content.
+    return tx.$queryRaw<HistoryKey[]>(Prisma.sql`
+      SELECT n."id", n."createdAt", (${full}) AS "full"
+      FROM "ClientNotification" n
+      JOIN "Client" client ON client."id" = n."clientId" AND client."tenantId" = ${tenantId}
+      WHERE n."tenantId" = ${tenantId} AND ${objectFilter}
+        AND ((${full}) OR (${statusOnly}))
+        AND ((n."caseId" IS NULL AND ${global}) OR EXISTS (
+          SELECT 1 FROM "Case" c WHERE c."id" = n."caseId" AND c."tenantId" = ${tenantId}
+            AND (c."clientId" = n."clientId" OR EXISTS (SELECT 1 FROM "CaseClient" cc
+              WHERE cc."caseId" = c."id" AND cc."clientId" = n."clientId"))))
+        ${after}
+      ORDER BY ${order} LIMIT ${take}`);
   }
 
   /** Caller: read; response-only O-4 projection, never stored or sent content. */

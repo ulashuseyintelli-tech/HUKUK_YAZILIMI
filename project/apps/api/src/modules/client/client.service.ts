@@ -1,10 +1,11 @@
 import { assertClientObjectScope, clientObjectScope, isClientObjectInScope } from './client-object-scope';
-import { Injectable, BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, BadRequestException, ConflictException, ForbiddenException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { OfficeApprovalService } from '../office-approval/office-approval.service';
 import { PoaExpiryDeliveryService, type PoaExpiryDeliveryRunResult } from '../automation/poa-expiry-delivery.service';
 import { NotificationDispatcherService, type DispatchResult } from '../client-notification/notification-dispatcher.service';
+import { ClientNotificationHistoryAccessService } from '../client-notification/client-notification-history-access.service';
 import { buildClientFieldDiff, buildContactsDiff, buildClientRemoveSnapshot } from './client-audit.util';
 import { Prisma } from '@prisma/client';
 import { partyDb, runPartyWrite, type PartyWriteTxContext } from '../../common/party-write-tx';
@@ -330,6 +331,7 @@ export class ClientService {
     private officeApproval: OfficeApprovalService,
     private poaExpiryDelivery?: PoaExpiryDeliveryService,
     private notificationDispatcher?: NotificationDispatcherService,
+    @Inject(ClientNotificationHistoryAccessService) private readonly notificationHistory?: ClientNotificationHistoryAccessService,
   ) {}
 
   private async getPoaReminderDeliveryState(
@@ -684,24 +686,12 @@ export class ClientService {
     if (!client) throw new NotFoundException('Client not found');
 
     const scanTake = Math.min(Math.max(limit * 4, limit + 1), CLIENT_TIMELINE_MAX_LIMIT * 4);
+    if (sources.includes('client_notification') && !this.notificationHistory) {
+      throw new ServiceUnavailableException('Notification history reader unavailable');
+    }
     const groups = await Promise.all([
       sources.includes('client_notification')
-        ? this.prisma.clientNotification.findMany({
-            where: { tenantId, clientId: id },
-            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-            take: scanTake,
-            select: {
-              id: true,
-              type: true,
-              channel: true,
-              subject: true,
-              status: true,
-              sentAt: true,
-              deliveredAt: true,
-              createdAt: true,
-              caseId: true,
-            },
-          })
+        ? this.notificationHistory!.readForTimeline(tenantId, actorUserId ?? '', id, { limit: scanTake, cursor })
         : Promise.resolve([]),
       sources.includes('intake_submission')
         ? this.prisma.clientIntakeSubmission.findMany({

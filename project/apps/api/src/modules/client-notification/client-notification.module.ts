@@ -33,6 +33,6 @@ import { CaseViewScopeModule } from "../case/case-view-scope.module";
     ClientNotificationHistoryAccessService,
     ExpenseSendApprovalService,
   ],
-  exports: [ClientNotificationService, NotificationDispatcherService, ExpenseSendApprovalService],
+  exports: [ClientNotificationService, NotificationDispatcherService, ExpenseSendApprovalService, ClientNotificationHistoryAccessService],
 })
 export class ClientNotificationModule {}

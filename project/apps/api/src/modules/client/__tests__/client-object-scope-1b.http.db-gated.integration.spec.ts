@@ -38,6 +38,8 @@ import { ClientNotificationAuthorityAdapter } from '../../client-notification/cl
 import { ClientNotificationHistoryAccessService } from '../../client-notification/client-notification-history-access.service';
 import { NotificationDispatchController } from '../../client-notification/notification-dispatch.controller';
 import { NotificationDispatcherService } from '../../client-notification/notification-dispatcher.service';
+import { PoaExpiryDeliveryService } from '../../automation/poa-expiry-delivery.service';
+import { ClientNotificationModule } from '../../client-notification/client-notification.module';
 import { assertClientObjectScope } from '../client-object-scope';
 
 const url = resolveTestDatabaseUrl(process.env);
@@ -48,6 +50,7 @@ dbDescribe('1b canonical Client object boundary — real Nest HTTP and PostgreSQ
   jest.setTimeout(90_000);
   let db: PrismaService; let app: INestApplication; let audit: AuditService; let core: ClientService;
   let poa: PoaService; let notifications: ClientNotificationService; let dispatcher: NotificationDispatcherService;
+  let history: ClientNotificationHistoryAccessService;
   let tenant: string; let foreignTenant: string; let clientId: string; let otherId: string; let caseId: string; let otherCase: string;
   let admin: string; let staffUser: string; let partner: string; let viewer: string; let outsider: string;
   let addressId: string; let otherAddress: string; let poaId: string; let otherPoa: string; let holdId: string; let dsarId: string; let approvalId: string; let linkId: string;
@@ -61,11 +64,11 @@ dbDescribe('1b canonical Client object boundary — real Nest HTTP and PostgreSQ
     const approval = new OfficeApprovalService(db, audit);
     notifications = new ClientNotificationService(db, office as any);
     dispatcher = new NotificationDispatcherService(db, notifications, {} as any);
-    core = new ClientService(db, audit, approval, undefined, dispatcher);
+    history = new ClientNotificationHistoryAccessService(db);
     poa = new PoaService(db, audit, approval, storage as any);
     const providers = [
       { provide: AuditService, useValue: audit }, { provide: OfficeApprovalService, useValue: approval },
-      { provide: ClientService, useValue: core }, { provide: PoaService, useValue: poa },
+      ClientService, { provide: PrismaService, useValue: db }, { provide: PoaExpiryDeliveryService, useValue: {} }, { provide: PoaService, useValue: poa },
       { provide: ClientNotificationService, useValue: notifications }, { provide: NotificationDispatcherService, useValue: dispatcher },
       factory(ClientAddressService, () => new ClientAddressService(db, audit, approval)),
       factory(ClientConsentService, () => new ClientConsentService(db, audit)),
@@ -77,7 +80,7 @@ dbDescribe('1b canonical Client object boundary — real Nest HTTP and PostgreSQ
       factory(ClientApprovalService, () => new ClientApprovalService(db, dispatcher, office as any)),
       factory(ClientIntakeLinkService, () => new ClientIntakeLinkService(db, dispatcher, office as any, audit)),
       factory(ClientNotificationAuthorityAdapter, () => new ClientNotificationAuthorityAdapter(approval, audit)),
-      { provide: ClientNotificationHistoryAccessService, useValue: {} },
+      { provide: ClientNotificationHistoryAccessService, useValue: history },
     ];
     const auth = { async canActivate(ctx: any) {
       const req = ctx.switchToHttp().getRequest();
@@ -91,6 +94,7 @@ dbDescribe('1b canonical Client object boundary — real Nest HTTP and PostgreSQ
       ClientIntakeLinkController, ClientNotificationController, NotificationDispatchController,
     ], providers }).overrideGuard(JwtAuthGuard).useValue(auth).overrideGuard(AuthGuard('jwt')).useValue(auth)
       .overrideGuard(OfficeF01AuthorizationGuard).useValue({ canActivate: () => { throw new Error('Template policy is outside 1b'); } }).compile();
+    core = module.get(ClientService);
     app = module.createNestApplication(); app.useLogger(false); await app.init(); await app.listen(0, '127.0.0.1');
   });
 
@@ -396,4 +400,128 @@ dbDescribe('1b canonical Client object boundary — real Nest HTTP and PostgreSQ
     const workspace = await req('post', `/clients/${clientId}/cases/${caseId}/intake-links`, admin, { scope: ['ADDRESS'] }).expect(201);
     expect(workspace.body.data.link.clientId).toBe(clientId);
   });
+
+  describe('CL-R11 K16 and K17 timeline intersection — actual reader and SQL', () => {
+    const stamp = new Date('2026-11-01T12:00:00.000Z');
+    const key = 'client.notification-history.audit';
+    const timeline = (who: string, query = 'sources=client_notification&limit=25', target = clientId) => req('get', '/clients/'+target+'/timeline?'+query, who);
+    const note = (id: string, data: Record<string, any> = {}) => db.clientNotification.create({data:{
+      id: tenant+':r11:'+id, tenantId:tenant, clientId, caseId, type:'GENEL_BILGILENDIRME', channel:'EMAIL', status:'SENT',
+      subject:'PRIVATE SUBJECT '+id, body:'PRIVATE BODY TR330006100519786457841326', metadata:{tokens:{officeIban:'TR330006100519786457841326'},secret:'PRIVATE TOKEN'},
+      createdAt:stamp, sentAt:stamp, sentById:admin, ...data,
+    }});
+    const grant = (who: string, data: Record<string, any> = {}) => db.permissionGrant.create({data:{tenantId:tenant,subjectUserId:who,permissionKey:key,scope:'GLOBAL',effect:'ALLOW',...data}});
+    const existing = (who: string) => req('get','/client-notifications/client/'+clientId,who);
+    const ids = (rows: any[]) => rows.map(row=>row.id).sort();
+    async function secondCase() {
+      const other = await db.case.create({data:{tenantId:tenant,clientId,type:'GENERAL_EXECUTION',fileNumber:randomUUID()}});
+      await db.caseClient.create({data:{caseId:other.id,clientId}}); return other.id;
+    }
+    it('resolves the explicit reader injection in Nest and exports its existing provider', () => {
+      expect((core as any).notificationHistory).toBe(history);
+      expect(Reflect.getMetadata('self:paramtypes',ClientService)).toContainEqual({index:5,param:ClientNotificationHistoryAccessService});
+      expect(Reflect.getMetadata('exports',ClientNotificationModule)).toContain(ClientNotificationHistoryAccessService);
+    });
+    it('keeps a linked secretary out of notification history without hiding other selected sources or writing', async () => {
+      const n=await note('general');
+      const link=await db.clientIntakeLink.create({data:{tenantId:tenant,clientId,caseId,tokenHash:randomUUID(),status:'ACTIVE',expiresAt:new Date(Date.now()+60000),createdById:admin}});
+      const delivery=await db.clientIntakeLinkDelivery.create({data:{tenantId:tenant,clientId,caseId,intakeLinkId:link.id,idempotencyKey:randomUUID(),dedupeKey:randomUUID(),createdById:admin,status:'SENT',notificationId:n.id}});
+      const before=await snapshot();
+      const r=await timeline(staffUser,'sources=client_notification,client_intake_link_delivery').expect(200);
+      expect(r.body.data).toHaveLength(1); expect(r.body.data[0]).toMatchObject({id:delivery.id,source:'client_intake_link_delivery'});
+      expect(JSON.stringify(r.body)).not.toContain('PRIVATE SUBJECT'); expect((await existing(staffUser).expect(200)).body).toEqual([]);
+      expect(await snapshot()).toEqual(before);
+    });
+    it('selects status-only expense fields in SQL for accounting and never retrieves subject/body', async () => {
+      const staff=await db.staffMember.findUniqueOrThrow({where:{userId:staffUser}});
+      await db.caseStaff.updateMany({where:{staffMemberId:staff.id,caseId},data:{roleOnCase:'MUHASEBE'}});
+      const expense=await note('expense',{type:'MASRAF_ISTEK'}); await note('general');
+      const selections: any[]=[]; const original=db.$transaction.bind(db);
+      jest.spyOn(db,'$transaction').mockImplementation(((callback:any,...rest:any[])=>original(async tx=>{
+        const actual=tx.clientNotification.findMany.bind(tx.clientNotification);
+        const notifications=new Proxy(tx.clientNotification,{get(target,property,receiver){return property==='findMany'?async(args:any)=>{selections.push(args);return actual(args);}:Reflect.get(target,property,receiver);}});
+        return callback(new Proxy(tx,{get(target,property,receiver){return property==='clientNotification'?notifications:Reflect.get(target,property,receiver);}}));
+      },...rest)) as any);
+      const before=await snapshot(); const r=await timeline(staffUser).expect(200);
+      expect(ids(r.body.data)).toEqual([expense.id]); expect(JSON.stringify(r.body)).not.toMatch(/PRIVATE SUBJECT|PRIVATE BODY|PRIVATE TOKEN|TR330006/);
+      expect(selections).toHaveLength(1); expect(Object.keys(selections[0].select).sort()).toEqual(['caseId','channel','createdAt','deliveredAt','id','sentAt','status','type']);
+      expect(ids((await existing(staffUser).expect(200)).body)).toEqual([expense.id]); expect(await snapshot()).toEqual(before);
+    });
+    it('limits a case lawyer to that case even when another case has the same Client', async () => {
+      const allowed=await note('allowed'); await note('unassigned',{caseId:await secondCase()});
+      const result=await timeline(partner).expect(200);
+      expect(ids(result.body.data)).toEqual([allowed.id]); expect(result.body.data[0].title).toBe(allowed.subject);
+      expect(ids((await existing(partner).expect(200)).body)).toEqual([allowed.id]);
+      expect(result.body.data[0]).not.toHaveProperty('body'); expect(result.body.data[0]).not.toHaveProperty('metadata');
+    });
+    it.each(['ALLOW','DENY','EXPIRED','FUTURE','REVOKED'] as const)('follows existing GLOBAL grant state %s', async state => {
+      const row=await note('grant');
+      const g=await grant(staffUser,state==='EXPIRED'?{validUntil:new Date(Date.now()-1000)}:state==='FUTURE'?{validFrom:new Date(Date.now()+60000)}:{});
+      if(state==='DENY')await grant(staffUser,{effect:'DENY'});
+      if(state==='REVOKED')await db.permissionGrant.update({where:{id:g.id},data:{validUntil:new Date(Date.now()-1000)}});
+      const result=await timeline(staffUser).expect(200); const expected=state==='ALLOW'?[row.id]:[];
+      expect(ids(result.body.data)).toEqual(expected); expect(ids((await existing(staffUser).expect(200)).body)).toEqual(expected);
+      if(!expected.length)expect(result.body.pageInfo).toMatchObject({hasNextPage:false,nextCursor:null});
+    });
+    it.each(['ASSISTANT','INTERN_RANK','INTERN_ROLE','AMBIGUOUS_PROFILE'] as const)('%s cannot turn Client scope into content access', async kind => {
+      const who=await actor('lawyer','USER',true); const lawyer=await db.lawyer.findUniqueOrThrow({where:{userId:who}}); await note('denied');
+      if(kind==='ASSISTANT')await db.caseLawyer.updateMany({where:{lawyerId:lawyer.id,caseId},data:{role:'ASSISTANT'}});
+      if(kind==='INTERN_RANK')await db.lawyer.update({where:{id:lawyer.id},data:{lawyerRank:'INTERN'}});
+      if(kind==='INTERN_ROLE')await db.lawyer.update({where:{id:lawyer.id},data:{role:'INTERN'}});
+      if(kind==='AMBIGUOUS_PROFILE'){await db.staffMember.create({data:{tenantId:tenant,userId:who,firstName:'Synthetic',lastName:'Duplicate',staffType:'MUHASEBE'}});await grant(who);}
+      expect((await timeline(who).expect(200)).body.data).toEqual([]); expect((await existing(who).expect(200)).body).toEqual([]);
+    });
+    it.each(['VIEWER','INACTIVE_ACCOUNT','INACTIVE_PROFILE','FOREIGN','ADMIN_NO_LINK','MISSING_ACTOR'] as const)('K16 still rejects %s before notification access', async kind => {
+      await note('root-denied'); let who=staffUser; let status=403;
+      if(kind==='VIEWER'){who=viewer;await grant(who);}
+      if(kind==='INACTIVE_ACCOUNT')await db.user.update({where:{id:who},data:{isActive:false}});
+      if(kind==='INACTIVE_PROFILE'){await db.staffMember.update({where:{userId:who},data:{isActive:false}});status=404;}
+      if(kind==='FOREIGN'){who=await actor('staff','USER',false,foreignTenant);status=404;}
+      if(kind==='ADMIN_NO_LINK'){who=outsider;status=404;}
+      if(kind==='MISSING_ACTOR'){who='';status=401;}
+      const before=await snapshot(); const read=jest.spyOn(history,'readForTimeline');
+      await timeline(who).expect(status); expect(read).not.toHaveBeenCalled(); expect(await snapshot()).toEqual(before);
+    });
+    it('rejects malformed notification case associations and preserves ADMIN caseless history', async () => {
+      const valid=await note('valid'),caseless=await note('caseless',{caseId:null});
+      await note('wrong-client-case',{caseId:otherCase}); await note('dangling',{caseId:randomUUID()});
+      const foreignClient=await db.client.create({data:{tenantId:foreignTenant,type:'PERSON',name:'Foreign'}});
+      const foreignCase=await db.case.create({data:{tenantId:foreignTenant,clientId:foreignClient.id,type:'GENERAL_EXECUTION',fileNumber:randomUUID()}});
+      await note('foreign-case',{caseId:foreignCase.id});
+      expect(ids((await timeline(admin).expect(200)).body.data)).toEqual([valid.id,caseless.id].sort());
+      expect(ids((await timeline(partner).expect(200)).body.data)).toEqual([valid.id]);
+    });
+    it('filters inaccessible rows before paging and exhausts 75 equal-time allowed notifications without loss/duplicates', async () => {
+      const deniedCase=await secondCase();
+      const expected=[] as string[];
+      for(let i=0;i<75;i++){const row=await note('visible-'+String(i).padStart(3,'0'));expected.push(row.id);}
+      for(let i=0;i<85;i++)await note('hidden-'+i,{caseId:deniedCase,createdAt:new Date(stamp.getTime()+60000),sentAt:new Date(stamp.getTime()+60000)});
+      let cursor:string|null=null; const found=[] as string[];
+      for(let page=0;page<20;page++){
+        const r: http.Response=await timeline(partner,'sources=client_notification&limit=7'+(cursor?'&cursor='+encodeURIComponent(cursor):'')).expect(200);
+        found.push(...r.body.data.map((row:any)=>row.id)); if(!r.body.pageInfo.hasNextPage){expect(r.body.pageInfo.nextCursor).toBeNull();break;}
+        expect(r.body.data).toHaveLength(7); cursor=r.body.pageInfo.nextCursor; expect(cursor).toBeTruthy();
+      }
+      expect(found).toEqual(expected.sort().reverse()); expect(new Set(found).size).toBe(75);
+    });
+    it('orders the bounded notification scan by the actual timeline occurrence, not creation time', async () => {
+      const recent=await note('recent-delivery',{createdAt:new Date('2026-01-01'),sentAt:new Date('2026-01-02'),deliveredAt:new Date('2026-01-05')});
+      for(let i=0;i<8;i++)await note('newer-created-'+i,{createdAt:new Date('2026-01-03'),sentAt:new Date('2026-01-03')});
+      expect((await timeline(admin,'sources=client_notification&limit=1').expect(200)).body.data[0].id).toBe(recent.id);
+    });
+    it.each(['client_document_request','client_notification','intake_submission'] as const)('preserves mixed-source tie cursor semantics at %s', async source => {
+      const row=await note('tie'); const cursor=Buffer.from(JSON.stringify({occurredAt:stamp.toISOString(),source,id:row.id})).toString('base64url');
+      const r=await timeline(admin,'sources=client_notification&cursor='+cursor).expect(200);
+      expect(ids(r.body.data)).toEqual(source==='client_document_request'?[row.id]:[]);
+    });
+    it('keeps the K17 public 50 limit, array and masked O-4 content while timeline still supports its existing 100 limit', async () => {
+      const n=await note('o4'); const full=await existing(admin).expect(200);
+      expect(Array.isArray(full.body)).toBe(true); expect(full.body[0].body).not.toContain('TR330006100519786457841326');
+      expect(full.body[0].metadata.tokens.officeIban).not.toBe('TR330006100519786457841326');
+      expect((await db.clientNotification.findUniqueOrThrow({where:{id:n.id}})).body).toContain('TR330006100519786457841326');
+      await req('get','/client-notifications/client/'+clientId+'?limit=51',admin).expect(400);
+      await timeline(admin,'sources=client_notification&limit=100').expect(200);
+    });
+  });
+
 });
