@@ -52,7 +52,7 @@ dbDescribe('1b canonical Client object boundary — real Nest HTTP and PostgreSQ
   let admin: string; let staffUser: string; let partner: string; let viewer: string; let outsider: string;
   let addressId: string; let otherAddress: string; let poaId: string; let otherPoa: string; let holdId: string; let dsarId: string; let approvalId: string; let linkId: string;
   const storage = { assertContained: jest.fn(() => { throw new Error('No file access allowed in rejected request'); }) };
-  const office = {};
+  const office = { getOfficeIdentity: async () => ({ name: 'Synthetic office' }) };
   const factory = <T>(provide: new (...args: any[]) => T, build: () => T) => ({ provide, useFactory: build });
 
   beforeAll(async () => {
@@ -358,6 +358,34 @@ dbDescribe('1b canonical Client object boundary — real Nest HTTP and PostgreSQ
     // Provider configuration is deliberately absent; no real transport is used by this acceptance.
     expect(transport.mock.calls.length).toBeLessThanOrEqual(1);
   });
+  it.each(['sent', 'failed', 'skipped'] as const)('CL-R15 legacy HTTP reports safe %s outcome without undoing link creation', async status => {
+    const transport = jest.spyOn(dispatcher, 'dispatch').mockResolvedValue({ status, dedupeKey: 'private-dedupe', error: 'unsafe https://x/intake/do-not-expose' });
+    const before = await db.clientIntakeLink.count({ where: { tenantId: tenant } });
+    const created = await req('post', `/client-intake-links/case/${caseId}`, admin, { clientId, scope: ['ADDRESS'] }).expect(201);
+    expect(created.body.emailDispatchStatus).toBe(status);
+    expect(created.body.intakeUrl).toContain(created.body.rawToken);
+    expect(created.body.link).not.toHaveProperty('tokenHash');
+    expect(JSON.stringify(created.body)).not.toMatch(/private-dedupe|do-not-expose/);
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(await db.clientIntakeLink.count({ where: { tenantId: tenant } })).toBe(before + 1);
+    const read = await req('get', `/client-intake-links/${created.body.link.id}`, admin).expect(200);
+    expect(read.body).not.toHaveProperty('rawToken');
+    expect(read.body).not.toHaveProperty('intakeUrl');
+    expect(read.body).not.toHaveProperty('tokenHash');
+  });
+
+  it('CL-R15 legacy HTTP leaves uncertain dispatch unknown and does not rewrite expiry on reads', async () => {
+    const transport = jest.spyOn(dispatcher, 'dispatch').mockRejectedValue(new Error('unsafe https://x/intake/do-not-expose'));
+    const created = await req('post', `/client-intake-links/case/${caseId}`, admin, { clientId, scope: ['ADDRESS'] }).expect(201);
+    expect(created.body.emailDispatchStatus).toBe('unknown');
+    expect(JSON.stringify(created.body)).not.toContain('do-not-expose');
+    await db.clientIntakeLink.update({ where: { id: created.body.link.id }, data: { expiresAt: new Date('2020-01-01T00:00:00Z') } });
+    const list = await req('get', `/client-intake-links/case/${caseId}`, admin).expect(200);
+    expect(list.body.find((link: any) => link.id === created.body.link.id)).toMatchObject({ status: 'ACTIVE', expiresAt: '2020-01-01T00:00:00.000Z' });
+    expect((await db.clientIntakeLink.findUniqueOrThrow({ where: { id: created.body.link.id } })).status).toBe('ACTIVE');
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+
   it('preserves scoped legacy and workspace intake entry points while enforcing exact-case scope', async () => {
     jest.spyOn(dispatcher, 'dispatch').mockResolvedValue({ status: 'sent' } as any);
     const created = await req('post', `/client-intake-links/case/${caseId}`, admin, { clientId }).expect(201);

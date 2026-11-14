@@ -3779,6 +3779,8 @@ export interface CreateIntakeLinkResult {
   link: IntakeLink;
   rawToken: string;
   intakeUrl: string;
+  /** Older API responses omit this field; absence is not proof of email delivery. */
+  emailDispatchStatus?: 'sent' | 'failed' | 'skipped' | 'unknown';
 }
 
 export type ClientWorkspaceDeliveryStatus = 'pending' | 'sending' | 'sent' | 'failed';

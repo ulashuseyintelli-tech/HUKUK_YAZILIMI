@@ -56,7 +56,7 @@ export class ClientIntakeLinkController {
     );
   }
 
-  /** Link üret (ACTIVE) + mail — POST /client-intake-links/case/:caseId. Yanıt: { link, rawToken, intakeUrl } (tek sefer). */
+  /** Link üret (ACTIVE) + best-effort mail — yanıt: { link, rawToken, intakeUrl, emailDispatchStatus }; token/URL tek sefer. */
   @Post('case/:caseId')
   async create(
     @Req() req: AuthRequest,
