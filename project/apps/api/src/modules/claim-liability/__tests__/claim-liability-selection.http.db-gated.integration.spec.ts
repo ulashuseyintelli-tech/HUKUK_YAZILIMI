@@ -372,6 +372,99 @@ describeWithDisposableDb('Seçimlik borçlu sorumluluğu — seçim, onay ve ge�
     }
   });
 
+  it('toplu uygulamada etkin seçimiyle aynı olan kalem ATLANIR: talep yalnız değişen kalemi taşır, atlanan kaleme yazılmaz; hepsi aynıysa talep açılmaz', async () => {
+    const f = await fixture('bulk-skip', [8000, 6000, 4000]);
+    const [k1, k2, k3] = f.itemIds;
+    // k1 zaten müteselsil (tek kalem seçimiyle)
+    await apply(f, [joint(f, k1)]);
+    const k1Before = await item(k1);
+
+    // "Tümü müteselsil": k1 değişmiyor → atlanır; k2 ve k3 için TEK toplu talep
+    const bulk = [joint(f, k1), joint(f, k2), joint(f, k3)];
+    const previewed = await preview(f, bulk);
+    expect(previewed.status).toBe(201);
+    expect(previewed.body).toMatchObject({ uygulamaTuru: 'BULK', uygulanabilir: true, uygulanacakKalemSayisi: 2, atlananKalemSayisi: 1 });
+    expect(previewed.body.kalemler.map((row: any) => [row.claimItemId, row.degisiklikYok])).toEqual([
+      [k1, true],
+      [k2, false],
+      [k3, false],
+    ]);
+    const requested = await requestSelection(f, bulk, previewed.body.onizlemeOzeti);
+    expect(requested.status).toBe(201);
+    expect(requested.body).toMatchObject({ applied: false, approvalRequired: true, uygulanacakKalemSayisi: 2, atlananKalemler: [k1] });
+    const pending = await prisma.officeApprovalRequest.findUniqueOrThrow({ where: { id: requested.body.approvalRequestId } });
+    // Kullanıcının eylemi topludur: hedef dosya, tek onay; niyet YALNIZ yazılacak kalemleri taşır.
+    expect(pending).toMatchObject({ targetType: 'CLAIM_ITEM_CASE', targetRef: f.caseId, status: OfficeApprovalStatus.PENDING_APPROVAL });
+    const intent = pending.savedIntent as any;
+    expect(intent.appliedVia).toBe('BULK');
+    expect(intent.bulkOperationId).toBeTruthy();
+    expect(intent.selections.map((row: any) => row.claimItemId)).toEqual([k2, k3]);
+
+    await approvals.approve(requested.body.approvalRequestId, f.approverUserId);
+    expect((await sets(f)).map((set) => [set.claimItemId, set.version, set.mode, set.appliedVia, set.status])).toEqual(
+      [
+        [k1, 1, 'JOINT_AND_SEVERAL', 'SINGLE', 'ACTIVE'],
+        [k2, 1, 'JOINT_AND_SEVERAL', 'BULK', 'ACTIVE'],
+        [k3, 1, 'JOINT_AND_SEVERAL', 'BULK', 'ACTIVE'],
+      ].sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+    );
+    // Atlanan kaleme hiç dokunulmadı: yeni sürüm yok, kalem satırı aynı.
+    expect((await item(k1)).updatedAt.toISOString()).toBe(k1Before.updatedAt.toISOString());
+
+    // Toplu uygulamada tek kalem değişse de talep TOPLUDUR (tek kalem talebine dönüşmez)
+    const g = await fixture('bulk-skip-one', [5000, 3000]);
+    const [g1, g2] = g.itemIds;
+    await apply(g, [joint(g, g1)]);
+    const oneLeft = [joint(g, g1), joint(g, g2)];
+    const onePreview = await preview(g, oneLeft);
+    expect(onePreview.body).toMatchObject({ uygulamaTuru: 'BULK', uygulanabilir: true, uygulanacakKalemSayisi: 1, atlananKalemSayisi: 1 });
+    const oneRequest = await requestSelection(g, oneLeft, onePreview.body.onizlemeOzeti);
+    expect(oneRequest.status).toBe(201);
+    const onePending = await prisma.officeApprovalRequest.findUniqueOrThrow({ where: { id: oneRequest.body.approvalRequestId } });
+    expect(onePending).toMatchObject({ targetType: 'CLAIM_ITEM_CASE', targetRef: g.caseId });
+    expect((onePending.savedIntent as any).selections.map((row: any) => row.claimItemId)).toEqual([g2]);
+    await approvals.approve(oneRequest.body.approvalRequestId, g.approverUserId);
+    expect((await sets(g)).filter((set) => set.claimItemId === g2).map((set) => [set.version, set.appliedVia, set.status])).toEqual([[1, 'BULK', 'ACTIVE']]);
+
+    // Hepsi zaten aynı seçimde: önizleme uygulanamaz, talep açılmaz
+    const allSame = [joint(g, g1), joint(g, g2)];
+    const samePreview = await preview(g, allSame);
+    expect(samePreview.body).toMatchObject({ uygulanabilir: false, uygulanacakKalemSayisi: 0, atlananKalemSayisi: 2 });
+    const requestsBefore = await prisma.officeApprovalRequest.count({ where: { tenantId: g.tenantId } });
+    const sameRequest = await requestSelection(g, allSame, samePreview.body.onizlemeOzeti);
+    expect(sameRequest.status).toBe(400);
+    expect(sameRequest.body).toEqual(expect.objectContaining({ code: 'LIABILITY_SELECTION_NO_CHANGE' }));
+    expect([...sameRequest.body.claimItemIds].sort()).toEqual([g1, g2].sort());
+    expect(await prisma.officeApprovalRequest.count({ where: { tenantId: g.tenantId } })).toBe(requestsBefore);
+  });
+
+  it('toplu uygulamada atlanan kalem öteki kalemin engelini KALDIRMAZ: engelli kalem varsa hiçbir kaleme yazılmaz', async () => {
+    const f = await fixture('bulk-skip-blocked', [8000, 6000]);
+    const [k1, k2] = f.itemIds;
+    await apply(f, [proportional(f, [1, 1], k1)]);
+    // k1 aynı seçim (atlanırdı), k2 geçersiz girdi (yüzde toplamı 99,99) → talep reddedilir, hiçbir şey yazılmaz
+    const invalidK2 = {
+      claimItemId: k2,
+      mode: 'PROPORTIONAL',
+      basis: 'CONTRACT',
+      parties: [
+        { caseDebtorId: f.b1.caseDebtorId, sharePercent: '60' },
+        { caseDebtorId: f.b2.caseDebtorId, sharePercent: '39.99' },
+      ],
+    };
+    const mixed = [proportional(f, [1, 1], k1), invalidK2];
+    const previewed = await preview(f, mixed);
+    expect(previewed.body.uygulanabilir).toBe(false);
+    expect(previewed.body.kalemler[0].degisiklikYok).toBe(true);
+    expect(previewed.body.kalemler[1].girdiHatalari.length).toBeGreaterThan(0);
+    const requestsBefore = await prisma.officeApprovalRequest.count({ where: { tenantId: f.tenantId } });
+    const rejected = await requestSelection(f, mixed, previewed.body.onizlemeOzeti);
+    expect(rejected.status).toBe(400);
+    expect(rejected.body).toEqual(expect.objectContaining({ code: 'LIABILITY_SELECTION_INVALID' }));
+    expect(await prisma.officeApprovalRequest.count({ where: { tenantId: f.tenantId } })).toBe(requestsBefore);
+    expect((await sets(f)).map((set) => [set.claimItemId, set.version])).toEqual([[k1, 1]]);
+  });
+
   it('AT-21 değişiklik — tasarım Örnek 4: borçlusu kayıtlı geçmiş tahsilatta önce / sonra; defter ve sayaç değişmez; geçmiş sürüm kapanır', async () => {
     const f = await fixture('change');
     await apply(f, [joint(f)]);

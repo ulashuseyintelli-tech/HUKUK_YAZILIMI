@@ -291,6 +291,92 @@ describe("AT-26 kalem paneli ve seçim çekmecesi", () => {
     expect(apiMock.previewClaimLiability.mock.calls[0][1][0]).toMatchObject({ mode: "JOINT_AND_SEVERAL", basis: "COURT_JUDGMENT", parties: [{ caseDebtorId: "cd-1" }, { caseDebtorId: "cd-2" }] });
   });
 
+  it("toplu uygulamada etkin seçimiyle aynı olan kalem ATLANIR: düğme açık kalır, hangi kalemin atlanacağı ve kaç kalemin gönderileceği yazar", async () => {
+    panelYanitlari(true);
+    const base = previewYaniti(true).kalemler[0];
+    apiMock.previewClaimLiability.mockResolvedValue({
+      ...previewYaniti(true),
+      uygulamaTuru: "BULK",
+      uygulanabilir: true,
+      uygulanacakKalemSayisi: 1,
+      atlananKalemSayisi: 1,
+      kalemler: [
+        { ...base, claimItemId: "k1", aciklama: "Sentetik anapara", oncekiTur: "MUTESELSIL", sonrakiTur: "MUTESELSIL", degisiklikYok: true },
+        { ...base, claimItemId: "k2", aciklama: "Sentetik masraf", oncekiTur: "BELIRLENMEDI", sonrakiTur: "MUTESELSIL", degisiklikYok: false },
+      ],
+    });
+    apiMock.requestClaimLiability.mockResolvedValue({
+      applied: false, approvalRequired: true, approvalRequestId: "a9", status: "PENDING_APPROVAL", uygulanacakKalemSayisi: 1, atlananKalemler: ["k1"],
+    });
+    render(<ClaimItemPanel caseId="case-1" />);
+    fireEvent.click(await screen.findByTestId("claim-liability-bulk-joint-button"));
+    fireEvent.change(await screen.findByTestId("claim-liability-basis"), { target: { value: "COURT_JUDGMENT" } });
+    fireEvent.click(screen.getByTestId("claim-liability-preview-button"));
+    await screen.findByTestId("claim-liability-preview");
+    expect(screen.getAllByTestId("claim-liability-no-change").map((node) => node.textContent)).toEqual([
+      "Seçim mevcut durumla aynı; bu kalem atlanır (talebe girmez).",
+    ]);
+    expect(screen.getByTestId("claim-liability-skip-summary").textContent).toBe(
+      "1 kalem onaya gönderilecek; 1 kalem zaten aynı seçimde olduğu için atlanacak.",
+    );
+    const requestButton = screen.getByTestId("claim-liability-request-button") as HTMLButtonElement;
+    expect(requestButton.disabled).toBe(false);
+    fireEvent.click(requestButton);
+    await waitFor(() => expect(apiMock.requestClaimLiability).toHaveBeenCalledTimes(1));
+    // İstemci kalem ayıklamaz: önizlenen seçimlerin tamamı gider, atlamayı sunucu yapar.
+    expect(apiMock.requestClaimLiability.mock.calls[0][1].selections.map((row: { claimItemId: string }) => row.claimItemId)).toEqual(["k1", "k2"]);
+    const notice = (await screen.findByTestId("claim-liability-notice")).textContent ?? "";
+    expect(notice).toContain("1 kalem için onaya gönderildi");
+    expect(notice).toContain("1 kalem zaten aynı seçimde olduğu için atlandı");
+  });
+
+  it("toplu uygulamada bütün kalemler zaten aynı seçimdeyse talep gönderilemez ve nedeni yazar; tek kalemde özet satırı çizilmez", async () => {
+    panelYanitlari(true);
+    const base = previewYaniti(true).kalemler[0];
+    apiMock.previewClaimLiability.mockResolvedValueOnce({
+      ...previewYaniti(false),
+      uygulamaTuru: "BULK",
+      uygulanacakKalemSayisi: 0,
+      atlananKalemSayisi: 2,
+      kalemler: [
+        { ...base, claimItemId: "k1", oncekiTur: "MUTESELSIL", sonrakiTur: "MUTESELSIL", degisiklikYok: true },
+        { ...base, claimItemId: "k2", aciklama: "Sentetik masraf", oncekiTur: "MUTESELSIL", sonrakiTur: "MUTESELSIL", degisiklikYok: true },
+      ],
+    });
+    const { unmount } = render(<ClaimItemPanel caseId="case-1" />);
+    fireEvent.click(await screen.findByTestId("claim-liability-bulk-joint-button"));
+    fireEvent.change(await screen.findByTestId("claim-liability-basis"), { target: { value: "COURT_JUDGMENT" } });
+    fireEvent.click(screen.getByTestId("claim-liability-preview-button"));
+    await screen.findByTestId("claim-liability-preview");
+    expect(screen.getAllByTestId("claim-liability-no-change").map((node) => node.textContent)).toEqual([
+      "Seçim mevcut durumla aynı; değişiklik yok.",
+      "Seçim mevcut durumla aynı; değişiklik yok.",
+    ]);
+    expect(screen.getByTestId("claim-liability-skip-summary").textContent).toBe("Seçilen kalemlerin hepsi zaten bu seçimde; gönderilecek değişiklik yok.");
+    expect((screen.getByTestId("claim-liability-request-button") as HTMLButtonElement).disabled).toBe(true);
+    unmount();
+
+    // Tek kalem: "değişiklik yok" satırı yeter; özet satırı yok.
+    panelYanitlari(true);
+    apiMock.previewClaimLiability.mockResolvedValueOnce({
+      ...previewYaniti(false),
+      uygulanacakKalemSayisi: 0,
+      atlananKalemSayisi: 1,
+      kalemler: [{ ...base, oncekiTur: "MUTESELSIL", sonrakiTur: "MUTESELSIL", degisiklikYok: true }],
+    });
+    render(<ClaimItemPanel caseId="case-1" />);
+    fireEvent.click(await screen.findByTestId("claim-item-liability-select-k1"));
+    fireEvent.click(await screen.findByTestId("claim-liability-mode-JOINT_AND_SEVERAL"));
+    fireEvent.click(screen.getByTestId("claim-liability-party-cd-1"));
+    fireEvent.click(screen.getByTestId("claim-liability-party-cd-2"));
+    fireEvent.change(screen.getByTestId("claim-liability-basis"), { target: { value: "CONTRACT" } });
+    fireEvent.click(screen.getByTestId("claim-liability-preview-button"));
+    await screen.findByTestId("claim-liability-preview");
+    expect(screen.getByTestId("claim-liability-no-change").textContent).toBe("Seçim mevcut durumla aynı; değişiklik yok.");
+    expect(screen.queryByTestId("claim-liability-skip-summary")).toBeNull();
+    expect((screen.getByTestId("claim-liability-request-button") as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("tutarla sınırlı seçilince tavanın yalnız kalem tutarını kapsadığı açıkça yazar; 'kefalet' sözcüğü kullanılmaz", async () => {
     panelYanitlari(true);
     render(<ClaimItemPanel caseId="case-1" />);
