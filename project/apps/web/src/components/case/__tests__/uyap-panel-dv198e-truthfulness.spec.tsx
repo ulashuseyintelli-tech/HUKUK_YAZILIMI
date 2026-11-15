@@ -60,6 +60,17 @@ function primeReads() {
   mocked.getPreHacizIntelligence.mockResolvedValue({ debtors: [], overallLevel: 'YOK' });
 }
 
+describe('CL-R14/A — pre-check clarity preserves the send contract', () => {
+  it.each([true, false])('shows unassessed scope without inventing operation permission (legacy isValid=%s)', async (isValid) => {
+    mocked.validateUyapCasePoa.mockResolvedValue({ isValid, errors: isValid ? [] : ['Geçerli vekalet bulunamadı'], canProceedToUyap: isValid });
+    render(<UyapPanel caseId="case-1" />);
+    expect(await screen.findByTestId('poa-scope-assessment')).toHaveTextContent('İşlem/dosya kapsamı doğrulanmadı. Gönderim yetkisi ayrıca denetlenir.');
+    expect(screen.queryByText(/Tüm vekaletler geçerli|UYAP işlemlerine devam edilebilir/)).not.toBeInTheDocument();
+    expect(mocked.submitUyapDocument).not.toHaveBeenCalled();
+    expect(mocked.sendUyapHacizRequest).not.toHaveBeenCalled();
+  });
+});
+
 async function openTab(name: 'Evrak Gönder' | 'Haciz Talebi') {
   render(<UyapPanel caseId="case-1" />);
   fireEvent.click(await screen.findByRole('tab', { name }));

@@ -519,7 +519,7 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
               <h4 className="font-medium text-gray-900 mb-2">Vekalet Kontrolü</h4>
               {poaValidation?.isValid ? (
                 <p className="text-sm text-green-700">
-                  ✓ Tüm vekaletler geçerli. UYAP işlemlerine devam edilebilir.
+                  Vekalet kayıtlarına ilişkin ön kontrol tamamlandı.
                 </p>
               ) : (
                 <div>
@@ -533,6 +533,9 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
                   </ul>
                 </div>
               )}
+              <p className="mt-2 text-sm text-amber-800" data-testid="poa-scope-assessment">
+                {poaValidation?.scopeMessage || 'İşlem/dosya kapsamı doğrulanmadı. Gönderim yetkisi ayrıca denetlenir.'}
+              </p>
             </div>
 
             {status?.stats && status.stats.failed > 0 && (
