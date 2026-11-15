@@ -60,6 +60,25 @@ function primeReads(over: Record<string, unknown> = {}) {
 
 const EMAIL_BTN = /Gerçek test e-postası gönder/i;
 
+describe('POA current engine gates', () => {
+  it.each(['GLOBAL_DISABLED', 'OFFICE_DISABLED'])('keeps historical deliveries visible while %s is OFF', async reason => {
+    const overview = { ...OVERVIEW, engines: { ...OVERVIEW.engines,
+      poa: { status: 'OFF', reason, poaExpiry: { pending: 1, sent: 7, failed: 2, lastSentAt: '2026-08-10T09:00:00.000Z', lastFailureAt: null } },
+    } };
+    primeReads({ overview: { data: { data: overview } } });
+    render(<NotificationsPage />);
+    const title = await screen.findByRole('heading', { name: 'Vekalet Süresi Uyarısı' });
+    const card = title.closest('div.rounded-xl')!;
+    expect(card.textContent).toContain('Kapalı');
+    expect(card.textContent).toContain(reason === 'GLOBAL_DISABLED' ? 'sistemde kapalı' : 'büro ayarında kapalı');
+    expect(card.textContent).toContain('Gönderilen7');
+    expect(card.textContent).not.toContain('Aktif motor');
+    expect(card.textContent).not.toContain('DELIVERY_WIRED');
+    expect(card.textContent).not.toContain(reason);
+    expect(mocked.post).not.toHaveBeenCalled();
+  });
+});
+
 async function armTestPanel() {
   render(<NotificationsPage />);
   const select = await screen.findByRole('combobox');

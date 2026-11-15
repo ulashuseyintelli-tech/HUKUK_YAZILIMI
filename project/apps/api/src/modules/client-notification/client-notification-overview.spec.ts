@@ -7,6 +7,12 @@
  */
 describe("ClientNotificationService.getNotificationOverview", () => {
   const tenantId = "t1";
+  const savedPoaFlag = process.env.POA_EXPIRY_NOTIFICATION_ENABLED;
+  beforeEach(() => { process.env.POA_EXPIRY_NOTIFICATION_ENABLED = "true"; });
+  afterEach(() => {
+    if (savedPoaFlag === undefined) delete process.env.POA_EXPIRY_NOTIFICATION_ENABLED;
+    else process.env.POA_EXPIRY_NOTIFICATION_ENABLED = savedPoaFlag;
+  });
 
   function buildService(overrides?: { prisma?: any; office?: any }) {
     const prisma: any = {
@@ -81,6 +87,7 @@ describe("ClientNotificationService.getNotificationOverview", () => {
         .fn()
         .mockResolvedValue({ smsProvider: "NETGSM", smsApiKey: "********", smsApiSecret: "********", smsSender: "BURO" }),
       getGreetingSettings: jest.fn().mockResolvedValue({ autoGreetingEnabled: true, autoGreetingTime: "09:00" }),
+      getPoaExpirySettings: jest.fn().mockResolvedValue({ poaExpiryNotificationEnabled: true, poaExpiryRecipientLawyerIds: ["private-poa-lawyer"] }),
       getEscalationSettings: jest.fn().mockResolvedValue({
         opReminderDays: 3,
         opFounderDays: 6,
@@ -180,4 +187,26 @@ describe("ClientNotificationService.getNotificationOverview", () => {
     expect(clientDelivery?.status).toBe("SENT");
     expect(poaDelivery).toMatchObject({ type: "POA_EXPIRY", channel: "EMAIL", status: "SENT" });
   });
+
+  it.each([undefined, "false", "true", "TRUE"].flatMap(flag => [false, true].map(officeEnabled => [flag, officeEnabled] as const)))(
+    "POA flag=%s office=%s reports current gates independently of historical delivery",
+    async (flag, officeEnabled) => {
+      if (flag === undefined) delete process.env.POA_EXPIRY_NOTIFICATION_ENABLED;
+      else process.env.POA_EXPIRY_NOTIFICATION_ENABLED = flag;
+      const { service, officeService } = buildService({ office: {
+        getPoaExpirySettings: jest.fn().mockResolvedValue({ poaExpiryNotificationEnabled: officeEnabled, poaExpiryRecipientLawyerIds: ["private-poa-lawyer"] }),
+      } });
+      const out = await service.getNotificationOverview(tenantId);
+      const globallyEnabled = flag?.toLowerCase() === "true";
+      const enabled = globallyEnabled && officeEnabled;
+      expect(out.engines.poa.status).toBe(enabled ? "ACTIVE" : "OFF");
+      expect(out.engines.poa.reason).toBe(!globallyEnabled ? "GLOBAL_DISABLED" : officeEnabled ? "DELIVERY_WIRED" : "OFFICE_DISABLED");
+      expect(officeService.getPoaExpirySettings).toHaveBeenCalledWith(tenantId);
+      expect(out.stats.activeEngines).toBe(enabled ? 3 : 2);
+      expect(out.engines.poa.poaExpiry).toMatchObject({ pending: 1, sent: 2, failed: 1, lastSentAt: "2026-06-24T09:00:00.000Z" });
+      expect(out.recentDeliveries.find(row => row.id === "poa-delivery-1")?.status).toBe("SENT");
+      expect(JSON.stringify(out)).not.toContain("private-poa-lawyer");
+      expect(JSON.stringify(out)).not.toContain("poaExpiryRecipientLawyerIds");
+    },
+  );
 });
