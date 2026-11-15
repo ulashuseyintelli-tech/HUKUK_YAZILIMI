@@ -517,3 +517,7 @@ src/modules/client/__tests__/client-bank-account-h13a.http.db-gated.integration.
 src/modules/portal/__tests__/portal-email-uniqueness-a.http.db-gated.integration.spec.ts
 src/modules/client-statement/__tests__/client-statement-retry-clr07.http.db-gated.integration.spec.ts
 src/modules/address-discovery/__tests__/client-info-request-actions-clz03.http.db-gated.integration.spec.ts
+# Secimlik kalem bazli borclu sorumlulugu (karar gunlugu 2026-11-15): tahsilat / mahsup / asan odeme / iptal / eszamanlilik / kiraci yalitimi + secim, onay yurutmesi, bayat onizleme, toplu uygulama, bayrak (gercek PostgreSQL).
+src/modules/claim-liability/__tests__/claim-liability-collection.db-gated.integration.spec.ts
+src/modules/claim-liability/__tests__/claim-liability-selection.http.db-gated.integration.spec.ts
+src/modules/claim-liability/__tests__/claim-liability-rollback-compat.db-gated.integration.spec.ts

@@ -18,9 +18,11 @@ import {
 import {
   CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE,
   CLAIM_ITEM_INTENT_VERSION,
+  CLAIM_ITEM_LIABILITY_SELECTION_INTENT_VERSION,
   CLAIM_ITEM_TARGET_TYPE,
   CLAIM_ITEM_CASE_TARGET_TYPE,
   type ClaimItemHighImpactSavedIntent,
+  type ClaimItemLiabilityProjection,
 } from '../claim-item/claim-item-approval.constants';
 import {
   claimItemCreationAmounts,
@@ -71,6 +73,17 @@ export type ClaimItemFormationBatchApprovalHandler = (
   req: OfficeApprovalRequest,
 ) => Promise<void>;
 
+/**
+ * Seçimlik sorumluluk (karar günlüğü 2026-11-15) — onaylanan seçim niyetini karar transaction'ı İÇİNDE uygulayan
+ * işleyici: dosya kilidi + durum özeti doğrulaması + seçim sürümü yazımı. Kalemin iki eski alanına yazılacak izdüşümü
+ * DÖNDÜRÜR; kalem satırını bu servis (mevcut onaylı kalem yazarı) süreklilik kaydıyla günceller. Fırlatırsa karar
+ * dahil hiçbir yazma kalmaz (talep PENDING_APPROVAL'da kalır).
+ */
+export type ClaimItemLiabilitySelectionApprovalHandler = (
+  tx: Prisma.TransactionClient,
+  req: OfficeApprovalRequest,
+) => Promise<ClaimItemLiabilityProjection[]>;
+
 const COLLECTION_DISPOSITION_APPROVAL_ACTION = 'COLLECTION_DISPOSITION_POST';
 const COLLECTION_DISPOSITION_TARGET_TYPE = 'COLLECTION_DISPOSITION';
 
@@ -78,6 +91,7 @@ const COLLECTION_DISPOSITION_TARGET_TYPE = 'COLLECTION_DISPOSITION';
 export class OfficeApprovalDomainSyncService {
   private readonly claimItemSourceIntegrity = new ClaimItemSourceIntegrityGuard();
   private claimItemFormationBatchHandler?: ClaimItemFormationBatchApprovalHandler;
+  private claimItemLiabilitySelectionHandler?: ClaimItemLiabilitySelectionApprovalHandler;
 
   constructor(
     @Optional() private readonly domainEventIngestService?: DomainEventIngestService,
@@ -105,6 +119,11 @@ export class OfficeApprovalDomainSyncService {
     if (this.isCollectionVoidApproval(req)) {
       return this.syncCollectionVoid(tx, req);
     }
+    // Sorumluluk seçimi aynı işlem kodunu ve hedef türlerini taşır; niyet sürümüyle ayrışır ve genel kalem
+    // değişikliği dalından ÖNCE yakalanır.
+    if (this.isClaimItemLiabilitySelectionApproval(req)) {
+      return this.syncClaimItemLiabilitySelection(tx, req);
+    }
     if (this.isClaimItemHighImpactApproval(req)) {
       return this.syncClaimItemHighImpact(tx, req);
     }
@@ -130,6 +149,117 @@ export class OfficeApprovalDomainSyncService {
       throw new Error('ClaimItem formation batch approval handler is already registered');
     }
     this.claimItemFormationBatchHandler = handler;
+  }
+
+  /**
+   * Seçimlik sorumluluk — onay yürütme işleyicisinin tek kaydı. Kayıt yoksa ONAY kapalı-hata verir; ret, revizyon ve
+   * iptal yine no-op'tur.
+   */
+  registerClaimItemLiabilitySelectionHandler(handler: ClaimItemLiabilitySelectionApprovalHandler): void {
+    if (this.claimItemLiabilitySelectionHandler && this.claimItemLiabilitySelectionHandler !== handler) {
+      throw new Error('ClaimItem liability selection approval handler is already registered');
+    }
+    this.claimItemLiabilitySelectionHandler = handler;
+  }
+
+  private isClaimItemLiabilitySelectionApproval(req: OfficeApprovalRequest): boolean {
+    if (req.actionCode !== CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE) return false;
+    if (req.targetType !== CLAIM_ITEM_TARGET_TYPE && req.targetType !== CLAIM_ITEM_CASE_TARGET_TYPE) return false;
+    const intent = req.savedIntent as { version?: unknown } | null;
+    return Boolean(intent && typeof intent === 'object' && intent.version === CLAIM_ITEM_LIABILITY_SELECTION_INTENT_VERSION);
+  }
+
+  /**
+   * Onay → seçim sürümleri ve kalem izdüşümleri karar transaction'ında birlikte yazılır (ya hep ya hiç). Ret,
+   * revizyon ve iptal hiçbir seçim YAZMAZ. Değiştirerek onay desteklenmez: onay içeriği önizlenen seçime bağlıdır.
+   */
+  private async syncClaimItemLiabilitySelection(tx: Prisma.TransactionClient, req: OfficeApprovalRequest): Promise<void> {
+    switch (req.status) {
+      case OfficeApprovalStatus.APPROVED:
+        return this.approveClaimItemLiabilitySelection(tx, req);
+      case OfficeApprovalStatus.REJECTED:
+      case OfficeApprovalStatus.REVISION_REQUESTED:
+      case OfficeApprovalStatus.CANCELLED:
+        return;
+      case OfficeApprovalStatus.APPROVED_WITH_CHANGES:
+        throw new BadRequestException(
+          'Borçlu sorumluluğu seçimi değiştirilerek onaylanamaz; revizyon isteyin veya normal onaylayın.',
+        );
+      default:
+        return;
+    }
+  }
+
+  private async approveClaimItemLiabilitySelection(tx: Prisma.TransactionClient, req: OfficeApprovalRequest): Promise<void> {
+    if (!req.approverUserId) {
+      throw new ConflictException('Onayli CLAIM_ITEM approval kaydinda approverUserId yok.');
+    }
+    if (!this.claimItemLiabilitySelectionHandler) {
+      throw new ConflictException({
+        code: 'LIABILITY_SELECTION_HANDLER_UNAVAILABLE',
+        message: 'Borçlu sorumluluğu seçimi onayı bu ortamda uygulanamaz; talep onay bekler durumda kalır.',
+      });
+    }
+    const claim = await tx.officeApprovalRequest.updateMany({
+      where: {
+        id: req.id,
+        status: OfficeApprovalStatus.APPROVED,
+        executionStatus: OfficeApprovalExecutionStatus.NOT_RUN,
+      },
+      data: {
+        executionStatus: OfficeApprovalExecutionStatus.RUNNING,
+        runningStartedAt: new Date(),
+      },
+    });
+    if (claim.count === 0) {
+      throw new ConflictException('ClaimItem approval zaten yurutulmus veya yurutme icin kilitlenmis.');
+    }
+
+    // İşleyici: dosya kilidi → durum özeti yeniden doğrulanır → seçim sürümü yazılır. Kalem izdüşümü aynı işlemde,
+    // mevcut onaylı kalem yazarının süreklilik (denetim + olay) kaydıyla yazılır.
+    const projections = await this.claimItemLiabilitySelectionHandler(tx, req);
+    for (const projection of projections) {
+      const current = await tx.claimItem.findFirst({
+        where: { id: projection.claimItemId, tenantId: req.tenantId },
+      });
+      if (!current) {
+        throw new ConflictException('CLAIM_ITEM hedef kalem bulunamadi.');
+      }
+      const unchanged =
+        current.isAllDebtorsLiable === projection.isAllDebtorsLiable &&
+        stableJsonHash([...current.liableDebtorIds].sort()) === stableJsonHash([...projection.liableDebtorIds].sort());
+      if (unchanged) continue;
+      const updated = await tx.claimItem.update({
+        where: { id: projection.claimItemId },
+        data: { isAllDebtorsLiable: projection.isAllDebtorsLiable, liableDebtorIds: projection.liableDebtorIds },
+      });
+      await appendClaimItemContinuity({
+        tx,
+        domainEventIngest: this.domainEventIngestService,
+        envelope: this.buildApprovedClaimItemEnvelope(req, current.caseId, projection.claimItemId, undefined, String(updated.currency)),
+        operation: 'UPDATE',
+        before: current as ClaimItemLifecycleRecord,
+        after: updated as ClaimItemLifecycleRecord,
+        auditAction: 'CLAIM_ITEM_LIABILITY_SELECTION_APPLIED',
+        auditUserId: req.approverUserId ?? undefined,
+        auditSource: 'USER_LIABILITY_SELECTION_REQUEST',
+        approvalRequired: true,
+      });
+    }
+
+    const done = await tx.officeApprovalRequest.updateMany({
+      where: {
+        id: req.id,
+        executionStatus: OfficeApprovalExecutionStatus.RUNNING,
+      },
+      data: {
+        executionStatus: OfficeApprovalExecutionStatus.SUCCEEDED,
+        executedAt: new Date(),
+      },
+    });
+    if (done.count === 0) {
+      throw new ConflictException('ClaimItem approval yurutme sonucu isaretlenemedi.');
+    }
   }
 
   private isClaimItemFormationBatchApproval(req: OfficeApprovalRequest): boolean {
@@ -625,6 +755,27 @@ export class OfficeApprovalDomainSyncService {
       current,
       (intent.proposedPatch as Record<string, unknown>).itemType,
     );
+    // Seçimlik sorumluluk: etkin seçimi olan kalemde iki eski alanın eski yoldan değiştirilmesi yürütmede de
+    // reddedilir (talep seçimden ÖNCE açılmış olabilir). Sorumluluk yalnız seçim işlemiyle değişir.
+    if (intent.operation !== 'DELETE') {
+      const legacyPatch = intent.proposedPatch as Record<string, unknown>;
+      const touchesLiability =
+        Object.prototype.hasOwnProperty.call(legacyPatch, 'isAllDebtorsLiable') ||
+        Object.prototype.hasOwnProperty.call(legacyPatch, 'liableDebtorIds');
+      if (touchesLiability) {
+        const activeSelection = await tx.claimItemLiabilitySet.findFirst({
+          where: { claimItemId: current.id, tenantId: req.tenantId, status: 'ACTIVE' },
+          select: { id: true },
+        });
+        if (activeSelection) {
+          throw new ConflictException({
+            code: 'CLAIM_ITEM_LIABILITY_SELECTION_ACTIVE',
+            message:
+              'Bu kalemde etkin borçlu sorumluluğu seçimi var; sorumluluk alanları yalnız sorumluluk seçimi işlemiyle değiştirilebilir.',
+          });
+        }
+      }
+    }
     const normalizedPatch = intent.operation === 'DELETE'
       ? intent.proposedPatch
       : this.normalizeApprovedInterestPatch(intent.proposedPatch, current, req.requesterUserId);

@@ -43,10 +43,14 @@ const PREVIEW_WARNING_LABELS: Record<string, string> = {
     "Tahsilat kaydedilecek; seçilen borçlunun sorumlu olduğu etkin kalem olmadığından mahsup bekletilecek.",
   DISTRIBUTION_DEFERRED_UNTIL_ALLOCATION_COMPLETED:
     "Mahsup tamamlanmadan müvekkile dağıtım önerilmez.",
+  LIABILITY_EXCESS_HELD_AS_DEBTOR_OVERPAYMENT:
+    "Ödeme seçilen borçlunun sorumluluğunu aşıyor; aşan tutar başka borçluya aktarılmaz, bu borçlu adına fazla ödeme olarak izlenir.",
 };
 
 const PREVIEW_BLOCKING_LABELS: Record<string, string> = {
   CASE_CLOSED_FOR_COLLECTION: "Dosya tahsilata kapalı görünüyor.",
+  LIABILITY_LIMIT_EXCEEDED_RESTRICTED_SOURCE:
+    "Haciz / icra dairesi kaynaklı bu ödeme seçilen borçlunun sorumluluğunu aşıyor. Bu kaynakta aşan tutar fazla ödeme olarak ayrılamaz; kaydedilirse tahsilatın TAMAMI mahsup bekletilir, hiçbir kaleme düşülmez.",
 };
 
 function labelPreviewMessage(code: string, labels: Record<string, string>) {
@@ -200,6 +204,8 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
         paymentDate: form.date || undefined,
         currency: form.currency || undefined,
         paymentMethod: form.channel || undefined,
+        // Seçimlik sorumluluk: kanal sunucuya ayrıca gider (haciz / icra dairesi kaynağında sınır aşımı engeli).
+        channel: form.channel || undefined,
         ...(payerCaseDebtorId ? { caseDebtorId: payerCaseDebtorId } : {}),
       });
       setPreviewResult(result);
@@ -570,6 +576,32 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
                 <p className="rounded bg-white px-2 py-1 text-amber-800">
                   Fazla ödeme: {formatPreviewAmount(previewResult.balanceImpact.overpaymentAmount)}
                 </p>
+              )}
+
+              {/* Seçimlik sorumluluk: borçlunun kapasitesi ve aşan tutarın akıbeti KAYITTAN ÖNCE gösterilir (sunucu hesabı). */}
+              {previewResult.liability && (
+                <div data-testid="collection-preview-liability" className="rounded bg-white px-2 py-1 space-y-1">
+                  <p className="font-medium">Borçlu sorumluluğu</p>
+                  <p>
+                    Seçilen borçlunun bu ödemede kullanılabilir sorumluluğu:{" "}
+                    <span className="font-medium">{formatPreviewAmount(previewResult.liability.debtorCapacityAmount)}</span>{" "}
+                    (işleyen faiz hariç)
+                  </p>
+                  {previewResult.liability.excessHandling === "DEBTOR_OVERPAYMENT_HELD" && (
+                    <p data-testid="collection-preview-liability-excess" className="text-amber-800">
+                      Sorumluluğu aşan {formatPreviewAmount(previewResult.liability.excessAmount)} başka borçluya
+                      aktarılmaz; bu borçlu adına fazla ödeme olarak izlenir ve tahsilat iptaliyle kapanır. İade ve başka
+                      borca mahsup komutları bu sürümde yoktur.
+                    </p>
+                  )}
+                  {previewResult.liability.excessHandling === "ALLOCATION_HELD_LIMIT_EXCEEDED" && (
+                    <p data-testid="collection-preview-liability-held" className="text-red-700">
+                      Sorumluluğu aşan {formatPreviewAmount(previewResult.liability.excessAmount)} bu kaynakta fazla ödeme
+                      olarak ayrılamaz. Kaydedilirse tahsilatın tamamı mahsup bekletilir; hiçbir borçlunun sorumluluk
+                      sınırı aşılmaz.
+                    </p>
+                  )}
+                </div>
               )}
 
               <div className="rounded bg-white px-2 py-1">

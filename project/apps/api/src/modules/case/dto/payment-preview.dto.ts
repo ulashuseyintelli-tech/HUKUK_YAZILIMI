@@ -20,6 +20,37 @@ export class PaymentPreviewRequestDto {
   @IsOptional()
   @IsString()
   caseDebtorId?: string;
+
+  /**
+   * Seçimlik sorumluluk: tahsilat kanalı ve kaynağı (isteğe bağlı). Haciz / icra dairesi kaynaklı ödeme borçlunun
+   * sorumluluğunu aşıyorsa önizleme KAYITTAN ÖNCE açıklayıcı engel gösterir.
+   */
+  @IsOptional()
+  @IsString()
+  channel?: string;
+
+  @IsOptional()
+  @IsString()
+  sourceType?: string;
+}
+
+/** Seçimlik sorumluluk — önizlemede borçlu kapasitesi ve aşan tutarın nasıl tutulacağı. */
+export interface PaymentPreviewLiabilityDto {
+  /** Dosyada etkin paylı / tutarla sınırlı kalem var ve ödeme bir borçlu hesabına. */
+  shareOrCapBound: boolean;
+  /** Hesabına ödeme yapılan borçlunun bu ödemede kullanabileceği toplam kapasite (işleyen faiz hariç). */
+  debtorCapacityAmount: number;
+  /** Kapasiteyi aşan tutar. */
+  excessAmount: number;
+  /**
+   * Aşan tutarın akıbeti:
+   *  - DEBTOR_OVERPAYMENT_HELD: borçlu adına fazla ödeme olarak izlenir (başka borçluya aktarılmaz);
+   *  - ALLOCATION_HELD_LIMIT_EXCEEDED: haciz / icra dairesi kaynağı — tahsilat kaydedilir, TAMAMI mahsup bekletilir;
+   *  - null: aşan tutar yok.
+   */
+  excessHandling: "DEBTOR_OVERPAYMENT_HELD" | "ALLOCATION_HELD_LIMIT_EXCEEDED" | null;
+  /** İade ve başka borca mahsup komutları bu sürümde yoktur; aşan tutar yalnız izlenir ve tahsilat iptaliyle kapanır. */
+  refundCommandsAvailable: false;
 }
 
 export type PaymentPreviewDistributionSource =
@@ -72,4 +103,6 @@ export interface PaymentPreviewResponseDto {
       clientName?: string;
     }>;
   };
+  /** Yalnız dosyada etkin sorumluluk seçimi varsa döner. */
+  liability?: PaymentPreviewLiabilityDto;
 }

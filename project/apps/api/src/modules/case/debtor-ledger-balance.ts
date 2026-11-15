@@ -1,12 +1,23 @@
 import { Prisma } from '@prisma/client';
+import {
+  fromKurus,
+  isLiableParty,
+  type EvaluatedItemLiability,
+  type ItemLiabilityKind,
+} from '../claim-liability/claim-liability.domain';
 
 /**
  * K3-L Faz 1c (owner kararı 2026-09-29 "önce defterden, faiz ayrı") — borçlu bazlı bakiye KALICI DEFTERDEN.
  *
  * Kaynak: kalem kaydı (`demandedAmount`) ve kalıcı mahsup (`collectedAmount` = LedgerAllocation toplamı; Faz 1b'den
  * itibaren TBK100 sırasıyla ve YALNIZ ödeyenin sorumlu olduğu kalemlere). Her borçlu için yalnız sorumlu olduğu kalemler
- * (`isAllDebtorsLiable` veya `liableDebtorIds` ∋ Debtor.id). Ortak kalemin tahsil edilen kısmı o kalemden sorumlu HERKES
- * için düşer (müteselsil); borçlu kalanları toplanınca dosya borcunu VERMEZ.
+ * (`isAllDebtorsLiable` veya `liableDebtorIds` ∋ Debtor.id). Ortak kalemin tahsil edilen kısmı o kalemi paylaşan HERKES
+ * için düşer; borçlu kalanları toplanınca dosya borcunu VERMEZ.
+ *
+ * Seçimlik sorumluluk (karar günlüğü 2026-11-15): sorumluluk türü seçilmemiş kalem "BELİRLENMEDİ"dir — bu bir
+ * müteselsillik kabulü DEĞİLDİR ve borçluya özgü kesin bakiye üretmez. Türü seçilmiş kalemde borçlunun payı / tavanı,
+ * hesabına sayılan mahsup ve kalan sorumluluğu `sorumluluk` alanında ayrıca verilir (mevcut alanlar aynı değerlerle
+ * korunur). Dosya kalanı `dosyaKalani` alanındadır; borçlu rakamlarından TOPLANMAZ.
  *
  * İŞLEYEN FAİZ HARİÇ: borçlu bazında faiz henüz hesaplanmaz (kanonik motor genişletmesi ayrı iş). Kayıtlı faiz kalemleri
  * (işlemiş faiz) kalem olarak dahildir. Sorumlusu kayıtta bulunamayan kısıtlı kalem hiçbir borçluya YAZILMAZ,
@@ -44,6 +55,45 @@ export interface DebtorLedgerItemLine {
   readonly kalan: number;
   /** Kalem tüm borçlulara açık (ortak) mı, yalnız belirli borçlulara mı ait. */
   readonly ortak: boolean;
+  /** Seçimlik sorumluluk görünümü (bağlam verildiyse). */
+  readonly sorumluluk?: DebtorLedgerLineLiability;
+}
+
+export type DebtorLedgerLiabilityKind = 'BELIRLENMEDI' | 'KAYITTAN_KISITLI' | 'MUTESELSIL' | 'PAYLI' | 'TUTARLA_SINIRLI';
+
+export interface DebtorLedgerLineLiability {
+  readonly tur: DebtorLedgerLiabilityKind;
+  readonly secimSurumu: number | null;
+  /** Paylıda borçlunun payı (kalemin TAM tutarından). */
+  readonly pay: number | null;
+  /** Tutarla sınırlıda tavan; sınırsız borçluda null. */
+  readonly tavan: number | null;
+  readonly sinirsiz: boolean;
+  /** Tavan YALNIZ kalemin kayıtlı tutarını kapsar (işleyen faiz ve diğer kalemler kapsam dışı). */
+  readonly tavanKapsami: 'ITEM_AMOUNT' | null;
+  /** Bu borçlu hesabına bu kaleme yapılmış net mahsup. */
+  readonly borcluHesabinaMahsup: number;
+  /** Borçlunun bu kalemdeki kalan sorumluluğu; belirlenmedi ya da uzlaşmayan kalemde null (kesin rakam üretilmez). */
+  readonly kalanSorumluluk: number | null;
+  /** Kalemin ortak kalanı (tek sayaçtan). */
+  readonly ortakKalan: number;
+  readonly uzlasiyor: boolean;
+}
+
+export interface DebtorLedgerCurrencyRemaining {
+  readonly paraBirimi: string;
+  readonly kalan: number;
+}
+
+export interface DebtorLedgerLiabilitySummary {
+  /** "Kesin sorumluluk": yalnız sorumluluğu belli kalemler (seçilmiş tür ya da kayıttan kısıtlı). */
+  readonly kesinSorumluluk: {
+    readonly durum: 'HESAPLANDI' | 'BELIRLENEMEDI';
+    readonly neden: 'TAVANLI_KALEM' | 'UZLASMAYAN_KALEM' | null;
+    readonly toplamlar: readonly DebtorLedgerCurrencyRemaining[];
+  };
+  /** Sorumluluk türü belirlenmemiş kalemlerin ORTAK kalanı — borçluya özgü kesin bakiye DEĞİLDİR. */
+  readonly belirlenmemisOrtakKalan: readonly DebtorLedgerCurrencyRemaining[];
 }
 
 export interface DebtorLedgerCurrencyTotal {
@@ -60,6 +110,12 @@ export interface DebtorLedgerBalance {
   readonly rol: string;
   readonly kalemler: readonly DebtorLedgerItemLine[];
   readonly toplamlar: readonly DebtorLedgerCurrencyTotal[];
+  /**
+   * Seçimlik sorumluluk: `BELIRLENEMEDI` iken `toplamlar` BOŞTUR — tutarla sınırlı (tavanı yalnız kalem tutarını
+   * kapsayan) ya da uzlaşmayan kalemi olan borçluda borçlu toplamı güvenle kurulamaz; kalem satırları yine listelenir.
+   */
+  readonly toplamDurumu?: 'HESAPLANDI' | 'BELIRLENEMEDI';
+  readonly sorumlulukOzeti?: DebtorLedgerLiabilitySummary;
 }
 
 /** Kaydedilmiş ama otomatik mahsubu bekletilen tahsilat (kimse için kalandan DÜŞÜLMEMİŞTİR). */
@@ -77,6 +133,40 @@ export interface DebtorLedgerBalanceResult {
   readonly borclular: readonly DebtorLedgerBalance[];
   readonly sorumlusuBulunamayanKalemler: readonly DebtorLedgerItemLine[];
   readonly mahsubuBekleyenTahsilatlar: readonly DebtorLedgerHeldCollection[];
+  /** Dosya kalanı: kalemlerin ortak kalanından; borçlu rakamları TOPLANMAZ. Yalnız sorumluluk bağlamı verildiyse. */
+  readonly dosyaKalani?: readonly DebtorLedgerCurrencyRemaining[];
+  readonly sorumlulukNotu?: string;
+}
+
+const LIABILITY_KIND_LABEL: Record<ItemLiabilityKind, DebtorLedgerLiabilityKind> = {
+  UNDETERMINED: 'BELIRLENMEDI',
+  LEGACY_RESTRICTED: 'KAYITTAN_KISITLI',
+  JOINT_AND_SEVERAL: 'MUTESELSIL',
+  PROPORTIONAL: 'PAYLI',
+  CAPPED: 'TUTARLA_SINIRLI',
+};
+
+const LIABILITY_NOTE =
+  'Sorumluluk türü seçilmemiş kalem "belirlenmedi"dir: ödeme bugünkü kurallarla kalemi azaltır, borçluya özgü kesin ' +
+  'bakiye üretilmez. Paylı kalemde pay kalemin tam tutarından hesaplanır. Tutarla sınırlı kalemde tavan yalnız kalemin ' +
+  'kayıtlı tutarını kapsar (işleyen faiz ve diğer kalemler kapsam dışıdır); bu yüzden tavanlı kalemi olan borçluda ' +
+  'borçlu toplamı belirlenemedi gösterilir. Dosya kalanı tek rakamdır ve borçlu rakamlarından toplanmaz.';
+
+function lineLiability(evaluation: EvaluatedItemLiability, debtorId: string): DebtorLedgerLineLiability {
+  const party = evaluation.parties.find((candidate) => candidate.debtorId === debtorId);
+  const fixed = evaluation.kind === 'UNDETERMINED' ? null : evaluation.kind === 'LEGACY_RESTRICTED' ? evaluation.remainingKurus : party?.remainingLiabilityKurus ?? null;
+  return {
+    tur: LIABILITY_KIND_LABEL[evaluation.kind],
+    secimSurumu: evaluation.setVersion,
+    pay: party?.shareKurus == null ? null : fromKurus(party.shareKurus),
+    tavan: party?.limitKurus == null ? null : fromKurus(party.limitKurus),
+    sinirsiz: party?.unlimited ?? false,
+    tavanKapsami: evaluation.kind === 'CAPPED' ? 'ITEM_AMOUNT' : null,
+    borcluHesabinaMahsup: fromKurus(evaluation.attribution.byDebtor.get(debtorId) ?? 0n),
+    kalanSorumluluk: fixed === null ? null : fromKurus(fixed),
+    ortakKalan: fromKurus(evaluation.remainingKurus),
+    uzlasiyor: evaluation.reconciled,
+  };
 }
 
 const dec = (value: Prisma.Decimal | number | string | null): Prisma.Decimal =>
@@ -115,34 +205,97 @@ export function buildDebtorLedgerBalances(input: {
     readonly currency: string;
     readonly holdReason: string;
   }[];
+  /**
+   * Seçimlik sorumluluk bağlamı (kalem → değerlendirme). Verilmezse çıktı değişiklik öncesiyle BİREBİR aynıdır.
+   * Verilirse mevcut alanlar seçimsiz dosyada aynı değerleri taşır; yalnız ek alanlar gelir.
+   */
+  readonly liability?: { readonly evaluations: ReadonlyMap<string, EvaluatedItemLiability> };
 }): DebtorLedgerBalanceResult {
   const active = input.caseDebtors.filter((cd) => cd.lifecycleStatus === 'ACTIVE');
   const activeDebtorIds = new Set(active.map((cd) => cd.debtorId));
-  const lines = input.items.map((item) => ({ item, line: line(item) }));
+  const lines = input.items.map((item) => ({ item, line: line(item), evaluation: input.liability?.evaluations.get(item.id) }));
   const strip = ({ raw: _raw, ...rest }: ReturnType<typeof line>): DebtorLedgerItemLine => rest;
+  const zero = () => new Prisma.Decimal(0);
+  const kurusDec = (kurus: bigint) => new Prisma.Decimal(kurus.toString()).div(100);
+  const sortedRemaining = (totals: Map<string, Prisma.Decimal>): DebtorLedgerCurrencyRemaining[] =>
+    [...totals.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([paraBirimi, kalan]) => ({ paraBirimi, kalan: money(kalan) }));
 
   const borclular = active.map((cd): DebtorLedgerBalance => {
-    const own = lines.filter(({ item }) => item.isAllDebtorsLiable || item.liableDebtorIds.includes(cd.debtorId));
+    // Sorumluluk bağlamı varsa kalem aidiyeti seçim kaydından okunur (seçimsiz kalemde mevcut kuralla aynı sonuç).
+    const own = lines.filter(({ item, evaluation }) =>
+      evaluation ? isLiableParty(evaluation, cd.debtorId) : item.isAllDebtorsLiable || item.liableDebtorIds.includes(cd.debtorId),
+    );
     const totals = new Map<string, { t: Prisma.Decimal; c: Prisma.Decimal; k: Prisma.Decimal }>();
-    for (const { line: l } of own) {
-      const acc = totals.get(l.paraBirimi) ?? { t: new Prisma.Decimal(0), c: new Prisma.Decimal(0), k: new Prisma.Decimal(0) };
+    const fixedTotals = new Map<string, Prisma.Decimal>();
+    const undeterminedTotals = new Map<string, Prisma.Decimal>();
+    let hasCapped = false;
+    let hasUnreconciled = false;
+    for (const { line: l, evaluation } of own) {
+      const acc = totals.get(l.paraBirimi) ?? { t: zero(), c: zero(), k: zero() };
+      const party = evaluation?.parties.find((candidate) => candidate.debtorId === cd.debtorId);
+      if (evaluation && (evaluation.kind === 'PROPORTIONAL' || evaluation.kind === 'CAPPED')) {
+        // Paylı / tutarla sınırlı kalemde borçlu toplamına kalemin tamamı DEĞİL, borçlunun payı / tavanı ve kendi
+        // hesabına sayılan mahsup girer. Uzlaşmayan kalem toplamı belirlenemez kılar.
+        if (evaluation.kind === 'CAPPED') hasCapped = true;
+        if (!evaluation.reconciled || !party || party.remainingLiabilityKurus === null) {
+          hasUnreconciled = true;
+        } else {
+          const attributed = kurusDec(party.attributedKurus);
+          const remaining = kurusDec(party.remainingLiabilityKurus);
+          const bound = party.shareKurus !== null ? kurusDec(party.shareKurus) : party.limitKurus !== null ? kurusDec(party.limitKurus) : l.raw.t;
+          totals.set(l.paraBirimi, { t: acc.t.plus(bound), c: acc.c.plus(attributed), k: acc.k.plus(remaining) });
+          fixedTotals.set(l.paraBirimi, (fixedTotals.get(l.paraBirimi) ?? zero()).plus(remaining));
+        }
+        continue;
+      }
       totals.set(l.paraBirimi, { t: acc.t.plus(l.raw.t), c: acc.c.plus(l.raw.c), k: acc.k.plus(l.raw.k) });
+      if (!evaluation) continue;
+      if (evaluation.kind === 'UNDETERMINED') {
+        undeterminedTotals.set(l.paraBirimi, (undeterminedTotals.get(l.paraBirimi) ?? zero()).plus(l.raw.k));
+      } else {
+        fixedTotals.set(l.paraBirimi, (fixedTotals.get(l.paraBirimi) ?? zero()).plus(l.raw.k));
+      }
+    }
+    const indeterminate = hasCapped || hasUnreconciled;
+    const kalemler = own.map(({ line: l, evaluation }) =>
+      evaluation ? { ...strip(l), sorumluluk: lineLiability(evaluation, cd.debtorId) } : strip(l),
+    );
+    const toplamlar = [...totals.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([paraBirimi, v]) => ({ paraBirimi, tutar: money(v.t), tahsilEdilen: money(v.c), kalan: money(v.k) }));
+    if (!input.liability) {
+      return { caseDebtorId: cd.id, debtorId: cd.debtorId, ad: cd.name, rol: cd.role, kalemler, toplamlar };
     }
     return {
       caseDebtorId: cd.id,
       debtorId: cd.debtorId,
       ad: cd.name,
       rol: cd.role,
-      kalemler: own.map(({ line: l }) => strip(l)),
-      toplamlar: [...totals.entries()]
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([paraBirimi, v]) => ({ paraBirimi, tutar: money(v.t), tahsilEdilen: money(v.c), kalan: money(v.k) })),
+      kalemler,
+      toplamlar: indeterminate ? [] : toplamlar,
+      toplamDurumu: indeterminate ? 'BELIRLENEMEDI' : 'HESAPLANDI',
+      sorumlulukOzeti: {
+        kesinSorumluluk: {
+          durum: indeterminate ? 'BELIRLENEMEDI' : 'HESAPLANDI',
+          neden: hasCapped ? 'TAVANLI_KALEM' : hasUnreconciled ? 'UZLASMAYAN_KALEM' : null,
+          toplamlar: indeterminate ? [] : sortedRemaining(fixedTotals),
+        },
+        belirlenmemisOrtakKalan: sortedRemaining(undeterminedTotals),
+      },
     };
   });
 
   const sorumlusuBulunamayanKalemler = lines
-    .filter(({ item }) => !item.isAllDebtorsLiable && !item.liableDebtorIds.some((id) => activeDebtorIds.has(id)))
+    .filter(({ item, evaluation }) =>
+      evaluation
+        ? evaluation.kind !== 'UNDETERMINED' && ![...activeDebtorIds].some((debtorId) => isLiableParty(evaluation, debtorId))
+        : !item.isAllDebtorsLiable && !item.liableDebtorIds.some((id) => activeDebtorIds.has(id)),
+    )
     .map(({ line: l }) => strip(l));
+
+  // Dosya kalanı: kalemlerin ortak kalanından (tek sayaç). Borçlu rakamlarından TOPLANMAZ.
+  const fileRemaining = new Map<string, Prisma.Decimal>();
+  for (const { line: l } of lines) fileRemaining.set(l.paraBirimi, (fileRemaining.get(l.paraBirimi) ?? zero()).plus(l.raw.k));
 
   return {
     kaynak: 'KALICI_DEFTER',
@@ -159,5 +312,6 @@ export function buildDebtorLedgerBalances(input: {
       paraBirimi: held.currency,
       sebep: held.holdReason,
     })),
+    ...(input.liability ? { dosyaKalani: sortedRemaining(fileRemaining), sorumlulukNotu: LIABILITY_NOTE } : {}),
   };
 }

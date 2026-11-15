@@ -654,6 +654,49 @@ class ApiClient {
   }
 
   /**
+   * Seçimlik borçlu sorumluluğu — kalem başına sorumluluk durumu (salt okuma; bayraktan bağımsız).
+   * Cagrildigi yerler:
+   * - ClaimItemPanel.loadData() -> GET /cases/:caseId/claim-liability
+   */
+  async getCaseClaimLiability(caseId: string) {
+    return this.request<ClaimLiabilityStateDTO>(`/cases/${caseId}/claim-liability`);
+  }
+
+  /**
+   * Seçimlik borçlu sorumluluğu — önce / sonra önizlemesi. DB'ye kayıt yazmaz.
+   * Cagrildigi yerler:
+   * - ClaimLiabilitySelectionDrawer.handlePreview() -> POST /cases/:caseId/claim-liability/preview
+   */
+  async previewClaimLiability(caseId: string, selections: ClaimLiabilitySelectionInputDTO[]) {
+    return this.request<ClaimLiabilityPreviewDTO>(`/cases/${caseId}/claim-liability/preview`, {
+      method: "POST",
+      body: JSON.stringify({ selections }),
+    });
+  }
+
+  /**
+   * Seçimlik borçlu sorumluluğu — seçim talebi (mevcut yüksek etkili kalem değişikliği onayına gider).
+   * Cagrildigi yerler:
+   * - ClaimLiabilitySelectionDrawer.handleRequest() -> POST /cases/:caseId/claim-liability/request
+   */
+  async requestClaimLiability(caseId: string, payload: { selections: ClaimLiabilitySelectionInputDTO[]; onizlemeOzeti: string }) {
+    return this.request<{ applied: false; approvalRequired: true; approvalRequestId: string; status: string }>(
+      `/cases/${caseId}/claim-liability/request`,
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+  }
+
+  /**
+   * Seçimlik borçlu sorumluluğu — seçim geçmişi (salt okuma).
+   * Cagrildigi yerler:
+   * - ClaimLiabilitySelectionDrawer -> GET /cases/:caseId/claim-liability/history
+   */
+  async getClaimLiabilityHistory(caseId: string, claimItemId?: string) {
+    const query = claimItemId ? `?claimItemId=${encodeURIComponent(claimItemId)}` : "";
+    return this.request<ClaimLiabilityHistoryDTO>(`/cases/${caseId}/claim-liability/history${query}`);
+  }
+
+  /**
    * K3-L — bekletilen mahsubu tamamla: hesabına ödeme yapılan borçlu girilir; sunucu aynı transaction'da mahsup
    * eder ve bekletmeyi kapatır. Tahsilat kaydıyla AYNI yetki kapısı (zarf dönebilir → runGuarded ile çağrılır).
    */
@@ -5980,6 +6023,23 @@ export interface UpdateCaseFeeAgreementDTO {
   note?: string;
 }
 
+export type ClaimLiabilityKindDTO = "BELIRLENMEDI" | "KAYITTAN_KISITLI" | "MUTESELSIL" | "PAYLI" | "TUTARLA_SINIRLI";
+
+/** Seçimlik borçlu sorumluluğu — borçlunun bir kalemdeki görünümü (sunucu hesabı; istemci hesap yapmaz). */
+export interface DebtorLedgerLineLiabilityDTO {
+  tur: ClaimLiabilityKindDTO;
+  secimSurumu: number | null;
+  pay: number | null;
+  tavan: number | null;
+  sinirsiz: boolean;
+  tavanKapsami: "ITEM_AMOUNT" | null;
+  borcluHesabinaMahsup: number;
+  /** Belirlenmedi ya da uzlaşmayan kalemde null: kesin rakam üretilmez. */
+  kalanSorumluluk: number | null;
+  ortakKalan: number;
+  uzlasiyor: boolean;
+}
+
 export interface DebtorLedgerItemLineDTO {
   claimItemId: string;
   kalemTuru: string;
@@ -5989,6 +6049,12 @@ export interface DebtorLedgerItemLineDTO {
   tahsilEdilen: number;
   kalan: number;
   ortak: boolean;
+  sorumluluk?: DebtorLedgerLineLiabilityDTO;
+}
+
+export interface CurrencyRemainingDTO {
+  paraBirimi: string;
+  kalan: number;
 }
 
 export interface DebtorLedgerBalanceResultDTO {
@@ -6002,9 +6068,123 @@ export interface DebtorLedgerBalanceResultDTO {
     rol: string;
     kalemler: DebtorLedgerItemLineDTO[];
     toplamlar: Array<{ paraBirimi: string; tutar: number; tahsilEdilen: number; kalan: number }>;
+    /** BELIRLENEMEDI iken `toplamlar` boştur (tavanlı ya da uzlaşmayan kalem). */
+    toplamDurumu?: "HESAPLANDI" | "BELIRLENEMEDI";
+    sorumlulukOzeti?: {
+      kesinSorumluluk: {
+        durum: "HESAPLANDI" | "BELIRLENEMEDI";
+        neden: "TAVANLI_KALEM" | "UZLASMAYAN_KALEM" | null;
+        toplamlar: CurrencyRemainingDTO[];
+      };
+      belirlenmemisOrtakKalan: CurrencyRemainingDTO[];
+    };
   }>;
   sorumlusuBulunamayanKalemler: DebtorLedgerItemLineDTO[];
   mahsubuBekleyenTahsilatlar?: Array<{ collectionId: string; tutar: number; paraBirimi: string; sebep: string }>;
+  /** Dosya kalanı: kalemlerin ortak kalanından; borçlu rakamlarından TOPLANMAZ. */
+  dosyaKalani?: CurrencyRemainingDTO[];
+  sorumlulukNotu?: string;
+}
+
+/** Seçimlik borçlu sorumluluğu — kalem başına durum (GET /cases/:id/claim-liability). */
+export interface ClaimLiabilityStateDTO {
+  kalemler: Array<{
+    claimItemId: string;
+    kalemTuru: string;
+    aciklama: string | null;
+    paraBirimi: string;
+    kalemDurumu: string;
+    sorumlulukTuru: ClaimLiabilityKindDTO;
+    secimId: string | null;
+    secimSurumu: number | null;
+    tavanKapsami: "ITEM_AMOUNT" | null;
+    tutar: number;
+    tahsilEdilen: number;
+    ortakKalan: number;
+    atifsizMahsup: number;
+    uzlasiyor: boolean;
+    engeller: Array<{ kod: string; debtorId: string | null; borcluAdi: string | null; tutar: number | null; sinir: number | null }>;
+    borcluGerekli: boolean;
+    taraflar: Array<{
+      caseDebtorId: string;
+      debtorId: string;
+      ad: string;
+      pay: number | null;
+      payAgirligi: number | null;
+      tavan: number | null;
+      sinirsiz: boolean;
+      borcluHesabinaMahsup: number;
+      kalanSorumluluk: number | null;
+    }>;
+  }>;
+  borclular: Array<{ caseDebtorId: string; debtorId: string; ad: string; rol: string; etkin: boolean }>;
+  dosyaKalani: CurrencyRemainingDTO[];
+  borcluGerekli: boolean;
+  /** Yeni seçim oluşturma açık mı (bayrak). Kapalıyken okuma ve mevcut seçimler aynen çalışır. */
+  secimYazmaAcik: boolean;
+  aciklamalar: { belirlenmedi: string; tavanKapsami: string; asanOdeme: string; isleyenFaiz: string };
+}
+
+export type ClaimLiabilityModeDTO = "JOINT_AND_SEVERAL" | "PROPORTIONAL" | "CAPPED" | "UNDETERMINED";
+
+export interface ClaimLiabilitySelectionInputDTO {
+  claimItemId: string;
+  mode: ClaimLiabilityModeDTO;
+  parties?: Array<{ caseDebtorId: string; shareWeight?: number; sharePercent?: string; limitAmount?: string; unlimited?: boolean }>;
+  basis?: string;
+  basisNote?: string;
+}
+
+export interface ClaimLiabilityPreviewDTO {
+  caseId: string;
+  uygulamaTuru: "SINGLE" | "BULK";
+  uygulanabilir: boolean;
+  onizlemeOzeti: string;
+  kalemler: Array<{
+    claimItemId: string;
+    kalemTuru: string;
+    aciklama: string | null;
+    paraBirimi: string;
+    tutar: number;
+    tahsilEdilen: number;
+    ortakKalan: number;
+    oncekiTur: ClaimLiabilityKindDTO;
+    oncekiSecimSurumu: number | null;
+    sonrakiTur: ClaimLiabilityKindDTO | null;
+    girdiHatalari: Array<{ kod: string; caseDebtorId: string | null }>;
+    engeller: Array<{ kod: string; debtorId: string | null; borcluAdi: string | null; tutar: number | null; sinir: number | null }>;
+    borclular: Array<{
+      caseDebtorId: string;
+      debtorId: string;
+      ad: string;
+      borcluHesabinaMahsup: number;
+      oncekiKalanSorumluluk: number | null;
+      sonrakiKalanSorumluluk: number | null;
+      sonrakiPay: number | null;
+      sonrakiTavan: number | null;
+      sonrakiSinirsiz: boolean;
+    }>;
+    degisiklikYok: boolean;
+  }>;
+  aciklamalar: Record<string, string>;
+}
+
+export interface ClaimLiabilityHistoryDTO {
+  surumler: Array<{
+    id: string;
+    claimItemId: string;
+    surum: number;
+    tur: ClaimLiabilityKindDTO;
+    durum: "ACTIVE" | "SUPERSEDED";
+    tavanKapsami: "ITEM_AMOUNT" | null;
+    dayanak: string | null;
+    dayanakNotu: string | null;
+    kararZamani: string;
+    onayTalebiId: string | null;
+    uygulamaTuru: string;
+    kapanmaZamani: string | null;
+    taraflar: Array<{ caseDebtorId: string; ad: string; payAgirligi: number | null; tavan: number | null; sinirsiz: boolean }>;
+  }>;
 }
 
 /** K3-L — bekletilen mahsup tamamlama yanıtı (replayed=true: aynı borçluyla tekrar; yeni kayıt üretilmedi). */
@@ -6026,6 +6206,18 @@ export interface PaymentPreviewRequestDTO {
   currency?: string;
   paymentMethod?: string;
   caseDebtorId?: string;
+  /** Seçimlik sorumluluk: haciz / icra dairesi kaynağında sınırı aşan ödeme kayıttan önce engel olarak gösterilir. */
+  channel?: string;
+  sourceType?: string;
+}
+
+/** Seçimlik sorumluluk — önizlemede borçlu kapasitesi ve aşan tutarın akıbeti (sunucu hesabı). */
+export interface PaymentPreviewLiabilityDTO {
+  shareOrCapBound: boolean;
+  debtorCapacityAmount: number;
+  excessAmount: number;
+  excessHandling: "DEBTOR_OVERPAYMENT_HELD" | "ALLOCATION_HELD_LIMIT_EXCEEDED" | null;
+  refundCommandsAvailable: false;
 }
 
 export type PaymentPreviewDistributionSource =
@@ -6075,6 +6267,8 @@ export interface PaymentPreviewResponseDTO {
       clientName?: string;
     }>;
   };
+  /** Yalnız dosyada etkin sorumluluk seçimi varsa döner. */
+  liability?: PaymentPreviewLiabilityDTO;
 }
 
 export interface CreateCollectionDTO {

@@ -287,6 +287,7 @@ export class ClaimItemService {
     const existing = await this.findOne(tenantId, id);
     assertInvoiceClaimItemTypeTransitionAllowed(existing, dto.itemType);
     this.assertUpdateInvariants(existing, dto);
+    await this.assertNoActiveLiabilitySelectionForLegacyPatch(tenantId, id, patch);
     const currentSnapshot = this.snapshotClaimItem(existing);
     const proposedPatch = this.omitServerDerivedInterestFields(
       patch,
@@ -1283,6 +1284,33 @@ export class ClaimItemService {
       throw new BadRequestException({
         code: 'UNSUPPORTED_COMPONENT',
         message: 'Claim component is not supported.',
+      });
+    }
+  }
+
+  /**
+   * Seçimlik sorumluluk (karar günlüğü 2026-11-15): etkin sorumluluk seçimi olan kalemde `isAllDebtorsLiable` /
+   * `liableDebtorIds` eski yoldan DEĞİŞTİRİLEMEZ — bu alanlar seçimin izdüşümüdür; doğrudan yama seçimle çelişen bir
+   * mahsup kapsamı üretirdi. Sorumluluk yalnız sorumluluk seçimi işlemiyle değişir.
+   */
+  private async assertNoActiveLiabilitySelectionForLegacyPatch(
+    tenantId: string,
+    claimItemId: string,
+    patch: ClaimItemPatch,
+  ): Promise<void> {
+    const touchesLiability =
+      Object.prototype.hasOwnProperty.call(patch, 'isAllDebtorsLiable') ||
+      Object.prototype.hasOwnProperty.call(patch, 'liableDebtorIds');
+    if (!touchesLiability) return;
+    const activeSelection = await this.prisma.claimItemLiabilitySet.findFirst({
+      where: { claimItemId, tenantId, status: 'ACTIVE' },
+      select: { id: true },
+    });
+    if (activeSelection) {
+      throw new ConflictException({
+        code: 'CLAIM_ITEM_LIABILITY_SELECTION_ACTIVE',
+        message:
+          'Bu kalemde etkin borçlu sorumluluğu seçimi var; sorumluluk alanları yalnız sorumluluk seçimi işlemiyle değiştirilebilir.',
       });
     }
   }
