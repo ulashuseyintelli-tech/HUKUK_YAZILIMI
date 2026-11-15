@@ -81,6 +81,20 @@ interface PartyForm {
 
 const emptyParty = (selected = false): PartyForm => ({ selected, percent: "", limit: "", unlimited: false });
 
+/**
+ * Kayıtlı pay ağırlığını okunur biçimde yazar. Ağırlıklar oranı saklar (ör. %60 → 6000 / 10000); ham sayı kullanıcıya
+ * bir şey söylemez. Oran iki ondalıkla TAM ifade edilebiliyorsa yüzde, edilemiyorsa (ör. üçte bir) kesir yazılır —
+ * yuvarlanmış bir yüzde gösterilmez. Yalnız gösterimdir; pay tutarı sunucuda hesaplanır.
+ */
+export function formatShare(weight: number, totalWeight: number): string {
+  if (!(totalWeight > 0) || !(weight >= 0)) return String(weight);
+  const basisPoints = weight * 10000;
+  if (basisPoints % totalWeight === 0) {
+    return `%${(basisPoints / totalWeight / 100).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+  return `${weight} / ${totalWeight}`;
+}
+
 export function ClaimLiabilitySelectionDrawer({
   caseId,
   state,
@@ -201,8 +215,13 @@ export function ClaimLiabilitySelectionDrawer({
     setBusy("request");
     setError(null);
     try {
-      await api.requestClaimLiability(caseId, { selections, onizlemeOzeti: preview.onizlemeOzeti });
-      onRequested("Borçlu sorumluluğu seçimi onaya gönderildi. Seçim, onaylandığında uygulanır; o zamana kadar hesap değişmez.");
+      const result = await api.requestClaimLiability(caseId, { selections, onizlemeOzeti: preview.onizlemeOzeti });
+      const skipped = result.atlananKalemler?.length ?? 0;
+      onRequested(
+        skipped > 0
+          ? `Borçlu sorumluluğu seçimi ${result.uygulanacakKalemSayisi ?? selections.length - skipped} kalem için onaya gönderildi; ${skipped} kalem zaten aynı seçimde olduğu için atlandı. Seçim, onaylandığında uygulanır; o zamana kadar hesap değişmez.`
+          : "Borçlu sorumluluğu seçimi onaya gönderildi. Seçim, onaylandığında uygulanır; o zamana kadar hesap değişmez.",
+      );
     } catch (err) {
       setError(toActionErrorMessage(err, "Seçim onaya gönderilemedi."));
     } finally {
@@ -333,7 +352,9 @@ export function ClaimLiabilitySelectionDrawer({
                         <input
                           aria-label={`${debtor.ad} tavan`}
                           data-testid={`claim-liability-limit-${debtor.caseDebtorId}`}
-                          value={form.limit}
+                          // "Tavan yok" işaretliyken kutu BOŞ görünür: eski rakam "tavan yok" ile yan yana durup
+                          // yanıltmasın. Yazılan değer saklanır; işaret kaldırılırsa geri gelir. Sunucuya gitmez.
+                          value={form.unlimited ? "" : form.limit}
                           disabled={form.unlimited}
                           onChange={(e) => updateParty(debtor.caseDebtorId, { limit: e.target.value })}
                           placeholder="Tavan"
@@ -427,7 +448,14 @@ export function ClaimLiabilitySelectionDrawer({
                     {engel.sinir !== null ? ` / sınır ${fmt(engel.sinir, kalem.paraBirimi)}` : ""}.
                   </p>
                 ))}
-                {kalem.degisiklikYok && <p className="text-amber-800">Seçim mevcut durumla aynı; değişiklik yok.</p>}
+                {kalem.degisiklikYok && (
+                  <p data-testid="claim-liability-no-change" className="text-amber-800">
+                    {/* Toplu uygulamada değişmeyen kalem engel değildir: talebe girmez, öteki kalemler gönderilir. */}
+                    {preview.uygulanabilir
+                      ? "Seçim mevcut durumla aynı; bu kalem atlanır (talebe girmez)."
+                      : "Seçim mevcut durumla aynı; değişiklik yok."}
+                  </p>
+                )}
                 {kalem.borclular.length > 0 && (
                   <table className="w-full text-left">
                     <thead>
@@ -478,6 +506,16 @@ export function ClaimLiabilitySelectionDrawer({
             {busy === "request" ? "Gönderiliyor…" : "Onaya gönder"}
           </button>
         </div>
+        {/* Yalnız toplu uygulamada: tek kalemde "değişiklik yok" satırı zaten yeterlidir. */}
+        {preview && preview.uygulamaTuru === "BULK" && (preview.atlananKalemSayisi ?? 0) > 0 && (
+          <p data-testid="claim-liability-skip-summary" className="text-xs text-amber-800">
+            {preview.uygulanabilir
+              ? `${preview.uygulanacakKalemSayisi ?? 0} kalem onaya gönderilecek; ${preview.atlananKalemSayisi} kalem zaten aynı seçimde olduğu için atlanacak.`
+              : (preview.uygulanacakKalemSayisi ?? 0) === 0
+                ? "Seçilen kalemlerin hepsi zaten bu seçimde; gönderilecek değişiklik yok."
+                : `${preview.atlananKalemSayisi} kalem zaten aynı seçimde; öteki kalemlerdeki sorun giderilmeden talep gönderilemez.`}
+          </p>
+        )}
 
         {!bulk && history && history.surumler.length > 0 && (
           <div data-testid="claim-liability-history" className="space-y-1 border-t pt-3 text-xs">
@@ -496,7 +534,10 @@ export function ClaimLiabilitySelectionDrawer({
                       {surum.taraflar
                         .map((taraf) =>
                           taraf.payAgirligi !== null
-                            ? `${taraf.ad} (ağırlık ${taraf.payAgirligi})`
+                            ? `${taraf.ad} (pay ${formatShare(
+                                taraf.payAgirligi,
+                                surum.taraflar.reduce((sum, other) => sum + (other.payAgirligi ?? 0), 0),
+                              )})`
                             : taraf.sinirsiz
                               ? `${taraf.ad} (tavan yok)`
                               : taraf.tavan !== null

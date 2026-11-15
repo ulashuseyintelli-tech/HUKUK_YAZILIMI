@@ -613,8 +613,10 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
                 <p className="font-medium">Dağıtım önizlemesi</p>
                 {previewResult.distributionPreview.status === "BLOCKED" ? (
                   <p className="mt-1 text-amber-800" data-testid="collection-preview-distribution-blocked">
-                    Mahsup bekletileceği için dağıtım önerilmez; hesabına ödeme yapılan borçlu girilip mahsup
-                    tamamlandıktan sonra dağıtım yapılabilir.
+                    {previewResult.liability?.excessHandling === "ALLOCATION_HELD_LIMIT_EXCEEDED"
+                      ? // Borçlu ZATEN seçili: bekletmenin nedeni borçlunun girilmemesi değil, sorumluluğun aşılmasıdır.
+                        "Mahsup bekletileceği için dağıtım önerilmez; ödeme seçilen borçlunun sorumluluğunu aştığı için bu kaynakta mahsup yapılmaz. Borçlunun sorumluluğu yeterli olduğunda bekletilen tahsilat borçlu hesabına mahsup edilebilir."
+                      : "Mahsup bekletileceği için dağıtım önerilmez; hesabına ödeme yapılan borçlu girilip mahsup tamamlandıktan sonra dağıtım yapılabilir."}
                   </p>
                 ) : previewResult.distributionPreview.requiresClientSelection ? (
                   <p className="mt-1 text-amber-800">Çoklu alacaklı dosyada dağıtım için alacaklı seçimi gerekir.</p>

@@ -32,6 +32,7 @@ const apiMock = vi.hoisted(() => ({
 vi.mock("@/lib/api", () => ({ api: apiMock }));
 
 import { ClaimItemPanel } from "../ClaimItemPanel";
+import { formatShare } from "../ClaimLiabilitySelectionDrawer";
 import { DebtorLedgerBalanceCard } from "../../debtor/DebtorLedgerBalanceCard";
 import { CollectionModal } from "../../finance/CollectionModal";
 
@@ -200,6 +201,58 @@ describe("AT-26 kalem paneli ve seçim çekmecesi", () => {
     expect(screen.queryByTestId("claim-liability-drawer")).toBeNull();
   });
 
+  it("geçmişte pay okunur yazılır (yüzde ya da kesir; ham ağırlık DEĞİL); 'Tavan yok' işaretliyken tavan kutusu boş görünür ve gönderilmez", async () => {
+    panelYanitlari(true);
+    const surum = (over: Record<string, unknown>) => ({
+      claimItemId: "k1", tur: "PAYLI", tavanKapsami: null, dayanak: "CONTRACT", dayanakNotu: null, onayTalebiId: "a1", uygulamaTuru: "SINGLE", kapanmaZamani: null, ...over,
+    });
+    const taraf = (n: number, payAgirligi: number) => ({ caseDebtorId: `cd-${n}`, ad: `Sentetik Borçlu ${n}`, payAgirligi, tavan: null, sinirsiz: false });
+    apiMock.getClaimLiabilityHistory.mockResolvedValue({
+      surumler: [
+        surum({ id: "s2", surum: 2, durum: "ACTIVE", kararZamani: "2026-03-03T09:00:00.000Z", taraflar: [taraf(1, 6000), taraf(2, 4000)] }),
+        surum({ id: "s1", surum: 1, durum: "SUPERSEDED", kararZamani: "2026-03-01T09:00:00.000Z", taraflar: [taraf(1, 1), taraf(2, 1), taraf(3, 1)] }),
+      ],
+    });
+    apiMock.previewClaimLiability.mockResolvedValue(previewYaniti(true));
+    render(<ClaimItemPanel caseId="case-1" />);
+    fireEvent.click(await screen.findByTestId("claim-item-liability-select-k1"));
+    const historyText = (await screen.findByTestId("claim-liability-history")).textContent ?? "";
+    expect(historyText).toContain("Sentetik Borçlu 1 (pay %60,00)");
+    expect(historyText).toContain("Sentetik Borçlu 2 (pay %40,00)");
+    // Üçte bir iki ondalıkla tam yazılamaz: yuvarlanmış yüzde yerine kesir.
+    expect(historyText).toContain("Sentetik Borçlu 3 (pay 1 / 3)");
+    expect(historyText).not.toContain("ağırlık");
+
+    fireEvent.click(screen.getByTestId("claim-liability-mode-CAPPED"));
+    fireEvent.click(screen.getByTestId("claim-liability-party-cd-1"));
+    fireEvent.click(screen.getByTestId("claim-liability-party-cd-2"));
+    const limit2 = () => screen.getByTestId("claim-liability-limit-cd-2") as HTMLInputElement;
+    fireEvent.change(screen.getByTestId("claim-liability-limit-cd-1"), { target: { value: "2000" } });
+    fireEvent.change(limit2(), { target: { value: "3000" } });
+    fireEvent.click(screen.getByTestId("claim-liability-unlimited-cd-2"));
+    expect(limit2().disabled).toBe(true);
+    expect(limit2().value).toBe("");
+    fireEvent.change(screen.getByTestId("claim-liability-basis"), { target: { value: "COURT_JUDGMENT" } });
+    fireEvent.click(screen.getByTestId("claim-liability-preview-button"));
+    await screen.findByTestId("claim-liability-preview");
+    expect(apiMock.previewClaimLiability).toHaveBeenLastCalledWith("case-1", [
+      expect.objectContaining({ claimItemId: "k1", mode: "CAPPED", parties: [{ caseDebtorId: "cd-1", limitAmount: "2000" }, { caseDebtorId: "cd-2", unlimited: true }] }),
+    ]);
+    // İşaret kaldırılınca yazılan değer geri gelir (kaybolmaz).
+    fireEvent.click(screen.getByTestId("claim-liability-unlimited-cd-2"));
+    expect(limit2().disabled).toBe(false);
+    expect(limit2().value).toBe("3000");
+  });
+
+  it("formatShare: tam ifade edilebilen oran yüzde, edilemeyen kesir; geçersiz toplamda ham değer", () => {
+    expect(formatShare(6000, 10000)).toBe("%60,00");
+    expect(formatShare(1, 2)).toBe("%50,00");
+    expect(formatShare(1, 8)).toBe("%12,50");
+    expect(formatShare(1, 3)).toBe("1 / 3");
+    expect(formatShare(2, 3)).toBe("2 / 3");
+    expect(formatShare(5, 0)).toBe("5");
+  });
+
   it("engel varsa işlem DURUR: engel açıkça yazılır, onaya gönder kapalı kalır", async () => {
     panelYanitlari(true);
     apiMock.previewClaimLiability.mockResolvedValue(
@@ -236,6 +289,92 @@ describe("AT-26 kalem paneli ve seçim çekmecesi", () => {
     // İki etkin kalem tek istekte
     expect(apiMock.previewClaimLiability.mock.calls[0][1].map((s: { claimItemId: string }) => s.claimItemId)).toEqual(["k1", "k2"]);
     expect(apiMock.previewClaimLiability.mock.calls[0][1][0]).toMatchObject({ mode: "JOINT_AND_SEVERAL", basis: "COURT_JUDGMENT", parties: [{ caseDebtorId: "cd-1" }, { caseDebtorId: "cd-2" }] });
+  });
+
+  it("toplu uygulamada etkin seçimiyle aynı olan kalem ATLANIR: düğme açık kalır, hangi kalemin atlanacağı ve kaç kalemin gönderileceği yazar", async () => {
+    panelYanitlari(true);
+    const base = previewYaniti(true).kalemler[0];
+    apiMock.previewClaimLiability.mockResolvedValue({
+      ...previewYaniti(true),
+      uygulamaTuru: "BULK",
+      uygulanabilir: true,
+      uygulanacakKalemSayisi: 1,
+      atlananKalemSayisi: 1,
+      kalemler: [
+        { ...base, claimItemId: "k1", aciklama: "Sentetik anapara", oncekiTur: "MUTESELSIL", sonrakiTur: "MUTESELSIL", degisiklikYok: true },
+        { ...base, claimItemId: "k2", aciklama: "Sentetik masraf", oncekiTur: "BELIRLENMEDI", sonrakiTur: "MUTESELSIL", degisiklikYok: false },
+      ],
+    });
+    apiMock.requestClaimLiability.mockResolvedValue({
+      applied: false, approvalRequired: true, approvalRequestId: "a9", status: "PENDING_APPROVAL", uygulanacakKalemSayisi: 1, atlananKalemler: ["k1"],
+    });
+    render(<ClaimItemPanel caseId="case-1" />);
+    fireEvent.click(await screen.findByTestId("claim-liability-bulk-joint-button"));
+    fireEvent.change(await screen.findByTestId("claim-liability-basis"), { target: { value: "COURT_JUDGMENT" } });
+    fireEvent.click(screen.getByTestId("claim-liability-preview-button"));
+    await screen.findByTestId("claim-liability-preview");
+    expect(screen.getAllByTestId("claim-liability-no-change").map((node) => node.textContent)).toEqual([
+      "Seçim mevcut durumla aynı; bu kalem atlanır (talebe girmez).",
+    ]);
+    expect(screen.getByTestId("claim-liability-skip-summary").textContent).toBe(
+      "1 kalem onaya gönderilecek; 1 kalem zaten aynı seçimde olduğu için atlanacak.",
+    );
+    const requestButton = screen.getByTestId("claim-liability-request-button") as HTMLButtonElement;
+    expect(requestButton.disabled).toBe(false);
+    fireEvent.click(requestButton);
+    await waitFor(() => expect(apiMock.requestClaimLiability).toHaveBeenCalledTimes(1));
+    // İstemci kalem ayıklamaz: önizlenen seçimlerin tamamı gider, atlamayı sunucu yapar.
+    expect(apiMock.requestClaimLiability.mock.calls[0][1].selections.map((row: { claimItemId: string }) => row.claimItemId)).toEqual(["k1", "k2"]);
+    const notice = (await screen.findByTestId("claim-liability-notice")).textContent ?? "";
+    expect(notice).toContain("1 kalem için onaya gönderildi");
+    expect(notice).toContain("1 kalem zaten aynı seçimde olduğu için atlandı");
+  });
+
+  it("toplu uygulamada bütün kalemler zaten aynı seçimdeyse talep gönderilemez ve nedeni yazar; tek kalemde özet satırı çizilmez", async () => {
+    panelYanitlari(true);
+    const base = previewYaniti(true).kalemler[0];
+    apiMock.previewClaimLiability.mockResolvedValueOnce({
+      ...previewYaniti(false),
+      uygulamaTuru: "BULK",
+      uygulanacakKalemSayisi: 0,
+      atlananKalemSayisi: 2,
+      kalemler: [
+        { ...base, claimItemId: "k1", oncekiTur: "MUTESELSIL", sonrakiTur: "MUTESELSIL", degisiklikYok: true },
+        { ...base, claimItemId: "k2", aciklama: "Sentetik masraf", oncekiTur: "MUTESELSIL", sonrakiTur: "MUTESELSIL", degisiklikYok: true },
+      ],
+    });
+    const { unmount } = render(<ClaimItemPanel caseId="case-1" />);
+    fireEvent.click(await screen.findByTestId("claim-liability-bulk-joint-button"));
+    fireEvent.change(await screen.findByTestId("claim-liability-basis"), { target: { value: "COURT_JUDGMENT" } });
+    fireEvent.click(screen.getByTestId("claim-liability-preview-button"));
+    await screen.findByTestId("claim-liability-preview");
+    expect(screen.getAllByTestId("claim-liability-no-change").map((node) => node.textContent)).toEqual([
+      "Seçim mevcut durumla aynı; değişiklik yok.",
+      "Seçim mevcut durumla aynı; değişiklik yok.",
+    ]);
+    expect(screen.getByTestId("claim-liability-skip-summary").textContent).toBe("Seçilen kalemlerin hepsi zaten bu seçimde; gönderilecek değişiklik yok.");
+    expect((screen.getByTestId("claim-liability-request-button") as HTMLButtonElement).disabled).toBe(true);
+    unmount();
+
+    // Tek kalem: "değişiklik yok" satırı yeter; özet satırı yok.
+    panelYanitlari(true);
+    apiMock.previewClaimLiability.mockResolvedValueOnce({
+      ...previewYaniti(false),
+      uygulanacakKalemSayisi: 0,
+      atlananKalemSayisi: 1,
+      kalemler: [{ ...base, oncekiTur: "MUTESELSIL", sonrakiTur: "MUTESELSIL", degisiklikYok: true }],
+    });
+    render(<ClaimItemPanel caseId="case-1" />);
+    fireEvent.click(await screen.findByTestId("claim-item-liability-select-k1"));
+    fireEvent.click(await screen.findByTestId("claim-liability-mode-JOINT_AND_SEVERAL"));
+    fireEvent.click(screen.getByTestId("claim-liability-party-cd-1"));
+    fireEvent.click(screen.getByTestId("claim-liability-party-cd-2"));
+    fireEvent.change(screen.getByTestId("claim-liability-basis"), { target: { value: "CONTRACT" } });
+    fireEvent.click(screen.getByTestId("claim-liability-preview-button"));
+    await screen.findByTestId("claim-liability-preview");
+    expect(screen.getByTestId("claim-liability-no-change").textContent).toBe("Seçim mevcut durumla aynı; değişiklik yok.");
+    expect(screen.queryByTestId("claim-liability-skip-summary")).toBeNull();
+    expect((screen.getByTestId("claim-liability-request-button") as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("tutarla sınırlı seçilince tavanın yalnız kalem tutarını kapsadığı açıkça yazar; 'kefalet' sözcüğü kullanılmaz", async () => {
@@ -367,5 +506,33 @@ describe("AT-17 tahsilat formu önizlemesi", () => {
     expect((await screen.findByTestId("collection-preview-liability-held")).textContent).toContain("tamamı mahsup bekletilir");
     expect(screen.getByText(/Haciz \/ icra dairesi kaynaklı bu ödeme seçilen borçlunun sorumluluğunu aşıyor/)).toBeTruthy();
     expect(apiMock.createCollection).not.toHaveBeenCalled();
+  });
+
+  it("dağıtım notu bekletmenin NEDENİNE göre yazar: sorumluluk aşımında 'borçlu girilip' demez; borçlu belirtilmemişse eski metin sürer", async () => {
+    // Sorumluluk aşımı (borçlu zaten seçili) — sunucu dağıtımı engelli döner.
+    apiMock.previewCasePayment.mockResolvedValueOnce({
+      ...onizleme({ excessHandling: "ALLOCATION_HELD_LIMIT_EXCEEDED" }, { wouldAccept: false, blockingReasons: ["LIABILITY_LIMIT_EXCEEDED_RESTRICTED_SOURCE"] }),
+      distributionPreview: { status: "BLOCKED", source: "UNKNOWN", requiresClientSelection: false, lines: [] },
+    });
+    // Borçlu belirtilmemiş bekletme — sorumluluk bilgisi yok.
+    apiMock.previewCasePayment.mockResolvedValueOnce({
+      ...onizleme({}, { warnings: ["ALLOCATION_HELD_ON_BEHALF_DEBTOR_REQUIRED"] }),
+      liability: undefined,
+      distributionPreview: { status: "BLOCKED", source: "UNKNOWN", requiresClientSelection: false, lines: [] },
+    });
+    render(<CollectionModal isOpen onClose={vi.fn()} caseId="case-1" onSuccess={vi.fn()} debtors={debtors} />);
+    fireEvent.change(screen.getByPlaceholderText("0.00"), { target: { value: "900" } });
+    fireEvent.change(screen.getByTestId("collection-payer-select"), { target: { value: "cd-1" } });
+    fireEvent.click(screen.getByRole("button", { name: /Önizle/ }));
+    const limitNote = (await screen.findByTestId("collection-preview-distribution-blocked")).textContent ?? "";
+    expect(limitNote).toContain("seçilen borçlunun sorumluluğunu aştığı için");
+    expect(limitNote).toContain("borçlu hesabına mahsup edilebilir");
+    expect(limitNote).not.toContain("borçlu girilip");
+
+    fireEvent.change(screen.getByTestId("collection-payer-select"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /Önizle/ }));
+    await waitFor(() =>
+      expect(screen.getByTestId("collection-preview-distribution-blocked").textContent).toContain("hesabına ödeme yapılan borçlu girilip"),
+    );
   });
 });
