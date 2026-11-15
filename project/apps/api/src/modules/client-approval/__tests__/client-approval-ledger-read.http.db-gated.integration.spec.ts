@@ -197,9 +197,10 @@ dbDescribe('6a staff-attributed approval ledger — real Nest HTTP and disposabl
 
     it('event failure rolls back the real status write and prevents notification', async () => {
       const row = await pending();
-      jest.spyOn(service as any, 'writeEvent').mockRejectedValueOnce(new Error('synthetic event-store failure'));
+      const eventWrite = jest.spyOn(service as any, 'writeEvent').mockRejectedValueOnce(new Error('synthetic event-store failure'));
       await request(app.getHttpServer()).post(`/client-approvals/${row.id}/decision`)
         .set('x-test-actor', lawyer).send({ decision: 'APPROVE' }).expect(500);
+      expect(eventWrite).toHaveBeenCalledTimes(1);
       expect(await db.clientApprovalRequest.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ status: 'SENT', decision: null, decidedAt: null });
       expect(await db.clientApprovalEvent.count({ where: { approvalRequestId: row.id } })).toBe(0);
       expect(dispatcher.dispatch).not.toHaveBeenCalled();
