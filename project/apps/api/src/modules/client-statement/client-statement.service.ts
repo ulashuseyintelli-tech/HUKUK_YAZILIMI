@@ -297,12 +297,17 @@ export class ClientStatementService {
       }, snap.lines);
 
       await tx.clientStatement.update({
-        where: { id: old.id },
+        where: { id: old.id, tenantId, status: ClientStatementStatus.ACTIVE },
         data: {
           status: ClientStatementStatus.SUPERSEDED,
           supersededById: fresh.id,
           supersededAt: new Date(),
         },
+      }).catch((error: unknown) => {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+          throw new ConflictException('Ekstre başka bir işlem tarafından değiştirildi. Kaydı yenileyin.');
+        }
+        throw error;
       });
 
       // Q5: supersede audit (aynı tx). Yalnız verilen old.id SUPERSEDED olur; entityId=old.id.
@@ -358,13 +363,18 @@ export class ClientStatementService {
     }
     await this.prisma.$transaction(async (tx) => {
       await tx.clientStatement.update({
-        where: { id },
+        where: { id, tenantId, status: ClientStatementStatus.ACTIVE },
         data: {
           status: ClientStatementStatus.VOID,
           voidedAt: new Date(),
           voidedById: userId,
           voidNote: note ?? null,
         },
+      }).catch((error: unknown) => {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+          throw new ConflictException('Ekstre başka bir işlem tarafından değiştirildi. Kaydı yenileyin.');
+        }
+        throw error;
       });
       // Q5: void audit (aynı tx; hata yutmaz).
       await this.audit.logInTransaction(tx, {

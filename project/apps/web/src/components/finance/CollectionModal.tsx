@@ -316,7 +316,12 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+      {/* Önizleme (özellikle borçlu sorumluluğu kutusu) pencereyi ekran yüksekliğinin üstüne çıkarabilir;
+          pencere kendi içinde kayar ki "Ekle" / "İptal" düğmeleri her ekran yüksekliğinde erişilebilir kalsın. */}
+      <div
+        className="relative bg-white rounded-lg shadow-xl w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto"
+        data-testid="collection-modal-panel"
+      >
         <div className="flex items-center justify-between px-4 py-3 border-b">
           <h3 className="text-sm font-semibold text-gray-900">
             {collection ? "Ödeme Düzenle" : "Yeni Ödeme"}

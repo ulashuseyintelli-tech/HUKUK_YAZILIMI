@@ -245,7 +245,9 @@ describeWithDisposableDb('Seçimlik borçlu sorumluluğu — seçim, onay ve ge�
     await expect(approvals.approve(approvalRequestId, f.requesterUserId)).rejects.toThrow();
     expect(await sets(f)).toEqual([]);
 
-    await approvals.approve(approvalRequestId, f.approverUserId);
+    const decisionResult = await approvals.approve(approvalRequestId, f.approverUserId);
+    // Onay yanıtı, alan eşitlemesi SONRASI kaydı taşır: aynı işlemde uygulanan seçim "çalışmadı" görünmez.
+    expect(decisionResult).toMatchObject({ status: OfficeApprovalStatus.APPROVED, executionStatus: OfficeApprovalExecutionStatus.SUCCEEDED });
     const executed = await prisma.officeApprovalRequest.findUniqueOrThrow({ where: { id: approvalRequestId } });
     expect(executed).toMatchObject({ status: OfficeApprovalStatus.APPROVED, executionStatus: OfficeApprovalExecutionStatus.SUCCEEDED });
     const written = await sets(f);

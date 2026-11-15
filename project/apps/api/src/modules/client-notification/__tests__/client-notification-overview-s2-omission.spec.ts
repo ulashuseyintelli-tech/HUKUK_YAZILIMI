@@ -25,6 +25,7 @@ describe("getNotificationOverview — S2 turevi sizinti yok", () => {
       getSmtpSettings: jest.fn().mockResolvedValue({ smtpHost: "smtp.x", smtpUser: "u" }),
       getSmsSettings: jest.fn().mockResolvedValue({ smsProvider: null }),
       getGreetingSettings: jest.fn().mockResolvedValue({ autoGreetingEnabled: false, autoGreetingTime: null }),
+      getPoaExpirySettings: jest.fn().mockResolvedValue({ poaExpiryNotificationEnabled: false, poaExpiryRecipientLawyerIds: MANAGER_IDS }),
       getEscalationSettings: jest.fn().mockResolvedValue({
         opReminderDays: 3,
         opFounderDays: 6,

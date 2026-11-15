@@ -50,7 +50,8 @@ describeDb('CL-R07 monthly PDF safe retry and reconciliation (real HTTP / dispos
   const mail = jest.fn();
   const office = { getFullSmtpSettings: jest.fn(async () => configured ? { smtpHost: 'smtp.example.test', smtpUser: 'disposable@example.test', smtpPass: 'test-only' } : {}),
     getOfficeIdentity: jest.fn(async () => ({ name: 'CI CL-R07' })), getSmtpSettings: async () => ({ smtpHost: 'smtp.example.test' }),
-    getSmsSettings: async () => ({}), getGreetingSettings: async () => ({}), getEscalationSettings: async () => ({}) };
+    getSmsSettings: async () => ({}), getGreetingSettings: async () => ({}), getEscalationSettings: async () => ({}),
+    getPoaExpirySettings: async () => ({ poaExpiryNotificationEnabled: false }) };
   const saved = process.env.CLIENT_STATEMENT_MONTHLY_DELIVERY;
 
   beforeAll(async () => {

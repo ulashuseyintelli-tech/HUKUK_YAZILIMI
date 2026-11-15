@@ -194,6 +194,92 @@ describeWithDisposableDb('Ekstre kaynak para birimi sınırı (HTTP + disposable
     expect(await statementDocumentCounts(prisma, tenant.tenantId)).toEqual(before);
   }
 
+  describe('same-statement terminal concurrency — CL-R03', () => {
+    const JULY = { periodStart: '2026-07-01T00:00:00.000Z', periodEnd: '2026-07-31T23:59:59.000Z' };
+    const AUGUST = { periodStart: '2026-08-01T00:00:00.000Z', periodEnd: '2026-08-31T23:59:59.000Z' };
+
+    function alignStatementReads(id: string) {
+      const real = prisma.clientStatement.findFirst.bind(prisma.clientStatement);
+      let arrivals = 0; let release!: () => void;
+      const ready = new Promise<void>(resolve => { release = resolve; });
+      const timer = setTimeout(release, 5_000);
+      const spy = jest.spyOn(prisma.clientStatement, 'findFirst').mockImplementation((async (args: any) => {
+        const row = await real(args);
+        if (args.where?.id === id && args.select?.status) {
+          arrivals++; if (arrivals === 2) { clearTimeout(timer); release(); }
+          await ready;
+        }
+        return row;
+      }) as any);
+      return { finish() { clearTimeout(timer); spy.mockRestore(); expect(arrivals).toBe(2); } };
+    }
+
+    async function financialSources(caseId: string) {
+      return {
+        ledger: await prisma.balanceLedger.findMany({ where: { caseBalance: { caseId } }, orderBy: { id: 'asc' } }),
+        payouts: await prisma.clientPayout.findMany({ where: { caseId }, orderBy: { id: 'asc' } }),
+        dispositions: await prisma.collectionDisposition.findMany({ where: { caseId }, orderBy: { id: 'asc' } }),
+        delivery: await prisma.clientStatementDeliveryLedger.findMany({ where: { tenantId: t1.tenantId }, orderBy: { id: 'asc' } }),
+      };
+    }
+
+    it.each([
+      ['supersede', 'supersede'], ['void', 'void'], ['void', 'supersede'],
+    ] as const)('%s versus %s preserves one terminal audit and rolls back a losing snapshot', async (a, b) => {
+      const f = await setup(`terminal-race-${a}-${b}`); await seedTryRows(f);
+      const created = await caseStatement(f); expect(created.status).toBe(201);
+      const id = created.body.id;
+      const original = await prisma.clientStatement.findUniqueOrThrow({ where: { id }, include: { lines: true } });
+      const sources = await financialSources(f.caseId);
+      dispatcher.dispatch.mockClear();
+      const barrier = alignStatementReads(id);
+      const responses = await Promise.all([
+        post(`/client-statements/${id}/${a}`, a === 'supersede' ? JULY : { note: 'Void A' }),
+        post(`/client-statements/${id}/${b}`, b === 'supersede' ? AUGUST : { note: 'Void B' }),
+      ]);
+      barrier.finish();
+      expect(responses.map(r => r.status).sort()).toEqual([201, 409]);
+      const stored = await prisma.clientStatement.findUniqueOrThrow({ where: { id }, include: { lines: true } });
+      expect(stored).toMatchObject({ openingBalance: original.openingBalance, closingBalance: original.closingBalance, currency: original.currency, periodStart: original.periodStart, periodEnd: original.periodEnd, note: original.note, lines: original.lines });
+      const rows = await prisma.clientStatement.findMany({ where: { caseId: f.caseId } });
+      if (stored.status === 'SUPERSEDED') {
+        expect(rows).toHaveLength(2);
+        expect(rows.find(r => r.id === stored.supersededById)).toMatchObject({ status: 'ACTIVE', currency: 'TRY', openingBalance: original.closingBalance, closingBalance: original.closingBalance });
+      } else {
+        expect(stored.status).toBe('VOID'); expect(rows).toHaveLength(1);
+      }
+      const audits = await prisma.auditLog.findMany({ where: { entityId: id, action: { in: ['CLIENT_STATEMENT_VOIDED', 'CLIENT_STATEMENT_SUPERSEDED'] } } });
+      expect(audits).toHaveLength(1);
+      expect(audits[0]).toMatchObject({ action: stored.status === 'VOID' ? 'CLIENT_STATEMENT_VOIDED' : 'CLIENT_STATEMENT_SUPERSEDED', userId: t1.userId });
+      expect(await financialSources(f.caseId)).toEqual(sources);
+      expect(dispatcher.dispatch).not.toHaveBeenCalled();
+      const after = await statementDocumentCounts(prisma, t1.tenantId);
+      await post(`/client-statements/${id}/void`, {}).expect(400);
+      expect(await statementDocumentCounts(prisma, t1.tenantId)).toEqual(after);
+    });
+
+    it.each(['void', 'supersede'] as const)('%s audit failure rolls back actual lifecycle, snapshot and audit writes', async action => {
+      const f = await setup(`terminal-rollback-${action}`); await seedTryRows(f);
+      const created = await caseStatement(f); expect(created.status).toBe(201);
+      const original = await prisma.clientStatement.findUniqueOrThrow({ where: { id: created.body.id }, include: { lines: true } });
+      const before = await statementDocumentCounts(prisma, t1.tenantId);
+      const sources = await financialSources(f.caseId);
+      const audit = app.get(AuditService); const real = audit.logInTransaction.bind(audit); let reached = false;
+      const spy = jest.spyOn(audit, 'logInTransaction').mockImplementationOnce(async (tx, input) => {
+        await real(tx, input); reached = true; throw new Error('synthetic after-audit failure');
+      });
+      dispatcher.dispatch.mockClear();
+      try {
+        await post(`/client-statements/${created.body.id}/${action}`, action === 'supersede' ? JULY : {}).expect(500);
+        expect(reached).toBe(true); expect(spy).toHaveBeenCalledTimes(1);
+        expect(await statementDocumentCounts(prisma, t1.tenantId)).toEqual(before);
+        expect(await prisma.clientStatement.findUniqueOrThrow({ where: { id: created.body.id }, include: { lines: true } })).toEqual(original);
+        expect(await financialSources(f.caseId)).toEqual(sources);
+        expect(dispatcher.dispatch).not.toHaveBeenCalled();
+      } finally { spy.mockRestore(); }
+    });
+  });
+
   describe('CL-R08 — dosya oluşturma, e-posta gönderimi değildir', () => {
     it.each([true, false])('özel hazır şablonu aktif=%s: HTTP 201 + snapshot/audit var; gönderim ve teslim kaydı yok', async (isActive) => {
       const f = await setup(`clr08-template-${isActive}`);

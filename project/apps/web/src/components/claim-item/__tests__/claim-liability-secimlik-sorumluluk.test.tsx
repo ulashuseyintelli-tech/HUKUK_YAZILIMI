@@ -126,6 +126,24 @@ describe("AT-26 kalem paneli ve seçim çekmecesi", () => {
     expect(screen.queryByTestId("claim-item-liability-select-k1")).toBeNull();
   });
 
+  it("dosya sayfasındaki kullanım (salt okunur + düzenleme kipi): kalem ekleme gizli kalır ama seçim girişi GÖRÜNÜR ve çekmece açılır", async () => {
+    // Dosya sayfası paneli `readOnly metadataEdit` ile kullanır. Seçim onaya giden bir taleptir; düzenleme kipine bağlıdır.
+    panelYanitlari(true);
+    render(<ClaimItemPanel caseId="case-1" readOnly metadataEdit />);
+    await waitFor(() => expect(screen.getByTestId("claim-item-liability-select-k1")).toBeTruthy());
+    expect(screen.getByTestId("claim-liability-bulk-actions")).toBeTruthy();
+    expect(screen.queryByText("Ana Para Ekle")).toBeNull();
+    fireEvent.click(screen.getByTestId("claim-item-liability-select-k1"));
+    expect(await screen.findByTestId("claim-liability-drawer")).toBeTruthy();
+    // Bayrak kapalıysa aynı kipte de giriş yoktur
+    cleanup();
+    panelYanitlari(false);
+    render(<ClaimItemPanel caseId="case-1" readOnly metadataEdit />);
+    await waitFor(() => expect(screen.getByTestId("claim-item-liability-k1")).toBeTruthy());
+    expect(screen.queryByTestId("claim-item-liability-select-k1")).toBeNull();
+    expect(screen.queryByTestId("claim-liability-bulk-actions")).toBeNull();
+  });
+
   it("sorumluluk durumu okunamazsa panel aynen çalışır (etiket gösterilmez)", async () => {
     panelYanitlari(true);
     apiMock.getCaseClaimLiability.mockRejectedValue(new Error("404"));
@@ -329,6 +347,11 @@ describe("AT-17 tahsilat formu önizlemesi", () => {
     expect(excess).toContain("400,00 TRY");
     expect(excess).toContain("başka borçluya aktarılmaz");
     expect(excess).toContain("İade ve başka borca mahsup komutları bu sürümde yoktur");
+    // Sorumluluk kutusu pencereyi uzatır: pencere kendi içinde kaymazsa "Ekle" / "İptal" ekran dışında kalır.
+    const panel = screen.getByTestId("collection-modal-panel");
+    expect(panel.className).toContain("max-h-[90vh]");
+    expect(panel.className).toContain("overflow-y-auto");
+    expect(panel.contains(screen.getByRole("button", { name: "Ekle" }))).toBe(true);
     expect(apiMock.previewCasePayment.mock.calls[1][1]).toMatchObject({ caseDebtorId: "cd-1", channel: expect.any(String) });
     expect(apiMock.createCollection).not.toHaveBeenCalled();
   });
