@@ -203,6 +203,19 @@ interface LedgerAllocationComputation {
   excludedOutstanding: number;
 }
 
+/** Yazımdan önce hesaplanan dağıtım planı (ledger / kalem yazımı YOK). */
+type AllocationPlan =
+  | { noItems: true }
+  | {
+      noItems: false;
+      caseRecord: { currency?: string | null };
+      liabilityScope: Awaited<ReturnType<typeof resolveCaseLiabilityAllocationScope>>;
+      allocations: Array<{ claimItemId: string; amount: number; allocationOrder: number }>;
+      diagnostics: LedgerAllocationDiagnostic[];
+      excludedOutstanding: number;
+      allocatorMode: AllocationAuthorityEvidence['allocatorMode'];
+    };
+
 function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
@@ -605,10 +618,18 @@ export class SummaryEngineService implements OnModuleInit {
        * tamamını bekletir (eski yola düşülmez, sorumluluk sınırı aşılmaz).
        */
       liabilityExcessAllowed?: boolean;
+      /**
+       * Borçlu belirtilmiş ya da haciz / icra dairesi kaynaklı ödeme (PaymentDesignation / COL/OD-19 açık): paylı /
+       * tutarla sınırlı seçim bağı YOKSA mahsup edilemeyen kalan tutar kalıcı bir fazla ödeme ya da bekletme kaydına
+       * ALINAMAZ. true iken kalan tutar varsa defter YAZILMADAN durulur ({ allocated:false, reason:'UNRECONCILED_REMAINDER' });
+       * çağıran işlemi geri alır (elle girilen ödeme) ya da tahsilatın tamamını bekletir (dış kaynaklı gerçek tahsilat).
+       * Yazım öncesi karardır: kısmi PAYMENT / mahsup bırakılmaz. Varsayılan false → mevcut davranış.
+       */
+      refuseUnreconcilableRemainder?: boolean;
     } = {},
   ): Promise<{
     allocated: boolean;
-    reason?: 'NO_CLAIM_ITEMS' | 'LEDGER_DISABLED' | 'LIABILITY_LIMIT_EXCEEDED';
+    reason?: 'NO_CLAIM_ITEMS' | 'LEDGER_DISABLED' | 'LIABILITY_LIMIT_EXCEEDED' | 'UNRECONCILED_REMAINDER';
     ledgerEntry: any | null;
     allocations: any[];
     diagnostics: LedgerAllocationDiagnostic[];
@@ -619,6 +640,11 @@ export class SummaryEngineService implements OnModuleInit {
     liability?: {
       /** Etkin paylı / tutarla sınırlı kalem var ve ödeme bir borçlu hesabına: dar istisna + eksiksiz uzlaştırma. */
       shareOrCapBound: boolean;
+      plannedAllocatedAmount: number;
+      excessAmount: number;
+    };
+    /** reason = 'UNRECONCILED_REMAINDER': mevcut kurallarla mahsup edilebilen tutar ve kalıcı kaydı olmayan kalan tutar. */
+    unreconciled?: {
       plannedAllocatedAmount: number;
       excessAmount: number;
     };
@@ -640,23 +666,10 @@ export class SummaryEngineService implements OnModuleInit {
       };
     }
 
-    // Dosya ve aktif kalemleri getir (çağıranın tx'i ile)
-    const caseRecord = await tx.case.findFirst({
-      where: { id: caseId, tenantId },
-      include: {
-        claimItems: {
-          where: { status: 'ACTIVE' },
-          orderBy: { sortOrder: 'asc' },
-        },
-      },
-    });
-
-    if (!caseRecord) {
-      throw new Error('Dosya bulunamadı');
-    }
-
-    const items = caseRecord.claimItems;
-    if (items.length === 0) {
+    // Dosya, aktif kalemler, sorumluluk kapsamı ve dağıtım planı — yazımdan ÖNCE, çağıranın tx'i ile. Önizleme
+    // (`planPaymentAllocation`) AYNI planı kullanır: ikinci bir kapasite hesabı yoktur.
+    const plan = await this.computeAllocationPlan(tx, tenantId, caseId, amount, options);
+    if (plan.noItems) {
       // S5(i): mahsup edilecek kalem yok → ledger YAZMA, diagnostic döndür.
       return {
         allocated: false,
@@ -673,47 +686,7 @@ export class SummaryEngineService implements OnModuleInit {
         },
       };
     }
-
-    // Seçimlik sorumluluk: dosyada etkin seçim varsa kapsam ve kapasite seçim kaydından çözülür; yoksa (null) mevcut
-    // K3-L kuralı AYNEN uygulanır (hesabına ödeme yapılan borçluya göre kapsam; kısıtlı kalem yoksa girdi aynen).
-    const liabilityScope = await resolveCaseLiabilityAllocationScope(tx, {
-      tenantId,
-      caseId,
-      activeItems: items,
-      onBehalfCaseDebtorId: options.onBehalfCaseDebtorId ?? null,
-    });
-    let payerScopedItems: typeof items;
-    if (!liabilityScope) {
-      payerScopedItems = scopeItemsToPayer(items, options.onBehalfDebtorId);
-    } else {
-      // Savunma katmanı: tahsilat yolu mahsubu önceden bekletir; buraya bekletme nedeniyle gelinmemelidir.
-      if (liabilityScope.scope.holdReason) throw new PayerLiabilityScopeError(liabilityScope.scope.holdReason);
-      // "Kalan = borçlunun kapasitesi" görünümü; dağıtıcı ve sıra (masraf → fer'i → faiz → anapara) DEĞİŞMEZ.
-      payerScopedItems = buildCapacityViewItems(items, liabilityScope.scope.capacityByItem) as unknown as typeof items;
-    }
-
-    let allocations: Array<{ claimItemId: string; amount: number; allocationOrder: number }> = [];
-    let diagnostics: LedgerAllocationDiagnostic[] = [];
-    let excludedOutstanding = 0;
-    const allocatorMode: AllocationAuthorityEvidence['allocatorMode'] =
-      this.tbk100Allocator ? 'TBK100' : 'LEGACY';
-    // TBK 100 Allocator varsa kullan (TEK KAYNAK). Sıra = allocator'ın mevcut hâli (PR-AO ayrı).
-    if (this.tbk100Allocator) {
-      const computation = this.allocateWithTBK100(payerScopedItems, amount);
-      allocations = computation.allocations;
-      diagnostics = computation.diagnostics;
-      excludedOutstanding = computation.excludedOutstanding;
-    } else {
-      // Legacy fallback (deprecated)
-      this.logger.warn('⚠️ Using legacy allocation order. Inject TBK100AllocatorService for correct TBK 100.');
-      allocations = this.allocateLegacy(payerScopedItems, amount);
-      diagnostics.push({
-        code: 'LEGACY_ALLOCATOR_ACTIVE',
-        reason: 'LEGACY_ALLOCATOR_FALLBACK',
-        amount,
-        message: 'Legacy allocation fallback is active; allocator disposition remains deferred under DA-4.',
-      });
-    }
+    const { caseRecord, liabilityScope, allocations, diagnostics, excludedOutstanding, allocatorMode } = plan;
 
     // Seçimlik sorumluluk — yazımdan ÖNCE: paylı / tutarla sınırlı dosyada borçlunun kapasitesini aşan tutar ya borçlu
     // atıflı fazla ödeme olarak ayrılabilmeli ya da ödeme HİÇ mahsup edilmemelidir. Ayrılamıyorsa (haciz / icra dairesi
@@ -742,6 +715,29 @@ export class SummaryEngineService implements OnModuleInit {
           unsafeForOverpayment: excludedOutstanding > 0,
           authorityEvidence: { allocatorMode, runtimePersisted: null, ledgerCollectedAmount: null },
           liability: liabilityOutcome,
+        };
+      }
+    }
+
+    // Seçim bağı (paylı / tutarla sınırlı + borçlu hesabı) OLMAYAN dosyada kalan tutar kalıcı bir fazla ödeme ya da
+    // bekletme kaydına alınamıyorsa (borçlu belirtilmiş / haciz - icra dairesi kaynağı; PaymentDesignation, COL/OD-19 açık)
+    // defter YAZILMADAN durulur. Eski yol önce PAYMENT + kısmi mahsup yazıp kalan tutarı yalnız tanı olayıyla bırakıyordu
+    // (tahsilat ≠ mahsup + fazla ödeme + bekletilen). Çağıran: elle girilen ödemeyi reddeder, dış kaynaklı gerçek
+    // tahsilatı bekletir.
+    if (options.refuseUnreconcilableRemainder === true && !liabilityScope?.scope.shareOrCapBound) {
+      const plannedKurus = allocations.reduce((sum, allocation) => sum + toKurus(allocation.amount), 0n);
+      const excessKurus = toKurus(amount) - plannedKurus;
+      if (excessKurus > 0n) {
+        return {
+          allocated: false,
+          reason: 'UNRECONCILED_REMAINDER',
+          ledgerEntry: null,
+          allocations: [],
+          diagnostics,
+          excludedOutstanding,
+          unsafeForOverpayment: excludedOutstanding > 0,
+          authorityEvidence: { allocatorMode, runtimePersisted: null, ledgerCollectedAmount: null },
+          unreconciled: { plannedAllocatedAmount: fromKurus(plannedKurus), excessAmount: fromKurus(excessKurus) },
         };
       }
     }
@@ -850,6 +846,131 @@ export class SummaryEngineService implements OnModuleInit {
         ledgerCollectedAmount,
       },
       ...(liabilityOutcome ? { liability: liabilityOutcome } : {}),
+    };
+  }
+
+  /**
+   * Dağıtım PLANI (SALT OKUMA): dosya + etkin kalemler + sorumluluk kapsamı + TBK 100 dağıtımı. Ledger / kalem
+   * yazımı YOKTUR. `allocatePaymentToLedgerInTx` yazımdan önce bu planı kullanır; `planPaymentAllocation` (önizleme)
+   * AYNI plan üzerinden çalışır.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - SummaryEngineService.allocatePaymentToLedgerInTx() → yazımdan önce plan
+   * - SummaryEngineService.planPaymentAllocation() → önizleme
+   * </remarks>
+   */
+  private async computeAllocationPlan(
+    db: Prisma.TransactionClient,
+    tenantId: string,
+    caseId: string,
+    amount: number,
+    options: { onBehalfDebtorId?: string | null; onBehalfCaseDebtorId?: string | null },
+  ): Promise<AllocationPlan> {
+    // Dosya ve aktif kalemleri getir (çağıranın bağlantısı ile)
+    const caseRecord = await db.case.findFirst({
+      where: { id: caseId, tenantId },
+      include: {
+        claimItems: {
+          where: { status: 'ACTIVE' },
+          orderBy: { sortOrder: 'asc' },
+        },
+      },
+    });
+
+    if (!caseRecord) {
+      throw new Error('Dosya bulunamadı');
+    }
+
+    const items = caseRecord.claimItems;
+    if (items.length === 0) return { noItems: true };
+
+    // Seçimlik sorumluluk: dosyada etkin seçim varsa kapsam ve kapasite seçim kaydından çözülür; yoksa (null) mevcut
+    // K3-L kuralı AYNEN uygulanır (hesabına ödeme yapılan borçluya göre kapsam; kısıtlı kalem yoksa girdi aynen).
+    const liabilityScope = await resolveCaseLiabilityAllocationScope(db, {
+      tenantId,
+      caseId,
+      activeItems: items,
+      onBehalfCaseDebtorId: options.onBehalfCaseDebtorId ?? null,
+    });
+    let payerScopedItems: typeof items;
+    if (!liabilityScope) {
+      payerScopedItems = scopeItemsToPayer(items, options.onBehalfDebtorId);
+    } else {
+      // Savunma katmanı: tahsilat yolu mahsubu önceden bekletir; buraya bekletme nedeniyle gelinmemelidir.
+      if (liabilityScope.scope.holdReason) throw new PayerLiabilityScopeError(liabilityScope.scope.holdReason);
+      // "Kalan = borçlunun kapasitesi" görünümü; dağıtıcı ve sıra (masraf → fer'i → faiz → anapara) DEĞİŞMEZ.
+      payerScopedItems = buildCapacityViewItems(items, liabilityScope.scope.capacityByItem) as unknown as typeof items;
+    }
+
+    let allocations: Array<{ claimItemId: string; amount: number; allocationOrder: number }> = [];
+    let diagnostics: LedgerAllocationDiagnostic[] = [];
+    let excludedOutstanding = 0;
+    const allocatorMode: AllocationAuthorityEvidence['allocatorMode'] =
+      this.tbk100Allocator ? 'TBK100' : 'LEGACY';
+    // TBK 100 Allocator varsa kullan (TEK KAYNAK). Sıra = allocator'ın mevcut hâli (PR-AO ayrı).
+    if (this.tbk100Allocator) {
+      const computation = this.allocateWithTBK100(payerScopedItems, amount);
+      allocations = computation.allocations;
+      diagnostics = computation.diagnostics;
+      excludedOutstanding = computation.excludedOutstanding;
+    } else {
+      // Legacy fallback (deprecated)
+      this.logger.warn('⚠️ Using legacy allocation order. Inject TBK100AllocatorService for correct TBK 100.');
+      allocations = this.allocateLegacy(payerScopedItems, amount);
+      diagnostics.push({
+        code: 'LEGACY_ALLOCATOR_ACTIVE',
+        reason: 'LEGACY_ALLOCATOR_FALLBACK',
+        amount,
+        message: 'Legacy allocation fallback is active; allocator disposition remains deferred under DA-4.',
+      });
+    }
+
+    return { noItems: false, caseRecord, liabilityScope, allocations, diagnostics, excludedOutstanding, allocatorMode };
+  }
+
+  /**
+   * Ödeme önizlemesi için SALT OKUMA dağıtım planı: bu ödeme mevcut kurallarla ne kadar mahsup edilebilir, kaç TL
+   * kalır? `allocatePaymentToLedgerInTx` ile AYNI plan (aynı kalemler, aynı kapsam, aynı dağıtıcı); hiçbir yazma yok.
+   * Plan, işlem anındaki yeniden denetimin yerine geçmez: sunucu kararı yazım anında, dosya kilidi altında verilir.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CasePaymentPreviewService.preview() → seçimsiz dosyada borçlu belirtilmiş / haciz - icra dairesi kaynaklı ödeme
+   * </remarks>
+   */
+  async planPaymentAllocation(
+    db: Prisma.TransactionClient,
+    tenantId: string,
+    caseId: string,
+    amount: number,
+    options: { onBehalfDebtorId?: string | null; onBehalfCaseDebtorId?: string | null } = {},
+  ): Promise<{
+    /** false → defter mahsubu kapalı (kural dosyası); sunucu bu ödemeyi mahsup etmez, engel üretmez. */
+    ledgerAllocationEnabled: boolean;
+    hasClaimItems: boolean;
+    /** Etkin paylı / tutarla sınırlı kalem var ve ödeme bir borçlu hesabına (dar istisna yolu). */
+    selectionBound: boolean;
+    plannedAllocatedAmount: number;
+    excessAmount: number;
+    excludedOutstanding: number;
+  }> {
+    if (!this.rules?.ledger_allocation?.enabled) {
+      return { ledgerAllocationEnabled: false, hasClaimItems: false, selectionBound: false, plannedAllocatedAmount: 0, excessAmount: 0, excludedOutstanding: 0 };
+    }
+    const plan = await this.computeAllocationPlan(db, tenantId, caseId, amount, options);
+    if (plan.noItems) {
+      return { ledgerAllocationEnabled: true, hasClaimItems: false, selectionBound: false, plannedAllocatedAmount: 0, excessAmount: 0, excludedOutstanding: 0 };
+    }
+    const plannedKurus = plan.allocations.reduce((sum, allocation) => sum + toKurus(allocation.amount), 0n);
+    const excessKurus = toKurus(amount) - plannedKurus;
+    return {
+      ledgerAllocationEnabled: true,
+      hasClaimItems: true,
+      selectionBound: Boolean(plan.liabilityScope?.scope.shareOrCapBound),
+      plannedAllocatedAmount: fromKurus(plannedKurus),
+      excessAmount: fromKurus(excessKurus > 0n ? excessKurus : 0n),
+      excludedOutstanding: plan.excludedOutstanding,
     };
   }
 

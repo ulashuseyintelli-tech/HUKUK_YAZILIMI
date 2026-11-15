@@ -53,6 +53,23 @@ export interface PaymentPreviewLiabilityDto {
   refundCommandsAvailable: false;
 }
 
+/**
+ * Seçim bağı (paylı / tutarla sınırlı) OLMAYAN dosyada borçlu belirtilmiş ya da haciz / icra dairesi kaynaklı ödeme
+ * mevcut kurallarla tamamen mahsup edilemiyor ve aşan tutar kalıcı bir fazla ödeme / bekletme kaydına alınamıyor
+ * (PaymentDesignation, COL/OD-19 açık). Sunucu aynı koşulu kayıt anında dosya kilidi altında YENİDEN denetler.
+ */
+export interface PaymentPreviewRemainderDto {
+  /** Mevcut kurallarla (aynı kalemler, aynı kapsam, aynı dağıtıcı) mahsup edilebilen tutar. */
+  allocatableAmount: number;
+  /** Mahsup edilemeyen ve kalıcı kayda alınamayan tutar. */
+  excessAmount: number;
+  /**
+   *  - REJECTED: elle girilen ödeme işlem kesinleşmeden reddedilir (hiçbir mali kayıt oluşmaz);
+   *  - ALLOCATION_HELD: haricî kaynaklı gerçekleşmiş tahsilat reddedilmez, kaydedilir ve TAMAMI mahsup bekletilir.
+   */
+  handling: "REJECTED" | "ALLOCATION_HELD";
+}
+
 export type PaymentPreviewDistributionSource =
   | "SINGLE_CASE_CLIENT"
   | "CASE_CREDITOR_CLUSTER"
@@ -105,4 +122,6 @@ export interface PaymentPreviewResponseDto {
   };
   /** Yalnız dosyada etkin sorumluluk seçimi varsa döner. */
   liability?: PaymentPreviewLiabilityDto;
+  /** Yalnız ödeme mevcut kurallarla tamamen mahsup edilemiyor ve aşan tutar kalıcı kayda alınamıyorsa döner. */
+  remainder?: PaymentPreviewRemainderDto;
 }

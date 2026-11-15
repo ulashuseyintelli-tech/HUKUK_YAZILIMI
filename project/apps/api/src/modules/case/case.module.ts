@@ -20,6 +20,8 @@ import { CasePaymentPreviewService } from "./case-payment-preview.service";
 // WP-4d-1: warn-only diagnostic audit (PERMISSION_WOULD_DENY) için.
 import { PermissionDiagnosticsModule } from "../permission-diagnostics/permission-diagnostics.module";
 import { ClaimItemModule } from "../claim-item/claim-item.module";
+// Ödeme önizlemesi: kayıt yolundaki dağıtım planı (SummaryEngineService.planPaymentAllocation; salt okuma).
+import { SummaryEngineModule } from "../summary-engine/summary-engine.module";
 import { OfficeApprovalModule } from "../office-approval/office-approval.module";
 // F02 P3-D1 / P3-D2: dosya görünüm kapsamı — tek uygulama noktası CaseViewScopeService (`office.cases.view_all`).
 import { CaseViewScopeModule } from "./case-view-scope.module";
@@ -40,6 +42,7 @@ import { CaseViewScopeModule } from "./case-view-scope.module";
     LawyerModule,
     DebtorModule,
     ClaimItemModule,
+    SummaryEngineModule,
     // K2: dosya avukatı/personel yetki verme kapısı (F01 yazma kuralı) — OfficeApprovalService.
     OfficeApprovalModule,
     CaseViewScopeModule,

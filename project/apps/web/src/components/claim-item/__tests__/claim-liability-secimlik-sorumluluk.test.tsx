@@ -535,4 +535,40 @@ describe("AT-17 tahsilat formu önizlemesi", () => {
       expect(screen.getByTestId("collection-preview-distribution-blocked").textContent).toContain("hesabına ödeme yapılan borçlu girilip"),
     );
   });
+
+  it("seçimsiz dosyada borçlu belirtilmiş ödeme mahsup edilebilen tutarı aşarsa: kayıttan ÖNCE açıklayıcı engel ve tutarlar yazar; kayıt çağrısı yapılmaz", async () => {
+    apiMock.previewCasePayment.mockResolvedValue({
+      ...onizleme({}, { wouldAccept: false, blockingReasons: ["DEBTOR_PAYMENT_EXCEEDS_ALLOCATABLE_NO_SELECTION"] }),
+      liability: undefined,
+      remainder: { allocatableAmount: 500, excessAmount: 400, handling: "REJECTED" },
+    });
+    render(<CollectionModal isOpen onClose={vi.fn()} caseId="case-1" onSuccess={vi.fn()} debtors={debtors} />);
+    fireEvent.change(screen.getByPlaceholderText("0.00"), { target: { value: "900" } });
+    fireEvent.change(screen.getByTestId("collection-payer-select"), { target: { value: "cd-1" } });
+    fireEvent.click(screen.getByRole("button", { name: /Önizle/ }));
+    const box = (await screen.findByTestId("collection-preview-remainder")).textContent ?? "";
+    expect(box).toContain("500,00 TRY");
+    expect(box).toContain("400,00 TRY");
+    expect((await screen.findByTestId("collection-preview-remainder-rejected")).textContent).toContain("kısmi tahsilat, mahsup ya da başka mali kayıt oluşmaz");
+    expect(screen.getByText(/paylı \/ tutarla sınırlı sorumluluk seçimi olmadığı için aşan tutar borçlu adına fazla ödeme olarak ayrılamaz/)).toBeTruthy();
+    expect(screen.queryByTestId("collection-preview-remainder-held")).toBeNull();
+    expect(apiMock.createCollection).not.toHaveBeenCalled();
+  });
+
+  it("haricî kaynaklı tahsilat aynı koşulda reddedilmez: kaydedilir ve tamamının mahsup bekletileceği önizlemede yazar", async () => {
+    apiMock.previewCasePayment.mockResolvedValue({
+      ...onizleme({}, { warnings: ["ALLOCATION_HELD_PAYMENT_EXCEEDS_ALLOCATABLE"] }),
+      liability: undefined,
+      remainder: { allocatableAmount: 500, excessAmount: 400, handling: "ALLOCATION_HELD" },
+      distributionPreview: { status: "BLOCKED", source: "UNKNOWN", requiresClientSelection: false, lines: [] },
+    });
+    render(<CollectionModal isOpen onClose={vi.fn()} caseId="case-1" onSuccess={vi.fn()} debtors={debtors} />);
+    fireEvent.change(screen.getByPlaceholderText("0.00"), { target: { value: "900" } });
+    fireEvent.change(screen.getByTestId("collection-payer-select"), { target: { value: "cd-1" } });
+    fireEvent.click(screen.getByRole("button", { name: /Önizle/ }));
+    expect((await screen.findByTestId("collection-preview-remainder-held")).textContent).toContain("TAMAMI mahsup bekletilir");
+    expect(screen.queryByTestId("collection-preview-remainder-rejected")).toBeNull();
+    expect(screen.getByTestId("collection-preview-distribution-blocked").textContent).toContain("mahsup edilebilen tutarı aştığı için");
+    expect(apiMock.createCollection).not.toHaveBeenCalled();
+  });
 });
