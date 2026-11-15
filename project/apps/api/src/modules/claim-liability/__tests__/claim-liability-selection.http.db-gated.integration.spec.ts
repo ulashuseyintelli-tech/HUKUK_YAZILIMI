@@ -285,6 +285,34 @@ describeWithDisposableDb('Seçimlik borçlu sorumluluğu — seçim, onay ve ge�
     expect(after.updatedAt.toISOString()).toBe(before.updatedAt.toISOString());
   });
 
+  it('önizlemenin "sonraki" türü onayda yazılacak izdüşümle hesaplanır: seçili türden belirlenmediye dönüş "BELIRLENMEDI" görünür ve onay sonrası gerçek durumla aynıdır', async () => {
+    const undetermined = (f: Fixture) => ({ claimItemId: f.k1, mode: 'UNDETERMINED' });
+
+    // Müteselsil seçimin izdüşümü: kısıtlı + sorumlu listesi. Önizleme bu ESKİ izdüşümü görüp "kayıttan kısıtlı" dememeli.
+    const f = await fixture('preview-after-joint');
+    await apply(f, [joint(f)]);
+    expect(await item(f.k1)).toMatchObject({ isAllDebtorsLiable: false });
+    const { preview: previewBody } = await apply(f, [undetermined(f)]);
+    expect(previewBody.kalemler[0]).toMatchObject({ oncekiTur: 'MUTESELSIL', sonrakiTur: 'BELIRLENMEDI', engeller: [], girdiHatalari: [] });
+    // Onaydan sonra oluşan gerçek durum, önizlemenin söylediğiyle aynı: izdüşüm (herkes, boş liste), etkin sürüm belirlenmedi.
+    expect(await item(f.k1)).toMatchObject({ isAllDebtorsLiable: true, liableDebtorIds: [] });
+    expect((await sets(f)).map((set) => [set.version, set.mode, set.status])).toEqual([
+      [1, 'JOINT_AND_SEVERAL', 'SUPERSEDED'],
+      [2, 'UNDETERMINED', 'ACTIVE'],
+    ]);
+    // Yeniden önizlemede "önceki" tür artık belirlenmedi: önizlemenin "sonraki" değeri ile sonraki okumanın "önceki" değeri tutarlı.
+    const again = await preview(f, [joint(f)]);
+    expect(again.body.kalemler[0]).toMatchObject({ oncekiTur: 'BELIRLENMEDI', sonrakiTur: 'MUTESELSIL' });
+
+    // Paylı seçimin izdüşümü: kısıtlı + BOŞ liste. Aynı kural.
+    const g = await fixture('preview-after-prop');
+    await apply(g, [proportional(g, [1, 1])]);
+    expect(await item(g.k1)).toMatchObject({ isAllDebtorsLiable: false, liableDebtorIds: [] });
+    const previewed = await preview(g, [undetermined(g)]);
+    expect(previewed.status).toBe(201);
+    expect(previewed.body.kalemler[0]).toMatchObject({ oncekiTur: 'PAYLI', sonrakiTur: 'BELIRLENMEDI', engeller: [] });
+  });
+
   it('AT-19 bayat önizleme: önizleme ile onay arasında tahsilat gelirse yürütme reddedilir; seçim yazılmaz', async () => {
     const f = await fixture('stale');
     const { approvalRequestId } = await ask(f, [proportional(f)]);
