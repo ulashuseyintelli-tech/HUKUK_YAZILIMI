@@ -7,7 +7,8 @@ jest.mock('../client/client-object-scope', () => ({
   isClientObjectInScope: jest.fn(async () => true),
 }));
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
 import { OfficeService } from '@/modules/office/office.service';
@@ -172,6 +173,26 @@ describe('ClientApprovalService', () => {
     it('cross-tenant kayıt görünmez (NotFound)', async () => {
       mockPrisma.clientApprovalRequest.findFirst.mockResolvedValue(null);
       await expect(service.send(TENANT, 'car-1', USER)).rejects.toThrow(NotFoundException);
+    });
+
+    it('a lost observed-state update returns 409 without an event or notification', async () => {
+      arm('SENT');
+      mockPrisma.clientApprovalRequest.update.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('synthetic lost transition', { code: 'P2025', clientVersion: Prisma.prismaVersion.client }),
+      );
+      await expect(service.decision(TENANT, 'car-1', USER, { decision: 'APPROVE' as any })).rejects.toThrow(ConflictException);
+      expect(mockPrisma.clientApprovalRequest.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'car-1', tenantId: TENANT, status: 'SENT' } }));
+      expect(mockPrisma.clientApprovalEvent.create).not.toHaveBeenCalled();
+      expect(mockDispatcher.dispatch).not.toHaveBeenCalled();
+    });
+
+    it('an unrelated database failure remains an error and produces no success event', async () => {
+      arm('DRAFT');
+      const error = new Error('synthetic storage failure');
+      mockPrisma.clientApprovalRequest.update.mockRejectedValueOnce(error);
+      await expect(service.send(TENANT, 'car-1', USER)).rejects.toBe(error);
+      expect(mockPrisma.clientApprovalEvent.create).not.toHaveBeenCalled();
+      expect(mockDispatcher.dispatch).not.toHaveBeenCalled();
     });
   });
 
