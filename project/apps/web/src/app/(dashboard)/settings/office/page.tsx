@@ -262,6 +262,8 @@ function OfficeSettingsInner() {
   const [testingSmtp, setTestingSmtp] = useState(false);
   const [testingSms, setTestingSms] = useState(false);
   const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [smtpSaveStatus, setSmtpSaveStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  useEffect(() => { setSmtpSaveStatus(null); }, [smtpForm]);
   const [smsTestResult, setSmsTestResult] = useState<{ status: "verified" | "unverified" | "error"; message: string } | null>(null);
   // ACT-12 (2026-07-05): "Bugün ne gidecek?" önizlemesi — backend GET /greetings/today zaten
   // mevcuttu (findTodayGreetings), FE hiç tüketmiyordu. null = henüz yüklenmedi (loading state).
@@ -563,12 +565,18 @@ function OfficeSettingsInner() {
   const handleSaveSmtp = async () => {
     if (writeBlocked("smtp")) return; // boş görünen alan "mevcut ayarı sil" niyeti DEĞİLDİR
     setSaving(true);
+    setSaved(false);
+    setSmtpSaveStatus(null);
+    setSmtpTestResult(null);
     try {
       const dataToSend = { ...smtpForm };
       if (!dataToSend.smtpPass) delete dataToSend.smtpPass; // Boşsa gönderme
       await api.put("/office/smtp-settings", dataToSend);
       showSaved();
-    } catch (e) { console.error(e); }
+      setSmtpSaveStatus({ ok: true, msg: "Kaydedildi" });
+    } catch (e) {
+      setSmtpSaveStatus({ ok: false, msg: isDeniedError(e) ? "SMTP ayarlarını kaydetme yetkiniz yok." : "SMTP ayarları kaydedilemedi." });
+    }
     finally { setSaving(false); }
   };
 
@@ -660,6 +668,7 @@ function OfficeSettingsInner() {
 
   const handleTestSmtp = async () => {
     setTestingSmtp(true);
+    setSmtpSaveStatus(null);
     setSmtpTestResult(null);
     try {
       const res = await api.post("/client-notifications/test-smtp");
@@ -1622,7 +1631,7 @@ function OfficeSettingsInner() {
         )}
         {drawerSection === "smtp" && (
         <div className="h-full flex flex-col bg-white">
-          <WorkbenchHeader title="SMTP" description="E-posta gönderim sunucusu" saving={saving} onSave={handleSaveSmtp} status={smtpTestResult ? { ok: smtpTestResult.success, msg: smtpTestResult.message } : null} />
+          <WorkbenchHeader title="SMTP" description="E-posta gönderim sunucusu" saving={saving} onSave={handleSaveSmtp} status={smtpSaveStatus ?? (smtpTestResult ? { ok: smtpTestResult.success, msg: smtpTestResult.message } : null)} />
           <div className="px-5 py-4">
             <SettingsSection title="E-POSTA (SMTP)" accent="teal">
               <div style={{ width: 280 }}>

@@ -456,20 +456,22 @@ export default function NotificationControlCenterPage() {
               </Link>
             </div>
           </div>
-          {engines.poa.status === 'ACTIVE' && engines.poa.poaExpiry && (
+          {(engines.poa.status === 'ACTIVE' || engines.poa.status === 'OFF') && engines.poa.poaExpiry && (
             <div className="rounded-xl border bg-white p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-100/70 shrink-0"><ShieldAlert className="h-4 w-4 text-emerald-600" /></span>
                   <div className="min-w-0">
                     <h2 className="text-[14px] font-semibold text-gray-900">Vekalet Süresi Uyarısı</h2>
-                    <p className="text-[11px] text-gray-500">Süresi yaklaşan vekaletler gerçek e-posta teslimat motoruyla gönderilir</p>
+                    <p className="text-[11px] text-gray-500">{engines.poa.status === 'OFF'
+                      ? engines.poa.reason === 'GLOBAL_DISABLED' ? 'Otomatik vekalet uyarıları sistemde kapalı.' : 'Otomatik vekalet uyarıları büro ayarında kapalı.'
+                      : 'Süresi yaklaşan vekaletler gerçek e-posta teslimat motoruyla gönderilir'}</p>
                   </div>
                 </div>
                 <Pill
-                  tone={engines.poa.poaExpiry.failed > 0 ? 'amber' : 'green'}
-                  icon={engines.poa.poaExpiry.failed > 0 ? AlertCircle : CheckCircle2}
-                  label={engines.poa.poaExpiry.failed > 0 ? 'Hata var' : 'Aktif motor'}
+                  tone={engines.poa.status === 'OFF' ? 'gray' : engines.poa.poaExpiry.failed > 0 ? 'amber' : 'green'}
+                  icon={engines.poa.status === 'OFF' ? Clock : engines.poa.poaExpiry.failed > 0 ? AlertCircle : CheckCircle2}
+                  label={engines.poa.status === 'OFF' ? 'Kapalı' : engines.poa.poaExpiry.failed > 0 ? 'Hata var' : 'Aktif motor'}
                 />
               </div>
               <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-[12.5px]">

@@ -308,11 +308,12 @@ export class ClientNotificationService {
     const since7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
     // Kanal/motor hazır-mı bilgisi (office getter'ları sırları zaten redakte eder)
-    const [smtp, sms, greeting, escalation] = await Promise.all([
+    const [smtp, sms, greeting, escalation, poaSettings] = await Promise.all([
       this.officeService.getSmtpSettings(tenantId),
       this.officeService.getSmsSettings(tenantId),
       this.officeService.getGreetingSettings(tenantId),
       this.officeService.getEscalationSettings(tenantId),
+      this.officeService.getPoaExpirySettings(tenantId),
     ]);
 
     const [cnStatusGroups, escDeliveryGroups, recentRows, failedRows] = await Promise.all([
@@ -497,6 +498,8 @@ export class ClientNotificationService {
     // (settings/office/page.tsx escAssignedCount === null) ve alanin gizli oldugu ayrica uyarilir.
     // Servis getter'i ve escalation motoru DEGISMEZ: gercek alici listeleri ic tuketicide kullanilmaya devam eder.
 
+    const poaGloballyEnabled = process.env.POA_EXPIRY_NOTIFICATION_ENABLED?.toLowerCase() === "true";
+    const poaEnabled = poaGloballyEnabled && poaSettings.poaExpiryNotificationEnabled;
     const engines = {
       greeting: {
         key: "greeting",
@@ -514,8 +517,8 @@ export class ClientNotificationService {
       },
       poa: {
         key: "poa",
-        status: "ACTIVE",
-        reason: "DELIVERY_WIRED",
+        status: poaEnabled ? "ACTIVE" : "OFF",
+        reason: !poaGloballyEnabled ? "GLOBAL_DISABLED" : !poaEnabled ? "OFFICE_DISABLED" : "DELIVERY_WIRED",
         poaExpiry,
       },
     };
