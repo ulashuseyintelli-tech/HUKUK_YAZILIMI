@@ -268,12 +268,42 @@ describeWithDisposableDb('Seçimlik borçlu sorumluluğu — tahsilat ve mahsup 
     expect(overpayment).toMatchObject({ status: 'HELD', caseDebtorId: f.b1.caseDebtorId });
     expect(Number(overpayment.amount)).toBe(600);
     expect(await assertCollectionsReconciled(f)).toBe(2);
+    // Kayıttan SONRA da görünür: borçlu bakiyesi okuması aşan tutarı YALNIZ atfedildiği borçluda gösterir; kalan değişmez.
+    const caseService = Object.assign(Object.create(CaseService.prototype), { prisma }) as CaseService;
+    const withOverpayment = await caseService.getDebtorLedgerBalances(f.tenantId, f.caseId);
+    const b1View = withOverpayment.borclular.find((b) => b.caseDebtorId === f.b1.caseDebtorId)!;
+    const b2View = withOverpayment.borclular.find((b) => b.caseDebtorId === f.b2.caseDebtorId)!;
+    expect(b1View.borcluAdinaFazlaOdeme).toEqual([{ paraBirimi: 'TRY', tutar: 600, tahsilatSayisi: 1 }]);
+    expect(b2View.borcluAdinaFazlaOdeme).toBeUndefined();
+    expect(withOverpayment.fazlaOdemeNotu).toContain('başka borçluya aktarılmaz');
+    expect(b1View.sorumlulukOzeti?.kesinSorumluluk.toplamlar).toEqual([{ paraBirimi: 'TRY', kalan: 0 }]);
+    expect(withOverpayment.dosyaKalani).toEqual([{ paraBirimi: 'TRY', kalan: 2600 }]);
 
     // Son tahsilatın iptali: borçlunun kapasitesi kendiliğinden geri gelir, aşan ödeme kaydı kapanır
     await cancel(f, (over as any).id);
     expect((await view(f)).K1).toMatchObject({ C: 1000, R: 8000, kalan: { B1: 5400, B2: 2600 }, A: { B2: 1000 } });
     expect(await prisma.collectionOverpayment.findUniqueOrThrow({ where: { collectionId: (over as any).id } })).toMatchObject({ status: 'REVERSED' });
+    // İptalle kapanan fazla ödeme artık gösterilmez.
+    const afterCancel = await caseService.getDebtorLedgerBalances(f.tenantId, f.caseId);
+    expect(afterCancel.borclular.every((b) => b.borcluAdinaFazlaOdeme === undefined)).toBe(true);
+    expect(afterCancel.fazlaOdemeNotu).toBeUndefined();
     await assertCollectionsReconciled(f);
+  });
+
+  it('borçlu adına fazla ödeme gösterimi: yalnız EMANETTEKİ (HELD) kayıt gösterilir; durumu değişmiş kayıt kalan tutarı olsa da gösterilmez', async () => {
+    const f = await fixture('overpay-view', [{ key: 'K1', itemType: 'PRINCIPAL', amount: 4000, sortOrder: 1 }]);
+    await select(f, 'K1', 'PROPORTIONAL', [{ ...f.b1, shareWeight: 1 }, { ...f.b2, shareWeight: 1 }]);
+    const over = await pay(f, 2300, f.b1.caseDebtorId); // 2.000 mahsup + 300 borçlu fazla ödemesi
+    const caseService = Object.assign(Object.create(CaseService.prototype), { prisma }) as CaseService;
+    const shown = async () =>
+      (await caseService.getDebtorLedgerBalances(f.tenantId, f.caseId)).borclular.map((row) => row.borcluAdinaFazlaOdeme ?? null);
+    expect(await shown()).toEqual([[{ paraBirimi: 'TRY', tutar: 300, tahsilatSayisi: 1 }], null]);
+
+    // Durum emanetten çıkarsa (ör. iade edildi) kalan tutar alanı ne olursa olsun gösterilmez.
+    await prisma.collectionOverpayment.update({ where: { collectionId: (over as any).id }, data: { status: 'REFUNDED' } });
+    expect(await shown()).toEqual([null, null]);
+    await prisma.collectionOverpayment.update({ where: { collectionId: (over as any).id }, data: { status: 'HELD' } });
+    expect(await shown()).toEqual([[{ paraBirimi: 'TRY', tutar: 300, tahsilatSayisi: 1 }], null]);
   });
 
   it('AT-10 tutarla sınırlı — tasarım Örnek 3: tavanlar aynı ortak borcun üzerine biner; tavanı aşan tutar ayrılır', async () => {
@@ -539,6 +569,15 @@ describeWithDisposableDb('Seçimlik borçlu sorumluluğu — tahsilat ve mahsup 
     const caseService = Object.assign(Object.create(CaseService.prototype), { prisma }) as CaseService;
     await expect(caseService.getDebtorLedgerBalances(b.tenantId, a.caseId)).rejects.toThrow('Dosya bulunamadı');
     await expect(caseService.getClaimLiabilityState(b.tenantId, a.caseId)).rejects.toThrow('Dosya bulunamadı');
+    // Borçlu adına fazla ödeme gösterimi de kiracı + dosya kapsamındadır: A'da yalnız B1'de 500,00; B'nin dosyasında yok.
+    const aBalances = await caseService.getDebtorLedgerBalances(a.tenantId, a.caseId);
+    expect(aBalances.borclular.map((row) => [row.caseDebtorId === a.b1.caseDebtorId ? 'B1' : 'B2', row.borcluAdinaFazlaOdeme ?? null])).toEqual([
+      ['B1', [{ paraBirimi: 'TRY', tutar: 500, tahsilatSayisi: 1 }]],
+      ['B2', null],
+    ]);
+    const bBalances = await caseService.getDebtorLedgerBalances(b.tenantId, b.caseId);
+    expect(bBalances.borclular.every((row) => row.borcluAdinaFazlaOdeme === undefined)).toBe(true);
+    expect(bBalances.fazlaOdemeNotu).toBeUndefined();
 
     // Veritabanı düzeyi: başka kiracının kalemine seçim yazılamaz (bileşik yabancı anahtar)
     await expect(

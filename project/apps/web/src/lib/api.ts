@@ -6084,12 +6084,19 @@ export interface DebtorLedgerBalanceResultDTO {
       };
       belirlenmemisOrtakKalan: CurrencyRemainingDTO[];
     };
+    /**
+     * Bu borçlu ADINA emanette tutulan fazla ödeme (sorumluluğu aşan, mahsup edilemeyen tutar). Yalnız varsa gelir;
+     * borçtan düşülmez ve `toplamlar` / kalan alanlarına girmez.
+     */
+    borcluAdinaFazlaOdeme?: Array<{ paraBirimi: string; tutar: number; tahsilatSayisi: number }>;
   }>;
   sorumlusuBulunamayanKalemler: DebtorLedgerItemLineDTO[];
   mahsubuBekleyenTahsilatlar?: Array<{ collectionId: string; tutar: number; paraBirimi: string; sebep: string }>;
   /** Dosya kalanı: kalemlerin ortak kalanından; borçlu rakamlarından TOPLANMAZ. */
   dosyaKalani?: CurrencyRemainingDTO[];
   sorumlulukNotu?: string;
+  /** Yalnız en az bir borçlu adına fazla ödeme varsa gelir. */
+  fazlaOdemeNotu?: string;
 }
 
 /** Seçimlik borçlu sorumluluğu — kalem başına durum (GET /cases/:id/claim-liability). */

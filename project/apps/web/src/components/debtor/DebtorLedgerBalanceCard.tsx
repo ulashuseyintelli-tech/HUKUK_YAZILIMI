@@ -212,6 +212,23 @@ export function DebtorLedgerBalanceCard({
               )}
             </div>
           )}
+          {own.borcluAdinaFazlaOdeme && own.borcluAdinaFazlaOdeme.length > 0 && (
+            // Kayıttan SONRA da görünür: sorumluluğu aşan ödeme borçtan düşülmez, borçlu adına ayrı izlenir. Tutar ve
+            // açıklama sunucudan gelir; istemci hesap yapmaz ve bu tutarı kalanlara eklemez / kalanlardan düşmez.
+            <div data-testid="debtor-ledger-overpayment" className="space-y-0.5 rounded border border-sky-200 bg-sky-50 p-1.5">
+              <div className="flex justify-between gap-2 text-[11px] font-medium text-sky-900">
+                <span>Bu borçlu adına izlenen fazla ödeme</span>
+                <span data-testid="debtor-ledger-overpayment-amount">
+                  {own.borcluAdinaFazlaOdeme
+                    .map((o) => `${fmt(o.tutar, o.paraBirimi)} (${o.tahsilatSayisi} tahsilat)`)
+                    .join(" + ")}
+                </span>
+              </div>
+              <p className="text-[10px] text-sky-900">
+                {data?.fazlaOdemeNotu ?? "Borçtan düşülmez; başka borçluya aktarılmaz."}
+              </p>
+            </div>
+          )}
           {held.length > 0 && (
             <div data-testid="debtor-ledger-held" className="space-y-1 rounded border border-amber-200 bg-amber-50 p-1.5">
               <p className="text-[10px] text-amber-800">
