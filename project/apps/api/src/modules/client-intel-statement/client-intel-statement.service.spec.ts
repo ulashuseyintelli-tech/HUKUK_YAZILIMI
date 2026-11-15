@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { ClientIntelStatementService } from './client-intel-statement.service';
 import { CreateClientIntelStatementDto } from './dto/client-intel-statement.dto';
@@ -32,6 +33,7 @@ describe('ClientIntelStatementService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockPrisma.clientIntelStatement.update.mockResolvedValue(undefined);
     mockOfficeApproval.isApproverEligible.mockResolvedValue(true);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -86,12 +88,28 @@ describe('ClientIntelStatementService', () => {
     const armActive = () =>
       mockPrisma.clientIntelStatement.findFirst.mockResolvedValue({ id: 'cis-1', status: 'ACTIVE', caseId: CASE, debtorId: DEBTOR, category: 'INCOME_SOURCE', label: 'L' });
 
+    it.each(['retract', 'falsePositive', 'supersede'] as const)('%s maps only its lost ACTIVE update to 409 without success audit', async method => {
+      armActive();
+      mockPrisma.clientIntelStatement.create.mockResolvedValue({ id: 'replacement' });
+      mockPrisma.clientIntelStatement.update.mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError('CAS lost', { code: 'P2025', clientVersion: '5.22.0' }));
+      const call = method === 'supersede' ? service.supersede(TENANT, 'cis-1', USER, { value: 'Replacement' }) : service[method](TENANT, 'cis-1', USER);
+      await expect(call).rejects.toThrow(ConflictException);
+      expect(mockAudit.logInTransaction).not.toHaveBeenCalled();
+    });
+
+    it('does not reinterpret an audit P2025 as a lifecycle conflict', async () => {
+      armActive();
+      const error = new Prisma.PrismaClientKnownRequestError('Audit failure', { code: 'P2025', clientVersion: '5.22.0' });
+      mockAudit.logInTransaction.mockRejectedValueOnce(error);
+      await expect(service.retract(TENANT, 'cis-1', USER)).rejects.toBe(error);
+    });
+
     it('retract: ACTIVE → RETRACTED (+damga)', async () => {
       armActive();
       mockPrisma.clientIntelStatement.update.mockResolvedValue({ id: 'cis-1', status: 'RETRACTED' });
       const res = await service.retract(TENANT, 'cis-1', USER, 'müvekkil geri aldı');
       expect(mockPrisma.clientIntelStatement.update).toHaveBeenCalledWith({
-        where: { id: 'cis-1' },
+        where: { id: 'cis-1', tenantId: TENANT, status: 'ACTIVE' },
         data: expect.objectContaining({ status: 'RETRACTED', revokedById: USER, lifecycleNote: 'müvekkil geri aldı' }),
       });
       expect(res.status).toBe('RETRACTED');
@@ -120,7 +138,7 @@ describe('ClientIntelStatementService', () => {
         expect.objectContaining({ data: expect.objectContaining({ value: 'Nakliyeci', category: 'INCOME_SOURCE', status: 'ACTIVE' }) }),
       );
       expect(mockPrisma.clientIntelStatement.update).toHaveBeenCalledWith({
-        where: { id: 'old-1' },
+        where: { id: 'old-1', tenantId: TENANT, status: 'ACTIVE' },
         data: expect.objectContaining({ status: 'SUPERSEDED', supersededById: 'new-1', supersededAt: expect.any(Date) }),
       });
       expect(res.id).toBe('new-1');

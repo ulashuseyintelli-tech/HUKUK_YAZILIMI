@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { ClientIntelStatus, Prisma } from '@prisma/client';
 import {
@@ -139,12 +139,17 @@ export class ClientIntelStatementService {
         },
       });
       await tx.clientIntelStatement.update({
-        where: { id: old.id },
+        where: { id: old.id, tenantId, status: ClientIntelStatus.ACTIVE },
         data: {
           status: ClientIntelStatus.SUPERSEDED,
           supersededById: fresh.id,
           supersededAt: new Date(),
         },
+      }).catch((error: unknown) => {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+          throw new ConflictException('Beyan başka bir işlem tarafından değiştirildi. Kaydı yenileyin.');
+        }
+        throw error;
       });
 
       await this.audit.logInTransaction(tx, {
@@ -224,13 +229,18 @@ export class ClientIntelStatementService {
 
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.clientIntelStatement.update({
-        where: { id },
+        where: { id, tenantId, status: ClientIntelStatus.ACTIVE },
         data: {
           status: to,
           revokedAt: new Date(),
           revokedById: userId,
           lifecycleNote: note ?? null,
         },
+      }).catch((error: unknown) => {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+          throw new ConflictException('Beyan başka bir işlem tarafından değiştirildi. Kaydı yenileyin.');
+        }
+        throw error;
       });
 
       await this.audit.logInTransaction(tx, {
