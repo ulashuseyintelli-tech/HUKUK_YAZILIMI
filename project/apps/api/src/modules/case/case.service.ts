@@ -5542,8 +5542,21 @@ export class CaseService {
       items: caseData.claimItems as unknown as DebtorLedgerItemRow[],
       always: true,
     });
+    // Borçlu ADINA emanette tutulan fazla ödemeler (sorumluluğu aşan, mahsup edilemeyen tutar). Yalnız gösterim:
+    // kalan / toplam hesabına girmez. Borçlu atfı olmayan (dosya düzeyi) fazla ödeme bu görünümün kapsamı değildir.
+    const debtorOverpayments = (
+      await this.prisma.collectionOverpayment.findMany({
+        where: { tenantId, caseId, status: "HELD", caseDebtorId: { not: null } },
+        select: { caseDebtorId: true, remainingAmount: true, currency: true },
+      })
+    ).map((row) => ({
+      caseDebtorId: String(row.caseDebtorId),
+      remainingAmount: row.remainingAmount,
+      currency: String(row.currency || "TRY"),
+    }));
     return buildDebtorLedgerBalances({
       heldCollections,
+      debtorOverpayments,
       caseDebtors: caseData.debtors.map((cd: any) => ({
         id: cd.id,
         debtorId: cd.debtorId,

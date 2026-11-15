@@ -116,6 +116,19 @@ export interface DebtorLedgerBalance {
    */
   readonly toplamDurumu?: 'HESAPLANDI' | 'BELIRLENEMEDI';
   readonly sorumlulukOzeti?: DebtorLedgerLiabilitySummary;
+  /**
+   * Bu borçlu ADINA izlenen (emanette) fazla ödeme — borçlunun sorumluluğunu aşan, mahsup edilemeyen tutar.
+   * Yalnız varsa gelir. Borçtan DÜŞÜLMEZ, başka borçluya aktarılmaz; kalan / toplam alanlarına GİRMEZ.
+   */
+  readonly borcluAdinaFazlaOdeme?: readonly DebtorLedgerHeldOverpayment[];
+}
+
+/** Borçlu adına emanette tutulan fazla ödeme (para birimi başına). */
+export interface DebtorLedgerHeldOverpayment {
+  readonly paraBirimi: string;
+  readonly tutar: number;
+  /** Bu tutarı oluşturan tahsilat sayısı. */
+  readonly tahsilatSayisi: number;
 }
 
 /** Kaydedilmiş ama otomatik mahsubu bekletilen tahsilat (kimse için kalandan DÜŞÜLMEMİŞTİR). */
@@ -136,7 +149,13 @@ export interface DebtorLedgerBalanceResult {
   /** Dosya kalanı: kalemlerin ortak kalanından; borçlu rakamları TOPLANMAZ. Yalnız sorumluluk bağlamı verildiyse. */
   readonly dosyaKalani?: readonly DebtorLedgerCurrencyRemaining[];
   readonly sorumlulukNotu?: string;
+  /** Yalnız en az bir etkin borçlu adına fazla ödeme varsa gelir. */
+  readonly fazlaOdemeNotu?: string;
 }
+
+const DEBTOR_OVERPAYMENT_NOTE =
+  'Borçlu adına izlenen fazla ödeme, borçlunun sorumluluğunu aşan ve mahsup edilemeyen tutardır: borçtan düşülmez, ' +
+  'başka borçluya aktarılmaz ve tahsilat iptaliyle kapanır. İade ve başka borca mahsup komutları bu sürümde yoktur.';
 
 const LIABILITY_KIND_LABEL: Record<ItemLiabilityKind, DebtorLedgerLiabilityKind> = {
   UNDETERMINED: 'BELIRLENMEDI',
@@ -210,7 +229,35 @@ export function buildDebtorLedgerBalances(input: {
    * Verilirse mevcut alanlar seçimsiz dosyada aynı değerleri taşır; yalnız ek alanlar gelir.
    */
   readonly liability?: { readonly evaluations: ReadonlyMap<string, EvaluatedItemLiability> };
+  /**
+   * Borçlu atıflı, emanetteki fazla ödemeler (kalan tutarı sıfırdan büyük). Verilmezse ya da borçluya düşen kayıt
+   * yoksa çıktıya hiçbir alan EKLENMEZ. Yalnız gösterimdir: kalan / toplam hesabına girmez.
+   */
+  readonly debtorOverpayments?: readonly {
+    readonly caseDebtorId: string;
+    readonly remainingAmount: Prisma.Decimal | number | string;
+    readonly currency: string;
+  }[];
 }): DebtorLedgerBalanceResult {
+  // Borçlu → para birimi → (tutar, tahsilat sayısı). Sıfır ya da negatif kalan yok sayılır.
+  const overpaymentsByCaseDebtor = new Map<string, Map<string, { amount: Prisma.Decimal; count: number }>>();
+  for (const row of input.debtorOverpayments ?? []) {
+    const remaining = new Prisma.Decimal(row.remainingAmount as Prisma.Decimal.Value);
+    if (!remaining.greaterThan(0)) continue;
+    const byCurrency = overpaymentsByCaseDebtor.get(row.caseDebtorId) ?? new Map<string, { amount: Prisma.Decimal; count: number }>();
+    const acc = byCurrency.get(row.currency) ?? { amount: new Prisma.Decimal(0), count: 0 };
+    byCurrency.set(row.currency, { amount: acc.amount.plus(remaining), count: acc.count + 1 });
+    overpaymentsByCaseDebtor.set(row.caseDebtorId, byCurrency);
+  }
+  const heldOverpaymentOf = (caseDebtorId: string): { borcluAdinaFazlaOdeme?: readonly DebtorLedgerHeldOverpayment[] } => {
+    const byCurrency = overpaymentsByCaseDebtor.get(caseDebtorId);
+    if (!byCurrency || byCurrency.size === 0) return {};
+    return {
+      borcluAdinaFazlaOdeme: [...byCurrency.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([paraBirimi, v]) => ({ paraBirimi, tutar: money(v.amount), tahsilatSayisi: v.count })),
+    };
+  };
   const active = input.caseDebtors.filter((cd) => cd.lifecycleStatus === 'ACTIVE');
   const activeDebtorIds = new Set(active.map((cd) => cd.debtorId));
   const lines = input.items.map((item) => ({ item, line: line(item), evaluation: input.liability?.evaluations.get(item.id) }));
@@ -264,7 +311,7 @@ export function buildDebtorLedgerBalances(input: {
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([paraBirimi, v]) => ({ paraBirimi, tutar: money(v.t), tahsilEdilen: money(v.c), kalan: money(v.k) }));
     if (!input.liability) {
-      return { caseDebtorId: cd.id, debtorId: cd.debtorId, ad: cd.name, rol: cd.role, kalemler, toplamlar };
+      return { caseDebtorId: cd.id, debtorId: cd.debtorId, ad: cd.name, rol: cd.role, kalemler, toplamlar, ...heldOverpaymentOf(cd.id) };
     }
     return {
       caseDebtorId: cd.id,
@@ -282,8 +329,10 @@ export function buildDebtorLedgerBalances(input: {
         },
         belirlenmemisOrtakKalan: sortedRemaining(undeterminedTotals),
       },
+      ...heldOverpaymentOf(cd.id),
     };
   });
+  const anyDebtorOverpayment = borclular.some((b) => b.borcluAdinaFazlaOdeme !== undefined);
 
   const sorumlusuBulunamayanKalemler = lines
     .filter(({ item, evaluation }) =>
@@ -313,5 +362,6 @@ export function buildDebtorLedgerBalances(input: {
       sebep: held.holdReason,
     })),
     ...(input.liability ? { dosyaKalani: sortedRemaining(fileRemaining), sorumlulukNotu: LIABILITY_NOTE } : {}),
+    ...(anyDebtorOverpayment ? { fazlaOdemeNotu: DEBTOR_OVERPAYMENT_NOTE } : {}),
   };
 }

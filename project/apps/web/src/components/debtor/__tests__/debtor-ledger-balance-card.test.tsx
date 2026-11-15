@@ -106,3 +106,64 @@ describe("DebtorLedgerBalanceCard (K3-L)", () => {
     await waitFor(() => expect(screen.getByTestId("debtor-ledger-completion-message").textContent).toContain("yeni kayıt üretilmedi"));
   });
 });
+
+/** Kayıttan SONRA görünürlük: borçlu adına izlenen fazla ödeme (sunucu tutarı; istemci hesap yapmaz). */
+describe("DebtorLedgerBalanceCard — borçlu adına izlenen fazla ödeme", () => {
+  const overpaymentNote =
+    "Borçlu adına izlenen fazla ödeme, borçlunun sorumluluğunu aşan ve mahsup edilemeyen tutardır: borçtan düşülmez, başka borçluya aktarılmaz ve tahsilat iptaliyle kapanır. İade ve başka borca mahsup komutları bu sürümde yoktur.";
+  const withOverpayment = {
+    ...result,
+    mahsubuBekleyenTahsilatlar: [],
+    fazlaOdemeNotu: overpaymentNote,
+    borclular: [
+      { ...result.borclular[0], borcluAdinaFazlaOdeme: [{ paraBirimi: "TRY", tutar: 600, tahsilatSayisi: 1 }] },
+      result.borclular[1],
+    ],
+  };
+
+  beforeEach(() => {
+    getCaseDebtorLedgerBalances.mockReset().mockResolvedValue(withOverpayment);
+    completeCollectionAllocation.mockReset();
+  });
+
+  it("atfedildiği borçluda tutar, tahsilat sayısı ve sunucu notuyla görünür; kalan rakamı DEĞİŞMEZ", async () => {
+    render(<DebtorLedgerBalanceCard caseId="case-1" caseDebtorId="cd-k" />);
+    const box = await screen.findByTestId("debtor-ledger-overpayment");
+    expect(box.textContent).toContain("Bu borçlu adına izlenen fazla ödeme");
+    expect(screen.getByTestId("debtor-ledger-overpayment-amount").textContent).toBe("600,00 TRY (1 tahsilat)");
+    expect(box.textContent).toContain("borçtan düşülmez");
+    expect(box.textContent).toContain("İade ve başka borca mahsup komutları bu sürümde yoktur");
+    // Fazla ödeme kalana eklenmez / kalandan düşülmez.
+    expect(screen.getByTestId("debtor-ledger-total").textContent).toContain("10.200,00 TRY");
+  });
+
+  it("başka borçlunun kartında GÖRÜNMEZ", async () => {
+    render(<DebtorLedgerBalanceCard caseId="case-1" caseDebtorId="cd-c" />);
+    await waitFor(() => expect(screen.getAllByTestId("debtor-ledger-line")).toHaveLength(1));
+    expect(screen.queryByTestId("debtor-ledger-overpayment")).toBeNull();
+  });
+
+  it("birden çok para birimi ayrı yazılır; sunucu alanı yoksa kutu hiç çizilmez", async () => {
+    getCaseDebtorLedgerBalances.mockResolvedValue({
+      ...withOverpayment,
+      borclular: [
+        {
+          ...result.borclular[0],
+          borcluAdinaFazlaOdeme: [
+            { paraBirimi: "EUR", tutar: 20, tahsilatSayisi: 1 },
+            { paraBirimi: "TRY", tutar: 750.5, tahsilatSayisi: 2 },
+          ],
+        },
+        result.borclular[1],
+      ],
+    });
+    const { unmount } = render(<DebtorLedgerBalanceCard caseId="case-1" caseDebtorId="cd-k" />);
+    expect((await screen.findByTestId("debtor-ledger-overpayment-amount")).textContent).toBe("20,00 EUR (1 tahsilat) + 750,50 TRY (2 tahsilat)");
+    unmount();
+
+    getCaseDebtorLedgerBalances.mockResolvedValue(result);
+    render(<DebtorLedgerBalanceCard caseId="case-1" caseDebtorId="cd-k" />);
+    await waitFor(() => expect(screen.getAllByTestId("debtor-ledger-line")).toHaveLength(2));
+    expect(screen.queryByTestId("debtor-ledger-overpayment")).toBeNull();
+  });
+});
