@@ -1,15 +1,21 @@
 import { BadRequestException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { CaseDebtorLifecycleStatus, ClaimItemStatus, Prisma } from "@prisma/client";
 import { hasRestrictedLiability, isItemLiableForDebtor } from "../claim-item/payer-liability-scope";
+import { fromKurus, toKurus } from "../claim-liability/claim-liability.domain";
+import { resolveCaseLiabilityAllocationScope } from "../claim-liability/claim-liability.reader";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CaseBalanceService } from "../interest-engine/orchestration/case-balance.service";
 import { toTurkeyCalendarDay, turkeyToday } from "../../common/turkey-calendar";
 import {
+  PaymentPreviewLiabilityDto,
   PaymentPreviewRequestDto,
   PaymentPreviewResponseDto,
 } from "./dto/payment-preview.dto";
 
 const CLOSED_FOR_COLLECTION = new Set(["HITAM", "INFAZ"]);
+// Haciz / icra dairesi kaynaklı ödeme (CollectionService ile aynı küme): dar fazla ödeme istisnası uygulanmaz.
+const RESTRICTED_PREVIEW_SOURCES = new Set(["BANK_SEIZURE", "SALARY_SEIZURE", "AUCTION"]);
+const RESTRICTED_PREVIEW_CHANNELS = new Set(["HACIZ", "ICRA_DAIRESI"]);
 const ELIGIBLE_CLIENT_ROLES = ["ALACAKLI", "ORTAK_ALACAKLI"];
 const DEFAULT_CURRENCY = "TRY";
 const ZERO = new Prisma.Decimal(0);
@@ -124,12 +130,34 @@ export class CasePaymentPreviewService {
     // K3-L (owner kararı 2026-09-28): yalnız bazı borçlulara bağlı kalem varsa ödeyen borçlu zorunlu; kalan borç
     // yalnız o borçlunun sorumlu olduğu kalemlerden (faiz hariç — borçlu bazlı kanonik bakiye ayrı iş).
     const payerScope = await this.resolvePayerScope(tenantId, caseId, currency, input.caseDebtorId);
+    // Seçimlik sorumluluk: borçlunun kapasitesini aşan tutar kayıttan ÖNCE gösterilir. Haciz / icra dairesi kaynağında
+    // aşan ödeme mahsup edilmez → açıklayıcı ENGEL (yine de gelen tahsilat kaydedilir ve tamamı bekletilir).
+    let liability: PaymentPreviewLiabilityDto | undefined;
+    if (payerScope.status === "SCOPED" && payerScope.liability) {
+      const excessKurus = toKurus(amount.toDecimalPlaces(2)) - payerScope.liability.capacityKurus;
+      const restrictedSource =
+        RESTRICTED_PREVIEW_SOURCES.has(String(input.sourceType || "").toUpperCase()) ||
+        RESTRICTED_PREVIEW_CHANNELS.has(String(input.channel || "").toUpperCase());
+      const exceeds = payerScope.liability.shareOrCapBound && excessKurus > 0n;
+      liability = {
+        shareOrCapBound: payerScope.liability.shareOrCapBound,
+        debtorCapacityAmount: fromKurus(payerScope.liability.capacityKurus),
+        excessAmount: fromKurus(excessKurus > 0n ? excessKurus : 0n),
+        excessHandling: !exceeds ? null : restrictedSource ? "ALLOCATION_HELD_LIMIT_EXCEEDED" : "DEBTOR_OVERPAYMENT_HELD",
+        refundCommandsAvailable: false,
+      };
+      if (exceeds && restrictedSource) blockingReasons.push("LIABILITY_LIMIT_EXCEEDED_RESTRICTED_SOURCE");
+      if (exceeds && !restrictedSource) warnings.push("LIABILITY_EXCESS_HELD_AS_DEBTOR_OVERPAYMENT");
+    }
     // K3-L (owner kararı 2026-09-29): tahsilat reddedilmez; hesabına ödeme yapılan borçlu belirsizse / sorumlu kalemi
     // yoksa kayıt yapılır ve mahsup BEKLETİLİR → önizlemede uyarı, uygulanan tutar 0.
     if (payerScope.status === "PAYER_REQUIRED") warnings.push("ALLOCATION_HELD_ON_BEHALF_DEBTOR_REQUIRED");
     if (payerScope.status === "PAYER_NOT_LIABLE") warnings.push("ALLOCATION_HELD_ON_BEHALF_DEBTOR_NOT_LIABLE");
     if (payerScope.status === "SCOPED") warnings.push("PAYER_SCOPED_OUTSTANDING_EXCLUDES_INTEREST");
-    const allocationHeld = payerScope.status === "PAYER_REQUIRED" || payerScope.status === "PAYER_NOT_LIABLE";
+    const allocationHeld =
+      payerScope.status === "PAYER_REQUIRED" ||
+      payerScope.status === "PAYER_NOT_LIABLE" ||
+      liability?.excessHandling === "ALLOCATION_HELD_LIMIT_EXCEEDED";
 
     const currentOutstandingAmount =
       payerScope.status === "SCOPED"
@@ -196,6 +224,7 @@ export class CasePaymentPreviewService {
         projectedOutstandingAmount: moneyToNumber(projectedOutstandingAmount),
       },
       distributionPreview,
+      ...(liability ? { liability } : {}),
     };
   }
 
@@ -216,12 +245,33 @@ export class CasePaymentPreviewService {
     | { status: "UNRESTRICTED" }
     | { status: "PAYER_REQUIRED" }
     | { status: "PAYER_NOT_LIABLE" }
-    | { status: "SCOPED"; outstanding: Prisma.Decimal }
+    | { status: "SCOPED"; outstanding: Prisma.Decimal; liability?: { capacityKurus: bigint; shareOrCapBound: boolean } }
   > {
     const items = await this.prisma.claimItem.findMany({
       where: { tenantId, caseId, currency, status: ClaimItemStatus.ACTIVE },
-      select: { amount: true, demandedAmount: true, collectedAmount: true, isAllDebtorsLiable: true, liableDebtorIds: true },
+      select: { id: true, amount: true, demandedAmount: true, collectedAmount: true, isAllDebtorsLiable: true, liableDebtorIds: true },
     });
+    // Seçimlik sorumluluk: etkin seçim varsa kapsam ve kapasite seçim kaydından (tahsilat yoluyla AYNI okuyucu).
+    const liabilityScope = await resolveCaseLiabilityAllocationScope(this.prisma, {
+      tenantId,
+      caseId,
+      activeItems: items,
+      onBehalfCaseDebtorId: caseDebtorId ?? null,
+    });
+    if (liabilityScope) {
+      if (liabilityScope.scope.holdReason === "ON_BEHALF_DEBTOR_REQUIRED") return { status: "PAYER_REQUIRED" };
+      if (liabilityScope.scope.holdReason === "ON_BEHALF_DEBTOR_NOT_LIABLE") return { status: "PAYER_NOT_LIABLE" };
+      // Borçlu gerekmiyorsa (bütün kalemler herkese açık) mevcut dosya düzeyi kalan hesabı aynen kullanılır.
+      if (!liabilityScope.onBehalfDebtorId) return { status: "UNRESTRICTED" };
+      return {
+        status: "SCOPED",
+        outstanding: new Prisma.Decimal(liabilityScope.scope.totalCapacityKurus.toString()).div(100),
+        liability: {
+          capacityKurus: liabilityScope.scope.totalCapacityKurus,
+          shareOrCapBound: liabilityScope.scope.shareOrCapBound,
+        },
+      };
+    }
     if (!hasRestrictedLiability(items)) return { status: "UNRESTRICTED" };
     const payer = caseDebtorId
       ? await this.prisma.caseDebtor.findFirst({ where: { id: caseDebtorId, caseId }, select: { debtorId: true } })

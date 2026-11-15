@@ -37,6 +37,8 @@ function build(claimItems: any[]) {
     // fark edilmedi. Ikisi de bos donuyor: canonical [] vs candidate [] karsilastirmasi
     // drift uretmez, yani bu testlerin dogruladigi tier routing davranisini etkilemez.
     ledgerAllocation: { findMany: async () => [] },
+    // Seçimlik sorumluluk: etkin seçim yok → mahsup kapsamı mevcut kuralla çözülür.
+    claimItemLiabilitySet: { findMany: async () => [] },
     claimItem: { update: async () => ({}), findMany: async () => [] },
   };
   return { svc, tx, created, warn, getDebt: () => capturedDebt };

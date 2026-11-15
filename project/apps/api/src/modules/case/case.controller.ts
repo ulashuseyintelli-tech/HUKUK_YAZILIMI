@@ -901,4 +901,17 @@ export class CaseController {
   ) {
     return this.caseService.getDebtorLedgerBalances(tenantId, id);
   }
+
+  /**
+   * Seçimlik sorumluluk — kalem başına sorumluluk durumu (salt okuma; bayraktan bağımsız).
+   * GET /cases/:id/claim-liability — hesap özetiyle aynı kiracı kapsamı.
+   */
+  @CaseViewScoped("id") // F02 P3-D3: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
+  @Get(":id/claim-liability")
+  async getClaimLiabilityState(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string,
+  ) {
+    return this.caseService.getClaimLiabilityState(tenantId, id);
+  }
 }

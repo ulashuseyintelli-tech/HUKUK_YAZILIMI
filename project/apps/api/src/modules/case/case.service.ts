@@ -78,10 +78,14 @@ import { CollectionService } from "../collection/collection.service";
 import { normalizeSourceIdentityText } from "../collection/collection-source-identity";
 import {
   EXCLUDE_ALLOCATION_HELD_COLLECTIONS,
+  effectiveAllocationHoldReason,
   findActiveCollectionAllocationHolds,
   readActiveAllocationHoldSummary,
 } from "../collection/collection-allocation-hold";
 import type { ReceiptAuthorizationBasis } from "../collection/receipt-object-scope-authorization.service";
+import { loadCaseLiabilityContext } from "../claim-liability/claim-liability.reader";
+import { buildClaimLiabilityState } from "../claim-liability/claim-liability.read-model";
+import { isClaimLiabilitySelectionEnabled } from "../claim-liability/claim-liability.flag";
 import {
   assertCollectionPublicUpdateAllowed,
   collectionDeleteDisabled,
@@ -5527,8 +5531,17 @@ export class CaseService {
       collectionId: hold.collectionId,
       amount: hold.amount,
       currency: hold.currency,
-      holdReason: String(hold.holdReason),
+      // Seçimlik sorumluluk: sorumluluğu aşan, ayrılamayan ödeme bekletmesi kendi ayrıntı koduyla gösterilir.
+      holdReason: effectiveAllocationHoldReason(hold),
     }));
+    // Seçimlik sorumluluk (karar günlüğü 2026-11-15): kalem başına tür, pay / tavan, borçlu hesabına sayılan mahsup ve
+    // kalan sorumluluk — her okumada kalem sayacı + defterden türetilir (saklanmaz). Mevcut alanlar aynı değerlerle kalır.
+    const liability = await loadCaseLiabilityContext(this.prisma, {
+      tenantId,
+      caseId,
+      items: caseData.claimItems as unknown as DebtorLedgerItemRow[],
+      always: true,
+    });
     return buildDebtorLedgerBalances({
       heldCollections,
       caseDebtors: caseData.debtors.map((cd: any) => ({
@@ -5539,6 +5552,47 @@ export class CaseService {
         name: String(cd.debtor?.name ?? cd.debtorId),
       })),
       items: caseData.claimItems as unknown as DebtorLedgerItemRow[],
+      liability: { evaluations: liability.evaluations },
+    });
+  }
+
+  /**
+   * Seçimlik sorumluluk — dosyanın KALEM başına sorumluluk durumu (salt okuma). Tür, etkin seçim sürümü, taraflar,
+   * ortak kalan, borçlu hesabına sayılan mahsup ve uzlaşma durumu. Seçim kaydı olmayan kalem "BELİRLENMEDİ" görünür.
+   */
+  async getClaimLiabilityState(tenantId: string, caseId: string) {
+    const caseData = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+      include: {
+        debtors: { include: { debtor: { select: { name: true } } } },
+        claimItems: { where: { status: { in: [...DEBTOR_LEDGER_BALANCE_ITEM_STATUSES] } }, orderBy: { sortOrder: "asc" } },
+      },
+    });
+    if (!caseData) throw new NotFoundException("Dosya bulunamadı");
+    const liability = await loadCaseLiabilityContext(this.prisma, {
+      tenantId,
+      caseId,
+      items: caseData.claimItems as unknown as DebtorLedgerItemRow[],
+      always: true,
+    });
+    return buildClaimLiabilityState({
+      items: caseData.claimItems.map((item: any) => ({
+        id: item.id,
+        itemType: String(item.itemType),
+        description: item.description ?? null,
+        currency: String(item.currency || "TRY"),
+        status: String(item.status),
+      })),
+      caseDebtors: caseData.debtors.map((cd: any) => ({
+        caseDebtorId: cd.id,
+        debtorId: cd.debtorId,
+        name: String(cd.debtor?.name ?? cd.debtorId),
+        role: String(cd.role),
+        active: String(cd.lifecycleStatus) === "ACTIVE",
+      })),
+      evaluations: liability.evaluations,
+      // Bayrak yalnız YENİ seçim oluşturmayı açar; bu okuma ve mevcut seçimler bayraktan bağımsızdır.
+      selectionWriteEnabled: isClaimLiabilitySelectionEnabled(),
     });
   }
 

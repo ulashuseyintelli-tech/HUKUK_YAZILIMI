@@ -1,13 +1,38 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, type DebtorLedgerBalanceResultDTO } from "@/lib/api";
+import { api, type DebtorLedgerBalanceResultDTO, type DebtorLedgerItemLineDTO } from "@/lib/api";
 import { useGuardedAction } from "@/components/guarded-edge/use-guarded-action";
 
 const HOLD_REASON_LABELS: Record<string, string> = {
   ON_BEHALF_DEBTOR_REQUIRED: "hesabına ödeme yapılan borçlu belirtilmedi",
   ON_BEHALF_DEBTOR_NOT_LIABLE: "belirtilen borçlunun sorumlu olduğu kalem yok",
+  LIABILITY_LIMIT_EXCEEDED: "ödeme borçlunun sorumluluğunu aşıyor ve bu kaynakta aşan tutar ayrılamıyor",
 };
+
+/** Seçimlik sorumluluk etiketi. Seçimi olmayan kalem her yerde "Belirlenmedi" görünür (müteselsillik kabulü değildir). */
+function liabilityLabel(kalem: DebtorLedgerItemLineDTO, fmt: (amount: number, currency: string) => string): string | null {
+  const s = kalem.sorumluluk;
+  if (!s) return null;
+  switch (s.tur) {
+    case "BELIRLENMEDI":
+      return "Belirlenmedi";
+    case "KAYITTAN_KISITLI":
+      return "Kayıttan kısıtlı";
+    case "MUTESELSIL":
+      return "Müteselsil";
+    case "PAYLI":
+      return s.pay === null ? "Paylı" : `Paylı — pay ${fmt(s.pay, kalem.paraBirimi)}`;
+    case "TUTARLA_SINIRLI":
+      return s.sinirsiz
+        ? "Tutarla sınırlı — bu borçlu için tavan yok"
+        : s.tavan === null
+          ? "Tutarla sınırlı"
+          : `Tutarla sınırlı — tavan ${fmt(s.tavan, kalem.paraBirimi)} (yalnız bu kalemin tutarı)`;
+    default:
+      return null;
+  }
+}
 
 /**
  * K3-L Faz 1c (owner kararı 2026-09-29 "önce defterden, faiz ayrı") — borçlunun yalnız sorumlu olduğu kalemlerden
@@ -102,26 +127,91 @@ export function DebtorLedgerBalanceCard({
       {own && (
         <>
           <ul className="space-y-0.5 text-[11px]">
-            {own.kalemler.map((kalem) => (
-              <li key={kalem.claimItemId} data-testid="debtor-ledger-line" className="flex justify-between gap-2">
-                <span className="text-gray-700">
-                  {kalem.aciklama || kalem.kalemTuru}
-                  {!kalem.ortak && <span className="ml-1 text-amber-700">(yalnız bu borçlu grubuna ait)</span>}
-                </span>
-                <span className="text-gray-900">kalan {fmt(kalem.kalan, kalem.paraBirimi)}</span>
-              </li>
-            ))}
+            {own.kalemler.map((kalem) => {
+              const s = kalem.sorumluluk;
+              const label = liabilityLabel(kalem, fmt);
+              // Sorumluluk bilgisi varsa: türü belli kalemde borçlunun KENDİ kalan sorumluluğu; belirlenmemiş kalemde
+              // ortak kalan (borçluya özgü rakam DEĞİL). Bilgi yoksa (eski sunucu yanıtı) gösterim aynen sürer.
+              return (
+                <li key={kalem.claimItemId} data-testid="debtor-ledger-line" className="flex justify-between gap-2">
+                  <span className="text-gray-700">
+                    {kalem.aciklama || kalem.kalemTuru}
+                    {!s && !kalem.ortak && <span className="ml-1 text-amber-700">(yalnız bu borçlu grubuna ait)</span>}
+                    {label && (
+                      <span data-testid="debtor-ledger-line-liability" className="ml-1 text-indigo-700">
+                        ({label})
+                      </span>
+                    )}
+                    {s && !s.uzlasiyor && (
+                      <span data-testid="debtor-ledger-line-unreconciled" className="ml-1 text-red-700">
+                        (geçmiş tahsilatla uzlaşmıyor — seçim yeniden yapılmalı)
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-gray-900">
+                    {!s && <>kalan {fmt(kalem.kalan, kalem.paraBirimi)}</>}
+                    {s && s.tur === "BELIRLENMEDI" && <>ortak kalan {fmt(s.ortakKalan, kalem.paraBirimi)}</>}
+                    {s && s.tur !== "BELIRLENMEDI" && s.kalanSorumluluk !== null && (
+                      <>kalan sorumluluk {fmt(s.kalanSorumluluk, kalem.paraBirimi)}</>
+                    )}
+                    {s && s.tur !== "BELIRLENMEDI" && s.kalanSorumluluk === null && <>belirlenemedi</>}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
-          {own.toplamlar.map((toplam) => (
-            <div
-              key={toplam.paraBirimi}
-              data-testid="debtor-ledger-total"
-              className="flex justify-between border-t pt-1 text-[11px] font-semibold text-gray-900"
-            >
-              <span>Kalan</span>
-              <span>{fmt(toplam.kalan, toplam.paraBirimi)}</span>
+          {!own.sorumlulukOzeti &&
+            own.toplamlar.map((toplam) => (
+              <div
+                key={toplam.paraBirimi}
+                data-testid="debtor-ledger-total"
+                className="flex justify-between border-t pt-1 text-[11px] font-semibold text-gray-900"
+              >
+                <span>Kalan</span>
+                <span>{fmt(toplam.kalan, toplam.paraBirimi)}</span>
+              </div>
+            ))}
+          {own.sorumlulukOzeti && (
+            <div className="space-y-1 border-t pt-1 text-[11px]">
+              {/* İki AYRI toplam: kesin sorumluluk ile belirlenmemiş kalemlerin ortak kalanı birbirine eklenmez. */}
+              <div data-testid="debtor-ledger-fixed-total" className="flex justify-between font-semibold text-gray-900">
+                <span>Kesin sorumluluk</span>
+                <span>
+                  {own.sorumlulukOzeti.kesinSorumluluk.durum === "BELIRLENEMEDI"
+                    ? "belirlenemedi"
+                    : own.sorumlulukOzeti.kesinSorumluluk.toplamlar.length === 0
+                      ? "—"
+                      : own.sorumlulukOzeti.kesinSorumluluk.toplamlar.map((t) => fmt(t.kalan, t.paraBirimi)).join(" + ")}
+                </span>
+              </div>
+              {own.sorumlulukOzeti.kesinSorumluluk.durum === "BELIRLENEMEDI" && (
+                <p data-testid="debtor-ledger-fixed-total-reason" className="text-[10px] text-amber-800">
+                  {own.sorumlulukOzeti.kesinSorumluluk.neden === "TAVANLI_KALEM"
+                    ? "Tutarla sınırlı kalemde tavan yalnız kalemin kayıtlı tutarını kapsar; işleyen faiz ve diğer kalemler kapsam dışıdır. Bu yüzden borçlu toplamı güvenle kurulamaz; kalem satırları yukarıdadır."
+                    : "Bir kalemin seçimi geçmiş tahsilatla uzlaşmıyor; borçlu toplamı güvenle kurulamaz."}
+                </p>
+              )}
+              <div data-testid="debtor-ledger-undetermined-total" className="flex justify-between text-gray-800">
+                <span>Belirlenmemiş kalemlerin ortak kalanı</span>
+                <span>
+                  {own.sorumlulukOzeti.belirlenmemisOrtakKalan.length === 0
+                    ? "—"
+                    : own.sorumlulukOzeti.belirlenmemisOrtakKalan.map((t) => fmt(t.kalan, t.paraBirimi)).join(" + ")}
+                </span>
+              </div>
+              {own.sorumlulukOzeti.belirlenmemisOrtakKalan.length > 0 && (
+                <p className="text-[10px] text-gray-500">
+                  Belirlenmemiş kalemlerde borçluya özgü kesin bakiye yoktur; tutar dosyanın ortak kalanıdır.
+                </p>
+              )}
+              {data?.dosyaKalani && data.dosyaKalani.length > 0 && (
+                <div data-testid="debtor-ledger-file-total" className="flex justify-between text-gray-600">
+                  <span>Dosya kalanı (tek rakam; borçlu satırlarından toplanmaz)</span>
+                  <span>{data.dosyaKalani.map((t) => fmt(t.kalan, t.paraBirimi)).join(" + ")}</span>
+                </div>
+              )}
             </div>
-          ))}
+          )}
           {held.length > 0 && (
             <div data-testid="debtor-ledger-held" className="space-y-1 rounded border border-amber-200 bg-amber-50 p-1.5">
               <p className="text-[10px] text-amber-800">
@@ -154,6 +244,11 @@ export function DebtorLedgerBalanceCard({
             </p>
           )}
           <p className="text-[10px] text-gray-500">{data?.not}</p>
+          {data?.sorumlulukNotu && (
+            <p data-testid="debtor-ledger-liability-note" className="text-[10px] text-gray-500">
+              {data.sorumlulukNotu}
+            </p>
+          )}
         </>
       )}
       {guardedModal}

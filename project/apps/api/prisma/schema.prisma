@@ -1882,6 +1882,9 @@ model CaseDebtor {
   // DBND-D5B: Collection.caseDebtorId FK karsi iliskisi
   collections            Collection[]
   releasedAllocationHolds CollectionAllocationHold[]
+  // Seçimlik kalem bazlı sorumluluk (karar günlüğü 2026-11-15): seçim tarafı ve borçlu atıflı fazla ödeme karşı ilişkileri
+  claimItemLiabilityParties ClaimItemLiabilityParty[]
+  attributedOverpayments    CollectionOverpayment[]
   // DBND-D6A-2: bu CaseDebtor'ın (affected tarafı) aldığı cross-case bildirimler
   crossCaseNotifications DebtorCrossCaseNotification[]
 
@@ -2983,6 +2986,12 @@ model CollectionOverpayment {
   currency        String            @default("TRY")
   status          OverpaymentStatus @default(HELD)
 
+  // Seçimlik sorumluluk — dar istisna (owner 2026-11-15): YALNIZ paylı / tutarla sınırlı seçimi olan dosyada, hesabına
+  // ödeme yapılan borçlunun sorumluluğunu aşan tutar bu borçluya atfedilir; başka borçluya AKTARILMAZ. NULL = dosya
+  // düzeyi fazla ödeme (bugünkü davranış). Eski satırlar NULL kalır; geri doldurma yoktur.
+  caseDebtorId String?
+  caseDebtor   CaseDebtor? @relation(fields: [caseDebtorId], references: [id], onDelete: Restrict)
+
   reversedAt DateTime?
   refundedAt DateTime?
 
@@ -2994,6 +3003,7 @@ model CollectionOverpayment {
   @@index([tenantId, caseId, status])
   @@index([tenantId, status])
   @@index([sourceLedgerEntryId])
+  @@index([caseDebtorId])
 }
 
 // K3-L (owner GO 2026-09-29) — MAHSUBU BEKLETİLEN tahsilat: kaynağı doğrulanmış, KAYDEDİLMİŞ (CONFIRMED) ama hesabına
@@ -3045,6 +3055,10 @@ enum AllocationHoldStatus {
 enum AllocationHoldReason {
   ON_BEHALF_DEBTOR_REQUIRED // Hesabına ödeme yapılan borçlu belirtilmedi
   ON_BEHALF_DEBTOR_NOT_LIABLE // Borçlunun sorumlu olduğu etkin kalem yok
+  // Seçimlik sorumluluk (2026-11-15): "ödeme borçlunun sorumluluğunu aşıyor ve aşan tutar ayrılamıyor" bekletmesi için
+  // BİLEREK yeni değer eklenmedi. Gerçek eski sürüm sınaması, önceki derlemenin tanımadığı enum değerini taşıyan
+  // bekletme kaydını OKUYAMADIĞINI gösterdi; bu bekletme ON_BEHALF_DEBTOR_NOT_LIABLE ile yazılır, ayrıntı kodu
+  // (LIABILITY_LIMIT_EXCEEDED) kaydın metadata.details.reasonCode alanındadır.
 }
 
 enum LegalApplicationBatchType {
@@ -6352,6 +6366,7 @@ model ClaimItem {
   ledgerAllocations       LedgerAllocation[]
   applicationAttributions ApplicationAttribution[]
   formationSnapshots      ClaimFormationSnapshot[]
+  liabilitySets           ClaimItemLiabilitySet[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, caseId, id])
@@ -6361,6 +6376,104 @@ model ClaimItem {
   @@index([status])
   @@index([bucket])
   @@index([instrumentId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// SEÇİMLİK KALEM BAZLI BORÇLU SORUMLULUĞU
+// Karar: decision-log 2026-11-15, DEBTOR-OD07-CLAIM-LIABILITY-SELECTION-SA01 (OD-07 dar kapsamlı yeniden açış).
+// - Seçim kalem–borçlu ilişkisine bağlıdır; borçlu rolünü ve CaseDebtor.liabilityAmount/liabilityType alanlarını KULLANMAZ.
+// - Kayıt parasal sonuç SAKLAMAZ: borçlunun kalan sorumluluğu her okumada kalem sayacı + defterden türetilir.
+// - Sürümlüdür: satır değiştirilemez, yalnız kapanır (DB tetikleyicisi). Kalem başına tek ACTIVE satır (kısmi tekil dizin).
+// - "Belirlenmedi" = seçim kaydının YOKLUĞU; UNDETERMINED yalnız bilinçli geri dönüşün izlenebilmesi içindir.
+// - Eski satırlar dönüştürülmez; geri doldurma yoktur.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+enum ClaimLiabilityMode {
+  JOINT_AND_SEVERAL // Müteselsil: seçilen her borçlu kalemin ortak kalanından sorumlu
+  PROPORTIONAL // Paylı: paylar kalemin TAM tutarından, birbirini dışlar
+  CAPPED // Tutarla sınırlı: tavanlar aynı ortak borcun üzerine biner
+  UNDETERMINED // Belirlenmedi (başka türden bilinçli geri dönüş)
+}
+
+enum ClaimLiabilityBasis {
+  COURT_JUDGMENT // İlam / mahkeme kararı
+  CONTRACT // Sözleşme
+  STATUTE // Kanun hükmü
+  NEGOTIABLE_INSTRUMENT // Kambiyo senedi
+  LAWYER_ASSESSMENT // Avukat değerlendirmesi (açıklama zorunlu)
+  OTHER // Diğer (açıklama zorunlu)
+}
+
+enum ClaimLiabilitySetStatus {
+  ACTIVE // Etkin seçim (kalem başına en çok bir)
+  SUPERSEDED // Yeni sürümle kapandı
+}
+
+enum ClaimLiabilityLimitScope {
+  ITEM_AMOUNT // Tavan YALNIZ kalemin kayıtlı tutarını kapsar (işleyen faiz ve diğer kalemler kapsam dışı; kefalet modeli DEĞİL)
+}
+
+model ClaimItemLiabilitySet {
+  id       String @id @default(cuid())
+  tenantId String
+  caseId   String
+
+  claimItemId String
+  // Kiracı + dosya + kalem bileşik bağı: başka kiracının / dosyanın kalemine seçim yazılamaz. Restrict: seçim geçmişi
+  // olan kalem fiziksel silinemez.
+  claimItem   ClaimItem @relation(fields: [tenantId, caseId, claimItemId], references: [tenantId, caseId, id], onDelete: Restrict)
+
+  version    Int
+  mode       ClaimLiabilityMode
+  limitScope ClaimLiabilityLimitScope? // yalnız CAPPED
+  status     ClaimLiabilitySetStatus   @default(ACTIVE)
+
+  // Dayanak (UNDETERMINED dışında zorunlu). Seçim kullanıcı tercihidir; yazılım ilam / rol / borçlu sayısından sonuç çıkarmaz.
+  basis           ClaimLiabilityBasis?
+  basisNote       String?
+  basisDocumentId String?
+
+  // Karar izi
+  decidedByUserId   String
+  decidedAt         DateTime
+  approvalRequestId String?
+  appliedVia        String // SINGLE | BULK
+  bulkOperationId   String?
+
+  // Zincir
+  supersededAt      DateTime?
+  supersededBySetId String?
+
+  createdAt DateTime @default(now())
+
+  parties ClaimItemLiabilityParty[]
+
+  @@unique([claimItemId, version])
+  @@unique([id, mode])
+  @@index([tenantId, caseId, status])
+  @@index([claimItemId, status])
+}
+
+model ClaimItemLiabilityParty {
+  id String @id @default(cuid())
+
+  // Bileşik bağ (setId, mode): satır düzeyi CHECK kısıtları türe göre alanları denetler.
+  setId String
+  mode  ClaimLiabilityMode
+  set   ClaimItemLiabilitySet @relation(fields: [setId, mode], references: [id, mode], onDelete: Cascade)
+
+  // Gerçek FK; Restrict — seçimde yer alan dosya borçlusu satırı silinemez.
+  caseDebtorId String
+  caseDebtor   CaseDebtor @relation(fields: [caseDebtorId], references: [id], onDelete: Restrict)
+
+  shareWeight Int? // PROPORTIONAL: 1..1.000.000 tam sayı ağırlık
+  limitAmount Decimal? @db.Decimal(15, 2) // CAPPED: tavan (> 0); sınırsızda NULL
+  unlimited   Boolean  @default(false) // CAPPED: tavansız borçlu
+  sortOrder   Int      @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@unique([setId, caseDebtorId])
+  @@index([caseDebtorId])
 }
 
 /// RCV-CLAIM-FORM-P02-S08-I02A — writer-disabled, immutable human-formation intent.

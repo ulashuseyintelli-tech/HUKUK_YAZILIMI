@@ -201,6 +201,7 @@ export const CASE_RELATED_CONTROLLERS: Readonly<Record<string, readonly RouteEnt
     ["GET /cases/:id/finance-summary", "KAPILI", ""],
     ["GET /cases/:id/calculation-summary", "KAPILI", ""],
     ["GET /cases/:id/debtor-balances", "KAPILI", ""],
+    ["GET /cases/:id/claim-liability", "KAPILI", ""],
   ],
   "claim-item/claim-item.controller.ts": [
     ["POST /claim-items", "YAZIM", ""],
@@ -218,6 +219,13 @@ export const CASE_RELATED_CONTROLLERS: Readonly<Record<string, readonly RouteEnt
     ["POST /claim-items/case/:caseId/generate-from-rules", "YAZIM", ""],
     ["POST /claim-items/case/:caseId/validate", "KAPILI", ""],
     ["POST /claim-items/calculate-check-penalty", "DOSYA_DISI", "saf hesap"],
+  ],
+  // Seçimlik borçlu sorumluluğu (karar günlüğü 2026-11-15): geçmiş okuması, yazmayan önizleme ve onay talebi — üçü de
+  // dosya görünüm kapısı taşır; talep ayrıca kalem yazma kapısından ve iki kişi onayından geçer.
+  "claim-liability/claim-liability.controller.ts": [
+    ["GET /cases/:caseId/claim-liability/history", "KAPILI", ""],
+    ["POST /cases/:caseId/claim-liability/preview", "KAPILI", ""],
+    ["POST /cases/:caseId/claim-liability/request", "KAPILI", ""],
   ],
   "client-approval/client-approval.controller.ts": [
     ["POST /client-approvals/case/:caseId", "YAZIM", ""],

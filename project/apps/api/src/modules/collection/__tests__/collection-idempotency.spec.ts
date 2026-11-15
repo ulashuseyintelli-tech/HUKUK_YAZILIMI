@@ -40,6 +40,8 @@ function setup(
     case: {
       findFirst: jest.fn(async () => ({ id: 'c1', caseStatus: 'DERDEST', currency: 'TRY' })),
     },
+    // Seçimlik sorumluluk: etkin seçim yok → mahsup kapsamı mevcut kuralla çözülür.
+    claimItemLiabilitySet: { findMany: jest.fn(async () => []) },
     claimItem: {
       findMany: jest.fn(async () => []),
     },
