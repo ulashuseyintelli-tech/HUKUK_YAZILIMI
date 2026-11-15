@@ -6,6 +6,7 @@ jest.mock("pdf-poppler", () => ({
 }));
 
 import { INestApplication } from "@nestjs/common";
+import { SchedulerRegistry } from "@nestjs/schedule";
 import { PrismaClient } from "@prisma/client";
 import * as request from "supertest";
 import { A_CASE_KEYS, ACaseKey, CASE_NOT_FOUND, CaseKey, ScopeWorld, buildScopeApp, createScopeWorld, expectHiddenResponse, scopeFlag, scopeHttp } from "../../../../test/p3-scope-world";
@@ -93,6 +94,11 @@ describeDb("F02 P3 tarama S5 / S6 / S7 — kalan dosyaya bağlı okumalar (gerç
       RiskModule,
       ValidationGateModule,
     ]);
+    // Otomasyon modülü zamanlayıcıyı da getirir. Beş dakikalık `AutomationService.processPendingCases` işi bu takımın
+    // otomatik kipteki dosyalarına yeni otomatik karar yazar; saat sınırına denk gelen koşuda S6 sayaçları değişir
+    // (kusur TEST-S6-OTOMASYON-ZAMANLAYICI-MUDAHALESI: beklenen 5, gelen 7). Bu takım yalnız OKUMA yollarını ölçer ve
+    // veriyi kendisi kurar; bu yüzden TEST uygulamasının zamanlanmış işleri durdurulur. Üretim otomasyonu değişmez.
+    for (const job of app.get(SchedulerRegistry, { strict: false }).getCronJobs().values()) job.stop();
     w = await createScopeWorld(db, "misc");
     for (const tenantId of [w.tA, w.tB]) client[tenantId] = (await db.client.create({ data: { tenantId, type: "COMPANY", name: mark("MUVEKKIL", tenantId === w.tA ? "A" : "B") } as never })).id;
     // Büro satırı: bildirim özeti büro ayarlarını dört paralel okumayla çözer; satır yokken varsayılan büroyu paralel oluşturmaya
@@ -296,6 +302,14 @@ describeDb("F02 P3 tarama S5 / S6 / S7 — kalan dosyaya bağlı okumalar (gerç
       //  kiracısı belirleyicidir ve satır düşer — karşılaştırma bu satır dışında yapılır)
       const comparable = (body: unknown) => (Array.isArray(body) ? body.filter((x: { caseId?: string }) => x.caseId !== w.c.b1) : body);
       if (!/evidence-report|stats/.test(r.name)) expect(canon(comparable(allowed.body))).toEqual(canon(comparable(all.body)));
+    });
+
+    it("zamanlanmış işler bu test uygulamasında durdurulmuştur — S6 sayaçlarına zamanlayıcı karışamaz", () => {
+      const jobs = [...app.get(SchedulerRegistry, { strict: false }).getCronJobs()];
+      // Boş kanıt olmasın: beş dakikalık otomasyon işi kayıtlıdır (durdurulacak bir şey VAR) …
+      expect(jobs.map(([name]) => name)).toContain("AutomationService.processPendingCases");
+      // … ve hiçbir iş etkin değildir.
+      expect(jobs.filter(([, job]) => job.isActive).map(([name]) => name)).toEqual([]);
     });
 
     it("S6 GET automation/stats — sayaçlar da aynı süzgeçle üretilir", async () => {
