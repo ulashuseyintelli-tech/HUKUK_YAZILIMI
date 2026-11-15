@@ -8,6 +8,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { assertClientObjectScope } from '../client/client-object-scope';
 import { OfficeApprovalService } from '../office-approval/office-approval.service';
+import { nativeMonthlyLockKey } from './client-statement-native.contract';
 import { identifyMonthlyStatementPeriod } from './client-statement-monthly-period';
 import {
   CLIENT_STATEMENT_DELIVERY_LOCK_TIMEOUT_MINUTES,
@@ -244,6 +245,11 @@ export class ClientStatementPrismaDeliveryLedgerAdapter implements ClientStateme
   }
 
   private async lockAndAuthorize(tx: Prisma.TransactionClient, input: ClientStatementDeliveryLedgerReservation) {
+    const periodKey = nativeMonthlyLockKey(input.tenantId, input.clientId, input.periodKey);
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${periodKey}, 0))`;
+    if (await tx.clientStatementNativeDelivery.count({ where: { tenantId: input.tenantId, clientId: input.clientId, periodKey: input.periodKey } })) {
+      throw new ClientStatementDeliveryLedgerInvariantError('Native monthly period already reserved; reconciliation required');
+    }
     const key = `client-notification-dispatch|${input.tenantId}|${input.dedupeKey}`;
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
     const statement = await tx.clientStatement.findFirst({ where: { id: input.statementId, tenantId: input.tenantId,

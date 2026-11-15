@@ -541,6 +541,7 @@ model ExecutionOffice {
 // ==================== CORE MODELS ====================
 
 model Client {
+  nativeStatementSets ClientStatementNativeSet[]
   id       String     @id @default(cuid())
   tenantId String
   tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -11057,4 +11058,77 @@ model OfficeWorkPoolEpoch {
   /// Havuz başına TAM OLARAK bir anchor.
   @@unique([tenantId, poolKind])
   @@index([tenantId])
+}
+
+// E2 documents are immutable native-currency projections, never an accounting source of truth.
+// Kept separate from ClientStatement so legacy E1/H6 queries cannot select one member of a set.
+model ClientStatementNativeSet {
+  id String @id @default(cuid())
+  tenantId String
+  clientId String
+  client Client @relation(fields: [clientId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  periodStart DateTime
+  periodEnd DateTime
+  sourceCutAt DateTime
+  sourceCaseIds String[]
+  memberCount Int
+  memberHash String
+  status ClientStatementStatus @default(ACTIVE)
+  supersededById String?
+  closedAt DateTime?
+  closeNote String?
+  generatedById String
+  createdAt DateTime @default(now())
+  documents ClientStatementNativeDocument[]
+  deliveries ClientStatementNativeDelivery[]
+  @@unique([id, tenantId, clientId])
+  @@unique([id, tenantId])
+  @@index([tenantId, clientId, periodStart, periodEnd])
+}
+
+model ClientStatementNativeDocument {
+  id String @id @default(cuid())
+  tenantId String
+  setId String
+  statementSet ClientStatementNativeSet @relation(fields: [setId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  currency String
+  render Json
+  renderHash String
+  createdAt DateTime @default(now())
+  artifact ClientStatementNativeArtifact?
+  @@unique([setId, currency])
+  @@unique([id, tenantId])
+}
+
+model ClientStatementNativeArtifact {
+  documentId String @id
+  tenantId String
+  document ClientStatementNativeDocument @relation(fields: [documentId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  pdf Bytes
+  sha256 String
+  createdAt DateTime @default(now())
+  @@unique([documentId, tenantId])
+}
+
+// One logical delivery per tenant/client/month, regardless of currencies, set revision or recipient changes.
+model ClientStatementNativeDelivery {
+  id String @id @default(cuid())
+  tenantId String
+  clientId String
+  setId String
+  statementSet ClientStatementNativeSet @relation(fields: [setId, tenantId, clientId], references: [id, tenantId, clientId], onDelete: Restrict)
+  periodKey String
+  memberHash String
+  recipientEmail String
+  dedupeKey String @unique
+  status ClientStatementDeliveryStatus @default(PENDING)
+  attempts Int @default(0)
+  reservedAt DateTime?
+  lastAttemptAt DateTime?
+  nextRetryAt DateTime?
+  sentAt DateTime?
+  lastError String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([tenantId, clientId, periodKey])
 }

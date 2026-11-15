@@ -21,6 +21,7 @@
 
 import { Injectable } from '@nestjs/common';
 import { ClaimItemStatus } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { RateProviderService } from '../rates/rate-provider.service';
 import type { RateEntry as ProviderRateEntry } from '../rates/rate-provider.service';
@@ -418,12 +419,14 @@ export class CaseBalanceService {
    * - InterestEngineController.getCaseBalanceDisplay() → GET /interest-engine/case/:caseId/balance/display (backend display contract)
    * - BalanceShadowCompareService.compare() → summary-engine vs computeBalance read-only gözlem
    * - CaseService.getCalculationSummary() → GET /cases/:id/calculation-summary (canonicalShadow + additive compatibility adapter)
+   * - ClientStatementService.loadAccruedInterest() / collectNativeClientLevel() → informational interest; E2 passes its source transaction
    * </remarks>
    */
   async computeCaseBalance(
     tenantId: string,
     caseId: string,
     asOfDate: string,
+    readContext?: Prisma.TransactionClient,
   ): Promise<CaseBalanceResult> {
     const empty: CaseBalanceResult = {
       asOfDate,
@@ -438,7 +441,7 @@ export class CaseBalanceService {
     // 1. Case (tenant-scoped) — faiz fallback kaynağı + varlık kontrolü
     // TBK100 Interest Accrual Contract v1: caseDate (takip tarihi) YALNIZ item'ın kendi
     // interestStartDateProvenance='ENFORCEMENT_PROCEEDING_DATE' ise kullanılır (assembler'da gate'li).
-    const caseRow = await this.prisma.case.findFirst({
+    const caseRow = await (readContext ?? this.prisma).case.findFirst({
       where: { id: caseId, tenantId },
       // K3-L KP-2: dosya faiz türünün kaynağı (metadata.interestTypeSource) — dosya düzeyine düşen kalemde uyarı için
       select: { interestType: true, interestStartDate: true, caseDate: true, metadata: true },
@@ -463,10 +466,10 @@ export class CaseBalanceService {
       activeAllocationHolds,
       policyHoldClaimItemIds,
     ] = await Promise.all([
-      this.prisma.claimItem.findMany({
+      (readContext ?? this.prisma).claimItem.findMany({
         where: { caseId, tenantId, status: { not: ClaimItemStatus.CANCELLED } },
       }),
-      this.prisma.ledgerEntry.findMany({
+      (readContext ?? this.prisma).ledgerEntry.findMany({
         where: { caseId, tenantId, entryType: { in: ['PAYMENT', 'REVERSAL'] }, status: 'CONFIRMED' },
         select: {
           id: true,
@@ -482,12 +485,12 @@ export class CaseBalanceService {
           reversesLedgerEntryId: true,
         },
       }),
-      this.prisma.collection.findMany({ where: { caseId, tenantId } }),
-      this.readHeldOverpayments(tenantId, caseId),
-      this.readBlockedOverpaymentDiagnostics(tenantId, caseId),
-      this.readActiveAllocationHolds(tenantId, caseId),
+      (readContext ?? this.prisma).collection.findMany({ where: { caseId, tenantId } }),
+      this.readHeldOverpayments(tenantId, caseId, readContext),
+      this.readBlockedOverpaymentDiagnostics(tenantId, caseId, readContext),
+      this.readActiveAllocationHolds(tenantId, caseId, readContext),
       // K3-L TK-10: güncel oluşum kaydı politika bekletmeli kalemler (23.7.8) — salt okuma
-      readPolicyHoldClaimItemIds(this.prisma, tenantId, caseId),
+      readPolicyHoldClaimItemIds(readContext ?? this.prisma, tenantId, caseId),
     ]);
     // K3-L: mahsubu BEKLETİLEN tahsilat (defter kaydı yok) Collection fallback'ine girmez — girseydi ödeme sayılır,
     // sonra tamamlanınca defterden bir kez daha düşerdi (çift sayım). Bekletme ayrı diagnostic olarak raporlanır.
@@ -710,7 +713,7 @@ export class CaseBalanceService {
       }
 
       try {
-        const rates = await this.gatherRates(tenantId, group.buckets, asOfDate);
+        const rates = await this.gatherRates(tenantId, group.buckets, asOfDate, readContext);
         // K3-L TK-2: oran verisi faiz dönemini gün gün kapsamıyorsa motor ÇALIŞTIRILMAZ — komşu/gelecek oran ya da
         // sıfır faizle "kesin" toplam üretilmez. Bilinen anapara korunur (kapsanan kovalar grossPrincipal'da, kapsanmayanlar
         // simüle edilmeyen anapara olarak); eksik dönem tanıda gösterilir. D2-b1 ile aynı sözleşme (ADR-014 RD01).
@@ -816,6 +819,7 @@ export class CaseBalanceService {
             asOfDate,
             toISO(caseRow.caseDate),
             now,
+            readContext,
           );
         }
       }
@@ -907,9 +911,10 @@ export class CaseBalanceService {
   private async readActiveAllocationHolds(
     tenantId: string,
     caseId: string,
+    readContext?: Prisma.TransactionClient,
   ): Promise<CaseBalanceAllocationHold[]> {
-    if (!this.prisma.collectionAllocationHold?.findMany) return [];
-    const rows = await findActiveCollectionAllocationHolds(this.prisma, tenantId, caseId);
+    if (!(readContext ?? this.prisma).collectionAllocationHold?.findMany) return [];
+    const rows = await findActiveCollectionAllocationHolds((readContext ?? this.prisma), tenantId, caseId);
     return rows.map((row) => ({
       id: String(row.id),
       collectionId: String(row.collectionId),
@@ -922,8 +927,9 @@ export class CaseBalanceService {
   private async readHeldOverpayments(
     tenantId: string,
     caseId: string,
+    readContext?: Prisma.TransactionClient,
   ): Promise<CaseBalanceHeldOverpayment[]> {
-    const client = (this.prisma as any).collectionOverpayment;
+    const client = ((readContext ?? this.prisma) as any).collectionOverpayment;
     if (!client?.findMany) return [];
 
     const rows = await client.findMany({
@@ -955,8 +961,9 @@ export class CaseBalanceService {
   private async readBlockedOverpaymentDiagnostics(
     tenantId: string,
     caseId: string,
+    readContext?: Prisma.TransactionClient,
   ): Promise<CaseBalanceBlockedOverpaymentDiagnostic[]> {
-    const client = (this.prisma as any).icrabotTimelineEntry;
+    const client = ((readContext ?? this.prisma) as any).icrabotTimelineEntry;
     if (!client?.findMany) return [];
 
     const rows = await client.findMany({
@@ -998,11 +1005,12 @@ export class CaseBalanceService {
     asOfDate: string,
     enforcementDate: string | null,
     now: string,
+    readContext?: Prisma.TransactionClient,
   ): Promise<PrincipalFreeInterestResult> {
     const resolved = resolvePrincipalFreeInterestBucket(item, { enforcementProceedingDate: enforcementDate, asOfDate });
     if ('result' in resolved) return resolved.result;
     const { bucket } = resolved;
-    const rates = await this.gatherRates(tenantId, [bucket], asOfDate);
+    const rates = await this.gatherRates(tenantId, [bucket], asOfDate, readContext);
     if (findUncoveredRateBuckets([bucket], rates, asOfDate).length > 0) {
       return failedPrincipalFreeInterest(item, bucket, 'RATE_COVERAGE_MISSING');
     }
@@ -1036,17 +1044,21 @@ export class CaseBalanceService {
     tenantId: string,
     buckets: ClaimBucket[],
     asOfDate: string,
+    readContext?: Prisma.TransactionClient,
   ): Promise<RateEntry[]> {
     const requirements = deriveRateRequirements(buckets, asOfDate);
     const fetched: RateEntry[] = [];
     for (const r of requirements) {
-      const rates = await this.rateProvider.getRatesForPeriod({
+      const options = {
         interestType: r.interestType,
         startDate: r.startDate,
         endDate: r.endDate,
         currency: r.currency,
         tenantId,
-      });
+      };
+      const rates = readContext
+        ? await this.rateProvider.getRatesForPeriodInTransaction(options, readContext)
+        : await this.rateProvider.getRatesForPeriod(options);
       // RateProvider RateEntry (sourceId/sourceName/publishedAt) → engine entity RateEntry
       // (source/versionHash/createdAt). Engine yalnız interestType/validFrom/validTo/annualRate'i
       // hesapta kullanır; gerisi metadata (G4c-1 audit'siz). İlk köprü burada.

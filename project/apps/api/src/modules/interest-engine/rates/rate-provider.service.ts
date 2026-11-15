@@ -7,6 +7,7 @@
  */
 
 import { Injectable, Optional } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { InterestTypeCode } from '../types/domain.types';
 import { generateRateEntryHash, generateRateTableVersion } from './rate-version-hash';
@@ -135,18 +136,23 @@ export class RateProviderService {
     return result;
   }
 
+  /** Called by CaseBalanceService for an immutable E2 source cut; bypasses shared cache only in this read context. */
+  async getRatesForPeriodInTransaction(options: RateQueryOptions, reader: Prisma.TransactionClient): Promise<RateEntry[]> {
+    return this.usePrisma && options.tenantId ? this.fetchRatesFromPrisma(options, reader) : this.filterInMemoryRates(options);
+  }
+
   /**
    * Fetch rates from Prisma database
    */
-  private async fetchRatesFromPrisma(options: RateQueryOptions): Promise<RateEntry[]> {
-    if (!this.prisma || !options.tenantId) {
+  private async fetchRatesFromPrisma(options: RateQueryOptions, reader: Prisma.TransactionClient | PrismaService | undefined = this.prisma): Promise<RateEntry[]> {
+    if (!reader || !options.tenantId) {
       return [];
     }
 
     // Oran deposu BÜRO kimliğiyle anahtarlıdır: `rate_schedule.tenantId` FK → `Office.id` (RateSyncService ve oran
     // yükleme betiği bu anahtarla yazar). Çağıranlar kimlik bağlamındaki `Tenant.id`'yi verir; kiracının tek bürosu
     // `Office.tenantId @unique` ile çözülür. Büro yoksa oran da yoktur → boş liste (kapsama kapısı RATE_COVERAGE_MISSING).
-    const office = await this.prisma.office.findUnique({
+    const office = await reader.office.findUnique({
       where: { tenantId: options.tenantId },
       select: { id: true },
     });
@@ -154,7 +160,7 @@ export class RateProviderService {
       return [];
     }
 
-    const rates = await this.prisma.rateSchedule.findMany({
+    const rates = await reader.rateSchedule.findMany({
       where: {
         tenantId: office.id,
         interestType: options.interestType,
