@@ -65,6 +65,11 @@ export interface ClaimItemLiabilitySelectionIntentItem {
   parties: ClaimItemLiabilitySelectionIntentParty[];
   /** Önizleme anındaki durum özeti; onay yürütmesi dosya kilidi altında yeniden hesaplayıp karşılaştırır. */
   stateDigest: string;
+  /**
+   * Onaylayanın ne onayladığını OKUYABİLMESİ için okunur özet (kalem, tür, borçlular ve pay / tavan). YALNIZ gösterim:
+   * onay yürütmesi bu alanı OKUMAZ; seçim yukarıdaki yapısal alanlardan yeniden doğrulanarak uygulanır.
+   */
+  display?: { kalem: string; tur: string; taraflar: string[]; dayanak: string | null };
 }
 
 export interface ClaimItemLiabilitySelectionSavedIntent {

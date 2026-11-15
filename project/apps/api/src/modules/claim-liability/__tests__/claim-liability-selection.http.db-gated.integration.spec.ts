@@ -233,6 +233,13 @@ describeWithDisposableDb('Seçimlik borçlu sorumluluğu — seçim, onay ve ge�
     expect(pending).toMatchObject({ actionCode: 'CLAIM_ITEM_HIGH_IMPACT_CHANGE', targetType: 'CLAIM_ITEM', targetRef: f.k1, requesterUserId: f.requesterUserId });
     expect(await sets(f)).toEqual([]);
     expect(await item(f.k1)).toMatchObject({ isAllDebtorsLiable: true, liableDebtorIds: [] });
+    // Onaylayan gördüğünü onaylar: kayıtlı niyet okunur özeti taşır (yalnız gösterim; pay burada hesaplanmaz)
+    expect((pending.savedIntent as any).selections[0].display).toEqual({
+      kalem: 'PRINCIPAL',
+      tur: 'PAYLI',
+      taraflar: ['Sentetik Borçlu 1: pay ağırlığı 6000 / 10000', 'Sentetik Borçlu 2: pay ağırlığı 4000 / 10000'],
+      dayanak: 'CONTRACT',
+    });
 
     // Mevcut kural: talep eden kendi talebini onaylayamaz
     await expect(approvals.approve(approvalRequestId, f.requesterUserId)).rejects.toThrow();

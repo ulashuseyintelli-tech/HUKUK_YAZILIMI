@@ -206,7 +206,10 @@ export class ClaimLiabilitySelectionService implements OnModuleInit {
       caseId,
       appliedVia: single ? 'SINGLE' : 'BULK',
       bulkOperationId,
-      selections: normalized.map(({ selection, stateDigest }) => this.toIntentItem(selection, stateDigest)),
+      selections: normalized.map(({ selection, stateDigest }) => ({
+        ...this.toIntentItem(selection, stateDigest),
+        display: this.displaySummary(state, selection),
+      })),
       reason: 'Borçlu sorumluluğu seçimi yüksek etkili kalem değişikliğidir; iki kişi onayı gerekir.',
     };
     const idempotencyKey = single
@@ -434,6 +437,31 @@ export class ClaimLiabilitySelectionService implements OnModuleInit {
         sortOrder: party.sortOrder,
       })),
       stateDigest,
+    };
+  }
+
+  /**
+   * Onay kutusunda gösterilecek okunur özet (onaylayan gördüğünü onaylar). Yalnız gösterim; yürütme bu metni okumaz.
+   * Paylar burada HESAPLANMAZ: kullanıcının girdiği ağırlık / tavan aynen yazılır.
+   */
+  private displaySummary(
+    state: CaseSelectionState,
+    selection: NormalizedSelection,
+  ): { kalem: string; tur: string; taraflar: string[]; dayanak: string | null } {
+    const item = state.items.find((candidate) => candidate.id === selection.claimItemId);
+    const weightSum = selection.parties.reduce((sum, party) => sum + (party.shareWeight ?? 0), 0);
+    const kind = selection.mode === 'UNDETERMINED' ? 'UNDETERMINED' : selection.mode;
+    return {
+      kalem: item ? item.description || item.itemType : selection.claimItemId,
+      tur: CLAIM_LIABILITY_KIND_LABEL[kind],
+      taraflar: selection.parties.map((party) => {
+        const name = state.debtorNames.get(party.caseDebtorId) ?? party.caseDebtorId;
+        if (party.shareWeight !== null) return `${name}: pay ağırlığı ${party.shareWeight} / ${weightSum}`;
+        if (party.unlimited) return `${name}: tavan yok`;
+        if (party.limitKurus !== null) return `${name}: tavan ${kurusToFixed(party.limitKurus)} (yalnız bu kalemin tutarı)`;
+        return name;
+      }),
+      dayanak: selection.basis,
     };
   }
 
