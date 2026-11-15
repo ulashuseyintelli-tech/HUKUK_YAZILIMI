@@ -186,6 +186,8 @@ describe('WS04-P02 allocation evidence inventory guards', () => {
           allocations: data.allocations.create,
         })),
       },
+      // Seçimlik sorumluluk: etkin seçim yok → mahsup kapsamı mevcut kuralla çözülür.
+      claimItemLiabilitySet: { findMany: jest.fn(async () => []) },
       claimItem: {
         update: jest.fn().mockResolvedValue({}),
         findMany: jest.fn().mockResolvedValue([

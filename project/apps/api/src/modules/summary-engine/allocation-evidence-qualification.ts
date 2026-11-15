@@ -230,6 +230,22 @@ export const COLLECTED_AMOUNT_REFERENCE_MANIFEST_V1: ReadonlyArray<{
       + 'okuma; yazma ve mahsup YOK.',
   },
   {
+    path: 'src/modules/claim-liability/claim-liability.reader.ts',
+    classification: 'RECONCILED_CACHE',
+    access: 'READ',
+    rationale:
+      'Seçimlik borçlu sorumluluğu (karar günlüğü 2026-11-15): kalemin tek tahsilat sayacını salt OKUR ve defter '
+      + 'atıflarının toplamıyla karşılaştırır (uzlaşmıyorsa borçluya bağlı mahsup durur); yazma YOK.',
+  },
+  {
+    path: 'src/modules/claim-liability/claim-liability.domain.ts',
+    classification: 'RECONCILED_CACHE',
+    access: 'READ',
+    rationale:
+      'Seçimlik borçlu sorumluluğu saf hesabı: dağıtıcıya verilen "kalan = kapasite" GÖRÜNÜMÜ (talep = kapasite, '
+      + 'tahsil = 0); kalem satırına yazma YOK, borçlu başına ayrı sayaç YOK.',
+  },
+  {
     path: 'src/modules/case/check-penalty-summary.ts',
     classification: 'DISPLAY_ONLY',
     access: 'READ',

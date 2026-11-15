@@ -48,6 +48,8 @@ function mockTx(
     ledgerAllocation: {
       findMany: jest.fn(async () => persistedAllocations),
     },
+    // Seçimlik sorumluluk: etkin seçim yok → mahsup kapsamı mevcut kuralla çözülür.
+    claimItemLiabilitySet: { findMany: jest.fn(async () => []) },
     claimItem: {
       update: jest.fn(async ({ where, data }: any) => {
         const item = mutableClaimItems.find((candidate) => candidate.id === where.id);

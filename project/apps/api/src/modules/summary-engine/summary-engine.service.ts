@@ -16,7 +16,12 @@ import { AncillaryType } from '../interest-engine/types/domain.types';
 // G4a: sınıflandırma TEK OTORİTE (ikinci kopya yok). mapItemTypeToAncillary + masraf/fer'i kuralı buradan.
 import { mapItemTypeToAncillary as classifierMapAncillary, isCostItemType } from '../interest-engine/classification/claim-item-classifier';
 import { ClaimItemService } from '../claim-item/claim-item.service';
-import { scopeItemsToPayer } from '../claim-item/payer-liability-scope';
+import { PayerLiabilityScopeError, scopeItemsToPayer } from '../claim-item/payer-liability-scope';
+import { buildCapacityViewItems, fromKurus, toKurus } from '../claim-liability/claim-liability.domain';
+import {
+  assertLiabilityReconciledAfterWriteInTx,
+  resolveCaseLiabilityAllocationScope,
+} from '../claim-liability/claim-liability.reader';
 import {
   assertWriteTimeAllocationComparison,
   buildAllocationComparisonContext,
@@ -589,16 +594,34 @@ export class SummaryEngineService implements OnModuleInit {
        * yolu — mahsubu önceden bekletir, bu yol savunma katmanıdır).
        */
       onBehalfDebtorId?: string | null;
+      /**
+       * Seçimlik sorumluluk: HESABINA ödeme yapılan dosya borçlusu (CaseDebtor.id). Dosyada etkin sorumluluk seçimi
+       * varsa mahsup kapsamı ve borçlu kapasitesi (pay / tavan) bu kimlikle çözülür; seçim yoksa kullanılmaz.
+       */
+      onBehalfCaseDebtorId?: string | null;
+      /**
+       * Seçimlik sorumluluk — dar istisna: borçlunun kapasitesini aşan tutar borçlu atıflı fazla ödeme olarak
+       * ayrılabilir mi (kaynak haciz / icra dairesi DEĞİL). false iken aşan ödeme mahsup EDİLMEZ; çağıran tahsilatın
+       * tamamını bekletir (eski yola düşülmez, sorumluluk sınırı aşılmaz).
+       */
+      liabilityExcessAllowed?: boolean;
     } = {},
   ): Promise<{
     allocated: boolean;
-    reason?: 'NO_CLAIM_ITEMS' | 'LEDGER_DISABLED';
+    reason?: 'NO_CLAIM_ITEMS' | 'LEDGER_DISABLED' | 'LIABILITY_LIMIT_EXCEEDED';
     ledgerEntry: any | null;
     allocations: any[];
     diagnostics: LedgerAllocationDiagnostic[];
     excludedOutstanding: number;
     unsafeForOverpayment: boolean;
     authorityEvidence: AllocationAuthorityEvidence;
+    /** Seçimlik sorumluluk bağlamı (dosyada etkin seçim varsa). */
+    liability?: {
+      /** Etkin paylı / tutarla sınırlı kalem var ve ödeme bir borçlu hesabına: dar istisna + eksiksiz uzlaştırma. */
+      shareOrCapBound: boolean;
+      plannedAllocatedAmount: number;
+      excessAmount: number;
+    };
   }> {
     if (!this.rules?.ledger_allocation?.enabled) {
       return {
@@ -651,8 +674,23 @@ export class SummaryEngineService implements OnModuleInit {
       };
     }
 
-    // K3-L: hesabına ödeme yapılan borçluya göre mahsup kapsamı (kısıtlı kalem yoksa girdi aynen).
-    const payerScopedItems = scopeItemsToPayer(items, options.onBehalfDebtorId);
+    // Seçimlik sorumluluk: dosyada etkin seçim varsa kapsam ve kapasite seçim kaydından çözülür; yoksa (null) mevcut
+    // K3-L kuralı AYNEN uygulanır (hesabına ödeme yapılan borçluya göre kapsam; kısıtlı kalem yoksa girdi aynen).
+    const liabilityScope = await resolveCaseLiabilityAllocationScope(tx, {
+      tenantId,
+      caseId,
+      activeItems: items,
+      onBehalfCaseDebtorId: options.onBehalfCaseDebtorId ?? null,
+    });
+    let payerScopedItems: typeof items;
+    if (!liabilityScope) {
+      payerScopedItems = scopeItemsToPayer(items, options.onBehalfDebtorId);
+    } else {
+      // Savunma katmanı: tahsilat yolu mahsubu önceden bekletir; buraya bekletme nedeniyle gelinmemelidir.
+      if (liabilityScope.scope.holdReason) throw new PayerLiabilityScopeError(liabilityScope.scope.holdReason);
+      // "Kalan = borçlunun kapasitesi" görünümü; dağıtıcı ve sıra (masraf → fer'i → faiz → anapara) DEĞİŞMEZ.
+      payerScopedItems = buildCapacityViewItems(items, liabilityScope.scope.capacityByItem) as unknown as typeof items;
+    }
 
     let allocations: Array<{ claimItemId: string; amount: number; allocationOrder: number }> = [];
     let diagnostics: LedgerAllocationDiagnostic[] = [];
@@ -675,6 +713,37 @@ export class SummaryEngineService implements OnModuleInit {
         amount,
         message: 'Legacy allocation fallback is active; allocator disposition remains deferred under DA-4.',
       });
+    }
+
+    // Seçimlik sorumluluk — yazımdan ÖNCE: paylı / tutarla sınırlı dosyada borçlunun kapasitesini aşan tutar ya borçlu
+    // atıflı fazla ödeme olarak ayrılabilmeli ya da ödeme HİÇ mahsup edilmemelidir. Ayrılamıyorsa (haciz / icra dairesi
+    // kaynağı ya da dağıtıcının dışladığı borç) defter yazılmaz; çağıran tahsilatın tamamını bekletir.
+    let liabilityOutcome: { shareOrCapBound: boolean; plannedAllocatedAmount: number; excessAmount: number } | undefined;
+    if (liabilityScope) {
+      const plannedKurus = allocations.reduce((sum, allocation) => sum + toKurus(allocation.amount), 0n);
+      const excessKurus = toKurus(amount) - plannedKurus;
+      liabilityOutcome = {
+        shareOrCapBound: liabilityScope.scope.shareOrCapBound,
+        plannedAllocatedAmount: fromKurus(plannedKurus),
+        excessAmount: fromKurus(excessKurus > 0n ? excessKurus : 0n),
+      };
+      if (
+        liabilityScope.scope.shareOrCapBound &&
+        excessKurus > 0n &&
+        (options.liabilityExcessAllowed !== true || excludedOutstanding > 0)
+      ) {
+        return {
+          allocated: false,
+          reason: 'LIABILITY_LIMIT_EXCEEDED',
+          ledgerEntry: null,
+          allocations: [],
+          diagnostics,
+          excludedOutstanding,
+          unsafeForOverpayment: excludedOutstanding > 0,
+          authorityEvidence: { allocatorMode, runtimePersisted: null, ledgerCollectedAmount: null },
+          liability: liabilityOutcome,
+        };
+      }
     }
 
     const ledgerEntry = await tx.ledgerEntry.create({
@@ -755,6 +824,19 @@ export class SummaryEngineService implements OnModuleInit {
       },
     );
 
+    // Seçimlik sorumluluk — yazım anı denetimi: dokunulan paylı / tutarla sınırlı kalemler hâlâ uzlaşıyor mu? Bu defter
+    // kaydının atfı (bekletilen mahsubun tamamlanmasında henüz bekletme kaydına yazılmadı) açıkça verilir.
+    if (liabilityScope) {
+      await assertLiabilityReconciledAfterWriteInTx(tx, {
+        tenantId,
+        caseId,
+        claimItemIds: allocations.map((allocation) => allocation.claimItemId),
+        override: options.collectionId
+          ? { collectionId: options.collectionId, caseDebtorId: options.onBehalfCaseDebtorId ?? null }
+          : null,
+      });
+    }
+
     return {
       allocated: true,
       ledgerEntry,
@@ -767,6 +849,7 @@ export class SummaryEngineService implements OnModuleInit {
         runtimePersisted,
         ledgerCollectedAmount,
       },
+      ...(liabilityOutcome ? { liability: liabilityOutcome } : {}),
     };
   }
 

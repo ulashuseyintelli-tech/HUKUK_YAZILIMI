@@ -64,6 +64,7 @@ const ROUTES: Array<{ name: string; path: (id: string) => string; body?: boolean
   { name: "cases/:id/finance-summary", path: (id) => `/cases/${id}/finance-summary` },
   { name: "cases/:id/calculation-summary", path: (id) => `/cases/${id}/calculation-summary?date=2026-11-01` },
   { name: "cases/:id/debtor-balances", path: (id) => `/cases/${id}/debtor-balances` },
+  { name: "cases/:id/claim-liability", path: (id) => `/cases/${id}/claim-liability` },
   { name: "cases/:caseId/balance", path: (id) => `/cases/${id}/balance` },
   { name: "cases/:caseId/balance/ledger", path: (id) => `/cases/${id}/balance/ledger` },
   { name: "cases/:caseId/groups", path: (id) => `/cases/${id}/groups`, body: true },

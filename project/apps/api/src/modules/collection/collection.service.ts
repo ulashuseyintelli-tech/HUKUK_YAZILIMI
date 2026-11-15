@@ -9,8 +9,15 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { resolveCollectionReportScope } from './collection-report-currency';
-import { allocationHoldReason, type PayerLiabilityScopeErrorCode } from "../claim-item/payer-liability-scope";
+import { allocationHoldReason } from "../claim-item/payer-liability-scope";
+import { toKurus as toLiabilityKurus } from "../claim-liability/claim-liability.domain";
 import {
+  resolveCaseLiabilityAllocationScope,
+  type CaseLiabilityAllocationScope,
+} from "../claim-liability/claim-liability.reader";
+import {
+  LIABILITY_LIMIT_EXCEEDED_HOLD_CODE,
+  LIABILITY_LIMIT_EXCEEDED_HOLD_REASON,
   PAYMENT_ALLOCATION_COMPLETED_EVENT,
   createCollectionAllocationHoldInTx,
   paymentAllocationCompletedEventId,
@@ -21,7 +28,7 @@ import {
   ReceiptObjectScopeAuthorizationService,
   type ReceiptAuthorizationBasis,
 } from "./receipt-object-scope-authorization.service";
-import { Prisma } from "@prisma/client";
+import { Prisma, type AllocationHoldReason } from "@prisma/client";
 import { randomUUID } from "crypto";
 import {
   CreateCollectionDto,
@@ -157,12 +164,21 @@ const RESTRICTED_OVERPAYMENT_CHANNELS = new Set<string>([
 ]);
 
 function hasUnsupportedRestrictedPaymentSignal(dto: CreateCollectionDto): boolean {
+  return Boolean(dto.caseDebtorId || hasRestrictedSourceOrChannel(dto));
+}
+
+/**
+ * Haciz / icra dairesi kaynaklı ödeme mi (kaynak ya da kanal). Bu kaynakların fazla ödeme kuralları DEĞİŞMEZ: seçimlik
+ * sorumluluğun dar fazla ödeme istisnası bu kaynaklara UYGULANMAZ.
+ */
+function hasRestrictedSourceOrChannel(input: { sourceType?: string | null; channel?: string | null }): boolean {
   return Boolean(
-    dto.caseDebtorId ||
-    (dto.sourceType && RESTRICTED_OVERPAYMENT_SOURCES.has(dto.sourceType)) ||
-    (dto.channel && RESTRICTED_OVERPAYMENT_CHANNELS.has(dto.channel)),
+    (input.sourceType && RESTRICTED_OVERPAYMENT_SOURCES.has(input.sourceType)) ||
+    (input.channel && RESTRICTED_OVERPAYMENT_CHANNELS.has(input.channel)),
   );
 }
+
+type AllocationScopeItem = { isAllDebtorsLiable: boolean; liableDebtorIds: string[] };
 
 function mapSourceToConfidence(sourceType: CollectionSource | undefined): OccurredAtConfidence {
   if (sourceType && EXTERNAL_SIGNED_SOURCES.has(sourceType)) {
@@ -462,26 +478,44 @@ export class CollectionService {
   /// </remarks>
   /**
    * K3-L — mahsup kapsamı: HESABINA ödeme yapılan borçlunun (Collection.caseDebtorId → Debtor.id) çözümü ve bekletme
-   * kararı. Kısıtlı kalem yoksa ek sorgu YOK, bekletme YOK (davranış aynı). Gönderen kişi ve icra dairesi bu kimliğe
-   * DÖNÜŞTÜRÜLMEZ.
+   * kararı. Kısıtlı kalem yoksa bekletme YOK (davranış aynı). Gönderen kişi ve icra dairesi bu kimliğe DÖNÜŞTÜRÜLMEZ.
+   *
+   * Seçimlik sorumluluk (karar günlüğü 2026-11-15): dosyada etkin sorumluluk seçimi varsa karar seçim kaydından
+   * verilir (paylı / tutarla sınırlı kalem ya da listesi herkesi kapsamayan müteselsil kalem → borçlu zorunlu).
+   * Etkin seçim YOKSA aşağıdaki mevcut kural AYNEN çalışır; tek ek maliyet bir seçim sorgusudur.
    *
    * <remarks>
    * Cagrildigi yerler:
    * - CollectionService.create() → ledger dağıtımından ÖNCE
+   * - CollectionService.completeHeldAllocation() → bekletilen mahsup tamamlanırken
    * </remarks>
    */
   private async resolveAllocationScopeInTx(
     tx: Prisma.TransactionClient,
+    tenantId: string,
     caseId: string,
     caseDebtorId: string | null | undefined,
-    activeItems: ReadonlyArray<{ isAllDebtorsLiable: boolean; liableDebtorIds: string[] }>,
-  ): Promise<{ onBehalfDebtorId: string | null; holdReason: PayerLiabilityScopeErrorCode | null }> {
-    if (allocationHoldReason(activeItems, null) === null) return { onBehalfDebtorId: null, holdReason: null };
+    activeItems: ReadonlyArray<AllocationScopeItem>,
+  ): Promise<{
+    onBehalfDebtorId: string | null;
+    holdReason: AllocationHoldReason | null;
+    liability: CaseLiabilityAllocationScope | null;
+  }> {
+    // Etkin seçim varsa etkin kalemleri (tutar ve tek tahsilat sayacıyla) sorumluluk okuyucusu kendisi okur.
+    const liability = await resolveCaseLiabilityAllocationScope(tx, {
+      tenantId,
+      caseId,
+      onBehalfCaseDebtorId: caseDebtorId ?? null,
+    });
+    if (liability) {
+      return { onBehalfDebtorId: liability.onBehalfDebtorId, holdReason: liability.scope.holdReason, liability };
+    }
+    if (allocationHoldReason(activeItems, null) === null) return { onBehalfDebtorId: null, holdReason: null, liability: null };
     const onBehalf = caseDebtorId
       ? await tx.caseDebtor.findFirst({ where: { id: caseDebtorId, caseId }, select: { debtorId: true } })
       : null;
     const onBehalfDebtorId = onBehalf?.debtorId ?? null;
-    return { onBehalfDebtorId, holdReason: allocationHoldReason(activeItems, onBehalfDebtorId) };
+    return { onBehalfDebtorId, holdReason: allocationHoldReason(activeItems, onBehalfDebtorId), liability: null };
   }
 
   /**
@@ -502,7 +536,9 @@ export class CollectionService {
       amount: number;
       currency: string;
       userId?: string;
-      holdReason: PayerLiabilityScopeErrorCode;
+      holdReason: AllocationHoldReason;
+      /** Bekletme nedeninin ayrıntısı (yalnız tanı; tutar alanlarını değiştirmez). */
+      details?: Record<string, unknown>;
     },
   ): Promise<string> {
     return createCollectionAllocationHoldInTx(tx, {
@@ -513,6 +549,7 @@ export class CollectionService {
       currency: input.currency,
       holdReason: input.holdReason,
       createdById: input.userId,
+      ...(input.details ? { details: input.details } : {}),
     });
   }
 
@@ -539,6 +576,12 @@ export class CollectionService {
       caseCurrency: string;
       restrictedPaymentSignal: boolean;
       restrictedDetails: Record<string, unknown>;
+      /**
+       * Seçimlik sorumluluk — dar istisna (owner 2026-11-15): dosyada etkin paylı / tutarla sınırlı seçim var ve ödeme
+       * bu borçlu hesabına yapıldı. Aşan tutar bu borçluya atfedilen fazla ödeme olarak AYRILIR (yalnız tanı olayı
+       * yeterli değildir); başka borçluya aktarılmaz. null → mevcut kural aynen.
+       */
+      liabilityAttribution?: { caseDebtorId: string; restrictedSourceOrChannel: boolean } | null;
       paymentEventId: string;
       userId?: string;
       trace: CollectionMutationTrace;
@@ -590,7 +633,26 @@ export class CollectionService {
         },
       });
     }
-    if (input.restrictedPaymentSignal) {
+    const liabilityAttribution = input.liabilityAttribution ?? null;
+    if (liabilityAttribution) {
+      // Dar istisna: borçlu belirtilmiş olması tek başına engel DEĞİLDİR. Haciz / icra dairesi kaynağı ya da güvenilmeyen
+      // dağıtım buraya ulaşmamalıdır (mahsup motoru yazımdan önce durur, tahsilat tamamen bekletilir). Ulaşırsa eski
+      // yola (yalnız tanı olayı) DÜŞÜLMEZ: işlem geri alınır.
+      if (liabilityAttribution.restrictedSourceOrChannel || blocks.length > 0) {
+        throw new ConflictException({
+          code: 'COLLECTION_RECONCILIATION_FAILED',
+          message:
+            'Tahsilat tutarı mahsup edilen ve fazla ödeme olarak ayrılan tutarlarla uzlaştırılamadı; işlem geri alındı.',
+          collectionAmount: input.collectionAmount,
+          allocatedAmount,
+          unreconciledAmount: overpaymentAmount,
+          reasons: [
+            ...(liabilityAttribution.restrictedSourceOrChannel ? ['RESTRICTED_SOURCE_OR_CHANNEL'] : []),
+            ...blocks.map((block) => block.reason),
+          ],
+        });
+      }
+    } else if (input.restrictedPaymentSignal) {
       blocks.push({
         reason: 'RESTRICTED_PAYMENT_UNSUPPORTED',
         message: 'Payment may be restricted/earmarked, but PaymentDesignation is not implemented yet.',
@@ -630,9 +692,29 @@ export class CollectionService {
         currency: input.currency,
         status: 'HELD',
         createdById: input.userId,
-        metadata: { collectionAmount: input.collectionAmount, allocatedAmount },
+        ...(liabilityAttribution ? { caseDebtorId: liabilityAttribution.caseDebtorId } : {}),
+        metadata: {
+          collectionAmount: input.collectionAmount,
+          allocatedAmount,
+          ...(liabilityAttribution ? { liabilityAttributed: true } : {}),
+        },
       },
     });
+    if (liabilityAttribution) {
+      // Yazım anı uzlaştırması (owner güvenlik düzeltmesi 1): tahsilat = mahsup edilen + fazla ödeme olarak ayrılan.
+      // Bu dalda bekletilen tutar yoktur. Kuruşu kuruşuna tutmazsa işlem geri alınır.
+      const reconciled =
+        toLiabilityKurus(input.collectionAmount) === toLiabilityKurus(allocatedAmount) + toLiabilityKurus(overpayment.amount);
+      if (!reconciled) {
+        throw new ConflictException({
+          code: 'COLLECTION_RECONCILIATION_FAILED',
+          message: 'Tahsilat tutarı mahsup edilen ve fazla ödeme olarak ayrılan tutarlarla uzlaşmıyor; işlem geri alındı.',
+          collectionAmount: input.collectionAmount,
+          allocatedAmount,
+          overpaymentAmount: String(overpayment.amount),
+        });
+      }
+    }
     await this.domainEventIngestService.appendInTransaction(tx, {
       header: {
         eventId: randomUUID(),
@@ -655,6 +737,7 @@ export class CollectionService {
         currency: input.currency,
         collectionAmount: input.collectionAmount,
         allocatedAmount,
+        ...(liabilityAttribution ? { onBehalfCaseDebtorId: liabilityAttribution.caseDebtorId } : {}),
       },
     });
     return { ledgerAllocationCount, overpaymentId: overpayment.id, heldOverpaymentAmount: overpaymentAmount, allocatedAmount };
@@ -774,7 +857,7 @@ export class CollectionService {
         throw new BadRequestException({ code: 'COLLECTION_CURRENCY_MISMATCH', message: 'Active allocation-input currencies must match the case currency.' });
       }
       await this.validateCaseDebtorForCollectionInTx(tx, tenantId, input.caseId, input.caseDebtorId);
-      const scope = await this.resolveAllocationScopeInTx(tx, input.caseId, input.caseDebtorId, activeAllocationItems);
+      const scope = await this.resolveAllocationScopeInTx(tx, tenantId, input.caseId, input.caseDebtorId, activeAllocationItems);
       if (activeAllocationItems.length === 0 || scope.holdReason) {
         // Bilgi hâlâ yetersiz → bekletme AYNEN korunur, hiçbir yazma yok.
         throw new ConflictException({
@@ -797,6 +880,7 @@ export class CollectionService {
 
       // 6) Defter mahsubu — bekletilen tutarın tamamı, orijinal tahsilat tarihiyle
       const holdAmount = toFiniteAmount(hold.amount);
+      const completionRestrictedSource = hasRestrictedSourceOrChannel({ sourceType: collection.sourceType, channel: collection.channel });
       const ledger = await this.summaryEngine!.allocatePaymentToLedgerInTx(tx, tenantId, input.caseId, holdAmount, {
         entryDate: coerceDate(collection.date, new Date()),
         description: collection.description ?? undefined,
@@ -808,9 +892,19 @@ export class CollectionService {
         causationId: trace.causationId,
         producer: 'COLLECTION_ALLOCATION_COMPLETION',
         onBehalfDebtorId: scope.onBehalfDebtorId,
+        onBehalfCaseDebtorId: input.caseDebtorId,
+        // Dar istisna haciz / icra dairesi kaynağına uygulanmaz: aşan ödeme mahsup edilmez, bekletme korunur.
+        liabilityExcessAllowed: !completionRestrictedSource,
       });
       if (!ledger.allocated || !ledger.ledgerEntry) {
-        throw new ConflictException({ code: ledger.reason ?? 'LEDGER_ALLOCATION_FAILED', message: 'Defter mahsubu yapılamadı; bekletme korunur.' });
+        throw new ConflictException({
+          code: ledger.reason ?? 'LEDGER_ALLOCATION_FAILED',
+          message:
+            ledger.reason === 'LIABILITY_LIMIT_EXCEEDED'
+              ? 'Ödeme, seçilen borçlunun sorumluluğunu aşıyor ve bu kaynakta aşan tutar fazla ödeme olarak ayrılamıyor; bekletme korunur.'
+              : 'Defter mahsubu yapılamadı; bekletme korunur.',
+          ...(ledger.liability ? { liability: ledger.liability } : {}),
+        });
       }
       await tx.ledgerEntry.update({
         where: { id: ledger.ledgerEntry.id },
@@ -830,6 +924,9 @@ export class CollectionService {
           channel: (collection.channel as CollectionChannel | null) ?? undefined,
         } as CreateCollectionDto),
         restrictedDetails: { caseDebtorId: input.caseDebtorId, sourceType: collection.sourceType, channel: collection.channel },
+        liabilityAttribution: ledger.liability?.shareOrCapBound
+          ? { caseDebtorId: input.caseDebtorId, restrictedSourceOrChannel: completionRestrictedSource }
+          : null,
         paymentEventId,
         userId: actorUserId,
         trace,
@@ -1141,12 +1238,17 @@ export class CollectionService {
       await this.validateCaseDebtorForCollectionInTx(tx, tenantId, dto.caseId, dto.caseDebtorId);
       // K3-L (owner kararı 2026-09-29): gerçekleşmiş tahsilat REDDEDİLMEZ. Hesabına ödeme yapılan borçlu (Debtor.id)
       // belirsizse veya sorumlu olduğu kalem yoksa tahsilat kaydedilir, otomatik mahsup BEKLETİLİR.
-      const { onBehalfDebtorId, holdReason: allocationHold } = await this.resolveAllocationScopeInTx(
+      const allocationScope = await this.resolveAllocationScopeInTx(
         tx,
+        tenantId,
         dto.caseId,
         dto.caseDebtorId,
         activeAllocationItems,
       );
+      const onBehalfDebtorId = allocationScope.onBehalfDebtorId;
+      // Seçimli dosyada mahsup motoru da bekletme kararı verebilir (sorumluluk sınırını aşan, ayrılamayan ödeme).
+      let allocationHold: AllocationHoldReason | null = allocationScope.holdReason;
+      const restrictedSourceOrChannel = hasRestrictedSourceOrChannel(dto);
 
       if (dto.sourceType && EXTERNAL_SOURCES.has(dto.sourceType) && dto.sourceId) {
         const existing = await (tx as any).collection.findFirst({
@@ -1296,8 +1398,38 @@ export class CollectionService {
             causationId: trace.causationId,
             producer: command.producer,
             onBehalfDebtorId,
+            onBehalfCaseDebtorId: dto.caseDebtorId ?? null,
+            // Dar fazla ödeme istisnası haciz / icra dairesi kaynağına UYGULANMAZ (mevcut kuralları değişmez).
+            liabilityExcessAllowed: !restrictedSourceOrChannel,
           },
         );
+        if (!ledger.allocated && ledger.reason === 'LIABILITY_LIMIT_EXCEEDED') {
+          // Seçimlik sorumluluk (owner güvenlik düzeltmesi 1): ödeme borçlunun sorumluluğunu aşıyor ve aşan tutar fazla
+          // ödeme olarak AYRILAMIYOR (haciz / icra dairesi kaynağı ya da güvenilmeyen dağıtım). Eski yola düşülmez:
+          // gerçekleşmiş tahsilat kaydedilir, TAMAMI mahsup bekletmeye alınır; hiçbir kaleme düşülmez, tutar kaybolmaz.
+          // Kayıtlı neden eski sürümün okuyabildiği değerdir; ayrıntı kodu metadata'dadır (geri dönüş güvenliği).
+          allocationHold = LIABILITY_LIMIT_EXCEEDED_HOLD_REASON;
+          allocationHoldId = await this.holdCollectionAllocationInTx(tx, {
+            tenantId,
+            caseId: dto.caseId,
+            collectionId: collection.id,
+            amount: dto.amount,
+            currency,
+            userId,
+            holdReason: allocationHold,
+            details: {
+              reasonCode: LIABILITY_LIMIT_EXCEEDED_HOLD_CODE,
+              onBehalfCaseDebtorId: dto.caseDebtorId ?? null,
+              debtorCapacityAmount: ledger.liability?.plannedAllocatedAmount ?? null,
+              excessAmount: ledger.liability?.excessAmount ?? null,
+              restrictedSourceOrChannel,
+              excludedOutstanding: ledger.excludedOutstanding,
+            },
+          });
+          this.logger.warn(
+            `collection allocation held (case=${dto.caseId}, collection=${collection.id}, reason=${LIABILITY_LIMIT_EXCEEDED_HOLD_CODE})`,
+          );
+        }
         if (ledger.allocated && ledger.ledgerEntry) {
           const settled = await this.settleLedgerAllocationInTx(tx, {
             tenantId,
@@ -1308,6 +1440,10 @@ export class CollectionService {
             caseCurrency,
             restrictedPaymentSignal: hasUnsupportedRestrictedPaymentSignal(dto),
             restrictedDetails: { caseDebtorId: dto.caseDebtorId, sourceType: dto.sourceType, channel: dto.channel },
+            liabilityAttribution:
+              ledger.liability?.shareOrCapBound && dto.caseDebtorId
+                ? { caseDebtorId: dto.caseDebtorId, restrictedSourceOrChannel }
+                : null,
             paymentEventId,
             userId,
             trace,
@@ -1318,7 +1454,7 @@ export class CollectionService {
           if (settled.overpaymentId) overpaymentId = settled.overpaymentId;
           heldOverpaymentAmount = settled.heldOverpaymentAmount;
         }
-        if (!ledger.allocated) {
+        if (!ledger.allocated && ledger.reason !== 'LIABILITY_LIMIT_EXCEEDED') {
           this.logger.warn(
             `case has no claimItems; payment not ledger-allocated ` +
               `(case=${dto.caseId}, collection=${collection.id}, reason=${ledger.reason})`,

@@ -61,6 +61,8 @@ function makePrisma(overrides: Record<string, any> = {}) {
         },
       ]),
     },
+    // Seçimlik sorumluluk: etkin seçim yok → mahsup kapsamı mevcut kuralla çözülür.
+    claimItemLiabilitySet: { findMany: jest.fn(async () => []) },
     claimItem: {
       ...modelWithCount(1),
       findMany: jest.fn(async () => []),

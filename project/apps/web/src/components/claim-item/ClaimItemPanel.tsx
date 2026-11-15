@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { api } from "@/lib/api";
+import { api, type ClaimLiabilityStateDTO } from "@/lib/api";
+import { CLAIM_LIABILITY_KIND_LABELS, ClaimLiabilitySelectionDrawer } from "./ClaimLiabilitySelectionDrawer";
 import { ActionError } from '@/components/ui/action-error';
 import { toActionErrorMessage } from '@/lib/action-error';
 import { runMutation, runRefreshOnly } from '@/lib/mutation-outcome';
@@ -173,9 +174,21 @@ export function ClaimItemPanel({
   };
   const [addType, setAddType] = useState<string>("");
   const [editItem, setEditItem] = useState<ClaimItem | null>(null); // PR-5c: metadata-edit modal hedefi
+  // Seçimlik borçlu sorumluluğu: kalem başına durum (sunucu hesabı). Okunamazsa panel aynen çalışır, etiket gösterilmez.
+  const [liability, setLiability] = useState<ClaimLiabilityStateDTO | null>(null);
+  const [liabilityTarget, setLiabilityTarget] = useState<{ claimItemIds: string[]; presetJointAll: boolean } | null>(null);
+  const [liabilityNotice, setLiabilityNotice] = useState<string | null>(null);
+  const loadLiability = async (): Promise<void> => {
+    try {
+      setLiability(await api.getCaseClaimLiability(caseId));
+    } catch {
+      setLiability(null);
+    }
+  };
 
   useEffect(() => {
     void loadData();
+    void loadLiability();
   }, [caseId]);
 
   // PR-2A1 DEPENDENCY_FIXED: `console.error` tek başına handling değildir — panel
@@ -443,6 +456,42 @@ export function ClaimItemPanel({
             <Calculator className="h-5 w-5" />
             Alacak Kalemleri ({items.length})
           </h3>
+          {!readOnly && liability?.secimYazmaAcik && items.some((item) => item.status === "ACTIVE") && (
+            <div className="mt-2 flex flex-wrap items-center gap-2" data-testid="claim-liability-bulk-actions">
+              <button
+                type="button"
+                data-testid="claim-liability-bulk-button"
+                onClick={() =>
+                  setLiabilityTarget({
+                    claimItemIds: items.filter((item) => item.status === "ACTIVE").map((item) => item.id),
+                    presetJointAll: false,
+                  })
+                }
+                className="rounded border px-2 py-1 text-xs hover:bg-white"
+              >
+                Borçlu sorumluluğu: dosyadaki kalemlere uygula
+              </button>
+              <button
+                type="button"
+                data-testid="claim-liability-bulk-joint-button"
+                onClick={() =>
+                  setLiabilityTarget({
+                    claimItemIds: items.filter((item) => item.status === "ACTIVE").map((item) => item.id),
+                    presetJointAll: true,
+                  })
+                }
+                className="rounded border px-2 py-1 text-xs hover:bg-white"
+                title="Tür müteselsil ve bütün etkin borçlular seçili gelir; dayanak ve onay yine istenir."
+              >
+                Tümü müteselsil (kısa yol)
+              </button>
+            </div>
+          )}
+          {liabilityNotice && (
+            <p data-testid="claim-liability-notice" className="mt-2 text-xs text-indigo-800">
+              {liabilityNotice}
+            </p>
+          )}
         </div>
         <div className="divide-y">
           {items.map((item) => {
@@ -473,6 +522,27 @@ export function ClaimItemPanel({
                           Otomatik
                         </span>
                       )}
+                      {(() => {
+                        // Seçimlik sorumluluk: seçimi olmayan kalem "Belirlenmedi" görünür (salt okunur etiket).
+                        const durum = liability?.kalemler.find((kalem) => kalem.claimItemId === item.id);
+                        if (!durum) return null;
+                        return (
+                          <span
+                            data-testid={`claim-item-liability-${item.id}`}
+                            className={`px-2 py-0.5 text-xs rounded ${
+                              durum.uzlasiyor ? "bg-indigo-50 text-indigo-700" : "bg-red-50 text-red-700"
+                            }`}
+                            title={
+                              durum.uzlasiyor
+                                ? "Borçlu sorumluluğu"
+                                : "Seçim geçmiş tahsilatla uzlaşmıyor; borçluya bağlı mahsup bu kalemde durur. Seçim yeniden yapılmalı."
+                            }
+                          >
+                            Sorumluluk: {CLAIM_LIABILITY_KIND_LABELS[durum.sorumlulukTuru]}
+                            {!durum.uzlasiyor ? " — uzlaşmıyor" : ""}
+                          </span>
+                        );
+                      })()}
                     </div>
                     <p className="text-sm text-muted-foreground">
                       {item.description || item.referenceNo || "-"}
@@ -500,6 +570,17 @@ export function ClaimItemPanel({
                   <span className="text-lg font-bold">
                     {formatCurrency(item.amount, item.currency)}
                   </span>
+                  {!readOnly && liability?.secimYazmaAcik && item.status === "ACTIVE" && (
+                    <button
+                      type="button"
+                      data-testid={`claim-item-liability-select-${item.id}`}
+                      onClick={() => setLiabilityTarget({ claimItemIds: [item.id], presetJointAll: false })}
+                      className="px-2 py-1 text-xs text-indigo-700 hover:bg-indigo-50 rounded-lg"
+                      title="Borçlu sorumluluğunu seç (onaya gider)"
+                    >
+                      Sorumluluk
+                    </button>
+                  )}
                   {metadataEdit && (
                   <button
                     onClick={() => setEditItem(item)}
@@ -640,6 +721,21 @@ export function ClaimItemPanel({
           itemType={addType}
           onClose={() => setShowAddModal(false)}
           onSuccess={() => { setShowAddModal(false); loadData(); }}
+        />
+      )}
+
+      {/* Seçimlik borçlu sorumluluğu: seçim çekmecesi — readOnly'de ve bayrak kapalıyken açılmaz. */}
+      {!readOnly && liability && liabilityTarget && (
+        <ClaimLiabilitySelectionDrawer
+          caseId={caseId}
+          state={liability}
+          claimItemIds={liabilityTarget.claimItemIds}
+          presetJointAll={liabilityTarget.presetJointAll}
+          onClose={() => setLiabilityTarget(null)}
+          onRequested={(message) => {
+            setLiabilityTarget(null);
+            setLiabilityNotice(message);
+          }}
         />
       )}
 

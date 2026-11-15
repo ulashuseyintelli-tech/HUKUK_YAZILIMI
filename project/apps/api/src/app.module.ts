@@ -54,6 +54,7 @@ import { PublicInstitutionModule } from "./modules/public-institution/public-ins
 import { TebligatModule } from "./modules/tebligat/tebligat.module";
 import { CollectionModule } from "./modules/collection/collection.module";
 import { ClaimItemModule } from "./modules/claim-item/claim-item.module";
+import { ClaimLiabilityModule } from "./modules/claim-liability/claim-liability.module";
 import { ClaimEngineModule } from "./modules/claim-engine/claim-engine.module";
 import { FeeEngineModule } from "./modules/fee-engine/fee-engine.module";
 import { TemplateEngineModule } from "./modules/template-engine/template-engine.module";
@@ -217,6 +218,7 @@ function getConditionalImports(): Type<unknown>[] {
     TebligatModule,
     CollectionModule,
     ClaimItemModule,
+    ClaimLiabilityModule,
     ClaimEngineModule,
     FeeEngineModule,
     TemplateEngineModule,

@@ -19,7 +19,28 @@ export type CollectionAllocationHoldActiveRow = Readonly<{
   currency: string;
   holdReason: AllocationHoldReason;
   createdAt: Date;
+  metadata?: Prisma.JsonValue | null;
 }>;
+
+/**
+ * Seçimlik sorumluluk (karar günlüğü 2026-11-15) — "ödeme, hesabına ödeme yapılan borçlunun sorumluluğunu aşıyor ve aşan
+ * tutar borçlu fazla ödemesi olarak AYRILAMIYOR" bekletmesinin ayrıntı kodu.
+ *
+ * Veritabanı enum'una yeni değer BİLEREK eklenmedi: gerçek eski sürüm sınamasında önceki derleme, tanımadığı enum
+ * değerini taşıyan bekletme kaydını okuyamadı. Kayıt, eski sürümün de okuyabildiği `ON_BEHALF_DEBTOR_NOT_LIABLE` ile
+ * yazılır (eski sürümün bu kayda uyguladığı kural da güvenlidir: sorumlu kalem yoksa mahsup yapmaz); ayrıntı kodu
+ * `metadata.details.reasonCode` alanında tutulur.
+ */
+export const LIABILITY_LIMIT_EXCEEDED_HOLD_CODE = 'LIABILITY_LIMIT_EXCEEDED' as const;
+export const LIABILITY_LIMIT_EXCEEDED_HOLD_REASON: AllocationHoldReason = 'ON_BEHALF_DEBTOR_NOT_LIABLE';
+
+/**
+ * Bekletmenin gösterilecek nedeni: ayrıntı kodu varsa o, yoksa kayıtlı neden.
+ */
+export function effectiveAllocationHoldReason(hold: { holdReason: unknown; metadata?: unknown }): string {
+  const details = (hold.metadata as { details?: { reasonCode?: unknown } } | null | undefined)?.details;
+  return details?.reasonCode === LIABILITY_LIMIT_EXCEEDED_HOLD_CODE ? LIABILITY_LIMIT_EXCEEDED_HOLD_CODE : String(hold.holdReason);
+}
 
 /**
  * Deterministik olay kimliği: aynı (tenant, tahsilat) için ikinci yayın outbox `evt:<id>` tekilliğine (P2002) takılır.
@@ -60,6 +81,8 @@ export async function createCollectionAllocationHoldInTx(
     currency: string;
     holdReason: AllocationHoldReason;
     createdById?: string;
+    /** Bekletme nedeninin ayrıntısı (yalnız tanı); tutar alanları değişmez. */
+    details?: Record<string, unknown>;
   },
 ): Promise<string> {
   const hold = await tx.collectionAllocationHold.create({
@@ -72,7 +95,11 @@ export async function createCollectionAllocationHoldInTx(
       status: 'HELD',
       holdReason: input.holdReason,
       createdById: input.createdById,
-      metadata: { collectionAmount: input.amount, allocatedAmount: 0 },
+      metadata: {
+        collectionAmount: input.amount,
+        allocatedAmount: 0,
+        ...(input.details ? { details: input.details as Prisma.InputJsonObject } : {}),
+      },
     },
     select: { id: true },
   });
@@ -123,7 +150,7 @@ export async function findActiveCollectionAllocationHolds(
 ): Promise<CollectionAllocationHoldActiveRow[]> {
   return db.collectionAllocationHold.findMany({
     where: { tenantId, caseId, status: 'HELD' },
-    select: { id: true, collectionId: true, amount: true, currency: true, holdReason: true, createdAt: true },
+    select: { id: true, collectionId: true, amount: true, currency: true, holdReason: true, createdAt: true, metadata: true },
     orderBy: { createdAt: 'asc' },
   });
 }
