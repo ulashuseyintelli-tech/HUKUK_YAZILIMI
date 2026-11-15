@@ -17,6 +17,44 @@ import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { PoaService } from "../poa.service";
 import { PoaStatus } from "@prisma/client";
 
+describe('CL-R14/A — generic active records do not assess operation/case scope', () => {
+  const build = (row: any) => {
+    const prisma: any = { clientPowerOfAttorney: { findFirst: jest.fn().mockResolvedValue(row), update: jest.fn() } };
+    const audit: any = { logInTransaction: jest.fn() };
+    return { svc: new PoaService(prisma, audit, {} as any), prisma, audit };
+  };
+  const read = (svc: PoaService, multiple: boolean) => multiple
+    ? svc.checkValidPoaForLawyers('scope-client', ['scope-lawyer'], 'scope-tenant')
+    : svc.checkValidPoa('scope-client', 'scope-lawyer', 'scope-tenant');
+
+  describe.each(['GENEL', 'ICRA_TAKIP', 'BU_DOSYA', 'OZEL'])('%s', (scopeType) => {
+    it.each([false, true])('keeps active-record compatibility but explicitly leaves scope unassessed (multi=%s)', async (multiple) => {
+      const row = { id: 'scope-poa', scopeType, isLimited: false, lawyers: [{ lawyerId: 'scope-lawyer', lawyer: { name: 'Synthetic', surname: 'Lawyer' } }] };
+      const { svc, prisma, audit } = build(row);
+      const result = await read(svc, multiple);
+      expect(result).toMatchObject({ isValid: true, poa: row, scopeStatus: 'NOT_EVALUATED', scopeMessage: expect.stringContaining('kapsamı doğrulanmadı') });
+      const where = prisma.clientPowerOfAttorney.findFirst.mock.calls[0][0].where;
+      expect(where).toMatchObject({ clientId: 'scope-client', client: { tenantId: 'scope-tenant' }, status: 'ACTIVE', isActive: true });
+      expect(where.scopeType).toBeUndefined();
+      expect(where.lawyers.some.lawyerId).toEqual(multiple ? { in: ['scope-lawyer'] } : 'scope-lawyer');
+      expect(prisma.clientPowerOfAttorney.update).not.toHaveBeenCalled();
+      expect(audit.logInTransaction).not.toHaveBeenCalled();
+    });
+  });
+
+  it.each([false, true])('preserves near-expiry days and warning as well as scope clarity (multi=%s)', async (multiple) => {
+    const { svc } = build({ id: 'scope-poa', isLimited: true, validUntil: new Date(Date.now() + 2 * 86400000), lawyers: [{ lawyerId: 'scope-lawyer', lawyer: { name: 'Synthetic', surname: 'Lawyer' } }] });
+    const result = await read(svc, multiple);
+    expect(result).toMatchObject({ isValid: true, daysRemaining: 2, scopeStatus: 'NOT_EVALUATED' });
+    expect(result.message).toContain('2 gün içinde sona erecek');
+  });
+
+  it.each([false, true])('does not turn an absent record into positive validity or a scope decision (multi=%s)', async (multiple) => {
+    const { svc } = build(null);
+    expect(await read(svc, multiple)).toMatchObject({ isValid: false, scopeStatus: 'NOT_EVALUATED', scopeMessage: expect.stringContaining('kapsamı doğrulanmadı') });
+  });
+});
+
 const TENANT = "t1";
 const POA_ID = "poa1";
 

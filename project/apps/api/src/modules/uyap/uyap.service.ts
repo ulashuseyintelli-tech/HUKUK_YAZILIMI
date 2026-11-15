@@ -1,6 +1,6 @@
 import { Injectable, Logger, BadRequestException, ForbiddenException, Inject, forwardRef, Optional } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { PoaService } from '../poa/poa.service';
+import { PoaService, POA_SCOPE_NOT_EVALUATED, type PoaScopeAssessment } from '../poa/poa.service';
 import { CasePolicyEngine } from '../policy-engine/case-policy-engine.service';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { maskIdentity } from '../../common/pii-mask.util';
@@ -101,7 +101,7 @@ export interface HacizRequest {
   // sözleşmesi görüntüsü üretiyordu. UYAP_SEND için authority bypass'ı YOKTUR.
 }
 
-export interface PoaValidationResult {
+export interface PoaValidationResult extends PoaScopeAssessment {
   isValid: boolean;
   message: string;
   daysRemaining?: number;
@@ -305,6 +305,7 @@ export class UyapService {
   async validatePowerOfAttorney(clientId: string, lawyerId: string, tenantId: string): Promise<PoaValidationResult> {
     if (!clientId || !lawyerId) {
       return {
+        ...POA_SCOPE_NOT_EVALUATED,
         isValid: false,
         message: 'Müvekkil veya avukat bilgisi eksik',
       };
@@ -316,14 +317,16 @@ export class UyapService {
       // CLIENT-SEC-H1 (S1): PII-safe error handling. Kimlik-enrichment lookup'ları kaldırıldı; her
       // geçersiz durumda AYNI generic mesaj döner — kayıt-varlığı veya kimlik (PII) ifşası yok.
       return {
+        ...POA_SCOPE_NOT_EVALUATED,
         isValid: false,
         message: 'Geçerli vekalet bulunamadı',
       };
     }
 
     return {
+      ...POA_SCOPE_NOT_EVALUATED,
       isValid: true,
-      message: 'Geçerli vekalet mevcut',
+      message: 'Etkin vekalet kaydı bulundu.',
       daysRemaining: result.daysRemaining,
       poaId: result.poa?.id,
     };
@@ -547,7 +550,7 @@ export class UyapService {
   /**
    * Takip için tüm müvekkil-avukat kombinasyonlarının vekaletlerini kontrol et
    */
-  async validateCasePoaForUyap(caseId: string, tenantId: string): Promise<{ isValid: boolean; errors: string[] }> {
+  async validateCasePoaForUyap(caseId: string, tenantId: string): Promise<PoaScopeAssessment & { isValid: boolean; errors: string[] }> {
     // CLIENT-SEC-H1 (S1): case load tenant-scoped (fail-closed). Cross-tenant caseId eşleşmez →
     // caseData null → 'Takip bulunamadı' (varlık ifşası yok).
     const caseData = await this.prisma.case.findFirst({
@@ -559,7 +562,7 @@ export class UyapService {
     });
 
     if (!caseData) {
-      return { isValid: false, errors: ['Takip bulunamadı'] };
+      return { ...POA_SCOPE_NOT_EVALUATED, isValid: false, errors: ['Takip bulunamadı'] };
     }
 
     const errors: string[] = [];
@@ -585,6 +588,7 @@ export class UyapService {
     }
 
     return {
+      ...POA_SCOPE_NOT_EVALUATED,
       isValid: errors.length === 0,
       errors,
     };

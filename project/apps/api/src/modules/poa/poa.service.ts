@@ -115,7 +115,17 @@ export interface CreatePoaDto {
  */
 export type UpdatePoaDto = Partial<Omit<CreatePoaDto, 'clientId'>>;
 
-export interface PoaValidationResult {
+export interface PoaScopeAssessment {
+  scopeStatus: 'NOT_EVALUATED';
+  scopeMessage: string;
+}
+
+export const POA_SCOPE_NOT_EVALUATED: PoaScopeAssessment = {
+  scopeStatus: 'NOT_EVALUATED',
+  scopeMessage: 'İşlem/dosya kapsamı doğrulanmadı. Gönderim yetkisi ayrıca denetlenir.',
+};
+
+export interface PoaValidationResult extends PoaScopeAssessment {
   isValid: boolean;
   poa?: any;
   message?: string;
@@ -691,6 +701,7 @@ export class PoaService {
 
     if (!validPoa) {
       return {
+        ...POA_SCOPE_NOT_EVALUATED,
         isValid: false,
         message: "Geçerli vekalet bulunamadı",
       };
@@ -704,12 +715,13 @@ export class PoaService {
     }
 
     return {
+      ...POA_SCOPE_NOT_EVALUATED,
       isValid: true,
       poa: validPoa,
       daysRemaining,
       message: daysRemaining !== undefined && daysRemaining <= 30
         ? `Vekalet ${daysRemaining} gün içinde sona erecek`
-        : undefined,
+        : 'Etkin vekalet kaydı bulundu.',
     };
   }
 
@@ -751,6 +763,7 @@ export class PoaService {
 
     if (!validPoa) {
       return {
+        ...POA_SCOPE_NOT_EVALUATED,
         isValid: false,
         message: "Seçili avukatlardan hiçbirine verilmiş geçerli vekalet bulunamadı",
       };
@@ -770,12 +783,13 @@ export class PoaService {
       .map(l => `${l.lawyer.name} ${l.lawyer.surname}`);
 
     return {
+      ...POA_SCOPE_NOT_EVALUATED,
       isValid: true,
       poa: validPoa,
       daysRemaining,
       message: daysRemaining !== undefined && daysRemaining <= 30
         ? `Vekalet ${daysRemaining} gün içinde sona erecek (${matchedLawyers.join(", ")})`
-        : `Geçerli vekalet var (${matchedLawyers.join(", ")})`,
+        : `Etkin vekalet kaydı bulundu (${matchedLawyers.join(", ")}).`,
     };
   }
 

@@ -4287,6 +4287,8 @@ export interface UyapStatus {
 }
 
 export interface UyapPoaValidation {
+  scopeStatus?: 'NOT_EVALUATED';
+  scopeMessage?: string;
   isValid: boolean;
   message: string;
   daysRemaining?: number;
@@ -4295,6 +4297,8 @@ export interface UyapPoaValidation {
 }
 
 export interface UyapCasePoaValidation {
+  scopeStatus?: 'NOT_EVALUATED';
+  scopeMessage?: string;
   isValid: boolean;
   errors: string[];
   canProceedToUyap: boolean;

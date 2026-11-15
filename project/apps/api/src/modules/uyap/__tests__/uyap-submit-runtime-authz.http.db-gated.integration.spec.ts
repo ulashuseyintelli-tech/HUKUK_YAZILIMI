@@ -257,12 +257,12 @@ describeWithDisposableDb('UYAP gönderim uçları — çalışma zamanı yetkisi
   });
 
   describe('RED: boş küme / vekaletsiz dosya (K2-c: karar politika motorunun aktör eşlemesinde)', () => {
-    it('müvekkilsiz dosya → üç uçta red (vekaletli avukat aktörle bile); okuma ucu bugünkü yanıtı AYNEN verir', async () => {
+    it('müvekkilsiz dosya → üç uçta red; okuma boolean değerlerini korur ve kapsamın değerlendirilmediğini belirtir', async () => {
       for (const ep of ENDPOINTS) {
         const caseId = await openCase(`muvekkilsiz-${ep.name.replace('/', '-')}`);
         await prisma.caseClient.deleteMany({ where: { caseId } });
         const read = await as(lawyerUserId).get(`/uyap/poa/validate/case/${caseId}`);
-        expect({ status: read.status, body: read.body }).toEqual({ status: 200, body: { isValid: true, errors: [], canProceedToUyap: true, errorCount: 0 } });
+        expect({ status: read.status, body: read.body }).toEqual({ status: 200, body: { isValid: true, errors: [], canProceedToUyap: true, errorCount: 0, scopeStatus: 'NOT_EVALUATED', scopeMessage: 'İşlem/dosya kapsamı doğrulanmadı. Gönderim yetkisi ayrıca denetlenir.' } });
         await expectPolicyDenied(`müvekkilsiz ${ep.name}`, await ep.send(lawyerUserId, caseId), caseId, 'POWER_OF_ATTORNEY_MISSING', ep.action);
       }
     });
@@ -284,11 +284,11 @@ describeWithDisposableDb('UYAP gönderim uçları — çalışma zamanı yetkisi
       }
     });
 
-    it('avukatsız dosya (dosyaya atanmış avukat YOK) + vekaleti olmayan avukat → üç uçta red; okuma ucu bugünkü yanıtı AYNEN verir', async () => {
+    it('avukatsız dosya + vekaleti olmayan avukat → üç uçta red; okuma boolean değerlerini korur ve kapsamı doğrulanmış saymaz', async () => {
       for (const ep of ENDPOINTS) {
         const caseId = await openCase(`avukatsiz-${ep.name.replace('/', '-')}`, { assignLawyer: false });
         const read = await as(adminId).get(`/uyap/poa/validate/case/${caseId}`);
-        expect({ status: read.status, body: read.body }).toEqual({ status: 200, body: { isValid: true, errors: [], canProceedToUyap: true, errorCount: 0 } });
+        expect({ status: read.status, body: read.body }).toEqual({ status: 200, body: { isValid: true, errors: [], canProceedToUyap: true, errorCount: 0, scopeStatus: 'NOT_EVALUATED', scopeMessage: 'İşlem/dosya kapsamı doğrulanmadı. Gönderim yetkisi ayrıca denetlenir.' } });
         await expectPolicyDenied(`avukatsız ${ep.name}`, await ep.send(noPoaLawyerUserId, caseId), caseId, 'POWER_OF_ATTORNEY_MISSING', ep.action);
       }
     });
@@ -308,7 +308,7 @@ describeWithDisposableDb('UYAP gönderim uçları — çalışma zamanı yetkisi
       ...ENDPOINTS.map((e) => ({ name: e.name as string, action: e.action as string, xml: false, send: e.send })),
       { name: 'xml/submit', action: 'UYAP_SEND', xml: true, send: (userId: string, caseId: string) => as(userId).post(`/uyap/xml/submit/${caseId}`) },
     ];
-    const OK_READ = { status: 200, body: { isValid: true, errors: [], canProceedToUyap: true, errorCount: 0 } };
+    const OK_READ = { status: 200, body: { isValid: true, errors: [], canProceedToUyap: true, errorCount: 0, scopeStatus: 'NOT_EVALUATED', scopeMessage: 'İşlem/dosya kapsamı doğrulanmadı. Gönderim yetkisi ayrıca denetlenir.' } };
     const label = (prefix: string, ep: { name: string }) => `${prefix}-${ep.name.replace('/', '-')}`;
 
     it('atanmış + vekaletli avukat → dört uçta 201 yerel simülasyon; uç başına TEK izinli karar', async () => {

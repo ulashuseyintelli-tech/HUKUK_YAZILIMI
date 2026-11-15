@@ -72,7 +72,31 @@ describe('UyapService — CLIENT-SEC-H1 (S1) cross-tenant containment', () => {
       );
       expect(prisma.case.findUnique).not.toHaveBeenCalled();
       // Cross-tenant/eksik case → güvenli generic hata (varlık ifşası yok):
-      expect(res).toEqual({ isValid: false, errors: ['Takip bulunamadı'] });
+      expect(res).toEqual({ isValid: false, errors: ['Takip bulunamadı'], scopeStatus: 'NOT_EVALUATED', scopeMessage: 'İşlem/dosya kapsamı doğrulanmadı. Gönderim yetkisi ayrıca denetlenir.' });
     });
+  });
+
+  it('CL-R14/A preserves legacy success fields without claiming operation scope', async () => {
+    const { svc, poaService } = buildService();
+    poaService.checkValidPoa.mockResolvedValue({ isValid: true, daysRemaining: 90, poa: { id: 'poa-1' } });
+    expect(await svc.validatePowerOfAttorney('c1', 'l1', 'tenant-A')).toEqual({ isValid: true, daysRemaining: 90, poaId: 'poa-1', message: 'Etkin vekalet kaydı bulundu.', scopeStatus: 'NOT_EVALUATED', scopeMessage: 'İşlem/dosya kapsamı doğrulanmadı. Gönderim yetkisi ayrıca denetlenir.' });
+  });
+
+  it.each([{ caseClients: [] }, { caseClients: [{ clientId: 'c1' }] }])('CL-R14/A does not describe an empty lawyer/client combination as found documents (%j)', async ({ caseClients }) => {
+    const { svc, prisma, poaService } = buildService();
+    prisma.case.findFirst.mockResolvedValue({ caseClients, lawyers: [] });
+    const result = await svc.validateCasePoaForUyap('case-A', 'tenant-A');
+    expect(result).toEqual({ isValid: true, errors: [], scopeStatus: 'NOT_EVALUATED', scopeMessage: 'İşlem/dosya kapsamı doğrulanmadı. Gönderim yetkisi ayrıca denetlenir.' });
+    expect(result).not.toHaveProperty('hasActiveDocument');
+    expect(poaService.checkValidPoa).not.toHaveBeenCalled();
+  });
+
+  it('CL-R14/A includes scope clarity on missing inputs and an invalid record without enrichment', async () => {
+    const { svc, poaService, prisma } = buildService();
+    expect(await svc.validatePowerOfAttorney('', 'l1', 'tenant-A')).toMatchObject({ isValid: false, scopeStatus: 'NOT_EVALUATED' });
+    expect(poaService.checkValidPoa).not.toHaveBeenCalled();
+    poaService.checkValidPoa.mockResolvedValue({ isValid: false, message: 'private data must not echo' });
+    expect(await svc.validatePowerOfAttorney('c1', 'l1', 'tenant-A')).toMatchObject({ isValid: false, message: 'Geçerli vekalet bulunamadı', scopeStatus: 'NOT_EVALUATED' });
+    expect(prisma.client.findUnique).not.toHaveBeenCalled();
   });
 });

@@ -1195,20 +1195,28 @@ export default function NewCasePage() {
               clientName: creditor.name,
               lawyerId: "", // Artık tek avukat değil
               lawyerName: "Seçili avukatlar",
-              message: result.message || "Seçili avukatlardan hiçbirine verilmiş geçerli vekalet bulunamadı",
+              message: `${result.message || "Seçili avukatlardan hiçbirine verilmiş geçerli vekalet bulunamadı"} ${result.scopeMessage || "İşlem/dosya kapsamı doğrulanmadı."}`,
             });
-          } else if (result.daysRemaining !== undefined && result.daysRemaining <= 30) {
+          } else {
+            const recordMessage = result.daysRemaining !== undefined && result.daysRemaining <= 30
+              ? result.message || `Vekalet ${result.daysRemaining} gün içinde sona erecek`
+              : 'Etkin vekalet kaydı bulundu.';
             warnings.push({
               clientId: creditor.id,
               clientName: creditor.name,
               lawyerId: "",
               lawyerName: "Seçili avukatlar",
-              message: result.message || `Vekalet ${result.daysRemaining} gün içinde sona erecek`,
+              message: `${recordMessage} ${result.scopeMessage || "İşlem/dosya kapsamı doğrulanmadı."}`,
             });
           }
-        } catch (err) {
-          // API hatası - sessizce geç
-          console.error("Vekalet kontrolü hatası:", err);
+        } catch {
+          warnings.push({
+            clientId: creditor.id,
+            clientName: creditor.name,
+            lawyerId: "",
+            lawyerName: "Seçili avukatlar",
+            message: "Vekalet kaydı kontrol edilemedi; işlem/dosya kapsamı doğrulanmadı.",
+          });
         }
       }
       
@@ -2358,7 +2366,7 @@ export default function NewCasePage() {
               <div className="mt-1 p-1.5 bg-amber-50 border border-amber-300 rounded flex-shrink-0">
                 <div className="flex items-center gap-1">
                   <AlertTriangle className="h-3 w-3 text-amber-600" />
-                  <p className="text-[10px] text-amber-800">⚠️ Bazı avukatlar için geçerli vekalet bulunamadı</p>
+                  <p className="text-[10px] text-amber-800">⚠️ Vekalet kaydı / kapsam kontrolü uyarısı</p>
                 </div>
               </div>
             )}
@@ -2498,9 +2506,9 @@ export default function NewCasePage() {
                 <div className="flex items-start gap-1">
                   <AlertTriangle className="h-3 w-3 text-amber-600 flex-shrink-0 mt-0.5" />
                   <div className="flex-1">
-                    <p className="text-[10px] font-medium text-amber-800">⚠️ Vekalet Uyarısı</p>
-                    <div className="space-y-0.5 mt-0.5">
-                      {poaWarnings.slice(0, 2).map((warning, idx) => (
+                    <p className="text-[10px] font-medium text-amber-800">⚠️ Vekalet Uyarısı ({poaWarnings.length})</p>
+                    <div className="space-y-0.5 mt-0.5 max-h-28 overflow-y-auto">
+                      {poaWarnings.map((warning, idx) => (
                         <p key={idx} className="text-[10px] text-amber-700">
                           <span className="font-medium">{warning.clientName}</span> - {warning.lawyerName}: {warning.message}
                         </p>
