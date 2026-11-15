@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Mail, Send, X, Users, AlertCircle } from 'lucide-react';
 import { api } from '@/lib/api';
+import { unwrapEnvelope } from '@/lib/api-envelope';
 
 interface BulkEmailModalProps {
   isOpen: boolean;
@@ -23,7 +24,17 @@ export function BulkEmailModal({ isOpen, onClose, recipients, type }: BulkEmailM
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [outcome, setOutcome] = useState<{ complete: boolean; message: string } | null>(null);
+  const inFlight = useRef(false);
+  const session = useRef(0);
+  const recipientKey = JSON.stringify(recipients.map(r => [r.id, r.email ?? null]));
+
+  useEffect(() => {
+    session.current++;
+    inFlight.current = false;
+    setSending(false); setOutcome(null); setSubject(''); setMessage(''); setTemplate('custom');
+    return () => { session.current++; };
+  }, [isOpen, recipientKey, type]);
 
   const validRecipients = recipients.filter(r => r.email);
 
@@ -44,29 +55,34 @@ export function BulkEmailModal({ isOpen, onClose, recipients, type }: BulkEmailM
   };
 
   const handleSend = async () => {
-    if (!subject || !message || validRecipients.length === 0) return;
+    if (!isOpen || inFlight.current || outcome || !subject || !message || validRecipients.length === 0) return;
     
+    inFlight.current = true;
+    const currentSession = session.current;
+    const recipientIds = validRecipients.map(r => r.id);
     setSending(true);
     try {
-      await api.post('/client-notification/bulk-email', {
-        recipients: validRecipients.map(r => r.id),
+      const response = await api.post('/client-notifications/bulk-email', {
+        recipients: recipientIds,
         subject,
         message,
         type,
       });
-      setSent(true);
-      setTimeout(() => {
-        onClose();
-        setSent(false);
-        setSubject('');
-        setMessage('');
-        setTemplate('custom');
-      }, 2000);
-    } catch (e) {
-      console.error(e);
-      alert('E-posta gönderilirken hata oluştu');
+      if (session.current !== currentSession) return;
+      const body = unwrapEnvelope<{ success?: unknown; details?: { sent?: unknown; failed?: unknown } }>(response);
+      const sent = body?.details?.sent, failed = body?.details?.failed;
+      if (body?.success !== true || typeof sent !== 'number' || typeof failed !== 'number' ||
+          !Number.isSafeInteger(sent) || !Number.isSafeInteger(failed) || sent < 0 || failed < 0 || sent + failed !== recipientIds.length) {
+        setOutcome({ complete: false, message: 'Toplu gönderim sonucu doğrulanamadı. Otomatik tekrar yapılmadı.' });
+      } else {
+        setOutcome({ complete: failed === 0, message: `Sunucu kabulü: ${sent}. Başarısız/belirsiz sonuç: ${failed}. Alıcıya teslim teyidi değildir. Otomatik tekrar yapılmadı.` });
+      }
+    } catch (e: unknown) {
+      if (session.current !== currentSession) return;
+      const status = (e as { status?: number })?.status;
+      setOutcome({ complete: false, message: status === 403 ? 'Toplu e-posta gönderme yetkiniz yok.' : 'Toplu e-posta sonucu alınamadı. Otomatik tekrar yapılmadı.' });
     } finally {
-      setSending(false);
+      if (session.current === currentSession) { inFlight.current = false; setSending(false); }
     }
   };
 
@@ -80,7 +96,7 @@ export function BulkEmailModal({ isOpen, onClose, recipients, type }: BulkEmailM
             <Mail className="h-5 w-5 text-blue-600" />
             Toplu E-posta Gönder
           </h3>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+          <button onClick={onClose} aria-label="Kapat" className="text-gray-500 hover:text-gray-700">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -102,11 +118,14 @@ export function BulkEmailModal({ isOpen, onClose, recipients, type }: BulkEmailM
             </div>
           )}
 
+          {outcome && <div role={outcome.complete ? 'status' : 'alert'} className={`p-3 rounded-lg text-sm ${outcome.complete ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-900'}`}>{outcome.message}</div>}
+
           {/* Template Selection */}
           <div>
             <label className="block text-sm font-medium mb-2">Şablon</label>
             <select
               value={template}
+              disabled={sending || outcome !== null}
               onChange={(e) => handleTemplateChange(e.target.value)}
               className="w-full border rounded-lg px-3 py-2"
             >
@@ -122,6 +141,7 @@ export function BulkEmailModal({ isOpen, onClose, recipients, type }: BulkEmailM
             <input
               type="text"
               value={subject}
+              disabled={sending || outcome !== null}
               onChange={(e) => setSubject(e.target.value)}
               placeholder="E-posta konusu"
               className="w-full border rounded-lg px-3 py-2"
@@ -133,6 +153,7 @@ export function BulkEmailModal({ isOpen, onClose, recipients, type }: BulkEmailM
             <label className="block text-sm font-medium mb-2">Mesaj</label>
             <textarea
               value={message}
+              disabled={sending || outcome !== null}
               onChange={(e) => setMessage(e.target.value)}
               placeholder="E-posta içeriği..."
               className="w-full border rounded-lg px-3 py-2 resize-none"
@@ -146,15 +167,15 @@ export function BulkEmailModal({ isOpen, onClose, recipients, type }: BulkEmailM
             onClick={onClose}
             className="px-4 py-2 border rounded-lg hover:bg-gray-100"
           >
-            İptal
+            {outcome ? 'Kapat' : 'İptal'}
           </button>
           <button
             onClick={handleSend}
-            disabled={sending || sent || !subject || !message || validRecipients.length === 0}
+            disabled={sending || outcome !== null || !subject || !message || validRecipients.length === 0}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
           >
-            {sent ? (
-              <>✓ Gönderildi</>
+            {outcome ? (
+              <>{outcome.complete ? 'Sunucu kabul etti' : 'Sonuç alındı'}</>
             ) : sending ? (
               <>Gönderiliyor...</>
             ) : (
