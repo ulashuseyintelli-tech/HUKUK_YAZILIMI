@@ -165,4 +165,72 @@ describe('OWN-12 A — iki istemcinin tasima davranisi (karakterizasyon)', () =>
       expect((init.headers as any)['Content-Type']).toBe('application/json');
     }
   });
+
+  // --- Basarili yanitin govdesi: GERCEK `Response` ile (govde metni okunabilir) ---
+  // Sunucu bir ucta "kayit yok" anlaminda `null` dondugunde yanit 200 + BOS govdedir. Eskiden iki istemci de
+  // `response.json()` ile "beklenmeyen JSON sonu" hatasi firlatiyor, ekran basarili okumayi hata gosteriyordu.
+  function stubFetchRealResponse(make: () => Response) {
+    vi.stubGlobal('fetch', vi.fn(async () => make()) as any);
+  }
+
+  async function loadClients() {
+    const { api } = await import('@/lib/api');
+    const { apiClient } = await import('@/lib/api/client');
+    return { api: api as any, apiClient };
+  }
+
+  it('BOS govdeli 200: iki istemci de `null` doner (hata FIRLATMAZ)', async () => {
+    stubFetchRealResponse(() => new Response(null, { status: 200 }));
+    const { api, apiClient } = await loadClients();
+
+    await expect(api.request('/cases/c1/responsible-person')).resolves.toBeNull();
+    await expect(apiClient.request('/cases/c1/responsible-person')).resolves.toBeNull();
+    // Zarf saran `get` yolu: `{ data: null }`.
+    await expect(api.get('/cases/c1/responsible-person')).resolves.toEqual({ data: null });
+  });
+
+  it('yalniz bosluk iceren govde ve 204: iki istemci de `null` doner', async () => {
+    stubFetchRealResponse(() => new Response('  \n', { status: 200 }));
+    let clients = await loadClients();
+    await expect(clients.api.request('/x')).resolves.toBeNull();
+    await expect(clients.apiClient.request('/x')).resolves.toBeNull();
+
+    stubFetchRealResponse(() => new Response(null, { status: 204 }));
+    clients = await loadClients();
+    await expect(clients.api.request('/x')).resolves.toBeNull();
+    await expect(clients.apiClient.request('/x')).resolves.toBeNull();
+  });
+
+  it('DOLU JSON govde eskisi gibi cozulur (JSON `null` ve dizi dahil)', async () => {
+    stubFetchRealResponse(() => new Response(JSON.stringify({ data: { id: 'c1' } }), { status: 200 }));
+    let clients = await loadClients();
+    await expect(clients.api.request('/clients/c1')).resolves.toEqual({ data: { id: 'c1' } });
+    await expect(clients.apiClient.request('/clients/c1')).resolves.toEqual({ data: { id: 'c1' } });
+
+    stubFetchRealResponse(() => new Response('null', { status: 200 }));
+    clients = await loadClients();
+    await expect(clients.api.request('/x')).resolves.toBeNull();
+
+    stubFetchRealResponse(() => new Response('[1,2]', { status: 201 }));
+    clients = await loadClients();
+    await expect(clients.apiClient.request('/x')).resolves.toEqual([1, 2]);
+  });
+
+  it('bos OLMAYAN gecersiz JSON: iki istemci de hata firlatir (sessizce `null` YAPILMAZ)', async () => {
+    stubFetchRealResponse(() => new Response('<html>beklenmeyen</html>', { status: 200 }));
+    const { api, apiClient } = await loadClients();
+
+    await expect(api.request('/x')).rejects.toBeInstanceOf(SyntaxError);
+    await expect(apiClient.request('/x')).rejects.toBeInstanceOf(SyntaxError);
+    // Govde cozum hatasi ag hatasi DEGILDIR: raporlanmaz ve kullanici mesajina cevrilmez.
+    expect(reported).toHaveLength(0);
+  });
+
+  it('BOS govdeli HATA yaniti degismedi: kanonik hata sozlesmesi (status korunur)', async () => {
+    stubFetchRealResponse(() => new Response(null, { status: 500 }));
+    const { api, apiClient } = await loadClients();
+
+    await expect(api.request('/x')).rejects.toMatchObject({ status: 500 });
+    await expect(apiClient.request('/x')).rejects.toMatchObject({ status: 500 });
+  });
 });

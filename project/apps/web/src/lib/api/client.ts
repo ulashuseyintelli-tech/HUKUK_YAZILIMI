@@ -5,7 +5,7 @@ import { reportClientError, shouldReportNetworkError } from "../error-reporter";
 // OWN-12 ADIM A (Faz 2): ortak tasima katmani — URL/baslik/ok-kontrolu TEK yerde.
 // `try` SINIRI burada KALIR: bu istemcide YALNIZ fetch try icindedir; ok-kontrolu DISARIDADIR,
 // yani HTTP hatasi ag raporlamasina girmez ve mesaj donusumune ugramaz (`api` bunlari yapar).
-import { API_BASE_URL, sendApiRequest, assertApiResponseOk } from "../api-transport";
+import { API_BASE_URL, sendApiRequest, assertApiResponseOk, readApiSuccessBody } from "../api-transport";
 import { api } from "../api"; // CAD-C1-B03-AUTH-CONTINUITY-REMEDIATION-R01: OFFICE-AUTH-P01 kanonik token kaynağı (tek-kaynak)
 
 const API_URL = API_BASE_URL;
@@ -58,7 +58,8 @@ export class ApiClient {
     // OWN-12 ADIM A: ok-kontrolu ORTAK katmanda; try DISINDA kalmasi BILEREKTIR (dosya basi).
     await assertApiResponseOk(response);
 
-    return response.json();
+    // Bos govdeli basarili yanit (sunucu `null` dondu / 204) hata DEGIL, `null`dur.
+    return readApiSuccessBody<T>(response);
   }
 
   async requestBlob(endpoint: string, options: RequestInit = {}): Promise<Blob> {
