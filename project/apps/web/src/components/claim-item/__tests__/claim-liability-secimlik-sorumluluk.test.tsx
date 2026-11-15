@@ -368,4 +368,32 @@ describe("AT-17 tahsilat formu önizlemesi", () => {
     expect(screen.getByText(/Haciz \/ icra dairesi kaynaklı bu ödeme seçilen borçlunun sorumluluğunu aşıyor/)).toBeTruthy();
     expect(apiMock.createCollection).not.toHaveBeenCalled();
   });
+
+  it("dağıtım notu bekletmenin NEDENİNE göre yazar: sorumluluk aşımında 'borçlu girilip' demez; borçlu belirtilmemişse eski metin sürer", async () => {
+    // Sorumluluk aşımı (borçlu zaten seçili) — sunucu dağıtımı engelli döner.
+    apiMock.previewCasePayment.mockResolvedValueOnce({
+      ...onizleme({ excessHandling: "ALLOCATION_HELD_LIMIT_EXCEEDED" }, { wouldAccept: false, blockingReasons: ["LIABILITY_LIMIT_EXCEEDED_RESTRICTED_SOURCE"] }),
+      distributionPreview: { status: "BLOCKED", source: "UNKNOWN", requiresClientSelection: false, lines: [] },
+    });
+    // Borçlu belirtilmemiş bekletme — sorumluluk bilgisi yok.
+    apiMock.previewCasePayment.mockResolvedValueOnce({
+      ...onizleme({}, { warnings: ["ALLOCATION_HELD_ON_BEHALF_DEBTOR_REQUIRED"] }),
+      liability: undefined,
+      distributionPreview: { status: "BLOCKED", source: "UNKNOWN", requiresClientSelection: false, lines: [] },
+    });
+    render(<CollectionModal isOpen onClose={vi.fn()} caseId="case-1" onSuccess={vi.fn()} debtors={debtors} />);
+    fireEvent.change(screen.getByPlaceholderText("0.00"), { target: { value: "900" } });
+    fireEvent.change(screen.getByTestId("collection-payer-select"), { target: { value: "cd-1" } });
+    fireEvent.click(screen.getByRole("button", { name: /Önizle/ }));
+    const limitNote = (await screen.findByTestId("collection-preview-distribution-blocked")).textContent ?? "";
+    expect(limitNote).toContain("seçilen borçlunun sorumluluğunu aştığı için");
+    expect(limitNote).toContain("borçlu hesabına mahsup edilebilir");
+    expect(limitNote).not.toContain("borçlu girilip");
+
+    fireEvent.change(screen.getByTestId("collection-payer-select"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /Önizle/ }));
+    await waitFor(() =>
+      expect(screen.getByTestId("collection-preview-distribution-blocked").textContent).toContain("hesabına ödeme yapılan borçlu girilip"),
+    );
+  });
 });

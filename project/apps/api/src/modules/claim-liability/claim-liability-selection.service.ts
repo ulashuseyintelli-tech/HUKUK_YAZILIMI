@@ -589,13 +589,17 @@ export class ClaimLiabilitySelectionService implements OnModuleInit {
       let after: EvaluatedItemLiability | null = null;
       let noChange = false;
       if (selection) {
+        // "Sonraki" durum, onayda YAZILACAK kalem izdüşümüyle değerlendirilir — kalemin şimdiki kaydıyla değil. Aksi
+        // hâlde seçili türden "belirlenmedi"ye dönüşte önizleme, eski kısıtlı izdüşümü görüp sonucu "kayıttan kısıtlı"
+        // diye gösterir; onaydan sonra oluşan gerçek durum ise "belirlenmedi"dir.
+        const projected = legacyProjection(selection.mode, selection.parties.map((party) => party.debtorId));
         after = evaluateItemLiability(
           {
             claimItemId: item.id,
             demandedKurus: before.demandedKurus,
             collectedKurus: before.collectedKurus,
-            isAllDebtorsLiable: item.isAllDebtorsLiable,
-            liableDebtorIds: item.liableDebtorIds,
+            isAllDebtorsLiable: projected.isAllDebtorsLiable,
+            liableDebtorIds: projected.liableDebtorIds,
             activeSet: { setId: null, version: (before.setVersion ?? 0) + 1, mode: selection.mode, parties: selection.parties },
             attribution: before.attribution,
           },
