@@ -76,6 +76,7 @@ export class ClientStatementNativeMonthlyService {
     const set = await this.native.findSet(this.prisma, tenantId, setId);
     const period = identifyMonthlyStatementPeriod(set.periodStart, set.periodEnd);
     if (!period) throw new ConflictException('E2_MONTH_REQUIRED');
+    if (set.sourceCutAt < set.periodEnd) return { outcome: 'RECONCILIATION_REQUIRED', reason: 'native-source-cut-before-period-end' };
     // A real partial artifact failure never reaches reservation or dispatcher.
     let artifacts: Awaited<ReturnType<ClientStatementNativeService['artifacts']>>;
     try { artifacts = await this.native.artifacts(tenantId, setId); }

@@ -64,6 +64,7 @@ export function NativeClientStatementSection({ clientId }: { clientId: string })
         : sets.map(set => <article key={set.id} className="mt-3 border-t pt-2">
           <p>{new Date(set.periodStart).toLocaleDateString('tr-TR', { timeZone: 'Europe/Istanbul' })} – {new Date(set.periodEnd).toLocaleDateString('tr-TR', { timeZone: 'Europe/Istanbul' })} · {set.status === 'ACTIVE' ? 'Geçerli' : set.status === 'VOID' ? 'Geçersiz' : 'Yenilenmiş'} · {set.memberCount} belge</p>
           <p className="text-xs text-gray-500">Kaynak kesimi: {new Date(set.sourceCutAt).toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' })}</p>
+          {Date.parse(set.sourceCutAt) < Date.parse(set.periodEnd) && <p>Bu set dönem kapanmadan oluşturuldu. Aylık teslim için dönem kapandıktan sonra seti yenileyin; otomatik yenileme veya gönderim yapılmaz.</p>}
           {set.artifactOutcome === 'FAILED' && <p>PDF seti henüz tamamlanmadı; gönderim kanıtı değildir.</p>}
           {set.deliveries?.[0] && <p>Aylık teslim: {set.deliveries[0].status === 'SENT' ? 'Gönderildi' : set.deliveries[0].status === 'FAILED' ? 'Başarısız' : 'Bekliyor / sonuç uzlaştırılmalı'} · Deneme: {set.deliveries[0].attempts}</p>}
           {set.documents.map(doc => <div key={doc.currency} className="my-1">

@@ -21,6 +21,10 @@ function mount(clientId = 'client1') {
 beforeEach(() => { vi.clearAllMocks(); api.list.mockResolvedValue([]); api.create.mockResolvedValue(fixture); vi.mocked(clientStatementApi.listByClient).mockResolvedValue([]); });
 
 describe('E2 set UI and canonical client context', () => {
+  it('a source cut before period end is explicit and cannot imply monthly readiness', async () => {
+    api.list.mockResolvedValue([{ ...fixture, sourceCutAt: '2026-10-15T10:00:00Z' }]); mount();
+    await screen.findByText(/Aylık teslim için dönem kapandıktan sonra seti yenileyin/); expect(api.retry).not.toHaveBeenCalled();
+  });
   it('the existing statement screen exposes E2 explicitly without replacing or auto-loading legacy/E2 data', async () => {
     const cache = new QueryClient();
     render(<QueryClientProvider client={cache}><ClientLevelStatementSection clientId="client1" currency="TRY" cases={[]} /></QueryClientProvider>);

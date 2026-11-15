@@ -405,4 +405,16 @@ describeDb('E2 complete native-currency statements (real HTTP / disposable DB)',
     expect(await db.clientStatementNativeDelivery.count({ where: { clientId: f.clientId } })).toBe(0);
     expect(await db.clientStatementDeliveryLedger.count({ where: { clientId: f.clientId, status: 'SENT' } })).toBe(1); expect(mail).toHaveBeenCalledTimes(1);
   });
+
+  it('monthly delivery refuses a snapshot cut before month end instead of silently sending a partial month', async () => {
+    const f = await seed(), futureRun = new Date(); futureRun.setUTCMonth(futureRun.getUTCMonth() + 3);
+    const future = resolvePreviousMonthPeriod(futureRun);
+    const made = await post(`/client-statement-sets/client/${f.clientId}`, { periodStart: future.periodStart.toISOString(), periodEnd: future.periodEnd.toISOString() });
+    expect(made.status).toBe(201); expect(Date.parse(made.body.sourceCutAt)).toBeLessThan(future.periodEnd.getTime());
+    process.env.CLIENT_STATEMENT_NATIVE_CURRENCY_DELIVERY = 'true';
+    const result = await monthly.runMonthlyDelivery(futureRun, { tenantId: tenant.tenantId, clientId: f.clientId });
+    expect(result.targets[0]).toMatchObject({ outcome: 'RECONCILIATION_REQUIRED', reason: 'native-source-cut-before-period-end' });
+    expect(mail).not.toHaveBeenCalled(); expect(await db.clientStatementNativeDelivery.count({ where: { clientId: f.clientId } })).toBe(0);
+    const unchanged = await db.clientStatementNativeSet.findUniqueOrThrow({ where: { id: made.body.id } }); expect(unchanged.status).toBe('ACTIVE'); expect(unchanged.memberHash).toBe(made.body.memberHash);
+  });
 });
