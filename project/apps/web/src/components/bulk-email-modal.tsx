@@ -69,10 +69,12 @@ export function BulkEmailModal({ isOpen, onClose, recipients, type }: BulkEmailM
         type,
       });
       if (session.current !== currentSession) return;
-      const body = unwrapEnvelope<{ success?: unknown; details?: { sent?: unknown; failed?: unknown } }>(response);
+      const body = unwrapEnvelope<{ success?: unknown; details?: { sent?: unknown; failed?: unknown; errors?: unknown } }>(response);
       const sent = body?.details?.sent, failed = body?.details?.failed;
+      const errors = body?.details?.errors;
       if (body?.success !== true || typeof sent !== 'number' || typeof failed !== 'number' ||
-          !Number.isSafeInteger(sent) || !Number.isSafeInteger(failed) || sent < 0 || failed < 0 || sent + failed !== recipientIds.length) {
+          !Number.isSafeInteger(sent) || !Number.isSafeInteger(failed) || sent < 0 || failed < 0 || sent + failed !== recipientIds.length ||
+          !Array.isArray(errors) || errors.length !== failed) {
         setOutcome({ complete: false, message: 'Toplu gönderim sonucu doğrulanamadı. Otomatik tekrar yapılmadı.' });
       } else {
         setOutcome({ complete: failed === 0, message: `Sunucu kabulü: ${sent}. Başarısız/belirsiz sonuç: ${failed}. Alıcıya teslim teyidi değildir. Otomatik tekrar yapılmadı.` });

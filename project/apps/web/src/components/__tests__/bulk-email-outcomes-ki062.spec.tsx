@@ -26,7 +26,7 @@ function fill() {
   fireEvent.change(screen.getByPlaceholderText('E-posta içeriği...'), { target: { value: 'Synthetic body' } });
   return screen.getByRole('button', { name: /Gönder \(2\)/ });
 }
-function reply(sent: number, failed: number) { return { success: true, details: { sent, failed, errors: [privateError] } }; }
+function reply(sent: number, failed: number) { return { success: true, details: { sent, failed, errors: Array.from({ length: failed }, () => privateError) } }; }
 function expectRequest() {
   expect(api.post).toHaveBeenCalledTimes(1);
   expect(api.post).toHaveBeenCalledWith('/client-notifications/bulk-email', { recipients: ['c1', 'c2'], subject: 'Synthetic subject', message: 'Synthetic body', type: 'clients' });
@@ -52,7 +52,10 @@ describe('KI-062 bulk-email actual consumer outcomes', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sonuç alındı' })); expectRequest();
   });
   it.each([null, {}, { success: true }, reply(0, 0), reply(1, 0), reply(-1, 3), reply(0.5, 1.5),
-    { success: true, details: { sent: '2', failed: 0 } }, { ...reply(2, 0), success: false }])(
+    { success: true, details: { sent: '2', failed: 0 } }, { ...reply(2, 0), success: false },
+    { success: true, details: { sent: 2, failed: 0, errors: [privateError] } },
+    { success: true, details: { sent: 1, failed: 1, errors: [] } },
+    { success: true, details: { sent: 2, failed: 0, errors: 'invalid' } }])(
     'does not treat a malformed, incomplete or unaccounted 2xx as all-success: %j', async body => {
       vi.mocked(api.post).mockResolvedValueOnce({ data: body } as any); open(); fireEvent.click(fill());
       expect((await screen.findByRole('alert')).textContent).toContain('sonucu doğrulanamadı');
