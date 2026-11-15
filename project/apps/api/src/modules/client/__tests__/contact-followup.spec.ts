@@ -18,6 +18,42 @@ import {
   contactTaskDedupeKey,
   CONTACT_TASK_DEDUPE_PREFIX,
 } from '../client.service';
+import { Logger } from '@nestjs/common';
+
+describe('KI-168 ClientService safe logging', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('retains best-effort false without logging contact data, display name or raw exception', async () => {
+    const log = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const audit = { log: jest.fn(), logInTransaction: jest.fn() };
+    const svc = new ClientService({} as any, audit as any, {} as any);
+    const raw = 'Private Person private@example.test 05559998877 PRIVATE-PROVIDER-ERROR';
+    jest.spyOn(svc as any, 'syncContactFollowUpTask').mockRejectedValueOnce(new Error(raw));
+    await expect((svc as any).syncContactFollowUpTaskSafe('tenant-id', { id: 'client-id', phone: '05559998877', email: 'private@example.test' })).resolves.toBe(false);
+    expect(log).toHaveBeenCalledWith('CONTACT_FOLLOWUP_SYNC_FAILED tenantId=tenant-id clientId=client-id');
+    for (const forbidden of ['Private Person', 'private@example.test', '05559998877', 'PRIVATE-PROVIDER-ERROR']) expect(JSON.stringify(log.mock.calls)).not.toContain(forbidden);
+    expect(audit.log).not.toHaveBeenCalled(); expect(audit.logInTransaction).not.toHaveBeenCalled();
+  });
+
+  it('retains successful follow-up without an error log', async () => {
+    const log = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const svc = new ClientService({} as any, {} as any, {} as any);
+    jest.spyOn(svc as any, 'syncContactFollowUpTask').mockResolvedValueOnce(undefined);
+    await expect((svc as any).syncContactFollowUpTaskSafe('tenant-id', { id: 'client-id' })).resolves.toBe(true);
+    expect(log).not.toHaveBeenCalled();
+  });
+
+  it('logs only the list count and tenant identifier, returning the original rows unchanged', async () => {
+    const log = jest.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined);
+    const rows = [{ id: 'client-id', displayName: 'Private Person', email: 'private@example.test', phone: '05559998877' }];
+    const svc = new ClientService({ client: { findMany: jest.fn().mockResolvedValue(rows) } } as any, {} as any, {} as any);
+    await expect(svc.findAll('tenant-id')).resolves.toBe(rows);
+    expect(log).toHaveBeenCalledWith('CLIENT_LIST count=1 tenantId=tenant-id');
+    expect(JSON.stringify(log.mock.calls)).not.toContain('Private Person');
+    expect(JSON.stringify(log.mock.calls)).not.toContain('private@example.test');
+    expect(JSON.stringify(log.mock.calls)).not.toContain('05559998877');
+  });
+});
 
 describe('computeMissingContactFields', () => {
   it('ikisi de yoksa → [phone, email]', () => {
