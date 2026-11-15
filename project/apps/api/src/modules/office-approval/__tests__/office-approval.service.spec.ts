@@ -239,7 +239,8 @@ describe('DBIND-P1 OfficeApprovalService - disposition domain sync transaction',
     const updated = dispositionApproval({ status: 'APPROVED', approverUserId: APPROVER });
     const domainSync = { syncAfterDecision: jest.fn().mockResolvedValue(undefined) };
     const { svc, prisma, audit } = make({
-      reqSeq: [dispositionApproval(), updated],
+      // Sıra: karar öncesi okuma → karar sonrası okuma → eşitleme SONRASI okuma (burada eşitleme kaydı değiştirmedi).
+      reqSeq: [dispositionApproval(), updated, updated],
       approverUser: partner(),
       domainSync,
     });
@@ -254,6 +255,40 @@ describe('DBIND-P1 OfficeApprovalService - disposition domain sync transaction',
     const auditOrder = audit.log.mock.invocationCallOrder[0];
     expect(decisionOrder).toBeLessThan(syncOrder);
     expect(syncOrder).toBeLessThan(auditOrder);
+  });
+
+  it('eşitleme aynı işlemde yürütmeyi tamamlarsa yanıt eşitleme SONRASI kaydı taşır; eşitlemeye ve denetim kaydına karar anı görüntüsü gider', async () => {
+    const decided = dispositionApproval({ status: 'APPROVED', approverUserId: APPROVER, executionStatus: 'NOT_RUN' });
+    const afterSync = dispositionApproval({ status: 'APPROVED', approverUserId: APPROVER, executionStatus: 'SUCCEEDED' });
+    const domainSync = { syncAfterDecision: jest.fn().mockResolvedValue(undefined) };
+    const { svc, prisma, audit } = make({
+      reqSeq: [dispositionApproval(), decided, afterSync],
+      approverUser: partner(),
+      domainSync,
+    });
+
+    const res = await svc.approve('oar-1', APPROVER, 'ok');
+
+    expect(res).toBe(afterSync);
+    expect(res.executionStatus).toBe('SUCCEEDED');
+    expect(domainSync.syncAfterDecision).toHaveBeenCalledWith(prisma, decided);
+    // Eşitleme sonrası okuma eşitlemeden SONRA ve aynı işlem istemcisiyle yapılır.
+    expect(prisma.officeApprovalRequest.findUnique).toHaveBeenCalledTimes(3);
+    const reReadOrder = prisma.officeApprovalRequest.findUnique.mock.invocationCallOrder[2];
+    expect(domainSync.syncAfterDecision.mock.invocationCallOrder[0]).toBeLessThan(reReadOrder);
+    // Denetim kaydı değişmez: karar anı görüntüsü.
+    expect(audit.log).toHaveBeenCalledTimes(1);
+    expect(audit.log.mock.calls[0][0].metadata).toMatchObject({ status: 'APPROVED', executionStatus: 'NOT_RUN' });
+  });
+
+  it('alan eşitlemesi bağlı değilse karar sonrası ikinci okuma yapılmaz (davranış aynı)', async () => {
+    const decided = dispositionApproval({ status: 'APPROVED', approverUserId: APPROVER });
+    const { svc, prisma } = make({ reqSeq: [dispositionApproval(), decided], approverUser: partner() });
+
+    const res = await svc.approve('oar-1', APPROVER, 'ok');
+
+    expect(res).toBe(decided);
+    expect(prisma.officeApprovalRequest.findUnique).toHaveBeenCalledTimes(2);
   });
 
   it('sync hata verirse audit yazmaz ve karar cagrisi fail olur', async () => {
