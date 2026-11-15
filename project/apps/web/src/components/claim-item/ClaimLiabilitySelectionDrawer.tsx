@@ -214,8 +214,15 @@ export function ClaimLiabilitySelectionDrawer({
   const basisNoteRequired = BASIS_OPTIONS.find((option) => option.value === basis)?.noteRequired === true;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/40" data-testid="claim-liability-drawer">
-      <div className="h-full w-full max-w-2xl overflow-y-auto bg-white p-5 space-y-4" role="dialog" aria-label="Borçlu sorumluluğu seçimi">
+    // Ortalanmış pencere (uygulamadaki diğer kalem pencereleriyle aynı düzen). Sağ kenara yaslı çekmece, sağ alttaki
+    // yüzen "Hızlı İşlemler" düğmesinin altında kalıyordu: düğme "Onaya gönder"in üstüne binip tıklamayı yutuyordu
+    // (çalışan arayüzde ölçüldü). Pencere ekranın %90'ını aşmaz ve işlem düğmeleri sola yaslıdır.
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" data-testid="claim-liability-drawer">
+      <div
+        className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl bg-white p-5 space-y-4"
+        role="dialog"
+        aria-label="Borçlu sorumluluğu seçimi"
+      >
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="text-lg font-semibold">{bulk ? "Dosyadaki kalemlere uygula" : "Borçlu sorumluluğu"}</h3>
@@ -451,7 +458,7 @@ export function ClaimLiabilitySelectionDrawer({
           </div>
         )}
 
-        <div className="flex justify-end gap-2">
+        <div className="flex justify-start gap-2" data-testid="claim-liability-actions">
           <button
             type="button"
             data-testid="claim-liability-preview-button"
