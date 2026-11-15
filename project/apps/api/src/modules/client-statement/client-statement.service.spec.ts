@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
@@ -30,7 +30,7 @@ const mockPrisma: any = {
   ledgerAllocation: { findMany: jest.fn().mockResolvedValue([]) },
   clientPayout: { findMany: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }), groupBy: jest.fn().mockResolvedValue([]) }, // M3 RECORDED payouts
   clientOffset: { findMany: jest.fn().mockResolvedValue([]), groupBy: jest.fn().mockResolvedValue([]) }, // TM3 Faz C C-1 — offset satırları (default: yok)
-  clientStatement: { create: jest.fn(), update: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+  clientStatement: { create: jest.fn(), update: jest.fn().mockResolvedValue({}), findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   clientStatementLine: { createMany: jest.fn() },
   $executeRaw: jest.fn().mockResolvedValue(1), // pg_advisory_xact_lock (Faz 7-E concurrency guard)
   $transaction: jest.fn((fn: any) => fn(mockPrisma)),
@@ -230,7 +230,7 @@ describe('ClientStatementService', () => {
       await service.supersede(TENANT, 'old-1', USER, { periodStart: dto.periodStart, periodEnd: dto.periodEnd });
 
       expect(mockPrisma.clientStatement.update).toHaveBeenCalledWith({
-        where: { id: 'old-1' },
+        where: { id: 'old-1', tenantId: TENANT, status: 'ACTIVE' },
         data: expect.objectContaining({ status: 'SUPERSEDED', supersededById: 'new-1', supersededAt: expect.any(Date) }),
       });
     });
@@ -251,7 +251,7 @@ describe('ClientStatementService', () => {
         .mockResolvedValue({ id: 'st-1', lines: [] });
       await service.void(TENANT, 'st-1', USER, 'yanlış dönem');
       expect(mockPrisma.clientStatement.update).toHaveBeenCalledWith({
-        where: { id: 'st-1' },
+        where: { id: 'st-1', tenantId: TENANT, status: 'ACTIVE' },
         data: expect.objectContaining({ status: 'VOID', voidedById: USER, voidNote: 'yanlış dönem', voidedAt: expect.any(Date) }),
       });
     });
@@ -260,6 +260,34 @@ describe('ClientStatementService', () => {
       mockPrisma.clientStatement.findFirst.mockResolvedValue({ id: 'st-1', status: 'VOID', caseId: CASE, clientId: CLIENT });
       await expect(service.void(TENANT, 'st-1', USER)).rejects.toThrow(BadRequestException);
       expect(mockPrisma.clientStatement.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('observed ACTIVE state — CL-R03', () => {
+    it.each(['void', 'supersede'] as const)('%s loses with 409 and no audit when the actual update returns P2025', async action => {
+      mockPrisma.clientStatement.findFirst.mockResolvedValue({ id: 'old-race', status: 'ACTIVE', caseId: CASE, clientId: CLIENT });
+      mockPrisma.clientStatement.create.mockResolvedValue({ id: 'new-race' });
+      const collect = jest.spyOn(service as any, 'collect').mockResolvedValue({ opening: D(0), closing: D(0), lines: [] });
+      const resolve = jest.spyOn(service as any, 'resolveCaseClientId').mockResolvedValue('cc-race');
+      mockPrisma.clientStatement.update.mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError('synthetic lost transition', { code: 'P2025', clientVersion: Prisma.prismaVersion.client }));
+      try {
+        await expect(action === 'void' ? service.void(TENANT, 'old-race', USER) : service.supersede(TENANT, 'old-race', USER, dto)).rejects.toThrow(ConflictException);
+        expect(mockAudit.logInTransaction).not.toHaveBeenCalled();
+        expect(mockDispatcher.dispatch).not.toHaveBeenCalled();
+      } finally { collect.mockRestore(); resolve.mockRestore(); }
+    });
+
+    it.each(['void', 'supersede'] as const)('%s preserves an unrelated storage error without an audit', async action => {
+      mockPrisma.clientStatement.findFirst.mockResolvedValue({ id: 'old-race', status: 'ACTIVE', caseId: CASE, clientId: CLIENT });
+      mockPrisma.clientStatement.create.mockResolvedValue({ id: 'new-race' });
+      const collect = jest.spyOn(service as any, 'collect').mockResolvedValue({ opening: D(0), closing: D(0), lines: [] });
+      const resolve = jest.spyOn(service as any, 'resolveCaseClientId').mockResolvedValue('cc-race');
+      const error = new Error('synthetic storage failure');
+      mockPrisma.clientStatement.update.mockRejectedValueOnce(error);
+      try {
+        await expect(action === 'void' ? service.void(TENANT, 'old-race', USER) : service.supersede(TENANT, 'old-race', USER, dto)).rejects.toBe(error);
+        expect(mockAudit.logInTransaction).not.toHaveBeenCalled();
+      } finally { collect.mockRestore(); resolve.mockRestore(); }
     });
   });
 
@@ -870,7 +898,7 @@ describe('ClientStatementService', () => {
       // yeni statement caseId=null + eskisi SUPERSEDED
       expect(mockPrisma.clientStatement.create.mock.calls[0][0].data.caseId).toBeNull();
       expect(mockPrisma.clientStatement.update).toHaveBeenCalledWith({
-        where: { id: 'old-cl' },
+        where: { id: 'old-cl', tenantId: TENANT, status: 'ACTIVE' },
         data: expect.objectContaining({ status: 'SUPERSEDED', supersededById: 'new-cl' }),
       });
     });
