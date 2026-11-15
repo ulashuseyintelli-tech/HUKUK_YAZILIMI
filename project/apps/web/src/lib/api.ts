@@ -7,7 +7,7 @@ import { buildResponsibilityHistoryPath, type ResponsibilityHistoryResult, type 
 import { buildApiHttpError, readErrorBody } from './api-error'; // OWN-12 ADIM A: kanonik hata sozlesmesi
 // OWN-12 ADIM A (Faz 2): ortak tasima katmani — URL/baslik/ok-kontrolu tek yerde.
 // `try` SINIRI burada KALIR: fetch ve ok-kontrolu bu istemcide AYNI try icindedir.
-import { API_BASE_URL, sendApiRequest, assertApiResponseOk, buildApiUrl } from './api-transport';
+import { API_BASE_URL, sendApiRequest, assertApiResponseOk, buildApiUrl, readApiSuccessBody } from './api-transport';
 import { resolveApiBaseUrl } from './api-base-url';
 import { reportClientError, shouldReportNetworkError } from "./error-reporter"; // PR-4: yalnız network-failure
 
@@ -257,7 +257,9 @@ class ApiClient {
       // PR-D: hata gövdesini KORU (code/candidates gibi yapısal alanlar) — review akışları için.
       await assertApiResponseOk(response);
 
-      return response.json();
+      // Bos govdeli basarili yanit (sunucu `null` dondu / 204) hata DEGIL, `null`dur. Eskisi gibi
+      // BEKLENMEDEN donulur: govde cozum hatasi asagidaki `catch`e GIRMEZ (try siniri degismedi).
+      return readApiSuccessBody<T>(response);
     } catch (err: any) {
       // PR-4: YALNIZ gerçek ağ hatası ErrorLog'a (HTTP response hatası DEĞİL → backend zaten loglar;
       // /error-logs/log self-skip). best-effort, davranış değişmez (aşağıdaki rethrow korunur).

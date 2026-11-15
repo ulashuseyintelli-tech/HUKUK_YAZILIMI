@@ -80,3 +80,23 @@ export async function assertApiResponseOk(response: Response): Promise<Response>
   }
   return response;
 }
+
+/**
+ * Basarili yanitin govdesini cozer (iki istemcide de AYNI adim).
+ *
+ * Govde BOSSA `null` doner: sunucu bir ucta "kayit yok" anlaminda `null` dondugunde yanit 200 ve
+ * BOS govdeyle gelir (ornek: sorumlusu olmayan dosyada `GET /cases/:id/responsible-person`), 204 / 205
+ * yanitlarinin da govdesi yoktur. Eskiden bu durumda `response.json()` "beklenmeyen JSON sonu" hatasi
+ * firlatiyor, cagiran ekran basarili bir okumayi HATA olarak gosteriyordu.
+ *
+ * Bos OLMAYAN govde eskisi gibi JSON olarak cozulur; gecersiz JSON yine hata firlatir (sessizce
+ * yutulmaz). Zarf cozumu (`{ data }`) cagirana aittir, burada yapilmaz.
+ */
+export async function readApiSuccessBody<T>(response: Response): Promise<T> {
+  if (response.status === 204 || response.status === 205) return null as T;
+  // Yalniz `json()` sunan yanit benzeri nesnelerde (govde metnine erisim yok) eski yol korunur.
+  if (typeof response.text !== 'function') return response.json();
+  const text = await response.text();
+  if (text.trim() === '') return null as T;
+  return JSON.parse(text) as T;
+}
