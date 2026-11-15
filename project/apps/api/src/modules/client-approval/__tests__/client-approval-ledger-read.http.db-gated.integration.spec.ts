@@ -21,8 +21,8 @@ dbDescribe('6a staff-attributed approval ledger — real Nest HTTP and disposabl
   let tenant: string; let foreignTenant: string; let client: string; let caseId: string; let otherCase: string;
   let lawyer: string; let staff: string; let outsider: string; let viewer: string;
   let approvalId: string; let otherApproval: string; let foreignApproval: string;
-  const dispatcher = { dispatch: jest.fn(() => { throw new Error('Read must not dispatch'); }) };
-  const office = { getOfficeIdentity: jest.fn(() => { throw new Error('Read must not prepare a notification'); }) };
+  const dispatcher = { dispatch: jest.fn<any, any[]>(() => { throw new Error('Read must not dispatch'); }) };
+  const office = { getOfficeIdentity: jest.fn<any, any[]>(() => { throw new Error('Read must not prepare a notification'); }) };
 
   beforeAll(async () => {
     db = new PrismaService({ datasources: { db: { url } } }); await db.$connect();
@@ -78,6 +78,7 @@ dbDescribe('6a staff-attributed approval ledger — real Nest HTTP and disposabl
     dispatcher.dispatch.mockClear(); office.getOfficeIdentity.mockClear();
   });
   afterEach(async () => {
+    jest.restoreAllMocks();
     for (const t of [tenant, foreignTenant]) {
       await db.clientApprovalRequest.deleteMany({ where: { tenantId: t } });
       await db.tenant.delete({ where: { id: t } });
@@ -141,5 +142,86 @@ dbDescribe('6a staff-attributed approval ledger — real Nest HTTP and disposabl
     await expect(service.listByCase(tenant, caseId)).rejects.toMatchObject({ status: 403 });
     await expect(service.findOne(tenant, approvalId)).rejects.toMatchObject({ status: 403 });
     expect(await snapshot()).toEqual(before);
+  });
+
+  describe('same-request transition concurrency — CL-R03', () => {
+    async function pending(status: 'DRAFT' | 'SENT' = 'SENT') {
+      return db.clientApprovalRequest.create({ data: {
+        tenantId: tenant, caseId, clientId: client, subjectType: 'OTHER',
+        subjectId: 'independent-soft-reference', status, requestedById: lawyer,
+      } });
+    }
+
+    // Hold only the two real preflight reads, before either transaction acquires a row lock.
+    function alignPreflight(id: string) {
+      const findFirst = db.clientApprovalRequest.findFirst.bind(db.clientApprovalRequest);
+      let arrivals = 0; let release!: () => void;
+      const ready = new Promise<void>(resolve => { release = resolve; });
+      const timer = setTimeout(release, 5_000);
+      const spy = jest.spyOn(db.clientApprovalRequest, 'findFirst').mockImplementation((async (args: any) => {
+        const result = await findFirst(args);
+        if (args?.where?.id === id && args?.select?.status) {
+          arrivals++; if (arrivals === 2) { clearTimeout(timer); release(); }
+          await ready;
+        }
+        return result;
+      }) as any);
+      return { finish() { clearTimeout(timer); spy.mockRestore(); expect(arrivals).toBe(2); } };
+    }
+
+    it.each([
+      ['decision', { decision: 'APPROVE' }, 'decision', { decision: 'REJECT' }, 'SENT'],
+      ['decision', { decision: 'APPROVE' }, 'cancel', {}, 'SENT'],
+      ['decision', { decision: 'APPROVE' }, 'expire', {}, 'SENT'],
+      ['send', {}, 'send', {}, 'DRAFT'],
+    ] as const)('race %# has one committed transition and no losing event/notification', async (a, bodyA, b, bodyB, status) => {
+      const row = await pending(status);
+      office.getOfficeIdentity.mockResolvedValueOnce({ name: 'Synthetic office' });
+      dispatcher.dispatch.mockResolvedValueOnce({ status: 'sent' });
+      const barrier = alignPreflight(row.id);
+      const results = await Promise.all([
+        request(app.getHttpServer()).post(`/client-approvals/${row.id}/${a}`).set('x-test-actor', lawyer).send(bodyA),
+        request(app.getHttpServer()).post(`/client-approvals/${row.id}/${b}`).set('x-test-actor', staff).send(bodyB),
+      ]);
+      barrier.finish();
+      expect(results.map(r => r.status).sort()).toEqual([201, 409]);
+      const winner = results.find(r => r.status === 201)!;
+      const stored = await db.clientApprovalRequest.findUniqueOrThrow({ where: { id: row.id } });
+      expect(stored.status).toBe(winner.body.status);
+      const events = await db.clientApprovalEvent.findMany({ where: { approvalRequestId: row.id } });
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ fromStatus: status, toStatus: stored.status, byUserId: winner.body.status === 'CANCELLED' || winner.body.status === 'EXPIRED' ? staff : results[0].status === 201 ? lawyer : staff });
+      expect(dispatcher.dispatch).toHaveBeenCalledTimes(['SENT', 'APPROVED', 'REJECTED'].includes(stored.status) ? 1 : 0);
+      expect(await db.auditLog.count({ where: { tenantId: tenant } })).toBe(0);
+    });
+
+    it('event failure rolls back the real status write and prevents notification', async () => {
+      const row = await pending();
+      jest.spyOn(service as any, 'writeEvent').mockRejectedValueOnce(new Error('synthetic event-store failure'));
+      await request(app.getHttpServer()).post(`/client-approvals/${row.id}/decision`)
+        .set('x-test-actor', lawyer).send({ decision: 'APPROVE' }).expect(500);
+      expect(await db.clientApprovalRequest.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ status: 'SENT', decision: null, decidedAt: null });
+      expect(await db.clientApprovalEvent.count({ where: { approvalRequestId: row.id } })).toBe(0);
+      expect(dispatcher.dispatch).not.toHaveBeenCalled();
+    });
+
+    it('sequential terminal rejection stays 400 and unrelated requests remain independent', async () => {
+      const first = await pending(); const second = await pending();
+      for (const row of [first, second]) {
+        await request(app.getHttpServer()).post(`/client-approvals/${row.id}/cancel`).set('x-test-actor', lawyer).send({}).expect(201);
+        await request(app.getHttpServer()).post(`/client-approvals/${row.id}/expire`).set('x-test-actor', lawyer).send({}).expect(400);
+        expect(await db.clientApprovalEvent.count({ where: { approvalRequestId: row.id } })).toBe(1);
+      }
+      expect(dispatcher.dispatch).not.toHaveBeenCalled();
+    });
+
+    it.each(['VIEWER', 'UNLINKED_ADMIN', 'FOREIGN'] as const)('%s cannot mutate a pending request or produce events', async kind => {
+      const row = await pending(); const before = await snapshot();
+      const who = kind === 'VIEWER' ? viewer : kind === 'FOREIGN' ? await actor('NONE', 'ADMIN', false, foreignTenant) : outsider;
+      await request(app.getHttpServer()).post(`/client-approvals/${row.id}/decision`)
+        .set('x-test-actor', who).send({ decision: 'APPROVE' }).expect(kind === 'VIEWER' ? 403 : 404);
+      expect(await snapshot()).toEqual(before);
+      expect(dispatcher.dispatch).not.toHaveBeenCalled();
+    });
   });
 });

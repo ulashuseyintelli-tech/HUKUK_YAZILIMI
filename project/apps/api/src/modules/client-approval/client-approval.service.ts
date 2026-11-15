@@ -1,5 +1,5 @@
 import { assertClientObjectScope, clientObjectScope } from '../client/client-object-scope';
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import {
   ClientApprovalStatus,
@@ -311,8 +311,13 @@ export class ClientApprovalService {
       if (!current) throw new NotFoundException('Onay talebi bulunamadı');
       await assertClientObjectScope(tx, tenantId, userId, current.clientId, current.caseId);
       const updated = await tx.clientApprovalRequest.update({
-        where: { id },
+        where: { id, tenantId, status: existing.status },
         data: { status: opts.to, ...(opts.extra ?? {}) },
+      }).catch((error: unknown) => {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+          throw new ConflictException('Onay talebi başka bir işlem tarafından değiştirildi. Kaydı yenileyin.');
+        }
+        throw error;
       });
       await this.writeEvent(tx, id, {
         eventType: opts.eventType,
