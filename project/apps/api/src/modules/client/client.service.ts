@@ -1,5 +1,5 @@
 import { assertClientObjectScope, clientObjectScope, isClientObjectInScope } from './client-object-scope';
-import { Injectable, Inject, BadRequestException, ConflictException, ForbiddenException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Inject, BadRequestException, ConflictException, ForbiddenException, NotFoundException, ServiceUnavailableException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { OfficeApprovalService } from '../office-approval/office-approval.service';
@@ -326,6 +326,7 @@ export function computeMissingContactFields(client: { phone?: string | null; ema
 
 @Injectable()
 export class ClientService {
+  private readonly logger = new Logger(ClientService.name);
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
@@ -573,7 +574,7 @@ export class ClientService {
       },
       orderBy: [{ createdAt: 'desc' }],
     });
-    console.log(`[ClientService] Found ${clients.length} clients for tenant ${tenantId}`);
+    this.logger.debug(`CLIENT_LIST count=${clients.length} tenantId=${tenantId}`);
     return clients;
   }
 
@@ -1568,7 +1569,7 @@ export class ClientService {
             message: 'Bu kimlik numarasına sahip pasif bir müvekkil mevcut; yeniden etkinleştirme yalnız yetkili yaşam döngüsü işlemiyle yapılır',
           });
         }
-        console.log(`[ClientService] Duplicate müvekkil (kapsam içi, aktif) döndürüldü: ${existing.id}`);
+        this.logger.debug(`CLIENT_EXISTING_RETURNED clientId=${existing.id}`);
         return { ...presentInternalClient(result as any, 'CONTACT_DETAIL'), _existingReturned: true, _reactivated: false };
       }
     }
@@ -2129,8 +2130,8 @@ export class ClientService {
     try {
       await this.syncContactFollowUpTask(tenantId, client);
       return true;
-    } catch (e: any) {
-      console.error(`[ClientService] contact follow-up sync hatası (client ${client.id}): ${e?.message}`);
+    } catch {
+      this.logger.error(`CONTACT_FOLLOWUP_SYNC_FAILED tenantId=${tenantId} clientId=${client.id}`);
       return false;
     }
   }
