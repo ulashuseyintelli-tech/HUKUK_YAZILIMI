@@ -263,6 +263,7 @@ function OfficeSettingsInner() {
   const [testingSms, setTestingSms] = useState(false);
   const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [smtpSaveStatus, setSmtpSaveStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  useEffect(() => { setSmtpSaveStatus(null); }, [smtpForm]);
   const [smsTestResult, setSmsTestResult] = useState<{ status: "verified" | "unverified" | "error"; message: string } | null>(null);
   // ACT-12 (2026-07-05): "Bugün ne gidecek?" önizlemesi — backend GET /greetings/today zaten
   // mevcuttu (findTodayGreetings), FE hiç tüketmiyordu. null = henüz yüklenmedi (loading state).
@@ -667,6 +668,7 @@ function OfficeSettingsInner() {
 
   const handleTestSmtp = async () => {
     setTestingSmtp(true);
+    setSmtpSaveStatus(null);
     setSmtpTestResult(null);
     try {
       const res = await api.post("/client-notifications/test-smtp");

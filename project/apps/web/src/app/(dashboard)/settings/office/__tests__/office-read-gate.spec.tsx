@@ -83,6 +83,23 @@ const body = () => document.body.textContent ?? '';
 const writes = () => mocked.put.mock.calls.length + mocked.post.mock.calls.length + mocked.delete.mock.calls.length + mocked.patch.mock.calls.length;
 
 describe('SMTP save outcome', () => {
+  it('does not retain an old saved status after editing or a subsequent failed connection test', async () => {
+    prime();
+    await open('smtp');
+    const dlg = screen.getByRole('dialog');
+    fireEvent.click(within(dlg).getByRole('button', { name: /Kaydet/ }));
+    await waitFor(() => expect(dlg.textContent).toContain('Kaydedildi'));
+    fireEvent.change(within(dlg).getByDisplayValue('smtp.sunucu.test'), { target: { value: 'edited.smtp.test' } });
+    await waitFor(() => expect(dlg.textContent).not.toContain('Kaydedildi'));
+    fireEvent.click(within(dlg).getByRole('button', { name: /Kaydet/ }));
+    await waitFor(() => expect(dlg.textContent).toContain('Kaydedildi'));
+    mocked.post.mockRejectedValueOnce(new Error('Connection test failed'));
+    fireEvent.click(within(dlg).getByRole('button', { name: 'Test et' }));
+    await waitFor(() => expect(dlg.textContent).toContain('Hata: Connection test failed'));
+    expect(dlg.textContent).not.toContain('Kaydedildi');
+    expect(mocked.put).toHaveBeenCalledTimes(2);
+    expect(mocked.post).toHaveBeenCalledTimes(1);
+  });
   it.each([403, 500])('shows a safe %s save failure without losing the form or claiming success', async (status) => {
     prime();
     mocked.put.mockRejectedValueOnce(buildApiHttpError({ message: 'PRIVATE-SMTP-PASSWORD' }, status));
