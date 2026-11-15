@@ -12,7 +12,7 @@ Exactly one Decision Log row transcribes the existing owner instructions and lif
   "status": "SUCCEEDED",
   "executionPrNumber": 3255,
   "executionMergeSha": "0c781fbdf8f0c5cec825597c147385254846fe37",
-  "effectiveMainSha": "0c781fbdf8f0c5cec825597c147385254846fe37",
+  "effectiveMainSha": "f55b151877a3192d51ef40279857d50c01799e93",
   "completedAt": "2026-11-15T10:18:32Z",
   "validationEvidence": [
     {
