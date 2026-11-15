@@ -178,6 +178,10 @@ export function ClaimItemPanel({
   const [liability, setLiability] = useState<ClaimLiabilityStateDTO | null>(null);
   const [liabilityTarget, setLiabilityTarget] = useState<{ claimItemIds: string[]; presetJointAll: boolean } | null>(null);
   const [liabilityNotice, setLiabilityNotice] = useState<string | null>(null);
+  // Seçim, metadata düzenlemesi gibi ONAYA giden bir taleptir (kalem doğrudan değişmez). Dosya sayfası paneli
+  // "salt okunur + düzenleme kipi" ile kullanır: kalem ekleme / silme gizlidir ama onaya giden talepler açıktır.
+  // Giriş bu yüzden düzenleme kipine bağlıdır; yalnız görüntüleme panelinde (düzenleme kipi kapalı) giriş yoktur.
+  const canRequestLiability = Boolean(liability?.secimYazmaAcik) && (!readOnly || metadataEdit);
   const loadLiability = async (): Promise<void> => {
     try {
       setLiability(await api.getCaseClaimLiability(caseId));
@@ -456,7 +460,7 @@ export function ClaimItemPanel({
             <Calculator className="h-5 w-5" />
             Alacak Kalemleri ({items.length})
           </h3>
-          {!readOnly && liability?.secimYazmaAcik && items.some((item) => item.status === "ACTIVE") && (
+          {canRequestLiability && items.some((item) => item.status === "ACTIVE") && (
             <div className="mt-2 flex flex-wrap items-center gap-2" data-testid="claim-liability-bulk-actions">
               <button
                 type="button"
@@ -570,7 +574,7 @@ export function ClaimItemPanel({
                   <span className="text-lg font-bold">
                     {formatCurrency(item.amount, item.currency)}
                   </span>
-                  {!readOnly && liability?.secimYazmaAcik && item.status === "ACTIVE" && (
+                  {canRequestLiability && item.status === "ACTIVE" && (
                     <button
                       type="button"
                       data-testid={`claim-item-liability-select-${item.id}`}
@@ -724,8 +728,8 @@ export function ClaimItemPanel({
         />
       )}
 
-      {/* Seçimlik borçlu sorumluluğu: seçim çekmecesi — readOnly'de ve bayrak kapalıyken açılmaz. */}
-      {!readOnly && liability && liabilityTarget && (
+      {/* Seçimlik borçlu sorumluluğu: seçim çekmecesi — yalnız görüntüleme panelinde ve bayrak kapalıyken açılmaz. */}
+      {canRequestLiability && liability && liabilityTarget && (
         <ClaimLiabilitySelectionDrawer
           caseId={caseId}
           state={liability}
