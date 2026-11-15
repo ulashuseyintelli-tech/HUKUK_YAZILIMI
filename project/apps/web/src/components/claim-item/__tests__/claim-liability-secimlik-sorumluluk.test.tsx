@@ -32,6 +32,7 @@ const apiMock = vi.hoisted(() => ({
 vi.mock("@/lib/api", () => ({ api: apiMock }));
 
 import { ClaimItemPanel } from "../ClaimItemPanel";
+import { formatShare } from "../ClaimLiabilitySelectionDrawer";
 import { DebtorLedgerBalanceCard } from "../../debtor/DebtorLedgerBalanceCard";
 import { CollectionModal } from "../../finance/CollectionModal";
 
@@ -198,6 +199,58 @@ describe("AT-26 kalem paneli ve seçim çekmecesi", () => {
     expect(apiMock.requestClaimLiability.mock.calls[0][1]).toMatchObject({ onizlemeOzeti: "ozet-1" });
     expect((await screen.findByTestId("claim-liability-notice")).textContent).toContain("onaya gönderildi");
     expect(screen.queryByTestId("claim-liability-drawer")).toBeNull();
+  });
+
+  it("geçmişte pay okunur yazılır (yüzde ya da kesir; ham ağırlık DEĞİL); 'Tavan yok' işaretliyken tavan kutusu boş görünür ve gönderilmez", async () => {
+    panelYanitlari(true);
+    const surum = (over: Record<string, unknown>) => ({
+      claimItemId: "k1", tur: "PAYLI", tavanKapsami: null, dayanak: "CONTRACT", dayanakNotu: null, onayTalebiId: "a1", uygulamaTuru: "SINGLE", kapanmaZamani: null, ...over,
+    });
+    const taraf = (n: number, payAgirligi: number) => ({ caseDebtorId: `cd-${n}`, ad: `Sentetik Borçlu ${n}`, payAgirligi, tavan: null, sinirsiz: false });
+    apiMock.getClaimLiabilityHistory.mockResolvedValue({
+      surumler: [
+        surum({ id: "s2", surum: 2, durum: "ACTIVE", kararZamani: "2026-03-03T09:00:00.000Z", taraflar: [taraf(1, 6000), taraf(2, 4000)] }),
+        surum({ id: "s1", surum: 1, durum: "SUPERSEDED", kararZamani: "2026-03-01T09:00:00.000Z", taraflar: [taraf(1, 1), taraf(2, 1), taraf(3, 1)] }),
+      ],
+    });
+    apiMock.previewClaimLiability.mockResolvedValue(previewYaniti(true));
+    render(<ClaimItemPanel caseId="case-1" />);
+    fireEvent.click(await screen.findByTestId("claim-item-liability-select-k1"));
+    const historyText = (await screen.findByTestId("claim-liability-history")).textContent ?? "";
+    expect(historyText).toContain("Sentetik Borçlu 1 (pay %60,00)");
+    expect(historyText).toContain("Sentetik Borçlu 2 (pay %40,00)");
+    // Üçte bir iki ondalıkla tam yazılamaz: yuvarlanmış yüzde yerine kesir.
+    expect(historyText).toContain("Sentetik Borçlu 3 (pay 1 / 3)");
+    expect(historyText).not.toContain("ağırlık");
+
+    fireEvent.click(screen.getByTestId("claim-liability-mode-CAPPED"));
+    fireEvent.click(screen.getByTestId("claim-liability-party-cd-1"));
+    fireEvent.click(screen.getByTestId("claim-liability-party-cd-2"));
+    const limit2 = () => screen.getByTestId("claim-liability-limit-cd-2") as HTMLInputElement;
+    fireEvent.change(screen.getByTestId("claim-liability-limit-cd-1"), { target: { value: "2000" } });
+    fireEvent.change(limit2(), { target: { value: "3000" } });
+    fireEvent.click(screen.getByTestId("claim-liability-unlimited-cd-2"));
+    expect(limit2().disabled).toBe(true);
+    expect(limit2().value).toBe("");
+    fireEvent.change(screen.getByTestId("claim-liability-basis"), { target: { value: "COURT_JUDGMENT" } });
+    fireEvent.click(screen.getByTestId("claim-liability-preview-button"));
+    await screen.findByTestId("claim-liability-preview");
+    expect(apiMock.previewClaimLiability).toHaveBeenLastCalledWith("case-1", [
+      expect.objectContaining({ claimItemId: "k1", mode: "CAPPED", parties: [{ caseDebtorId: "cd-1", limitAmount: "2000" }, { caseDebtorId: "cd-2", unlimited: true }] }),
+    ]);
+    // İşaret kaldırılınca yazılan değer geri gelir (kaybolmaz).
+    fireEvent.click(screen.getByTestId("claim-liability-unlimited-cd-2"));
+    expect(limit2().disabled).toBe(false);
+    expect(limit2().value).toBe("3000");
+  });
+
+  it("formatShare: tam ifade edilebilen oran yüzde, edilemeyen kesir; geçersiz toplamda ham değer", () => {
+    expect(formatShare(6000, 10000)).toBe("%60,00");
+    expect(formatShare(1, 2)).toBe("%50,00");
+    expect(formatShare(1, 8)).toBe("%12,50");
+    expect(formatShare(1, 3)).toBe("1 / 3");
+    expect(formatShare(2, 3)).toBe("2 / 3");
+    expect(formatShare(5, 0)).toBe("5");
   });
 
   it("engel varsa işlem DURUR: engel açıkça yazılır, onaya gönder kapalı kalır", async () => {

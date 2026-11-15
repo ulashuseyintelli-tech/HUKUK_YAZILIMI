@@ -81,6 +81,20 @@ interface PartyForm {
 
 const emptyParty = (selected = false): PartyForm => ({ selected, percent: "", limit: "", unlimited: false });
 
+/**
+ * Kayıtlı pay ağırlığını okunur biçimde yazar. Ağırlıklar oranı saklar (ör. %60 → 6000 / 10000); ham sayı kullanıcıya
+ * bir şey söylemez. Oran iki ondalıkla TAM ifade edilebiliyorsa yüzde, edilemiyorsa (ör. üçte bir) kesir yazılır —
+ * yuvarlanmış bir yüzde gösterilmez. Yalnız gösterimdir; pay tutarı sunucuda hesaplanır.
+ */
+export function formatShare(weight: number, totalWeight: number): string {
+  if (!(totalWeight > 0) || !(weight >= 0)) return String(weight);
+  const basisPoints = weight * 10000;
+  if (basisPoints % totalWeight === 0) {
+    return `%${(basisPoints / totalWeight / 100).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+  return `${weight} / ${totalWeight}`;
+}
+
 export function ClaimLiabilitySelectionDrawer({
   caseId,
   state,
@@ -333,7 +347,9 @@ export function ClaimLiabilitySelectionDrawer({
                         <input
                           aria-label={`${debtor.ad} tavan`}
                           data-testid={`claim-liability-limit-${debtor.caseDebtorId}`}
-                          value={form.limit}
+                          // "Tavan yok" işaretliyken kutu BOŞ görünür: eski rakam "tavan yok" ile yan yana durup
+                          // yanıltmasın. Yazılan değer saklanır; işaret kaldırılırsa geri gelir. Sunucuya gitmez.
+                          value={form.unlimited ? "" : form.limit}
                           disabled={form.unlimited}
                           onChange={(e) => updateParty(debtor.caseDebtorId, { limit: e.target.value })}
                           placeholder="Tavan"
@@ -496,7 +512,10 @@ export function ClaimLiabilitySelectionDrawer({
                       {surum.taraflar
                         .map((taraf) =>
                           taraf.payAgirligi !== null
-                            ? `${taraf.ad} (ağırlık ${taraf.payAgirligi})`
+                            ? `${taraf.ad} (pay ${formatShare(
+                                taraf.payAgirligi,
+                                surum.taraflar.reduce((sum, other) => sum + (other.payAgirligi ?? 0), 0),
+                              )})`
                             : taraf.sinirsiz
                               ? `${taraf.ad} (tavan yok)`
                               : taraf.tavan !== null
