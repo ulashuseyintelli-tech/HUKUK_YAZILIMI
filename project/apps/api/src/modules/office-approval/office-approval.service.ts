@@ -814,6 +814,7 @@ export class OfficeApprovalService {
     extra: Record<string, unknown> = {},
   ): Promise<OfficeApprovalRequest> {
     let updated: OfficeApprovalRequest | null = null;
+    let afterSync: OfficeApprovalRequest | null = null;
     await this.prisma.$transaction(async (tx) => {
       // K4-1: yetki kilit ALTINDA ve ilk yazmadan (durum CAS'ı + domain senkronu) ÖNCE.
       await this.authorizeDecisionInTx(tx, req, approverUserId, selfApprovalRule);
@@ -824,11 +825,17 @@ export class OfficeApprovalService {
       });
       if (res.count === 0) throw new ConflictException('Talep eszamanli degistirildi; karar uygulanmadi.');
       updated = await this.requireRequestInTransaction(tx, id);
-      await this.domainSync?.syncAfterDecision(tx, updated);
+      if (this.domainSync) {
+        await this.domainSync.syncAfterDecision(tx, updated);
+        // Alan eşitlemesi AYNI işlem içinde talebi uygulayıp yürütme durumunu değiştirebilir (ör. NOT_RUN → SUCCEEDED).
+        // Yanıt, eşitlemeden ÖNCEKİ okumayı değil eşitleme SONRASI kaydı taşır; aksi hâlde onaylayan, uygulanmış
+        // değişikliği "çalışmadı" görür. Denetim kaydı karar anı görüntüsünü yazmaya devam eder (aşağıda `updated`).
+        afterSync = await this.requireRequestInTransaction(tx, id);
+      }
     });
     if (!updated) throw new ConflictException('Talep eszamanli degistirildi; karar uygulanmadi.');
     await this.auditLog(auditAction, updated, approverUserId);
-    return updated;
+    return afterSync ?? updated;
   }
 
   /** Yürütme işaretleyicisi: yalnız status=APPROVED + executionStatus NOT_RUN/RUNNING → tek-yön geçiş (idempotent). */
