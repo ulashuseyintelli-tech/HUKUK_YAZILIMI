@@ -521,3 +521,4 @@ src/modules/address-discovery/__tests__/client-info-request-actions-clz03.http.d
 src/modules/claim-liability/__tests__/claim-liability-collection.db-gated.integration.spec.ts
 src/modules/claim-liability/__tests__/claim-liability-selection.http.db-gated.integration.spec.ts
 src/modules/claim-liability/__tests__/claim-liability-rollback-compat.db-gated.integration.spec.ts
+src/modules/client-intel-statement/__tests__/client-intel-terminal-race.http.db-gated.integration.spec.ts
