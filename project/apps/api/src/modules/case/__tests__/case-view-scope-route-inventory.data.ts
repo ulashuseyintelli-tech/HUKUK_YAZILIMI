@@ -699,6 +699,8 @@ export const CASE_RELATED_CONTROLLERS: Readonly<Record<string, readonly RouteEnt
     ["POST /pdf/generate-table", "DOSYA_DISI", "gövdeden üretim"],
   ],
   "poa/poa.controller.ts": [
+    ["GET /poa/:id/cases", "BASKA_KAPI", "Mevcut POA okuma yetkisi + her hedefte K16 canonical CaseClient ve aktör-dosya kapsamı; yalnız yetkili dosya bağlantıları"],
+    ["GET /poa/:id/case-candidates", "BASKA_KAPI", "Mevcut POA okuma yetkisi + K16 canonical CaseClient ve aktör-dosya kapsamıyla sayfalı adaylar"],
     ["GET /poa/check/valid", "BASKA_KAPI", "K16 müvekkil nesne kapsamı (CaseLawyer ∪ CaseStaff canView; bayraksız, her zaman açık)"],
     ["POST /poa/check/valid-for-lawyers", "YAZIM", ""],
     ["GET /poa/expiring/list", "BASKA_KAPI", "K16 müvekkil nesne kapsamı (CaseLawyer ∪ CaseStaff canView; bayraksız, her zaman açık)"],

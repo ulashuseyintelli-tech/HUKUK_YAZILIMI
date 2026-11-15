@@ -21,6 +21,7 @@ import {
   type ClientMutationCapabilities,
 } from "@/lib/client-mutation-capabilities";
 import { PoaScannerWizard } from "@/components/client/PoaScannerWizard";
+import { PoaCaseLinks } from "@/components/client/PoaCaseLinks";
 import { BulkEmailModal } from "@/components/bulk-email-modal";
 
 const CLIENT_TYPES = [
@@ -691,6 +692,7 @@ export default function ClientsSettingsPage() {
       {/* Vekaletler Modal */}
       {showPoaModal && poaClient && (
         <ClientPoaModal
+          key={poaClient.id}
           client={poaClient}
           onClose={() => { setShowPoaModal(false); setPoaClient(null); }}
         />
@@ -1829,6 +1831,8 @@ function ClientPoaModal({ client, onClose }: { client: any; onClose: () => void 
   const [showAddForm, setShowAddForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null);
+  const poaReadSequence = useRef(0);
+  const lawyerReadSequence = useRef(0);
   const [form, setForm] = useState({
     notaryName: "",
     notaryCity: "",
@@ -1849,28 +1853,35 @@ function ClientPoaModal({ client, onClose }: { client: any; onClose: () => void 
   useEffect(() => {
     loadPoas();
     loadLawyers();
+    return () => { poaReadSequence.current++; lawyerReadSequence.current++; };
   }, [client.id]);
 
   const loadPoas = async () => {
+    const sequence = ++poaReadSequence.current;
     try {
       setPoasLoadError(null);
       const res = await api.get(`/poa/client/${client.id}`);
+      if (sequence !== poaReadSequence.current) return;
       setPoas(res.data || []);
     } catch (e) {
+      if (sequence !== poaReadSequence.current) return;
       // WSMR-A4p: eskiden yalniz console.error ile YUTULUYORDU — "Henüz
       // vekalet kaydı yok" render'i okuma hatasiyla AYNI ekrana dusuyordu.
       setPoasLoadError(toActionErrorMessage(e, "Vekaletler yüklenemedi."));
     } finally {
-      setLoading(false);
+      if (sequence === poaReadSequence.current) setLoading(false);
     }
   };
 
   const loadLawyers = async () => {
+    const sequence = ++lawyerReadSequence.current;
     try {
       setLawyersLoadError(null);
       const res = await api.get("/lawyers");
+      if (sequence !== lawyerReadSequence.current) return;
       setLawyers(res.data?.data || res.data || []);
     } catch (e) {
+      if (sequence !== lawyerReadSequence.current) return;
       // WSMR-A4p: bos donen avukat listesi "atanacak avukat yok" gibi
       // gorunuyordu; artik okuma hatasi GORUNUR (formun altinda).
       setLawyersLoadError(toActionErrorMessage(e, "Avukatlar yüklenemedi."));
@@ -2083,6 +2094,7 @@ function ClientPoaModal({ client, onClose }: { client: any; onClose: () => void 
                         {poa.canSettle && <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs">Sulh</span>}
                         {poa.canRelease && <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs">İbra</span>}
                       </div>
+                      <PoaCaseLinks clientId={client.id} poaId={poa.id} poaUpdatedAt={poa.updatedAt} />
                       {/* Dosya Yükleme/İndirme */}
                       <div className="flex items-center gap-2 mt-2 pt-2 border-t">
                         {poa.filePath ? (
