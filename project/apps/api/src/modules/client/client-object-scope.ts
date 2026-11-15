@@ -13,6 +13,16 @@ export async function clientObjectScope(
   actorUserId: string | null | undefined,
   caseId?: string,
 ): Promise<Prisma.ClientWhereInput> {
+  return { caseClients: { some: { case: await clientCaseObjectScope(db, tenantId, actorUserId, caseId) } } };
+}
+
+/** The same K16 case predicate for bounded case-link lists; grants no mutation permission. */
+export async function clientCaseObjectScope(
+  db: ClientScopeDb,
+  tenantId: string,
+  actorUserId: string | null | undefined,
+  caseId?: string,
+): Promise<Prisma.CaseWhereInput> {
   if (typeof tenantId !== 'string' || !tenantId || typeof actorUserId !== 'string' || !actorUserId) {
     throw new ForbiddenException({ code: 'CLIENT_READ_DENIED' });
   }
@@ -26,7 +36,6 @@ export async function clientObjectScope(
   if (!actor) throw new ForbiddenException({ code: 'CLIENT_READ_DENIED' });
   // No title/ADMIN, ReportingLine, legacy Case.clientId or creator exception.
   return {
-    caseClients: { some: { case: {
       tenantId,
       ...(caseId !== undefined ? { id: caseId } : {}),
       OR: [
@@ -37,7 +46,6 @@ export async function clientObjectScope(
           tenantId, isActive: true, user: { id: actorUserId, tenantId, isActive: true, role: { in: ['USER', 'ADMIN'] } },
         } } } },
       ],
-    } } },
   };
 }
 

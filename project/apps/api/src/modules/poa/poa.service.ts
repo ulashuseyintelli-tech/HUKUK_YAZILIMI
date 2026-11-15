@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
-import { assertClientObjectScope, clientObjectScope } from '../client/client-object-scope';
-import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from "@nestjs/common";
+import { assertClientObjectScope, clientCaseObjectScope, clientObjectScope } from '../client/client-object-scope';
+import { decideClientWorkspaceCommand, CLIENT_MUTATION_REASON } from '../client/client-mutation-policy';
+import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException, ConflictException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { PoaStatus, PoaScopeType } from "@prisma/client";
 import * as fs from "fs";
@@ -203,6 +204,115 @@ export class PoaService {
         this.officeApproval.isApproverEligible(userId, actorTenantId),
       auditLog: (input: Parameters<AuditService['log']>[0]) => this.audit.log(input),
     };
+  }
+
+  private async caseLinkPoa(db: Prisma.TransactionClient, id: string, tenantId: string, actor: ClientWorkspaceCommandActor) {
+    if (!actor?.userId || actor.tenantId !== tenantId) throw new ForbiddenException({ code: 'CLIENT_READ_DENIED' });
+    const currentUser = await db.user.findFirst({
+      where: { id: actor.userId, tenantId, isActive: true, role: { in: ['USER', 'ADMIN'] } }, select: { role: true },
+    });
+    if (!currentUser || currentUser.role !== String(actor.role ?? '').trim().toUpperCase()) {
+      throw new ForbiddenException({ code: 'CLIENT_READ_DENIED' });
+    }
+    const poa = await db.clientPowerOfAttorney.findFirst({
+      where: { id, tenantId, client: { tenantId } }, select: { id: true, clientId: true, updatedAt: true },
+    });
+    if (!poa) throw new NotFoundException('Vekalet bulunamadı');
+    await assertClientObjectScope(db, tenantId, actor.userId, poa.clientId);
+    return poa;
+  }
+
+  private async canManageCaseLinks(actor: ClientWorkspaceCommandActor, tenantId: string): Promise<boolean> {
+    const coarse = decideClientWorkspaceCommand({ userId: actor.userId, role: actor.role, elevatedAuthority: false });
+    if (coarse.allowed) return true;
+    if (coarse.reasonCode !== CLIENT_MUTATION_REASON.WORKSPACE_COMMAND_DENIED) return false;
+    return decideClientWorkspaceCommand({ userId: actor.userId, role: actor.role,
+      elevatedAuthority: await this.officeApproval.isApproverEligible(actor.userId!, tenantId) }).allowed;
+  }
+
+  /** Declared links only: neither a validity result nor UYAP operation authority. */
+  async listCaseLinks(id: string, tenantId: string, actor: ClientWorkspaceCommandActor) {
+    return this.prisma.$transaction(async (tx) => {
+      const poa = await this.caseLinkPoa(tx, id, tenantId, actor);
+      const scope = await clientCaseObjectScope(tx, tenantId, actor.userId);
+      const links = await tx.poaCaseLink.findMany({
+        where: { poaId: id, tenantId, clientId: poa.clientId, case: scope },
+        select: { caseId: true, sourcePoaUpdatedAt: true, case: { select: { fileNumber: true } } },
+        orderBy: { caseId: 'asc' },
+      });
+      return { data: links.map(link => ({ caseId: link.caseId, fileNumber: link.case.fileNumber,
+        sourcePoaUpdatedAt: link.sourcePoaUpdatedAt.toISOString(),
+        sourceChanged: link.sourcePoaUpdatedAt.getTime() !== poa.updatedAt.getTime() })),
+        poaUpdatedAt: poa.updatedAt.toISOString(), visibility: 'AUTHORIZED_CASES_ONLY' as const,
+        canManageLinks: await this.canManageCaseLinks(actor, tenantId) };
+    }, { isolationLevel: 'RepeatableRead' });
+  }
+
+  async listCaseLinkCandidates(id: string, query: { page?: string; limit?: string; q?: string }, tenantId: string, actor: ClientWorkspaceCommandActor) {
+    const parsePage = (raw: unknown, fallback: number, maximum: number) => {
+      if (raw === undefined) return fallback;
+      if (typeof raw !== 'string' || !/^[1-9]\d*$/.test(raw) || Number(raw) > maximum) {
+        throw new BadRequestException('Geçersiz sayfalama');
+      }
+      return Number(raw);
+    };
+    const page = parsePage(query.page, 1, 100000), limit = parsePage(query.limit, 20, 100);
+    if (query.q !== undefined && (typeof query.q !== 'string' || query.q.length > 120)) throw new BadRequestException('Geçersiz dosya araması');
+    return this.prisma.$transaction(async (tx) => {
+      const poa = await this.caseLinkPoa(tx, id, tenantId, actor);
+      const scope = await clientCaseObjectScope(tx, tenantId, actor.userId);
+      const where: Prisma.CaseWhereInput = { AND: [scope, { caseClients: { some: { clientId: poa.clientId } } },
+        ...(query.q?.trim() ? [{ fileNumber: { contains: query.q.trim(), mode: 'insensitive' as const } }] : [])] };
+      const [cases, total] = await Promise.all([
+        tx.case.findMany({ where, select: { id: true, fileNumber: true }, orderBy: { id: 'asc' }, skip: (page - 1) * limit, take: limit }),
+        tx.case.count({ where }),
+      ]);
+      return { data: cases.map(c => ({ caseId: c.id, fileNumber: c.fileNumber })),
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    }, { isolationLevel: 'RepeatableRead' });
+  }
+
+  async linkCase(id: string, caseId: string, input: { expectedPoaUpdatedAt: string }, tenantId: string, actor: ClientWorkspaceCommandActor) {
+    return this.changeCaseLink(id, caseId, input, tenantId, actor, true);
+  }
+
+  async unlinkCase(id: string, caseId: string, input: { expectedPoaUpdatedAt: string }, tenantId: string, actor: ClientWorkspaceCommandActor) {
+    return this.changeCaseLink(id, caseId, input, tenantId, actor, false);
+  }
+
+  private async changeCaseLink(id: string, caseId: string, input: { expectedPoaUpdatedAt: string }, tenantId: string, actor: ClientWorkspaceCommandActor, linked: boolean) {
+    if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(k => k !== 'expectedPoaUpdatedAt') ||
+      typeof input.expectedPoaUpdatedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(input.expectedPoaUpdatedAt) ||
+      !Number.isFinite(Date.parse(input.expectedPoaUpdatedAt)) || new Date(input.expectedPoaUpdatedAt).toISOString() !== input.expectedPoaUpdatedAt) throw new BadRequestException('POA kaynak sürümü zorunludur');
+    if (typeof caseId !== 'string' || !caseId) throw new NotFoundException('Dosya bulunamadı');
+    if (!actor?.userId || actor.tenantId !== tenantId) throw new ForbiddenException({ code: 'CLIENT_READ_DENIED' });
+    return this.prisma.$transaction(async (tx) => {
+      // Serialize only this POA's link commands and source changes, without modifying its updatedAt.
+      await tx.$queryRaw`SELECT "id" FROM "ClientPowerOfAttorney" WHERE "id" = ${id} AND "tenantId" = ${tenantId} FOR UPDATE`;
+      const poa = await this.caseLinkPoa(tx, id, tenantId, actor);
+      return runAuthorizedClientWorkspaceCommand({
+        isApproverEligible: (userId, actorTenantId) => this.officeApproval.isApproverEligible(userId, actorTenantId, tx),
+        auditLog: record => this.audit.logInTransaction(tx, record),
+      }, actor, { tenantId, clientId: poa.clientId, commandType: CLIENT_WORKSPACE_COMMAND.POA_UPDATE }, async () => {
+        await assertClientObjectScope(tx, tenantId, actor.userId, poa.clientId, caseId);
+        if (new Date(input.expectedPoaUpdatedAt).getTime() !== poa.updatedAt.getTime()) {
+          throw new ConflictException({ code: 'POA_SOURCE_CHANGED', message: 'Vekalet kaynağı değişti; yenileyip yeniden gözden geçirin.' });
+        }
+        const current = await tx.poaCaseLink.findUnique({ where: { poaId_caseId: { poaId: id, caseId } } });
+        let changed = false;
+        if (linked && !current) {
+          await tx.poaCaseLink.create({ data: { tenantId, poaId: id, clientId: poa.clientId, caseId, sourcePoaUpdatedAt: poa.updatedAt } });
+          changed = true;
+        } else if (linked && current && current.sourcePoaUpdatedAt.getTime() !== poa.updatedAt.getTime()) {
+          await tx.poaCaseLink.update({ where: { id: current.id }, data: { sourcePoaUpdatedAt: poa.updatedAt } });
+          changed = true;
+        } else if (!linked && current) {
+          await tx.poaCaseLink.delete({ where: { id: current.id } });
+          changed = true;
+        }
+        return { caseId, linked, changed, sourcePoaUpdatedAt: poa.updatedAt.toISOString() };
+      }, result => ({ poaId: id, ...result, scope: 'DECLARED_CASE_LINK_ONLY' }));
+    });
   }
 
   /**

@@ -100,6 +100,28 @@ export class PoaController {
     return this.poaService.findOneForActor(id, req.user.tenantId, req.user.id);
   }
 
+  @Get(":id/cases")
+  async listCaseLinks(@Param("id") id: string, @Request() req: any) {
+    return this.poaService.listCaseLinks(id, req.user.tenantId, this.actorOf(req));
+  }
+
+  @Get(":id/case-candidates")
+  async listCaseLinkCandidates(@Param("id") id: string, @Query() query: { page?: string; limit?: string; q?: string }, @Request() req: any) {
+    return this.poaService.listCaseLinkCandidates(id, query, req.user.tenantId, this.actorOf(req));
+  }
+
+  @Put(":id/cases/:caseId")
+  async linkCase(@Param("id") id: string, @Param("caseId") caseId: string,
+    @Body() input: { expectedPoaUpdatedAt: string }, @Request() req: any) {
+    return this.poaService.linkCase(id, caseId, input, req.user.tenantId, this.actorOf(req));
+  }
+
+  @Delete(":id/cases/:caseId")
+  async unlinkCase(@Param("id") id: string, @Param("caseId") caseId: string,
+    @Body() input: { expectedPoaUpdatedAt: string }, @Request() req: any) {
+    return this.poaService.unlinkCase(id, caseId, input, req.user.tenantId, this.actorOf(req));
+  }
+
   /**
    * Yeni vekalet oluştur
    * POST /api/poa

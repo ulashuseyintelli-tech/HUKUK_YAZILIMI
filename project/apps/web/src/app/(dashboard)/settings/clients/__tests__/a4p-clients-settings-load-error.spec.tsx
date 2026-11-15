@@ -23,7 +23,11 @@ import { api } from '@/lib/api';
  */
 
 vi.mock('@/lib/api', () => ({
-  api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() },
+  api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn(),
+    getPoaCaseLinks: vi.fn().mockResolvedValue({
+      data: [], poaUpdatedAt: '2026-11-15T10:00:00.000Z', visibility: 'AUTHORIZED_CASES_ONLY', canManageLinks: false,
+    }),
+  },
 }));
 
 let searchParams = new URLSearchParams('');

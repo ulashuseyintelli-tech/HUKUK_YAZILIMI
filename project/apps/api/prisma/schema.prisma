@@ -835,10 +835,12 @@ model ClientPowerOfAttorney {
   // İlişkiler
   lawyers          PoaLawyer[]
   expiryDeliveries PoaExpiryNotificationDelivery[]
+  caseLinks        PoaCaseLink[]
 
   /// UYAP-POA-TENANT-SAFETY-I01: `PoaLawyer` composite tenant-safe FK hedefi.
   /// `id` PK olduğundan superset key — ihlal edilemez, veri riski yok.
   @@unique([id, tenantId])
+  @@unique([id, clientId, tenantId])
   @@index([tenantId])
   @@index([tenantId, clientId])
   @@index([clientId])
@@ -1175,6 +1177,25 @@ model PoaLawyer {
   @@index([lawyerId])
 }
 
+// Explicit document-to-Case declaration; it does not evaluate operation authority.
+model PoaCaseLink {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  poaId              String
+  clientId           String
+  caseId             String
+  createdAt          DateTime @default(now())
+  sourcePoaUpdatedAt DateTime
+
+  poa        ClientPowerOfAttorney @relation(fields: [poaId, clientId, tenantId], references: [id, clientId, tenantId], onDelete: Restrict)
+  case       Case                  @relation(fields: [caseId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  caseClient CaseClient            @relation(fields: [caseId, clientId], references: [caseId, clientId], onDelete: Restrict)
+
+  @@unique([poaId, caseId])
+  @@index([tenantId, poaId])
+  @@index([caseId, clientId])
+}
+
 // Dosya-Müvekkil İlişkisi (Takipte yer alan müvekkiller)
 model CaseClient {
   id       String @id @default(cuid())
@@ -1200,6 +1221,7 @@ model CaseClient {
 
   // CLIENT-P2-U03-TRACK-B-I01 (§35.3) — V1 yalnız SINGLE_CASE_CLIENT (additive).
   clientFinancialDisclosures ClientFinancialDisclosure[]
+  poaCaseLinks               PoaCaseLink[]
 
   @@unique([caseId, clientId])
   @@index([caseId])
@@ -1637,6 +1659,7 @@ model Case {
   groups                        CaseGroup[]
   stageHistory                  CaseStageHistory[]            @relation("CaseStageHistory")
   caseClients                   CaseClient[]
+  poaCaseLinks                  PoaCaseLink[]
   tebligatlar                   Tebligat[]
   legalDeadlineSnapshots        LegalDeadlineSnapshot[]
   legalTimeShadowDiffs          LegalTimeShadowDiff[]

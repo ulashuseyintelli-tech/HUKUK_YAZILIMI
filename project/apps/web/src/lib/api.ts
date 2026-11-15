@@ -970,6 +970,28 @@ class ApiClient {
     return response.data;
   }
 
+  async getPoaCaseLinks(poaId: string): Promise<PoaCaseLinksResult> {
+    return this.request<PoaCaseLinksResult>(`/poa/${encodeURIComponent(poaId)}/cases`);
+  }
+
+  async getPoaCaseCandidates(poaId: string, input: { page?: number; limit?: number; q?: string } = {}): Promise<PoaCaseCandidatesResult> {
+    const query = new URLSearchParams({ page: String(input.page ?? 1), limit: String(input.limit ?? 20) });
+    if (input.q?.trim()) query.set('q', input.q.trim());
+    return this.request<PoaCaseCandidatesResult>(`/poa/${encodeURIComponent(poaId)}/case-candidates?${query}`);
+  }
+
+  async linkPoaCase(poaId: string, caseId: string, input: { expectedPoaUpdatedAt: string }): Promise<PoaCaseLinkMutationResult> {
+    return this.request<PoaCaseLinkMutationResult>(`/poa/${encodeURIComponent(poaId)}/cases/${encodeURIComponent(caseId)}`, {
+      method: 'PUT', body: JSON.stringify({ expectedPoaUpdatedAt: input.expectedPoaUpdatedAt }),
+    });
+  }
+
+  async unlinkPoaCase(poaId: string, caseId: string, input: { expectedPoaUpdatedAt: string }): Promise<PoaCaseLinkMutationResult> {
+    return this.request<PoaCaseLinkMutationResult>(`/poa/${encodeURIComponent(poaId)}/cases/${encodeURIComponent(caseId)}`, {
+      method: 'DELETE', body: JSON.stringify({ expectedPoaUpdatedAt: input.expectedPoaUpdatedAt }),
+    });
+  }
+
 
   async uploadClientWorkspacePoaFile(clientId: string, poaId: string, file: File) {
     const body = new FormData();
@@ -3869,6 +3891,35 @@ export interface ClientWorkspacePoaUploadResult {
   hasFile: boolean;
   fileSize: number | null;
   mimeType: string | null;
+}
+
+export interface PoaCaseCandidate {
+  caseId: string;
+  fileNumber: string | null;
+}
+
+export interface PoaCaseLink extends PoaCaseCandidate {
+  sourcePoaUpdatedAt: string;
+  sourceChanged: boolean;
+}
+
+export interface PoaCaseLinksResult {
+  data: PoaCaseLink[];
+  poaUpdatedAt: string;
+  visibility: 'AUTHORIZED_CASES_ONLY';
+  canManageLinks: boolean;
+}
+
+export interface PoaCaseCandidatesResult {
+  data: PoaCaseCandidate[];
+  pagination: { page: number; limit: number; total: number; totalPages: number };
+}
+
+export interface PoaCaseLinkMutationResult {
+  caseId: string;
+  linked: boolean;
+  changed: boolean;
+  sourcePoaUpdatedAt: string;
 }
 export type ClientWorkspaceTemplateNotificationCode = 'GENEL_BILGILENDIRME' | 'DOSYA_DURUMU';
 export type ClientWorkspaceTemplateNotificationStatus = 'sent' | 'skipped' | 'failed';
