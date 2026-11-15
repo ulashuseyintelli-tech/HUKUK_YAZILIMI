@@ -52,7 +52,7 @@ afterEach(() => {
   vi.restoreAllMocks(); vi.unstubAllGlobals();
 });
 
-async function submit(mode: Mode, selected = false) {
+async function submit(mode: Mode, selected = false, withContacts = false) {
   window.history.replaceState(null, '', '/cases/new');
   saveCaseWizardDraftState({ currentStep: mode === 'document' ? 0 : 3, showDocumentSelector: true, formSelection: { formCode: 'FORM_7', subFormCode: null }, ...(selected ? { creditors: [{ ...saved, isNew: false }] } : {}) }, scope);
   const view = render(<NewCasePage />);
@@ -62,6 +62,10 @@ async function submit(mode: Mode, selected = false) {
     const modal = screen.getByText('Yeni Müvekkil Ekle').closest('.max-w-2xl') as HTMLElement;
     const inputs = within(modal).getAllByRole('textbox');
     ['Sentetik', 'Müvekkil', '10000000214'].forEach((value, index) => fireEvent.change(inputs[index], { target: { value } }));
+    if (withContacts) {
+      fireEvent.change(within(modal).getByText('Telefon').parentElement!.querySelector('input')!, { target: { value: '03120000000' } });
+      fireEvent.change(within(modal).getByText('E-posta').parentElement!.querySelector('input')!, { target: { value: 'input@example.test' } });
+    }
     fireEvent.change(within(modal).getByText('Yevmiye No').parentElement!.querySelector('input')!, { target: { value: 'R17-1' } });
     fireEvent.click(within(modal).getByRole('button', { name: 'Kaydet ve Ekle' }));
   } else fireEvent.click(await screen.findByRole('button', { name: mode === 'document' ? 'R17 document scan' : 'R17 step3 scan' }));
@@ -74,6 +78,20 @@ async function expectSelected() {
 }
 
 describe.each(modes)('CL-R17 — actual wizard create consumer: %s', (mode) => {
+  it('KI-148 sends canonical contact arrays but selects the returned Client, including dedup', async () => {
+    fixture.scan = { ...fixture.scan, phone: '03120000000', email: 'input@example.test' };
+    const returnedContacts = [{ id: 'canonical-contact', type: 'EMAIL', value: 'server@example.test', isPrimary: true }];
+    response = { data: { ...saved, _existingReturned: true, phone: 'server phone', email: 'server@example.test', contacts: returnedContacts } };
+    await submit(mode, false, true); await expectSelected();
+    const creates = vi.mocked(api.post).mock.calls.filter(([url]) => url === '/clients');
+    expect(creates).toHaveLength(1);
+    expect(creates[0][1]).toMatchObject({ phone: '03120000000', email: 'input@example.test',
+      phones: [{ value: '03120000000', isPrimary: true }], emails: [{ value: 'input@example.test', isPrimary: true }],
+    });
+    expect(loadCaseWizardDraftState(scope).creditors).toEqual([expect.objectContaining({ id: saved.id, phone: 'server phone', email: 'server@example.test', contacts: returnedContacts })]);
+    expect(window.alert).toHaveBeenCalledWith(CLIENT_EXISTING_RETURNED_MESSAGE);
+    expect(vi.mocked(api.post).mock.calls.filter(([url]) => url === '/poa')).toHaveLength(1);
+  });
   it.each([0, 1, 2])('uses the existing card and reports it (envelope=%s)', async (depth) => {
     response = { ...saved, _existingReturned: true, _reactivated: false };
     for (let i = 0; i < depth; i++) response = { data: response };

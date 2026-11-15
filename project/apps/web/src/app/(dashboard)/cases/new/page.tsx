@@ -9,6 +9,7 @@ import { api } from "@/lib/api";
 import { runMutation } from "@/lib/mutation-outcome";
 import { toActionErrorMessage } from "@/lib/action-error";
 import { readClientCreateResult, CLIENT_EXISTING_RETURNED_MESSAGE } from "@/lib/client-create-result";
+import { withClientCreateContacts } from "@/lib/client-create-contacts";
 import { buildCreateCaseDuesPayload, buildClaimDocumentFields, ClaimKalemTuruValidationError, mapClaimKalemTuruToDueType, flattenNestedYanAlacaklarRaws, formatCaseDueValidationError, formatCaseCreateAdmissionError } from "@/lib/case-due-payload";
 import { buildUiInterestWriteIntent, type InterestTypeCode as UiInterestTypeCode } from "@/lib/interest-type-resolver";
 import { aggregateListedClaimItems } from "@/lib/case-claim-live-aggregate";
@@ -1088,7 +1089,7 @@ export default function NewCasePage() {
         canRelease: result.canRelease,
       };
       
-      const clientResponse = await api.post("/clients", clientData);
+      const clientResponse = await api.post("/clients", withClientCreateContacts(clientData));
       const savedClient = readClientCreateResult(clientResponse);
       if (savedClient._existingReturned) alert(CLIENT_EXISTING_RETURNED_MESSAGE);
       
@@ -2407,7 +2408,7 @@ export default function NewCasePage() {
                         canSettle: result.canSettle,
                         canRelease: result.canRelease,
                       };
-                      const response = await api.post("/clients", clientData);
+                      const response = await api.post("/clients", withClientCreateContacts(clientData));
                       const savedClient = readClientCreateResult(response);
                       if (savedClient._existingReturned) alert(CLIENT_EXISTING_RETURNED_MESSAGE);
                       // Taranan vekaletname bilgisi varsa kanonik /poa ile kaydet
@@ -2971,7 +2972,7 @@ export default function NewCasePage() {
             try {
               // Vekaletname alanları /clients gövdesine konmaz; vekalet ayrı
               // kanonik POST /poa ile kaydedilir (giriliyor ama düşüyor tuzağını kapatır).
-              const response = await api.post("/clients", stripPoaFields(data));
+              const response = await api.post("/clients", withClientCreateContacts(stripPoaFields(data)));
               const savedClient = readClientCreateResult(response);
               if (savedClient._existingReturned) alert(CLIENT_EXISTING_RETURNED_MESSAGE);
               if (savedClient?.id && hasPoaInput(data)) {
