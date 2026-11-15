@@ -1,6 +1,7 @@
 import { CanActivate, ExecutionContext, INestApplication, ModuleMetadata, UnauthorizedException, ValidationPipe } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { AuthGuard } from "@nestjs/passport";
+import { SchedulerRegistry } from "@nestjs/schedule";
 import { Test } from "@nestjs/testing";
 import { PrismaClient } from "@prisma/client";
 import { randomUUID } from "node:crypto";
@@ -153,7 +154,33 @@ export async function buildScopeApp(db: () => PrismaClient, imports: NonNullable
   const app = moduleRef.createNestApplication();
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
   await app.init();
+  // Zamanlanmış işler kurulumun HEMEN ardından durdurulur; çağıran takım test verisini bundan SONRA kurar.
+  stopScopeAppScheduledJobs(app);
   return app;
+}
+
+/**
+ * Kapsam testlerinin uygulaması gerçek modülleri içe aktarır; modüllerden biri zamanlayıcıyı kuruyorsa uygulamadaki
+ * BÜTÜN zamanlanmış işler (ör. beş dakikalık otomasyon döngüsü, saatlik adres görevi denetimi) gerçek saatle çalışır ve
+ * takımın kurduğu veriye yazabilir. Bu takımlar yalnız veri kurup okuma / işlem yollarını doğrular; zamanlayıcıyı sınamaz.
+ * Bu yüzden TEST uygulamasının işleri durdurulur (kusur sınıfı: TEST-S6-OTOMASYON-ZAMANLAYICI-MUDAHALESI). Ürün
+ * zamanlayıcısı ve ürün kodu değişmez.
+ *
+ * Durdurulan işlerin adlarını döner; zamanlayıcı kurulmamış uygulamada boş liste döner. Durdurmadan sonra etkin iş
+ * kalırsa HATA fırlatır (yalıtım sessizce eksik kalmaz).
+ */
+export function stopScopeAppScheduledJobs(app: INestApplication): string[] {
+  let registry: SchedulerRegistry;
+  try {
+    registry = app.get(SchedulerRegistry, { strict: false });
+  } catch {
+    return []; // bu uygulamada zamanlayıcı kurulmamış
+  }
+  const jobs = [...registry.getCronJobs()];
+  for (const [, job] of jobs) job.stop();
+  const stillActive = jobs.filter(([, job]) => job.isActive).map(([name]) => name);
+  if (stillActive.length > 0) throw new Error(`Test uygulamasının zamanlanmış işleri durdurulamadı: ${stillActive.join(", ")}`);
+  return jobs.map(([name]) => name).sort();
 }
 
 export function scopeHttp(app: () => INestApplication) {

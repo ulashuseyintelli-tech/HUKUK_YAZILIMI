@@ -6,6 +6,7 @@ jest.mock("pdf-poppler", () => ({
 }));
 
 import { INestApplication } from "@nestjs/common";
+import { SchedulerRegistry } from "@nestjs/schedule";
 import { PrismaClient } from "@prisma/client";
 import * as request from "supertest";
 import { A_CASE_KEYS, ACaseKey, CASE_NOT_FOUND, CaseKey, ScopeWorld, buildScopeApp, createScopeWorld, expectHiddenResponse, scopeFlag, scopeHttp } from "../../../../test/p3-scope-world";
@@ -345,6 +346,16 @@ describeDb("F02 P3 tarama S4 — borçlu tarafı dosyaya bağlı okumalar (gerç
       // staff yalnız c5'i görür: iki dosyadaki eşleşen borçlunun adresi görünür dosyadan (c5) gelir, gizli c6'dan değil.
       const staff = await http.get(w.u.staff, `/address-discovery/cross-file/${shared.debtor}/addresses?currentCaseId=${w.c.c1}`);
       expect((staff.body as Array<{ fromCaseId: string; fromCaseFileNumber: string }>).map((x) => [x.fromCaseId, x.fromCaseFileNumber])).toEqual([[w.c.c5, w.fileNo("c5")]]);
+    });
+
+    it("zamanlanmış işler bu test uygulamasında durdurulmuştur — süresi geçmiş adres görevlerine zamanlayıcı karışamaz", () => {
+      const jobs = [...app.get(SchedulerRegistry, { strict: false }).getCronJobs()];
+      // Boş kanıt olmasın: bu takımın kurduğu veriye yazan iki iş kayıtlıdır (durdurulacak bir şey VAR) …
+      expect(jobs.map(([name]) => name)).toEqual(
+        expect.arrayContaining(["AddressTaskSchedulerService.checkOverdueTasks", "AddressTaskSchedulerService.publishOutboxEvents"]),
+      );
+      // … ve ortak kurucu (buildScopeApp) hepsini durdurmuştur.
+      expect(jobs.filter(([, job]) => job.isActive).map(([name]) => name)).toEqual([]);
     });
 
     it("GET address-tasks/debtor/:debtorId ve address-tasks/overdue — yalnız görünen dosyaların adres görevleri", async () => {
