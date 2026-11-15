@@ -682,7 +682,16 @@ class ApiClient {
    * - ClaimLiabilitySelectionDrawer.handleRequest() -> POST /cases/:caseId/claim-liability/request
    */
   async requestClaimLiability(caseId: string, payload: { selections: ClaimLiabilitySelectionInputDTO[]; onizlemeOzeti: string }) {
-    return this.request<{ applied: false; approvalRequired: true; approvalRequestId: string; status: string }>(
+    return this.request<{
+      applied: false;
+      approvalRequired: true;
+      approvalRequestId: string;
+      status: string;
+      /** Onaya giden kalem sayısı. */
+      uygulanacakKalemSayisi?: number;
+      /** Etkin seçimiyle aynı olduğu için talebe girmeyen kalemler. */
+      atlananKalemler?: string[];
+    }>(
       `/cases/${caseId}/claim-liability/request`,
       { method: "POST", body: JSON.stringify(payload) },
     );
@@ -6147,7 +6156,12 @@ export interface ClaimLiabilitySelectionInputDTO {
 export interface ClaimLiabilityPreviewDTO {
   caseId: string;
   uygulamaTuru: "SINGLE" | "BULK";
+  /** Girdi hatası ve engel yok VE en az bir kalemde değişiklik var. */
   uygulanabilir: boolean;
+  /** Onaya gidecek (değişen) kalem sayısı. Eski sunucu yanıtında bulunmaz. */
+  uygulanacakKalemSayisi?: number;
+  /** Etkin seçimiyle aynı olduğu için atlanacak kalem sayısı. Eski sunucu yanıtında bulunmaz. */
+  atlananKalemSayisi?: number;
   onizlemeOzeti: string;
   kalemler: Array<{
     claimItemId: string;

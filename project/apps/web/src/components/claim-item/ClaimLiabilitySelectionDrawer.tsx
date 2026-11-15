@@ -215,8 +215,13 @@ export function ClaimLiabilitySelectionDrawer({
     setBusy("request");
     setError(null);
     try {
-      await api.requestClaimLiability(caseId, { selections, onizlemeOzeti: preview.onizlemeOzeti });
-      onRequested("Borçlu sorumluluğu seçimi onaya gönderildi. Seçim, onaylandığında uygulanır; o zamana kadar hesap değişmez.");
+      const result = await api.requestClaimLiability(caseId, { selections, onizlemeOzeti: preview.onizlemeOzeti });
+      const skipped = result.atlananKalemler?.length ?? 0;
+      onRequested(
+        skipped > 0
+          ? `Borçlu sorumluluğu seçimi ${result.uygulanacakKalemSayisi ?? selections.length - skipped} kalem için onaya gönderildi; ${skipped} kalem zaten aynı seçimde olduğu için atlandı. Seçim, onaylandığında uygulanır; o zamana kadar hesap değişmez.`
+          : "Borçlu sorumluluğu seçimi onaya gönderildi. Seçim, onaylandığında uygulanır; o zamana kadar hesap değişmez.",
+      );
     } catch (err) {
       setError(toActionErrorMessage(err, "Seçim onaya gönderilemedi."));
     } finally {
@@ -443,7 +448,14 @@ export function ClaimLiabilitySelectionDrawer({
                     {engel.sinir !== null ? ` / sınır ${fmt(engel.sinir, kalem.paraBirimi)}` : ""}.
                   </p>
                 ))}
-                {kalem.degisiklikYok && <p className="text-amber-800">Seçim mevcut durumla aynı; değişiklik yok.</p>}
+                {kalem.degisiklikYok && (
+                  <p data-testid="claim-liability-no-change" className="text-amber-800">
+                    {/* Toplu uygulamada değişmeyen kalem engel değildir: talebe girmez, öteki kalemler gönderilir. */}
+                    {preview.uygulanabilir
+                      ? "Seçim mevcut durumla aynı; bu kalem atlanır (talebe girmez)."
+                      : "Seçim mevcut durumla aynı; değişiklik yok."}
+                  </p>
+                )}
                 {kalem.borclular.length > 0 && (
                   <table className="w-full text-left">
                     <thead>
@@ -494,6 +506,16 @@ export function ClaimLiabilitySelectionDrawer({
             {busy === "request" ? "Gönderiliyor…" : "Onaya gönder"}
           </button>
         </div>
+        {/* Yalnız toplu uygulamada: tek kalemde "değişiklik yok" satırı zaten yeterlidir. */}
+        {preview && preview.uygulamaTuru === "BULK" && (preview.atlananKalemSayisi ?? 0) > 0 && (
+          <p data-testid="claim-liability-skip-summary" className="text-xs text-amber-800">
+            {preview.uygulanabilir
+              ? `${preview.uygulanacakKalemSayisi ?? 0} kalem onaya gönderilecek; ${preview.atlananKalemSayisi} kalem zaten aynı seçimde olduğu için atlanacak.`
+              : (preview.uygulanacakKalemSayisi ?? 0) === 0
+                ? "Seçilen kalemlerin hepsi zaten bu seçimde; gönderilecek değişiklik yok."
+                : `${preview.atlananKalemSayisi} kalem zaten aynı seçimde; öteki kalemlerdeki sorun giderilmeden talep gönderilemez.`}
+          </p>
+        )}
 
         {!bulk && history && history.surumler.length > 0 && (
           <div data-testid="claim-liability-history" className="space-y-1 border-t pt-3 text-xs">

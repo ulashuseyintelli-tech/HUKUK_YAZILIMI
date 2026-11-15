@@ -89,13 +89,19 @@ export interface LiabilitySelectionPreviewItem {
   /** Geçmiş tahsilatla uzlaşmayan seçim — işlem DURUR; hiçbir geçmiş mahsup taşınmaz ya da yeniden atfedilmez. */
   readonly engeller: readonly { kod: string; debtorId: string | null; borcluAdi: string | null; tutar: number | null; sinir: number | null }[];
   readonly borclular: readonly LiabilitySelectionPreviewParty[];
+  /** Seçim kalemin etkin seçimiyle aynı. Toplu uygulamada böyle kalem ATLANIR; talebe ve onaya girmez. */
   readonly degisiklikYok: boolean;
 }
 
 export interface LiabilitySelectionPreview {
   readonly caseId: string;
   readonly uygulamaTuru: 'SINGLE' | 'BULK';
+  /** Girdi hatası ve engel yok VE en az bir kalemde değişiklik var. */
   readonly uygulanabilir: boolean;
+  /** Onaya gidecek (değişen) kalem sayısı. */
+  readonly uygulanacakKalemSayisi: number;
+  /** Etkin seçimiyle aynı olduğu için atlanacak kalem sayısı. */
+  readonly atlananKalemSayisi: number;
   readonly kalemler: readonly LiabilitySelectionPreviewItem[];
   /** Önizlenen durumun özeti; talep bu özetle gönderilir, arada değişiklik olduysa talep reddedilir. */
   readonly onizlemeOzeti: string;
@@ -184,11 +190,16 @@ export class ClaimLiabilitySelectionService implements OnModuleInit {
         blockers,
       });
     }
-    if (preview.kalemler.some((kalem) => kalem.degisiklikYok)) {
+    // Etkin seçimiyle aynı olan kalem talebe GİRMEZ (atlanır): toplu uygulama, bir kısmı zaten bu seçimde olan dosyada
+    // kalan kalemler için kullanılabilsin. Girdi hatası ve engel yukarıda BÜTÜN kalemler için denetlendi; "ya hep ya
+    // hiç" kuralı yazılacak kalemler için aynen geçerlidir. Hiçbir kalemde değişiklik yoksa talep açılmaz.
+    const unchangedIds = new Set(preview.kalemler.filter((kalem) => kalem.degisiklikYok).map((kalem) => kalem.claimItemId));
+    const changed = normalized.filter(({ selection }) => !unchangedIds.has(selection.claimItemId));
+    if (changed.length === 0) {
       throw new BadRequestException({
         code: 'LIABILITY_SELECTION_NO_CHANGE',
         message: 'Seçim mevcut durumla aynı; değişiklik yok.',
-        claimItemIds: preview.kalemler.filter((kalem) => kalem.degisiklikYok).map((kalem) => kalem.claimItemId),
+        claimItemIds: [...unchangedIds],
       });
     }
     if (preview.onizlemeOzeti !== input.onizlemeOzeti) {
@@ -198,6 +209,8 @@ export class ClaimLiabilitySelectionService implements OnModuleInit {
       });
     }
 
+    // Tek / toplu ayrımı kullanıcının EYLEMİNE göredir: toplu uygulamada kalem atlanması talebi tek kalem talebine
+    // çevirmez (hedef dosya, tek onay). Niyet yalnız yazılacak kalemleri taşır.
     const single = normalized.length === 1;
     const bulkOperationId = single ? null : randomUUID();
     const intent: ClaimItemLiabilitySelectionSavedIntent = {
@@ -206,7 +219,7 @@ export class ClaimLiabilitySelectionService implements OnModuleInit {
       caseId,
       appliedVia: single ? 'SINGLE' : 'BULK',
       bulkOperationId,
-      selections: normalized.map(({ selection, stateDigest }) => ({
+      selections: changed.map(({ selection, stateDigest }) => ({
         ...this.toIntentItem(selection, stateDigest),
         display: this.displaySummary(state, selection),
       })),
@@ -240,7 +253,14 @@ export class ClaimLiabilitySelectionService implements OnModuleInit {
       idempotencyKey,
       reason: intent.reason,
     });
-    return { applied: false as const, approvalRequired: true as const, approvalRequestId: requestRow.id, status: requestRow.status };
+    return {
+      applied: false as const,
+      approvalRequired: true as const,
+      approvalRequestId: requestRow.id,
+      status: requestRow.status,
+      uygulanacakKalemSayisi: changed.length,
+      atlananKalemler: [...unchangedIds],
+    };
   }
 
   /**
@@ -653,12 +673,18 @@ export class ClaimLiabilitySelectionService implements OnModuleInit {
       digestParts.push({ digest, selection: selection ? this.toIntentItem(selection, digest) : null });
     }
 
-    const uygulanabilir = kalemler.every((kalem) => kalem.girdiHatalari.length === 0 && kalem.engeller.length === 0 && !kalem.degisiklikYok);
+    // Değişmeyen kalem engel DEĞİLDİR (atlanır); ama en az bir kalemde değişiklik olmalıdır.
+    const atlananKalemSayisi = kalemler.filter((kalem) => kalem.degisiklikYok).length;
+    const uygulanacakKalemSayisi = kalemler.length - atlananKalemSayisi;
+    const uygulanabilir =
+      kalemler.every((kalem) => kalem.girdiHatalari.length === 0 && kalem.engeller.length === 0) && uygulanacakKalemSayisi > 0;
     return {
       preview: {
         caseId: state.caseId,
         uygulamaTuru: drafts.length === 1 ? 'SINGLE' : 'BULK',
         uygulanabilir,
+        uygulanacakKalemSayisi,
+        atlananKalemSayisi,
         kalemler,
         onizlemeOzeti: stableJsonHash({ v: 1, caseId: state.caseId, items: digestParts }),
         aciklamalar: PREVIEW_NOTES,
