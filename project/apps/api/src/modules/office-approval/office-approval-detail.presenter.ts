@@ -1,5 +1,6 @@
 import { OfficeApprovalRequest } from '@prisma/client';
 import { OfficeApprovalDetailDto, toDetailDto } from './dto/office-approval.dto';
+import type { OfficeApprovalDisplayContextDto } from './office-approval-display-context.service';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -21,6 +22,8 @@ export interface OfficeApprovalDetailMaskingMetadata {
 
 export type OfficeApprovalSafeDetailDto = OfficeApprovalDetailDto & {
   financeVisibility?: OfficeApprovalDetailMaskingMetadata;
+  /** Onay Kutusu görünüm bağlamı (kişi adları + güncel dosya); controller ekler, okunamazsa alan yoktur. */
+  displayContext?: OfficeApprovalDisplayContextDto;
 };
 
 const MASKED = '[MASKED]';

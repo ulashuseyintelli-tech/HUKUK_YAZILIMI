@@ -74,11 +74,14 @@ describe("OfficeApprovalsPage (P4-4 read-only inbox)", () => {
       executedAt: null,
     });
     render(<OfficeApprovalsPage />);
-    await waitFor(() => expect(screen.getByText("CHANGE_STATUS")).toBeInTheDocument());
-    expect(screen.getByText(/case-123/)).toBeInTheDocument();
-    expect(screen.getByText(/user-1/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Dosya durumu değişikliği")).toBeInTheDocument());
+    // Teknik kimlikler listede gösterilmez; talep edenin adı yoksa bu açıkça yazılır (uydurulmaz).
+    expect(screen.queryByText(/case-123/)).toBeNull();
+    expect(screen.queryByText(/user-1/)).toBeNull();
+    expect(screen.getByText("Talep eden: adı bulunamadı")).toBeInTheDocument();
+    expect(screen.getByText("Dosya")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("CHANGE_STATUS"));
+    fireEvent.click(screen.getByText("Dosya durumu değişikliği"));
     expect(screen.getByText("Onay Talebi Detayı")).toBeInTheDocument();
     await waitFor(() => expect(officeApprovalApi.getDetail).toHaveBeenCalledWith("req1"));
   });
@@ -162,10 +165,10 @@ describe("OfficeApprovalsPage (P4-4 read-only inbox)", () => {
     (officeApprovalApi.approve as any).mockResolvedValue({ ...detail, status: "APPROVED" });
 
     render(<OfficeApprovalsPage />);
-    await waitFor(() => expect(screen.getByText("CHANGE_STATUS")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Dosya durumu değişikliği")).toBeInTheDocument());
     expect(officeApprovalApi.getInbox).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByText("CHANGE_STATUS")); // drawer aç
+    fireEvent.click(screen.getByText("Dosya durumu değişikliği")); // drawer aç
     await waitFor(() => expect(screen.getAllByText("Onayla").length).toBeGreaterThan(0));
 
     fireEvent.click(screen.getByText("Onayla")); // aksiyon paneli
@@ -173,5 +176,25 @@ describe("OfficeApprovalsPage (P4-4 read-only inbox)", () => {
 
     await waitFor(() => expect(officeApprovalApi.approve).toHaveBeenCalledWith("req1", ""));
     await waitFor(() => expect(officeApprovalApi.getInbox).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe("OfficeApprovalsPage — okunur satır (U-1 / U-2)", () => {
+  it("satırda Türkçe işlem / hedef adı ve talep edenin adı görünür; ham kod görünmez", async () => {
+    (officeApprovalApi.getInbox as any).mockResolvedValue([
+      { ...ROW, id: "req2", actionCode: "CLAIM_ITEM_HIGH_IMPACT_CHANGE", targetType: "CLAIM_ITEM", requesterName: "Sentetik Talepçi" },
+    ]);
+    render(<OfficeApprovalsPage />);
+    await waitFor(() => expect(screen.getByText("Alacak kalemi — yüksek etkili değişiklik")).toBeInTheDocument());
+    expect(screen.getByText("Alacak kalemi")).toBeInTheDocument();
+    expect(screen.getByText("Talep eden: Sentetik Talepçi")).toBeInTheDocument();
+    expect(screen.queryByText("CLAIM_ITEM_HIGH_IMPACT_CHANGE")).toBeNull();
+  });
+
+  it("tanınmayan işlem kodu uydurulmaz: 'Tanımsız işlem türü' yazılır", async () => {
+    (officeApprovalApi.getInbox as any).mockResolvedValue([{ ...ROW, id: "req3", actionCode: "SOMETHING_NEW", targetType: "Whatever" }]);
+    render(<OfficeApprovalsPage />);
+    await waitFor(() => expect(screen.getByText("Tanımsız işlem türü")).toBeInTheDocument());
+    expect(screen.getByText("Tanımsız hedef türü")).toBeInTheDocument();
   });
 });

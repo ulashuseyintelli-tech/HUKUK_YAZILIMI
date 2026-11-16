@@ -14,10 +14,13 @@ import { DomainEventIngestModule } from '../icrabot/domain-event-ingest';
 import { AccountingJournalWriterService } from '../accounting-journal';
 import { AuditModule } from '../audit/audit.module';
 import { OfficeF01AuthorizationGuard } from './office-f01-authorization.guard';
+import { OfficeApprovalDisplayContextService } from './office-approval-display-context.service';
+import { CaseViewScopeModule } from '../case/case-view-scope.module';
 
 @Module({
   // P4-2: OfficeApprovalShadowService (CHANGE_STATUS shadow; ConfigService global, PrismaModule import, AuditService @Global).
-  imports: [PrismaModule, DomainEventIngestModule, AuditModule, ConfigModule],
+  // Onay Kutusu görünüm bağlamı: dosya görme kapsamı (F02 P3) yalnız okuma için içe aktarılır (CaseModule DEĞİL; döngü yok).
+  imports: [PrismaModule, DomainEventIngestModule, AuditModule, ConfigModule, CaseViewScopeModule],
   controllers: [OfficeApprovalController],
   providers: [
     OfficeApprovalService,
@@ -28,6 +31,7 @@ import { OfficeF01AuthorizationGuard } from './office-f01-authorization.guard';
     ClientFinancialDisclosureApprovalPolicy,
     AccountingJournalWriterService,
     OfficeF01AuthorizationGuard,
+    OfficeApprovalDisplayContextService,
   ],
   // PAYOUT-APPROVAL-2: PayoutApprovalPolicy export → ClientSettlementModule (zaten bu modülü import ediyor)
   // ClientPayoutService.finalize()'da izole re-check için kullanır.

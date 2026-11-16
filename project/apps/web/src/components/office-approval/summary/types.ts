@@ -16,7 +16,8 @@ export interface ApprovalSummaryResult {
   reason?: string;
   /**
    * "Onaylanırsa ne değişir?" — actionCode behavior catalog'dan (sabit domain bilgisi).
-   * Projector'lar bunu KENDİLERİ doldurmaz; registry, action-behavior-catalog.ts'ten ekler.
+   * Projector'lar bunu yalnız aynı eylem kodu altında işlem türüne özgü not gerektiğinde doldurur
+   * (ör. borçlu sorumluluğu seçimi); doldurmazsa registry action-behavior-catalog.ts'ten ekler.
    */
   impactNotes?: string[];
 }
