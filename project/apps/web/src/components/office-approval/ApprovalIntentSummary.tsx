@@ -1,7 +1,7 @@
 "use client";
 
 // Approval Inbox — savedIntent/replacementSavedIntent için insan-okur özet + "Onaylanırsa ne değişir?"
-// + ham JSON'ı "Advanced" olarak (kaldırmadan) collapsible tutar. summary üretilemezse (unsafe) JSON
+// + ham JSON'ı "Teknik ayrıntı" olarak (kaldırmadan) collapsible tutar. summary üretilemezse (unsafe) JSON
 // varsayılan olarak AÇIK gelir (gösterilecek başka bir şey yok); summary varsa varsayılan KAPALI.
 import { useState } from "react";
 import { CopyButton } from "@/components/error/CopyButton";
@@ -70,7 +70,7 @@ export function ApprovalIntentSummary({ title, actionCode, savedIntent, context,
           className="text-xs text-gray-500 underline"
           aria-expanded={jsonOpen}
         >
-          {jsonOpen ? "Ham JSON'ı gizle" : "Advanced / Ham JSON"}
+          {jsonOpen ? "Ham veriyi gizle" : "Teknik ayrıntı: ham veri (JSON)"}
         </button>
         {jsonOpen && (
           <div className="mt-1">

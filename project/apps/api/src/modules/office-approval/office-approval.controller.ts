@@ -9,6 +9,7 @@ import {
   NotFoundException,
   BadRequestException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { OfficeApprovalService } from './office-approval.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -23,6 +24,7 @@ import {
   toSummaryDto,
 } from './dto/office-approval.dto';
 import { toDetailDtoForViewer, type OfficeApprovalDetailViewerContext } from './office-approval-detail.presenter';
+import { OfficeApprovalDisplayContextService } from './office-approval-display-context.service';
 
 // P4-4 — OfficeApprovalController (Inbox / Approve API). KESİN (Ulaş kilidi):
 //  - DECISION-ONLY: approve/reject/revision/approve-with-changes/cancel yalnız STATUS GEÇİŞİ yapar; EXECUTION TETİKLEMEZ
@@ -50,7 +52,11 @@ function parseStatus(raw?: string): OfficeApprovalStatus | undefined {
 @UseGuards(JwtAuthGuard)
 export class OfficeApprovalController {
   private readonly logger = new Logger(OfficeApprovalController.name);
-  constructor(private readonly service: OfficeApprovalService) {}
+  constructor(
+    private readonly service: OfficeApprovalService,
+    // Onay Kutusu görünüm bağlamı (kişi adları + güncel dosya; yalnız okuma). Yoksa yanıtlar bugünkü gibidir.
+    @Optional() private readonly displayContext?: OfficeApprovalDisplayContextService,
+  ) {}
 
   // Inbox — approver'ın eyleme geçebileceği bekleyenler (KENDİ talepleri hariç). Yetkisiz → boş liste (403 DEĞİL).
   @Get('inbox')
@@ -69,7 +75,7 @@ export class OfficeApprovalController {
       status: parseStatus(status),
       ...(!genericEligible ? { actionCode: ActionCode.CLIENT_PAYOUT_POST } : {}),
     });
-    return { success: true, data: rows.map(toSummaryDto) };
+    return { success: true, data: await this.withRequesterNames(tenantId, rows) };
   }
 
   // Mine — caller'ın KENDİ talepleri (tüm statüler; her authenticated kullanıcı, kendi tenant'ı).
@@ -84,7 +90,7 @@ export class OfficeApprovalController {
       callerUserId: actorUserId,
       status: parseStatus(status),
     });
-    return { success: true, data: rows.map(toSummaryDto) };
+    return { success: true, data: await this.withRequesterNames(tenantId, rows) };
   }
 
   // Detail — tenant-scoped (çapraz-tenant→404) + görünürlük: requester ∨ eligible-approver; aksi → 404 (existence-oracle yok).
@@ -188,8 +194,30 @@ export class OfficeApprovalController {
     };
   }
 
+  /** Liste satırlarına talep edenin adı (yalnız talebin kiracısından; okunamazsa null — liste bozulmaz). */
+  private async withRequesterNames(tenantId: string, rows: OfficeApprovalRequest[]) {
+    const dtos = rows.map(toSummaryDto);
+    let names = new Map<string, string>();
+    if (this.displayContext && rows.length > 0) {
+      try {
+        names = await this.displayContext.userNames(tenantId, rows.map((row) => row.requesterUserId));
+      } catch {
+        this.logger.warn('Approval requester names unavailable; list returned without names.');
+      }
+    }
+    return dtos.map((dto) => ({ ...dto, requesterName: names.get(dto.requesterUserId) ?? null }));
+  }
+
   private async presentDetail(request: OfficeApprovalRequest, context: OfficeApprovalDetailViewerContext) {
     const detail = toDetailDtoForViewer(request, context);
+    if (this.displayContext) {
+      try {
+        detail.displayContext = await this.displayContext.build(request, context.actorUserId);
+      } catch {
+        // Görünüm bağlamı yalnız bilgi amaçlıdır: okunamaması kararı / yanıtı bozmaz; web eksikliği açıkça gösterir.
+        this.logger.warn('Approval display context unavailable; detail returned without it.');
+      }
+    }
     if (request.actionCode === ActionCode.CLIENT_PAYOUT_POST) {
       try {
         detail.payoutExecution = await this.service.payoutExecutionState(request, context.actorUserId);

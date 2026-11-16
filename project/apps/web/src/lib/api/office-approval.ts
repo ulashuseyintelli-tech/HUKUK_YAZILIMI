@@ -33,6 +33,24 @@ export interface OfficeApprovalSummary {
   createdAt: string;
   decidedAt: string | null;
   expiresAt: string | null;
+  /** Talep edenin görünen adı (sunucu, talebin kiracısından çözer); bulunamazsa / eski sunucuda yok. */
+  requesterName?: string | null;
+}
+
+/**
+ * Onay Kutusu görünüm bağlamı — sunucu ekler (kişi adları + GÜNCEL dosya). Dosya numarası ve kalem adı yalnız aktörün dosya
+ * görme kapsamındaysa (VISIBLE) gelir. Kayıtlı niyet (savedIntent) talep anındaki kayıttır; bu bağlam güncel kayıttır.
+ */
+export interface OfficeApprovalDisplayContext {
+  requesterName: string | null;
+  approverName: string | null;
+  case: {
+    status: "VISIBLE" | "NOT_VISIBLE" | "NOT_FOUND" | "NOT_APPLICABLE";
+    caseId: string | null;
+    fileNumber: string | null;
+    claimItemLabel: string | null;
+    intentCaseMatches: boolean | null;
+  };
 }
 
 /** DETAIL — backend toDetailDtoForViewer ile birebir. savedIntent bazı durumlarda sunucu tarafında maskelenmiş olabilir. */
@@ -56,6 +74,7 @@ export interface OfficeApprovalDetail extends OfficeApprovalSummary {
     contractVersion: string | null;
     maskedFields: string[];
   };
+  displayContext?: OfficeApprovalDisplayContext;
 }
 
 interface OfficeApprovalListResponse {

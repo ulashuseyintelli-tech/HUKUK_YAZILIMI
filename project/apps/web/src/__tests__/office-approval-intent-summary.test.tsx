@@ -33,7 +33,7 @@ describe("ApprovalIntentSummary", () => {
     expect(screen.getByText("Onaylanırsa ne değişir?")).toBeInTheDocument();
     expect(screen.getByText("Tahsilat dağıtımı onaylanır.")).toBeInTheDocument();
     expect(screen.queryByText(/"caseId"/)).toBeNull(); // JSON kapalı
-    expect(screen.getByText("Advanced / Ham JSON")).toBeInTheDocument();
+    expect(screen.getByText("Teknik ayrıntı: ham veri (JSON)")).toBeInTheDocument();
   });
 
   it("Advanced / Ham JSON tıklanınca ham veri açılır ve kopyalama butonu görünür", () => {
@@ -46,10 +46,10 @@ describe("ApprovalIntentSummary", () => {
         copyAriaLabel="savedIntent kopyala"
       />,
     );
-    fireEvent.click(screen.getByText("Advanced / Ham JSON"));
+    fireEvent.click(screen.getByText("Teknik ayrıntı: ham veri (JSON)"));
     expect(screen.getByText(/"caseId": "case-1"/)).toBeInTheDocument();
     expect(screen.getByLabelText("savedIntent kopyala")).toBeInTheDocument();
-    expect(screen.getByText("Ham JSON'ı gizle")).toBeInTheDocument();
+    expect(screen.getByText("Ham veriyi gizle")).toBeInTheDocument();
   });
 
   it("MASKED payload -> satır detayı gösterilmez, toplam/kalem sayısı/risk güvenle gösterilir", () => {
@@ -96,7 +96,7 @@ describe("ApprovalIntentSummary", () => {
     expect(screen.getByText(/güvenli özet üretilemiyor/)).toBeInTheDocument();
     // Gösterilecek özet olmadığı için ham JSON zaten açık.
     expect(screen.getByText(/"anything": "goes"/)).toBeInTheDocument();
-    expect(screen.getByText("Ham JSON'ı gizle")).toBeInTheDocument();
+    expect(screen.getByText("Ham veriyi gizle")).toBeInTheDocument();
   });
 
   it("CHANGE_STATUS minimal özet render edilir", () => {

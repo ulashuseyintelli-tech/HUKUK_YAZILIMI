@@ -4,6 +4,7 @@
 // (sağdan kayan panel + <pre> JSON gösterimi + CopyButton). Karar aksiyonları PENDING taleplerde,
 // savedIntent'in ALTINDA (approver gördüğünü onaylar) — OfficeApprovalDecisionActions bileşeni.
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { officeApprovalApi, type OfficeApprovalSummary, type OfficeApprovalDetail } from "@/lib/api/office-approval";
 import { relativeTime } from "@/lib/relative-time";
 import { useAuth } from "@/lib/auth-context";
@@ -11,6 +12,7 @@ import { STATUS_LABELS } from "./status-labels";
 import { OfficeApprovalDecisionActions } from "./OfficeApprovalDecisionActions";
 import { PayoutFinalizeAction } from "./PayoutFinalizeAction";
 import { ApprovalIntentSummary } from "./ApprovalIntentSummary";
+import { actionLabel, executionStatusLabel, targetTypeLabel } from "./labels";
 
 interface Props {
   requestId: string | null;
@@ -44,6 +46,73 @@ function TimeField({ label, value }: { label: string; value?: string | null }) {
       <div className="text-sm" title={fmt(value)}>
         {value ? relativeTime(value) : "-"}
       </div>
+    </div>
+  );
+}
+
+function personValue(name: string | null | undefined, context: OfficeApprovalDetail["displayContext"]): string {
+  if (name) return name;
+  return context ? "Adı bulunamadı" : "Ad bilgisi alınamadı";
+}
+
+/**
+ * Dosya satırı — yalnız sunucunun GÜNCEL bağlamından. Dosya numarası ve bağlantı yalnız aktörün görme kapsamındaysa;
+ * aksi hâlde neden açıkça yazılır, kimlik / numara gösterilmez.
+ */
+function CaseContextField({ detail }: { detail: OfficeApprovalDetail }) {
+  const context = detail.displayContext;
+  if (!context) {
+    return <Field label="Dosya" value="Dosya bilgisi alınamadı" />;
+  }
+  const caseContext = context.case;
+  if (caseContext.status === "NOT_APPLICABLE") return null;
+  if (caseContext.status === "NOT_FOUND") {
+    return <Field label="Dosya" value="Hedef kayıt bulunamadı (silinmiş ya da erişilemiyor)" />;
+  }
+  if (caseContext.status === "NOT_VISIBLE" || !caseContext.caseId) {
+    return <Field label="Dosya" value="Bu dosyayı görme yetkiniz yok; dosya bilgisi gösterilmiyor" />;
+  }
+  return (
+    <>
+      <div className="mb-3">
+        <div className="text-xs text-gray-500 mb-0.5">Dosya (güncel kayıt)</div>
+        <div className="text-sm">
+          <Link
+            href={`/cases/${encodeURIComponent(caseContext.caseId)}`}
+            className="text-blue-700 underline"
+            data-testid="approval-case-link"
+          >
+            {caseContext.fileNumber || "Dosya numarası yok"}
+          </Link>
+        </div>
+      </div>
+      {caseContext.claimItemLabel && <Field label="Kalem (güncel ad)" value={caseContext.claimItemLabel} />}
+      {caseContext.intentCaseMatches === false && (
+        <div className="mb-3 rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-800">
+          Kayıtlı niyetteki dosya ile hedefin güncel dosyası uyuşmuyor; talebi onaylamadan önce inceleyin.
+        </div>
+      )}
+    </>
+  );
+}
+
+function TechnicalDetails({ detail }: { detail: OfficeApprovalDetail }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mb-3">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="text-xs text-gray-500 underline" aria-expanded={open}>
+        {open ? "Teknik ayrıntıyı gizle" : "Teknik ayrıntı (kodlar ve kimlikler)"}
+      </button>
+      {open && (
+        <div className="mt-2 rounded border bg-gray-50 p-3" data-testid="approval-technical-details">
+          <Field label="İşlem kodu" value={detail.actionCode} mono />
+          <Field label="Hedef türü kodu" value={detail.targetType} mono />
+          <Field label="Hedef kimliği" value={detail.targetRef} mono />
+          <Field label="Yürütme durumu kodu" value={detail.executionStatus} mono />
+          <Field label="Talep eden kullanıcı kimliği" value={detail.requesterUserId} mono />
+          {detail.approverUserId && <Field label="Karar veren kullanıcı kimliği" value={detail.approverUserId} mono />}
+        </div>
+      )}
     </div>
   );
 }
@@ -100,17 +169,19 @@ export function OfficeApprovalDetailDrawer({ requestId, onClose, onDecided }: Pr
           <>
             <div className="flex items-center gap-2 mb-4 text-xs">
               <span className="px-2 py-0.5 rounded bg-gray-100">{statusLabel}</span>
-              <span className="px-2 py-0.5 rounded bg-gray-100">{detail.executionStatus}</span>
+              <span className="px-2 py-0.5 rounded bg-gray-100">{executionStatusLabel(detail.executionStatus)}</span>
               {detail.hasReplacement && (
                 <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-700">Değişiklikle onaylanmış</span>
               )}
             </div>
 
-            <Field label="Aksiyon Kodu" value={detail.actionCode} mono />
-            <Field label="Hedef Tür" value={detail.targetType} mono />
-            <Field label="Hedef Referans" value={detail.targetRef} mono />
-            <Field label="Talep Eden" value={detail.requesterUserId} mono />
-            {detail.approverUserId && <Field label="Karar Veren" value={detail.approverUserId} mono />}
+            <Field label="İşlem" value={actionLabel(detail.actionCode, detail.savedIntent)} />
+            <Field label="Hedef" value={targetTypeLabel(detail.targetType)} />
+            <CaseContextField detail={detail} />
+            <Field label="Talep eden" value={personValue(detail.displayContext?.requesterName, detail.displayContext)} />
+            {detail.approverUserId && (
+              <Field label="Karar veren" value={personValue(detail.displayContext?.approverName, detail.displayContext)} />
+            )}
             {detail.reason && <Field label="Gerekçe" value={detail.reason} />}
             {detail.decisionNote && <Field label="Karar Notu" value={detail.decisionNote} />}
 
@@ -118,6 +189,8 @@ export function OfficeApprovalDetailDrawer({ requestId, onClose, onDecided }: Pr
             <TimeField label="Karar Zamanı" value={detail.decidedAt} />
             <TimeField label="Yürütme Zamanı" value={detail.executedAt} />
             <TimeField label="Son Geçerlilik" value={detail.payoutExecution ? detail.payoutExecution.validUntil : detail.expiresAt} />
+
+            <TechnicalDetails detail={detail} />
 
             {detail.financeVisibility?.applied && (
               <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
@@ -127,7 +200,7 @@ export function OfficeApprovalDetailDrawer({ requestId, onClose, onDecided }: Pr
 
             <div className="border-t pt-4 mt-4">
               <ApprovalIntentSummary
-                title="Kayıtlı Niyet (savedIntent)"
+                title="Talep edilen değişiklik (talep anındaki kayıt)"
                 actionCode={detail.actionCode}
                 savedIntent={detail.savedIntent}
                 context={{ financeVisibility: detail.financeVisibility }}
@@ -137,7 +210,7 @@ export function OfficeApprovalDetailDrawer({ requestId, onClose, onDecided }: Pr
 
             {detail.replacementSavedIntent != null && (
               <ApprovalIntentSummary
-                title="Değiştirilmiş Niyet (replacementSavedIntent)"
+                title="Onaylayanın değiştirdiği niyet (değişiklikle onay)"
                 actionCode={detail.actionCode}
                 savedIntent={detail.replacementSavedIntent}
                 context={{ financeVisibility: detail.financeVisibility }}

@@ -8,6 +8,7 @@ import { ClipboardCheck } from "lucide-react";
 import { officeApprovalApi, type OfficeApprovalSummary, type OfficeApprovalStatusValue } from "@/lib/api/office-approval";
 import { OfficeApprovalDetailDrawer } from "@/components/office-approval/OfficeApprovalDetailDrawer";
 import { STATUS_LABELS, STATUS_OPTIONS } from "@/components/office-approval/status-labels";
+import { actionLabel, targetTypeLabel } from "@/components/office-approval/labels";
 import { relativeTime } from "@/lib/relative-time";
 
 export default function OfficeApprovalsPage() {
@@ -87,12 +88,10 @@ export default function OfficeApprovalsPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-xs px-2 py-0.5 rounded bg-gray-100">{STATUS_LABELS[item.status] ?? item.status}</span>
-                    <span className="text-xs text-gray-500">{item.targetType}</span>
+                    <span className="text-xs text-gray-500">{targetTypeLabel(item.targetType)}</span>
                   </div>
-                  <div className="font-medium mt-1 truncate">{item.actionCode}</div>
-                  <div className="text-sm text-gray-500 truncate">
-                    Hedef: {item.targetRef} · Talep eden: {item.requesterUserId}
-                  </div>
+                  <div className="font-medium mt-1 truncate">{actionLabel(item.actionCode)}</div>
+                  <div className="text-sm text-gray-500 truncate">Talep eden: {item.requesterName || "adı bulunamadı"}</div>
                   <div className="text-xs text-gray-400 mt-1">
                     <span title={new Date(item.createdAt).toLocaleString("tr-TR")}>
                       Oluşturuldu {relativeTime(item.createdAt)}

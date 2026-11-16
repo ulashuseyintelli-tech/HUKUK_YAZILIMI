@@ -65,7 +65,7 @@ describe("OfficeApprovalDetailDrawer (P4-4 read-only)", () => {
       decisionNote: null,
       executedAt: null,
     });
-    await waitFor(() => expect(screen.getByText("CHANGE_STATUS")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Dosya durumu değişikliği")).toBeInTheDocument());
   });
 
   it("hata → hata mesajı gösterilir", async () => {
@@ -74,7 +74,7 @@ describe("OfficeApprovalDetailDrawer (P4-4 read-only)", () => {
     await waitFor(() => expect(screen.getByText("Talep bulunamadı")).toBeInTheDocument());
   });
 
-  it("savedIntent özetlenebiliyorsa (CHANGE_STATUS) özet gösterilir; ham JSON 'Advanced' altında erişilebilir kalır", async () => {
+  it("savedIntent özetlenebiliyorsa (CHANGE_STATUS) özet gösterilir; ham JSON 'Teknik ayrıntı' altında erişilebilir kalır", async () => {
     (officeApprovalApi.getDetail as any).mockResolvedValue({
       id: "req1",
       actionCode: "CHANGE_STATUS",
@@ -97,12 +97,12 @@ describe("OfficeApprovalDetailDrawer (P4-4 read-only)", () => {
       executedAt: null,
     });
     render(<OfficeApprovalDetailDrawer requestId="req1" onClose={vi.fn()} />);
-    await waitFor(() => expect(screen.getByText("Kayıtlı Niyet (savedIntent)")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Talep edilen değişiklik (talep anındaki kayıt)")).toBeInTheDocument());
     // Özet render edilir (payload'dan): Yeni Durum = HITAM.
     expect(screen.getByText("HITAM")).toBeInTheDocument();
-    // Ham JSON varsayılan olarak KAPALI (özet mevcutken) — kaldırılmadı, "Advanced" ile erişilebilir.
+    // Ham JSON varsayılan olarak KAPALI (özet mevcutken) — kaldırılmadı, "Teknik ayrıntı" ile erişilebilir.
     expect(screen.queryByText(/"status": "HITAM"/)).toBeNull();
-    fireEvent.click(screen.getByText("Advanced / Ham JSON"));
+    fireEvent.click(screen.getByText("Teknik ayrıntı: ham veri (JSON)"));
     expect(screen.getByText(/"status": "HITAM"/)).toBeInTheDocument();
   });
 
@@ -170,7 +170,7 @@ describe("OfficeApprovalDetailDrawer (Decision UI entegrasyonu)", () => {
   it("terminal statü (REJECTED) → hiçbir karar aksiyonu render edilmez", async () => {
     (officeApprovalApi.getDetail as any).mockResolvedValue({ ...PENDING_DETAIL, status: "REJECTED" });
     render(<OfficeApprovalDetailDrawer requestId="req1" onClose={vi.fn()} />);
-    await waitFor(() => expect(screen.getByText("CHANGE_STATUS")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Dosya durumu değişikliği")).toBeInTheDocument());
     expect(screen.queryByTestId("decision-actions")).toBeNull();
   });
 
@@ -258,7 +258,7 @@ describe("OfficeApprovalDetailDrawer — müvekkile ödeme talebi (satır 8)", (
     authState.user = { id: "baska-kullanici" };
     (officeApprovalApi.getDetail as any).mockResolvedValue({ ...PAYOUT_APPROVED, payoutExecution: { validUntil: null, approvalExpired: false, canFinalize: false, canRequestRenewal: false, recordedPayoutId: null } });
     render(<OfficeApprovalDetailDrawer requestId="req1" onClose={vi.fn()} />);
-    await waitFor(() => expect(screen.getByText("CLIENT_PAYOUT_POST")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Müvekkile ödeme")).toBeInTheDocument());
     expect(screen.queryByRole("button", { name: "Kesinleştir" })).toBeNull();
   });
 });
