@@ -592,3 +592,93 @@ describe("K3-L KP-11: ödeme önizlemesi hesap tarihi", () => {
     })).rejects.toBeInstanceOf(BadRequestException);
   });
 });
+
+describe("seçim bağı olmayan dosyada kalıcı kaydı olmayan kalan tutar (önizleme; kayıt anında sunucu yeniden denetler)", () => {
+  const plan = (over: Record<string, unknown> = {}) => ({
+    ledgerAllocationEnabled: true,
+    hasClaimItems: true,
+    selectionBound: false,
+    plannedAllocatedAmount: 11000,
+    excessAmount: 1000,
+    excludedOutstanding: 0,
+    ...over,
+  });
+  const build = (planResult: any) => {
+    const prisma = makePrisma({
+      caseDebtor: { ...modelWithCount(1), findFirst: jest.fn(async () => ({ id: "case-debtor-1", debtorId: "debtor-1" })) },
+    });
+    const summaryEngine = { planPaymentAllocation: jest.fn(async () => planResult) };
+    const service = new CasePaymentPreviewService(prisma as any, makeBalance(12500) as any, summaryEngine as any);
+    return { prisma, summaryEngine, service };
+  };
+  const run = (service: CasePaymentPreviewService, input: Record<string, unknown>) =>
+    service.preview({ tenantId: "tenant-1", caseId: "case-1", input: { amount: 12000, currency: "TRY", ...input } as any });
+
+  it("elle girilen, borçlu belirtilmiş ödeme: açıklayıcı ENGEL + tutarlar; yazma yok", async () => {
+    const { prisma, summaryEngine, service } = build(plan());
+    const result = await run(service, { caseDebtorId: "case-debtor-1" });
+    expect(result.acceptance).toMatchObject({ wouldAccept: false, blockingReasons: ["DEBTOR_PAYMENT_EXCEEDS_ALLOCATABLE_NO_SELECTION"] });
+    expect(result.remainder).toEqual({ allocatableAmount: 11000, excessAmount: 1000, handling: "REJECTED" });
+    // Plan, kayıt yolunun kullandığı dağıtım planıdır: aynı tutar ve borçlu kimlikleri verilir.
+    expect(summaryEngine.planPaymentAllocation).toHaveBeenCalledWith(prisma, "tenant-1", "case-1", 12000, {
+      onBehalfDebtorId: "debtor-1",
+      onBehalfCaseDebtorId: "case-debtor-1",
+    });
+    expectNoFinancialMutations(prisma);
+  });
+
+  it("tam sığan ödeme: engel de kalan tutar kutusu da yok", async () => {
+    const { service } = build(plan({ plannedAllocatedAmount: 12000, excessAmount: 0 }));
+    const result = await run(service, { caseDebtorId: "case-debtor-1" });
+    expect(result.acceptance).toMatchObject({ wouldAccept: true, blockingReasons: [] });
+    expect(result.remainder).toBeUndefined();
+  });
+
+  it("haricî kaynaklı gerçekleşmiş tahsilat reddedilmez: uyarı + bekletme; uygulanan tutar 0 ve dağıtım engelli", async () => {
+    const { service } = build(plan());
+    for (const extra of [{ sourceType: "BANK_INTEGRATION" }, { sourceType: "THIRD_PARTY" }, { channel: "HACIZ" }, { sourceType: "BANK_SEIZURE" }]) {
+      const result = await run(service, { caseDebtorId: "case-debtor-1", ...extra });
+      expect(result.acceptance.wouldAccept).toBe(true);
+      expect(result.acceptance.blockingReasons).toEqual([]);
+      expect(result.acceptance.warnings).toContain("ALLOCATION_HELD_PAYMENT_EXCEEDS_ALLOCATABLE");
+      expect(result.remainder).toEqual({ allocatableAmount: 11000, excessAmount: 1000, handling: "ALLOCATION_HELD" });
+      expect(result.balanceImpact.appliedAmount).toBe(0);
+      expect(result.distributionPreview.status).toBe("BLOCKED");
+    }
+  });
+
+  it("dosya düzeyi ödeme (borçlu yok, kısıtlı kaynak yok): plan sorulmaz, kalan tutar engeli yok (dosya düzeyi fazla ödeme bugünkü gibi)", async () => {
+    const { summaryEngine, service } = build(plan());
+    const result = await run(service, {});
+    expect(summaryEngine.planPaymentAllocation).not.toHaveBeenCalled();
+    expect(result.remainder).toBeUndefined();
+    expect(result.acceptance.blockingReasons).toEqual([]);
+  });
+
+  it("paylı / tutarla sınırlı bağ (dar istisna yolu) ya da kapalı mahsup / kalem yok: önizleme engel UYDURMAZ", async () => {
+    for (const planResult of [plan({ selectionBound: true }), plan({ ledgerAllocationEnabled: false }), plan({ hasClaimItems: false })]) {
+      const { service } = build(planResult);
+      const result = await run(service, { caseDebtorId: "case-debtor-1" });
+      expect(result.remainder).toBeUndefined();
+      expect(result.acceptance.blockingReasons).toEqual([]);
+    }
+  });
+
+  it("plan kurulamazsa önizleme engel uydurmaz, uyarır; mahsup motoru yoksa sessiz kalır (işlem anı denetimi yine uygulanır)", async () => {
+    const prisma = makePrisma();
+    const failing = new CasePaymentPreviewService(prisma as any, makeBalance(12500) as any, {
+      planPaymentAllocation: jest.fn(async () => {
+        throw new Error("plan yok");
+      }),
+    } as any);
+    const failed = await run(failing, { caseDebtorId: "case-debtor-1" });
+    expect(failed.acceptance.blockingReasons).toEqual([]);
+    expect(failed.acceptance.warnings).toContain("ALLOCATION_PLAN_UNAVAILABLE");
+    expect(failed.remainder).toBeUndefined();
+
+    const withoutEngine = new CasePaymentPreviewService(makePrisma() as any, makeBalance(12500) as any);
+    const silent = await run(withoutEngine, { caseDebtorId: "case-debtor-1" });
+    expect(silent.acceptance.blockingReasons).toEqual([]);
+    expect(silent.remainder).toBeUndefined();
+  });
+});

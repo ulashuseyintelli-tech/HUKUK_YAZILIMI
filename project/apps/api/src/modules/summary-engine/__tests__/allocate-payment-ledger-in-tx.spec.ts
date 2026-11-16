@@ -270,3 +270,81 @@ describe('SummaryEngineService.allocatePaymentToLedgerInTx (G3a)', () => {
     }));
   });
 });
+
+/**
+ * Seçim bağı (paylı / tutarla sınırlı) olmayan dosyada mahsup edilemeyen kalan tutar kalıcı kayda alınamaz
+ * (PaymentDesignation, COL/OD-19 açık): `refuseUnreconcilableRemainder` iken defter YAZILMADAN durulur; önizleme aynı
+ * planı salt okuma ile kullanır.
+ */
+describe('SummaryEngineService — kalıcı kaydı olmayan kalan tutar (refuseUnreconcilableRemainder / planPaymentAllocation)', () => {
+  // Gerçek dağıtıcı gibi borcu aşan tutarı mahsup etmez (yalnız borç kadar dağıtır).
+  const cappedAllocator = {
+    allocate: (amount: number, debt: any) => ({
+      allocations: [{ category: 'PRINCIPAL', amountAllocated: Math.min(amount, debt.principal) }],
+    }),
+  };
+  const item = [{ id: 'ci1', itemType: 'PRINCIPAL', demandedAmount: 1000, collectedAmount: 0, amount: 1000 }];
+
+  it('bayrak açık + aşan tutar → defter YAZILMAZ; mahsup edilebilen ve kalan tutar bildirilir', async () => {
+    const svc = buildService({ enabled: true, allocator: cappedAllocator });
+    const tx = mockTx(item);
+
+    const r = await svc.allocatePaymentToLedgerInTx(tx, 't1', 'c1', 1200, { collectionId: 'col1', refuseUnreconcilableRemainder: true });
+
+    expect(r).toMatchObject({
+      allocated: false,
+      reason: 'UNRECONCILED_REMAINDER',
+      ledgerEntry: null,
+      unreconciled: { plannedAllocatedAmount: 1000, excessAmount: 200 },
+    });
+    expect(tx.ledgerEntry.create).not.toHaveBeenCalled();
+    expect(tx.claimItem.update).not.toHaveBeenCalled();
+  });
+
+  it('bayrak açık + ödeme tam sığıyor → mevcut davranış: defter yazılır, kalem tahsil tutarı artar', async () => {
+    const svc = buildService({ enabled: true, allocator: cappedAllocator });
+    const tx = mockTx(item);
+
+    const r = await svc.allocatePaymentToLedgerInTx(tx, 't1', 'c1', 1000, { collectionId: 'col1', refuseUnreconcilableRemainder: true });
+
+    expect(r.allocated).toBe(true);
+    expect(tx.ledgerEntry.create).toHaveBeenCalledTimes(1);
+    expect(tx.claimItem.update).toHaveBeenCalledWith({ where: { id: 'ci1' }, data: { collectedAmount: { increment: 1000 } } });
+  });
+
+  it('bayrak yok (dosya düzeyi ödeme) + aşan tutar → mevcut davranış korunur: defter yazılır, aşan tutar çağıranın fazla ödeme kuralına kalır', async () => {
+    const svc = buildService({ enabled: true, allocator: cappedAllocator });
+    const tx = mockTx(item);
+
+    const r = await svc.allocatePaymentToLedgerInTx(tx, 't1', 'c1', 1200, { collectionId: 'col1' });
+
+    expect(r.allocated).toBe(true);
+    expect(r.reason).toBeUndefined();
+    expect(sumAmounts((tx.ledgerEntry.create as jest.Mock).mock.calls[0][0].data.allocations.create)).toBe(1000);
+  });
+
+  it('planPaymentAllocation SALT OKUMA: aynı plan, hiçbir yazma yok', async () => {
+    const svc = buildService({ enabled: true, allocator: cappedAllocator });
+    const tx = mockTx(item);
+
+    const plan = await svc.planPaymentAllocation(tx, 't1', 'c1', 1200);
+
+    expect(plan).toEqual({
+      ledgerAllocationEnabled: true,
+      hasClaimItems: true,
+      selectionBound: false,
+      plannedAllocatedAmount: 1000,
+      excessAmount: 200,
+      excludedOutstanding: 0,
+    });
+    expect(tx.ledgerEntry.create).not.toHaveBeenCalled();
+    expect(tx.claimItem.update).not.toHaveBeenCalled();
+  });
+
+  it('planPaymentAllocation: kalem yok ya da defter mahsubu kapalı → engel üretmeyen boş plan', async () => {
+    const noItems = await buildService({ enabled: true, allocator: cappedAllocator }).planPaymentAllocation(mockTx([]), 't1', 'c1', 500);
+    expect(noItems).toMatchObject({ ledgerAllocationEnabled: true, hasClaimItems: false, excessAmount: 0 });
+    const disabled = await buildService({ enabled: false }).planPaymentAllocation(mockTx(item), 't1', 'c1', 500);
+    expect(disabled).toMatchObject({ ledgerAllocationEnabled: false, hasClaimItems: false, excessAmount: 0 });
+  });
+});

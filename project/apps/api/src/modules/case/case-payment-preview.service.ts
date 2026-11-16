@@ -5,9 +5,12 @@ import { fromKurus, toKurus } from "../claim-liability/claim-liability.domain";
 import { resolveCaseLiabilityAllocationScope } from "../claim-liability/claim-liability.reader";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CaseBalanceService } from "../interest-engine/orchestration/case-balance.service";
+import { SummaryEngineService } from "../summary-engine/summary-engine.service";
+import { isExternalRealizedReceipt } from "../collection/collection.service";
 import { toTurkeyCalendarDay, turkeyToday } from "../../common/turkey-calendar";
 import {
   PaymentPreviewLiabilityDto,
+  PaymentPreviewRemainderDto,
   PaymentPreviewRequestDto,
   PaymentPreviewResponseDto,
 } from "./dto/payment-preview.dto";
@@ -25,6 +28,12 @@ type PreviewArgs = {
   caseId: string;
   input: PaymentPreviewRequestDto;
 };
+
+type PayerScope =
+  | { status: "UNRESTRICTED" }
+  | { status: "PAYER_REQUIRED" }
+  | { status: "PAYER_NOT_LIABLE" }
+  | { status: "SCOPED"; outstanding: Prisma.Decimal; liability?: { capacityKurus: bigint; shareOrCapBound: boolean } };
 
 type CurrencyResultLike = {
   currency?: string;
@@ -91,6 +100,8 @@ export class CasePaymentPreviewService {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly caseBalanceService?: CaseBalanceService,
+    // Kayıt yolundaki dağıtım planı (salt okuma); yoksa önizleme kalan tutar engeli üretmez.
+    @Optional() private readonly summaryEngine?: SummaryEngineService,
   ) {}
 
   /// <remarks>
@@ -132,12 +143,12 @@ export class CasePaymentPreviewService {
     const payerScope = await this.resolvePayerScope(tenantId, caseId, currency, input.caseDebtorId);
     // Seçimlik sorumluluk: borçlunun kapasitesini aşan tutar kayıttan ÖNCE gösterilir. Haciz / icra dairesi kaynağında
     // aşan ödeme mahsup edilmez → açıklayıcı ENGEL (yine de gelen tahsilat kaydedilir ve tamamı bekletilir).
+    const restrictedSource =
+      RESTRICTED_PREVIEW_SOURCES.has(String(input.sourceType || "").toUpperCase()) ||
+      RESTRICTED_PREVIEW_CHANNELS.has(String(input.channel || "").toUpperCase());
     let liability: PaymentPreviewLiabilityDto | undefined;
     if (payerScope.status === "SCOPED" && payerScope.liability) {
       const excessKurus = toKurus(amount.toDecimalPlaces(2)) - payerScope.liability.capacityKurus;
-      const restrictedSource =
-        RESTRICTED_PREVIEW_SOURCES.has(String(input.sourceType || "").toUpperCase()) ||
-        RESTRICTED_PREVIEW_CHANNELS.has(String(input.channel || "").toUpperCase());
       const exceeds = payerScope.liability.shareOrCapBound && excessKurus > 0n;
       liability = {
         shareOrCapBound: payerScope.liability.shareOrCapBound,
@@ -154,10 +165,29 @@ export class CasePaymentPreviewService {
     if (payerScope.status === "PAYER_REQUIRED") warnings.push("ALLOCATION_HELD_ON_BEHALF_DEBTOR_REQUIRED");
     if (payerScope.status === "PAYER_NOT_LIABLE") warnings.push("ALLOCATION_HELD_ON_BEHALF_DEBTOR_NOT_LIABLE");
     if (payerScope.status === "SCOPED") warnings.push("PAYER_SCOPED_OUTSTANDING_EXCLUDES_INTEREST");
+
+    // Seçim bağı (paylı / tutarla sınırlı) OLMAYAN dosyada borçlu belirtilmiş ya da haciz / icra dairesi kaynaklı ödeme:
+    // mevcut kurallarla tamamen mahsup edilemiyorsa aşan tutar kalıcı bir fazla ödeme / bekletme kaydına alınamaz
+    // (PaymentDesignation, COL/OD-19 açık). Elle girilen ödeme KAYITTAN ÖNCE açıklayıcı engelle gösterilir; haricî kaynaklı
+    // gerçekleşmiş tahsilat reddedilmez, tamamı bekletilir. Hesap, kayıt yolundaki dağıtım planıyla AYNIDIR; yine de karar
+    // sunucuda kayıt anında dosya kilidi altında yeniden verilir.
+    const remainder = await this.resolveUnreconcilableRemainder({
+      tenantId,
+      caseId,
+      payerScope,
+      amount,
+      input,
+      restrictedSource,
+      warnings,
+    });
+    if (remainder?.handling === "REJECTED") blockingReasons.push("DEBTOR_PAYMENT_EXCEEDS_ALLOCATABLE_NO_SELECTION");
+    if (remainder?.handling === "ALLOCATION_HELD") warnings.push("ALLOCATION_HELD_PAYMENT_EXCEEDS_ALLOCATABLE");
+
     const allocationHeld =
       payerScope.status === "PAYER_REQUIRED" ||
       payerScope.status === "PAYER_NOT_LIABLE" ||
-      liability?.excessHandling === "ALLOCATION_HELD_LIMIT_EXCEEDED";
+      liability?.excessHandling === "ALLOCATION_HELD_LIMIT_EXCEEDED" ||
+      remainder?.handling === "ALLOCATION_HELD";
 
     const currentOutstandingAmount =
       payerScope.status === "SCOPED"
@@ -225,7 +255,58 @@ export class CasePaymentPreviewService {
       },
       distributionPreview,
       ...(liability ? { liability } : {}),
+      ...(remainder ? { remainder } : {}),
     };
+  }
+
+  /**
+   * Seçimsiz (ya da paylı / tutarla sınırlı bağı olmayan) dosyada kalıcı kayda alınamayan kalan tutar. Kayıt yolundaki
+   * `refuseUnreconcilableRemainder` koşuluyla aynı: ödeme borçlu belirtilmiş ya da haciz / icra dairesi kaynaklı. Plan
+   * `SummaryEngineService.planPaymentAllocation` ile (kayıt yolunun kullandığı dağıtım planı) hesaplanır; plan kurulamazsa
+   * önizleme engel UYDURMAZ (uyarı verir) — işlem anı denetimi yine uygulanır.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CasePaymentPreviewService.preview() → kabul kararı ve uyarılar
+   * </remarks>
+   */
+  private async resolveUnreconcilableRemainder(args: {
+    tenantId: string;
+    caseId: string;
+    payerScope: PayerScope;
+    amount: Prisma.Decimal;
+    input: PaymentPreviewRequestDto;
+    restrictedSource: boolean;
+    warnings: string[];
+  }): Promise<PaymentPreviewRemainderDto | undefined> {
+    const { tenantId, caseId, payerScope, amount, input, restrictedSource, warnings } = args;
+    const signal = Boolean(input.caseDebtorId) || restrictedSource;
+    if (!signal) return undefined;
+    // Bekletme nedenleri (borçlu belirsiz / sorumlu kalem yok) kendi uyarısını taşır; paylı / tutarla sınırlı bağ kendi
+    // dar istisna yolundadır (`liability`).
+    if (payerScope.status === "PAYER_REQUIRED" || payerScope.status === "PAYER_NOT_LIABLE") return undefined;
+    if (payerScope.status === "SCOPED" && payerScope.liability?.shareOrCapBound) return undefined;
+    if (!this.summaryEngine) return undefined;
+    try {
+      const payer = input.caseDebtorId
+        ? await this.prisma.caseDebtor.findFirst({ where: { id: input.caseDebtorId, caseId }, select: { debtorId: true } })
+        : null;
+      const plan = await this.summaryEngine.planPaymentAllocation(this.prisma, tenantId, caseId, moneyToNumber(amount), {
+        onBehalfDebtorId: payer?.debtorId ?? null,
+        onBehalfCaseDebtorId: input.caseDebtorId ?? null,
+      });
+      if (!plan.ledgerAllocationEnabled || !plan.hasClaimItems || plan.selectionBound || plan.excessAmount <= 0) return undefined;
+      return {
+        allocatableAmount: plan.plannedAllocatedAmount,
+        excessAmount: plan.excessAmount,
+        handling: isExternalRealizedReceipt({ sourceType: input.sourceType?.toUpperCase(), channel: input.channel?.toUpperCase() })
+          ? "ALLOCATION_HELD"
+          : "REJECTED",
+      };
+    } catch {
+      warnings.push("ALLOCATION_PLAN_UNAVAILABLE");
+      return undefined;
+    }
   }
 
   /**
@@ -241,12 +322,7 @@ export class CasePaymentPreviewService {
     caseId: string,
     currency: string,
     caseDebtorId?: string,
-  ): Promise<
-    | { status: "UNRESTRICTED" }
-    | { status: "PAYER_REQUIRED" }
-    | { status: "PAYER_NOT_LIABLE" }
-    | { status: "SCOPED"; outstanding: Prisma.Decimal; liability?: { capacityKurus: bigint; shareOrCapBound: boolean } }
-  > {
+  ): Promise<PayerScope> {
     const items = await this.prisma.claimItem.findMany({
       where: { tenantId, caseId, currency, status: ClaimItemStatus.ACTIVE },
       select: { id: true, amount: true, demandedAmount: true, collectedAmount: true, isAllDebtorsLiable: true, liableDebtorIds: true },

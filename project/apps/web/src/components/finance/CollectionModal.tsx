@@ -45,10 +45,16 @@ const PREVIEW_WARNING_LABELS: Record<string, string> = {
     "Mahsup tamamlanmadan müvekkile dağıtım önerilmez.",
   LIABILITY_EXCESS_HELD_AS_DEBTOR_OVERPAYMENT:
     "Ödeme seçilen borçlunun sorumluluğunu aşıyor; aşan tutar başka borçluya aktarılmaz, bu borçlu adına fazla ödeme olarak izlenir.",
+  ALLOCATION_HELD_PAYMENT_EXCEEDS_ALLOCATABLE:
+    "Tahsilat kaydedilecek; ödeme mevcut kurallarla mahsup edilebilen tutarı aşıyor ve aşan tutar kalıcı kayda alınamadığı için tahsilatın tamamı mahsup bekletilecek.",
+  ALLOCATION_PLAN_UNAVAILABLE:
+    "Mahsup planı önizlemede kurulamadı; kayıt anında sunucu aynı denetimi yeniden yapar.",
 };
 
 const PREVIEW_BLOCKING_LABELS: Record<string, string> = {
   CASE_CLOSED_FOR_COLLECTION: "Dosya tahsilata kapalı görünüyor.",
+  DEBTOR_PAYMENT_EXCEEDS_ALLOCATABLE_NO_SELECTION:
+    "Borçlu hesabına belirtilmiş bu ödeme, alacak kalemlerinde mevcut kurallarla mahsup edilebilen tutarı aşıyor. Bu kalemlerde paylı / tutarla sınırlı sorumluluk seçimi olmadığı için aşan tutar borçlu adına fazla ödeme olarak ayrılamaz; ödeme kaydedilmez ve hiçbir mali kayıt oluşmaz.",
   LIABILITY_LIMIT_EXCEEDED_RESTRICTED_SOURCE:
     "Haciz / icra dairesi kaynaklı bu ödeme seçilen borçlunun sorumluluğunu aşıyor. Bu kaynakta aşan tutar fazla ödeme olarak ayrılamaz; kaydedilirse tahsilatın TAMAMI mahsup bekletilir, hiçbir kaleme düşülmez.",
 };
@@ -609,11 +615,37 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
                 </div>
               )}
 
+              {/* Seçim bağı olmayan dosyada mahsup edilemeyen tutar: kayıt anında sunucu aynı koşulu yeniden denetler. */}
+              {previewResult.remainder && (
+                <div data-testid="collection-preview-remainder" className="rounded bg-white px-2 py-1 space-y-1">
+                  <p className="font-medium">Mahsup edilemeyen tutar</p>
+                  <p>
+                    Mevcut kurallarla mahsup edilebilen:{" "}
+                    <span className="font-medium">{formatPreviewAmount(previewResult.remainder.allocatableAmount)}</span> · Mahsup
+                    edilemeyen: <span className="font-medium">{formatPreviewAmount(previewResult.remainder.excessAmount)}</span>
+                  </p>
+                  {previewResult.remainder.handling === "REJECTED" ? (
+                    <p data-testid="collection-preview-remainder-rejected" className="text-red-700">
+                      Ödeme bu haliyle kaydedilmez; kısmi tahsilat, mahsup ya da başka mali kayıt oluşmaz. Ödeme tutarını mahsup
+                      edilebilir tutara indirin, ödemeyi borçlu belirtmeden (dosya düzeyi) kaydedin ya da önce ilgili kalemlerde
+                      borçlu sorumluluğunu seçin.
+                    </p>
+                  ) : (
+                    <p data-testid="collection-preview-remainder-held" className="text-amber-800">
+                      Haricî kaynaklı gerçekleşmiş tahsilat reddedilmez: kaydedilir ve tutarın TAMAMI mahsup bekletilir; hiçbir
+                      kaleme düşülmez, tutar kaybolmaz.
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div className="rounded bg-white px-2 py-1">
                 <p className="font-medium">Dağıtım önizlemesi</p>
                 {previewResult.distributionPreview.status === "BLOCKED" ? (
                   <p className="mt-1 text-amber-800" data-testid="collection-preview-distribution-blocked">
-                    {previewResult.liability?.excessHandling === "ALLOCATION_HELD_LIMIT_EXCEEDED"
+                    {previewResult.remainder?.handling === "ALLOCATION_HELD"
+                      ? "Mahsup bekletileceği için dağıtım önerilmez; ödeme mevcut kurallarla mahsup edilebilen tutarı aştığı için mahsup yapılmaz. Alacak kalemleri ya da sorumluluk seçimi güncellenip tutar mahsup edilebilir olduğunda bekletilen tahsilat tamamlanabilir."
+                      : previewResult.liability?.excessHandling === "ALLOCATION_HELD_LIMIT_EXCEEDED"
                       ? // Borçlu ZATEN seçili: bekletmenin nedeni borçlunun girilmemesi değil, sorumluluğun aşılmasıdır.
                         "Mahsup bekletileceği için dağıtım önerilmez; ödeme seçilen borçlunun sorumluluğunu aştığı için bu kaynakta mahsup yapılmaz. Borçlunun sorumluluğu yeterli olduğunda bekletilen tahsilat borçlu hesabına mahsup edilebilir."
                       : "Mahsup bekletileceği için dağıtım önerilmez; hesabına ödeme yapılan borçlu girilip mahsup tamamlandıktan sonra dağıtım yapılabilir."}

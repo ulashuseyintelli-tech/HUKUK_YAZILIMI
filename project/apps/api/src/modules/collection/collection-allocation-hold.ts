@@ -35,11 +35,23 @@ export const LIABILITY_LIMIT_EXCEEDED_HOLD_CODE = 'LIABILITY_LIMIT_EXCEEDED' as 
 export const LIABILITY_LIMIT_EXCEEDED_HOLD_REASON: AllocationHoldReason = 'ON_BEHALF_DEBTOR_NOT_LIABLE';
 
 /**
+ * Seçim bağı (paylı / tutarla sınırlı) OLMAYAN dosyada, borçlu belirtilmiş ya da haciz / icra dairesi kaynaklı gerçekleşmiş
+ * tahsilat mevcut kurallarla tamamen mahsup edilemiyor ve aşan tutar kalıcı bir fazla ödeme / bekletme kaydına alınamıyor
+ * (PaymentDesignation, COL/OD-19 açık): tahsilat yok sayılmaz, TAMAMI bekletilir; hiçbir kaleme düşülmez. Aynı gerekçeyle
+ * enum'a yeni değer eklenmez; kayıt `ON_BEHALF_DEBTOR_NOT_LIABLE` ile yazılır, ayrıntı kodu `metadata.details.reasonCode`
+ * alanındadır.
+ */
+export const PAYMENT_EXCEEDS_ALLOCATABLE_HOLD_CODE = 'PAYMENT_EXCEEDS_ALLOCATABLE' as const;
+export const PAYMENT_EXCEEDS_ALLOCATABLE_HOLD_REASON: AllocationHoldReason = 'ON_BEHALF_DEBTOR_NOT_LIABLE';
+
+/**
  * Bekletmenin gösterilecek nedeni: ayrıntı kodu varsa o, yoksa kayıtlı neden.
  */
 export function effectiveAllocationHoldReason(hold: { holdReason: unknown; metadata?: unknown }): string {
   const details = (hold.metadata as { details?: { reasonCode?: unknown } } | null | undefined)?.details;
-  return details?.reasonCode === LIABILITY_LIMIT_EXCEEDED_HOLD_CODE ? LIABILITY_LIMIT_EXCEEDED_HOLD_CODE : String(hold.holdReason);
+  if (details?.reasonCode === LIABILITY_LIMIT_EXCEEDED_HOLD_CODE) return LIABILITY_LIMIT_EXCEEDED_HOLD_CODE;
+  if (details?.reasonCode === PAYMENT_EXCEEDS_ALLOCATABLE_HOLD_CODE) return PAYMENT_EXCEEDS_ALLOCATABLE_HOLD_CODE;
+  return String(hold.holdReason);
 }
 
 /**

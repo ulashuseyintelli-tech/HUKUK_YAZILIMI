@@ -19,6 +19,8 @@ import {
   LIABILITY_LIMIT_EXCEEDED_HOLD_CODE,
   LIABILITY_LIMIT_EXCEEDED_HOLD_REASON,
   PAYMENT_ALLOCATION_COMPLETED_EVENT,
+  PAYMENT_EXCEEDS_ALLOCATABLE_HOLD_CODE,
+  PAYMENT_EXCEEDS_ALLOCATABLE_HOLD_REASON,
   createCollectionAllocationHoldInTx,
   paymentAllocationCompletedEventId,
   readActiveAllocationHoldSummary,
@@ -176,6 +178,20 @@ function hasRestrictedSourceOrChannel(input: { sourceType?: string | null; chann
     (input.sourceType && RESTRICTED_OVERPAYMENT_SOURCES.has(input.sourceType)) ||
     (input.channel && RESTRICTED_OVERPAYMENT_CHANNELS.has(input.channel)),
   );
+}
+
+/**
+ * Haricî kaynaklı (banka entegrasyonu, üçüncü kişi, alacak haczi, haciz / maaş haczi, ihale) ya da haciz / icra dairesi
+ * kanallı GERÇEKLEŞMİŞ tahsilat mı? Para zaten gelmiştir ve girişi düzeltecek bir kullanıcı yoktur: kayıt REDDEDİLMEZ,
+ * yok sayılmaz; mahsup edilemeyen durumda tamamı mevcut bekletme mekanizmasıyla tutulur. Elle girilen (MANUAL /
+ * SETTLEMENT / kaynaksız) ve haciz - icra dairesi kanalı OLMAYAN ödeme düzeltilebilir: işlem anında reddedilir.
+ */
+export function isExternalRealizedReceipt(input: { sourceType?: string | null; channel?: string | null }): boolean {
+  return Boolean((input.sourceType && EXTERNAL_SOURCES.has(input.sourceType)) || hasRestrictedSourceOrChannel(input));
+}
+
+function formatTl(value: number): string {
+  return `${roundMoney(value).toFixed(2)} TL`;
 }
 
 type AllocationScopeItem = { isAllDebtorsLiable: boolean; liableDebtorIds: string[] };
@@ -653,9 +669,18 @@ export class CollectionService {
         });
       }
     } else if (input.restrictedPaymentSignal) {
-      blocks.push({
-        reason: 'RESTRICTED_PAYMENT_UNSUPPORTED',
-        message: 'Payment may be restricted/earmarked, but PaymentDesignation is not implemented yet.',
+      // Savunma katmanı (işlem anı yeniden denetimi): mahsup motoru bu durumda defteri HİÇ yazmadan durur
+      // (`refuseUnreconcilableRemainder`). Buraya ulaşılırsa kalan tutar kalıcı bir fazla ödeme / bekletme kaydına
+      // alınamaz (PaymentDesignation, COL/OD-19 açık). Eski yola (PAYMENT + kısmi mahsup + yalnız tanı olayı) DÜŞÜLMEZ:
+      // işlem geri alınır; kısmi PAYMENT / mahsup / başka mali kayıt kalmaz.
+      throw new ConflictException({
+        code: 'COLLECTION_RECONCILIATION_FAILED',
+        message:
+          'Tahsilat tutarı mahsup edilen tutarla uzlaştırılamadı ve kalan tutar kalıcı fazla ödeme / bekletme kaydına alınamıyor; işlem geri alındı.',
+        collectionAmount: input.collectionAmount,
+        allocatedAmount,
+        unreconciledAmount: overpaymentAmount,
+        reasons: ['RESTRICTED_PAYMENT_UNSUPPORTED', ...blocks.map((block) => block.reason)],
         details: input.restrictedDetails,
       });
     }
@@ -895,6 +920,9 @@ export class CollectionService {
         onBehalfCaseDebtorId: input.caseDebtorId,
         // Dar istisna haciz / icra dairesi kaynağına uygulanmaz: aşan ödeme mahsup edilmez, bekletme korunur.
         liabilityExcessAllowed: !completionRestrictedSource,
+        // Hesabına ödeme yapılan borçlu belli (kısıtlı ödeme sinyali): kalan tutar kalıcı kayda alınamıyorsa defter yazılmaz,
+        // bekletme AYNEN korunur (tamamlama create() ile aynı kuralı işlem anında yeniden denetler).
+        refuseUnreconcilableRemainder: true,
       });
       if (!ledger.allocated || !ledger.ledgerEntry) {
         throw new ConflictException({
@@ -902,8 +930,13 @@ export class CollectionService {
           message:
             ledger.reason === 'LIABILITY_LIMIT_EXCEEDED'
               ? 'Ödeme, seçilen borçlunun sorumluluğunu aşıyor ve bu kaynakta aşan tutar fazla ödeme olarak ayrılamıyor; bekletme korunur.'
-              : 'Defter mahsubu yapılamadı; bekletme korunur.',
+              : ledger.reason === 'UNRECONCILED_REMAINDER'
+                ? `Ödeme, seçilen borçlu için mevcut kurallarla mahsup edilebilen tutarı (${formatTl(ledger.unreconciled?.plannedAllocatedAmount ?? 0)}) ` +
+                  `${formatTl(ledger.unreconciled?.excessAmount ?? 0)} aşıyor ve aşan tutar kalıcı fazla ödeme / bekletme kaydına alınamıyor; ` +
+                  `hiçbir kayıt yazılmadı, bekletme korunur.`
+                : 'Defter mahsubu yapılamadı; bekletme korunur.',
           ...(ledger.liability ? { liability: ledger.liability } : {}),
+          ...(ledger.unreconciled ? { unreconciled: ledger.unreconciled } : {}),
         });
       }
       await tx.ledgerEntry.update({
@@ -1401,8 +1434,60 @@ export class CollectionService {
             onBehalfCaseDebtorId: dto.caseDebtorId ?? null,
             // Dar fazla ödeme istisnası haciz / icra dairesi kaynağına UYGULANMAZ (mevcut kuralları değişmez).
             liabilityExcessAllowed: !restrictedSourceOrChannel,
+            // Kalan tutar kalıcı bir fazla ödeme / bekletme kaydına alınamıyorsa (borçlu belirtilmiş ya da haciz - icra
+            // dairesi; PaymentDesignation COL/OD-19 açık) defter YAZILMADAN dur: kısmi PAYMENT / mahsup bırakılmaz.
+            refuseUnreconcilableRemainder: hasUnsupportedRestrictedPaymentSignal(dto),
           },
         );
+        if (!ledger.allocated && ledger.reason === 'UNRECONCILED_REMAINDER') {
+          const allocatable = ledger.unreconciled?.plannedAllocatedAmount ?? 0;
+          const excess = ledger.unreconciled?.excessAmount ?? 0;
+          if (!isExternalRealizedReceipt(dto)) {
+            // Elle girilen, borçlu belirtilmiş ödeme: işlem kesinleşmeden REDDEDİLİR. Collection, yevmiye, ödeme olayı ve
+            // idempotency kaydı aynı işlemde yazıldığı için hiçbiri kalmaz (hata işlemi geri alır).
+            throw new ConflictException({
+              code: 'COLLECTION_DEBTOR_PAYMENT_EXCEEDS_ALLOCATABLE',
+              message:
+                `Borçlu hesabına belirtilmiş ödeme (${formatTl(toFiniteAmount(dto.amount))}), alacak kalemlerinde mevcut kurallarla ` +
+                `mahsup edilebilen tutarı (${formatTl(allocatable)}) ${formatTl(excess)} aşıyor. Bu kalemlerde paylı / tutarla sınırlı ` +
+                `sorumluluk seçimi bulunmadığı için aşan tutar borçlu adına fazla ödeme olarak ayrılamaz; ödeme KAYDEDİLMEDİ ve hiçbir ` +
+                `mali kayıt oluşmadı. Ödeme tutarını mahsup edilebilir tutara indirin, ödemeyi borçlu belirtmeden (dosya düzeyi) ` +
+                `kaydedin ya da önce ilgili kalemlerde borçlu sorumluluğunu seçin.`,
+              collectionAmount: toFiniteAmount(dto.amount),
+              allocatableAmount: allocatable,
+              excessAmount: excess,
+              currency,
+              onBehalfCaseDebtorId: dto.caseDebtorId ?? null,
+              reasons: ['NO_SHARE_OR_CAP_SELECTION', 'REMAINDER_NOT_PERSISTABLE'],
+            });
+          }
+          // Haricî kaynaklı GERÇEKLEŞMİŞ tahsilat yok sayılmaz ve silinmez: kaydedilir, TAMAMI mevcut bekletme
+          // mekanizmasıyla tutulur; hiçbir kaleme düşülmez, tutar kaybolmaz (defter yazımı yok).
+          allocationHold = PAYMENT_EXCEEDS_ALLOCATABLE_HOLD_REASON;
+          allocationHoldId = await this.holdCollectionAllocationInTx(tx, {
+            tenantId,
+            caseId: dto.caseId,
+            collectionId: collection.id,
+            amount: dto.amount,
+            currency,
+            userId,
+            holdReason: allocationHold,
+            details: {
+              reasonCode: PAYMENT_EXCEEDS_ALLOCATABLE_HOLD_CODE,
+              basis: 'NO_SHARE_OR_CAP_SELECTION',
+              onBehalfCaseDebtorId: dto.caseDebtorId ?? null,
+              allocatableAmount: allocatable,
+              excessAmount: excess,
+              restrictedSourceOrChannel,
+              sourceType: dto.sourceType ?? null,
+              channel: dto.channel ?? null,
+              excludedOutstanding: ledger.excludedOutstanding,
+            },
+          });
+          this.logger.warn(
+            `collection allocation held (case=${dto.caseId}, collection=${collection.id}, reason=${PAYMENT_EXCEEDS_ALLOCATABLE_HOLD_CODE})`,
+          );
+        }
         if (!ledger.allocated && ledger.reason === 'LIABILITY_LIMIT_EXCEEDED') {
           // Seçimlik sorumluluk (owner güvenlik düzeltmesi 1): ödeme borçlunun sorumluluğunu aşıyor ve aşan tutar fazla
           // ödeme olarak AYRILAMIYOR (haciz / icra dairesi kaynağı ya da güvenilmeyen dağıtım). Eski yola düşülmez:
@@ -1454,7 +1539,7 @@ export class CollectionService {
           if (settled.overpaymentId) overpaymentId = settled.overpaymentId;
           heldOverpaymentAmount = settled.heldOverpaymentAmount;
         }
-        if (!ledger.allocated && ledger.reason !== 'LIABILITY_LIMIT_EXCEEDED') {
+        if (!ledger.allocated && ledger.reason !== 'LIABILITY_LIMIT_EXCEEDED' && ledger.reason !== 'UNRECONCILED_REMAINDER') {
           this.logger.warn(
             `case has no claimItems; payment not ledger-allocated ` +
               `(case=${dto.caseId}, collection=${collection.id}, reason=${ledger.reason})`,

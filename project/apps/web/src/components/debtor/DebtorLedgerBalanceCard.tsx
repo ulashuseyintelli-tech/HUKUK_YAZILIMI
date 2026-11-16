@@ -8,6 +8,8 @@ const HOLD_REASON_LABELS: Record<string, string> = {
   ON_BEHALF_DEBTOR_REQUIRED: "hesabına ödeme yapılan borçlu belirtilmedi",
   ON_BEHALF_DEBTOR_NOT_LIABLE: "belirtilen borçlunun sorumlu olduğu kalem yok",
   LIABILITY_LIMIT_EXCEEDED: "ödeme borçlunun sorumluluğunu aşıyor ve bu kaynakta aşan tutar ayrılamıyor",
+  PAYMENT_EXCEEDS_ALLOCATABLE:
+    "ödeme mevcut kurallarla mahsup edilebilen tutarı aşıyor ve aşan tutar kalıcı kayda alınamıyor; tahsilatın tamamı bekletiliyor",
 };
 
 /** Seçimlik sorumluluk etiketi. Seçimi olmayan kalem her yerde "Belirlenmedi" görünür (müteselsillik kabulü değildir). */

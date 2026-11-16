@@ -537,13 +537,45 @@ describeWithDisposableDb('Seçimlik borçlu sorumluluğu — tahsilat ve mahsup 
     expect((await view(f)).K1.C).toBe(1500);
   });
 
-  it('AT-16c (seçimsiz dosya) haciz kaynağında bugünkü davranış AYNEN: mahsup yapılır, aşan tutar için bekletme / borçlu fazla ödemesi üretilmez', async () => {
+  it('AT-16c (seçimsiz dosya) haciz kaynağı: kapasiteye sığan tahsilat bugünkü gibi mahsup edilir; aşan tutar kalıcı kayda alınamıyorsa KISMİ mahsup yazılmaz, TAMAMI mevcut bekletmeyle tutulur (16.11.2026 düzeltmesi)', async () => {
+    // Eski davranış (kusur): 1.000 mahsup + PAYMENT 1.300; kalan 300 yalnız OVERPAYMENT_BLOCKED tanısında (tahsilat ≠ mahsup +
+    // fazla ödeme + bekletilen). Haricî gerçekleşmiş tahsilat yok sayılmaz ve silinmez; hiçbir kaleme kısmen düşülmez.
+    const fits = await fixture('seize-legacy-fits', [{ key: 'K1', itemType: 'PRINCIPAL', amount: 1000, sortOrder: 1 }]);
+    await pay(fits, 1000, fits.b1.caseDebtorId, { channel: 'HACIZ' as never });
+    expect((await view(fits)).K1).toMatchObject({ C: 1000, R: 0, tur: 'UNDETERMINED' });
+    expect(await prisma.collectionAllocationHold.count({ where: { tenantId: fits.tenantId } })).toBe(0);
+    await assertCollectionsReconciled(fits);
+
     const f = await fixture('seize-legacy', [{ key: 'K1', itemType: 'PRINCIPAL', amount: 1000, sortOrder: 1 }]);
     const created = await pay(f, 1300, f.b1.caseDebtorId, { channel: 'HACIZ' as never });
-    expect((await view(f)).K1).toMatchObject({ C: 1000, R: 0, tur: 'UNDETERMINED' });
-    expect(await prisma.collectionAllocationHold.count({ where: { collectionId: (created as any).id } })).toBe(0);
+    expect(created).toMatchObject({ status: 'CONFIRMED' });
+    expect((await view(f)).K1).toMatchObject({ C: 0, R: 1000, tur: 'UNDETERMINED' });
+    const hold = await prisma.collectionAllocationHold.findUniqueOrThrow({ where: { collectionId: (created as any).id } });
+    expect(hold).toMatchObject({ status: 'HELD', holdReason: 'ON_BEHALF_DEBTOR_NOT_LIABLE' });
+    expect(Number(hold.amount)).toBe(1300);
+    expect((hold.metadata as any).details).toMatchObject({ reasonCode: 'PAYMENT_EXCEEDS_ALLOCATABLE', allocatableAmount: 1000, excessAmount: 300, restrictedSourceOrChannel: true });
+    expect(await prisma.ledgerEntry.count({ where: { collectionId: (created as any).id } })).toBe(0);
     expect(await prisma.collectionOverpayment.count({ where: { collectionId: (created as any).id } })).toBe(0);
-    expect(await prisma.icrabotTimelineEntry.count({ where: { tenantId: f.tenantId, caseId: f.caseId, type: 'OVERPAYMENT_BLOCKED' } })).toBe(1);
+    expect(await prisma.icrabotTimelineEntry.count({ where: { tenantId: f.tenantId, caseId: f.caseId, type: 'OVERPAYMENT_BLOCKED' } })).toBe(0);
+    await assertCollectionsReconciled(f);
+  });
+
+  it('AT-16e müteselsil seçimli (paylı / tutarla sınırlı DEĞİL) dosyada borçlu belirtilmiş aşan elle ödeme de kesinleşmeden reddedilir: istisna genişletilmez, kısmi yazım kalmaz', async () => {
+    const f = await fixture('joint-excess', [{ key: 'K1', itemType: 'PRINCIPAL', amount: 12000, sortOrder: 1 }]);
+    await select(f, 'K1', 'JOINT_AND_SEVERAL', [f.b1, f.b2]);
+    const collectionsBefore = await prisma.collection.count({ where: { tenantId: f.tenantId } });
+    const error = await pay(f, 13000, f.b1.caseDebtorId).catch((e) => e);
+    expect(error.getStatus()).toBe(409);
+    expect(error.getResponse()).toMatchObject({ code: 'COLLECTION_DEBTOR_PAYMENT_EXCEEDS_ALLOCATABLE', allocatableAmount: 12000, excessAmount: 1000 });
+    expect(await prisma.collection.count({ where: { tenantId: f.tenantId } })).toBe(collectionsBefore);
+    expect(await prisma.ledgerEntry.count({ where: { tenantId: f.tenantId } })).toBe(0);
+    expect(await prisma.collectionOverpayment.count({ where: { tenantId: f.tenantId } })).toBe(0);
+    expect(await prisma.icrabotTimelineEntry.count({ where: { tenantId: f.tenantId, caseId: f.caseId, type: 'OVERPAYMENT_BLOCKED' } })).toBe(0);
+    expect((await view(f)).K1).toMatchObject({ C: 0, R: 12000, tur: 'JOINT_AND_SEVERAL' });
+    // Sığan ödeme bugünkü gibi sürer.
+    await pay(f, 12000, f.b1.caseDebtorId);
+    expect((await view(f)).K1).toMatchObject({ C: 12000, R: 0 });
+    await assertCollectionsReconciled(f);
   });
 
   it('AT-16d kiracı yalıtımı: bir kiracının seçim, atıf ve fazla ödeme kayıtları başka kiracının okumasına ve mahsubuna girmez', async () => {

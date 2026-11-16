@@ -6347,6 +6347,19 @@ export interface PaymentPreviewResponseDTO {
   };
   /** Yalnız dosyada etkin sorumluluk seçimi varsa döner. */
   liability?: PaymentPreviewLiabilityDTO;
+  /** Yalnız ödeme mevcut kurallarla tamamen mahsup edilemiyor ve aşan tutar kalıcı kayda alınamıyorsa döner. */
+  remainder?: PaymentPreviewRemainderDTO;
+}
+
+/**
+ * Seçim bağı (paylı / tutarla sınırlı) olmayan dosyada borçlu belirtilmiş ya da haciz / icra dairesi kaynaklı ödeme tamamen
+ * mahsup edilemiyor ve aşan tutar kalıcı fazla ödeme / bekletme kaydına alınamıyor. REJECTED: elle girilen ödeme kayıttan
+ * önce reddedilir (hiçbir mali kayıt oluşmaz); ALLOCATION_HELD: haricî kaynaklı gerçekleşmiş tahsilat kaydedilir, tamamı bekletilir.
+ */
+export interface PaymentPreviewRemainderDTO {
+  allocatableAmount: number;
+  excessAmount: number;
+  handling: "REJECTED" | "ALLOCATION_HELD";
 }
 
 export interface CreateCollectionDTO {

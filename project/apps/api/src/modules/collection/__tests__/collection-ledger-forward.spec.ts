@@ -54,6 +54,7 @@ function setup(opts: { summaryEngine?: any; caseRecord?: any; lockedDup?: any; p
       ]),
     },
     collectionOverpayment: { create: jest.fn(async () => ({ id: 'overpayment-1' })) },
+    collectionAllocationHold: { create: jest.fn(async () => ({ id: 'hold-1' })) },
     auditLog: { create: jest.fn() },
     // P0-1: advisory xact lock — mock no-op.
     $executeRaw: jest.fn(async () => 0),
@@ -549,7 +550,10 @@ describe('CollectionService.create — G3a ledger forward write', () => {
     ]);
   });
 
-  it('restricted/earmarked sinyal varsa PaymentDesignation olmadan overpayment projection yazmaz', async () => {
+  it('restricted/earmarked sinyal + kısmi mahsup dönen motor (savunma katmanı): işlem GERİ ALINIR; fazla ödeme ve tanı olayı yazılmaz', async () => {
+    // Mahsup motoru normalde bu durumda defteri hiç yazmadan durur (UNRECONCILED_REMAINDER). Motor yine de kısmi mahsup
+    // dönerse eski yola (PAYMENT + kısmi mahsup + yalnız OVERPAYMENT_BLOCKED tanısı) DÜŞÜLMEZ: kalan tutar kalıcı kayda
+    // alınamadığı için işlem geri alınır (kısmi PAYMENT / mahsup bırakılmaz).
     const summaryEngine = {
       allocatePaymentToLedgerInTx: jest.fn(async () => ({
         allocated: true,
@@ -562,30 +566,111 @@ describe('CollectionService.create — G3a ledger forward write', () => {
     };
     const { svc, tx, domainEvent } = setup({ summaryEngine });
 
-    await svc.create(
-      't1',
-      {
-        ...dto,
-        amount: 1200,
-        currency: 'TRY',
-        sourceType: CollectionSource.SALARY_SEIZURE,
-        sourceId: 'salary-seizure-1',
-        channel: CollectionChannel.HACIZ,
-      },
-      'u1',
-    );
+    await expect(
+      svc.create(
+        't1',
+        {
+          ...dto,
+          amount: 1200,
+          currency: 'TRY',
+          sourceType: CollectionSource.SALARY_SEIZURE,
+          sourceId: 'salary-seizure-1',
+          channel: CollectionChannel.HACIZ,
+        },
+        'u1',
+      ),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'COLLECTION_RECONCILIATION_FAILED',
+        collectionAmount: 1200,
+        allocatedAmount: 1000,
+        unreconciledAmount: 200,
+        reasons: expect.arrayContaining(['RESTRICTED_PAYMENT_UNSUPPORTED']),
+      }),
+    });
 
     expect(tx.collectionOverpayment.create).not.toHaveBeenCalled();
-    const blockedEvent = domainEvent.appendInTransaction.mock.calls[1][1];
-    expect(blockedEvent.header.eventType).toBe('OVERPAYMENT_BLOCKED');
-    expect(blockedEvent.payload.blockedReasons).toEqual([
-      expect.objectContaining({
-        reason: 'RESTRICTED_PAYMENT_UNSUPPORTED',
-        details: expect.objectContaining({
-          sourceType: CollectionSource.SALARY_SEIZURE,
-          channel: CollectionChannel.HACIZ,
-        }),
+    const eventTypes = domainEvent.appendInTransaction.mock.calls.map((call: any[]) => call[1].header.eventType);
+    expect(eventTypes).not.toContain('OVERPAYMENT_BLOCKED');
+  });
+});
+
+describe('CollectionService.create — seçim bağı olmayan kısıtlı ödemede kalıcı kaydı olmayan kalan tutar', () => {
+  const unreconciled = (planned: number, excess: number) => ({
+    allocated: false,
+    reason: 'UNRECONCILED_REMAINDER',
+    ledgerEntry: null,
+    allocations: [],
+    diagnostics: [],
+    excludedOutstanding: 0,
+    unsafeForOverpayment: false,
+    unreconciled: { plannedAllocatedAmount: planned, excessAmount: excess },
+  });
+  const fitting = () => ({
+    allocated: true,
+    ledgerEntry: { id: 'le-fit', tenantId: 't1', caseId: 'c1', currency: 'TRY' },
+    allocations: [{ amount: 1200 }],
+    diagnostics: [],
+    excludedOutstanding: 0,
+    unsafeForOverpayment: false,
+  });
+
+  it('elle girilen, borçlu belirtilmiş ödeme: kesinleşmeden 409 ile reddedilir; bekletme / fazla ödeme / tanı olayı yazılmaz', async () => {
+    const summaryEngine = { allocatePaymentToLedgerInTx: jest.fn(async () => unreconciled(1000, 200)) };
+    const { svc, tx, domainEvent, autoSpy } = setup({ summaryEngine });
+
+    await expect(
+      svc.create('t1', { ...dto, amount: 1200, currency: 'TRY', caseDebtorId: 'cd-1' }, 'u1'),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'COLLECTION_DEBTOR_PAYMENT_EXCEEDS_ALLOCATABLE',
+        collectionAmount: 1200,
+        allocatableAmount: 1000,
+        excessAmount: 200,
+        reasons: expect.arrayContaining(['NO_SHARE_OR_CAP_SELECTION']),
       }),
-    ]);
+    });
+
+    expect(tx.collectionAllocationHold.create).not.toHaveBeenCalled();
+    expect(tx.collectionOverpayment.create).not.toHaveBeenCalled();
+    expect(autoSpy).not.toHaveBeenCalled();
+    expect(domainEvent.appendInTransaction.mock.calls.map((call: any[]) => call[1].header.eventType)).not.toContain('OVERPAYMENT_BLOCKED');
+  });
+
+  it('motora kayıt anında bayrak verilir: borçlu belirtilmiş ya da haciz kaynaklı ödemede true; sinyalsiz (dosya düzeyi) ödemede false', async () => {
+    const calls: any[] = [];
+    const summaryEngine = {
+      allocatePaymentToLedgerInTx: jest.fn(async (...args: any[]) => {
+        calls.push(args[4]);
+        return fitting();
+      }),
+    };
+    await setup({ summaryEngine }).svc.create('t1', { ...dto, amount: 1200, currency: 'TRY', idempotencyKey: 'k-a', caseDebtorId: 'cd-1' }, 'u1');
+    await setup({ summaryEngine }).svc.create('t1', { ...dto, amount: 1200, currency: 'TRY', idempotencyKey: 'k-b', channel: CollectionChannel.HACIZ }, 'u1');
+    await setup({ summaryEngine }).svc.create('t1', { ...dto, amount: 1200, currency: 'TRY', idempotencyKey: 'k-c' }, 'u1');
+
+    expect(calls.map((options) => options.refuseUnreconcilableRemainder)).toEqual([true, true, false]);
+  });
+
+  it.each([
+    ['haciz kaynağı (maaş haczi)', { sourceType: CollectionSource.SALARY_SEIZURE, sourceId: 'sz-1', channel: CollectionChannel.HACIZ }],
+    ['banka entegrasyonu (borçlu belirtilmiş)', { sourceType: CollectionSource.BANK_INTEGRATION, sourceId: 'bank-1', caseDebtorId: 'cd-1' }],
+    ['üçüncü kişi (89 ihbarname)', { sourceType: CollectionSource.THIRD_PARTY, sourceId: 'tp-1', caseDebtorId: 'cd-1' }],
+  ])('haricî kaynaklı gerçekleşmiş tahsilat (%s) reddedilmez: kaydedilir, TAMAMI mevcut bekletmeyle tutulur, deftere yazılmaz', async (_ad, extra) => {
+    const summaryEngine = { allocatePaymentToLedgerInTx: jest.fn(async () => unreconciled(1000, 200)) };
+    const { svc, tx, autoSpy } = setup({ summaryEngine });
+
+    await svc.create('t1', { ...dto, amount: 1200, currency: 'TRY', ...extra }, 'u1');
+
+    expect(tx.collectionAllocationHold.create).toHaveBeenCalledTimes(1);
+    const hold = tx.collectionAllocationHold.create.mock.calls[0][0].data;
+    expect(hold).toMatchObject({ amount: 1200, status: 'HELD', holdReason: 'ON_BEHALF_DEBTOR_NOT_LIABLE' });
+    expect(hold.metadata.details).toMatchObject({
+      reasonCode: 'PAYMENT_EXCEEDS_ALLOCATABLE',
+      allocatableAmount: 1000,
+      excessAmount: 200,
+    });
+    expect(tx.collectionOverpayment.create).not.toHaveBeenCalled();
+    expect(autoSpy).not.toHaveBeenCalled();
   });
 });
