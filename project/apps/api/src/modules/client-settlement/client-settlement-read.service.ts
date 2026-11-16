@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { readActiveAllocationHoldSummary } from '../collection/collection-allocation-hold';
@@ -9,6 +9,8 @@ import {
   type ClientAccountingCurrencySource,
   type ClientAccountingCurrencyStatus,
 } from './client-accounting-currency-scope';
+
+import { assertNativeSummaryMoney, nativeSummaryCurrency, nativeSummaryUnavailable, type ClientAccountingNativeGroup, type ClientAccountingNativeSummary } from './client-accounting-native-summary';
 
 const ZERO = new Prisma.Decimal(0);
 const ELIGIBLE_ROLES = ['ALACAKLI', 'ORTAK_ALACAKLI'];
@@ -412,8 +414,9 @@ export class ClientSettlementReadService {
     tenantId: string,
     clientId: string,
     currency = 'TRY',
+    db: Prisma.TransactionClient = this.prisma,
   ): Promise<ClientAccountingSummary> {
-    const ccRows = await this.prisma.caseClient.findMany({
+    const ccRows = await db.caseClient.findMany({
       where: { clientId, role: { in: ELIGIBLE_ROLES }, client: { tenantId } },
       select: {
         id: true,
@@ -432,8 +435,8 @@ export class ClientSettlementReadService {
     let totalPayableNet = ZERO;
     let totalPaid = ZERO;
     for (const cc of ccRows) {
-      const payableNet = await this.computeOutstanding(this.prisma, tenantId, cc.caseId, cc.id, currency);
-      const paidAgg = await this.prisma.clientPayout.aggregate({
+      const payableNet = await this.computeOutstanding(db, tenantId, cc.caseId, cc.id, currency);
+      const paidAgg = await db.clientPayout.aggregate({
         _sum: { amount: true },
         where: { tenantId, caseId: cc.caseId, caseClientId: cc.id, currency, status: 'RECORDED' },
       });
@@ -452,7 +455,7 @@ export class ClientSettlementReadService {
     let totalAdvance = ZERO;
     let anyNeedsReview = false;
     for (const caseId of distinctCaseIds) {
-      const collAgg = await this.prisma.collection.aggregate({
+      const collAgg = await db.collection.aggregate({
         _sum: { amount: true },
         where: { tenantId, caseId, currency, status: 'CONFIRMED' },
       });
@@ -462,20 +465,20 @@ export class ClientSettlementReadService {
       // Aksi halde iptal edilen tahsilat toplamdan düşerken dağıtımı düşmeye devam eder → negatif "dağıtım bekleyen" +
       // kalıcı "kontrol gerekli" ve aynı dosyadaki GERÇEK bekleyen tutar sessizce eksik görünürdü. Negatif değer
       // KIRPILMAZ: işaretsiz gerçek tutarsızlık (dağıtım > onaylı tahsilat) hâlâ negatif + needsReview üretir.
-      const dispAgg = await this.prisma.collectionDisposition.aggregate({
+      const dispAgg = await db.collectionDisposition.aggregate({
         _sum: { totalAmount: true },
         where: { tenantId, caseId, currency, status: 'POSTED', manualReversalRequiredAt: null },
       });
       const postedDisp = dispAgg._sum.totalAmount ?? ZERO;
       // K3-L: mahsubu bekletilen tahsilat dağıtıma kapalıdır → AYRI alan; "dağıtılabilir bekleyen" = pendingDist − allocationHeld.
       // Gölge rapor (client-accounting-summary-shadow-report) kendi formül kopyasını taşır; bu değişiklik ona dokunmaz.
-      const heldSummary = await readActiveAllocationHoldSummary(this.prisma, tenantId, caseId, currency);
+      const heldSummary = await readActiveAllocationHoldSummary(db, tenantId, caseId, currency);
       const allocationHeld = new Prisma.Decimal(heldSummary.amount);
       const pendingDist = debtorCollection.minus(postedDisp);
       const needsReview = pendingDist.lt(ZERO); // negatif → tutarsızlık; sessiz sıfırlama YOK
       if (needsReview) anyNeedsReview = true;
       // G1: avans bakiyesi yalnız istenen para biriminin bakiyesidir (başka para birimi bu toplama eklenmez; kapsam dışı olarak bildirilir).
-      const bal = await this.prisma.caseBalance.findFirst({ where: { tenantId, caseId, currency }, select: { balance: true } });
+      const bal = await db.caseBalance.findFirst({ where: { tenantId, caseId, currency }, select: { balance: true } });
       const advance = bal?.balance ?? ZERO;
       bByCase.set(caseId, { debtorCollection, pendingDist, allocationHeld, advance, needsReview });
       totalDebtorCollection = totalDebtorCollection.plus(debtorCollection);
@@ -486,7 +489,7 @@ export class ClientSettlementReadService {
 
     // Masraf — clientId scope (ExpenseRequest hem clientId hem caseId taşır → breakdown gerçek caseId).
     // G1: masraf talepleri yalnız istenen para biriminde toplanır (başka para birimi bu toplama eklenmez; kapsam dışı olarak bildirilir).
-    const expRows = await this.prisma.expenseRequest.findMany({
+    const expRows = await db.expenseRequest.findMany({
       where: { tenantId, clientId, status: { not: 'CANCELLED' }, currency },
       select: { id: true, caseId: true, totalAmount: true, paidTotal: true },
     });
@@ -503,7 +506,7 @@ export class ClientSettlementReadService {
     // TM3 Faz C C-1 — net ClientOffset (APPLY−REVERSAL). Payable bacağı ZATEN computeOutstanding üzerinden
     // payableNet'e yansıdı; burada (a) masraf unpaid'i düş (b) breakdown için iki bacağı caseId bazında ayır.
     // offsetNet payable+expense'i AYNI tutarda düşürdüğü için offsettableNetPosition DEĞİŞMEZ (locked invariant).
-    const offRows = await this.prisma.clientOffset.findMany({
+    const offRows = await db.clientOffset.findMany({
       where: { tenantId, clientId, currency },
       select: { amount: true, kind: true, payableCaseId: true, expenseCaseId: true },
     });
@@ -520,7 +523,7 @@ export class ClientSettlementReadService {
     // application terimleri dahil). offsetNet/byCase YALNIZ offsetApplied breakdown display için korunur (client-level toplam DEĞİL).
     let expUnpaid = ZERO;
     for (const e of expRows) {
-      const remaining = await this.computeExpenseRemaining(this.prisma, tenantId, e.id, e.totalAmount, e.paidTotal);
+      const remaining = await this.computeExpenseRemaining(db, tenantId, e.id, e.totalAmount, e.paidTotal);
       expUnpaid = expUnpaid.plus(remaining);
       const bucket = expByCase.get(e.caseId)!;
       bucket.unpaid = bucket.unpaid.plus(remaining);
@@ -536,6 +539,7 @@ export class ClientSettlementReadService {
         currency,
         distinctCaseIds,
         ccRows.map((cc) => cc.id),
+        db,
       ),
     });
 
@@ -603,6 +607,118 @@ export class ClientSettlementReadService {
   }
 
   /**
+   * Current monetary projection, one snapshot, without journal/E2 authority promotion.
+   * Called by ClientAccountingSummaryReadService.getClientAccountingNativeSummary().
+   */
+  async getClientAccountingNativeSummary(tenantId: string, clientId: string): Promise<ClientAccountingNativeSummary> {
+    return this.prisma.$transaction(async (db) => {
+      const asOf = new Date().toISOString();
+      const client = await db.client.findFirst({ where: { id: clientId, tenantId }, select: { id: true } });
+      if (!client) throw new NotFoundException('Müvekkil bulunamadı');
+      const sources = await this.readNativeSummarySources(db, tenantId, clientId);
+      const groups: ClientAccountingNativeGroup[] = [];
+      for (const currency of [...sources.currencies].sort()) {
+        const legacy = await this.getClientAccountingSummary(tenantId, clientId, currency, db);
+        const { paraBirimiDurumu: _legacyScope, caseBreakdown, ...amounts } = legacy;
+        const group: ClientAccountingNativeGroup = { ...amounts, caseBreakdown: caseBreakdown
+          .filter(row => sources.byCase.get(row.caseId)?.has(currency))
+          .map(({ paraBirimiKapsami: _legacyCaseScope, ...row }) => ({ ...row, currency })) };
+        assertNativeSummaryMoney(group);
+        groups.push(group);
+      }
+      return { clientId, asOf, source: 'LEGACY_PROJECTION', primarySwitchUnchanged: true, groups };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, maxWait: 5000, timeout: 20000 });
+  }
+
+  /**
+   * Validate existing formula inputs without repairing or re-attributing them.
+   * Called only by getClientAccountingNativeSummary(), inside its read transaction.
+   */
+  private async readNativeSummarySources(db: Prisma.TransactionClient, tenantId: string, clientId: string) {
+    const cc = await db.caseClient.findMany({
+      where: { clientId, client: { tenantId }, role: { in: ELIGIBLE_ROLES } },
+      select: { id: true, caseId: true, case: { select: { tenantId: true } } },
+    });
+    const cases = new Set(cc.map(row => row.caseId));
+    const caseByCc = new Map(cc.map(row => [row.id, row.caseId]));
+    if (cc.some(row => row.case.tenantId !== tenantId)) nativeSummaryUnavailable();
+    const inCases = { in: [...cases] }, currencies = new Set<string>(), byCase = new Map<string, Set<string>>();
+    const add = (caseId: string, value: unknown) => {
+      if (!cases.has(caseId)) nativeSummaryUnavailable();
+      const code = nativeSummaryCurrency(value);
+      currencies.add(code);
+      const values = byCase.get(caseId) ?? new Set<string>(); values.add(code); byCase.set(caseId, values);
+      return code;
+    };
+    const collections = await db.collection.findMany({ where: { tenantId, caseId: inCases, status: 'CONFIRMED' }, select: { caseId: true, currency: true } });
+    for (const row of collections) add(row.caseId, row.currency);
+    const dispositions = await db.collectionDisposition.findMany({
+      where: { tenantId, caseId: inCases, status: 'POSTED', manualReversalRequiredAt: null },
+      select: { caseId: true, currency: true, collectionId: true },
+    });
+    const parents = await db.collection.findMany({ where: { tenantId, id: { in: [...new Set(dispositions.map(row => row.collectionId))] } }, select: { id: true, caseId: true, currency: true } });
+    const collectionById = new Map(parents.map(row => [row.id, row]));
+    for (const row of dispositions) {
+      const code = add(row.caseId, row.currency);
+      const parent = collectionById.get(row.collectionId);
+      if (!parent || parent.caseId !== row.caseId || parent.currency !== code) nativeSummaryUnavailable();
+    }
+    const payableLines = await db.collectionDispositionLine.findMany({
+      where: { type: 'CLIENT_PAYABLE', caseClientId: { in: [...caseByCc.keys()] }, disposition: { tenantId, status: 'POSTED', manualReversalRequiredAt: null } },
+      select: { caseClientId: true, disposition: { select: { caseId: true } } },
+    });
+    if (payableLines.some(row => !row.caseClientId || caseByCc.get(row.caseClientId) !== row.disposition.caseId)) nativeSummaryUnavailable();
+    const payouts = await db.clientPayout.findMany({
+      where: { tenantId, caseClientId: { in: [...caseByCc.keys()] }, status: 'RECORDED' },
+      select: { caseId: true, caseClientId: true, currency: true },
+    });
+    for (const row of payouts) {
+      if (caseByCc.get(row.caseClientId) !== row.caseId) nativeSummaryUnavailable();
+      add(row.caseId, row.currency);
+    }
+    const expenses = await db.expenseRequest.findMany({
+      where: { tenantId, clientId, status: { not: 'CANCELLED' } }, select: { id: true, caseId: true, currency: true },
+    });
+    const expenseById = new Map(expenses.map(row => [row.id, row]));
+    for (const row of expenses) add(row.caseId, row.currency);
+    const accounts = await db.caseBalance.findMany({ where: { tenantId, caseId: inCases }, select: { id: true, caseId: true, currency: true } });
+    const accountById = new Map(accounts.map(row => [row.id, row]));
+    for (const row of accounts) add(row.caseId, row.currency);
+    const ledger = await db.balanceLedger.findMany({ where: { tenantId, caseBalanceId: { in: [...accountById.keys()] } }, select: { caseBalanceId: true, currency: true } });
+    for (const row of ledger) {
+      const account = accountById.get(row.caseBalanceId);
+      if (!account || nativeSummaryCurrency(row.currency) !== account.currency) nativeSummaryUnavailable();
+    }
+    const offsets = await db.clientOffset.findMany({
+      where: { tenantId, OR: [{ clientId }, { payableCaseClientId: { in: [...caseByCc.keys()] } }, { expenseRequestId: { in: [...expenseById.keys()] } }] },
+      select: { clientId: true, currency: true, payableCaseId: true, payableCaseClientId: true, expenseCaseId: true, expenseRequestId: true },
+    });
+    for (const row of offsets) {
+      const expense = expenseById.get(row.expenseRequestId);
+      // A cancelled expense is not in the remaining projection. Its historical offset still affects payable.
+      const target = expense ?? await db.expenseRequest.findFirst({ where: { id: row.expenseRequestId, tenantId, clientId }, select: { id: true, caseId: true, currency: true } });
+      if (row.clientId !== clientId || caseByCc.get(row.payableCaseClientId) !== row.payableCaseId || !target ||
+        target.caseId !== row.expenseCaseId || target.currency !== row.currency) nativeSummaryUnavailable();
+      add(row.payableCaseId, row.currency); add(row.expenseCaseId, row.currency);
+    }
+    const applications = await db.collectionDispositionExpenseApplication.findMany({
+      where: { tenantId, expenseRequestId: { in: [...expenseById.keys()] } },
+      select: { caseId: true, expenseRequestId: true, currency: true, collectionDispositionId: true,
+        collectionDisposition: { select: { tenantId: true, caseId: true, currency: true } },
+        collectionDispositionLine: { select: { dispositionId: true, expenseRequestId: true } } },
+    });
+    for (const row of applications) {
+      const target = expenseById.get(row.expenseRequestId);
+      if (!target || row.caseId !== target.caseId || row.collectionDisposition.tenantId !== tenantId ||
+        row.collectionDisposition.caseId !== row.caseId || row.collectionDisposition.currency !== row.currency ||
+        row.collectionDispositionLine.dispositionId !== row.collectionDispositionId ||
+        row.collectionDispositionLine.expenseRequestId !== row.expenseRequestId || target.currency !== row.currency) nativeSummaryUnavailable();
+      add(row.caseId, row.currency);
+    }
+    return { currencies, byCase };
+  }
+
+  /**
    * G1 — özetin istenen para biriminin DIŞINDA kalan kayıt gözlemleri. Yalnız okur; tutar toplamaz, çevirmez.
    * Her sorgu `getClientAccountingSummary()`nin toplamlarda okuduğu kümeyi (durum süzgeci, tenant + müvekkil kapsamı) para birimi
    * "istenenden farklı" olacak biçimde gruplar. Boş / belirlenemeyen para birimi de "farklı" sayılır.
@@ -613,12 +729,14 @@ export class ClientSettlementReadService {
    * Çağrıldığı yerler:
    * - ClientSettlementReadService.getClientAccountingSummary() → `paraBirimiDurumu` / `paraBirimiKapsami`
    */
+
   private async readOutOfScopeCurrencyObservations(
     tenantId: string,
     clientId: string,
     currency: string,
     caseIds: readonly string[],
     caseClientIds: readonly string[],
+    db: Prisma.TransactionClient = this.prisma,
   ): Promise<ClientAccountingCurrencyObservation[]> {
     if (caseIds.length === 0) return [];
     const observations: ClientAccountingCurrencyObservation[] = [];
@@ -633,7 +751,7 @@ export class ClientSettlementReadService {
 
     addGroups(
       'Collection',
-      await this.prisma.collection.groupBy({
+      await db.collection.groupBy({
         by: ['caseId', 'currency'],
         where: { tenantId, caseId: inCases, status: 'CONFIRMED', currency: notRequested },
         _count: { _all: true },
@@ -641,7 +759,7 @@ export class ClientSettlementReadService {
     );
     addGroups(
       'CollectionDisposition',
-      await this.prisma.collectionDisposition.groupBy({
+      await db.collectionDisposition.groupBy({
         by: ['caseId', 'currency'],
         where: { tenantId, caseId: inCases, status: 'POSTED', currency: notRequested },
         _count: { _all: true },
@@ -649,7 +767,7 @@ export class ClientSettlementReadService {
     );
     addGroups(
       'ClientPayout',
-      await this.prisma.clientPayout.groupBy({
+      await db.clientPayout.groupBy({
         by: ['caseId', 'currency'],
         where: {
           tenantId,
@@ -663,7 +781,7 @@ export class ClientSettlementReadService {
     );
     addGroups(
       'ExpenseRequest',
-      await this.prisma.expenseRequest.groupBy({
+      await db.expenseRequest.groupBy({
         by: ['caseId', 'currency'],
         where: { tenantId, clientId, caseId: inCases, status: { not: 'CANCELLED' }, currency: notRequested },
         _count: { _all: true },
@@ -671,7 +789,7 @@ export class ClientSettlementReadService {
     );
 
     // Masraf/avans: bakiye satırı yalnız sıfır olmayan bakiyesi varsa kayıt sayılır; defter satırları para birimine göre gruplanır.
-    const balances = await this.prisma.caseBalance.findMany({
+    const balances = await db.caseBalance.findMany({
       where: { tenantId, caseId: inCases },
       select: { id: true, caseId: true, currency: true, balance: true },
     });
@@ -683,7 +801,7 @@ export class ClientSettlementReadService {
       }
     }
     if (caseByBalanceId.size > 0) {
-      const ledgerGroups = (await this.prisma.balanceLedger.groupBy({
+      const ledgerGroups = (await db.balanceLedger.groupBy({
         by: ['caseBalanceId', 'currency'],
         where: { tenantId, caseBalanceId: { in: [...caseByBalanceId.keys()] }, currency: notRequested },
         _count: { _all: true },
@@ -695,7 +813,7 @@ export class ClientSettlementReadService {
     }
 
     // Mahsup: iki bacağı da (alacak ve masraf dosyası) ilgili dosyaya yazılır.
-    const offsets = await this.prisma.clientOffset.findMany({
+    const offsets = await db.clientOffset.findMany({
       where: { tenantId, clientId, currency: notRequested },
       select: { payableCaseId: true, expenseCaseId: true, currency: true },
     });

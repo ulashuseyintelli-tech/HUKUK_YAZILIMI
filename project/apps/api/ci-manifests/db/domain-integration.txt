@@ -524,3 +524,4 @@ src/modules/claim-liability/__tests__/claim-liability-rollback-compat.db-gated.i
 src/modules/client-intel-statement/__tests__/client-intel-terminal-race.http.db-gated.integration.spec.ts
 src/modules/poa/__tests__/poa-case-links.http.db-gated.integration.spec.ts
 src/modules/client-statement/__tests__/client-statement-native-e2.http.db-gated.integration.spec.ts
+src/modules/client-settlement/__tests__/client-accounting-native-summary.http.db-gated.integration.spec.ts

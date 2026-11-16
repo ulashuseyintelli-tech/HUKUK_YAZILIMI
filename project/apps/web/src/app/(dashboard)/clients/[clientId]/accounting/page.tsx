@@ -197,7 +197,7 @@ export default function ClientAccountingPage() {
       </Card>
 
       {/* Genel Cari (client scope) — DEFAULT görünüm */}
-      {scope === 'client' && <ClientCariView clientId={clientId} currency="TRY" />}
+      {scope === 'client' && <ClientCariView clientId={clientId} currency="TRY" nativeSummary />}
 
       {/* Dosya bazlı muhasebe (case scope) — dosya seçilince mevcut 5-kart + payout + ekstre */}
       {scope === 'case' && selected && caseId && caseClientId && (
