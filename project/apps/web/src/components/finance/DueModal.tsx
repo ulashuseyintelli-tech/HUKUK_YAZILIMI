@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { X, Loader2, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { recordCurrencyCode } from "@/lib/record-currency-display";
+import { caseClaimCurrencyMatches, CASE_CLAIM_CURRENCY_MESSAGE } from "@/lib/case-claim-currency";
 
 const DUE_TYPES = [
   { value: "PRINCIPAL", label: "Ana Para (Asıl Alacak)" },
@@ -96,6 +97,10 @@ export function DueModal({ isOpen, onClose, caseId, due, onSuccess, defaultCurre
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.amount || !form.type) return;
+    if (!caseClaimCurrencyMatches(newDueCurrency, form.currency)) {
+      alert(CASE_CLAIM_CURRENCY_MESSAGE);
+      return;
+    }
 
     setLoading(true);
     try {
@@ -213,6 +218,8 @@ export function DueModal({ isOpen, onClose, caseId, due, onSuccess, defaultCurre
               <label className="block text-xs font-medium text-gray-700 mb-1">Para Birimi</label>
               <select
                 value={form.currency}
+                disabled
+                title="FR-7: Alacak kalemi dosya para biriminde olmalıdır; eski kayıt dönüştürülmez."
                 onChange={(e) => setForm({ ...form, currency: e.target.value })}
                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >

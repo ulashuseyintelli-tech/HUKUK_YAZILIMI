@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { assertStoredCaseClaimCurrency } from './case-claim-currency-policy';
 import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-json';
 import { DomainEventIngestService } from '../icrabot/domain-event-ingest';
 import {
@@ -139,6 +140,10 @@ export class ClaimItemWriterRouterService {
       database,
     );
     assertClaimItemCreateStatus(data.status);
+    // Validate the value Prisma will persist, including the existing ClaimItem.currency schema default.
+    // Never fill an absent source currency from the case or the command envelope.
+    await assertStoredCaseClaimCurrency(database as any, input.tenantId, input.caseId,
+      data.currency === undefined ? 'TRY' : data.currency);
     const created = await (database as any).claimItem.create({ data }) as T;
     await appendClaimItemContinuity({
       tx: database as Prisma.TransactionClient,
@@ -173,6 +178,10 @@ export class ClaimItemWriterRouterService {
     const current = await this.findLifecycleRecord(input, database);
     const lifecycle = assertClaimItemLifecycleMutation(current.status, input.data);
     if (lifecycle.noOp) return current as T;
+    if (Object.prototype.hasOwnProperty.call(input.data, 'currency') || Object.prototype.hasOwnProperty.call(input.data, 'amount')) {
+      await assertStoredCaseClaimCurrency(database as any, input.tenantId, input.caseId,
+        input.data.currency === undefined ? current.currency : input.data.currency);
+    }
     const updated = await (database as any).claimItem.update({
       where: { id: input.claimItemId },
       data: input.data,

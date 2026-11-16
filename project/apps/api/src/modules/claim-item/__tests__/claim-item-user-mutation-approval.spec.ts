@@ -59,7 +59,7 @@ function makeSvc(opts: {
   const prisma: any = {
     $transaction: jest.fn((fn) => fn(tx)),
     case: {
-      findFirst: jest.fn().mockResolvedValue({ id: 'case-1' }),
+      findFirst: jest.fn().mockResolvedValue({ id: 'case-1', currency: 'TRY' }),
     },
     claimItem: {
       findFirst: jest.fn().mockResolvedValue(item),
@@ -70,12 +70,17 @@ function makeSvc(opts: {
       findUnique: jest.fn().mockResolvedValue(opts.existingApproval ?? null),
     },
   };
+  Object.assign(tx, { case: prisma.case, officeApprovalRequest: prisma.officeApprovalRequest });
   const audit = {
     logInTransaction: jest.fn((auditTx, input) => auditTx.auditLog.create({ data: input })),
   };
   const officeApproval = {
     createPendingRequest: jest.fn().mockResolvedValue({ id: 'appr-1' }),
   };
+  (officeApproval as any).createPendingRequestInTransaction = jest.fn((input: any, currentTx: any) => {
+    expect(currentTx).toBe(tx);
+    return officeApproval.createPendingRequest(input);
+  });
   const domainEventIngest = {
     appendInTransaction: jest.fn().mockResolvedValue({ id: 'event-1' }),
   };
@@ -132,6 +137,25 @@ function makeSvc(opts: {
 }
 
 describe('OWN-29-D ClaimItemService user mutation gate', () => {
+  it('FR7 rejects an admitted incompatible financial patch before approval/audit writes', async () => {
+    const { svc, tx, officeApproval, audit, domainEventIngest } = makeSvc();
+    await expect(svc.updateFromUser('t1', 'requester-u', 'ci-1', { currency: 'USD' } as any))
+      .rejects.toMatchObject({ response: expect.objectContaining({ code: 'CASE_CLAIM_CURRENCY_MISMATCH' }) });
+    expect(tx.case.findFirst).toHaveBeenCalledWith({ where: { id: 'case-1', tenantId: 't1' }, select: { id: true, currency: true } });
+    expect(officeApproval.createPendingRequest).not.toHaveBeenCalled();
+    expect(tx.claimItem.update).not.toHaveBeenCalled();
+    expect(audit.logInTransaction).not.toHaveBeenCalled();
+    expect(domainEventIngest.appendInTransaction).not.toHaveBeenCalled();
+  });
+
+  it('FR7 leaves a historical mixed item metadata-only edit unchanged', async () => {
+    const { svc, officeApproval } = makeSvc({ item: { ...baseItem, currency: 'USD' } });
+    const result = await svc.updateFromUser('t1', 'requester-u', 'ci-1', { description: 'new' });
+    expect(result.applied).toBe(true);
+    expect((result.data as any).currency).toBe('USD');
+    expect(officeApproval.createPendingRequest).not.toHaveBeenCalled();
+  });
+
   it('FATURA + TAX_KDV create talebini approval olusturmadan reddeder', async () => {
     const { svc, prisma, officeApproval } = makeSvc();
 

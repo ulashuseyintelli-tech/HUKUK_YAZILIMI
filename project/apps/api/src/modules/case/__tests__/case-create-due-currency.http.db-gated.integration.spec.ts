@@ -258,7 +258,7 @@ describeWithDisposableDb('Dosya açılışında alacak kalemi para birimi (HTTP 
     expect(await tenantCounts()).toEqual(before);
   });
 
-  it('sonradan kalem ekleme (POST /cases/:id/dues): para birimi verilmezse DOSYA para birimi; açıkça verilen değer aynen korunur', async () => {
+  it('sonradan kalem ekleme: dosya para birimi varsayılır; FR-7 A ile farklı açık değer sıfır yazmayla reddedilir', async () => {
     const opened = await openCase('sonradan', { currency: 'USD', dues: [PRINCIPAL] });
     expect(opened.status).toBe(201);
     const caseId = opened.body.id as string;
@@ -267,20 +267,19 @@ describeWithDisposableDb('Dosya açılışında alacak kalemi para birimi (HTTP 
     expect(omitted.status).toBe(201);
     expect(omitted.body.currency).toBe('USD');
 
-    // Açık değer yolu bu değişiklikle DEĞİŞMEDİ (karma para birimine izin verilip verilmeyeceği ayrı owner kararı)
+    const beforeRejected = await tenantCounts();
     const explicit = await post(`/cases/${caseId}/dues`, { ...EXPENSE, amount: 200, description: 'açıkça EUR', currency: 'EUR' });
-    expect(explicit.status).toBe(201);
-    expect(explicit.body.currency).toBe('EUR');
+    expect(explicit.status).toBe(400);
+    expect(explicit.body.code).toBe('CASE_CLAIM_CURRENCY_MISMATCH');
+    expect(await tenantCounts()).toEqual(beforeRejected);
 
     const row = await stored(caseId);
     expect(row.dues).toEqual([
       { type: 'EXPENSE', amount: 100, currency: 'USD' },
-      { type: 'EXPENSE', amount: 200, currency: 'EUR' },
       { type: 'PRINCIPAL', amount: 10_000, currency: 'USD' },
     ]);
     expect(row.claimItems).toEqual([
       { itemType: 'EXPENSE', amount: 100, currency: 'USD', fromInstrument: false },
-      { itemType: 'EXPENSE', amount: 200, currency: 'EUR', fromInstrument: false },
       { itemType: 'PRINCIPAL', amount: 10_000, currency: 'USD', fromInstrument: false },
     ]);
   });

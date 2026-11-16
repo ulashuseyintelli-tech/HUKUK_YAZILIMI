@@ -896,6 +896,22 @@ describeWithDisposableDb('RCV-CLAIM-FORM-P02-S08-I03 transactional finalizer', (
     ).toBe(0);
   });
 
+  it('FR7 revalidates the case currency at finalization and rolls back without completing the old approval', async () => {
+    const { intent, source } = await approvedIntent('fr7-stale-currency');
+    const before = await prisma.auditLog.count({ where: { tenantId } });
+    await prisma.case.update({ where: { id: caseId }, data: { currency: 'USD' } });
+    try {
+      await expect(finalizer(source).finalize({ tenantId, formationIntentId: intent.id }))
+        .rejects.toMatchObject({ status: 409, response: expect.objectContaining({ code: 'CASE_CLAIM_CURRENCY_MISMATCH' }) });
+      expect(await prisma.claimItem.count({ where: { id: executionRefs(intent).claimItemId } })).toBe(0);
+      expect(await prisma.claimFormationSnapshot.count({ where: { formationIntentId: intent.id } })).toBe(0);
+      expect(await prisma.auditLog.count({ where: { tenantId } })).toBe(before);
+      expect((await prisma.officeApprovalRequest.findUniqueOrThrow({ where: { id: intent.approvalRequestId } })).executionStatus).toBe('NOT_RUN');
+    } finally {
+      await prisma.case.update({ where: { id: caseId }, data: { currency: 'TRY' } });
+    }
+  });
+
   it('is default-disabled and performs no database lookup or write', async () => {
     const disabled = new TransactionalClaimItemFormationFinalizerService(
       prisma as any,

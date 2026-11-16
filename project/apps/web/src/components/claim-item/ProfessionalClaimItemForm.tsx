@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { caseClaimCurrencyMatches, CASE_CLAIM_CURRENCY_MESSAGE } from "@/lib/case-claim-currency";
 import {
   Calculator,
   Receipt,
@@ -1442,6 +1443,8 @@ export function ProfessionalClaimItemForm({
               <label className="block text-[10px] text-gray-500 mb-0.5">Para Birimi</label>
               <select
                 value={kalem.currency}
+                disabled
+                title="FR-7: Alacak kalemi dosya para biriminde olmalıdır; tutar çevrilmez."
                 onChange={(e) => setKalem(prev => ({ ...prev, currency: e.target.value }))}
                 className="w-full border rounded px-1.5 py-0.5 text-xs"
               >
@@ -1449,6 +1452,7 @@ export function ProfessionalClaimItemForm({
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
+              {!caseClaimCurrencyMatches(currency, kalem.currency) && <p role="alert" className="text-xs text-red-600">{CASE_CLAIM_CURRENCY_MESSAGE}</p>}
             </div>
             <div>
               <label className="block text-[10px] text-gray-500 mb-0.5">Vade/Keşide Tarihi *</label>

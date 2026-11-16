@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculator, TrendingUp, Receipt, Banknote, FileCheck, Calendar, XCircle, Info, Search, Users, Building2, Landmark, Edit2, Trash2, Phone, Mail, AlertCircle, Settings } from "lucide-react";
 import { ProfessionalClaimItemForm } from "@/components/claim-item";
+import { assertCaseClaimDraftCurrencies } from "@/lib/case-claim-currency";
 import { api } from "@/lib/api";
 import { runMutation } from "@/lib/mutation-outcome";
 import { toActionErrorMessage } from "@/lib/action-error";
@@ -1669,10 +1670,12 @@ export default function NewCasePage() {
     }
     try {
       if (editingItemIndex === null && claimFormBuffer && Number(claimFormBuffer.bakiyeTutar) > 0) {
+        assertCaseClaimDraftCurrencies(caseData.currency, [...claimDraftItems.map(item => item.raw), claimFormBuffer]);
         effClaimItems = [...claimDraftItems, { id: genClaimDraftItemId(), raw: claimFormBuffer }];
         applyClaimDraftItems(effClaimItems);
         resetClaimEditor();
       }
+      assertCaseClaimDraftCurrencies(caseData.currency, effClaimItems.map(item => item.raw));
       effDues = claimItemsToDues(effClaimItems, caseData.startDate, FEATURE_FLAGS.MANUAL_CASE_INSTRUMENTS);
       // PR-2b-2: manuel kambiyo (CEK/SENET) → instruments[] (source:MANUAL). Flag ON'da dues'tan ÇIKARILDI (K1);
       // OFF'ta boş (kambiyo dues'a gitti = PR-2a). createCase'e effDues ile birlikte taşınır.
@@ -1767,6 +1770,8 @@ export default function NewCasePage() {
         shownPreview: shownCekPreview && shownCekPreview.previewHash === checkedCekPreviewHash ? shownCekPreview : null,
         currentRequestKey: previewRequestKey(buildCaseOpenCekPreviewRequest(instrumentsToSubmit, sanitizedCaseDebtors)),
       });
+      assertCaseClaimDraftCurrencies(caseData.currency, claimDraftItems.map(item => item.raw));
+      assertCaseClaimDraftCurrencies(caseData.currency, instrumentsToSubmit);
       const response = await api.createCase({
         fileNumber: caseData.fileNumber, executionFileNumber: caseData.executionFileNumber || undefined,
         type: mapCategoryToCaseType(selectedForm?.category), subType: selectedSubForm?.code || selectedForm?.code,

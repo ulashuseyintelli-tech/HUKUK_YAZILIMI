@@ -7,6 +7,7 @@ import {
   type OfficeApprovalRequest,
 } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { assertStoredCaseClaimCurrency } from '../case-claim-currency-policy';
 import { AuditService } from '../../audit/audit.service';
 import { stableJsonHash } from '../../permission-diagnostics/guided-edge/canonical-json';
 import { CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE } from '../claim-item-approval.constants';
@@ -177,6 +178,7 @@ export class ClaimItemFormationOfficeApprovalAdapter {
       );
     }
 
+    await assertStoredCaseClaimCurrency(tx, input.tenantId, input.caseId, input.currency);
     const formationIntentId = randomUUID();
     const approvalRequestId = randomUUID();
     const savedIntent: ClaimItemFormationApprovalRefV1 = Object.freeze({
@@ -430,6 +432,9 @@ export class ClaimItemFormationOfficeApprovalAdapter {
       throw new ClaimItemFormationAdmissionError('DUPLICATE_FORMATION_CONFLICT');
     }
 
+    for (const item of input.items) {
+      await assertStoredCaseClaimCurrency(tx, item.tenantId, item.caseId, item.currency);
+    }
     const batchId = randomUUID();
     const approvalRequestId = randomUUID();
     const intentIds = input.items.map(() => randomUUID());
