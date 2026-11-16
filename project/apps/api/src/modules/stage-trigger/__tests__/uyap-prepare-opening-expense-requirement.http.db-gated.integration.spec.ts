@@ -14,6 +14,7 @@ import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import * as request from 'supertest';
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
+import { addLegacyMixedDueFixture } from '../../../../test/legacy-mixed-due-fixture';
 import { StorageModule } from '../../../common/storage/storage.module';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CaseModule } from '../../case/case.module';
@@ -600,8 +601,7 @@ describeWithDisposableDb('Açılış masrafı şartı — belirlenemeyen masraf 
 
   it('karma dosya (USD dosya + TRY anapara kalemi): açılış masrafı belirlenmedi', async () => {
     const caseId = await openUsdCase('karma');
-    const added = await post(`/cases/${caseId}/dues`, { ...principal(2_000), description: 'TRY anapara', currency: 'TRY' });
-    expect(added.status).toBe(201);
+    await addLegacyMixedDueFixture(prisma, post, caseId, { ...principal(2_000), description: 'TRY anapara' }, 'TRY');
 
     const gate = await gateStatus(caseId);
     expect(gate.openingExpense).toEqual(notDeterminedOf('USD', ['TRY', 'USD']));
