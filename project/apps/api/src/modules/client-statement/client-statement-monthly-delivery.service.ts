@@ -7,6 +7,7 @@ import { OfficeApprovalService } from '../office-approval/office-approval.servic
 import { assertClientObjectScope } from '../client/client-object-scope';
 import { ACTIVE_TENANT_WHERE } from '@/modules/tenant/tenant-lifecycle';
 import { resolveSchedulerTimezone } from '../../common/scheduler-timezone';
+import { ClientStatementNativeMonthlyService, resolveStatementRecipient } from './client-statement-native-monthly.service';
 import { ClientStatementService } from './client-statement.service';
 import {
   CLIENT_STATEMENT_UNSUPPORTED_CURRENCY_CODE,
@@ -158,6 +159,7 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
     private readonly ledger?: ClientStatementDeliveryLedgerPort,
     @Optional() private readonly errorReporter?: IntegrationErrorReporter,
     @Optional() private readonly approval?: OfficeApprovalService,
+    @Optional() private readonly nativeMonthly?: ClientStatementNativeMonthlyService,
   ) {}
 
   /** Env bayrağı — açık teyit olmadan KAPALI. */
@@ -273,6 +275,9 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
       return { ...base, outcome: 'SKIPPED_NO_RECIPIENT', statementSource: 'NONE' };
     }
 
+    const nativeTarget = await this.nativeMonthly?.existingTarget(client.tenantId, client.id, period, now);
+    if (nativeTarget) return nativeTarget;
+
     let statementId: string | null = null;
     let statementSource: 'GENERATED' | 'REUSED' = 'REUSED';
 
@@ -298,6 +303,7 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
       }
       // E1: para birimi sınırı ihlali — ekstre üretilmedi ve hiçbir kayıt yazılmadı; "başarısız" değil, nedeniyle atlandı.
       if (error?.response?.code === CLIENT_STATEMENT_UNSUPPORTED_CURRENCY_CODE) {
+        if (this.nativeMonthly?.isEnabled()) return this.nativeMonthly.process(client.tenantId, client.id, period, now);
         const reason = String(error.response.reasonCode ?? CLIENT_STATEMENT_UNSUPPORTED_CURRENCY_CODE);
         return {
           ...base,
@@ -625,12 +631,7 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
 
   /** Kanonik alıcı çözümü (ClientNotificationService.sendEmail deseni — yeni yetki modeli KURULMAZ). */
   private resolveRecipientEmail(client: ClientRow): string | null {
-    const contacts = client.contacts || [];
-    const primary = contacts.find((c) => c.type === 'EMAIL' && c.isPrimary === true);
-    const anyEmail = contacts.find((c) => c.type === 'EMAIL');
-    const raw = primary?.value || anyEmail?.value || client.email || '';
-    const normalized = raw.trim().toLowerCase();
-    return normalized.includes('@') ? normalized : null;
+    return resolveStatementRecipient(client);
   }
 
   private resolveClientName(client: ClientRow): string {

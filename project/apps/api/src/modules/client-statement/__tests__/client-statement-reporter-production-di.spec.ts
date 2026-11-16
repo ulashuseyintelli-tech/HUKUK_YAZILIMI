@@ -8,6 +8,7 @@ import { ErrorLogModule } from '../../error-log/error-log.module';
 import { ErrorLogService } from '../../error-log/error-log.service';
 import { IntegrationErrorReporter } from '../../error-log/integration-error-reporter';
 import { OfficeApprovalService } from '../../office-approval/office-approval.service';
+import { ClientStatementNativeMonthlyService } from '../client-statement-native-monthly.service';
 import type { ClientStatementMonthlyDeliveryService } from '../client-statement-monthly-delivery.service';
 
 /**
@@ -93,12 +94,14 @@ describe('K18 — uretim metadata ve gercek Nest reporter DI', () => {
   }
 
   it('uretim metadata reporter sinif tokenini korur; Function olmaz', () => {
-    expect(tokens).toHaveLength(9);
+    expect(tokens).toHaveLength(10);
     expect(tokens[7]).toBe(IntegrationErrorReporter);
     expect(tokens[7]).not.toBe(Function);
     expect(Reflect.getMetadata('optional:paramtypes', production.ClientStatementMonthlyDeliveryService)).toContain(7);
     expect(tokens[8]).toBe(OfficeApprovalService);
     expect(Reflect.getMetadata('optional:paramtypes', production.ClientStatementMonthlyDeliveryService)).toContain(8);
+    expect(tokens[9]).toBe(ClientStatementNativeMonthlyService);
+    expect(Reflect.getMetadata('optional:paramtypes', production.ClientStatementMonthlyDeliveryService)).toContain(9);
   });
 
   it('gercek global ErrorLogModule reporterini hedefe enjekte eder', async () => {

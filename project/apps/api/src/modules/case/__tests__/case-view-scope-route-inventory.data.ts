@@ -354,6 +354,15 @@ export const CASE_RELATED_CONTROLLERS: Readonly<Record<string, readonly RouteEnt
     ["POST /collection-dispositions/:id/approve", "YAZIM", ""],
     ["POST /collection-dispositions/:id/post", "YAZIM", ""],
   ],
+  "client-statement/client-statement-native.controller.ts": [
+    ["POST /client-statement-sets/client/:clientId", "YAZIM", ""],
+    ["GET /client-statement-sets/client/:clientId", "BASKA_KAPI", "E2 complete-client object gate: fresh K16 actor, all current and frozen canonical CaseClient links; no partial document"],
+    ["GET /client-statement-sets/:id", "BASKA_KAPI", "E2 complete-client object gate: fresh K16 actor, all current and frozen canonical CaseClient links; no partial document"],
+    ["GET /client-statement-sets/:id/pdf/:currency", "BASKA_KAPI", "E2 complete-client object gate: fresh K16 actor, all current and frozen canonical CaseClient links; no partial document"],
+    ["POST /client-statement-sets/:id/supersede", "YAZIM", ""],
+    ["POST /client-statement-sets/:id/void", "YAZIM", ""],
+    ["POST /client-statement-sets/:id/monthly-delivery/retry", "YAZIM", ""],
+  ],
   "client-statement/client-statement.controller.ts": [
     ["POST /client-statements/monthly-delivery/run-now", "YAZIM", ""],
     ["POST /client-statements/:id/monthly-delivery/retry", "YAZIM", ""],

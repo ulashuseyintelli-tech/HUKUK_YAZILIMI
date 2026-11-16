@@ -7,6 +7,9 @@ import { OfficeModule } from '../office/office.module';
 // bağımlı DEĞİLDİR → döngüsel bağımlılık oluşmaz.
 import { OfficeApprovalModule } from '../office-approval/office-approval.module';
 import { InterestEngineModule } from '../interest-engine/interest-engine.module';
+import { ClientStatementNativeController } from './client-statement-native.controller';
+import { ClientStatementNativeService } from './client-statement-native.service';
+import { ClientStatementNativeMonthlyService } from './client-statement-native-monthly.service';
 import { ClientStatementController } from './client-statement.controller';
 import { ClientStatementService } from './client-statement.service';
 import { ClientStatementPdfService } from './client-statement-pdf.service';
@@ -36,8 +39,10 @@ import { CaseViewScopeModule } from '../case/case-view-scope.module';
  */
 @Module({
   imports: [CaseViewScopeModule, PrismaModule, ClientNotificationModule, OfficeModule, OfficeApprovalModule, InterestEngineModule],
-  controllers: [ClientStatementController],
+  controllers: [ClientStatementController, ClientStatementNativeController],
   providers: [
+    ClientStatementNativeService,
+    ClientStatementNativeMonthlyService,
     ClientStatementService,
     ClientStatementPdfService,
     ClientStatementMonthlyDeliveryService,

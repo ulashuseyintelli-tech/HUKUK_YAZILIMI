@@ -18,7 +18,7 @@ import {
   CreateClientLevelStatementDto,
   SupersedeClientStatementDto,
 } from './dto/client-statement.dto';
-import { CaseBalanceService } from '../interest-engine/orchestration/case-balance.service';
+import { CaseBalanceService, type CaseBalanceResult } from '../interest-engine/orchestration/case-balance.service';
 import { findExpenseCatalogEntry } from '../expense-request/expense-item-catalog';
 import {
   projectAccruedInterest,
@@ -44,7 +44,7 @@ const INTEREST_CLAIM_ITEM_TYPES = [
 const ELIGIBLE_ROLES = ['ALACAKLI', 'ORTAK_ALACAKLI'];
 
 /** Hesaplanmış tek satır (DB'ye yazılmadan önce). */
-interface LineDraft {
+export interface LineDraft {
   lineDate: Date;
   lineType: ClientStatementLineType;
   refType: string;
@@ -473,6 +473,51 @@ export class ClientStatementService {
     if (!client) throw new NotFoundException('Müvekkil bulunamadı');
   }
 
+  /** Called only by ClientStatementNativeService inside its repeatable-read generation transaction.
+   * Source queries/signs and canonical interest projections are shared with E1; currencies are never added together. */
+  async collectNativeClientLevel(reader: Prisma.TransactionClient, tenantId: string, clientId: string, periodStart: Date, periodEnd: Date) {
+    const links = await reader.caseClient.findMany({ where: { clientId, role: { in: ELIGIBLE_ROLES }, client: { tenantId }, case: { tenantId } }, select: { id: true, caseId: true } });
+    const allLinks = await reader.caseClient.findMany({ where: { clientId, client: { tenantId }, case: { tenantId } }, select: { id: true, caseId: true } });
+    if (await reader.caseClient.count({ where: { clientId, client: { tenantId } } }) !== allLinks.length) throw new ConflictException('E2_SOURCE_PARENT_NOT_PROVEN');
+    const parents = new Map(allLinks.map(l => [l.id, l.caseId]));
+    const sourceCaseIds = [...new Set(allLinks.map(l => l.caseId))].sort();
+    const relevantRequests = await reader.expenseRequest.findMany({ where: { tenantId, clientId, OR: [
+      { status: { not: 'CANCELLED' }, createdAt: { gte: periodStart, lte: periodEnd } },
+      { payments: { some: { paymentDate: { lte: periodEnd } } } },
+    ] }, select: { caseId: true } });
+    const payouts = await reader.clientPayout.findMany({ where: { tenantId, caseClientId: { in: links.map(l => l.id) }, status: 'RECORDED', paidAt: { lte: periodEnd } }, select: { caseId: true, caseClientId: true } });
+    const dispositions = await reader.collectionDisposition.findMany({ where: { tenantId, status: 'POSTED', manualReversalRequiredAt: null, postedAt: { lte: periodEnd },
+      lines: { some: { type: 'CLIENT_PAYABLE', caseClientId: { in: links.map(l => l.id) } } } }, select: { caseId: true, lines: { where: { type: 'CLIENT_PAYABLE', caseClientId: { in: links.map(l => l.id) } }, select: { caseClientId: true } } } });
+    const offsets = await reader.clientOffset.findMany({ where: { tenantId, clientId, createdAt: { gte: periodStart, lte: periodEnd } }, select: { payableCaseId: true, expenseCaseId: true, payableCaseClientId: true } });
+    if (relevantRequests.some(r => !r.caseId || !sourceCaseIds.includes(r.caseId)) ||
+      payouts.some(p => parents.get(p.caseClientId) !== p.caseId) || dispositions.some(d => d.lines.some(l => !l.caseClientId || parents.get(l.caseClientId) !== d.caseId)) ||
+      offsets.some(o => parents.get(o.payableCaseClientId) !== o.payableCaseId || !sourceCaseIds.includes(o.expenseCaseId))) {
+      throw new ConflictException('E2_SOURCE_PARENT_NOT_PROVEN');
+    }
+    const observations = await this.readClientLevelSourceCurrencies(tenantId, clientId, links.map(x => x.id), periodStart, periodEnd, reader);
+    const currencies = new Set<string>();
+    const add = (currency: unknown) => {
+      if (typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency)) throw new BadRequestException({ code: 'E2_CURRENCY_UNDETERMINED' });
+      currencies.add(currency);
+    };
+    for (const row of observations) if (row.count > 0) add(row.currency);
+    const balances = new Map<string, CaseBalanceResult>();
+    for (const caseId of [...new Set(links.map(x => x.caseId))].sort()) {
+      const balance = await this.caseBalance.computeCaseBalance(tenantId, caseId, periodEnd.toISOString().slice(0, 10), reader);
+      balances.set(caseId, balance);
+      for (const result of balance.currencyResults) {
+        add(result.currency);
+        if (!result.result && result.skippedReason !== 'NO_BUCKETS') throw new ConflictException({ code: 'E2_INTEREST_NOT_PROVEN', reason: result.skippedReason });
+      }
+    }
+    if (!currencies.size) throw new BadRequestException({ code: 'E2_EMPTY_PERIOD' });
+    const documents = [];
+    for (const currency of [...currencies].sort()) {
+      documents.push({ currency, ...await this.collectClientLevel(tenantId, clientId, periodStart, periodEnd, { reader, currency, balances }) });
+    }
+    return { documents, sourceCaseIds };
+  }
+
   /**
    * Faz B — CLIENT-LEVEL snapshot: müvekkilin TÜM eligible (ALACAKLI/ORTAK_ALACAKLI) dosyalarındaki
    * YALNIZ CLIENT_SPECIFIC hareketleri. CASE_CONTEXT (Collection/BalanceLedger/dosya-geneli) DAHİL DEĞİL.
@@ -497,41 +542,44 @@ export class ClientStatementService {
     clientId: string,
     periodStart: Date,
     periodEnd: Date,
+    native?: { reader: Prisma.TransactionClient; currency: string; balances: ReadonlyMap<string, CaseBalanceResult> },
   ): Promise<{ opening: Prisma.Decimal; closing: Prisma.Decimal; lines: LineDraft[] }> {
+    const db = native?.reader ?? this.prisma;
+    const currency = native?.currency;
     // Müvekkilin eligible CaseClient bağları (proceeds/payout scope) + caseId map.
-    const ccRows = await this.prisma.caseClient.findMany({
+    const ccRows = await db.caseClient.findMany({
       where: { clientId, role: { in: ELIGIBLE_ROLES }, client: { tenantId } },
       select: { id: true, caseId: true },
     });
     const ccIds = ccRows.map((r) => r.id);
 
     // E1: ekstreye girecek kaynaklar (devir dahil) yalnız TL ise üretim sürer; aksi halde HİÇBİR kayıt yazılmadan reddedilir.
-    await this.assertClientLevelSourceCurrency(tenantId, clientId, ccIds, periodStart, periodEnd);
+    if (!native) await this.assertClientLevelSourceCurrency(tenantId, clientId, ccIds, periodStart, periodEnd);
 
     // ── opening = dönem ÖNCESİ net CLIENT_SPECIFIC pozisyon (devir) ──
     let opening = ZERO;
     if (ccIds.length) {
-      const payableBefore = await this.prisma.collectionDispositionLine.aggregate({
+      const payableBefore = await db.collectionDispositionLine.aggregate({
         _sum: { amount: true },
         where: {
           type: CollectionDispositionLineType.CLIENT_PAYABLE,
           caseClientId: { in: ccIds },
-          disposition: { tenantId, status: 'POSTED', manualReversalRequiredAt: null, postedAt: { lt: periodStart } },
+          disposition: { tenantId, ...(currency ? { currency } : {}), status: 'POSTED', manualReversalRequiredAt: null, postedAt: { lt: periodStart } },
         },
       });
       opening = opening.plus(payableBefore._sum.amount ?? ZERO);
-      const payoutBefore = await this.prisma.clientPayout.aggregate({
+      const payoutBefore = await db.clientPayout.aggregate({
         _sum: { amount: true },
-        where: { tenantId, caseClientId: { in: ccIds }, status: 'RECORDED', paidAt: { lt: periodStart } },
+        where: { tenantId, ...(currency ? { currency } : {}), caseClientId: { in: ccIds }, status: 'RECORDED', paidAt: { lt: periodStart } },
       });
       opening = opening.minus(payoutBefore._sum.amount ?? ZERO);
     }
     // W4 MODEL-1 RATIFIED (owner D2): PENDING ExpenseRequest bilgi/ödeme TALEBİDİR — açılış
     // bakiyesine KATILMAZ (önceki erBefore düşümü kaldırıldı). Bakiye etkisi yalnız POSTED
     // gerçekleşen masraf (EXPENSE_ACTUAL ledger) hareketinden gelir.
-    const epBefore = await this.prisma.expensePayment.aggregate({
+    const epBefore = await db.expensePayment.aggregate({
       _sum: { amount: true },
-      where: { expenseRequest: { tenantId, clientId }, paymentDate: { lt: periodStart } },
+      where: { expenseRequest: { tenantId, clientId, ...(currency ? { currency } : {}) }, paymentDate: { lt: periodStart } },
     });
     opening = opening.plus(epBefore._sum.amount ?? ZERO);
 
@@ -539,10 +587,11 @@ export class ClientStatementService {
     const items: { date: Date; effect: Prisma.Decimal; draft: Omit<LineDraft, 'runningBalance'> }[] = [];
 
     if (ccIds.length) {
-      const postedDispositions = await this.prisma.collectionDisposition.findMany({
+      const postedDispositions = await db.collectionDisposition.findMany({
         where: {
           tenantId,
           status: 'POSTED',
+          ...(currency ? { currency } : {}),
           manualReversalRequiredAt: null,
           postedAt: { gte: periodStart, lte: periodEnd },
           lines: {
@@ -561,7 +610,7 @@ export class ClientStatementService {
           lines: { select: { id: true, type: true, amount: true, caseClientId: true } },
         },
       });
-      const interestShares = await this.loadCollectedInterestShares(tenantId, postedDispositions);
+      const interestShares = await this.loadCollectedInterestShares(tenantId, postedDispositions, native?.reader, currency);
       for (const disposition of postedDispositions) {
         if (!disposition.postedAt) continue;
         for (const line of disposition.lines) {
@@ -611,8 +660,8 @@ export class ClientStatementService {
         }
       }
 
-      const payouts = await this.prisma.clientPayout.findMany({
-        where: { tenantId, caseClientId: { in: ccIds }, status: 'RECORDED', paidAt: { gte: periodStart, lte: periodEnd } },
+      const payouts = await db.clientPayout.findMany({
+        where: { tenantId, ...(currency ? { currency } : {}), caseClientId: { in: ccIds }, status: 'RECORDED', paidAt: { gte: periodStart, lte: periodEnd } },
         select: { id: true, amount: true, paidAt: true, caseId: true, caseClientId: true },
       });
       for (const p of payouts) {
@@ -635,8 +684,8 @@ export class ClientStatementService {
     }
 
     // ExpenseRequest — müvekkilin masraf borcu artar → net pozisyon DÜŞER (debit −).
-    const ers = await this.prisma.expenseRequest.findMany({
-      where: { tenantId, clientId, status: { not: 'CANCELLED' }, createdAt: { gte: periodStart, lte: periodEnd } },
+    const ers = await db.expenseRequest.findMany({
+      where: { tenantId, clientId, ...(currency ? { currency } : {}), status: { not: 'CANCELLED' }, createdAt: { gte: periodStart, lte: periodEnd } },
       select: {
         id: true, caseId: true, totalAmount: true, currency: true, status: true, createdAt: true,
         requestItems: { select: { label: true, itemCode: true }, orderBy: { sortOrder: 'asc' } },
@@ -657,14 +706,14 @@ export class ClientStatementService {
           caseClientId: null,
           debit: ZERO,
           credit: ZERO,
-          note: this.expenseRequestNote(e.status, e.totalAmount, e.requestItems),
+          note: this.expenseRequestNote(e.status, e.totalAmount, e.requestItems, currency),
         },
       });
     }
 
     // ExpensePayment — müvekkilin masraf borcu azalır → net pozisyon ARTAR (credit +).
-    const eps = await this.prisma.expensePayment.findMany({
-      where: { expenseRequest: { tenantId, clientId }, paymentDate: { gte: periodStart, lte: periodEnd } },
+    const eps = await db.expensePayment.findMany({
+      where: { expenseRequest: { tenantId, clientId, ...(currency ? { currency } : {}) }, paymentDate: { gte: periodStart, lte: periodEnd } },
       select: { id: true, amount: true, paymentDate: true, expenseRequest: { select: { caseId: true } } },
     });
     for (const p of eps) {
@@ -690,8 +739,8 @@ export class ClientStatementService {
     //   REVERSAL→ payable bacağı credit (net +X) + expense bacağı debit (net −X)  → net delta 0
     // opening/closing offset'e DUYARSIZ (iki bacak sıfırlanır; dönem öncesi offset de net 0 → opening doğru).
     // Satırlar yalnız GÖRÜNÜRLÜK. Period dahil = ClientOffset.createdAt. Mevcut statement MUTATE EDİLMEZ (yeni snapshot).
-    const offsets = await this.prisma.clientOffset.findMany({
-      where: { tenantId, clientId, createdAt: { gte: periodStart, lte: periodEnd } },
+    const offsets = await db.clientOffset.findMany({
+      where: { tenantId, clientId, ...(currency ? { currency } : {}), createdAt: { gte: periodStart, lte: periodEnd } },
       select: { id: true, amount: true, kind: true, payableCaseId: true, payableCaseClientId: true, expenseCaseId: true, createdAt: true },
     });
     for (const o of offsets) {
@@ -741,6 +790,7 @@ export class ClientStatementService {
       tenantId,
       [...new Set(ccRows.map((row) => row.caseId))],
       periodEnd,
+      native?.reader, currency, native?.balances,
     );
     for (const accrued of accruedInterest) {
       lines.push({
@@ -1113,24 +1163,26 @@ export class ClientStatementService {
         caseClientId: string | null;
       }[];
     }[],
+    reader: Prisma.TransactionClient | PrismaService = this.prisma,
+    currency: string = STATEMENT_CURRENCY,
   ): Promise<Map<string, CollectedInterestShare[]>> {
-    const eligibleDispositions = dispositions.filter((disposition) => disposition.currency === STATEMENT_CURRENCY);
+    const eligibleDispositions = dispositions.filter((disposition) => disposition.currency === currency);
     const collectionIds = [...new Set(eligibleDispositions.map((disposition) => disposition.collectionId))];
     if (collectionIds.length === 0) return new Map();
 
-    const allocations = await this.prisma.ledgerAllocation.findMany({
+    const allocations = await reader.ledgerAllocation.findMany({
       where: {
         ledgerEntry: {
           tenantId,
           collectionId: { in: collectionIds },
           entryType: 'PAYMENT',
           status: 'CONFIRMED',
-          currency: STATEMENT_CURRENCY,
+          currency: currency,
         },
         claimItem: {
           tenantId,
           itemType: { in: [...INTEREST_CLAIM_ITEM_TYPES] },
-          currency: STATEMENT_CURRENCY,
+          currency: currency,
         },
       },
       select: {
@@ -1174,12 +1226,17 @@ export class ClientStatementService {
     tenantId: string,
     caseIds: readonly string[],
     periodEnd: Date,
+    reader?: Prisma.TransactionClient,
+    currency: string = STATEMENT_CURRENCY,
+    balances?: ReadonlyMap<string, CaseBalanceResult>,
   ): Promise<{ caseId: string; amount: Prisma.Decimal }[]> {
     const asOfDate = periodEnd.toISOString().slice(0, 10);
     const result: { caseId: string; amount: Prisma.Decimal }[] = [];
     for (const caseId of [...new Set(caseIds)].sort()) {
-      const balance = await this.caseBalance.computeCaseBalance(tenantId, caseId, asOfDate);
-      const amount = projectAccruedInterest(balance, STATEMENT_CURRENCY);
+      const balance = balances?.get(caseId) ?? (reader
+        ? await this.caseBalance.computeCaseBalance(tenantId, caseId, asOfDate, reader)
+        : await this.caseBalance.computeCaseBalance(tenantId, caseId, asOfDate));
+      const amount = projectAccruedInterest(balance, currency);
       if (amount) result.push({ caseId, amount });
     }
     return result;
@@ -1195,6 +1252,7 @@ export class ClientStatementService {
     status: string,
     totalAmount?: Prisma.Decimal,
     requestItems?: ReadonlyArray<{ label: string; itemCode?: string }>,
+    currency: string = STATEMENT_CURRENCY,
   ): string {
     // W4 MODEL-1 (owner D2): tutar Borç sütunundan kalktı → NOTE içinde tr-TR biçimiyle gösterilir.
     // Tek kalemli taleplerde kategori/purpose özeti başa gelir. R02: müvekkil yüzeyinde
@@ -1207,7 +1265,7 @@ export class ClientStatementService {
     const label = this.expenseRequestStatusLabel(status);
     if (totalAmount === undefined) return `${purpose} (${label})`;
     const amountTr = Number(totalAmount).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    return `${purpose}: ${amountTr} TL (${label})`;
+    return `${purpose}: ${amountTr} ${currency === 'TRY' ? 'TL' : currency} (${label})`;
   }
 
   /** ExpenseRequestStatus → client-safe Türkçe etiket. Bilinmeyen değerde raw enum SIZDIRILMAZ. */
@@ -1433,13 +1491,20 @@ export class ClientStatementService {
    * - ClientStatementService.collectClientLevel() → createClientLevel() / supersede() (genel dal) üretim öncesi
    * </remarks>
    */
-  private async assertClientLevelSourceCurrency(
+  private async assertClientLevelSourceCurrency(tenantId: string, clientId: string, ccIds: readonly string[], periodStart: Date, periodEnd: Date): Promise<void> {
+    assertClientStatementCurrencySupported(assessClientStatementCurrencies(
+      await this.readClientLevelSourceCurrencies(tenantId, clientId, ccIds, periodStart, periodEnd),
+    ));
+  }
+
+  private async readClientLevelSourceCurrencies(
     tenantId: string,
     clientId: string,
     ccIds: readonly string[],
     periodStart: Date,
     periodEnd: Date,
-  ): Promise<void> {
+    reader: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<ClientStatementCurrencyObservation[]> {
     const inPeriod = { gte: periodStart, lte: periodEnd };
     const observations: ClientStatementCurrencyObservation[] = [];
     const add = (source: ClientStatementCurrencySource, groups: unknown) => {
@@ -1451,7 +1516,7 @@ export class ClientStatementService {
       // devir (dönem öncesi) + dönem içi = periodEnd'e kadar
       add(
         'CollectionDisposition',
-        await this.prisma.collectionDisposition.groupBy({
+        await reader.collectionDisposition.groupBy({
           by: ['currency'],
           where: {
             tenantId,
@@ -1465,7 +1530,7 @@ export class ClientStatementService {
       );
       add(
         'ClientPayout',
-        await this.prisma.clientPayout.groupBy({
+        await reader.clientPayout.groupBy({
           by: ['currency'],
           where: { tenantId, caseClientId: { in: [...ccIds] }, status: 'RECORDED', paidAt: { lte: periodEnd } },
           _count: { _all: true },
@@ -1474,7 +1539,7 @@ export class ClientStatementService {
     }
     add(
       'ExpenseRequest',
-      await this.prisma.expenseRequest.groupBy({
+      await reader.expenseRequest.groupBy({
         by: ['currency'],
         where: { tenantId, clientId, status: { not: 'CANCELLED' }, createdAt: inPeriod },
         _count: { _all: true },
@@ -1483,7 +1548,7 @@ export class ClientStatementService {
     // masraf tahsilatının para birimi bağlı olduğu talebin para birimidir (devir + dönem içi)
     add(
       'ExpensePayment',
-      await this.prisma.expenseRequest.groupBy({
+      await reader.expenseRequest.groupBy({
         by: ['currency'],
         where: { tenantId, clientId, payments: { some: { paymentDate: { lte: periodEnd } } } },
         _count: { _all: true },
@@ -1491,14 +1556,14 @@ export class ClientStatementService {
     );
     add(
       'ClientOffset',
-      await this.prisma.clientOffset.groupBy({
+      await reader.clientOffset.groupBy({
         by: ['currency'],
         where: { tenantId, clientId, createdAt: inPeriod },
         _count: { _all: true },
       }),
     );
 
-    assertClientStatementCurrencySupported(assessClientStatementCurrencies(observations));
+    return observations;
   }
 
   private async findOwned(tenantId: string, id: string) {

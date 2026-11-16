@@ -30,6 +30,7 @@ import {
 } from '@/lib/api/client-statement';
 import { AccountingPanel } from './AccountingPanel';
 import { AccountingTable } from './AccountingTable';
+import { NativeClientStatementSection } from './NativeClientStatementSection';
 
 interface ClientLevelStatementSectionProps {
   clientId: string;
@@ -46,7 +47,8 @@ export function ClientLevelStatementSection({ clientId, currency, cases, classNa
   const queryClient = useQueryClient();
   const [modal, setModal] = useState<ModalState>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
-  useEffect(() => { setModal(null); setDetailId(null); }, [clientId]);
+  const [nativeOpen, setNativeOpen] = useState(false);
+  useEffect(() => { setModal(null); setDetailId(null); setNativeOpen(false); }, [clientId]);
 
   const caseNo = useMemo(() => {
     const m = new Map<string, string>();
@@ -130,6 +132,9 @@ export function ClientLevelStatementSection({ clientId, currency, cases, classNa
           </AccountingTable>
         )}
       </AccountingPanel>
+
+      <button type="button" className="mt-2 text-sm underline" onClick={() => setNativeOpen(!nativeOpen)}>Para birimi başına ekstreler</button>
+      {nativeOpen && <NativeClientStatementSection key={clientId} clientId={clientId} />}
 
       {modal && (
         <StatementFormModal
