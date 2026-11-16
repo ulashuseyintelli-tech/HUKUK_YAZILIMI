@@ -14,6 +14,7 @@ import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import * as request from 'supertest';
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
+import { addLegacyMixedDueFixture } from '../../../../test/legacy-mixed-due-fixture';
 import { StorageModule } from '../../../common/storage/storage.module';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CaseModule } from '../../case/case.module';
@@ -333,8 +334,7 @@ describeWithDisposableDb('Açılış masraf talebi — dövizli dosyada peşin h
   ])('%s: açık istek de yazmaz', async (_title, label, basisCurrencies, context) => {
     const opened = await openCase(label, { currency: 'USD', subCategory: 'DOVIZ', ...withClient(), dues: [principal(10_000)] });
     if (label === 'karma') {
-      const added = await post(`/cases/${opened.id}/dues`, { ...principal(2_000), description: 'TRY anapara', currency: 'TRY' });
-      expect(added.status).toBe(201);
+      await addLegacyMixedDueFixture(prisma, post, opened.id, { ...principal(2_000), description: 'TRY anapara' }, 'TRY');
     } else {
       // Dosya açılışı düzeltmesinden önceki kaydın kurulumu: kalem para birimi TRY damgalı
       await prisma.due.updateMany({ where: { caseId: opened.id }, data: { currency: 'TRY' } });

@@ -15,6 +15,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { inflateSync } from 'node:zlib';
 import * as request from 'supertest';
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
+import { addLegacyMixedDueFixture } from '../../../../test/legacy-mixed-due-fixture';
 import { StorageModule } from '../../../common/storage/storage.module';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CaseModule } from '../../case/case.module';
@@ -288,10 +289,9 @@ describeWithDisposableDb('Belge şablonu toplamı — resmî çıktı ret kapıs
     return res.body.id as string;
   };
 
-  /** Sonradan kalem ekleme: para birimi açıkça verilir (bugün kabul edilen yol). */
+  /** FR-7 öncesi karma kayıt; belge ret sözleşmesi aynen sınanır. */
   const addDue = async (caseId: string, due: Record<string, unknown>, currency: string) => {
-    const res = await post(`/cases/${caseId}/dues`, { ...due, description: `${currency} kalem`, currency });
-    expect(res.status).toBe(201);
+    await addLegacyMixedDueFixture(prisma, post, caseId, { ...due, description: `${currency} kalem` }, currency);
   };
 
   /** Dilekçeler günün tarihini basar; parmak izinden çıkarılır. */

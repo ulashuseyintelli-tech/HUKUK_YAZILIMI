@@ -3,6 +3,7 @@ import { OfficeApprovalStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { OfficeApprovalService } from '../office-approval/office-approval.service';
+import { assertStoredCaseClaimCurrency } from './case-claim-currency-policy';
 import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-json';
 import {
   CreateClaimItemDto,
@@ -1095,22 +1096,31 @@ export class ClaimItemService {
       throw new ConflictException('ClaimItem approval dependency is not available.');
     }
 
-    const existing = await this.prisma.officeApprovalRequest.findUnique({
-      where: { tenantId_idempotencyKey: { tenantId: input.tenantId, idempotencyKey: input.idempotencyKey } },
-    });
-    if (existing?.status === OfficeApprovalStatus.PENDING_APPROVAL && existing.payloadHash !== stableJsonHash(input.intent)) {
-      throw new ConflictException('Bu ClaimItem için farklı içerikli bekleyen bir onay talebi zaten var.');
-    }
-
-    return this.officeApproval.createPendingRequest({
-      tenantId: input.tenantId,
-      actionCode: CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE,
-      targetType: input.targetType,
-      targetRef: input.targetRef,
-      requesterUserId: input.actorUserId,
-      savedIntent: input.intent,
-      idempotencyKey: input.idempotencyKey,
-      reason: input.intent.reason,
+    return this.prisma.$transaction(async (tx) => {
+      // Serialize only this ClaimItem approval key. A unique violation inside PostgreSQL's
+      // transaction cannot be reconciled by querying the already-aborted transaction.
+      const requestLock = `claim-item-approval:${input.tenantId}:${input.idempotencyKey}`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${requestLock}, 0))`;
+      const existing = await tx.officeApprovalRequest.findUnique({
+        where: { tenantId_idempotencyKey: { tenantId: input.tenantId, idempotencyKey: input.idempotencyKey } },
+      });
+      if (existing?.status === OfficeApprovalStatus.PENDING_APPROVAL && existing.payloadHash !== stableJsonHash(input.intent)) {
+        throw new ConflictException('Bu ClaimItem için farklı içerikli bekleyen bir onay talebi zaten var.');
+      }
+      if (input.intent.operation === 'UPDATE') {
+        await assertStoredCaseClaimCurrency(tx, input.tenantId, input.intent.caseId,
+          input.intent.proposedPatch.currency === undefined ? input.intent.currentSnapshot?.currency : input.intent.proposedPatch.currency);
+      }
+      return this.officeApproval!.createPendingRequestInTransaction({
+        tenantId: input.tenantId,
+        actionCode: CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE,
+        targetType: input.targetType,
+        targetRef: input.targetRef,
+        requesterUserId: input.actorUserId,
+        savedIntent: input.intent,
+        idempotencyKey: input.idempotencyKey,
+        reason: input.intent.reason,
+      }, tx);
     });
   }
 

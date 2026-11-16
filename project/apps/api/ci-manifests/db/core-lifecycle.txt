@@ -392,3 +392,4 @@ src/modules/case/__tests__/case-historical-import-attorney-fee-basis.http.db-gat
 src/modules/case/__tests__/case-principal-free-balance.http.db-gated.integration.spec.ts
 src/modules/interest-engine/__tests__/rate-provider-office-key.http.db-gated.integration.spec.ts
 src/modules/case/__tests__/case-client-address-clz05.http.db-gated.integration.spec.ts
+src/modules/case/__tests__/case-claim-currency-fr7.http.db-gated.integration.spec.ts

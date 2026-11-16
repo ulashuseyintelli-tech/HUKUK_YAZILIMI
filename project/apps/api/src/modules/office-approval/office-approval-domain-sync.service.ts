@@ -7,6 +7,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { buildCanonicalWriteEnvelopeV1 } from '../../common/canonical-write-envelope';
+import { assertStoredCaseClaimCurrency } from '../claim-item/case-claim-currency-policy';
 import { AccountingJournalWriterService } from '../accounting-journal';
 import { DomainEventIngestService } from '../icrabot/domain-event-ingest';
 import {
@@ -791,6 +792,10 @@ export class OfficeApprovalDomainSyncService {
       ? { status: 'CANCELLED' }
       : this.buildClaimItemUpdateData(normalizedPatch as Record<string, unknown>);
     const lifecycle = assertClaimItemLifecycleMutation(current.status, data);
+    if (intent.operation !== 'DELETE' && !lifecycle.noOp) {
+      await assertStoredCaseClaimCurrency(tx, req.tenantId, current.caseId,
+        data.currency === undefined ? current.currency : data.currency, true);
+    }
     const updated = lifecycle.noOp
       ? current
       : await tx.claimItem.update({

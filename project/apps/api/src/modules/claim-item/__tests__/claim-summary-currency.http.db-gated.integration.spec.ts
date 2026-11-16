@@ -13,6 +13,7 @@ import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import * as request from 'supertest';
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
+import { addLegacyMixedDueFixture } from '../../../../test/legacy-mixed-due-fixture';
 import { StorageModule } from '../../../common/storage/storage.module';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CaseModule } from '../../case/case.module';
@@ -31,8 +32,8 @@ import { MetricsRegistryModule } from '../../metrics-registry/metrics-registry.m
  * birimli (TL ve dövizli) dosyada bloktaki tek satır `totals` ile aynıdır.
  *
  * KAPSAM DIŞI (owner kararı): bir dosyada kalem başına farklı para birimine izin verilip verilmeyeceği ve dövizli
- * takipte kur. Aşağıdaki karma dosyalar bugün `POST /cases/:id/dues` ile açıkça para birimi verilerek oluşabiliyor;
- * bu yol kısıtlanırsa kurulum eski kayıt fikstürüne çevrilir, özetin sözleşmesi değişmez. "Mevcut alanlar 17.000
+ * takipte kur. FR-7 A yeni karma kalem yazımını reddeder; aşağıdaki karma dosyalar yalnız disposable DB'de
+ * eski kayıt fikstürüyle kurulur, özetin sözleşmesi değişmez. "Mevcut alanlar 17.000
  * döndürmeyi sürdürür" iddiası bugünkü davranışı SABİTLER (karakterizasyon).
  */
 const TEST_DB_URL = resolveTestDatabaseUrl(process.env);
@@ -133,10 +134,9 @@ describeWithDisposableDb('Alacak özeti para birimi bağlamı (HTTP + disposable
     return res.body.id as string;
   };
 
-  /** Sonradan kalem ekleme: para birimi açıkça verilir (bugün kabul edilen yol). */
+  /** FR-7 öncesi karma kayıt; özetin salt okuma sözleşmesi korunur. */
   const addDue = async (caseId: string, due: Record<string, unknown>, currency: string) => {
-    const res = await post(`/cases/${caseId}/dues`, { ...due, description: `${currency} kalem`, currency });
-    expect(res.status).toBe(201);
+    await addLegacyMixedDueFixture(prisma, post, caseId, { ...due, description: `${currency} kalem` }, currency);
   };
 
   const summaryOf = async (caseId: string, userId: string = adminId) => {

@@ -15,6 +15,7 @@ import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import * as request from 'supertest';
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
+import { addLegacyMixedDueFixture } from '../../../../test/legacy-mixed-due-fixture';
 import { StorageModule } from '../../../common/storage/storage.module';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { AutomationModule } from '../../automation/automation.module';
@@ -342,8 +343,7 @@ describeWithDisposableDb('Aşama masraf seti — dövizli dosyada oranlı kalem 
   ])('%s: iki para birimi tek sayıda toplanıp oran uygulanmaz; kayıt yazılmaz', async (_title, label, basisCurrencies, context) => {
     const caseId = await openCase(label, { currency: 'USD', subCategory: 'DOVIZ', ...withClient(), dues: [principal(1_000_000)] });
     if (label === 'karma') {
-      const added = await post(`/cases/${caseId}/dues`, { ...principal(250_000), description: 'TRY anapara', currency: 'TRY' });
-      expect(added.status).toBe(201);
+      await addLegacyMixedDueFixture(prisma, post, caseId, { ...principal(250_000), description: 'TRY anapara' }, 'TRY');
     } else {
       // Dosya açılışı düzeltmesinden önceki kaydın kurulumu: alacak kalemi para birimi TRY damgalı
       await prisma.claimItem.updateMany({ where: { tenantId, caseId, itemType: 'PRINCIPAL' }, data: { currency: 'TRY' } });

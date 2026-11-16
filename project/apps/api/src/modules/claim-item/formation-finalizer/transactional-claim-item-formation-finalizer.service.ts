@@ -8,6 +8,7 @@ import {
   type OfficeApprovalRequest,
 } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { assertStoredCaseClaimCurrency } from '../case-claim-currency-policy';
 import { AuditService } from '../../audit/audit.service';
 import { buildCanonicalWriteEnvelopeV1 } from '../../../common/canonical-write-envelope';
 import { DomainEventIngestService } from '../../icrabot/domain-event-ingest';
@@ -256,6 +257,7 @@ export class TransactionalClaimItemFormationFinalizerService {
         ? await this.sourceIntegrity.prepareHumanInstrumentCreate(guardInput, tx)
         : await this.sourceIntegrity.prepareHumanDocumentCreate(guardInput, tx);
     assertClaimItemCreateStatus(guardedData.status);
+    await assertStoredCaseClaimCurrency(tx, intent.tenantId, intent.caseId, intent.currency, true);
     const claimItemPayloadHash = stableJsonHash(this.jsonSafe(guardedData));
     const claimItem = await tx.claimItem.create({ data: guardedData as Prisma.ClaimItemUncheckedCreateInput });
 

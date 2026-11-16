@@ -10,7 +10,7 @@ describe('RCV-P2-WS01-P03 ClaimItemWriterRouterService', () => {
   function setup(outcome: 'DIRECT_ALLOWED' | 'DENIED') {
     const transaction: any = {
       $executeRaw: jest.fn().mockResolvedValue(1),
-      case: { findFirst: jest.fn().mockResolvedValue({ id: 'case-1' }) },
+      case: { findFirst: jest.fn().mockResolvedValue({ id: 'case-1', currency: 'TRY' }) },
       due: { findFirst: jest.fn().mockResolvedValue({ id: 'due-1' }) },
       caseInstrument: { findFirst: jest.fn().mockResolvedValue({ id: 'instrument-1' }) },
       caseDocument: { findFirst: jest.fn().mockResolvedValue({ id: 'document-1' }) },
@@ -132,6 +132,24 @@ describe('RCV-P2-WS01-P03 ClaimItemWriterRouterService', () => {
         };
     }
   }
+
+  it.each(routes)('%s refuses a foreign currency after reaching its admitted source route', async (route) => {
+    const { router, transaction, domainEventIngest } = setup('DIRECT_ALLOWED');
+    const input = createInput(route);
+    await expect(router.createSystemClaimItem({ ...input, currency: 'USD', data: { ...input.data, currency: 'USD' } }))
+      .rejects.toMatchObject({ response: expect.objectContaining({ code: 'CASE_CLAIM_CURRENCY_MISMATCH' }) });
+    expect(transaction.case.findFirst).toHaveBeenCalledWith(expect.objectContaining({ select: { id: true, currency: true } }));
+    expect(transaction.claimItem.create).not.toHaveBeenCalled();
+    expect(transaction.auditLog.create).not.toHaveBeenCalled();
+    expect(domainEventIngest.appendInTransaction).not.toHaveBeenCalled();
+  });
+
+  it('does not treat missing server case identity/currency as the TRY schema default', async () => {
+    const { router, transaction } = setup('DIRECT_ALLOWED');
+    transaction.case.findFirst.mockResolvedValue({ id: 'case-1' });
+    await expect(router.createSystemClaimItem(createInput('DUE_BRIDGE'))).rejects.toThrow();
+    expect(transaction.claimItem.create).not.toHaveBeenCalled();
+  });
 
   it.each(routes)('%s persists only after an explicit system direct-allow', async (route) => {
     const { router, prisma, gate, transaction, domainEventIngest } = setup('DIRECT_ALLOWED');

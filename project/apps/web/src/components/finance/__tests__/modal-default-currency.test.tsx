@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 /**
@@ -9,8 +9,8 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
  * fark etmeden kaydederse dövizli dosyaya TRY kalem / TRY tahsilat gider; dosya para biriminden farklı tek kalem o
  * dosyaya HER tahsilatı 400 COLLECTION_CURRENCY_MISMATCH ile keser (RCV-COL-CURRENCY-BOUNDARY-01).
  *
- * Kural (politika gerektirmeyen kısım): varsayılan dosyanın para birimidir; seçim KİLİTLENMEZ (kullanıcı değiştirebilir);
- * düzenlemede kaydın kendi değeri korunur. Kalem başına para birimi kuralı (tek / çoklu) bu değişiklikle SEÇİLMEZ.
+ * FR-7 A: alacak kaleminin para birimi dosyayla sınırlıdır; ödeme seçimi değişmez.
+ * Eski kaydın kendi değeri gösterilir; uyumsuz kalem yeniden yazılmaz veya çevrilmez.
  */
 
 const createDue = vi.fn();
@@ -64,12 +64,15 @@ const KINDS: Array<{ kind: Kind; title: string; submit: string; create: typeof c
 ];
 
 beforeEach(() => {
+  vi.stubGlobal("alert", vi.fn());
   createDue.mockReset().mockResolvedValue({ id: "due-new" });
   updateDue.mockReset().mockResolvedValue({ id: "due-1" });
   createCollection.mockReset().mockResolvedValue({ id: "col-new" });
   updateCollection.mockReset().mockResolvedValue({ id: "col-1" });
   previewCasePayment.mockReset();
 });
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe.each(KINDS)("$title — para birimi varsayılanı dosyanın para birimi", ({ kind, submit, create, update }) => {
   it("USD dosyada yeni kayıt formu USD seçili açılır", () => {
@@ -117,15 +120,23 @@ describe.each(KINDS)("$title — para birimi varsayılanı dosyanın para birimi
     expect(create.mock.calls[0][1]).toMatchObject({ amount: 250, currency: "USD" });
   });
 
-  it("seçim kilitli DEĞİLDİR: kullanıcı başka para birimi seçebilir ve seçtiği gönderilir", async () => {
+  it("FR-7 alacak seçimini kilitler ve uyumsuz yazmayı reddeder; ödeme seçimi değişmez", async () => {
     render(modal(kind, { defaultCurrency: "USD" }));
 
-    expect(currencySelect().disabled).toBe(false);
+    expect(currencySelect().disabled).toBe(kind === "due");
     fireEvent.change(currencySelect(), { target: { value: "EUR" } });
     expect(selected()).toBe("EUR");
     fireEvent.change(screen.getByPlaceholderText("0.00"), { target: { value: "100" } });
     fireEvent.click(screen.getByRole("button", { name: submit }));
 
+    if (kind === "due") {
+      expect(create).not.toHaveBeenCalled();
+      expect(update).not.toHaveBeenCalled();
+      expect(window.alert).toHaveBeenCalledWith(expect.stringContaining("Tutar veya para birimi çevrilmedi"));
+      expect(selected()).toBe("EUR");
+      expect((screen.getByPlaceholderText("0.00") as HTMLInputElement).value).toBe("100");
+      return;
+    }
     await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
     expect(create.mock.calls[0][1]).toMatchObject({ amount: 100, currency: "EUR" });
   });
@@ -162,12 +173,19 @@ describe.each(KINDS)("$title — para birimi varsayılanı dosyanın para birimi
     expect(selected()).toBe("EUR");
   });
 
-  it("düzenlemede kaydın KENDİ para birimi korunur (dosya USD, kayıt EUR) ve o değerle gönderilir", async () => {
+  it("eski kaydın EUR değeri korunur; uyumsuz alacak yazılmaz, ödeme yolu değişmez", async () => {
     render(modal(kind, { defaultCurrency: "USD", record: { id: "rec-1", type: kind === "due" ? "PRINCIPAL" : "TAHSILAT", amount: 500, currency: "EUR" } }));
 
     expect(selected()).toBe("EUR");
     fireEvent.click(screen.getByRole("button", { name: "Güncelle" }));
 
+    if (kind === "due") {
+      expect(update).not.toHaveBeenCalled();
+      expect(create).not.toHaveBeenCalled();
+      expect(window.alert).toHaveBeenCalledWith(expect.stringContaining("Tutar veya para birimi çevrilmedi"));
+      expect(selected()).toBe("EUR");
+      return;
+    }
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
     expect(update.mock.calls[0][2]).toMatchObject({ amount: 500, currency: "EUR" });
     expect(create).not.toHaveBeenCalled();

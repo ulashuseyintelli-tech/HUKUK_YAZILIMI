@@ -148,7 +148,7 @@ function makeDue(overrides: Record<string, any> = {}) {
 function makeTx(overrides: Record<string, any> = {}) {
   const tx = {
     case: {
-      findFirst: jest.fn(async () => ({ id: 'case-1', tenantId: 'tenant-1' })),
+      findFirst: jest.fn(async () => ({ id: 'case-1', tenantId: 'tenant-1', currency: 'TRY' })),
     },
     due: {
       aggregate: jest.fn(async () => ({ _max: { sortOrder: 0 } })),

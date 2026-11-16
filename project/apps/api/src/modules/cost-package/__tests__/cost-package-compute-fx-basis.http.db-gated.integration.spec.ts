@@ -14,6 +14,7 @@ import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import * as request from 'supertest';
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
+import { addLegacyMixedDueFixture } from '../../../../test/legacy-mixed-due-fixture';
 import { StorageModule } from '../../../common/storage/storage.module';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CaseModule } from '../../case/case.module';
@@ -304,8 +305,7 @@ describeWithDisposableDb('Masraf paketi önerisi — dövizli dosyada oranlı ka
 
     it('anapara DIŞI kalemin para birimi matrahı etkilemez: dövizli masraf kalemi eklenen TL dosyada yanıt aynen', async () => {
       const withFxExpense = await openCase('try-doviz-masraf', { ...inCurrency('TRY'), dues: [principal(1_000_000)] });
-      const added = await post(`/cases/${withFxExpense}/dues`, { type: 'EXPENSE', description: 'Yurt dışı tebligat gideri', amount: 500, dueDate: '2026-01-20', currency: 'USD' });
-      expect(added.status).toBe(201);
+      await addLegacyMixedDueFixture(prisma, post, withFxExpense, { type: 'EXPENSE', description: 'Yurt dışı tebligat gideri', amount: 500, dueDate: '2026-01-20' }, 'USD');
       // Kurulum doğrulaması: dövizli kalem hem Due hem alacak kalemi (ClaimItem) olarak kayıtlı, ikisi de anapara DEĞİL
       const recorded = async () => ({
         dues: (await prisma.due.findMany({ where: { caseId: withFxExpense }, orderBy: { createdAt: 'asc' } })).map((row) => `${row.type}:${row.currency}`),
@@ -464,8 +464,7 @@ describeWithDisposableDb('Masraf paketi önerisi — dövizli dosyada oranlı ka
     ['dosya TRY + sonradan USD anapara kalemi', 'karma-try-usd', 'TRY', { currency: 'USD', amount: 40_000 }],
   ])('karma — %s: oranlı kalem hesaplanmaz', async (_title, label, caseCurrency, added) => {
     const caseId = await openCase(label, { ...inCurrency(caseCurrency), dues: [principal(1_000_000)] });
-    const due = await post(`/cases/${caseId}/dues`, { ...principal(added.amount), description: 'İkinci anapara', currency: added.currency });
-    expect(due.status).toBe(201);
+    await addLegacyMixedDueFixture(prisma, post, caseId, { ...principal(added.amount), description: 'İkinci anapara' }, added.currency);
 
     const res = await compute(caseId, OPENING);
 
@@ -579,7 +578,7 @@ describeWithDisposableDb('Masraf paketi önerisi — dövizli dosyada oranlı ka
     ])('%s dosya: eski pencerenin yüklediği (peşin harçlı) ya da peşin harçsız paket talebi 409 ile reddedilir; hiçbir kayıt yazılmaz', async (label, caseBody, added) => {
       const caseId = await openCase(`fp-${String(label).slice(0, 3)}`, { ...caseBody, ...withClient(), dues: [principal(1_000_000)] });
       if (added) {
-        expect((await post(`/cases/${caseId}/dues`, { ...principal(added.amount), description: 'İkinci anapara', currency: added.currency })).status).toBe(201);
+        await addLegacyMixedDueFixture(prisma, post, caseId, { ...principal(added.amount), description: 'İkinci anapara' }, added.currency);
       }
 
       for (const [title, items, extra] of [

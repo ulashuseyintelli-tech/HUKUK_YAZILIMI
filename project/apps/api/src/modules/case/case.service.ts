@@ -53,6 +53,7 @@ import {
 } from "./case-calculation-summary.compatibility";
 import { buildAnaparasizKalemDokumu } from "./case-calculation-summary.principal-free";
 import { buildCalculationSummaryCurrencyStatus } from "./case-calculation-summary-currency";
+import { assertCaseClaimCurrency } from "../claim-item/case-claim-currency-policy";
 import { resolveInitialPolicy } from "../interest-engine/interest-strategy.config";
 import { mapDtoCaseTypeToInterestCaseType } from "./case-type-mapping";
 import { validateResponsibleSelection } from "./responsible-candidates.service"; // M2-A3a: create'te ortak Dosya Sorumlusu validator
@@ -2456,6 +2457,9 @@ export class CaseService {
     // transaction başlamadan önce doğrula. Legacy DueType.OTHER kayıtlarının read/update/
     // lifecycle yüzeyleri korunur; yalnız yeni formation admission fail-closed'dur.
     this.assertDueCreationAdmission(dto.dues ?? []);
+    for (const instrument of dto.instruments ?? []) {
+      assertCaseClaimCurrency(dto.currency ?? "TRY", instrument.currency);
+    }
     // Evrak kabulü (MANUAL + OCR): kaynağı kapalı ya da işlenemeyen TEK kayıt bile varsa → 400; dosya,
     // taraf, evrak, alacak kalemi ve (commit-sonrası) K3 talebi hiç oluşmaz. Evraksız açılış etkilenmez.
     this.assertCaseInstrumentAdmission(dto.instruments ?? [], {
@@ -4610,6 +4614,8 @@ export class CaseService {
       if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
 
       // Get max sortOrder
+      const currency = data.currency === undefined ? caseExists.currency : data.currency;
+      assertCaseClaimCurrency(caseExists.currency, currency);
       const maxSort = await tx.due.aggregate({
         where: { caseId },
         _max: { sortOrder: true },
@@ -4622,8 +4628,8 @@ export class CaseService {
           description: data.description,
           amount: data.amount,
           dueDate: new Date(data.dueDate),
-          // Para birimi açıkça verilmediyse DOSYA para birimi (sabit TRY değil); açıkça verilen değer aynen korunur.
-          currency: data.currency || caseExists.currency,
+          // Eksik değer DOSYA para birimini alır; açık değer FR-7 A denetiminden geçmiştir. Çevirme yapılmaz.
+          currency,
           ...normalizedInterest.persisted,
           interestStartDate: data.interestStartDate ? new Date(data.interestStartDate) : undefined,
           interestEndDate: data.interestEndDate ? new Date(data.interestEndDate) : undefined,
@@ -4687,6 +4693,7 @@ export class CaseService {
 
       this.assertDuePatchAdmission(due.type as DueType, data.type);
       assertGenericDueTypeTransition(due.type as DueType, data.type);
+      assertCaseClaimCurrency(caseExists.currency, data.currency === undefined ? due.currency : data.currency);
       const normalizedInterest = this.normalizeDueInterestForWrite(data, actorUserId, due);
 
       const updatedDue = await tx.due.update({
