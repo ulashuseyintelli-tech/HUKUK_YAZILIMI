@@ -321,6 +321,7 @@ export const CASE_RELATED_CONTROLLERS: Readonly<Record<string, readonly RouteEnt
   "client-settlement/client-accounting.controller.ts": [
     ["GET /clients/:clientId/accounting/cases", "KAPILI_ICERDE", "caseRowFilter"],
     ["GET /clients/:clientId/accounting/summary", "KAPILI", ""],
+    ["GET /clients/:clientId/accounting/summary/by-currency", "KAPILI", ""],
     ["GET /clients/:clientId/accounting/movements", "KAPILI_ICERDE", "assertAllClientCasesVisible"],
   ],
   "client-settlement/client-financial-disclosure-office-command.controller.ts": [

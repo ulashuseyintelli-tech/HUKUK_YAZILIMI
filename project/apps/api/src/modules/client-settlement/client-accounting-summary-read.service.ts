@@ -1,4 +1,5 @@
 ﻿import { Injectable } from '@nestjs/common';
+import type { ClientAccountingNativeSummary } from './client-accounting-native-summary';
 import { AccountingJournalCutoverReadinessService } from '../accounting-journal/accounting-journal-cutover-readiness.service';
 import type { AccountingJournalCutoverCandidateReadScope } from '../accounting-journal/accounting-journal-cutover-readiness.types';
 import {
@@ -97,6 +98,11 @@ export class ClientAccountingSummaryReadService {
     }
 
     return this.legacy(tenantId, clientId, currency, readMode, 'JOURNAL_SUMMARY_READER_MISSING');
+  }
+
+  /** Called only by ClientAccountingController.summaryByCurrency after the existing total-view gates. */
+  async getClientAccountingNativeSummary(tenantId: string, clientId: string): Promise<ClientAccountingNativeSummary> {
+    return this.legacyRead.getClientAccountingNativeSummary(tenantId, clientId);
   }
 
   private async legacy(

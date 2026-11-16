@@ -253,6 +253,43 @@ export interface MovementsParams {
   to?: string;
 }
 
+export interface ClientAccountingNativeGroup {
+  clientId: string;
+  currency: string;
+  clientScoped: ClientAccountingSummary['clientScoped'] & { offsetApplied: string };
+  caseScopedContext: Required<ClientAccountingSummary['caseScopedContext']>;
+  needsReview: boolean;
+  caseBreakdown: Array<Required<Omit<ClientCaseBreakdownItem, 'paraBirimiKapsami'>> & {
+    currency: string; offsetPayableApplied: string; offsetExpenseApplied: string;
+  }>;
+}
+export interface ClientAccountingNativeSummary {
+  clientId: string; asOf: string; source: 'LEGACY_PROJECTION'; primarySwitchUnchanged: true;
+  groups: ClientAccountingNativeGroup[];
+}
+
+function validateNativeSummary(value: ClientAccountingNativeSummary, clientId: string): void {
+  const fail = () => { throw new Error('CLIENT_ACCOUNTING_NATIVE_SUMMARY_UNAVAILABLE'); };
+  if (!value || value.clientId !== clientId || value.source !== 'LEGACY_PROJECTION' || value.primarySwitchUnchanged !== true ||
+    typeof value.asOf !== 'string' || !Number.isFinite(Date.parse(value.asOf)) || !Array.isArray(value.groups)) fail();
+  const currencies = new Set<string>();
+  const money = (v: unknown) => { if (typeof v !== 'string' || !v.trim() || !/^-?\d+(?:\.\d+)?(?:e[+-]?\d+)?$/i.test(v) || !Number.isFinite(Number(v))) fail(); };
+  for (const group of value.groups) {
+    if (!group || group.clientId !== clientId || !/^[A-Z]{3}$/.test(group.currency) || currencies.has(group.currency) ||
+      typeof group.needsReview !== 'boolean' || !Array.isArray(group.caseBreakdown)) fail();
+    currencies.add(group.currency);
+    for (const key of ['payableNet', 'paidToClient', 'expenseRequested', 'expensePaid', 'expenseUnpaid', 'offsetApplied', 'offsettableNetPosition'] as const) money(group.clientScoped?.[key]);
+    for (const key of ['debtorCollection', 'pendingDistribution', 'allocationHeld', 'pendingDistributionExcludingHeld', 'advanceBalance'] as const) money(group.caseScopedContext?.[key]);
+    const cases = new Set<string>();
+    for (const row of group.caseBreakdown) {
+      if (!row || row.currency !== group.currency || !row.caseId || cases.has(row.caseId) || typeof row.caseNumber !== 'string' || typeof row.role !== 'string') fail();
+      cases.add(row.caseId);
+      for (const key of ['payableNet', 'paidToClient', 'expenseRequested', 'expensePaid', 'expenseUnpaid', 'offsetPayableApplied',
+        'offsetExpenseApplied', 'debtorCollection', 'pendingDistribution', 'allocationHeld', 'pendingDistributionExcludingHeld', 'advanceBalance'] as const) money(row[key]);
+    }
+  }
+}
+
 export const clientAccountingApi = {
   /** Müvekkilin (eligible) dosyaları + caseClientId resolve. */
   async getCases(clientId: string): Promise<ClientAccountingCase[]> {
@@ -313,6 +350,15 @@ export const clientAccountingApi = {
    * Faz A — Müvekkil Genel Cari (client-level read-only projection). scope=client.
    * A grubu müvekkile özgü, B grubu dosya geneli + dosya kırılımı. Çift zarf (response.data.data).
    */
+  async getClientSummaryByCurrency(clientId: string): Promise<ClientAccountingNativeSummary> {
+    const resp = await apiClient.get<{ data: ClientAccountingNativeSummary }>(
+      `/clients/${clientId}/accounting/summary/by-currency`,
+    );
+    const data = resp.data.data;
+    validateNativeSummary(data, clientId);
+    return data;
+  },
+
   async getClientSummary(clientId: string, currency = 'TRY'): Promise<ClientAccountingSummary> {
     const qs = new URLSearchParams({ currency });
     const resp = await apiClient.get<{ data: ClientAccountingSummary }>(

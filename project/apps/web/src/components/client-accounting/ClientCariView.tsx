@@ -39,13 +39,15 @@ import { AccountingTable } from './AccountingTable';
 import { ClientMovementsTable } from './ClientMovementsTable';
 import { ClientLevelStatementSection } from './ClientLevelStatementSection';
 import { OffsetDrawer } from './OffsetDrawer';
+import { ClientCariNativeSummary } from './ClientCariNativeSummary';
 
 interface ClientCariViewProps {
   clientId: string;
   currency?: string;
+  nativeSummary?: boolean;
 }
 
-export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewProps) {
+export function ClientCariView({ clientId, currency = 'TRY', nativeSummary = false }: ClientCariViewProps) {
   const summaryQ = useQuery({
     queryKey: ['client-cari-summary', clientId, currency],
     queryFn: () => clientAccountingApi.getClientSummary(clientId, currency),
@@ -89,6 +91,18 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
 
   return (
     <div className="flex min-h-0 flex-col gap-3 xl:flex-1 xl:overflow-hidden">
+      {nativeSummary ? <div className="min-h-0 space-y-2 xl:max-h-[52vh] xl:overflow-auto">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded border bg-white p-2">
+          <span className="text-xs">Mevcut işlemler, hareketler ve ekstre bağlamı: {cur}</span>
+          <div className="flex items-center gap-2"><OffsetStatusBadge elig={eligQ.data} loading={eligQ.isLoading} />
+            <Button variant="default" size="lg" onClick={() => { setSuggestion(null); setMahsupOpen(true); }}>
+              <ArrowLeftRight className="mr-1.5 h-4 w-4" /> Mahsup
+            </Button></div>
+        </div>
+        {reco && <OffsetRecommendationCard reco={reco} canApply={eligQ.data?.canApply === true} currency={cur}
+          onPrepare={() => { setSuggestion({ payableCaseClientId: reco.payableCaseClientId, expenseRequestId: reco.expenseRequestId, amount: reco.amount }); setMahsupOpen(true); }} />}
+        <ClientCariNativeSummary clientId={clientId} />
+      </div> : <>
       <CurrencyScopeNotice currency={cur} status={s.paraBirimiDurumu} />
       {/* ── SUMMARY DECK — sabit, scroll etmez (shrink-0) ─────────────────────────── */}
       <div className="grid shrink-0 gap-3 xl:grid-cols-[1.5fr_1fr]">
@@ -186,8 +200,11 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
         </Card>
       </div>
 
+      </>}
+
       {/* ── WORKSPACE — xl'de flex-1 (iç scroll panelleri); altında klasik akış (fallback) ───── */}
-      <div className="grid min-h-0 gap-3 xl:flex-1 xl:grid-rows-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+      <div className={nativeSummary ? "grid min-h-0 gap-3 xl:flex-1 xl:grid-rows-1" : "grid min-h-0 gap-3 xl:flex-1 xl:grid-rows-[minmax(0,0.9fr)_minmax(0,1.1fr)]"}>
+        {!nativeSummary && <>
         {/* Satır 1 — Dosya Kırılımı (full width; kendi içinde scroll + sticky header) */}
         <AccountingPanel
           ariaLabel="Dosya kırılımı tablosu"
@@ -272,6 +289,8 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
             </AccountingTable>
           )}
         </AccountingPanel>
+
+        </>}
 
         {/* Satır 2 — Birleşik Hareketler (sol) + Müvekkil Genel Ekstresi (sağ). Mahsup Geçmişi+reverse → C-2C. */}
         <div className="grid min-h-0 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.9fr)_minmax(0,1fr)] lg:grid-rows-1">

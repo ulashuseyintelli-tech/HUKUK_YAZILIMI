@@ -1,4 +1,4 @@
-﻿import { Controller, Get, Param, Query, Request, UseGuards, Optional } from '@nestjs/common';
+﻿import { Controller, Get, Param, Query, Request, UseGuards, Optional, UnauthorizedException } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ClientAccountingMovementsReadService } from './client-accounting-movements-read.service';
 import { ClientAccountingSummaryReadService } from './client-accounting-summary-read.service';
@@ -33,6 +33,15 @@ export class ClientAccountingController {
     // S3: müvekkilin dosya listesi yalnız aktörün görebildiği dosyaları taşır (dosya listesiyle aynı kapsam).
     const caseFilter = await requireCaseViewScope(this.caseViewScope)?.caseRowFilter(req.user.tenantId, req.user.id);
     const data = await this.readService.listClientCases(req.user.tenantId, clientId, caseFilter);
+    return { data };
+  }
+
+  /** Called by the General Account SDK: same total-view gates, native read-only currency groups. */
+  @Get('summary/by-currency')
+  @ClientTotalViewScoped()
+  async summaryByCurrency(@Request() req: AuthRequest, @Param('clientId') clientId: string) {
+    if (!req.user?.id || !req.user?.tenantId) throw new UnauthorizedException();
+    const data = await this.summaryReadService.getClientAccountingNativeSummary(req.user.tenantId, clientId);
     return { data };
   }
 
