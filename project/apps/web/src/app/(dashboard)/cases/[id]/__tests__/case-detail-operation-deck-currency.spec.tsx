@@ -382,7 +382,7 @@ describe('Dağıtım & Mutabakat — dağıtım kaydı tutarı kendi para birimi
 });
 
 describe('Yeni alacak / yeni ödeme formu — para birimi varsayılanı dosyanın para birimi', () => {
-  it('USD dosyada iki form da USD seçili açılır; seçim kilitli değildir', async () => {
+  it('USD dosyada iki form da USD açılır; FR-7 yalnız alacak seçimini kilitler', async () => {
     mountCase({
       caseFields: { currency: 'USD', subCategory: 'DOVIZ', principalAmount: '10000' },
       dues: [due('d1', 'PRINCIPAL', 'Asıl alacak', '10000', 'USD')],
@@ -390,7 +390,7 @@ describe('Yeni alacak / yeni ödeme formu — para birimi varsayılanı dosyanı
     });
     await pageReady();
 
-    expect(await newDueField()).toEqual({ selected: 'USD', shown: '$ USD', options: LISTED, disabled: false });
+    expect(await newDueField()).toEqual({ selected: 'USD', shown: '$ USD', options: LISTED, disabled: true });
     expect(await newPaymentField()).toEqual({ selected: 'USD', shown: '$ USD', options: LISTED, disabled: false });
   });
 
@@ -406,7 +406,7 @@ describe('Yeni alacak / yeni ödeme formu — para birimi varsayılanı dosyanı
     mountCase({ caseFields: { currency: 'CHF', subCategory: 'DOVIZ', principalAmount: '5000' } });
     await pageReady();
 
-    expect(await newDueField()).toEqual({ selected: 'CHF', shown: 'CHF', options: [...LISTED, 'CHF'], disabled: false });
+    expect(await newDueField()).toEqual({ selected: 'CHF', shown: 'CHF', options: [...LISTED, 'CHF'], disabled: true });
     expect(await newPaymentField()).toEqual({ selected: 'CHF', shown: 'CHF', options: [...LISTED, 'CHF'], disabled: false });
   });
 
@@ -443,7 +443,7 @@ describe('TL dosya — gösterim ve form varsayılanı DEĞİŞMEDİ (düzeltme 
     expect(finance.total).toBe('1.000 ₺');
     expect(finance.card).toBe('Tahsilat1.000 ₺');
     expect(finance.rows).toEqual(['Tahsilat | +1.000 ₺']);
-    expect(await newDueField()).toEqual({ selected: 'TRY', shown: '₺ TRY', options: LISTED, disabled: false });
+    expect(await newDueField()).toEqual({ selected: 'TRY', shown: '₺ TRY', options: LISTED, disabled: true });
     expect(await newPaymentField()).toEqual({ selected: 'TRY', shown: '₺ TRY', options: LISTED, disabled: false });
     expect((await editDueField('Asıl alacak')).selected).toBe('TRY');
     expect((await editPaymentField(0)).selected).toBe('TRY');

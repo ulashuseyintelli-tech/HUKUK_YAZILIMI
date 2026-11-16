@@ -12,6 +12,8 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { ErrorLogModule } from '../../error-log/error-log.module';
 import { MetricsRegistryModule } from '../../metrics-registry/metrics-registry.module';
 import { DomainEventIngestService } from '../../icrabot/domain-event-ingest';
+import { ClaimItemService } from '../../claim-item/claim-item.service';
+import { stableJsonHash } from '../../permission-diagnostics/guided-edge/canonical-json';
 import { assertCaseClaimCurrency, assertStoredCaseClaimCurrency } from '../../claim-item/case-claim-currency-policy';
 import { CaseModule } from '../case.module';
 
@@ -171,6 +173,22 @@ dbDescribe('FR-7 A + temporary D — real HTTP/disposable PostgreSQL', () => {
     await expect(db.$transaction(tx => assertStoredCaseClaimCurrency(tx, tenantId, id, 'USD', true))).rejects.toMatchObject({ status: 409 });
     expect(await counts()).toEqual(before);
   });
+  it('same-key high-impact request retries reuse one pending approval and one audit in real transactions', async () => {
+    const id = await opened();
+    const claim = await db.claimItem.findFirstOrThrow({ where: { caseId: id } });
+    const key = `fr7-concurrent-approval-${randomUUID()}`;
+    const input = { tenantId, actorUserId: adminId, targetType: 'CLAIM_ITEM', targetRef: claim.id, idempotencyKey: key,
+      intent: { version: 'OWN29D_CLAIM_ITEM_HIGH_IMPACT_V1', operation: 'UPDATE', caseId: id, claimItemId: claim.id,
+        proposedPatch: { amount: 1200 }, currentSnapshot: { currency: 'USD' }, currentSnapshotHash: stableJsonHash({ currency: 'USD' }), reason: 'FR7 isolated concurrency fixture' } };
+    // Transaction seam only: public authorization is covered separately; this checks real unique-key/audit behavior.
+    const service = app.get(ClaimItemService) as any;
+    const [first, second] = await Promise.all([service.createHighImpactApprovalRequest(input), service.createHighImpactApprovalRequest(input)]);
+    expect(first.id).toBe(second.id);
+    expect(await db.officeApprovalRequest.count({ where: { tenantId, idempotencyKey: key } })).toBe(1);
+    expect(await db.auditLog.count({ where: { tenantId, entityId: first.id, action: 'OFFICE_APPROVAL_REQUESTED' } })).toBe(1);
+    expect((await db.claimItem.findUniqueOrThrow({ where: { id: claim.id } })).amount.toString()).toBe('1000');
+  });
+
   it('temporary D keeps proportional foreign-currency fee fields unavailable', async () => {
     const id = await opened();
     const before = await counts();

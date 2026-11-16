@@ -1097,6 +1097,10 @@ export class ClaimItemService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      // Serialize only this ClaimItem approval key. A unique violation inside PostgreSQL's
+      // transaction cannot be reconciled by querying the already-aborted transaction.
+      const requestLock = `claim-item-approval:${input.tenantId}:${input.idempotencyKey}`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${requestLock}, 0))`;
       const existing = await tx.officeApprovalRequest.findUnique({
         where: { tenantId_idempotencyKey: { tenantId: input.tenantId, idempotencyKey: input.idempotencyKey } },
       });

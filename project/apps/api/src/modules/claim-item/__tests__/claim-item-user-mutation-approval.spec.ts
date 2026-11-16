@@ -48,6 +48,7 @@ function makeSvc(opts: {
 } = {}) {
   const item = opts.item ?? baseItem;
   const tx: any = {
+    $executeRaw: jest.fn().mockResolvedValue(1),
     claimItem: {
       findFirst: jest.fn().mockResolvedValue(item),
       update: jest.fn().mockResolvedValue({ ...item, description: 'new', referenceNo: 'ref-new', sortOrder: 2 }),

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import NewCasePage from '../page';
 import { api } from '@/lib/api';
+import { CASE_CLAIM_CURRENCY_MESSAGE } from '@/lib/case-claim-currency';
 
 /**
  * Sihirbaz son adım — gönderim ÖNCESİ metinler sistemin yapmadığı şeyi vaat etmez (owner seçimi 2026-10-01: nötr metin).
@@ -239,6 +240,19 @@ async function openExpenseModal(draft: DraftOptions, response: Record<string, un
   expect(mocked.createCase).not.toHaveBeenCalled();
 }
 
+/** FR-7: incompatible restored drafts stop before confirmation and retain the form. */
+async function refuseIncompatibleDraft(draft: DraftOptions) {
+  routeApi();
+  seedReadyDraft(draft);
+  render(<NewCasePage />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Takibi Oluştur' }));
+  await screen.findByText(CASE_CLAIM_CURRENCY_MESSAGE);
+  expect(expenseModal()).toBeNull();
+  expect(mocked.createCase).not.toHaveBeenCalled();
+  expect(push).not.toHaveBeenCalled();
+  expect(window.localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+}
+
 /** Pencerede verilen düğmeye basar ve isteğin gövdesini döner. */
 async function submitWith(button: string) {
   fireEvent.click(screen.getByRole('button', { name: button }));
@@ -317,34 +331,23 @@ describe('Sihirbaz son adım — gönderim öncesi metinler', () => {
     expect(body).toMatchObject({ currency: 'TRY', sendExpenseEmail: false });
   });
 
-  it('karma taslak — dosya TRY, listelenen kalem USD: dosya para birimine bakılmaz, pencere vaat vermez', async () => {
-    await openExpenseModal({ caseCurrency: 'TRY', itemCurrency: 'USD' });
-
-    // Bilgi satırı dosya para birimine bağlıdır (TRY → satır yok); pencere taslaktaki para birimlerine bakar
-    expect(panelLines()).toBeNull();
-    expect(expenseModal()).toEqual({ message: [foreignMessage('USD')], buttons: FOREIGN_BUTTONS });
-
-    const body = await submitWith(FOREIGN_SEND);
-    expect(body).toMatchObject({ currency: 'TRY', sendExpenseEmail: true });
+  it('FR-7: TRY dosyadaki eski USD kalem dönüştürülmez, onay penceresinden önce reddedilir', async () => {
+    await refuseIncompatibleDraft({ caseCurrency: 'TRY', itemCurrency: 'USD' });
   });
 
-  it('karma taslak — dosya ve kalem TRY, taranan evrak USD: pencere vaat vermez', async () => {
-    await openExpenseModal({
+  it('FR-7: TRY dosyada taranan USD evrak dönüştürülmez ve gönderilmez', async () => {
+    await refuseIncompatibleDraft({
       caseCurrency: 'TRY',
       instruments: [{ type: 'SENET', amount: 5000, currency: 'USD', documentNo: 'SN-1', issueDate: '2026-01-05', dueDate: '2026-03-01' }],
     });
 
-    expect(panelLines()).toBeNull();
-    expect(expenseModal()).toEqual({ message: [foreignMessage('USD')], buttons: FOREIGN_BUTTONS });
   });
 
-  it('birden fazla TL dışı para birimi: hepsi sıralı yazılır', async () => {
-    await openExpenseModal({ caseCurrency: 'USD', itemCurrency: 'EUR' });
-
-    expect(expenseModal()).toEqual({ message: [foreignMessage('EUR, USD')], buttons: FOREIGN_BUTTONS });
+  it('FR-7: USD dosyadaki EUR kalem tutarı çevrilmeden reddedilir', async () => {
+    await refuseIncompatibleDraft({ caseCurrency: 'USD', itemCurrency: 'EUR' });
   });
 
-  it('formda bekleyen (listeye eklenmemiş) USD kalem: gönderimde listeye alınır ve pencere onu da görür', async () => {
+  it('FR-7: bekleyen uyumsuz kalem gönderimde listeye eklenmez; form korunur', async () => {
     routeApi();
     seedReadyDraft({ caseCurrency: 'TRY', withoutListedItem: true });
     mocked.createCase.mockResolvedValue({ id: 'case-new' });
@@ -360,9 +363,11 @@ describe('Sihirbaz son adım — gönderim öncesi metinler', () => {
     await screen.findByText('SON BORÇ', undefined, { timeout: 4000 }); // kalem hesabı bitti → form tamponu doldu
 
     fireEvent.click(screen.getByRole('button', { name: 'Takibi Oluştur' }));
-    await screen.findByRole('heading', { name: 'Masraf Talebi Gönderimi' });
-
-    expect(expenseModal()).toEqual({ message: [foreignMessage('USD')], buttons: FOREIGN_BUTTONS });
-    expect(screen.getByTestId('listed-claim-items-live-aggregate').textContent).toContain('USD');
+    expect((await screen.findAllByText(CASE_CLAIM_CURRENCY_MESSAGE)).length).toBeGreaterThan(0);
+    expect(expenseModal()).toBeNull();
+    expect(mocked.createCase).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('listed-claim-items-live-aggregate')).toBeNull();
+    expect((document.querySelector('input[type="number"][placeholder="0,00"]') as HTMLInputElement).value).toBe('5000');
   });
 });

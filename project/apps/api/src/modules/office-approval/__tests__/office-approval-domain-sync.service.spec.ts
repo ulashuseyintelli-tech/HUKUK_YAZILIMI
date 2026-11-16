@@ -564,7 +564,7 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
         create: jest.fn().mockResolvedValue(item),
       },
       case: {
-        findFirst: jest.fn().mockResolvedValue({ id: 'case-1' }),
+        findFirst: jest.fn().mockResolvedValue({ id: 'case-1', currency: 'TRY' }),
       },
       auditLog: {
         create: jest.fn().mockResolvedValue({ id: 'audit-1' }),
