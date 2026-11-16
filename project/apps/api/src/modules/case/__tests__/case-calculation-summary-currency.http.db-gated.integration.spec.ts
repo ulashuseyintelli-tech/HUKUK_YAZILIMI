@@ -13,6 +13,7 @@ import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import * as request from 'supertest';
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
+import { addLegacyMixedDueFixture } from '../../../../test/legacy-mixed-due-fixture';
 import { StorageModule } from '../../../common/storage/storage.module';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { ErrorLogModule } from '../../error-log/error-log.module';
@@ -216,8 +217,7 @@ describeWithDisposableDb('Hesap özeti para birimi bağlamı (HTTP + disposable 
   it('karma anapara (USD + EUR + TRY): legacy asilAlacak tek sayıdır (17.000, değişmedi); blok para birimi bazında ayırır', async () => {
     const caseId = await openCase('karma', { currency: 'USD', subCategory: 'DOVIZ', dues: [principal(10_000)] });
     for (const [amount, currency] of [[5_000, 'EUR'], [2_000, 'TRY']] as const) {
-      const added = await post(`/cases/${caseId}/dues`, { ...principal(amount), description: `${currency} anapara`, currency });
-      expect(added.status).toBe(201);
+      await addLegacyMixedDueFixture(prisma, post, caseId, { ...principal(amount), description: `${currency} anapara` }, currency);
     }
     const summary = await summaryOf(caseId);
 
