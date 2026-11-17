@@ -12,7 +12,7 @@ import { STATUS_LABELS } from "./status-labels";
 import { OfficeApprovalDecisionActions } from "./OfficeApprovalDecisionActions";
 import { PayoutFinalizeAction } from "./PayoutFinalizeAction";
 import { ApprovalIntentSummary } from "./ApprovalIntentSummary";
-import { actionLabel, executionStatusLabel, targetTypeLabel } from "./labels";
+import { actionLabel, executionStatusLabel, reasonLabel, targetTypeLabel } from "./labels";
 import { humanizeClaimItemName } from "@/components/claim-item/claim-item-labels";
 
 interface Props {
@@ -184,7 +184,7 @@ export function OfficeApprovalDetailDrawer({ requestId, onClose, onDecided }: Pr
             {detail.approverUserId && (
               <Field label="Karar veren" value={personValue(detail.displayContext?.approverName, detail.displayContext)} />
             )}
-            {detail.reason && <Field label="Gerekçe" value={detail.reason} />}
+            {detail.reason && <Field label="Gerekçe" value={reasonLabel(detail.reason)} />}
             {detail.decisionNote && <Field label="Karar Notu" value={detail.decisionNote} />}
 
             <TimeField label="Oluşturulma" value={detail.createdAt} />

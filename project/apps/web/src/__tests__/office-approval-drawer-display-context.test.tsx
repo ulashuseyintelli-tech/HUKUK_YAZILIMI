@@ -221,8 +221,10 @@ describe("Onay Talebi Detayı — kalem alanı değişikliği ve kalem adı (P02
     expect(screen.queryByText("PRINCIPAL")).toBeNull();
   });
 
-  it("faiz alanı değişikliği talebi okunur 'önce → sonra' özetiyle gösterilir; değişmeyen faiz türü yazılmaz", async () => {
-    await open({ ...BASE, savedIntent: UPDATE_INTENT, displayContext: visibleContext });
+  it("faiz alanı değişikliği talebi okunur 'önce → sonra' özetiyle gösterilir; değişmeyen faiz türü yazılmaz; sabit gerekçe Türkçe", async () => {
+    await open({ ...BASE, reason: UPDATE_INTENT.reason, savedIntent: UPDATE_INTENT, displayContext: visibleContext });
+    expect(screen.getByText("Yüksek etkili alacak kalemi değişikliği; iki kişi onayı gerekir.")).toBeInTheDocument();
+    expect(screen.queryByText("ClaimItem high-impact update requires K4 four-eyes approval.")).toBeNull();
     const summary = screen.getByTestId("approval-summary");
     expect(summary).toHaveTextContent("Vekalet Ücreti");
     expect(summary).toHaveTextContent("Türü belirtilmemiş → İlam vekâlet ücreti");

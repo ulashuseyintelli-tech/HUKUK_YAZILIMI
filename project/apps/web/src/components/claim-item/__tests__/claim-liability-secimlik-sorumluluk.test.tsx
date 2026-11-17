@@ -201,6 +201,29 @@ describe("AT-26 kalem paneli ve seçim çekmecesi", () => {
     expect(screen.queryByTestId("claim-liability-drawer")).toBeNull();
   });
 
+  it("açıklaması boş kalemde çekmece başlığı ve önizleme ham tür kodu yerine Türkçe adı gösterir", async () => {
+    panelYanitlari(true);
+    const state = liabilityState(true);
+    state.kalemler[0] = { ...state.kalemler[0], kalemTuru: "ATTORNEY_FEE", aciklama: null as unknown as string };
+    apiMock.getCaseClaimLiability.mockResolvedValue(state);
+    const onizleme = previewYaniti(true);
+    onizleme.kalemler[0] = { ...onizleme.kalemler[0], kalemTuru: "ATTORNEY_FEE", aciklama: null as unknown as string };
+    apiMock.previewClaimLiability.mockResolvedValue(onizleme);
+    render(<ClaimItemPanel caseId="case-1" />);
+    fireEvent.click(await screen.findByTestId("claim-item-liability-select-k1"));
+    const drawer = await screen.findByTestId("claim-liability-drawer");
+    expect(drawer.textContent).toContain("Vekalet Ücreti");
+    fireEvent.click(screen.getByTestId("claim-liability-mode-PROPORTIONAL"));
+    fireEvent.click(screen.getByTestId("claim-liability-party-cd-1"));
+    fireEvent.click(screen.getByTestId("claim-liability-party-cd-2"));
+    fireEvent.click(screen.getByTestId("claim-liability-share-equal"));
+    fireEvent.change(screen.getByTestId("claim-liability-basis"), { target: { value: "CONTRACT" } });
+    fireEvent.click(screen.getByTestId("claim-liability-preview-button"));
+    const preview = await screen.findByTestId("claim-liability-preview");
+    expect(preview.textContent).toContain("Vekalet Ücreti — Müteselsil");
+    expect(screen.getByTestId("claim-liability-drawer").textContent).not.toContain("ATTORNEY_FEE");
+  });
+
   it("geçmişte pay okunur yazılır (yüzde ya da kesir; ham ağırlık DEĞİL); 'Tavan yok' işaretliyken tavan kutusu boş görünür ve gönderilmez", async () => {
     panelYanitlari(true);
     const surum = (over: Record<string, unknown>) => ({

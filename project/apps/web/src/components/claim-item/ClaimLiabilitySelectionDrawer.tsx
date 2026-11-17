@@ -11,6 +11,7 @@ import {
   type ClaimLiabilityStateDTO,
 } from "@/lib/api";
 import { toActionErrorMessage } from "@/lib/action-error";
+import { humanizeClaimItemName } from "./claim-item-labels";
 
 /**
  * Seçimlik kalem bazlı borçlu sorumluluğu — seçim çekmecesi (tek kalem ya da "dosyadaki kalemlere uygula").
@@ -248,7 +249,7 @@ export function ClaimLiabilitySelectionDrawer({
             <p className="text-xs text-gray-600">
               {bulk
                 ? `${targetItems.length} kalem için tek onay talebi oluşturulur; bir kalem engelliyse hiçbirine yazılmaz.`
-                : targetItems[0]?.aciklama || targetItems[0]?.kalemTuru}
+                : targetItems[0]?.aciklama || humanizeClaimItemName(targetItems[0]?.kalemTuru ?? "")}
             </p>
           </div>
           <button type="button" onClick={onClose} className="rounded border px-2 py-1 text-xs hover:bg-gray-50">
@@ -428,7 +429,8 @@ export function ClaimLiabilitySelectionDrawer({
             {preview.kalemler.map((kalem) => (
               <div key={kalem.claimItemId} className="space-y-1 rounded bg-white p-2">
                 <p className="font-medium">
-                  {kalem.aciklama || kalem.kalemTuru} — {CLAIM_LIABILITY_KIND_LABELS[kalem.oncekiTur]} →{" "}
+                  {/* Açıklaması boş kalemde ham tür kodu yerine Türkçe ad (ör. ATTORNEY_FEE → Vekalet Ücreti). */}
+                  {kalem.aciklama || humanizeClaimItemName(kalem.kalemTuru)} — {CLAIM_LIABILITY_KIND_LABELS[kalem.oncekiTur]} →{" "}
                   {kalem.sonrakiTur ? CLAIM_LIABILITY_KIND_LABELS[kalem.sonrakiTur] : "—"}
                 </p>
                 <p className="text-gray-600">

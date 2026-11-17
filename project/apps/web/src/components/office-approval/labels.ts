@@ -54,3 +54,16 @@ export function targetTypeLabel(targetType: string): string {
 export function executionStatusLabel(executionStatus: string): string {
   return EXECUTION_STATUS_LABELS[executionStatus] ?? "Tanımsız yürütme durumu";
 }
+
+/**
+ * Sunucunun SABİT İngilizce talep gerekçeleri (claim-item.service) → Türkçe. Yalnız birebir eşleşen sabit çevrilir; kullanıcı ya da
+ * başka kaynaktan gelen gerekçe AYNEN gösterilir (uydurma yok). Ham metin "Teknik ayrıntı" bölümünde kalır.
+ */
+const FIXED_REASON_LABELS: Record<string, string> = {
+  "ClaimItem high-impact update requires K4 four-eyes approval.": "Yüksek etkili alacak kalemi değişikliği; iki kişi onayı gerekir.",
+  "ClaimItem delete/cancel requires K4 four-eyes approval.": "Alacak kalemi iptali; iki kişi onayı gerekir.",
+};
+
+export function reasonLabel(reason: string): string {
+  return FIXED_REASON_LABELS[reason] ?? reason;
+}
