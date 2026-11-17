@@ -173,3 +173,66 @@ describe("Onay Talebi Detayı — okunur bağlam (U-1…U-4)", () => {
     expect(screen.queryByText(/^Dosya/)).toBeNull();
   });
 });
+
+describe("Onay Talebi Detayı — kalem alanı değişikliği ve kalem adı (P02 ekran eksikleri)", () => {
+  // Sentetik: açıklaması boş vekâlet ücreti kalemi; faiz durumu belirlenmemiş → işler, kesinleşme dayanağı.
+  const UPDATE_INTENT = {
+    version: "OWN29D_CLAIM_ITEM_HIGH_IMPACT_V1",
+    operation: "UPDATE",
+    caseId: "case-s1",
+    claimItemId: "item-s1",
+    proposedPatch: {
+      attorneyFeeBasis: "JUDGMENT_AWARDED",
+      interestAccrualStatus: "ACCRUES",
+      interestStartDate: "2026-04-08",
+      interestStartDateProvenance: "JUDGMENT_FINALIZATION_DATE",
+      interestTypeCode: "LEGAL_3095",
+      interestType: "YASAL",
+      interestRate: null,
+      noInterestReason: null,
+      noInterestConfirmedById: null,
+    },
+    currentSnapshot: {
+      itemType: "ATTORNEY_FEE",
+      description: null,
+      amount: "1000.00",
+      currency: "TRY",
+      interestAccrualStatus: "UNKNOWN",
+      interestStartDate: "2025-05-27T00:00:00.000Z",
+      interestStartDateProvenance: null,
+      interestTypeCode: "LEGAL_3095",
+      interestType: "YASAL",
+      interestRate: null,
+      attorneyFeeBasis: null,
+      noInterestReason: null,
+      noInterestConfirmedById: null,
+    },
+    currentSnapshotHash: "h",
+    reason: "ClaimItem high-impact update requires K4 four-eyes approval.",
+  };
+
+  it("güncel kalem adı ham kod ise ('PRINCIPAL') Türkçe gösterilir; kod normal görünümde yok", async () => {
+    await open({
+      ...BASE,
+      displayContext: { ...visibleContext, case: { ...visibleContext.case, claimItemLabel: "PRINCIPAL" } },
+    });
+    expect(screen.getByText("Kalem (güncel ad)")).toBeInTheDocument();
+    expect(screen.getByText("Asıl Alacak")).toBeInTheDocument();
+    expect(screen.queryByText("PRINCIPAL")).toBeNull();
+  });
+
+  it("faiz alanı değişikliği talebi okunur 'önce → sonra' özetiyle gösterilir; değişmeyen faiz türü yazılmaz; sabit gerekçe Türkçe", async () => {
+    await open({ ...BASE, reason: UPDATE_INTENT.reason, savedIntent: UPDATE_INTENT, displayContext: visibleContext });
+    expect(screen.getByText("Yüksek etkili alacak kalemi değişikliği; iki kişi onayı gerekir.")).toBeInTheDocument();
+    expect(screen.queryByText("ClaimItem high-impact update requires K4 four-eyes approval.")).toBeNull();
+    const summary = screen.getByTestId("approval-summary");
+    expect(summary).toHaveTextContent("Vekalet Ücreti");
+    expect(summary).toHaveTextContent("Türü belirtilmemiş → İlam vekâlet ücreti");
+    expect(summary).toHaveTextContent("Belirlenmedi → Faiz işler");
+    expect(summary).toHaveTextContent("27.05.2025 → 08.04.2026");
+    expect(summary).toHaveTextContent("Boş → Kesinleşme tarihi");
+    expect(summary).not.toHaveTextContent("Faiz türü");
+    expect(screen.queryByText(/ACCRUES|JUDGMENT_FINALIZATION_DATE|JUDGMENT_AWARDED/)).toBeNull();
+    expect(screen.getByText("Onaylanınca yalnız listelenen alanlar kaleme yazılır; tutar ve kalem türü değişmez.")).toBeInTheDocument();
+  });
+});

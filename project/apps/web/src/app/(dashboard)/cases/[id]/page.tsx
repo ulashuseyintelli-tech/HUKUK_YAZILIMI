@@ -43,6 +43,7 @@ import {
   PlusCircle,
   PauseCircle,
   Search,
+  UserMinus,
 } from "lucide-react";
 import { api, DebtorListItemDTO, DebtorsSummaryDTO, CollectionDispositionDTO, PostCollectionDispositionLineDTO, GenerateDistributionRecommendationDTO } from "@/lib/api";
 import { toActionErrorMessage } from "@/lib/action-error";
@@ -2045,6 +2046,26 @@ export default function CaseDetailPage() {
     }
   };
 
+  // Dosya ekibinden avukat çıkar — mevcut sunucu ucu (DELETE /cases/:id/lawyers/:caseLawyerId): hukuki sorumlu avukat
+  // sunucuda çıkarılamaz (önce kurallı akışla sorumlu değiştirilir); çıkarma denetim kaydı ve kapsam geri alımı sunucudadır.
+  const handleRemoveCaseLawyer = async () => {
+    if (!selectedLawyer || !caseData) return;
+    if (selectedLawyer.caseRole === 'RESPONSIBLE') return;
+    const confirmed = window.confirm(
+      `Av. ${selectedLawyer.name} ${selectedLawyer.surname} bu dosyanın ekibinden çıkarılacak. ` +
+        'Bu dosyadaki yetkileri kalkar; başka bir yetkisi yoksa dosyayı göremez. Devam edilsin mi?',
+    );
+    if (!confirmed) return;
+    try {
+      await api.removeCaseLawyer(caseData.id, selectedLawyer.caseLawyerId);
+      await fetchCase();
+      setLawyerDrawerOpen(false);
+    } catch (error) {
+      console.error('Dosya ekibinden çıkarma hatası:', error);
+      alert(caseAssignmentSaveErrorMessage(error, 'Dosya ekibinden çıkarma başarısız'));
+    }
+  };
+
   // WP-1d-5-6: sorumluluk yazımı (hukuki sorumlu / operasyon sorumlusu) sonrası panelleri yenile +
   // point-in-time panelini "şimdi"ye çek. Tek ortak helper; büyük state refactor yok.
   const refreshResponsibilityPanels = () => {
@@ -3732,6 +3753,19 @@ export default function CaseDetailPage() {
                   <Save className="h-4 w-4" />
                   Bu dosya için kaydet
                 </button>
+
+                {/* Dosya ekibinden çıkar — hukuki sorumlu avukatta gösterilmez (sunucu da reddeder). */}
+                {selectedLawyer.caseRole !== 'RESPONSIBLE' && (
+                  <button
+                    type="button"
+                    data-testid="case-lawyer-remove"
+                    onClick={handleRemoveCaseLawyer}
+                    className="w-full py-2 border border-red-300 text-red-700 rounded-lg hover:bg-red-50 font-medium text-sm flex items-center justify-center gap-2"
+                  >
+                    <UserMinus className="h-4 w-4" />
+                    Dosya ekibinden çıkar
+                  </button>
+                )}
               </div>
             )}
 

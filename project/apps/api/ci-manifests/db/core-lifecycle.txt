@@ -393,3 +393,5 @@ src/modules/case/__tests__/case-principal-free-balance.http.db-gated.integration
 src/modules/interest-engine/__tests__/rate-provider-office-key.http.db-gated.integration.spec.ts
 src/modules/case/__tests__/case-client-address-clz05.http.db-gated.integration.spec.ts
 src/modules/case/__tests__/case-claim-currency-fr7.http.db-gated.integration.spec.ts
+# P02 ekran eksikleri (18.11.2026): kalem faiz durumu / baslangic dayanagi talep + iki kisi onayi; Belirlenmedi korunur; yetkisiz yazamaz; dosya ekibinden cikarma (sorumlu cikarilamaz, goruntuleyici cikaramaz) (gercek HTTP + PostgreSQL).
+src/modules/claim-item/__tests__/claim-item-interest-status-team-removal.http.db-gated.integration.spec.ts

@@ -9,6 +9,16 @@ import { runMutation, runRefreshOnly } from '@/lib/mutation-outcome';
 import { useKeyedSubmitLock } from '@/lib/use-submit-lock';
 import { getInterestReadDisplayLabel } from "@/lib/interest-type-resolver";
 import {
+  ATTORNEY_FEE_BASIS_LABELS,
+  attorneyFeeBasisLabel,
+  type AttorneyFeeBasis,
+  CLAIM_ITEM_TYPE_LABELS,
+  INTEREST_ACCRUAL_STATUS_LABELS,
+  INTEREST_START_PROVENANCE_OPTIONS,
+  PROVENANCE_WITHOUT_START_DATE,
+  type InterestAccrualStatusCode,
+} from "./claim-item-labels";
+import {
   DollarSign,
   Plus,
   Trash2,
@@ -33,6 +43,8 @@ interface ClaimItem {
   interestType?: string;
   interestTypeCode?: string | null;
   interestAccrualStatus?: string | null;
+  /** Faiz başlangıcının kayıtlı dayanağı (InterestStartDateProvenance); null = kayıtlı değil. */
+  interestStartDateProvenance?: string | null;
   interestRate?: number;
   interestStartDate?: string;
   interestEndDate?: string;
@@ -45,18 +57,8 @@ interface ClaimItem {
   isCalculated: boolean;
 }
 
-export type AttorneyFeeBasis = "JUDGMENT_AWARDED" | "ENFORCEMENT_TARIFF";
-
-/** Vekâlet ücreti kaynağı metni — YALNIZ kayıtlı alandan; açıklama metnine bakılmaz. */
-export const ATTORNEY_FEE_BASIS_LABELS: Record<AttorneyFeeBasis | "UNKNOWN", string> = {
-  JUDGMENT_AWARDED: "İlam vekâlet ücreti",
-  ENFORCEMENT_TARIFF: "Takip vekâlet ücreti",
-  UNKNOWN: "Türü belirtilmemiş",
-};
-
-export function attorneyFeeBasisLabel(basis: AttorneyFeeBasis | null | undefined): string {
-  return basis ? ATTORNEY_FEE_BASIS_LABELS[basis] : ATTORNEY_FEE_BASIS_LABELS.UNKNOWN;
-}
+// Vekâlet ücreti kaynağı etiketleri ortak etiket modülünde; mevcut içe aktarmalar için buradan yeniden dışa aktarılır.
+export { ATTORNEY_FEE_BASIS_LABELS, attorneyFeeBasisLabel, type AttorneyFeeBasis } from "./claim-item-labels";
 
 interface ClaimSummaryTotals {
   principal: number;
@@ -116,23 +118,25 @@ const PARA_BIRIMI_TOPLAM_SATIRLARI: { alan: keyof ClaimSummaryTotals; etiket: st
   { alan: "other", etiket: "Diğer" },
 ];
 
+// Etiket metinleri tek kaynaktan (claim-item-labels); burada yalnız simge ve renk eklenir.
+const L = CLAIM_ITEM_TYPE_LABELS;
 const itemTypeLabels: Record<string, { label: string; icon: any; color: string }> = {
-  PRINCIPAL: { label: "Asıl Alacak", icon: DollarSign, color: "text-blue-600 bg-blue-100" },
-  INTEREST: { label: "Faiz", icon: Percent, color: "text-green-600 bg-green-100" },
-  PRE_INTEREST: { label: "Takip Öncesi Faiz", icon: Percent, color: "text-green-600 bg-green-100" },
-  POST_INTEREST: { label: "Takip Sonrası Faiz", icon: Percent, color: "text-emerald-600 bg-emerald-100" },
-  EXPENSE: { label: "Masraf", icon: Receipt, color: "text-orange-600 bg-orange-100" },
-  FEE: { label: "Harç", icon: Receipt, color: "text-amber-600 bg-amber-100" },
-  ATTORNEY_FEE: { label: "Vekalet Ücreti", icon: Scale, color: "text-purple-600 bg-purple-100" },
-  PENALTY: { label: "Tazminat", icon: AlertCircle, color: "text-red-600 bg-red-100" },
-  CHECK_PENALTY: { label: "Çek Tazminatı", icon: AlertCircle, color: "text-red-600 bg-red-100" },
-  CONTRACTUAL_PENALTY: { label: "Cezai Şart", icon: AlertCircle, color: "text-red-600 bg-red-100" },
-  TAX_KDV: { label: "KDV", icon: Receipt, color: "text-gray-600 bg-gray-100" },
-  TAX_BSMV: { label: "BSMV", icon: Receipt, color: "text-gray-600 bg-gray-100" },
-  TAX_KKDF: { label: "KKDF", icon: Receipt, color: "text-gray-600 bg-gray-100" },
-  OTHER: { label: "Diğer", icon: FileText, color: "text-gray-600 bg-gray-100" },
+  PRINCIPAL: { label: L.PRINCIPAL, icon: DollarSign, color: "text-blue-600 bg-blue-100" },
+  INTEREST: { label: L.INTEREST, icon: Percent, color: "text-green-600 bg-green-100" },
+  PRE_INTEREST: { label: L.PRE_INTEREST, icon: Percent, color: "text-green-600 bg-green-100" },
+  POST_INTEREST: { label: L.POST_INTEREST, icon: Percent, color: "text-emerald-600 bg-emerald-100" },
+  EXPENSE: { label: L.EXPENSE, icon: Receipt, color: "text-orange-600 bg-orange-100" },
+  FEE: { label: L.FEE, icon: Receipt, color: "text-amber-600 bg-amber-100" },
+  ATTORNEY_FEE: { label: L.ATTORNEY_FEE, icon: Scale, color: "text-purple-600 bg-purple-100" },
+  PENALTY: { label: L.PENALTY, icon: AlertCircle, color: "text-red-600 bg-red-100" },
+  CHECK_PENALTY: { label: L.CHECK_PENALTY, icon: AlertCircle, color: "text-red-600 bg-red-100" },
+  CONTRACTUAL_PENALTY: { label: L.CONTRACTUAL_PENALTY, icon: AlertCircle, color: "text-red-600 bg-red-100" },
+  TAX_KDV: { label: L.TAX_KDV, icon: Receipt, color: "text-gray-600 bg-gray-100" },
+  TAX_BSMV: { label: L.TAX_BSMV, icon: Receipt, color: "text-gray-600 bg-gray-100" },
+  TAX_KKDF: { label: L.TAX_KKDF, icon: Receipt, color: "text-gray-600 bg-gray-100" },
+  OTHER: { label: L.OTHER, icon: FileText, color: "text-gray-600 bg-gray-100" },
   // İlamda hükmedilen yargılama gideri — tebligat masrafından ayrı tür.
-  YARGILAMA_GIDERI: { label: "Yargılama Gideri", icon: Scale, color: "text-orange-700 bg-orange-50" },
+  YARGILAMA_GIDERI: { label: L.YARGILAMA_GIDERI, icon: Scale, color: "text-orange-700 bg-orange-50" },
 };
 
 interface Props {
@@ -567,6 +571,26 @@ export function ClaimItemPanel({
                           {new Date(item.interestStartDate).toLocaleDateString("tr-TR")} - {new Date(item.interestEndDate).toLocaleDateString("tr-TR")}
                         </span>
                       )}
+                      {(() => {
+                        // Kayıtlı faiz durumu ve (faiz işliyorsa) başlangıç + dayanağı; yalnız kayıttan, tahmin yok.
+                        const status = item.interestAccrualStatus ?? "UNKNOWN";
+                        const statusLabel = INTEREST_ACCRUAL_STATUS_LABELS[status as InterestAccrualStatusCode] ?? "Tanımsız durum";
+                        const parts = [`Faiz: ${statusLabel}`];
+                        if (status === "ACCRUES") {
+                          if (item.interestStartDate) parts.push(`başlangıç ${new Date(item.interestStartDate).toLocaleDateString("tr-TR")}`);
+                          const provenance = item.interestStartDateProvenance;
+                          parts.push(
+                            provenance
+                              ? `dayanak: ${INTEREST_START_PROVENANCE_OPTIONS.find((o) => o.code === provenance)?.label ?? "tanımsız"}`
+                              : "dayanak kayıtlı değil",
+                          );
+                        }
+                        return (
+                          <span data-testid={`claim-item-interest-status-${item.id}`} className="text-xs text-gray-600">
+                            {parts.join(" · ")}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -922,9 +946,53 @@ function AddClaimItemModal({
 }
 
 
+/** Düzenleme penceresindeki faiz alanları (yalnız bu doğrulamanın girdisi). */
+export interface InterestEditInput {
+  initialStatus: string;
+  status: string;
+  initialProvenance: string;
+  provenance: string;
+  initialStartDate: string;
+  startDate: string;
+  /** Kalemde kayıtlı faiz türü var mı (interestType ya da interestTypeCode)? Bu pencerede faiz türü seçilmez. */
+  hasInterestType: boolean;
+}
+
+/**
+ * Bu pencerenin sunduğu faiz durumu geçişleri: yalnız "Belirlenmedi" ⇄ "Faiz işler". "Faiz işlemez"e geçiş SUNULMAZ: onay
+ * yürütmesi (office-approval-domain-sync buildClaimItemUpdateData) açık null başlangıç / dayanak alanını yazmadığı için geçiş
+ * sunucunun kendi kuralına aykırı kayıt bırakır (bulgu 18.11.2026; ayrı iş). Kayıtlı "Faiz işlemez" kalemde seçim yalnız gösterimdir.
+ */
+export const EDITABLE_INTEREST_STATUSES: InterestAccrualStatusCode[] = ["UNKNOWN", "ACCRUES"];
+
+/**
+ * Sunucu kuralının (api interest-accrual-policy.validateInterestAccrualState) istemci yansıması — kural GEVŞETİLMEZ; sunucu yine
+ * son karardır. Faiz alanlarına dokunulmadıysa hiçbir şey denetlenmez ("Belirlenmedi" kayıt kendiliğinden değişmez).
+ * Hata metni döner; geçerliyse null.
+ */
+export function validateInterestEdit(input: InterestEditInput): string | null {
+  const statusChanged = input.status !== input.initialStatus;
+  const provenanceChanged = input.provenance !== input.initialProvenance;
+  const startChanged = input.startDate !== input.initialStartDate;
+  if (statusChanged && !(EDITABLE_INTEREST_STATUSES as string[]).includes(input.status)) {
+    return "Bu faiz durumu bu pencereden seçilemez.";
+  }
+  if (input.status === "ACCRUES" && (statusChanged || provenanceChanged || startChanged)) {
+    if (!input.hasInterestType) {
+      return "Kalemde faiz türü kayıtlı değil; 'Faiz işler' bu pencereden seçilemez.";
+    }
+    if (!input.provenance) return "'Faiz işler' için faiz başlangıcının dayanağı seçilmelidir.";
+    if (input.provenance !== PROVENANCE_WITHOUT_START_DATE && !input.startDate) {
+      return "'Faiz işler' için faiz başlangıç tarihi girilmelidir.";
+    }
+  }
+  return null;
+}
+
 // PR-5c: Metadata-only düzenleme modalı.
 // KIRMIZI ÇİZGİ: amount / itemType / currency / status / collectedAmount / demandedAmount
 // payload'a ASLA girmez — tutar ve kalem tipi bakiye cutover'a kadar kilitli (salt görüntü).
+// Faiz durumu ve faiz başlangıcının dayanağı yüksek etkili alandır: YALNIZ kullanıcı değiştirirse yüke girer ve onaya gider.
 function EditMetadataModal({
   item,
   onClose,
@@ -945,9 +1013,18 @@ function EditMetadataModal({
     interestRate: item.interestRate != null ? String(item.interestRate) : "",
     sortOrder: item.sortOrder != null ? String(item.sortOrder) : "",
     attorneyFeeBasis: item.attorneyFeeBasis ?? "",
+    interestAccrualStatus: item.interestAccrualStatus ?? "UNKNOWN",
+    interestStartDateProvenance: item.interestStartDateProvenance ?? "",
   });
   const isAttorneyFee = item.itemType === "ATTORNEY_FEE";
   const initialAttorneyFeeBasis = item.attorneyFeeBasis ?? "";
+  const initialStatus = item.interestAccrualStatus ?? "UNKNOWN";
+  const initialProvenance = item.interestStartDateProvenance ?? "";
+  const statusChanged = form.interestAccrualStatus !== initialStatus;
+  const provenanceChanged = form.interestStartDateProvenance !== initialProvenance;
+  // Kayıtlı "Faiz işlemez" kalem: durum bu pencereden değiştirilmez; başlangıç / bitiş / oran sunucu kuralı gereği boş tutulur.
+  const statusLocked = !(EDITABLE_INTEREST_STATUSES as string[]).includes(initialStatus);
+  const interestDetailLocked = initialStatus === "NO_INTEREST";
 
   const typeInfo = itemTypeLabels[item.itemType] || itemTypeLabels.OTHER;
   const lockNote = "Tutar ve kalem tipi, bakiye cutover tamamlanana kadar düzenlenemez.";
@@ -967,10 +1044,25 @@ function EditMetadataModal({
     form.interestStartDate !== initialHighImpact.interestStartDate ||
     form.interestEndDate !== initialHighImpact.interestEndDate ||
     form.interestRate !== initialHighImpact.interestRate ||
-    attorneyFeeBasisChanged;
+    attorneyFeeBasisChanged ||
+    statusChanged ||
+    provenanceChanged;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const validationError = validateInterestEdit({
+      initialStatus,
+      status: form.interestAccrualStatus,
+      initialProvenance,
+      provenance: form.interestStartDateProvenance,
+      initialStartDate: initialHighImpact.interestStartDate,
+      startDate: form.interestStartDate,
+      hasInterestType: Boolean(item.interestType || item.interestTypeCode),
+    });
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -980,18 +1072,26 @@ function EditMetadataModal({
         sortOrder: form.sortOrder !== "" ? parseInt(form.sortOrder, 10) : undefined,
       };
       if (form.dueDate !== initialHighImpact.dueDate) payload.dueDate = form.dueDate || undefined;
-      if (form.interestStartDate !== initialHighImpact.interestStartDate) {
-        payload.interestStartDate = form.interestStartDate || undefined;
-      }
-      if (form.interestEndDate !== initialHighImpact.interestEndDate) {
-        payload.interestEndDate = form.interestEndDate || undefined;
-      }
-      if (form.interestRate !== initialHighImpact.interestRate) {
-        payload.interestRate = form.interestRate !== "" ? parseFloat(form.interestRate) : undefined;
+      if (!interestDetailLocked) {
+        if (form.interestStartDate !== initialHighImpact.interestStartDate) {
+          payload.interestStartDate = form.interestStartDate || undefined;
+        }
+        if (form.interestEndDate !== initialHighImpact.interestEndDate) {
+          payload.interestEndDate = form.interestEndDate || undefined;
+        }
+        if (form.interestRate !== initialHighImpact.interestRate) {
+          payload.interestRate = form.interestRate !== "" ? parseFloat(form.interestRate) : undefined;
+        }
       }
       // Vekâlet ücreti kaynağı yüksek etkilidir (onaya gider); "Belirtilmemiş" seçimi açık null gönderir.
       if (attorneyFeeBasisChanged) {
         payload.attorneyFeeBasis = form.attorneyFeeBasis === "" ? null : form.attorneyFeeBasis;
+      }
+      // Faiz durumu ve dayanağı: yalnız kullanıcı değiştirdiyse yüke girer (kayıt kendiliğinden değişmez). Dayanak yalnız
+      // "Faiz işler"de seçilir ve doludur (boş dayanak doğrulamada durur); boşaltma gönderilmez.
+      if (statusChanged) payload.interestAccrualStatus = form.interestAccrualStatus;
+      if (provenanceChanged && form.interestAccrualStatus === "ACCRUES" && form.interestStartDateProvenance) {
+        payload.interestStartDateProvenance = form.interestStartDateProvenance;
       }
 
       const res = await api.put(`/claim-items/${item.id}`, payload);
@@ -1112,14 +1212,71 @@ function EditMetadataModal({
               />
             </div>
           </div>
+          {/* Faiz durumu ve faiz başlangıcının dayanağı — yüksek etkili; değişirse onaya gider. */}
+          <div>
+            <label htmlFor="claim-item-interest-accrual-status" className="block text-sm font-medium mb-1">
+              Faiz Durumu
+            </label>
+            <select
+              id="claim-item-interest-accrual-status"
+              data-testid="claim-item-interest-accrual-status-select"
+              value={form.interestAccrualStatus}
+              disabled={statusLocked}
+              onChange={(e) => setForm((p) => ({ ...p, interestAccrualStatus: e.target.value }))}
+              className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary disabled:bg-gray-100"
+            >
+              {(statusLocked ? [initialStatus as InterestAccrualStatusCode] : EDITABLE_INTEREST_STATUSES).map((code) => (
+                <option key={code} value={code}>
+                  {INTEREST_ACCRUAL_STATUS_LABELS[code] ?? "Tanımsız durum"}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-muted-foreground mt-1">
+              {statusLocked
+                ? "Faiz işlemeyen kalemin durumu bu pencereden değiştirilmez."
+                : "Belgeye göre seçin. \"Belirlenmedi\" kayıt siz değiştirmedikçe aynen kalır; değişiklik onaya gönderilir."}
+            </p>
+          </div>
+          {form.interestAccrualStatus === "ACCRUES" && (
+            <div>
+              <label htmlFor="claim-item-interest-start-provenance" className="block text-sm font-medium mb-1">
+                Faiz Başlangıcının Dayanağı
+              </label>
+              <select
+                id="claim-item-interest-start-provenance"
+                data-testid="claim-item-interest-start-provenance-select"
+                value={form.interestStartDateProvenance}
+                onChange={(e) => setForm((p) => ({ ...p, interestStartDateProvenance: e.target.value }))}
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
+              >
+                <option value="">Seçin…</option>
+                {INTEREST_START_PROVENANCE_OPTIONS.map((option) => (
+                  <option key={option.code} value={option.code}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              {form.interestStartDateProvenance === PROVENANCE_WITHOUT_START_DATE && (
+                <p className="text-[11px] text-muted-foreground mt-1">Başlangıç tarihi dosyanın takip tarihinden alınır.</p>
+              )}
+            </div>
+          )}
+          {interestDetailLocked && (
+            <p className="text-[11px] text-muted-foreground">
+              Faiz işlemeyen kalemde başlangıç, bitiş ve oran boş tutulur; bu alanlar düzenlenmez.
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium mb-1">Faiz Başlangıç</label>
+              <label htmlFor="claim-item-interest-start-date" className="block text-sm font-medium mb-1">Faiz Başlangıç</label>
               <input
+                id="claim-item-interest-start-date"
+                data-testid="claim-item-interest-start-date"
                 type="date"
                 value={form.interestStartDate}
+                disabled={interestDetailLocked}
                 onChange={(e) => setForm((p) => ({ ...p, interestStartDate: e.target.value }))}
-                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary disabled:bg-gray-100"
               />
             </div>
             <div>
@@ -1127,8 +1284,9 @@ function EditMetadataModal({
               <input
                 type="date"
                 value={form.interestEndDate}
+                disabled={interestDetailLocked}
                 onChange={(e) => setForm((p) => ({ ...p, interestEndDate: e.target.value }))}
-                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary disabled:bg-gray-100"
               />
             </div>
           </div>
@@ -1138,9 +1296,10 @@ function EditMetadataModal({
               type="number"
               step="0.01"
               value={form.interestRate}
+              disabled={interestDetailLocked}
               onChange={(e) => setForm((p) => ({ ...p, interestRate: e.target.value }))}
               placeholder="örn. 24"
-              className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
+              className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary disabled:bg-gray-100"
             />
           </div>
 
