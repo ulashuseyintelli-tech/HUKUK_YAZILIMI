@@ -13,6 +13,7 @@ import { OfficeApprovalDecisionActions } from "./OfficeApprovalDecisionActions";
 import { PayoutFinalizeAction } from "./PayoutFinalizeAction";
 import { ApprovalIntentSummary } from "./ApprovalIntentSummary";
 import { actionLabel, executionStatusLabel, targetTypeLabel } from "./labels";
+import { humanizeClaimItemName } from "@/components/claim-item/claim-item-labels";
 
 interface Props {
   requestId: string | null;
@@ -86,7 +87,8 @@ function CaseContextField({ detail }: { detail: OfficeApprovalDetail }) {
           </Link>
         </div>
       </div>
-      {caseContext.claimItemLabel && <Field label="Kalem (güncel ad)" value={caseContext.claimItemLabel} />}
+      {/* Açıklaması boş kalemde sunucu ham tür kodunu verir (ör. "PRINCIPAL"); gösterimde Türkçe ada çevrilir. */}
+      {caseContext.claimItemLabel && <Field label="Kalem (güncel ad)" value={humanizeClaimItemName(caseContext.claimItemLabel)} />}
       {caseContext.intentCaseMatches === false && (
         <div className="mb-3 rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-800">
           Kayıtlı niyetteki dosya ile hedefin güncel dosyası uyuşmuyor; talebi onaylamadan önce inceleyin.

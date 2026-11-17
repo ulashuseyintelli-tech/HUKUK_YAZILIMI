@@ -5,6 +5,7 @@ import type { ApprovalSummaryField, ApprovalSummaryProjector, ApprovalSummaryRes
 import { UNSAFE_SUMMARY_REASON } from "./types";
 import { formatDecimalString } from "./format";
 import { isNonEmptyString, isRecord } from "./guards";
+import { humanizeClaimItemName } from "@/components/claim-item/claim-item-labels";
 
 export const LIABILITY_SELECTION_INTENT_VERSION = "CLAIM_ITEM_LIABILITY_SELECTION_V1";
 export const LIABILITY_SELECTION_OPERATION = "LIABILITY_SELECTION";
@@ -66,7 +67,8 @@ function selectionFields(selection: Record<string, unknown>, prefix: string): Ap
 
   fields.push(
     display && isNonEmptyString(display.kalem)
-      ? { label: `${prefix}Kalem`, value: display.kalem }
+      ? // Açıklaması boş kalemde kayıtlı ad ham tür kodudur (ör. "PRINCIPAL"); okuma anında Türkçe ada çevrilir, kayıt değişmez.
+        { label: `${prefix}Kalem`, value: humanizeClaimItemName(display.kalem) }
       : { label: `${prefix}Kalem`, value: "Kalem adı kayıtta yok", tone: "warning" },
   );
 

@@ -9,14 +9,23 @@ import { projectFinancialCaseClose } from "./financial-case-close.projector";
 import { actionBehaviorNotes } from "./action-behavior-catalog";
 import { projectExpenseSend } from './expense-send.projector';
 import { projectClaimItemLiabilitySelection } from "./claim-item-liability-selection.projector";
+import { CLAIM_ITEM_UPDATE_OPERATION, projectClaimItemUpdate } from "./claim-item-update.projector";
+
+/**
+ * Aynı eylem kodu iki işlemi taşır: borçlu sorumluluğu seçimi ve kalem alanı değişikliği (UPDATE). Diğer işlemler
+ * (ör. oluşturma / silme) özetlenmez → seçim projector'ının "unsafe" dönüşü (bugünkü davranış).
+ */
+const projectClaimItemHighImpact: ApprovalSummaryProjector = (savedIntent, ctx) => {
+  const operation = savedIntent && typeof savedIntent === "object" ? (savedIntent as Record<string, unknown>).operation : undefined;
+  return operation === CLAIM_ITEM_UPDATE_OPERATION ? projectClaimItemUpdate(savedIntent, ctx) : projectClaimItemLiabilitySelection(savedIntent, ctx);
+};
 
 const PROJECTORS: Record<string, ApprovalSummaryProjector> = {
   COLLECTION_DISPOSITION_POST: projectCollectionDispositionPost,
   CHANGE_STATUS: projectChangeStatus,
   FINANCIAL_CASE_CLOSE: projectFinancialCaseClose,
   EXPENSE_REQUEST_SEND: projectExpenseSend,
-  // Yalnız borçlu sorumluluğu seçimi özetlenir; aynı kodun diğer işlemleri projector içinde "unsafe" kalır.
-  CLAIM_ITEM_HIGH_IMPACT_CHANGE: projectClaimItemLiabilitySelection,
+  CLAIM_ITEM_HIGH_IMPACT_CHANGE: projectClaimItemHighImpact,
 };
 
 const unsafe = (): ApprovalSummaryResult => ({ kind: "unsafe", fields: [], reason: UNSAFE_SUMMARY_REASON });

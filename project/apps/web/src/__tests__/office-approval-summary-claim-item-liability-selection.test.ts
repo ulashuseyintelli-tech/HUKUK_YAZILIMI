@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { getApprovalSummary } from "@/components/office-approval/summary/registry";
 import { LIABILITY_SELECTION_UNSUPPORTED_REASON } from "@/components/office-approval/summary/claim-item-liability-selection.projector";
 import { UNSAFE_SUMMARY_REASON } from "@/components/office-approval/summary/types";
+import { CLAIM_ITEM_UPDATE_UNSUPPORTED_REASON } from "@/components/office-approval/summary/claim-item-update.projector";
 import { actionLabel } from "@/components/office-approval/labels";
 
 // Sentetik değerler; gerçek dosya / kişi bilgisi YOK.
@@ -155,10 +156,38 @@ describe("Onay Kutusu — borçlu sorumluluğu seçimi özeti (U-1 / U-4)", () =
     }
   });
 
-  it("aynı eylem kodunun diğer işlemleri (alan yaması) bugünkü güvenli geri dönüşte kalır", () => {
-    const patch = { version: "OWN29D_CLAIM_ITEM_HIGH_IMPACT_V1", operation: "UPDATE", caseId: "c", proposedPatch: { amount: "1" } };
-    expect(getApprovalSummary("CLAIM_ITEM_HIGH_IMPACT_CHANGE", patch)).toEqual({ kind: "unsafe", fields: [], reason: UNSAFE_SUMMARY_REASON });
+  it("aynı eylem kodunun özetlenmeyen işlemleri güvenli geri dönüşte kalır (alan yamasının kendi özeti ayrı dosyada sınanır)", () => {
+    // Alan yaması (UPDATE) artık kendi projector'ında özetlenir; tanınmayan alan (tutar) içeren yama yine özet üretmez.
+    const patch = { version: "OWN29D_CLAIM_ITEM_HIGH_IMPACT_V1", operation: "UPDATE", caseId: "c", proposedPatch: { amount: "1" }, currentSnapshot: {} };
+    expect(getApprovalSummary("CLAIM_ITEM_HIGH_IMPACT_CHANGE", patch)).toEqual({
+      kind: "unsafe",
+      fields: [],
+      reason: CLAIM_ITEM_UPDATE_UNSUPPORTED_REASON,
+    });
+    const create = { version: "OWN29D_CLAIM_ITEM_HIGH_IMPACT_V1", operation: "CREATE", caseId: "c", proposedPatch: {} };
+    expect(getApprovalSummary("CLAIM_ITEM_HIGH_IMPACT_CHANGE", create)).toEqual({ kind: "unsafe", fields: [], reason: UNSAFE_SUMMARY_REASON });
     expect(getApprovalSummary("CLAIM_ITEM_HIGH_IMPACT_CHANGE", null)).toEqual({ kind: "unsafe", fields: [], reason: UNSAFE_SUMMARY_REASON });
     expect(actionLabel("CLAIM_ITEM_HIGH_IMPACT_CHANGE", patch)).toBe("Alacak kalemi — yüksek etkili değişiklik");
+  });
+});
+
+describe("Onay Kutusu — kayıtlı kalem adı ham tür kodu ise Türkçe ad (U-1 kalıntısı)", () => {
+  const withKalem = (kalem: string) => ({
+    ...CAPPED_INTENT,
+    selections: [{ ...CAPPED_INTENT.selections[0], display: { ...CAPPED_INTENT.selections[0].display, kalem } }],
+  });
+  const kalemValue = (intent: unknown) => {
+    const result = getApprovalSummary("CLAIM_ITEM_HIGH_IMPACT_CHANGE", intent);
+    return result.fields.find((field) => field.label === "Kalem")?.value;
+  };
+
+  it("açıklaması boş kalemde kayıtlı 'PRINCIPAL' → 'Asıl Alacak'; 'YARGILAMA_GIDERI' → 'Yargılama Gideri'", () => {
+    expect(kalemValue(withKalem("PRINCIPAL"))).toBe("Asıl Alacak");
+    expect(kalemValue(withKalem("YARGILAMA_GIDERI"))).toBe("Yargılama Gideri");
+  });
+
+  it("gerçek açıklama aynen kalır (kod benzeri olmayan metin çevrilmez)", () => {
+    expect(kalemValue(withKalem("Sentetik asıl alacak"))).toBe("Sentetik asıl alacak");
+    expect(kalemValue(withKalem("PRINCIPAL ek"))).toBe("PRINCIPAL ek");
   });
 });
