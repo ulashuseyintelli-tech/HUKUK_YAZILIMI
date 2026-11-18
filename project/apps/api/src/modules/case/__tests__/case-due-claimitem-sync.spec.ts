@@ -214,6 +214,8 @@ function makeTx(overrides: Record<string, any> = {}) {
     $executeRaw: jest.fn(async () => 1),
     officeApprovalRequest: {
       findFirst: jest.fn(async () => null),
+      // Due güncelleme / silme talebi: bekleyen talep var mı (yinelenen anahtar).
+      findUnique: jest.fn(async () => null),
     },
     case: {
       findFirst: jest.fn(async () => ({ id: 'case-1', tenantId: 'tenant-1', currency: 'TRY' })),
@@ -688,8 +690,8 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
     });
   });
 
-  it('updateDue NAFAKA -> NAFAKA same-side güncellemeye izin verir', async () => {
-    const tx = makeTx({
+  it('updateDue NAFAKA -> NAFAKA same-side: açıklayıcı alan doğrudan yazılır; tutar değişikliği onaya talep olur', async () => {
+    const nafakaTx = () => makeTx({
       due: {
         findFirst: jest.fn(async () => makeDue({ type: DueType.NAFAKA })),
         update: jest.fn(async ({ data }: any) => makeDue({ ...data, type: DueType.NAFAKA })),
@@ -699,15 +701,31 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
         update: jest.fn(),
       },
     });
-    const { service } = makeService(tx);
 
-    await service.updateDue('tenant-1', 'case-1', 'due-1', {
+    const direct = nafakaTx();
+    await makeService(direct).service.updateDue('tenant-1', 'case-1', 'due-1', {
       type: DueType.NAFAKA,
-      amount: 750,
+      description: 'Nafaka taksiti (düzeltildi)',
     }, 'requester-1');
+    expect(direct.due.update).toHaveBeenCalled();
+    expect(direct.claimItem.update).not.toHaveBeenCalled();
 
-    expect(tx.due.update).toHaveBeenCalled();
-    expect(tx.claimItem.update).not.toHaveBeenCalled();
+    // Bağlı kalemi olmayan Due'da tutar, Due'dan okuyan çıktıyı değiştirir → doğrudan yazılmaz (owner 19.11.2026).
+    const gated = nafakaTx();
+    const { service, officeApproval } = makeService(gated);
+    const result = await service.updateDue('tenant-1', 'case-1', 'due-1', { type: DueType.NAFAKA, amount: 750 }, 'requester-1');
+    expect(result).toMatchObject({ applied: false, approvalRequired: true, fields: ['amount'] });
+    expect(gated.due.update).not.toHaveBeenCalled();
+    expect(officeApproval.createPendingRequestInTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionCode: 'CLAIM_ITEM_HIGH_IMPACT_CHANGE',
+        targetType: 'CLAIM_ITEM_CASE',
+        targetRef: 'case-1',
+        idempotencyKey: 'case-due-update:due-1',
+        savedIntent: expect.objectContaining({ version: 'CASE_DUE_CHANGE_V1', operation: 'DUE_UPDATE', dueId: 'due-1', patch: { type: 'NAFAKA', amount: 750 }, effectiveFields: ['amount'] }),
+      }),
+      gated,
+    );
   });
 
   /**
@@ -751,21 +769,59 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
     },
   );
 
-  it('updateDue kalem türünü değiştirmeyen Due türünü (asıl alacak → kira) yalnız Due\'ya yazar', async () => {
-    const tx = makeTx({
+  it('updateDue kalem türünü değiştirmeyen Due türü (asıl alacak → kira): doğrudan yazılmaz, onaya talep olur; onay yürütmesi yalnız Due\'ya yazar', async () => {
+    const kiraTx = (overrides: Record<string, any> = {}) => makeTx({
+      officeApprovalRequest: { findFirst: jest.fn(async () => null), findUnique: jest.fn(async () => null) },
       due: {
         findFirst: jest.fn(async () => makeDue({ type: DueType.PRINCIPAL })),
         update: jest.fn(async ({ data }: any) => makeDue({ ...data, type: DueType.KIRA })),
       },
       claimItem: { findMany: jest.fn(async () => [makeClaim()]), update: jest.fn() },
+      ...overrides,
     });
-    const { service, writerRouter } = makeService(tx);
 
-    await service.updateDue('tenant-1', 'case-1', 'due-1', { type: DueType.KIRA }, 'requester-1');
+    const tx = kiraTx();
+    const { service, writerRouter, officeApproval } = makeService(tx);
+    const result = await service.updateDue('tenant-1', 'case-1', 'due-1', { type: DueType.KIRA }, 'requester-1');
 
-    expect(tx.due.update).toHaveBeenCalled();
+    expect(result).toMatchObject({ applied: false, approvalRequired: true, approvalRequestId: 'approval-1', fields: ['type'] });
+    expect(tx.due.update).not.toHaveBeenCalled();
     expect(writerRouter.updateSystemClaimItem).not.toHaveBeenCalled();
-    expect(tx.claimItem.update).not.toHaveBeenCalled();
+    const intent = officeApproval.createPendingRequestInTransaction.mock.calls[0][0].savedIntent;
+    expect(intent).toMatchObject({ operation: 'DUE_UPDATE', dueId: 'due-1', patch: { type: 'KIRA' }, effectiveFields: ['type'], before: expect.objectContaining({ type: 'PRINCIPAL', amount: '1000.00' }) });
+
+    // Onay yürütmesi: aynı çekirdek, talep anındaki durum özeti doğrulanarak; kaleme dokunulmaz.
+    const applyTx = kiraTx();
+    const applied = makeService(applyTx);
+    const req = { id: 'approval-1', tenantId: 'tenant-1', targetType: 'CLAIM_ITEM_CASE', targetRef: 'case-1', savedIntent: intent, requesterUserId: 'requester-1', approverUserId: 'approver-1' };
+    await applied.service.applyApprovedDueChangeInTx(applyTx, req as any);
+    expect(applyTx.due.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'due-1' }, data: expect.objectContaining({ type: 'KIRA' }) }));
+    expect(applied.writerRouter.updateSystemClaimItem).not.toHaveBeenCalled();
+    expect(applied.officeApproval.createPendingRequestInTransaction).not.toHaveBeenCalled();
+    expect(applied.audit.logInTransaction).toHaveBeenCalledWith(applyTx, expect.objectContaining({ action: 'CASE_DUE_UPDATE_APPROVED_APPLIED', userId: 'approver-1' }));
+
+    // Talepten sonra Due değiştiyse (tutar) yürütme reddedilir; hiçbir yazım olmaz.
+    const staleTx = kiraTx({
+      due: { findFirst: jest.fn(async () => makeDue({ type: DueType.PRINCIPAL, amount: 1200 })), update: jest.fn() },
+    });
+    await expect(makeService(staleTx).service.applyApprovedDueChangeInTx(staleTx, req as any)).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'DUE_CHANGE_STALE' }),
+    });
+    expect(staleTx.due.update).not.toHaveBeenCalled();
+
+    // Bekleyen FARKLI içerikli talep varken ikinci talep açılmaz; aynı içerik mevcut talebe döner.
+    const pending = (patch: Record<string, unknown>) => kiraTx({
+      officeApprovalRequest: {
+        findFirst: jest.fn(async () => null),
+        findUnique: jest.fn(async () => ({ id: 'approval-0', status: 'PENDING_APPROVAL', savedIntent: { ...intent, patch } })),
+      },
+    });
+    const conflictTx = pending({ type: 'AIDAT' });
+    await expect(makeService(conflictTx).service.updateDue('tenant-1', 'case-1', 'due-1', { type: DueType.KIRA }, 'requester-1')).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'DUE_CHANGE_PENDING_CONFLICT' }),
+    });
+    const sameTx = pending({ type: 'KIRA' });
+    await expect(makeService(sameTx).service.updateDue('tenant-1', 'case-1', 'due-1', { type: DueType.KIRA }, 'requester-1')).resolves.toMatchObject({ approvalRequired: true });
   });
 
   it('updateDue markerlı ClaimItem\'a yalnız değişen düşük etkili alanları (açıklama, sıra) yansıtır', async () => {

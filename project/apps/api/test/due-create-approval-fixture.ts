@@ -7,7 +7,7 @@ import { resolveTestDatabaseUrl } from './test-db-env';
  * `POST /cases/:id/dues` artık Due / kalem oluşturmaz; mevcut yüksek etkili kalem değişikliği onayına talep açar (202)
  * ve kalem ikinci kişinin onayında oluşur (owner kararı 19.11.2026). Konusu kalem ekleme onayı OLMAYAN HTTP testleri
  * hazırlık kalemini bu yardımcıyla, üretimdeki AYNI yoldan (talep → başka hesabın onayı → köprü) oluşturur. Onay
- * kuralının kendisi due-create-approval.http.db-gated.integration.spec.ts içinde sınanır.
+ * kuralının kendisi due-change-approval.http.db-gated.integration.spec.ts içinde sınanır.
  */
 export interface DueApprovalDecider {
   approve(id: string, approverUserId: string, note?: string): Promise<unknown>;

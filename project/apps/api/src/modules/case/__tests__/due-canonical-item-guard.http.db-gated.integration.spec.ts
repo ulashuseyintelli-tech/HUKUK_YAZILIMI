@@ -265,13 +265,23 @@ describeWithDisposableDb('Due yazım yolu bağlı kanonik kalemi korur — HTTP 
     f: Fixture,
     run: () => request.Test,
     expected: { status: number; code?: string; fields?: string[] },
+    // Onaya giden istek: Due / kalem / bakiye değişmez; yalnız yeni onay talebi (ve onun denetim kaydı) oluşur.
+    allow: { newApprovalRequests?: number } = {},
   ) {
     const digestBefore = await recordDigest(f);
     const balanceBefore = await balanceView(f);
     const res = await run();
     expect([res.status, res.body?.code ?? null]).toEqual([expected.status, expected.code ?? res.body?.code ?? null]);
     if (expected.fields) expect(res.body.fields).toEqual(expected.fields);
-    expect(await recordDigest(f)).toBe(digestBefore);
+    if (allow.newApprovalRequests) {
+      const before = JSON.parse(digestBefore);
+      const after = JSON.parse(await recordDigest(f));
+      expect([after.dues, after.claims]).toEqual([before.dues, before.claims]);
+      expect(after.approvalRows.slice(0, before.approvalRows.length)).toEqual(before.approvalRows);
+      expect(after.approvalRows.length - before.approvalRows.length).toBe(allow.newApprovalRequests);
+    } else {
+      expect(await recordDigest(f)).toBe(digestBefore);
+    }
     expect(await balanceView(f)).toEqual(balanceBefore);
     return res;
   }
@@ -408,12 +418,16 @@ describeWithDisposableDb('Due yazım yolu bağlı kanonik kalemi korur — HTTP 
       });
     });
 
-    it('kalem türünü değiştirmeyen Due türü (asıl alacak → kira) yalnız Due\'ya yazılır', async () => {
+    it('kalem türünü değiştirmeyen Due türü (asıl alacak → kira) onaya talep olur; onaylanınca yalnız Due\'ya yazılır', async () => {
       const f = await fixture('tur');
       await approveAccrues(f);
       const claimBefore = await claimRow(f.claimId);
-      const res = await patch(f.duePath, f.yetkili.userId, { type: 'KIRA' });
-      expect(res.status).toBe(200);
+      // Alt tür kaleme ulaşmaz ama Due'dan okuyan hesap / dışa aktarım çıktısını değiştirir (owner kararı 19.11.2026).
+      const res = await expectRejectedWithoutWrite(f, () => patch(f.duePath, f.yetkili.userId, { type: 'KIRA' }), { status: 202 }, { newApprovalRequests: 1 });
+      expect(res.body).toMatchObject({ applied: false, approvalRequired: true, fields: ['type'] });
+      expect((await dueRow(f.dueId))?.type).toBe('PRINCIPAL');
+
+      await approvals.approve(res.body.approvalRequestId, f.onayci.userId);
       expect((await dueRow(f.dueId))?.type).toBe('KIRA');
       expect(await claimRow(f.claimId)).toEqual(claimBefore);
     });
@@ -487,10 +501,20 @@ describeWithDisposableDb('Due yazım yolu bağlı kanonik kalemi korur — HTTP 
       const created = await addApproved(f, f.yetkili.userId, { type: 'NAFAKA', amount: 300, dueDate: '2025-05-05', description: 'Sentetik nafaka taksiti' });
       const path = `${f.duesPath}/${created.dueId}`;
       expect(await prisma.claimItem.count({ where: { caseId: f.caseId } })).toBe(1); // nafaka kalem üretmez
+      // Bağlı kalemi olmayan Due: tutar / vade değişikliği ve silme onaya talep olur (ayrıntı:
+      // due-effective-fields-approval.http.db-gated.integration.spec.ts). Açıklayıcı alan doğrudan yazılır.
       const updated = await patch(path, f.yetkili.userId, { amount: 350, dueDate: '2025-06-05' });
-      expect(updated.status).toBe(200);
+      expect([updated.status, updated.body.approvalRequired, updated.body.fields]).toEqual([202, true, ['amount', 'dueDate']]);
+      expect(Number((await dueRow(created.dueId))!.amount)).toBe(300);
+      await approvals.approve(updated.body.approvalRequestId, f.onayci.userId);
       expect(Number((await dueRow(created.dueId))!.amount)).toBe(350);
-      expect((await del(path, f.yetkili.userId)).status).toBe(200);
+
+      expect((await patch(path, f.yetkili.userId, { description: 'Sentetik nafaka taksiti (düzeltildi)' })).status).toBe(200);
+
+      const removed = await del(path, f.yetkili.userId);
+      expect([removed.status, removed.body.approvalRequired]).toEqual([202, true]);
+      expect(await dueRow(created.dueId)).not.toBeNull();
+      await approvals.approve(removed.body.approvalRequestId, f.onayci.userId);
       expect(await dueRow(created.dueId)).toBeNull();
     });
   });

@@ -21,7 +21,7 @@ export class CaseDueApprovalHandlerService implements OnModuleInit {
 
   onModuleInit(): void {
     this.domainSync.registerCaseDueChangeHandler(async (tx, req) => {
-      await this.caseService.applyApprovedDueCreateInTx(tx, req);
+      await this.caseService.applyApprovedDueChangeInTx(tx, req);
     });
   }
 }
