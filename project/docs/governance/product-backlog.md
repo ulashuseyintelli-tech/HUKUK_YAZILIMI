@@ -226,7 +226,7 @@ Depends On: `ONAY-KUTUSU-OKUNUR-OZET-U1-U4` (canlıda).
 Unlock Condition: Owner kararı 2026-11-17: yalnız bu kusur için ayrı aday, prova ya da yayın YOK; düzeltme sonraki uygun toplu yayına girer.
 Estimated Size: XS
 Related Modules: project/apps/api/src/modules/office-approval (display-context.service); project/apps/web/src/components/office-approval (summary/claim-item-liability-selection.projector, OfficeApprovalDetailDrawer). Kanıt: `HY_F02_EVIDENCE/r14r08r3/R14R08R3-HAZIRLIK-KAYDI-R01.md` §11 (özel dizin).
-Status: OPEN — kod değişikliği yapılmadı; sonraki uygun toplu yayına bağlı. Canlı veri ya da onaylı seçim etkilenmez (yalnız gösterim).
+Status: OPEN — **Main düzeltmesi tamamlandı.** Onay Kutusu, açıklaması boş alacak kalemlerinde ham tür kodu yerine mevcut Türkçe etiketi gösteriyor (`PRINCIPAL` → `Asıl Alacak`). Eşleme okuma sırasında yapılıyor ve geçmiş kayıtlar korunuyor. [#3302](https://github.com/ulashuseyintelli-tech/HUKUK_YAZILIMI/pull/3302), squash `359800b06ba5f0f89d8e3fe0bf68790f1055fd2e`. [Main CI](https://github.com/ulashuseyintelli-tech/HUKUK_YAZILIMI/actions/runs/44197044113), [CodeQL](https://github.com/ulashuseyintelli-tech/HUKUK_YAZILIMI/actions/runs/44197043854) ve [yönetişim](https://github.com/ulashuseyintelli-tech/HUKUK_YAZILIMI/actions/runs/44197044217) başarılı. **Canlı yayın bekliyor.** Düzeltme, 17.11.2026 tarihli owner kararı uyarınca sonraki uygun toplu yayına alınacak. Canlı doğrulama ve kullanıcı kabulü yayın sonrasında ayrıca kaydedilecek.
 
 ---
 ID: SECIMLIK-SORUMLULUK-TAHSILAT-KABULU
