@@ -514,8 +514,8 @@ describeWithDisposableDb('K2 — dosya yetkisi verme/değiştirme F01 yönetim k
       },
     );
 
-    // Çıkarmada tx içi kilitli yeniden değerlendirme ayrı teslimdedir (K7.3 işlemine bağlı); burada yalnız ekleme sınanır.
-    it.each(['add'] as const)('%s: erken izin sonrası yetki geri alınırsa tx içi kilitli yeniden değerlendirme reddeder; yazma ve denetim yok', async (kind) => {
+    // Çıkarmada yeniden değerlendirme K7.3 kapsam geri alımıyla AYNI işlemdedir (silmeden önce).
+    it.each(['add', 'remove'] as const)('%s: erken izin sonrası yetki geri alınırsa tx içi kilitli yeniden değerlendirme reddeder; yazma ve denetim yok', async (kind) => {
       const f = await fixture('team-revoked-' + kind);
       const before = await teamRows(f);
       const audits = await lawyerAudits(f);
