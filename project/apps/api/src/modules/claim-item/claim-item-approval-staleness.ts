@@ -4,19 +4,19 @@ import type { ClaimItemOperation } from './claim-item-approval.constants';
 /**
  * YÜKSEK ETKİLİ KALEM DEĞİŞİKLİĞİ ONAYINDA BAYATLIK KAPSAMI (owner talimatı 2026-11-18).
  *
- * Kural değişmedi: talep açıldıktan sonra kalem değiştiyse onay UYGULANMAZ ("stale-state conflict"). Tek ve dar istisna:
- * faiz / vekâlet ücreti kaynağı / açıklayıcı alan talebi beklerken AYNI kalemde ONAYLI bir borçlu sorumluluğu seçimi
- * uygulanmışsa ve kalemde değişen alanlar YALNIZ o seçimin yazdığı iki izdüşüm alanıysa talep bayat sayılmaz. Bu iki
- * değişiklik birbirinden bağımsızdır: seçim kalemin tutarına ve tahsilatına bakar (kendi durum özetiyle korunur), faiz
- * beyanı borçlu sorumluluğuna bakmaz.
+ * Kural değişmedi: talep açıldıktan sonra kalem değiştiyse onay UYGULANMAZ ("stale-state conflict"). Tek ve dar istisna,
+ * talepten BAĞIMSIZ ve KAYITLI değişikliklerdir:
+ *  - onaylı borçlu sorumluluğu seçiminin kaleme yazdığı iki izdüşüm alanı,
+ *  - açıklayıcı alanlar (açıklama, referans no, sıra) — yalnız talep bu alanlara dokunmuyorsa.
+ * Bu alanlar ne talebin değiştirdiği alanlardır ne de hesabın bağlı olduğu ortak veridir: seçim kalemin tutarına ve
+ * tahsilatına bakar (kendi durum özetiyle korunur); faiz / vekâlet kaynağı beyanı borçlu sorumluluğuna ya da açıklamaya
+ * bakmaz. İstisna, talep faiz / vekâlet ücreti kaynağı / açıklayıcı alanlar DIŞINDA bir alana dokunuyorsa uygulanmaz.
  *
  * İstisna KÖRLEMESİNE daraltma DEĞİLDİR; aşağıdakilerin HEPSİ bugünkü gibi bayatlıktır:
  *  - ortak veri değişti (tutar, tahsil edilen, tür, para birimi, durum, vade),
- *  - talebin kendi alan grubu değişti (faiz alanları, vekâlet ücreti kaynağı, açıklayıcı alanlar),
- *  - sorumluluk alanları ONAYLI seçim dışında bir yoldan değişti,
- *  - seçimle birlikte ya da ondan önce / sonra kaleme BAŞKA bir yazım yapıldı — görüntüde olmayan alan olsa bile
- *    (çağıran bunu denetim kaydındaki tam satır özetleri zinciriyle doğrular),
- *  - neyin değiştiği GÖRÜLEMİYOR (yalnız `updatedAt` değişmiş) ve zincir bunu onaylı seçimlere bağlayamıyor,
+ *  - talebin kendi alanlarından biri değişti (faiz alanları, vekâlet ücreti kaynağı ya da talepteki açıklayıcı alan),
+ *  - değişiklik KAYITSIZ yapıldı ya da araya başka bir yazım girdi — görüntüde olmayan alan olsa bile (çağıran bunu
+ *    denetim kaydındaki tam satır özetleri zinciriyle doğrular; zincir kurulamıyorsa talep bayattır),
  *  - talep ortak veriye ya da sorumluluk alanlarına dokunuyor, kalemi siliyor ya da tanınmayan alan taşıyor.
  *
  * <remarks>
@@ -28,7 +28,10 @@ import type { ClaimItemOperation } from './claim-item-approval.constants';
 /** Seçimin kaleme yazdığı iki izdüşüm alanı (mevcut okuyucular için). */
 export const CLAIM_ITEM_LIABILITY_PROJECTION_FIELDS = ['isAllDebtorsLiable', 'liableDebtorIds'] as const;
 
-/** Sorumluluktan BAĞIMSIZ talep alanları: faiz grubu, vekâlet ücreti kaynağı ve açıklayıcı alanlar. */
+/** Açıklayıcı (düşük etkili) alanlar: hesaba girmez. */
+export const CLAIM_ITEM_DESCRIPTIVE_FIELDS = ['description', 'referenceNo', 'sortOrder'] as const;
+
+/** Sorumluluktan ve ortak veriden BAĞIMSIZ talep alanları: faiz grubu, vekâlet ücreti kaynağı ve açıklayıcı alanlar. */
 export const CLAIM_ITEM_LIABILITY_INDEPENDENT_PATCH_FIELDS = [
   'interestType',
   'interestTypeCode',
@@ -40,19 +43,23 @@ export const CLAIM_ITEM_LIABILITY_INDEPENDENT_PATCH_FIELDS = [
   'noInterestReason',
   'noInterestConfirmedById',
   'attorneyFeeBasis',
-  'description',
-  'referenceNo',
-  'sortOrder',
+  ...CLAIM_ITEM_DESCRIPTIVE_FIELDS,
 ] as const;
 
 const VERSION_FIELD = 'updatedAt';
+
+/**
+ * Talepten bağımsız sayılabilecek değişiklik alanları: iki izdüşüm alanı + açıklayıcı alanlar. Çağıran, talep anındaki
+ * satırı bu alanları (ve sürüm alanını) talep görüntüsündeki değerlere çevirerek yeniden kurar (zincir doğrulaması).
+ */
+export const CLAIM_ITEM_INDEPENDENT_CHANGE_FIELDS = [...CLAIM_ITEM_LIABILITY_PROJECTION_FIELDS, ...CLAIM_ITEM_DESCRIPTIVE_FIELDS] as const;
 
 export type ClaimItemApprovalStalenessReason =
   /** Karşılaştırılacak görüntü / özet yok (eski kayıt biçimi): denetim yapılmaz — mevcut davranış. */
   | 'NO_BASELINE'
   | 'UNCHANGED'
-  /** Yalnız talepten sonra onaylanmış sorumluluk seçiminin yazdığı alanlar değişmiş: talep geçerli. */
-  | 'ONLY_APPROVED_LIABILITY_SELECTION_APPLIED'
+  /** Yalnız talepten bağımsız, kayıtlı değişiklikler (onaylı seçim izdüşümü / açıklayıcı alan) yapılmış: talep geçerli. */
+  | 'ONLY_INDEPENDENT_RECORDED_CHANGES'
   /** Kayıtlı görüntü kendi özetiyle tutmuyor. */
   | 'SNAPSHOT_INTEGRITY'
   | 'CHANGED';
@@ -73,20 +80,20 @@ export interface ClaimItemApprovalStalenessInput {
   /** Kalemin şimdiki görüntüsü (aynı görüntü işleviyle). */
   readonly currentSnapshot: Record<string, unknown>;
   /**
-   * Çağıranın KAYITTAN doğruladığı olgu: talep açıldıktan sonra bu kaleme YALNIZ onaylı sorumluluk seçimi yazdı (denetim
-   * kaydındaki tam satır özetleri zinciri; görüntüde olmayan alanlar dahil başka hiçbir yazım yok). Doğrulanamıyorsa `false`.
+   * Çağıranın KAYITTAN doğruladığı olgu: talep anındaki satırdan şimdiki satıra giden bütün yazımlar denetim kaydında
+   * kesintisiz zincir oluşturuyor ve iki satır arasındaki fark yalnız bağımsız değişiklik alanlarında (görüntüde olmayan
+   * alanlar dahil başka hiçbir fark yok). Doğrulanamıyorsa `false`.
    */
-  readonly liabilityChangeFromApprovedSelection: boolean;
+  readonly independentChangesVerifiedByRecord: boolean;
 }
 
 /**
- * Değişen alanlar yalnız iki izdüşüm alanı ve / veya sürüm alanı mı? Yalnız bu durumda değişiklik onaylı sorumluluk
- * seçimiyle AÇIKLANABİLİR ve kayıt (zincir) doğrulamasına gidilir. Yalnız sürüm alanının değişmesi de buraya girer:
- * art arda uygulanan iki seçim izdüşümü başa döndürmüş olabilir. Zincir doğrulanamazsa (seçim kaydı yok ya da araya
- * başka yazım girmiş) talep bayat kalır.
+ * Değişen alanlar yalnız bağımsız değişiklik alanları ve / veya sürüm alanı mı? Yalnız bu durumda değişiklik talepten
+ * bağımsız OLABİLİR ve kayıt (zincir) doğrulamasına gidilir. Yalnız sürüm alanının değişmesi de buraya girer: art arda
+ * yazımlar alanları başa döndürmüş olabilir. Zincir doğrulanamazsa talep bayat kalır.
  */
-export function isExplainableByLiabilitySelection(changedFields: readonly string[]): boolean {
-  const allowed = [...(CLAIM_ITEM_LIABILITY_PROJECTION_FIELDS as readonly string[]), VERSION_FIELD];
+export function isExplainableByIndependentChange(changedFields: readonly string[]): boolean {
+  const allowed = [...(CLAIM_ITEM_INDEPENDENT_CHANGE_FIELDS as readonly string[]), VERSION_FIELD];
   return changedFields.length > 0 && changedFields.every((field) => allowed.includes(field));
 }
 
@@ -119,9 +126,12 @@ export function evaluateClaimItemApprovalStaleness(input: ClaimItemApprovalStale
     patchFields.every((field) => (CLAIM_ITEM_LIABILITY_INDEPENDENT_PATCH_FIELDS as readonly string[]).includes(field));
   if (!independentPatch) return stale;
 
-  // İzdüşüm ve sürüm alanı dışında bir alan değiştiyse: bayat. Aksi hâlde karar kayıt (zincir) doğrulamasınındır.
-  if (!isExplainableByLiabilitySelection(changedFields)) return stale;
-  if (!input.liabilityChangeFromApprovedSelection) return stale;
+  // Bağımsız alanlar ve sürüm alanı dışında bir alan değiştiyse: bayat.
+  if (!isExplainableByIndependentChange(changedFields)) return stale;
+  // Talebin KENDİ alanı değiştiyse (ör. talep açıklamayı da değiştiriyor ve açıklama arada değişmiş): bayat.
+  if (changedFields.some((field) => patchFields.includes(field))) return stale;
+  // Aksi hâlde karar kayıt (zincir) doğrulamasınındır.
+  if (!input.independentChangesVerifiedByRecord) return stale;
 
-  return { stale: false, reason: 'ONLY_APPROVED_LIABILITY_SELECTION_APPLIED', changedFields };
+  return { stale: false, reason: 'ONLY_INDEPENDENT_RECORDED_CHANGES', changedFields };
 }

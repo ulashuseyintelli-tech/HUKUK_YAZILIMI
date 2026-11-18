@@ -48,7 +48,12 @@ import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-
 import { interestWriteData, normalizeInterestWriteIntent } from '../claim-item/interest-write-admission';
 import { validateInterestAccrualState } from '../claim-item/interest-accrual-policy';
 import { assertAttorneyFeeBasisMatchesItemType, effectiveField } from '../claim-item/attorney-fee-basis';
-import { evaluateClaimItemApprovalStaleness, isExplainableByLiabilitySelection } from '../claim-item/claim-item-approval-staleness';
+import {
+  CLAIM_ITEM_DESCRIPTIVE_FIELDS,
+  evaluateClaimItemApprovalStaleness,
+  isExplainableByIndependentChange,
+} from '../claim-item/claim-item-approval-staleness';
+
 import { AuditService } from '../audit/audit.service';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { createCollectionMutationTrace } from '../collection/collection-audit';
@@ -89,6 +94,10 @@ export type ClaimItemLiabilitySelectionApprovalHandler = (
 ) => Promise<ClaimItemLiabilityProjection[]>;
 
 const COLLECTION_DISPOSITION_APPROVAL_ACTION = 'COLLECTION_DISPOSITION_POST';
+/** Zincir doğrulamasında kayıt saati ile satır sürüm saati arasındaki saat farkı payı. */
+const CLAIM_ITEM_AUDIT_CHAIN_CLOCK_MARGIN_MS = 5 * 60 * 1000;
+/** Zincir doğrulamasında okunacak en çok kayıt; aşılırsa zincir kurulamaz sayılır (talep bayat kalır). */
+const CLAIM_ITEM_AUDIT_CHAIN_MAX_RECORDS = 200;
 const COLLECTION_DISPOSITION_TARGET_TYPE = 'COLLECTION_DISPOSITION';
 
 @Injectable()
@@ -759,13 +768,13 @@ export class OfficeApprovalDomainSyncService {
       requestSnapshotHash: intent.currentSnapshotHash,
       currentSnapshot,
     };
-    let staleness = evaluateClaimItemApprovalStaleness({ ...stalenessInput, liabilityChangeFromApprovedSelection: false });
-    // Değişen alanlar yalnız iki izdüşüm alanı ve / veya sürüm alanıysa kayıttan doğrulanır: talepten bu yana kaleme
-    // YALNIZ onaylı seçim mi yazdı? (Art arda iki seçim izdüşümü başa döndürdüyse yalnız sürüm alanı değişmiş görünür.)
-    if (staleness.stale && isExplainableByLiabilitySelection(staleness.changedFields)) {
+    let staleness = evaluateClaimItemApprovalStaleness({ ...stalenessInput, independentChangesVerifiedByRecord: false });
+    // Değişen alanlar yalnız bağımsız alanlar (sorumluluk izdüşümü / açıklayıcı alanlar) ve / veya sürüm alanıysa kayıttan
+    // doğrulanır: talep anındaki satırdan bu yana yapılan bütün yazımlar kayıtlı mı ve fark yalnız bu alanlarda mı?
+    if (staleness.stale && isExplainableByIndependentChange(staleness.changedFields)) {
       staleness = evaluateClaimItemApprovalStaleness({
         ...stalenessInput,
-        liabilityChangeFromApprovedSelection: await this.onlyApprovedLiabilitySelectionWroteSinceRequest(
+        independentChangesVerifiedByRecord: await this.independentChangesVerifiedByAuditChain(
           tx,
           req,
           intent,
@@ -857,61 +866,71 @@ export class OfficeApprovalDomainSyncService {
   }
 
   /**
-   * Bayatlık istisnasının KAYIT doğrulaması (tam satır): talep açıldıktan sonra bu kaleme YALNIZ onaylı borçlu sorumluluğu
-   * seçimi mi yazdı? Her kalem yazımı denetim kaydına yazımdan önceki ve sonraki TAM satırın özetini bırakır. Seçim
-   * uygulama kayıtları zincir olarak doğrulanır:
-   *  - ilk kaydın "önceki" özeti = talep anındaki satır (şimdiki satırın, iki izdüşüm alanı ve `updatedAt` talep
-   *    görüntüsündeki değerlere çevrilmiş hâli) → talep ile seçim arasında başka yazım yok;
-   *  - ardışık kayıtlar birbirine bağlı → aralarında başka yazım yok;
-   *  - son kaydın "sonraki" özeti = şimdiki satır → seçimden sonra başka yazım yok.
-   * Görüntüde bulunmayan alanlar dahil HERHANGİ bir başka yazım zinciri koparır ve talep bayat kalır.
-   * Dosya kilidi altında çağrılır.
+   * Bayatlık istisnasının KAYIT doğrulaması (tam satır): talep anındaki satırdan şimdiki satıra giden BÜTÜN yazımlar
+   * denetim kaydında kesintisiz zincir mi ve iki satır arasındaki fark YALNIZ bağımsız değişiklik alanlarında mı?
+   *
+   * Her kalem yazımı denetim kaydına yazımdan önceki ve sonraki TAM satırın özetini bırakır. Talep anındaki satır, şimdiki
+   * satırın bağımsız alanları (iki sorumluluk izdüşümü + açıklayıcı alanlar) ve `updatedAt` talep görüntüsündeki
+   * değerlere çevrilerek yeniden kurulur. Zincir:
+   *  - "önceki" özeti talep anındaki satıra eşit olan kayıttan başlar (o kayıttan önceki yazımlar talep görüntüsünü
+   *    üretenlerdir; talep yazım anına denk gelip "bayat doğmuş" olsa da doğru yerden başlanır),
+   *  - ardışık kayıtlar birbirine bağlıdır (aralarında kayıtsız yazım yok),
+   *  - son kaydın "sonraki" özeti şimdiki satırdır (ardından kayıtsız yazım yok).
+   * Görüntüde bulunmayan alanlar dahil bağımsız alanlar dışındaki HERHANGİ bir fark ya da kayıtsız yazım zinciri koparır
+   * ve talep bayat kalır. Dosya kilidi altında çağrılır.
    *
    * <remarks>
    * Cagrildigi yerler:
    * - OfficeApprovalDomainSyncService.applyClaimItemUpdateOrDelete() → onay kararı transaction'ı
    * </remarks>
    */
-  private async onlyApprovedLiabilitySelectionWroteSinceRequest(
+  private async independentChangesVerifiedByAuditChain(
     tx: Prisma.TransactionClient,
     req: OfficeApprovalRequest,
     intent: ClaimItemHighImpactSavedIntent,
     current: ClaimItemLifecycleRecord,
   ): Promise<boolean> {
     const requested = intent.currentSnapshot;
-    if (!requested || !(req.createdAt instanceof Date)) return false;
+    if (!requested) return false;
     const requestedUpdatedAt = typeof requested.updatedAt === 'string' ? new Date(requested.updatedAt) : null;
     if (!requestedUpdatedAt || Number.isNaN(requestedUpdatedAt.getTime())) return false;
     if (typeof requested.isAllDebtorsLiable !== 'boolean' || !Array.isArray(requested.liableDebtorIds)) return false;
+    for (const field of CLAIM_ITEM_DESCRIPTIVE_FIELDS) {
+      if (!Object.prototype.hasOwnProperty.call(requested, field)) return false;
+    }
 
-    const applied = await tx.auditLog.findMany({
-      where: {
-        tenantId: req.tenantId,
-        entityType: 'ClaimItem',
-        entityId: current.id,
-        action: 'CLAIM_ITEM_LIABILITY_SELECTION_APPLIED',
-        createdAt: { gte: req.createdAt },
-      },
-      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-      select: { oldValues: true, newValues: true },
-    });
-    if (applied.length === 0) return false;
-    const hashOf = (value: unknown): string | null => {
-      const hash = (value as { recordHash?: unknown } | null)?.recordHash;
-      return typeof hash === 'string' && hash.length > 0 ? hash : null;
-    };
     const rowAtRequest: ClaimItemLifecycleRecord = {
       ...current,
       isAllDebtorsLiable: requested.isAllDebtorsLiable,
       liableDebtorIds: [...requested.liableDebtorIds],
+      description: requested.description ?? null,
+      referenceNo: requested.referenceNo ?? null,
+      sortOrder: requested.sortOrder ?? 0,
       updatedAt: requestedUpdatedAt,
     };
-    if (hashOf(applied[0].oldValues) !== claimItemLifecycleRecordHash(rowAtRequest)) return false;
-    for (let index = 1; index < applied.length; index += 1) {
-      const previous = hashOf(applied[index - 1].newValues);
-      if (!previous || previous !== hashOf(applied[index].oldValues)) return false;
+    const rowAtRequestHash = claimItemLifecycleRecordHash(rowAtRequest);
+
+    // Talep görüntüsünün alındığı sürümden bu yana kalemin süreklilik kayıtları (pay bırakılır: kayıt saati ile satır
+    // sürüm saati farklı saatlerden gelir; fazladan gelen eski kayıtlar zincir başlangıcı aranırken atlanır).
+    const since = new Date(requestedUpdatedAt.getTime() - CLAIM_ITEM_AUDIT_CHAIN_CLOCK_MARGIN_MS);
+    const records = await tx.auditLog.findMany({
+      where: { tenantId: req.tenantId, entityType: 'ClaimItem', entityId: current.id, createdAt: { gte: since } },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      select: { oldValues: true, newValues: true },
+      take: CLAIM_ITEM_AUDIT_CHAIN_MAX_RECORDS + 1,
+    });
+    if (records.length === 0 || records.length > CLAIM_ITEM_AUDIT_CHAIN_MAX_RECORDS) return false;
+    const hashOf = (value: unknown): string | null => {
+      const hash = (value as { recordHash?: unknown } | null)?.recordHash;
+      return typeof hash === 'string' && hash.length > 0 ? hash : null;
+    };
+    const start = records.findIndex((record) => hashOf(record.oldValues) === rowAtRequestHash);
+    if (start < 0) return false;
+    for (let index = start + 1; index < records.length; index += 1) {
+      const previous = hashOf(records[index - 1].newValues);
+      if (!previous || previous !== hashOf(records[index].oldValues)) return false;
     }
-    return hashOf(applied[applied.length - 1].newValues) === claimItemLifecycleRecordHash(current);
+    return hashOf(records[records.length - 1].newValues) === claimItemLifecycleRecordHash(current);
   }
 
   private normalizeApprovedInterestPatch(

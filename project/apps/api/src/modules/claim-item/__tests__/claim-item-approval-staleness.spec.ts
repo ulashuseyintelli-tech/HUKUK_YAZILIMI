@@ -1,8 +1,9 @@
 import { stableJsonHash } from '../../permission-diagnostics/guided-edge/canonical-json';
 import {
+  CLAIM_ITEM_INDEPENDENT_CHANGE_FIELDS,
   CLAIM_ITEM_LIABILITY_INDEPENDENT_PATCH_FIELDS,
   evaluateClaimItemApprovalStaleness,
-  isExplainableByLiabilitySelection,
+  isExplainableByIndependentChange,
 } from '../claim-item-approval-staleness';
 import { CLAIM_ITEM_HIGH_IMPACT_USER_FIELDS, CLAIM_ITEM_LOW_IMPACT_USER_FIELDS } from '../claim-item-approval.constants';
 
@@ -10,8 +11,9 @@ import { CLAIM_ITEM_HIGH_IMPACT_USER_FIELDS, CLAIM_ITEM_LOW_IMPACT_USER_FIELDS }
  * YÜKSEK ETKİLİ KALEM DEĞİŞİKLİĞİ ONAYINDA BAYATLIK KAPSAMI (owner talimatı 2026-11-18).
  *
  * Kanıtlanan: bayatlık kuralı körlemesine daraltılmadı. Tek istisna — faiz / vekâlet ücreti kaynağı / açıklayıcı alan talebi
- * beklerken talepten SONRA onaylanmış sorumluluk seçiminin yazdığı iki izdüşüm alanı — dışında her değişiklik bayatlıktır.
- * Değerler SENTETİKTİR.
+ * beklerken yapılan, talepten BAĞIMSIZ ve KAYITLI değişiklikler (onaylı sorumluluk seçiminin iki izdüşüm alanı; talebin
+ * dokunmadığı açıklayıcı alanlar) — dışında her değişiklik bayatlıktır. Kayıt (zincir) doğrulaması çağırana aittir; burada
+ * `verified` bayrağıyla temsil edilir. Değerler SENTETİKTİR.
  */
 const snapshot = (over: Record<string, unknown> = {}) => ({
   id: 'ci-1',
@@ -47,12 +49,13 @@ const snapshot = (over: Record<string, unknown> = {}) => ({
 
 const INTEREST_PATCH = { interestAccrualStatus: 'ACCRUES', interestStartDate: '2025-03-04', interestStartDateProvenance: 'JUDGMENT_FINALIZATION_DATE' };
 const SELECTION_APPLIED = { isAllDebtorsLiable: false, liableDebtorIds: [], updatedAt: '2026-01-02T00:00:00.000Z' };
+const DESCRIPTION_EDITED = { description: 'Onay beklerken düzenlenen açıklama', updatedAt: '2026-01-02T00:00:00.000Z' };
 
 const evaluate = (over: {
   operation?: 'UPDATE' | 'DELETE';
   patch?: Record<string, unknown>;
   current?: Record<string, unknown>;
-  fromSelection?: boolean;
+  verified?: boolean;
   request?: Record<string, unknown> | null;
   hash?: string | null;
 }) => {
@@ -63,7 +66,7 @@ const evaluate = (over: {
     requestSnapshot: request,
     requestSnapshotHash: over.hash === undefined ? (request ? stableJsonHash(request) : null) : over.hash,
     currentSnapshot: snapshot(over.current ?? {}),
-    liabilityChangeFromApprovedSelection: over.fromSelection ?? false,
+    independentChangesVerifiedByRecord: over.verified ?? false,
   });
 };
 
@@ -81,18 +84,12 @@ describe('Kalem onayı bayatlık kapsamı — değişmeyen kural', () => {
     ['vade', { dueDate: '2025-02-02T00:00:00.000Z', updatedAt: 'x' }],
     ['faiz alanı (talebin kendi grubu)', { interestTypeCode: 'COMMERCIAL', updatedAt: 'x' }],
     ['vekâlet ücreti kaynağı', { attorneyFeeBasis: 'ENFORCEMENT_TARIFF', updatedAt: 'x' }],
-    ['açıklama', { description: 'Onay beklerken değişti', updatedAt: 'x' }],
-  ])('%s değiştiyse faiz talebi bayattır — onaylı seçim uygulanmış olsa bile', (_ad, current) => {
-    // Seçim de uygulanmış olsun: ortak / kendi grubundaki değişiklik yine bayatlıktır.
-    const result = evaluate({ current: { ...SELECTION_APPLIED, ...current }, fromSelection: true });
+  ])('%s değiştiyse faiz talebi bayattır — bağımsız değişiklikler kayıtlı ve doğrulanmış olsa bile', (_ad, current) => {
+    // Seçim de uygulanmış, açıklama da düzenlenmiş olsun: ortak / kendi grubundaki değişiklik yine bayatlıktır.
+    const result = evaluate({ current: { ...SELECTION_APPLIED, ...DESCRIPTION_EDITED, ...current }, verified: true });
     expect(result.stale).toBe(true);
     expect(result.reason).toBe('CHANGED');
-    // Seçim uygulanmamışken de bayattır.
     expect(evaluate({ current }).stale).toBe(true);
-  });
-
-  it('yalnız sürüm alanı değiştiyse (neyin değiştiği görülemiyor) ve kayıt bunu onaylı seçimlere bağlayamıyorsa bayattır', () => {
-    expect(evaluate({ current: { updatedAt: 'x' }, fromSelection: false })).toMatchObject({ stale: true, reason: 'CHANGED', changedFields: ['updatedAt'] });
   });
 
   it('kayıtlı görüntü kendi özetiyle tutmuyorsa bayattır', () => {
@@ -109,33 +106,56 @@ describe('Kalem onayı bayatlık kapsamı — değişmeyen kural', () => {
   });
 });
 
-describe('Kalem onayı bayatlık kapsamı — tek istisna: talepten sonra onaylanmış sorumluluk seçimi', () => {
-  it('yalnız iki izdüşüm alanı değişti ve değişiklik onaylı seçimden: faiz talebi geçerlidir', () => {
-    expect(evaluate({ current: SELECTION_APPLIED, fromSelection: true })).toEqual({
+describe('Kalem onayı bayatlık kapsamı — tek istisna: talepten bağımsız ve kayıtlı değişiklikler', () => {
+  it('yalnız onaylı seçimin iki izdüşüm alanı değişti ve kayıt doğruladı: faiz talebi geçerlidir', () => {
+    expect(evaluate({ current: SELECTION_APPLIED, verified: true })).toEqual({
       stale: false,
-      reason: 'ONLY_APPROVED_LIABILITY_SELECTION_APPLIED',
+      reason: 'ONLY_INDEPENDENT_RECORDED_CHANGES',
       changedFields: ['isAllDebtorsLiable', 'updatedAt'],
     });
-    expect(
-      evaluate({ current: { isAllDebtorsLiable: false, liableDebtorIds: ['d-1'], updatedAt: 'x' }, fromSelection: true }),
-    ).toMatchObject({ stale: false, changedFields: ['isAllDebtorsLiable', 'liableDebtorIds', 'updatedAt'] });
+    expect(evaluate({ current: { isAllDebtorsLiable: false, liableDebtorIds: ['d-1'], updatedAt: 'x' }, verified: true })).toMatchObject({
+      stale: false,
+      changedFields: ['isAllDebtorsLiable', 'liableDebtorIds', 'updatedAt'],
+    });
   });
 
-  it('art arda seçimler izdüşümü başa döndürdüyse yalnız sürüm alanı değişir; kayıt zinciri doğruladıysa talep geçerlidir', () => {
-    expect(evaluate({ current: { updatedAt: 'x' }, fromSelection: true })).toEqual({
+  it('yalnız açıklayıcı alan değişti (açıklama / referans / sıra) ve kayıt doğruladı: faiz talebi geçerlidir', () => {
+    expect(evaluate({ current: DESCRIPTION_EDITED, verified: true })).toEqual({
       stale: false,
-      reason: 'ONLY_APPROVED_LIABILITY_SELECTION_APPLIED',
+      reason: 'ONLY_INDEPENDENT_RECORDED_CHANGES',
+      changedFields: ['description', 'updatedAt'],
+    });
+    expect(evaluate({ current: { referenceNo: 'R-1', sortOrder: 3, updatedAt: 'x' }, verified: true }).stale).toBe(false);
+    // Seçim + açıklama birlikte de bağımsızdır.
+    expect(evaluate({ current: { ...SELECTION_APPLIED, ...DESCRIPTION_EDITED }, verified: true }).stale).toBe(false);
+  });
+
+  it('art arda yazımlar alanları başa döndürdüyse yalnız sürüm alanı değişir; kayıt doğruladıysa talep geçerlidir', () => {
+    expect(evaluate({ current: { updatedAt: 'x' }, verified: true })).toEqual({
+      stale: false,
+      reason: 'ONLY_INDEPENDENT_RECORDED_CHANGES',
       changedFields: ['updatedAt'],
     });
   });
 
-  it('aynı değişiklik onaylı seçimden gelmiyorsa (kayıttan doğrulanamadı) bayattır', () => {
-    expect(evaluate({ current: SELECTION_APPLIED, fromSelection: false })).toMatchObject({ stale: true, reason: 'CHANGED' });
+  it('aynı değişiklikler kayıttan doğrulanamadıysa (kayıtsız yazım / kopuk zincir) bayattır', () => {
+    expect(evaluate({ current: SELECTION_APPLIED, verified: false })).toMatchObject({ stale: true, reason: 'CHANGED' });
+    expect(evaluate({ current: DESCRIPTION_EDITED, verified: false })).toMatchObject({ stale: true, reason: 'CHANGED' });
+    expect(evaluate({ current: { updatedAt: 'x' }, verified: false })).toMatchObject({ stale: true, reason: 'CHANGED', changedFields: ['updatedAt'] });
+  });
+
+  it('talebin KENDİ açıklayıcı alanı arada değiştiyse bayattır (kayıt doğrulasa bile)', () => {
+    const patch = { ...INTEREST_PATCH, description: 'Talebin önerdiği açıklama' };
+    expect(evaluate({ patch, current: DESCRIPTION_EDITED, verified: true })).toMatchObject({ stale: true, reason: 'CHANGED' });
+    // Aynı talep, yalnız seçim uygulanmışsa geçerlidir (açıklama değişmedi).
+    expect(evaluate({ patch, current: SELECTION_APPLIED, verified: true }).stale).toBe(false);
+    // Talep yalnız sırayı değiştiriyor, arada açıklama düzenlendi: talebin alanı değil → geçerli.
+    expect(evaluate({ patch: { ...INTEREST_PATCH, sortOrder: 5 }, current: DESCRIPTION_EDITED, verified: true }).stale).toBe(false);
   });
 
   it.each([
     ['vekâlet ücreti kaynağı talebi', { attorneyFeeBasis: 'ENFORCEMENT_TARIFF' }, false],
-    ['açıklayıcı alan talebi', { description: 'Yeni açıklama' }, false],
+    ['açıklayıcı alan talebi (başka alan)', { referenceNo: 'R-9' }, false],
     ['faizsizlik beyanı', { interestAccrualStatus: 'NO_INTEREST', noInterestReason: 'Sentetik gerekçe', noInterestConfirmedById: 'u-1' }, false],
     ['tutar talebi (ortak veri)', { amount: 1200 }, true],
     ['tür talebi (ortak veri)', { itemType: 'EXPENSE' }, true],
@@ -145,28 +165,33 @@ describe('Kalem onayı bayatlık kapsamı — tek istisna: talepten sonra onayla
     ['faiz + tutar birlikte', { ...INTEREST_PATCH, amount: 1200 }, true],
     ['tanınmayan alan', { bilinmeyenAlan: 1 }, true],
     ['boş talep', {}, true],
-  ])('istisna yalnız sorumluluktan bağımsız talepler içindir: %s', (_ad, patch, expectedStale) => {
-    expect(evaluate({ patch, current: SELECTION_APPLIED, fromSelection: true }).stale).toBe(expectedStale);
+  ])('istisna yalnız ortak veriden ve sorumluluktan bağımsız talepler içindir: %s', (_ad, patch, expectedStale) => {
+    expect(evaluate({ patch, current: { ...SELECTION_APPLIED, ...DESCRIPTION_EDITED }, verified: true }).stale).toBe(expectedStale);
   });
 
   it('silme talebinde istisna yoktur', () => {
-    expect(evaluate({ operation: 'DELETE', patch: {}, current: SELECTION_APPLIED, fromSelection: true })).toMatchObject({ stale: true });
+    expect(evaluate({ operation: 'DELETE', patch: {}, current: SELECTION_APPLIED, verified: true })).toMatchObject({ stale: true });
   });
 
-  it('bağımsız alan listesi yalnız kullanıcı alanlarından oluşur; ortak veri ve sorumluluk alanı içermez', () => {
+  it('alan listeleri: bağımsız talep alanları yalnız kullanıcı alanlarıdır; ortak veri ve sorumluluk alanı içermez', () => {
     const userFields = [...CLAIM_ITEM_HIGH_IMPACT_USER_FIELDS, ...CLAIM_ITEM_LOW_IMPACT_USER_FIELDS] as readonly string[];
     for (const field of CLAIM_ITEM_LIABILITY_INDEPENDENT_PATCH_FIELDS) expect(userFields).toContain(field);
     for (const shared of ['amount', 'itemType', 'currency', 'status', 'dueDate', 'isAllDebtorsLiable', 'liableDebtorIds']) {
       expect(CLAIM_ITEM_LIABILITY_INDEPENDENT_PATCH_FIELDS as readonly string[]).not.toContain(shared);
     }
+    // Bağımsız DEĞİŞİKLİK alanları: yalnız iki izdüşüm alanı + düşük etkili (açıklayıcı) alanlar.
+    expect([...CLAIM_ITEM_INDEPENDENT_CHANGE_FIELDS].sort()).toEqual(
+      ['isAllDebtorsLiable', 'liableDebtorIds', ...CLAIM_ITEM_LOW_IMPACT_USER_FIELDS].sort(),
+    );
   });
 
-  it('isExplainableByLiabilitySelection: yalnız izdüşüm alanları ve / veya sürüm alanı değiştiyse doğru', () => {
-    expect(isExplainableByLiabilitySelection(['isAllDebtorsLiable', 'updatedAt'])).toBe(true);
-    expect(isExplainableByLiabilitySelection(['liableDebtorIds'])).toBe(true);
-    expect(isExplainableByLiabilitySelection(['updatedAt'])).toBe(true);
-    expect(isExplainableByLiabilitySelection(['isAllDebtorsLiable', 'amount'])).toBe(false);
-    expect(isExplainableByLiabilitySelection(['description', 'updatedAt'])).toBe(false);
-    expect(isExplainableByLiabilitySelection([])).toBe(false);
+  it('isExplainableByIndependentChange: yalnız bağımsız alanlar ve / veya sürüm alanı değiştiyse doğru', () => {
+    expect(isExplainableByIndependentChange(['isAllDebtorsLiable', 'updatedAt'])).toBe(true);
+    expect(isExplainableByIndependentChange(['liableDebtorIds'])).toBe(true);
+    expect(isExplainableByIndependentChange(['description', 'updatedAt'])).toBe(true);
+    expect(isExplainableByIndependentChange(['updatedAt'])).toBe(true);
+    expect(isExplainableByIndependentChange(['isAllDebtorsLiable', 'amount'])).toBe(false);
+    expect(isExplainableByIndependentChange(['interestStartDate', 'updatedAt'])).toBe(false);
+    expect(isExplainableByIndependentChange([])).toBe(false);
   });
 });
