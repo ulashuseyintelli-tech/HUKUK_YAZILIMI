@@ -1,5 +1,12 @@
-// @db-gated: CI'da approved TEST_DATABASE_URL zorunludur; yerelde değişken yoksa takım atlanır.
+// CaseModule grafiği `pdf-poppler`'ı yükler; paket Linux'ta yükleme anında process.exit(1) verir
 // (CI emsali: case-opening-claim-requests.http.db-gated.integration.spec.ts).
+jest.mock('pdf-poppler', () => ({
+  convert: async () => {
+    throw new Error('pdf-poppler is stubbed in unit tests');
+  },
+}));
+
+// @db-gated: CI'da approved TEST_DATABASE_URL zorunludur; yerelde değişken yoksa takım atlanır.
 import { CanActivate, ExecutionContext, INestApplication, UnauthorizedException, ValidationPipe } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
