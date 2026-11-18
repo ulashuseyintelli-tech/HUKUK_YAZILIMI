@@ -694,15 +694,34 @@ interface DrawerProps {
   children: React.ReactNode;
 }
 
+// Yerleşim (owner 18.11.2026, P02 kullanılabilirlik notu U-7): sabit 480 px yerine küçük ekranda tam genişlik, masaüstünde
+// 560 / 640 px; diyalog rolü, Escape ile kapanma ve adlandırılmış kapat düğmesi. İçerik ve davranış AYNEN.
 function Drawer({ isOpen, onClose, title, children }: DrawerProps) {
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      // Üstte başka bir kalıcı pencere (ör. kalem düzenleme) açıksa Escape onundur; çekmece kapanmaz.
+      if (document.querySelectorAll('[aria-modal="true"]').length > 1) return;
+      onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-50 flex">
       <div className="fixed inset-0 bg-black/30" onClick={onClose} />
-      <div className="ml-auto w-[480px] bg-white h-full shadow-xl flex flex-col relative">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        data-testid="case-detail-drawer"
+        className="ml-auto w-full sm:w-[560px] xl:w-[640px] max-w-full bg-white h-full shadow-xl flex flex-col relative"
+      >
         <div className="p-4 border-b flex items-center justify-between bg-gray-50">
           <h2 className="font-semibold text-lg">{title}</h2>
-          <button onClick={onClose} className="p-1 hover:bg-gray-200 rounded"><X className="h-5 w-5" /></button>
+          <button onClick={onClose} aria-label="Kapat" className="p-1 hover:bg-gray-200 rounded"><X className="h-5 w-5" /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-4">{children}</div>
       </div>
@@ -3746,27 +3765,33 @@ export default function CaseDetailPage() {
                   </label>
                 </div>
 
-                {/* Kaydet Butonu */}
-                <button
-                  onClick={handleSaveCasePermissions}
-                  className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm flex items-center justify-center gap-2"
+                {/* İşlem düğmeleri: uzun yetki listesinde kaydırmadan görünür kalır (owner 18.11.2026, U-7). */}
+                <div
+                  data-testid="case-lawyer-permission-actions"
+                  className="sticky bottom-0 -mx-4 -mb-4 space-y-2 border-t bg-white px-4 py-3"
                 >
-                  <Save className="h-4 w-4" />
-                  Bu dosya için kaydet
-                </button>
-
-                {/* Dosya ekibinden çıkar — hukuki sorumlu avukatta gösterilmez (sunucu da reddeder). */}
-                {selectedLawyer.caseRole !== 'RESPONSIBLE' && (
+                  {/* Kaydet Butonu */}
                   <button
-                    type="button"
-                    data-testid="case-lawyer-remove"
-                    onClick={handleRemoveCaseLawyer}
-                    className="w-full py-2 border border-red-300 text-red-700 rounded-lg hover:bg-red-50 font-medium text-sm flex items-center justify-center gap-2"
+                    onClick={handleSaveCasePermissions}
+                    className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm flex items-center justify-center gap-2"
                   >
-                    <UserMinus className="h-4 w-4" />
-                    Dosya ekibinden çıkar
+                    <Save className="h-4 w-4" />
+                    Bu dosya için kaydet
                   </button>
-                )}
+
+                  {/* Dosya ekibinden çıkar — hukuki sorumlu avukatta gösterilmez (sunucu da reddeder). */}
+                  {selectedLawyer.caseRole !== 'RESPONSIBLE' && (
+                    <button
+                      type="button"
+                      data-testid="case-lawyer-remove"
+                      onClick={handleRemoveCaseLawyer}
+                      className="w-full py-2 border border-red-300 text-red-700 rounded-lg hover:bg-red-50 font-medium text-sm flex items-center justify-center gap-2"
+                    >
+                      <UserMinus className="h-4 w-4" />
+                      Dosya ekibinden çıkar
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 

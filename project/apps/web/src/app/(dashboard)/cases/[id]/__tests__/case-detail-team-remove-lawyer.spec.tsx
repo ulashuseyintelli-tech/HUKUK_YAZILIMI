@@ -150,3 +150,34 @@ describe('Dosya ekibinden avukat çıkarma', () => {
     expect(screen.getByText('Bu dosya için kaydet')).toBeTruthy();
   });
 });
+
+describe('Avukat çekmecesi yerleşimi (owner 18.11.2026, U-7)', () => {
+  it('çekmece diyalogdur ve masaüstünde geniştir; kaydet / çıkar düğmeleri yapışık işlem şeridinde', async () => {
+    renderPage();
+    await openLawyer('Gecici Sentetik');
+    const drawer = screen.getByRole('dialog', { name: 'Av. Gecici Sentetik' });
+    expect(drawer.getAttribute('aria-modal')).toBe('true');
+    expect(drawer.className).toContain('sm:w-[560px]');
+    expect(drawer.className).not.toContain('w-[480px]');
+    const actions = screen.getByTestId('case-lawyer-permission-actions');
+    expect(actions.className).toContain('sticky');
+    expect(actions.className).toContain('bottom-0');
+    expect(actions.contains(screen.getByText('Bu dosya için kaydet'))).toBe(true);
+    expect(actions.contains(screen.getByTestId('case-lawyer-remove'))).toBe(true);
+    expect(screen.getByRole('button', { name: 'Kapat' })).toBeTruthy();
+  });
+
+  it('Escape çekmeceyi kapatır; üstte başka kalıcı pencere varken kapatmaz', async () => {
+    renderPage();
+    await openLawyer('Gecici Sentetik');
+    const other = document.createElement('div');
+    other.setAttribute('aria-modal', 'true');
+    document.body.appendChild(other);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.getByText('Bu dosya için kaydet')).toBeTruthy();
+    other.remove();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByText('Bu dosya için kaydet')).toBeNull());
+    expect(m.removeCaseLawyer).not.toHaveBeenCalled();
+  });
+});

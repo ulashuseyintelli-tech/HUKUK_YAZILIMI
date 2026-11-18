@@ -35,6 +35,12 @@ import {
   parseLawyerDefaultPermissionsStatuses,
   type LawyerDefaultPermissionsStatus,
 } from "@/lib/lawyer-default-permissions-status";
+import {
+  OFFICE_DELEGATE_LABEL,
+  OFFICE_DELEGATE_SCOPE_CHANGE_NOTE,
+  OFFICE_DELEGATE_SCOPE_INTRO,
+  OFFICE_DELEGATE_SCOPE_ITEMS,
+} from "@/lib/office-delegate-scope";
 
 // Okuma yüzeyi (owner kararı 2026-10-03, madde 6): hesap kimliği + varsayılan bilgisi + MASKELİ IBAN. Banka adı / şube /
 // hesap sahibi okuma yüzeyinde YOKTUR (undefined = bilinmiyor, boş değil).
@@ -2291,9 +2297,18 @@ function LawyerModal({ lawyer, permissionStatus = null, onSave, onClose, saving 
                 <label className="flex items-center gap-1"><input type="checkbox" checked={form.canModifyOtherPermissions} onChange={e => setForm({...form, canModifyOtherPermissions: e.target.checked})} />Başkalarının yetkilerini değiştirebilir</label>
               )}
               {lawyer?.id && form.lawyerRank !== 'PARTNER' && (
-                <label className="flex items-center gap-1" title="PARTNER olmasa da ofis onay taleplerini (OfficeApproval) onaylayabilir"><input type="checkbox" checked={form.canApproveOfficeActions} onChange={e => setForm({...form, canApproveOfficeActions: e.target.checked})} />Ofis onay yetkisi (delege)</label>
+                <label className="flex items-center gap-1" data-testid="lawyer-office-delegate-toggle"><input type="checkbox" checked={form.canApproveOfficeActions} onChange={e => setForm({...form, canApproveOfficeActions: e.target.checked})} aria-describedby="lawyer-office-delegate-scope" />{OFFICE_DELEGATE_LABEL}</label>
               )}
             </div>
+            {lawyer?.id && form.lawyerRank !== 'PARTNER' && (
+              <div id="lawyer-office-delegate-scope" data-testid="lawyer-office-delegate-scope" className="text-xs text-gray-600 -mt-1">
+                <p>{OFFICE_DELEGATE_SCOPE_INTRO}</p>
+                <ul className="list-disc pl-5">
+                  {OFFICE_DELEGATE_SCOPE_ITEMS.map((item) => (<li key={item}>{item}</li>))}
+                </ul>
+                <p>{OFFICE_DELEGATE_SCOPE_CHANGE_NOTE}</p>
+              </div>
+            )}
             <div className="p-2 bg-amber-50 border border-amber-200 rounded">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input 

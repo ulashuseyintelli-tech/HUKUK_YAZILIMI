@@ -149,14 +149,28 @@ export function OfficeApprovalDetailDrawer({ requestId, onClose, onDecided }: Pr
     };
   }, [requestId]);
 
+  // Escape ile kapanır; üstte başka kalıcı pencere varsa ona bırakır (owner 18.11.2026, U-8).
+  useEffect(() => {
+    if (!requestId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (document.querySelectorAll('[aria-modal="true"]').length > 1) return;
+      onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [requestId, onClose]);
+
   if (!requestId) return null;
 
   const statusLabel = detail ? STATUS_LABELS[detail.status] ?? detail.status : "";
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-label="Onay talebi detayı">
+    // Yerleşim (owner 18.11.2026, P02 kullanılabilirlik notu U-8): masaüstünde geniş; talep bilgileri ve "talep edilen
+    // değişiklik" yan yana; karar düğmeleri altta sabit. Küçük ekranda tek sütun. İçerik ve kurallar AYNEN.
+    <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-label="Onay talebi detayı">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} aria-hidden="true" />
-      <div className="relative w-full max-w-xl bg-white h-full overflow-y-auto p-6 shadow-xl">
+      <div className="relative w-full max-w-xl lg:max-w-4xl bg-white h-full overflow-y-auto p-6 shadow-xl">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold">Onay Talebi Detayı</h2>
           <button type="button" onClick={onClose} aria-label="Kapat" className="text-gray-400 hover:text-gray-700">
@@ -177,6 +191,8 @@ export function OfficeApprovalDetailDrawer({ requestId, onClose, onDecided }: Pr
               )}
             </div>
 
+            <div data-testid="approval-detail-columns" className="lg:grid lg:grid-cols-2 lg:gap-6">
+            <div className="min-w-0" data-testid="approval-detail-facts">
             <Field label="İşlem" value={actionLabel(detail.actionCode, detail.savedIntent)} />
             <Field label="Hedef" value={targetTypeLabel(detail.targetType)} />
             <CaseContextField detail={detail} />
@@ -199,8 +215,10 @@ export function OfficeApprovalDetailDrawer({ requestId, onClose, onDecided }: Pr
                 Bazı mali alanlar görünürlük kuralı gereği maskelenmiştir ({detail.financeVisibility.level}).
               </div>
             )}
+            </div>
 
-            <div className="border-t pt-4 mt-4">
+            <div className="min-w-0 lg:border-l lg:pl-6" data-testid="approval-detail-intent">
+            <div className="border-t pt-4 mt-4 lg:border-t-0 lg:pt-0 lg:mt-0">
               <ApprovalIntentSummary
                 title="Talep edilen değişiklik (talep anındaki kayıt)"
                 actionCode={detail.actionCode}
@@ -219,7 +237,13 @@ export function OfficeApprovalDetailDrawer({ requestId, onClose, onDecided }: Pr
                 copyAriaLabel="replacementSavedIntent kopyala"
               />
             )}
+            </div>
+            </div>
 
+            <div
+              data-testid="approval-detail-actions"
+              className="sticky bottom-0 -mx-6 -mb-6 mt-4 border-t bg-white px-6 py-3 empty:hidden"
+            >
             <OfficeApprovalDecisionActions
               detail={detail}
               currentUserId={user?.id ?? null}
@@ -237,6 +261,7 @@ export function OfficeApprovalDetailDrawer({ requestId, onClose, onDecided }: Pr
                 onDecided?.();
               }}
             />
+            </div>
           </>
         )}
       </div>
