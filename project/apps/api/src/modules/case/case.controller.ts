@@ -16,7 +16,8 @@ import {
   Req,
 } from "@nestjs/common";
 import { CaseService } from "./case.service";
-import { CreateCaseDto, CreateDueDto, UpdateCaseDto, UpdateDueDto } from "./dto/case.dto";
+import { CreateCaseDto, CreateDueDto, OpeningClaimPreviewRequestDto, UpdateCaseDto, UpdateDueDto } from "./dto/case.dto";
+import { CaseOpeningClaimRequestsService } from "./case-opening-claim-requests.service";
 import { HistoricalCaseImportDto } from "./dto/historical-case-import.dto";
 import { isCaseHistoricalImportEnabled } from "./historical-import/case-historical-import";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -57,6 +58,8 @@ export class CaseController {
     private guidedOpenObserve: GuidedOpenObserveService,
     @Optional()
     private receiptAuthorization?: ReceiptObjectScopeAuthorizationService,
+    @Optional()
+    private openingClaimRequests?: CaseOpeningClaimRequestsService,
   ) {}
 
   @Get()
@@ -249,6 +252,20 @@ export class CaseController {
     @Body() dto: CreateCaseDto,
   ) {
     return this.caseService.create(tenantId, dto, userId, userRole);
+  }
+
+  /**
+   * Açılış önizlemesi — hiçbir kayıt OLUŞTURMAZ ve veritabanına dokunmaz. Yeni dosya formundaki kalemler, borçlular ve
+   * kalem beyanları ("faiz işler" + borçlu sorumluluğu seçimi) için kalem tutarları toplamını, borçlu başına dağılımı,
+   * girdi hatalarını ve açılış isteğine eklenecek önizleme özetini döndürür. Beyanlar açılışta kaleme yazılmaz; dosya
+   * oluşturulduktan sonra mevcut iki kişi onayına gider (bkz. `CaseOpeningClaimRequestsService`).
+   */
+  @Post("opening-claim-preview")
+  openingClaimPreview(@Body() dto: OpeningClaimPreviewRequestDto) {
+    if (!this.openingClaimRequests) {
+      throw new ServiceUnavailableException("Açılış önizlemesi bu ortamda kullanılamıyor.");
+    }
+    return this.openingClaimRequests.preview(dto);
   }
 
   /**

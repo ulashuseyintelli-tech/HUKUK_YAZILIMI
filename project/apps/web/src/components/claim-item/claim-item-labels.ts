@@ -77,3 +77,30 @@ export const INTEREST_START_PROVENANCE_LABELS: Record<string, string> = Object.f
 
 /** Sunucu kuralı (interest-accrual-policy): bu dayanakta başlangıç tarihi dosyanın takip tarihinden mekanik çözülür. */
 export const PROVENANCE_WITHOUT_START_DATE: InterestStartDateProvenanceCode = "ENFORCEMENT_PROCEEDING_DATE";
+
+// ── Borçlu sorumluluğu seçimi (kodlar API `claim-liability.domain` ile aynı) ──────────────────────────────────────────
+// Yeni dosya formundaki açılış seçimi bu sabitleri kullanır. Dosya sayfasındaki seçim çekmecesi aynı içerikte kendi
+// kopyasını taşır (`ClaimLiabilitySelectionDrawer`); iki liste birlikte güncellenmelidir.
+
+/** Sorumluluk seçiminin dayanağı. `noteRequired`: açıklama zorunlu (sunucu kuralı). */
+export const CLAIM_LIABILITY_BASIS_OPTIONS: Array<{ value: string; label: string; noteRequired?: boolean }> = [
+  { value: "COURT_JUDGMENT", label: "İlam / mahkeme kararı" },
+  { value: "CONTRACT", label: "Sözleşme" },
+  { value: "STATUTE", label: "Kanun hükmü" },
+  { value: "NEGOTIABLE_INSTRUMENT", label: "Kambiyo senedi" },
+  { value: "LAWYER_ASSESSMENT", label: "Avukat değerlendirmesi", noteRequired: true },
+  { value: "OTHER", label: "Diğer", noteRequired: true },
+];
+
+export const CLAIM_LIABILITY_BASIS_LABELS: Record<string, string> = Object.fromEntries(
+  CLAIM_LIABILITY_BASIS_OPTIONS.map((option) => [option.value, option.label]),
+);
+
+/** Açılış önizlemesinde ve formunda sorumluluk türü adları. "Paylı sorumluluk" terimi kullanılır. */
+export const OPENING_LIABILITY_KIND_LABELS: Record<string, string> = {
+  BELIRLENMEDI: "Belirlenmedi",
+  SECIMDE_YOK: "Seçimde yok",
+  MUTESELSIL: "Müteselsil",
+  PAYLI: "Paylı sorumluluk",
+  TUTARLA_SINIRLI: "Tutarla sınırlı",
+};

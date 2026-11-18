@@ -87,6 +87,8 @@ import type { ReceiptAuthorizationBasis } from "../collection/receipt-object-sco
 import { loadCaseLiabilityContext } from "../claim-liability/claim-liability.reader";
 import { buildClaimLiabilityState } from "../claim-liability/claim-liability.read-model";
 import { isClaimLiabilitySelectionEnabled } from "../claim-liability/claim-liability.flag";
+import { CaseOpeningClaimRequestsService, type OpeningClaimRequestsOutcome } from "./case-opening-claim-requests.service";
+import type { OpeningClaimPlan } from "./opening-claim-requests";
 import {
   assertCollectionPublicUpdateAllowed,
   collectionDeleteDisabled,
@@ -453,6 +455,7 @@ export type DueForClaimItemSync = {
   ilamEsasNo?: string | null;
   ilamKararNo?: string | null;
   davaTarihi?: string | null;
+  ilamKesinlesmeTarihi?: string | null;
   issueDate?: string | null;
   kiraDonemBaslangic?: string | null;
   kiraDonemBitis?: string | null;
@@ -509,6 +512,7 @@ export function buildSyncDueDto(due: DueForClaimItemSync): DueDto {
     ilamEsasNo: due.ilamEsasNo ?? undefined,
     ilamKararNo: due.ilamKararNo ?? undefined,
     davaTarihi: due.davaTarihi ?? undefined,
+    ilamKesinlesmeTarihi: due.ilamKesinlesmeTarihi ?? undefined,
     issueDate: due.issueDate ?? undefined,
     kiraDonemBaslangic: due.kiraDonemBaslangic ?? undefined,
     kiraDonemBitis: due.kiraDonemBitis ?? undefined,
@@ -654,6 +658,10 @@ export class CaseService {
     // ortak). Bayrak açıkken yoksa FAIL-CLOSED.
     @Optional()
     private caseViewScopeService?: CaseViewScopeService,
+    // Açılış kalem beyanları ("faiz işler" + borçlu sorumluluğu seçimi): kabul transaction öncesi, onay talepleri commit
+    // sonrası. Yoksa beyan içeren açılış FAIL-CLOSED reddedilir (dosya oluşmaz); beyansız açılış etkilenmez.
+    @Optional()
+    private openingClaimRequests?: CaseOpeningClaimRequestsService,
   ) {}
 
   /**
@@ -751,6 +759,34 @@ export class CaseService {
       throw new ConflictException("ClaimItem writer router kullanıma hazır değil");
     }
     return this.claimItemWriterRouter;
+  }
+
+  /**
+   * Açılış kalem beyanlarının transaction ÖNCESİ kabulü. Beyan yoksa `null` (açılış bugünkü gibidir).
+   * Tarihsel aktarım bu beyanları taşımaz; servis bağlı değilken beyan içeren açılış fail-closed reddedilir.
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - CaseService.create() → POST /cases (hiçbir yazmadan önce)
+   * </remarks>
+   */
+  private assertOpeningClaimRequestsAdmissible(dto: CreateCaseDto, historicalImport: boolean): OpeningClaimPlan | null {
+    const requests = dto.openingClaimRequests;
+    const hasDeclarations = (requests?.interestAccruals?.length ?? 0) > 0 || (requests?.liabilitySelections?.length ?? 0) > 0;
+    if (!hasDeclarations) return null;
+    if (historicalImport) {
+      throw new BadRequestException({
+        code: "OPENING_CLAIM_REQUESTS_NOT_SUPPORTED",
+        message: "Tarihsel aktarımda açılış kalem beyanı gönderilemez.",
+      });
+    }
+    if (!this.openingClaimRequests) {
+      throw new ConflictException({
+        code: "OPENING_CLAIM_REQUESTS_UNAVAILABLE",
+        message: "Açılış kalem beyanları bu ortamda işlenemiyor; dosya oluşturulmadı.",
+      });
+    }
+    return this.openingClaimRequests.assertAdmissible(dto);
   }
 
   private assertDueCreationAdmission(dues: ReadonlyArray<Pick<DueDto, "type" | "attorneyFeeBasis">>): void {
@@ -1815,14 +1851,16 @@ export class CaseService {
     caseId: string,
     dues: DueForClaimItemSync[],
     initiatedByUserId: string,
-  ): Promise<void> {
+  ): Promise<Map<string, string>> {
+    // Due kimliği → oluşan alacak kalemi kimliği (açılış kalem beyanlarının commit sonrası talepleri için).
+    const claimItemIdByDueId = new Map<string, string>();
     for (const due of dues) {
       const itemType = mapDueTypeToClaimItemType(due.type as DueType);
       if (itemType === null) continue; // NAFAKA → yalnız Due (taksit takvimi)
       const claimItemData = this.buildDueSyncClaimItemData(tenantId, caseId, due);
       if (!claimItemData) continue;
 
-      await this.requireClaimItemWriterRouter().createSystemClaimItem(
+      const created = await this.requireClaimItemWriterRouter().createSystemClaimItem<{ id: string }>(
         {
           route: "DUE_BRIDGE",
           tenantId,
@@ -1834,7 +1872,9 @@ export class CaseService {
         },
         tx,
       );
+      claimItemIdByDueId.set(due.id, created.id);
     }
+    return claimItemIdByDueId;
   }
 
   /**
@@ -2480,6 +2520,11 @@ export class CaseService {
       manual: this.manualCaseInstrumentsEnabled(),
     });
 
+    // Açılış kalem beyanları ("faiz işler" + borçlu sorumluluğu seçimi): hiçbir yazmadan ÖNCE doğrulanır. Geçersiz
+    // beyan, gösterilmemiş / değişmiş girdi ya da kapalı seçim bayrağında istek bütün olarak reddedilir → dosya, taraf
+    // ve kalem hiç oluşmaz. Beyanlar kaleme YAZILMAZ; commit sonrası mevcut iki kişi onayına talep olarak gider.
+    const openingClaimPlan = this.assertOpeningClaimRequestsAdmissible(dto, Boolean(historicalImport));
+
     // B.5: Başlangıç statüsü validasyonu
     if (dto.caseStatus && !isInitialStatus(dto.caseStatus as LegalCaseStatus)) {
       throw new BadRequestException(
@@ -2856,6 +2901,8 @@ export class CaseService {
 
         // 6. Alacak Kalemleri (Dues)
         let duesPrincipal = 0;
+        // dues[] sırasıyla hizalı kalem kimlikleri (kalem üretmeyen satırda null) — açılış kalem beyanları için.
+        let openingClaimItemIds: Array<string | null> = [];
         if (dto.dues && dto.dues.length > 0) {
           const createdDues: DueForClaimItemSync[] = [];
           for (const dueDto of dto.dues) {
@@ -2905,6 +2952,7 @@ export class CaseService {
               ilamEsasNo: dueDto.ilamEsasNo,
               ilamKararNo: dueDto.ilamKararNo,
               davaTarihi: dueDto.davaTarihi,
+              ilamKesinlesmeTarihi: dueDto.ilamKesinlesmeTarihi,
               issueDate: dueDto.issueDate,
               kiraDonemBaslangic: dueDto.kiraDonemBaslangic,
               kiraDonemBitis: dueDto.kiraDonemBitis,
@@ -2916,7 +2964,8 @@ export class CaseService {
           // 6b. G1 KÖPRÜSÜ — kanonik ClaimItem'lar üret (bakiye motoru bunları okur).
           // Due satırları korunur (legacy/transition + nafaka takvimi); NAFAKA için
           // ClaimItem üretilmez. Aynı tx içinde, tenantId zorunlu.
-          await this.createClaimItemsFromDues(tx, tenantId, newCase.id, createdDues, userId);
+          const claimItemIdByDueId = await this.createClaimItemsFromDues(tx, tenantId, newCase.id, createdDues, userId);
+          openingClaimItemIds = createdDues.map((due) => claimItemIdByDueId.get(due.id) ?? null);
 
           // Ana para (dues PRINCIPAL); case.update aşağıda instrument ile birleştirilir.
           duesPrincipal = dto.dues
@@ -3079,7 +3128,7 @@ export class CaseService {
           },
         });
 
-        return { case: createdCase, clientIds, lawyerIds: dto.lawyers?.map(l => l.id).filter(Boolean) || [], staffResult, responsibleKeptId, responsibleDemotedIds };
+        return { case: createdCase, clientIds, lawyerIds: dto.lawyers?.map(l => l.id).filter(Boolean) || [], staffResult, responsibleKeptId, responsibleDemotedIds, openingClaimItemIds };
       }, CASE_CREATE_TRANSACTION_OPTIONS);
 
       // DAR ATOMİKLİK: transaction COMMIT EDİLDİ → kuyruğa alınmış commit-sonrası (best-effort)
@@ -3117,6 +3166,19 @@ export class CaseService {
               message: 'Çek tazminatı onay talebi beklenmeyen bir hata nedeniyle açılmadı; dosya oluşturuldu.',
             }
           : undefined;
+      }
+
+      // Açılış kalem beyanları — commit SONRASI: beyanlar mevcut yüksek etkili kalem değişikliği onayına talep olarak
+      // açılır (iki kişi kuralı aynen). Mevcut yetki kapıları ATLANMAZ; reddi dosyayı geri almaz, sonuç yanıtta raporlanır.
+      let openingClaimRequests: OpeningClaimRequestsOutcome | undefined;
+      if (openingClaimPlan && this.openingClaimRequests && result.case?.id) {
+        openingClaimRequests = await this.openingClaimRequests.requestAfterCommit({
+          tenantId,
+          userId,
+          caseId: result.case.id,
+          plan: openingClaimPlan,
+          claimItemIdByDueIndex: result.openingClaimItemIds,
+        });
       }
 
       // ASSIGN-2a: seçimle atanan personel için audit (yalnız dto.staff verildiğinde; default
@@ -3270,6 +3332,7 @@ export class CaseService {
         ...result.case,
         poaWarnings: poaWarnings.length > 0 ? poaWarnings : undefined,
         ...(checkPenaltyFormation ? { checkPenaltyFormation } : {}),
+        ...(openingClaimRequests ? { openingClaimRequests } : {}),
         ...(openingExpenseRequest ? { openingExpenseRequest } : {}),
         ...(historicalImport
           ? { historicalImport: { ...historicalImport, skippedSideEffects: [...HISTORICAL_IMPORT_SKIPPED_SIDE_EFFECTS] } }

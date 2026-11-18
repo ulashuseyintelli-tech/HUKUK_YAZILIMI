@@ -502,6 +502,24 @@ class ApiClient {
     });
   }
 
+  /**
+   * Açılış önizlemesi — kayıt OLUŞTURMAZ. Yeni dosya formundaki kalemler, borçlular ve kalem beyanları için kalem
+   * tutarları toplamı, borçlu başına dağılım, girdi hataları ve açılış isteğine eklenecek önizleme özeti.
+   *
+   * /// <remarks>Çağrıldığı yerler: cases/new/page.tsx (Alacak Kalemleri adımı, açılış önizleme kartı)</remarks>
+   */
+  async previewCaseOpeningClaims(payload: {
+    currency: string;
+    dues: unknown[];
+    caseDebtors: Array<{ debtorId: string }>;
+    openingClaimRequests?: import("./case-opening-claims").OpeningClaimDeclarationsPayload;
+  }) {
+    return this.request<import("./case-opening-claims").OpeningClaimPreviewDTO>("/cases/opening-claim-preview", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
   // A2-min/A3 — OCR extraction feedback (PII'siz telemetri). Fire-and-forget caller'da .catch ile çağrılır.
   async recordOcrExtractionFeedback(payload: any) {
     return this.request<{ success: boolean; recorded: number }>("/ocr/extraction-feedback", {

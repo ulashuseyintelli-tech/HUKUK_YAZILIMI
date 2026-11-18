@@ -9,6 +9,11 @@ import {
   IsBoolean,
   Matches,
   ValidateIf,
+  ArrayMaxSize,
+  IsInt,
+  Max,
+  MaxLength,
+  Min,
 } from "class-validator";
 import { Type } from "class-transformer";
 import { DocumentSourceType, InterestAccrualStatus, InterestTypeCode } from "@prisma/client";
@@ -363,6 +368,12 @@ export class DueDto {
   @IsOptional()
   davaTarihi?: string; // → metadata.ilam.davaTarihi (faiz motoru DEĞİŞMEZ; yalnız kayıt)
 
+  // İlamın kesinleşme tarihi → metadata.ilam.kesinlesmeTarihi. YALNIZ kayıt: faiz başlangıcı bu alandan TÜRETİLMEZ;
+  // faiz başlangıcı ve dayanağı ayrıca ve açıkça beyan edilir (açılışta `openingClaimRequests`).
+  @IsDateString()
+  @IsOptional()
+  ilamKesinlesmeTarihi?: string;
+
   @IsDateString()
   @IsOptional()
   issueDate?: string; // FATURA/İLAM düzenleme tarihi → ClaimItem.issueDate (tipli kolon)
@@ -604,6 +615,146 @@ export class CheckPenaltyFormationRequestDto {
   @IsString()
   @IsOptional()
   previewHash?: string;
+}
+
+/**
+ * DOSYA AÇILIŞINDA KALEM BEYANLARI (owner talimatı 2026-11-18) — kullanıcının kalem bazında AÇIKÇA girdiği "faiz işler"
+ * beyanı ve borçlu sorumluluğu seçimi. Bu bilgiler açılışta kaleme YAZILMAZ: dosya kaydı tamamlandıktan sonra mevcut
+ * yüksek etkili kalem değişikliği onayına talep olarak gider (aynı işlem kodu, aynı iki kişi kuralı). Kalemler `dues[]`
+ * içindeki sıra numarasıyla gösterilir (`dueIndex`). Alan kuralları sonradan düzenlemeyle aynıdır; ayrıntı
+ * `opening-claim-requests.ts`.
+ */
+export class OpeningInterestAccrualDto {
+  @IsInt()
+  @Min(0)
+  dueIndex: number;
+
+  // Dayanak "takip tarihi" değilse zorunlu (sonradan düzenlemeyle aynı kural; `validateInterestAccrualState`).
+  @IsDateString()
+  @IsOptional()
+  interestStartDate?: string;
+
+  // InterestStartDateProvenance değeri. Biçim burada yalnız metin olarak sınırlanır; geçerliliği (boş / bilinmeyen
+  // değer dahil) alan doğrulaması denetler ve kalem bazında okunur girdi hatası olarak döner — yarım doldurulmuş
+  // formun önizlemesi biçim hatasıyla (400) kesilmesin. Açılış isteğinde geçersiz beyan yine 400 ile reddedilir.
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  interestStartDateProvenance?: string;
+}
+
+export class OpeningLiabilityPartyDto {
+  // Kişi kimliği (Debtor.id); aynı istekteki `caseDebtors[]` içinde bulunmalıdır.
+  @IsString()
+  @MaxLength(64)
+  debtorId: string;
+
+  /** Paylı sorumluluk: tam sayı ağırlık (eşit pay = her borçluda 1). `sharePercent` ile birlikte verilemez. */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(1_000_000)
+  shareWeight?: number;
+
+  /**
+   * Paylı sorumluluk: iki ondalıklı yüzde; bütün taraflarda verilir, toplam tam 100,00 olmalıdır. Sayı biçimi alan
+   * doğrulamasında denetlenir (sonradan düzenlemedeki seçim gövdesiyle AYNI kalıp) ve girdi hatası olarak döner.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  sharePercent?: string;
+
+  /** Tutarla sınırlı sorumluluk: kişi bazında tavan; yalnız bu kalemin kayıtlı tutarını kapsar. Biçim: yukarıdaki gibi. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  limitAmount?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  unlimited?: boolean;
+}
+
+export class OpeningLiabilitySelectionDto {
+  @IsInt()
+  @Min(0)
+  dueIndex: number;
+
+  /** JOINT_AND_SEVERAL | PROPORTIONAL | CAPPED — ön seçili değer yoktur; "belirlenmedi" için seçim GÖNDERİLMEZ. */
+  @IsString()
+  @MaxLength(32)
+  mode: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(32)
+  @ValidateNested({ each: true })
+  @Type(() => OpeningLiabilityPartyDto)
+  parties?: OpeningLiabilityPartyDto[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  basis?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  basisNote?: string;
+}
+
+export class OpeningClaimDeclarationsDto {
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => OpeningInterestAccrualDto)
+  interestAccruals?: OpeningInterestAccrualDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => OpeningLiabilitySelectionDto)
+  liabilitySelections?: OpeningLiabilitySelectionDto[];
+}
+
+export class OpeningClaimRequestsDto extends OpeningClaimDeclarationsDto {
+  // Kullanıcıya GÖSTERİLEN açılış önizlemesinin özeti. Sunucu girdiyi yeniden hesaplar; özet uyuşmuyorsa dosya açılmaz.
+  @IsString()
+  @MaxLength(128)
+  previewHash: string;
+}
+
+export class OpeningPreviewDebtorDto {
+  @IsString()
+  @MaxLength(64)
+  debtorId: string;
+}
+
+/** `POST /cases/opening-claim-preview` — açılış önizlemesi; hiçbir kayıt oluşturmaz. */
+export class OpeningClaimPreviewRequestDto {
+  @IsEnum(Currency)
+  @IsOptional()
+  currency?: Currency;
+
+  @IsArray()
+  @ArrayMaxSize(500)
+  @ValidateNested({ each: true })
+  @Type(() => DueDto)
+  dues: DueDto[];
+
+  @IsArray()
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => OpeningPreviewDebtorDto)
+  caseDebtors: OpeningPreviewDebtorDto[];
+
+  @ValidateNested()
+  @Type(() => OpeningClaimDeclarationsDto)
+  @IsOptional()
+  openingClaimRequests?: OpeningClaimDeclarationsDto;
 }
 
 export class CreateCaseDto {
@@ -857,6 +1008,13 @@ export class CreateCaseDto {
   @IsBoolean()
   @IsOptional()
   sendExpenseEmail?: boolean;
+
+  // Açılışta kalem beyanları ("faiz işler" + borçlu sorumluluğu seçimi) — yalnız kullanıcının AÇIK girdisiyle. Alan
+  // yoksa hiçbir talep açılmaz ve açılış bugünkü gibidir. Beyanlar kaleme yazılmaz; commit sonrası onaya gider.
+  @ValidateNested()
+  @Type(() => OpeningClaimRequestsDto)
+  @IsOptional()
+  openingClaimRequests?: OpeningClaimRequestsDto;
 }
 
 export class UpdateCaseDto {

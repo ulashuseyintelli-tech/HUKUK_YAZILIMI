@@ -26,6 +26,12 @@ export interface CreateCaseDueInput {
   ilamKararNo?: string;
   kiraDonemBaslangic?: string;
   kiraDonemBitis?: string;
+  // Açılış beyanları: vekâlet ücreti kaynağı ve ilam kesinleşme tarihi açılışta kaleme yazılır (yalnız açık girdi).
+  attorneyFeeBasis?: 'JUDGMENT_AWARDED' | 'ENFORCEMENT_TARIFF';
+  ilamKesinlesmeTarihi?: string;
+  // GEÇİCİ: "faiz işler" beyanı + sorumluluk seçimi. Due gövdesiyle GÖNDERİLMEZ; `buildOpeningClaimRequests`
+  // (case-opening-claims) bunları `openingClaimRequests` bloğuna, gönderilen sıra numarasıyla taşır.
+  opening?: import('./case-opening-claims').OpeningDueDeclaration;
 }
 
 export interface CreateCaseDuePayload {
@@ -53,8 +59,12 @@ export interface CreateCaseDuePayload {
   ilamKararNo?: string;
   kiraDonemBaslangic?: string;
   kiraDonemBitis?: string;
+  attorneyFeeBasis?: 'JUDGMENT_AWARDED' | 'ENFORCEMENT_TARIFF';
+  ilamKesinlesmeTarihi?: string;
 }
 
+// NOT: tutarı sıfır / boş satırı düşüren süzgeç `buildOpeningClaimRequests` (case-opening-claims) ile AYNI olmalıdır;
+// açılış beyanları kalemi bu fonksiyonun ÜRETTİĞİ sıra numarasıyla gösterir.
 export function buildCreateCaseDuesPayload(dues: CreateCaseDueInput[]): CreateCaseDuePayload[] {
   return dues
     .filter((due) => due.amount && Number.parseFloat(String(due.amount)) > 0)
@@ -84,6 +94,9 @@ export function buildCreateCaseDuesPayload(dues: CreateCaseDueInput[]): CreateCa
       ilamKararNo: due.ilamKararNo,
       kiraDonemBaslangic: due.kiraDonemBaslangic,
       kiraDonemBitis: due.kiraDonemBitis,
+      // Açılış beyanları: kaleme açılışta yazılan iki alan (yoksa undefined). `opening` bilinçli olarak TAŞINMAZ.
+      attorneyFeeBasis: due.attorneyFeeBasis,
+      ilamKesinlesmeTarihi: due.ilamKesinlesmeTarihi,
     }));
 }
 

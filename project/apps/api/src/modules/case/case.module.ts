@@ -25,6 +25,10 @@ import { SummaryEngineModule } from "../summary-engine/summary-engine.module";
 import { OfficeApprovalModule } from "../office-approval/office-approval.module";
 // F02 P3-D1 / P3-D2: dosya görünüm kapsamı — tek uygulama noktası CaseViewScopeService (`office.cases.view_all`).
 import { CaseViewScopeModule } from "./case-view-scope.module";
+// Açılış kalem beyanları: sorumluluk seçimi talebi mevcut seçim servisiyle açılır (ClaimLiabilityModule CaseModule'ü
+// içe aktarmaz → döngü yok).
+import { ClaimLiabilityModule } from "../claim-liability/claim-liability.module";
+import { CaseOpeningClaimRequestsService } from "./case-opening-claim-requests.service";
 
 @Module({
   imports: [
@@ -46,9 +50,10 @@ import { CaseViewScopeModule } from "./case-view-scope.module";
     // K2: dosya avukatı/personel yetki verme kapısı (F01 yazma kuralı) — OfficeApprovalService.
     OfficeApprovalModule,
     CaseViewScopeModule,
+    ClaimLiabilityModule,
   ],
   controllers: [CaseController, CasePaymentPreviewController],
-  providers: [CaseService, CasePaymentPreviewService, ResponsibleCandidatesService, TemporalResponsibilityService, ResponsibilityHistoryService, LegalResponsibleLawyerService],
+  providers: [CaseService, CasePaymentPreviewService, ResponsibleCandidatesService, TemporalResponsibilityService, ResponsibilityHistoryService, LegalResponsibleLawyerService, CaseOpeningClaimRequestsService],
   exports: [CaseService, TemporalResponsibilityService, ResponsibilityHistoryService],
 })
 export class CaseModule {}
