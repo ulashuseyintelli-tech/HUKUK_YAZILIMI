@@ -271,7 +271,10 @@ export function buildClaimDocumentFields(item: {
  * doğru DueType'a eşler; standalone girilen fer'i/masraf kalemi motorda yanlışlıkla PRINCIPAL'a
  * DÜŞMESİN. Backend DUE_TO_CLAIM_ITEM köprüsü bu DueType'ları kanonik ClaimItemType'a çevirir
  * (EXPENSE→EXPENSE · VEKALET_UCRETI→ATTORNEY_FEE · INTEREST→INTEREST · CEZAI_SART→CONTRACTUAL_PENALTY
- * · HARC→FEE · OTHER→OTHER).
+ * · HARC→FEE · OTHER→OTHER · YARGILAMA_GIDERI→YARGILAMA_GIDERI).
+ *
+ * Yargılama gideri kendi türüne gider (owner 12.11.2026): EXPENSE olarak yazılırsa motor onu tebligat masrafı sayar.
+ * Tür seçimi faiz kararı DEĞİLDİR; faiz durumu ayrıca ve açıkça gönderilir.
  *
  * Yalnız aşağıdaki explicit canonical/compatibility değerleri kabul edilir. Blank veya
  * bilinmeyen bir değerin PRINCIPAL'a dönüştürülmesi hukuki sınıflandırma üretir; bu nedenle
@@ -279,7 +282,7 @@ export function buildClaimDocumentFields(item: {
  */
 export type ClaimDueType =
   | 'PRINCIPAL' | 'INTEREST' | 'EXPENSE' | 'VEKALET_UCRETI' | 'HARC' | 'TAZMINAT'
-  | 'CEZAI_SART' | 'NAFAKA' | 'KIRA' | 'AIDAT' | 'KOMISYON' | 'PRIM' | 'OTHER';
+  | 'CEZAI_SART' | 'NAFAKA' | 'KIRA' | 'AIDAT' | 'KOMISYON' | 'PRIM' | 'OTHER' | 'YARGILAMA_GIDERI';
 
 const CLAIM_KALEM_DUE_TYPE: Record<string, ClaimDueType> = {
   // Canonical ana alacak kalemleri. PRINCIPAL yalnız bu explicit değerlerle üretilir.
@@ -299,14 +302,14 @@ const CLAIM_KALEM_DUE_TYPE: Record<string, ClaimDueType> = {
   NAFAKA_ISLEYECEK: 'PRINCIPAL',
   // Genel fer'i/masraf (prefixsiz jenerik; PR-i2 dropdown'u bunları açacak)
   MASRAF: 'EXPENSE',
-  YARGILAMA_GIDERI: 'EXPENSE',
+  YARGILAMA_GIDERI: 'YARGILAMA_GIDERI', // backend → ClaimItemType.YARGILAMA_GIDERI (tebligat masrafı / EXPENSE DEĞİL)
   VEKALET_UCRETI: 'VEKALET_UCRETI',
   ISLEMIS_FAIZ: 'INTEREST',
   CEZAI_SART: 'CEZAI_SART', // M2: backend → CONTRACTUAL_PENALTY (TAZMINAT/PENALTY DEĞİL)
   HARC: 'HARC',
   DIGER_FERI: 'OTHER',
   // Mevcut nested ILAM_* yan-alacak kalemTuru'ları (gerçek; güvenlik için de eşlenir)
-  ILAM_YARGILAMA_GIDERI: 'EXPENSE',
+  ILAM_YARGILAMA_GIDERI: 'YARGILAMA_GIDERI',
   ILAM_VEKALET_UCRETI: 'VEKALET_UCRETI',
   ILAM_ISLEMIS_FAIZ: 'INTEREST',
 };

@@ -177,7 +177,8 @@ describe("mapClaimKalemTuruToDueType (PR-i1 — genel fer'i/masraf foundation)",
 
   it("genel fer'i kalemTuru → doğru DueType", () => {
     expect(mapClaimKalemTuruToDueType('MASRAF')).toBe('EXPENSE');
-    expect(mapClaimKalemTuruToDueType('YARGILAMA_GIDERI')).toBe('EXPENSE');
+    // Yargılama gideri kendi türüne gider: EXPENSE olsaydı motor onu tebligat masrafı sayardı (owner 12.11.2026).
+    expect(mapClaimKalemTuruToDueType('YARGILAMA_GIDERI')).toBe('YARGILAMA_GIDERI');
     expect(mapClaimKalemTuruToDueType('VEKALET_UCRETI')).toBe('VEKALET_UCRETI');
     expect(mapClaimKalemTuruToDueType('ISLEMIS_FAIZ')).toBe('INTEREST');
     expect(mapClaimKalemTuruToDueType('CEZAI_SART')).toBe('CEZAI_SART'); // → backend CONTRACTUAL_PENALTY
@@ -186,7 +187,7 @@ describe("mapClaimKalemTuruToDueType (PR-i1 — genel fer'i/masraf foundation)",
   });
 
   it("mevcut nested ILAM_* kalemTuru → doğru DueType", () => {
-    expect(mapClaimKalemTuruToDueType('ILAM_YARGILAMA_GIDERI')).toBe('EXPENSE');
+    expect(mapClaimKalemTuruToDueType('ILAM_YARGILAMA_GIDERI')).toBe('YARGILAMA_GIDERI');
     expect(mapClaimKalemTuruToDueType('ILAM_VEKALET_UCRETI')).toBe('VEKALET_UCRETI');
     expect(mapClaimKalemTuruToDueType('ILAM_ISLEMIS_FAIZ')).toBe('INTEREST');
   });

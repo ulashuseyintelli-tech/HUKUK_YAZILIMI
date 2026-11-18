@@ -196,7 +196,7 @@ interface Lawyer {
 interface Party { id?: string; type: "INDIVIDUAL" | "COMPANY"; name: string; identityNo?: string; taxOffice?: string; phone?: string; email?: string; address?: string; isNew?: boolean; }
 interface ExecutionOffice { id: string; name: string; city: string; district?: string; uyapCode?: string; taxNumber?: string; bankName?: string; branchName?: string; iban?: string; }
 interface DueItem { 
-  type: "PRINCIPAL" | "INTEREST" | "EXPENSE" | "VEKALET_UCRETI" | "HARC" | "TAZMINAT" | "CEZAI_SART" | "NAFAKA" | "KIRA" | "AIDAT" | "KOMISYON" | "PRIM" | "OTHER"; 
+  type: "PRINCIPAL" | "INTEREST" | "EXPENSE" | "VEKALET_UCRETI" | "HARC" | "TAZMINAT" | "CEZAI_SART" | "NAFAKA" | "KIRA" | "AIDAT" | "KOMISYON" | "PRIM" | "OTHER" | "YARGILAMA_GIDERI";
   description: string; 
   amount: string; 
   dueDate: string;
@@ -330,7 +330,8 @@ function buildDuesFromClaimItem(item: any, startDate: string): DueItem[] {
         let yanDueType: DueItem['type'] = 'PRINCIPAL';
         let yanLabel = yan.aciklama;
         if (yan.tur === 'ILAM_YARGILAMA_GIDERI') {
-          yanDueType = 'EXPENSE';
+          // Yargılama gideri kendi türüne gider (EXPENSE = motor için tebligat masrafı; owner 12.11.2026).
+          yanDueType = 'YARGILAMA_GIDERI';
           yanLabel = 'Yargılama Giderleri';
         } else if (yan.tur === 'ILAM_VEKALET_UCRETI') {
           yanDueType = 'VEKALET_UCRETI';
