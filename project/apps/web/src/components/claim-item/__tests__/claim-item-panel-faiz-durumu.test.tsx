@@ -31,6 +31,7 @@ const ITEMS = [
     id: "yg-isler", itemType: "YARGILAMA_GIDERI", amount: 100, currency: "TRY", description: "Sentetik işleyen gider", status: "ACTIVE",
     isCalculated: false, interestAccrualStatus: "ACCRUES", interestType: "YASAL", interestTypeCode: "LEGAL_3095",
     interestStartDate: "2026-04-08T00:00:00.000Z", interestStartDateProvenance: "JUDGMENT_FINALIZATION_DATE",
+    interestEndDate: "2026-05-01T00:00:00.000Z", interestRate: 18, dueDate: "2026-04-07T00:00:00.000Z",
   },
   {
     id: "tursuz", itemType: "OTHER", amount: 50, currency: "TRY", description: "Sentetik türsüz kalem", status: "ACTIVE",
@@ -134,8 +135,7 @@ describe("ClaimItemPanel — faiz durumu ve başlangıç dayanağı", () => {
     expect(validateInterestEdit({ ...base, provenance: "ENFORCEMENT_PROCEEDING_DATE" })).toBeNull();
     // Faiz alanlarına dokunulmadıysa denetim yok (kayıtlı durum aynen kalır).
     expect(validateInterestEdit({ ...base, status: "UNKNOWN", provenance: "" })).toBeNull();
-    // "Faiz işlemez"e geçiş bu pencerede sunulmaz (onay yürütmesi bulgusu); elle gelse de durdurulur.
-    expect(validateInterestEdit({ ...base, status: "NO_INTEREST", provenance: "" })).toBe("Bu faiz durumu bu pencereden seçilemez.");
+    expect(validateInterestEdit({ ...base, status: "NO_INTEREST", provenance: "" })).toBe("Faiz işlememe gerekçesi zorunludur.");
   });
 
   it("faiz türü kayıtlı olmayan kalemde 'Faiz işler' gönderilmez (bu pencerede tür seçilmez)", async () => {
@@ -148,10 +148,10 @@ describe("ClaimItemPanel — faiz durumu ve başlangıç dayanağı", () => {
     expect(apiPut).not.toHaveBeenCalled();
   });
 
-  it("seçenekler yalnız 'Belirlenmedi' ve 'Faiz işler'; kayıtlı 'Faiz işlemez' kalemde seçim ve tarih / oran kilitli", async () => {
+  it("Faiz işlemez seçilebilir; kayıtlı faizsiz kalemde mevcut seçim ve faiz alanları kilitli", async () => {
     await duzenle("yg-isler");
     const options = [...(screen.getByTestId("claim-item-interest-accrual-status-select") as HTMLSelectElement).options].map((o) => o.value);
-    expect(options).toEqual(["UNKNOWN", "ACCRUES"]);
+    expect(options).toEqual(["UNKNOWN", "ACCRUES", "NO_INTEREST"]);
     cleanup();
 
     await duzenle("faizsiz");
@@ -160,6 +160,46 @@ describe("ClaimItemPanel — faiz durumu ve başlangıç dayanağı", () => {
     expect(select.value).toBe("NO_INTEREST");
     expect([...select.options].map((o) => o.textContent)).toEqual(["Faiz işlemez"]);
     expect((screen.getByTestId("claim-item-interest-start-date") as HTMLInputElement).disabled).toBe(true);
+  });
+
+
+  it("Faiz işlemez geçişi gerekçeli açık null değerlerini onaya yollar ve vadeyi yükten çıkarır", async () => {
+    await duzenle("yg-isler");
+    durumSec("NO_INTEREST");
+    const reason = screen.getByRole("textbox", { name: "Faiz işlememe gerekçesi" });
+    fireEvent.change(reason, { target: { value: "  Sentetik gerekçe  " } });
+    fireEvent.click(screen.getByRole("button", { name: "Onaya Gönder" }));
+
+    await waitFor(() => expect(apiPut).toHaveBeenCalledTimes(1));
+    const [url, payload] = apiPut.mock.calls[0];
+    expect(url).toBe("/claim-items/yg-isler");
+    expect(payload).toMatchObject({
+      interestAccrualStatus: "NO_INTEREST",
+      noInterestReason: "Sentetik gerekçe",
+      interestType: null,
+      interestTypeCode: null,
+      interestRate: null,
+      interestStartDate: null,
+      interestEndDate: null,
+      interestStartDateProvenance: null,
+    });
+    expect(payload).not.toHaveProperty("dueDate");
+    expect(payload).not.toHaveProperty("noInterestConfirmedById");
+    expect(window.alert).toHaveBeenCalledWith("Yüksek etkili alacak kalemi değişikliği onaya gönderildi.");
+  });
+
+  it("Faiz işlemez geçişinde gerekçesiz talep veya birlikte vade değişikliği gönderilmez", async () => {
+    await duzenle("yg-isler");
+    durumSec("NO_INTEREST");
+    fireEvent.click(screen.getByRole("button", { name: "Onaya Gönder" }));
+    expect(await screen.findByText("Faiz işlememe gerekçesi zorunludur.")).toBeInTheDocument();
+    expect(apiPut).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Faiz işlememe gerekçesi" }), { target: { value: "Sentetik gerekçe" } });
+    fireEvent.change(screen.getByDisplayValue("2026-04-07"), { target: { value: "2026-04-10" } });
+    fireEvent.click(screen.getByRole("button", { name: "Onaya Gönder" }));
+    expect(await screen.findByText("Vade değişikliğini ayrı onaya gönderin.")).toBeInTheDocument();
+    expect(apiPut).not.toHaveBeenCalled();
   });
 
   it("faiz işler → belirlenmedi: yalnız durum gönderilir (kayıtlı başlangıç / dayanak boşaltılmaz)", async () => {

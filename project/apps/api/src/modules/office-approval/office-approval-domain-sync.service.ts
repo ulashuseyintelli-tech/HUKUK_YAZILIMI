@@ -949,6 +949,7 @@ export class OfficeApprovalDomainSyncService {
     };
   }
 
+  /** applyClaimItemUpdateOrDelete: runs the approved ClaimItem update in the decision transaction. */
   private buildClaimItemUpdateData(patch: Record<string, unknown>): Record<string, unknown> {
     const data: Record<string, unknown> = {};
     if (patch.itemType) data.itemType = patch.itemType;
@@ -957,11 +958,18 @@ export class OfficeApprovalDomainSyncService {
     if (Object.prototype.hasOwnProperty.call(patch, 'interestType')) data.interestType = patch.interestType;
     if (Object.prototype.hasOwnProperty.call(patch, 'interestTypeCode')) data.interestTypeCode = patch.interestTypeCode;
     if (patch.interestRate !== undefined) data.interestRate = patch.interestRate;
-    if (patch.interestStartDate) data.interestStartDate = new Date(String(patch.interestStartDate));
-    if (patch.interestEndDate) data.interestEndDate = new Date(String(patch.interestEndDate));
+    // An explicit null clears the approved interest field. Omission preserves the stored value.
+    if (patch.interestStartDate !== undefined) {
+      data.interestStartDate = patch.interestStartDate === null ? null : new Date(String(patch.interestStartDate));
+    }
+    if (patch.interestEndDate !== undefined) {
+      data.interestEndDate = patch.interestEndDate === null ? null : new Date(String(patch.interestEndDate));
+    }
     if (patch.dueDate) data.dueDate = new Date(String(patch.dueDate));
     if (patch.interestAccrualStatus) data.interestAccrualStatus = patch.interestAccrualStatus;
-    if (patch.interestStartDateProvenance) data.interestStartDateProvenance = patch.interestStartDateProvenance;
+    if (patch.interestStartDateProvenance !== undefined) {
+      data.interestStartDateProvenance = patch.interestStartDateProvenance;
+    }
     // Açık null = "bilinmiyor"a dönüş (onaylı); alan yamada yoksa dokunulmaz.
     if (Object.prototype.hasOwnProperty.call(patch, 'attorneyFeeBasis')) data.attorneyFeeBasis = patch.attorneyFeeBasis ?? null;
     if (patch.interestAccrualStatus === 'NO_INTEREST') {

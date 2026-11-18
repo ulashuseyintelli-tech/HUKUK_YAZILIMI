@@ -1054,14 +1054,11 @@ export interface InterestEditInput {
   startDate: string;
   /** Kalemde kayıtlı faiz türü var mı (interestType ya da interestTypeCode)? Bu pencerede faiz türü seçilmez. */
   hasInterestType: boolean;
+  noInterestReason?: string;
 }
 
-/**
- * Bu pencerenin sunduğu faiz durumu geçişleri: yalnız "Belirlenmedi" ⇄ "Faiz işler". "Faiz işlemez"e geçiş SUNULMAZ: onay
- * yürütmesi (office-approval-domain-sync buildClaimItemUpdateData) açık null başlangıç / dayanak alanını yazmadığı için geçiş
- * sunucunun kendi kuralına aykırı kayıt bırakır (bulgu 18.11.2026; ayrı iş). Kayıtlı "Faiz işlemez" kalemde seçim yalnız gösterimdir.
- */
-export const EDITABLE_INTEREST_STATUSES: InterestAccrualStatusCode[] = ["UNKNOWN", "ACCRUES"];
+/** Düzenlenebilen kalemlerde sunulan seçenekler. Kayıtlı "Faiz işlemez" durumu kilitlidir. */
+export const EDITABLE_INTEREST_STATUSES: InterestAccrualStatusCode[] = ["UNKNOWN", "ACCRUES", "NO_INTEREST"];
 
 /**
  * Sunucu kuralının (api interest-accrual-policy.validateInterestAccrualState) istemci yansıması — kural GEVŞETİLMEZ; sunucu yine
@@ -1072,8 +1069,11 @@ export function validateInterestEdit(input: InterestEditInput): string | null {
   const statusChanged = input.status !== input.initialStatus;
   const provenanceChanged = input.provenance !== input.initialProvenance;
   const startChanged = input.startDate !== input.initialStartDate;
-  if (statusChanged && !(EDITABLE_INTEREST_STATUSES as string[]).includes(input.status)) {
+  if (statusChanged && (input.initialStatus === "NO_INTEREST" || !(EDITABLE_INTEREST_STATUSES as string[]).includes(input.status))) {
     return "Bu faiz durumu bu pencereden seçilemez.";
+  }
+  if (statusChanged && input.status === "NO_INTEREST" && !input.noInterestReason?.trim()) {
+    return "Faiz işlememe gerekçesi zorunludur.";
   }
   if (input.status === "ACCRUES" && (statusChanged || provenanceChanged || startChanged)) {
     if (!input.hasInterestType) {
@@ -1113,6 +1113,7 @@ function EditMetadataModal({
     attorneyFeeBasis: item.attorneyFeeBasis ?? "",
     interestAccrualStatus: item.interestAccrualStatus ?? "UNKNOWN",
     interestStartDateProvenance: item.interestStartDateProvenance ?? "",
+    noInterestReason: "",
   });
   const isAttorneyFee = item.itemType === "ATTORNEY_FEE";
   const initialAttorneyFeeBasis = item.attorneyFeeBasis ?? "";
@@ -1120,9 +1121,9 @@ function EditMetadataModal({
   const initialProvenance = item.interestStartDateProvenance ?? "";
   const statusChanged = form.interestAccrualStatus !== initialStatus;
   const provenanceChanged = form.interestStartDateProvenance !== initialProvenance;
-  // Kayıtlı "Faiz işlemez" kalem: durum bu pencereden değiştirilmez; başlangıç / bitiş / oran sunucu kuralı gereği boş tutulur.
-  const statusLocked = !(EDITABLE_INTEREST_STATUSES as string[]).includes(initialStatus);
-  const interestDetailLocked = initialStatus === "NO_INTEREST";
+  const requestNoInterest = statusChanged && form.interestAccrualStatus === "NO_INTEREST";
+  const statusLocked = initialStatus === "NO_INTEREST" || !(EDITABLE_INTEREST_STATUSES as string[]).includes(initialStatus);
+  const interestDetailLocked = initialStatus === "NO_INTEREST" || requestNoInterest;
 
   const typeInfo = itemTypeLabels[item.itemType] || itemTypeLabels.OTHER;
   const lockNote = "Tutar ve kalem tipi, bakiye cutover tamamlanana kadar düzenlenemez.";
@@ -1156,9 +1157,14 @@ function EditMetadataModal({
       initialStartDate: initialHighImpact.interestStartDate,
       startDate: form.interestStartDate,
       hasInterestType: Boolean(item.interestType || item.interestTypeCode),
+      noInterestReason: form.noInterestReason,
     });
     if (validationError) {
       setError(validationError);
+      return;
+    }
+    if (requestNoInterest && form.dueDate !== initialHighImpact.dueDate) {
+      setError("Vade değişikliğini ayrı onaya gönderin.");
       return;
     }
     setLoading(true);
@@ -1170,7 +1176,17 @@ function EditMetadataModal({
         sortOrder: form.sortOrder !== "" ? parseInt(form.sortOrder, 10) : undefined,
       };
       if (form.dueDate !== initialHighImpact.dueDate) payload.dueDate = form.dueDate || undefined;
-      if (!interestDetailLocked) {
+      if (requestNoInterest) {
+        Object.assign(payload, {
+          interestType: null,
+          interestTypeCode: null,
+          interestRate: null,
+          interestStartDate: null,
+          interestEndDate: null,
+          interestStartDateProvenance: null,
+          noInterestReason: form.noInterestReason.trim(),
+        });
+      } else if (!interestDetailLocked) {
         if (form.interestStartDate !== initialHighImpact.interestStartDate) {
           payload.interestStartDate = form.interestStartDate || undefined;
         }
@@ -1185,8 +1201,7 @@ function EditMetadataModal({
       if (attorneyFeeBasisChanged) {
         payload.attorneyFeeBasis = form.attorneyFeeBasis === "" ? null : form.attorneyFeeBasis;
       }
-      // Faiz durumu ve dayanağı: yalnız kullanıcı değiştirdiyse yüke girer (kayıt kendiliğinden değişmez). Dayanak yalnız
-      // "Faiz işler"de seçilir ve doludur (boş dayanak doğrulamada durur); boşaltma gönderilmez.
+      // Durum yalnız açık seçimde gönderilir. "Faiz işlemez" geçişi faiz alanlarını yukarıda açıkça boşaltır.
       if (statusChanged) payload.interestAccrualStatus = form.interestAccrualStatus;
       if (provenanceChanged && form.interestAccrualStatus === "ACCRUES" && form.interestStartDateProvenance) {
         payload.interestStartDateProvenance = form.interestStartDateProvenance;
@@ -1335,6 +1350,23 @@ function EditMetadataModal({
                 : "Belgeye göre seçin. \"Belirlenmedi\" kayıt siz değiştirmedikçe aynen kalır; değişiklik onaya gönderilir."}
             </p>
           </div>
+          {requestNoInterest && (
+            <div>
+              <label htmlFor="claim-item-no-interest-reason" className="block text-sm font-medium mb-1">
+                Faiz işlememe gerekçesi
+              </label>
+              <textarea
+                id="claim-item-no-interest-reason"
+                aria-required="true"
+                value={form.noInterestReason}
+                onChange={(e) => setForm((p) => ({ ...p, noInterestReason: e.target.value }))}
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Onaylandığında faiz alanları boşaltılır. Vade korunur.
+              </p>
+            </div>
+          )}
           {form.interestAccrualStatus === "ACCRUES" && (
             <div>
               <label htmlFor="claim-item-interest-start-provenance" className="block text-sm font-medium mb-1">
