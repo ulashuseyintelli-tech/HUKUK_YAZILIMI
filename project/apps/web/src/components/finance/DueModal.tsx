@@ -107,6 +107,18 @@ export function dueBlockNotice(error: any): string | null {
   return typeof code === "string" && DUE_BLOCK_CODES.has(code) && error?.message ? String(error.message) : null;
 }
 
+const DUE_APPROVAL_FALLBACK =
+  "İşlem onaya gönderildi. İkinci bir kişinin onayından sonra uygulanır; o zamana kadar dosya kalemleri değişmez.";
+
+/**
+ * Sunucu isteği UYGULAMADIYSA ve onaya gönderdiyse (ekleme; hesap ve dışa aktarım çıktısını etkileyen değişiklik; bağlı
+ * kalemi olmayan kalemin silinmesi) kullanıcıya gösterilecek ileti; istek doğrudan uygulandıysa null.
+ */
+export function dueApprovalNotice(result: any): string | null {
+  if (!result || typeof result !== "object" || result.approvalRequired !== true) return null;
+  return typeof result.message === "string" && result.message ? result.message : DUE_APPROVAL_FALLBACK;
+}
+
 export function DueModal({ isOpen, onClose, caseId, due, onSuccess, defaultCurrency }: DueModalProps) {
   // Alan boşsa şema varsayılanı (TRY) — dosya para birimi verilmeyen çağrı önceki gibi davranır
   const newDueCurrency = recordCurrencyCode(defaultCurrency);
@@ -114,6 +126,8 @@ export function DueModal({ isOpen, onClose, caseId, due, onSuccess, defaultCurre
   const [deleting, setDeleting] = useState(false);
   // Sunucunun engel reddi (onaya tabi değişiklik / bekleyen talep / yetki): pencerede kalıcı ve okunur gösterilir.
   const [blockNotice, setBlockNotice] = useState<string | null>(null);
+  // İstek onaya gönderildi (kayıt değişmedi): ileti pencerede kalır; kullanıcı okuyup kapatır.
+  const [approvalNotice, setApprovalNotice] = useState<string | null>(null);
   const [form, setForm] = useState<DueFormState>({
     type: "PRINCIPAL",
     description: "",
@@ -131,6 +145,7 @@ export function DueModal({ isOpen, onClose, caseId, due, onSuccess, defaultCurre
 
   useEffect(() => {
     setBlockNotice(null);
+    setApprovalNotice(null);
     if (due) {
       setForm(dueFormFromRecord(due));
     } else {
@@ -161,19 +176,25 @@ export function DueModal({ isOpen, onClose, caseId, due, onSuccess, defaultCurre
     }
 
     setBlockNotice(null);
+    setApprovalNotice(null);
     setLoading(true);
     try {
-      if (due?.id && changes) {
-        await api.updateDue(caseId, due.id, changes as any);
-      } else {
-        await api.createDue(caseId, {
-          type: form.type as any,
-          description: form.description || undefined,
-          amount: parseFloat(form.amount),
-          dueDate: form.dueDate,
-          currency: form.currency,
-          interestType: form.type === 'PRINCIPAL' ? form.interestType : undefined,
-        });
+      const result =
+        due?.id && changes
+          ? await api.updateDue(caseId, due.id, changes as any)
+          : await api.createDue(caseId, {
+              type: form.type as any,
+              description: form.description || undefined,
+              amount: parseFloat(form.amount),
+              dueDate: form.dueDate,
+              currency: form.currency,
+              interestType: form.type === 'PRINCIPAL' ? form.interestType : undefined,
+            });
+      const pending = dueApprovalNotice(result);
+      if (pending) {
+        // Kayıt değişmedi; pencere açık kalır ve ileti okunur. Liste yenilenmez (yenilenecek kayıt yok).
+        setApprovalNotice(pending);
+        return;
       }
       onSuccess();
       onClose();
@@ -192,9 +213,14 @@ export function DueModal({ isOpen, onClose, caseId, due, onSuccess, defaultCurre
     if (!confirm("Bu alacak kalemini silmek istediğinize emin misiniz?")) return;
 
     setBlockNotice(null);
+    setApprovalNotice(null);
     setDeleting(true);
     try {
-      await api.deleteDue(caseId, due.id);
+      const pending = dueApprovalNotice(await api.deleteDue(caseId, due.id));
+      if (pending) {
+        setApprovalNotice(pending);
+        return;
+      }
       onSuccess();
       onClose();
     } catch (error: any) {
@@ -240,8 +266,25 @@ export function DueModal({ isOpen, onClose, caseId, due, onSuccess, defaultCurre
             <p className="text-[11px] text-gray-500 leading-snug">
               Bağlı alacak kaleminin tutarını, türünü, vadesini ya da faiz bilgisini değiştiren düzenlemeler ve silme
               iki kişi onayına tabidir; bu pencereden yapılamaz. Bunları &quot;Alacak Kalemleri (Kanonik)&quot;
-              panelinde kalemi düzenleyerek isteyin.
+              panelinde kalemi düzenleyerek isteyin. Alt tür değişikliği (ör. asıl alacak → kira) bu pencereden
+              istenir ve ikinci bir kişinin onayıyla uygulanır.
             </p>
+          )}
+          {due?.id && due?.type === "NAFAKA" && (
+            <p className="text-[11px] text-gray-500 leading-snug">
+              Tutar, vade ve faiz değişikliği ile silme ikinci bir kişinin onayıyla uygulanır; açıklama doğrudan kaydedilir.
+            </p>
+          )}
+          {!due?.id && (
+            <p className="text-[11px] text-gray-500 leading-snug">
+              Yeni kalem ikinci bir kişinin onayından sonra dosyaya eklenir; o zamana kadar borca ve dışa aktarıma girmez.
+            </p>
+          )}
+          {approvalNotice && (
+            <div role="status" className="rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-xs text-blue-900 leading-snug">
+              <p className="font-semibold mb-0.5">Onaya gönderildi</p>
+              <p>{approvalNotice}</p>
+            </div>
           )}
           {blockNotice && (
             <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 leading-snug">

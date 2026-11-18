@@ -412,3 +412,6 @@ src/modules/interest-engine/rates/__tests__/legal-3095-rate-table.spec.ts
 src/modules/claim-liability/__tests__/claim-liability.domain.spec.ts
 # Due yazim yolu bagli kanonik kalemi korur (owner karari 18.11.2026, K1 / K2): saf karar kurali - gonderilmeyen alan degismez, ayni deger degisiklik sayilmaz, yuksek etkili alan ihlali, ret sozlesmeleri.
 src/modules/case/__tests__/due-canonical-item-guard.spec.ts
+# Due ekleme / degisikligi onayi (owner karari 19.11.2026): kayitli niyet sozlesmesi (ekleme, guncelleme, silme) ve kaleme ulasmayan etkili alan karar kurali.
+src/modules/case/__tests__/due-change-approval.spec.ts
+src/modules/case/__tests__/due-effective-change.spec.ts

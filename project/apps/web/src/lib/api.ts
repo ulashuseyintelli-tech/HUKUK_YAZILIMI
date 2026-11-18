@@ -3336,10 +3336,10 @@ class ApiClient {
   }
 
   /**
-   * Alacak kalemi ekle
+   * Alacak kalemi ekleme TALEBİ: kalem oluşmaz, iki kişi onayına talep açılır (yanıt: DueChangePendingDTO).
    */
   async createDue(caseId: string, data: CreateDueDTO) {
-    return this.request<DueDTO>(`/cases/${caseId}/dues`, {
+    return this.request<DueChangePendingDTO>(`/cases/${caseId}/dues`, {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -3349,7 +3349,8 @@ class ApiClient {
    * Alacak kalemi güncelle
    */
   async updateDue(caseId: string, dueId: string, data: UpdateDueDTO) {
-    return this.request<DueDTO>(`/cases/${caseId}/dues/${dueId}`, {
+    // Hesap ve dışa aktarım çıktısını etkileyen değişiklik onaya gider (DueChangePendingDTO); ötekiler doğrudan uygulanır.
+    return this.request<DueDTO | DueChangePendingDTO>(`/cases/${caseId}/dues/${dueId}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
     });
@@ -3359,7 +3360,8 @@ class ApiClient {
    * Alacak kalemi sil
    */
   async deleteDue(caseId: string, dueId: string) {
-    return this.request<{ success: boolean }>(`/cases/${caseId}/dues/${dueId}`, {
+    // Bağlı alacak kalemi olmayan dosya kaleminin silinmesi onaya gider (DueChangePendingDTO).
+    return this.request<{ success: boolean } | DueChangePendingDTO>(`/cases/${caseId}/dues/${dueId}`, {
       method: 'DELETE',
     });
   }
@@ -5849,6 +5851,16 @@ export interface UyapExportableCasesResult {
 // ============================================
 
 export type DueType = 'PRINCIPAL' | 'INTEREST' | 'PAST_DUE_INTEREST' | 'ATTORNEY_FEE' | 'COURT_FEE' | 'EXECUTION_FEE' | 'OTHER';
+
+/** Due isteği UYGULANMADI: mevcut iki kişi onayına talep açıldı (kayıt değişmedi). */
+export interface DueChangePendingDTO {
+  applied: false;
+  approvalRequired: true;
+  approvalRequestId: string;
+  status: string;
+  fields?: string[];
+  message: string;
+}
 
 export interface DueDTO {
   id: string;

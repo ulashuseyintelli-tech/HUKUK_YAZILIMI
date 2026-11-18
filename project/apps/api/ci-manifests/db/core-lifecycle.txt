@@ -398,3 +398,5 @@ src/modules/case/__tests__/case-claim-currency-fr7.http.db-gated.integration.spe
 src/modules/claim-item/__tests__/claim-item-interest-status-team-removal.http.db-gated.integration.spec.ts
 # Due yazim yolu bagli kanonik kalemi korur (owner karari 18.11.2026, K1 / K2 / K3): yuksek etkili degisiklik ve silme yazimdan once ret; aciklama onayli faizi korur; dosya kapsami + mali yazma yetkisi; bekleyen onay; eszamanli istek; faiz hesabi + UYAP izdusumu korunan kaydi kullanir.
 src/modules/case/__tests__/due-canonical-item-guard.http.db-gated.integration.spec.ts
+# Due ekleme ve kaleme ulasmayan etkili Due degisiklikleri iki kisi onayina tabidir (owner karari 19.11.2026): gercek HTTP + gercek onay; onaylanmamis kayit borca / hesap ozetine / UYAP eslemesine girmez.
+src/modules/case/__tests__/due-change-approval.http.db-gated.integration.spec.ts

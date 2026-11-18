@@ -10,12 +10,16 @@ import { actionBehaviorNotes } from "./action-behavior-catalog";
 import { projectExpenseSend } from './expense-send.projector';
 import { projectClaimItemLiabilitySelection } from "./claim-item-liability-selection.projector";
 import { CLAIM_ITEM_UPDATE_OPERATION, projectClaimItemUpdate } from "./claim-item-update.projector";
+import { CASE_DUE_CHANGE_INTENT_VERSION, projectCaseDueChange } from "./case-due-change.projector";
 
 /**
- * Aynı eylem kodu iki işlemi taşır: borçlu sorumluluğu seçimi ve kalem alanı değişikliği (UPDATE). Diğer işlemler
- * (ör. oluşturma / silme) özetlenmez → seçim projector'ının "unsafe" dönüşü (bugünkü davranış).
+ * Aynı eylem kodu üç niyet ailesini taşır: dosya kalemi (Due) talebi (kayıtlı niyet sürümüyle ayrışır), borçlu
+ * sorumluluğu seçimi ve kalem alanı değişikliği (UPDATE). Diğer işlemler (ör. kalem oluşturma / silme) özetlenmez →
+ * seçim projector'ının "unsafe" dönüşü (bugünkü davranış).
  */
 const projectClaimItemHighImpact: ApprovalSummaryProjector = (savedIntent, ctx) => {
+  const version = savedIntent && typeof savedIntent === "object" ? (savedIntent as Record<string, unknown>).version : undefined;
+  if (version === CASE_DUE_CHANGE_INTENT_VERSION) return projectCaseDueChange(savedIntent, ctx);
   const operation = savedIntent && typeof savedIntent === "object" ? (savedIntent as Record<string, unknown>).operation : undefined;
   return operation === CLAIM_ITEM_UPDATE_OPERATION ? projectClaimItemUpdate(savedIntent, ctx) : projectClaimItemLiabilitySelection(savedIntent, ctx);
 };
