@@ -434,6 +434,33 @@ describeWithDisposableDb('Due yazım yolu bağlı kanonik kalemi korur — HTTP 
       expect(await claimRow(f.claimId)).toEqual(cancelled); // Due yolu kaleme dokunmadı
     });
 
+    it('bağlı kalem kapalıyken (kanonik iptal onaylandı) kaleme ulaşacak Due isteği doğru iletiyle reddedilir; "onaya gönder" yönlendirmesi verilmez', async () => {
+      const f = await fixture('kapali');
+      await approveAccrues(f);
+      const id = await approvalIdOf(await del(`/claim-items/${f.claimId}`, f.yetkili.userId));
+      await approvals.approve(id, f.onayci.userId);
+      const cancelled = await claimRow(f.claimId);
+      expect(cancelled.status).toBe('CANCELLED');
+
+      // Yüksek etkili (tutar; faiz başlangıcı) ve düşük etkili (açıklama) — kapalı kalem kalem ucundan da değiştirilemez.
+      for (const body of [{ amount: 1500 }, { interestStartDate: '2024-02-01' }, { description: 'Kapalı kaleme açıklama' }]) {
+        const res = await expectRejectedWithoutWrite(f, () => patch(f.duePath, f.yetkili.userId, body), {
+          status: 409,
+          code: 'DUE_BOUND_CLAIM_ITEM_CLOSED',
+        });
+        expect(res.body.claimItemStatus).toBe('CANCELLED');
+        expect(res.body.message).toContain('iptal edilmiş');
+        expect(res.body.message).not.toContain('Onaya Gönder');
+        expect(res.body.canonicalAction).toBeUndefined();
+      }
+
+      // Kaleme ulaşmayan Due alanı (ana kalem işareti) yazılır; kapalı kalem aynen kalır.
+      const marked = await patch(f.duePath, f.yetkili.userId, { isPrimary: true });
+      expect(marked.status).toBe(200);
+      expect((await dueRow(f.dueId))!.isPrimary).toBe(true);
+      expect(await claimRow(f.claimId)).toEqual(cancelled);
+    });
+
     it('kanonik kalem üretmeyen tür (nafaka): Due kendi alanlarıyla güncellenir ve silinir', async () => {
       const f = await fixture('nafaka');
       const created = await post(f.duesPath, f.yetkili.userId, { type: 'NAFAKA', amount: 300, dueDate: '2025-05-05', description: 'Sentetik nafaka taksiti' });

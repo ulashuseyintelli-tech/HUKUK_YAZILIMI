@@ -26,6 +26,7 @@ import { AttorneyFeeBasis, assertAttorneyFeeBasisMatchesItemType } from "../clai
 import { interestWriteData, normalizeInterestWriteIntent } from "../claim-item/interest-write-admission";
 import { assertGenericDueTypeTransition } from "./due-type-transition.policy";
 import {
+  DueBoundClaimItemClosedException,
   DueChangeRequiresClaimItemApprovalException,
   DueClaimItemBusyException,
   DueDeleteRequiresClaimItemCancelException,
@@ -4839,6 +4840,8 @@ export class CaseService {
    *  - Yetki: dosya kapsamı + mali yazma yetkisi, yazma transaction'ında kilit altında (`assertDueWriteAuthorityInTx`).
    *  - Bağlı kanonik kalemde yüksek etkili değişiklik (tutar, tür, para birimi, vade, faiz alanları) gerektiren istek
    *    hiçbir yazımdan ÖNCE 409 ile reddedilir; kullanıcı kalem ucuna (iki kişi onayı) yönlendirilir.
+   *  - Bağlı kalem kapalıysa (iptal / feragat / tahsil) kaleme ulaşacak her değişiklik 409 `DUE_BOUND_CLAIM_ITEM_CLOSED`
+   *    ile reddedilir; kapalı kalem kalem ucundan da değiştirilemediği için "onaya gönder" yönlendirmesi verilmez.
    *  - Gönderilmeyen alan değişmez; Due'daki değeri yineleyen alan değişiklik sayılmaz; kaleme yalnız düşük etkili
    *    alanlar (açıklama, sıra) yansır. Karar kuralı: `planDueCanonicalUpdate` (saf).
    *  - Dosya kilidi → Due satırı → bağlı kalem satırı sırasıyla kilitlenir: aynı dosyadaki Due istekleri sıraya girer,
@@ -4886,12 +4889,17 @@ export class CaseService {
         request: data,
         normalizedInterest: normalizedInterest.persisted,
       });
+      const claimItemTouched = claimItem !== null && Object.keys(plan.claimItemPatch).length > 0;
+      if (claimItem && claimItem.status !== "ACTIVE" && (plan.highImpactFields.length > 0 || claimItemTouched)) {
+        // Kapalı (iptal / feragat / tahsil) kalem kalem ucundan da değiştirilemez: "onaya gönder" yönlendirmesi
+        // yanıltıcı olurdu. Kaleme ulaşacak her Due değişikliği (yüksek ya da düşük etkili) yazımdan önce reddedilir.
+        throw new DueBoundClaimItemClosedException(claimItem.id, claimItem.status);
+      }
       if (claimItem && plan.highImpactFields.length > 0) {
         throw new DueChangeRequiresClaimItemApprovalException(claimItem.id, plan.highImpactFields);
       }
-      const claimItemTouched = claimItem !== null && Object.keys(plan.claimItemPatch).length > 0;
       if (claimItem && claimItemTouched) {
-        // Kapalı (iptal / feragat / tahsil) kalem değiştirilemez: mevcut yaşam döngüsü reddi, yazımdan önce.
+        // İkinci kat: kalem yaşam döngüsü sözleşmesi (kapalı kalem yukarıda zaten reddedildi).
         assertClaimItemLifecycleMutation(claimItem.status, plan.claimItemPatch);
         if (await this.hasPendingClaimItemApproval(tx, tenantId, claimItem.id)) {
           throw new DueEditBlockedByPendingClaimItemApprovalException(claimItem.id);

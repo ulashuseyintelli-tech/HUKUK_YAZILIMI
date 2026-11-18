@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { ClaimItemSourceIntegrityException } from '../../claim-item/claim-item-source-integrity.guard';
 import { CaseService } from '../case.service';
 import {
+  DueBoundClaimItemClosedException,
   DueChangeRequiresClaimItemApprovalException,
   DueClaimItemBusyException,
   DueDeleteRequiresClaimItemCancelException,
@@ -783,18 +784,40 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
     expect(tx.due.update).not.toHaveBeenCalled();
   });
 
-  it('updateDue kapalı (iptal edilmiş) kaleme yansıyan değişikliği yazımdan önce reddeder', async () => {
+  it.each([
+    ['düşük etkili (açıklama)', { description: 'Kapalı kalem' }],
+    ['yüksek etkili (tutar)', { amount: 2400 }],
+    ['yüksek etkili (faiz başlangıcı)', { interestStartDate: '2024-02-01' }],
+  ] as Array<[string, Record<string, unknown>]>)(
+    'updateDue kapalı (iptal edilmiş) kaleme ulaşacak %s değişikliği yazımdan önce reddeder; "onaya gönder" yönlendirmesi vermez',
+    async (_label, body) => {
+      const tx = makeTx({
+        due: { findFirst: jest.fn(async () => makeDue()), update: jest.fn() },
+        claimItem: { findMany: jest.fn(async () => [makeClaim({ status: 'CANCELLED' })]), update: jest.fn() },
+      });
+      const { service, writerRouter } = makeService(tx);
+
+      const error = await service.updateDue('tenant-1', 'case-1', 'due-1', body as any, 'requester-1').catch((e) => e);
+
+      expect(error).toBeInstanceOf(DueBoundClaimItemClosedException);
+      expect(error).not.toBeInstanceOf(DueChangeRequiresClaimItemApprovalException);
+      expect(error.getResponse()).toMatchObject({ code: 'DUE_BOUND_CLAIM_ITEM_CLOSED', claimItemStatus: 'CANCELLED' });
+      expect(tx.due.update).not.toHaveBeenCalled();
+      expect(writerRouter.updateSystemClaimItem).not.toHaveBeenCalled();
+    },
+  );
+
+  it('updateDue kapalı kaleme ULAŞMAYAN alanı (ana kalem işareti) yazar; kaleme dokunmaz', async () => {
     const tx = makeTx({
-      due: { findFirst: jest.fn(async () => makeDue()), update: jest.fn() },
+      due: { findFirst: jest.fn(async () => makeDue()), update: jest.fn(async () => makeDue({ isPrimary: true })) },
       claimItem: { findMany: jest.fn(async () => [makeClaim({ status: 'CANCELLED' })]), update: jest.fn() },
     });
-    const { service } = makeService(tx);
+    const { service, writerRouter } = makeService(tx);
 
-    await expect(
-      service.updateDue('tenant-1', 'case-1', 'due-1', { description: 'Kapalı kalem' }, 'requester-1'),
-    ).rejects.toMatchObject({ conflictCode: 'CLAIM_ITEM_TERMINAL_MUTATION_FORBIDDEN' });
+    await service.updateDue('tenant-1', 'case-1', 'due-1', { isPrimary: true } as any, 'requester-1');
 
-    expect(tx.due.update).not.toHaveBeenCalled();
+    expect(tx.due.update).toHaveBeenCalledTimes(1);
+    expect(writerRouter.updateSystemClaimItem).not.toHaveBeenCalled();
   });
 
   it.each([

@@ -28,6 +28,7 @@ export const DUE_CHANGE_REQUIRES_CLAIM_ITEM_APPROVAL = 'DUE_CHANGE_REQUIRES_CLAI
 export const DUE_DELETE_REQUIRES_CLAIM_ITEM_CANCEL_APPROVAL = 'DUE_DELETE_REQUIRES_CLAIM_ITEM_CANCEL_APPROVAL';
 export const DUE_EDIT_BLOCKED_BY_PENDING_CLAIM_ITEM_APPROVAL = 'DUE_EDIT_BLOCKED_BY_PENDING_CLAIM_ITEM_APPROVAL';
 export const DUE_CLAIM_ITEM_BUSY = 'DUE_CLAIM_ITEM_BUSY';
+export const DUE_BOUND_CLAIM_ITEM_CLOSED = 'DUE_BOUND_CLAIM_ITEM_CLOSED';
 export const DUE_WRITE_FORBIDDEN = 'DUE_WRITE_FORBIDDEN';
 
 /**
@@ -332,6 +333,37 @@ export class DueClaimItemBusyException extends ConflictException {
       claimItemId,
     });
     this.name = 'DueClaimItemBusyException';
+  }
+}
+
+const CLOSED_STATUS_LABELS: Readonly<Record<string, string>> = {
+  CANCELLED: 'iptal edilmiş',
+  WAIVED: 'feragat edilmiş',
+  COLLECTED: 'tahsil edilmiş',
+};
+
+/**
+ * Bağlı kanonik kalem KAPALI (iptal / feragat / tahsil): kaleme ulaşacak Due değişikliği — yüksek etkili de düşük etkili
+ * de — yazımdan önce reddedilir. Kapalı kalem kalem ucundan da değiştirilemez; bu yüzden "onaya gönder" yönlendirmesi
+ * VERİLMEZ (kullanıcıyı çalışmayan bir yola göndermek olurdu). İptal edilmiş kalemde dosya kalemi silinebilir
+ * (`CaseService.deleteDue`); ileti bunu yalnız o durumda söyler.
+ */
+export class DueBoundClaimItemClosedException extends ConflictException {
+  constructor(claimItemId: string, claimItemStatus: string) {
+    const label = CLOSED_STATUS_LABELS[claimItemStatus] ?? 'kapalı';
+    super({
+      statusCode: 409,
+      error: 'Due Bound Claim Item Closed',
+      code: DUE_BOUND_CLAIM_ITEM_CLOSED,
+      message:
+        `Bu dosya kalemine bağlı alacak kalemi ${label} durumda; kapalı kalemin bilgisi bu pencereden de alacak kalemi ` +
+        `ekranından da değiştirilemez.` +
+        (claimItemStatus === 'CANCELLED' ? ' Kalem iptal edildiği için bu dosya kalemi silinebilir.' : '') +
+        ` ${NOTHING_CHANGED}`,
+      claimItemId,
+      claimItemStatus,
+    });
+    this.name = 'DueBoundClaimItemClosedException';
   }
 }
 

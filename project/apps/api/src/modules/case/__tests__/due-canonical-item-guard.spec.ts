@@ -1,10 +1,12 @@
 import { Prisma } from '@prisma/client';
 import {
+  DUE_BOUND_CLAIM_ITEM_CLOSED,
   DUE_CHANGE_REQUIRES_CLAIM_ITEM_APPROVAL,
   DUE_CLAIM_ITEM_BUSY,
   DUE_DELETE_REQUIRES_CLAIM_ITEM_CANCEL_APPROVAL,
   DUE_EDIT_BLOCKED_BY_PENDING_CLAIM_ITEM_APPROVAL,
   DUE_WRITE_FORBIDDEN,
+  DueBoundClaimItemClosedException,
   DueChangeRequiresClaimItemApprovalException,
   DueClaimItemBusyException,
   DueDeleteRequiresClaimItemCancelException,
@@ -243,6 +245,26 @@ describe('ret sözleşmeleri', () => {
   ] as Array<[unknown, boolean]>)('isRowLockNotAvailable(%j) → %s', (error, expected) => {
     expect(isRowLockNotAvailable(error)).toBe(expected);
   });
+
+  it.each([
+    ['CANCELLED', 'iptal edilmiş', true],
+    ['WAIVED', 'feragat edilmiş', false],
+    ['COLLECTED', 'tahsil edilmiş', false],
+    ['BILINMEYEN', 'kapalı', false],
+  ] as Array<[string, string, boolean]>)(
+    'kapalı kalem reddi (%s): 409 + kod + durum; "onaya gönder" yönlendirmesi yok',
+    (status, label, deletable) => {
+      const closed = new DueBoundClaimItemClosedException('claim-1', status);
+      const body = closed.getResponse() as { code: string; message: string; claimItemStatus: string; canonicalAction?: unknown };
+      expect([closed.getStatus(), body.code, body.claimItemStatus]).toEqual([409, DUE_BOUND_CLAIM_ITEM_CLOSED, status]);
+      expect(body.message).toContain(label);
+      expect(body.message).toContain('Hiçbir kayıt değiştirilmedi.');
+      expect(body.message).not.toContain('Onaya Gönder');
+      expect(body.canonicalAction).toBeUndefined();
+      // Yalnız iptal edilmiş kalemde dosya kalemi silinebilir; ileti bunu yalnız o durumda söyler.
+      expect(body.message.includes('silinebilir')).toBe(deletable);
+    },
+  );
 
   it('silme, bekleyen onay ve yetki retleri kendi kodlarını taşır', () => {
     const remove = new DueDeleteRequiresClaimItemCancelException('claim-1');
