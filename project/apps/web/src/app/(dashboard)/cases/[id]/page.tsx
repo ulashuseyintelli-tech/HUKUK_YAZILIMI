@@ -48,7 +48,7 @@ import {
 import { api, DebtorListItemDTO, DebtorsSummaryDTO, CollectionDispositionDTO, PostCollectionDispositionLineDTO, GenerateDistributionRecommendationDTO } from "@/lib/api";
 import { toActionErrorMessage } from "@/lib/action-error";
 import { caseStaffEditFields, buildCaseStaffPatch, type CaseStaffEditFields } from "@/lib/case-staff-edit";
-import { buildCaseLawyerPatch, caseAssignmentSaveErrorMessage, type CaseLawyerEditState } from "@/lib/case-lawyer-edit";
+import { buildCaseLawyerPatch, caseAssignmentSaveErrorMessage, caseTeamMembershipErrorMessage, type CaseLawyerEditState } from "@/lib/case-lawyer-edit";
 import {
   CASE_STAFF_ROLE_OPTIONS,
   CASE_STAFF_ROLE_GROUP_LABEL,
@@ -1892,7 +1892,8 @@ export default function CaseDetailPage() {
       await fetchCase();
       await loadTeamOptions();
     } catch (error: any) {
-      alert(error.message || 'Avukat eklenemedi');
+      // Ekip üyeliği sunucuda F01 yönetim kuralına bağlı (18.11.2026): yetkisiz ise anlaşılır mesaj.
+      alert(caseTeamMembershipErrorMessage(error, error?.message || 'Avukat eklenemedi'));
     } finally {
       setAddingTeamMember(false);
     }
@@ -2062,7 +2063,7 @@ export default function CaseDetailPage() {
       setLawyerDrawerOpen(false);
     } catch (error) {
       console.error('Dosya ekibinden çıkarma hatası:', error);
-      alert(caseAssignmentSaveErrorMessage(error, 'Dosya ekibinden çıkarma başarısız'));
+      alert(caseTeamMembershipErrorMessage(error, 'Dosya ekibinden çıkarma başarısız'));
     }
   };
 

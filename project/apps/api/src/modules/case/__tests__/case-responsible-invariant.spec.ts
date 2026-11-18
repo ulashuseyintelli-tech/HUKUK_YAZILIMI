@@ -106,7 +106,7 @@ describe('WP-1d-5-7 CaseService.updateCaseLawyer (hukuki sorumlu ekseni kanonik-
       ...data,
       lawyer: { id: 'l-1', name: 'Av', surname: 'X', barNumber: '1', lawyerRank: 'LAWYER' },
     }));
-    const auditLog = jest.fn(async () => undefined);
+    const auditLog = jest.fn(async (_input?: unknown) => undefined);
     const mockPrisma = {
       case: { findFirst: jest.fn(async () => ({ id: 'case-1', tenantId: 'tenant-1' })) },
       caseLawyer: {
@@ -120,7 +120,7 @@ describe('WP-1d-5-7 CaseService.updateCaseLawyer (hukuki sorumlu ekseni kanonik-
       },
     };
     (service as any).prisma = mockPrisma;
-    (service as any).auditService = { log: auditLog };
+    (service as any).auditService = { log: auditLog, logInTransaction: async (_tx: any, input: any) => auditLog(input) };
     return { service, update, auditLog };
   }
 
@@ -187,7 +187,7 @@ describe('WP-1d-5-9 CaseService.addCaseLawyer (lifecycle — mevcut sorumlu koru
       lawyer: { id: data.lawyerId, name: 'Yeni', surname: 'Av', barNumber: '9', lawyerRank: opts.lawyerRank ?? 'PARTNER' },
     }));
     const count = jest.fn(async () => opts.existingResponsible);
-    const auditLog = jest.fn(async () => undefined);
+    const auditLog = jest.fn(async (_input?: unknown) => undefined);
     const mockPrisma = {
       case: { findFirst: jest.fn(async () => ({ id: 'case-1', tenantId: 'tenant-1' })) },
       lawyer: { findFirst: jest.fn(async () => ({ id: 'law-1', tenantId: 'tenant-1', lawyerRank: opts.lawyerRank ?? 'PARTNER', isActive: true })) },
@@ -198,7 +198,7 @@ describe('WP-1d-5-9 CaseService.addCaseLawyer (lifecycle — mevcut sorumlu koru
       },
     };
     (service as any).prisma = mockPrisma;
-    (service as any).auditService = { log: auditLog };
+    (service as any).auditService = { log: auditLog, logInTransaction: async (_tx: any, input: any) => auditLog(input) };
     return { service, create, count, auditLog };
   }
 

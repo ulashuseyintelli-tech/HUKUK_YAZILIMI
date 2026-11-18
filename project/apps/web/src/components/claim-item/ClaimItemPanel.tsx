@@ -8,6 +8,7 @@ import { toActionErrorMessage } from '@/lib/action-error';
 import { runMutation, runRefreshOnly } from '@/lib/mutation-outcome';
 import { useKeyedSubmitLock } from '@/lib/use-submit-lock';
 import { getInterestReadDisplayLabel } from "@/lib/interest-type-resolver";
+import type { AnaparasizKalemDokumu } from "@/hooks/useCaseCalculation";
 import {
   ATTORNEY_FEE_BASIS_LABELS,
   attorneyFeeBasisLabel,
@@ -87,6 +88,35 @@ interface ClaimSummaryCurrencyStatus {
   toplamlarParaBirimiBazinda: { paraBirimi: string; kalemSayisi: number; totals: ClaimSummaryTotals }[];
 }
 
+/**
+ * Anaparasız dosyada üst özet kutusu ve "Alacak Özeti" (18.11.2026): bu panelin kendi özeti (claim-items summary) faizi
+ * yalnız faiz TÜRÜNDEKİ kalemlerden toplar; anaparasız dosyada kalem faizi orada YOKTUR → "0,00" bilinmeyeni sıfır gibi
+ * gösteriyordu. Doğru durum sunucunun anaparasız dökümündedir (calculation-summary.anaparasizKalemDokumu: faiz toplamı
+ * yalnız her kalemin faiz durumu belliyken dolu, aksi hâlde null — sıfır DEĞİL; nihai borç her zaman null). İstemci hesap
+ * YAPMAZ; yalnız sunucu değerini gösterir.
+ */
+type AnaparasizDokumDurumu =
+  | { kaynak: "YOK" }
+  | { kaynak: "DOKUM"; dokum: AnaparasizKalemDokumu }
+  | { kaynak: "OKUNAMADI" };
+
+async function readAnaparasizDokum(caseId: string): Promise<AnaparasizDokumDurumu> {
+  try {
+    const res = await api.get(`/cases/${caseId}/calculation-summary`);
+    const body = (res as { data?: unknown } | undefined)?.data as Record<string, unknown> | undefined;
+    const hesap = (body && typeof body === "object" && !Array.isArray(body) && "anaparasizKalemDokumu" in body
+      ? body
+      : (body?.data as Record<string, unknown> | undefined)) ?? undefined;
+    const dokum = hesap && typeof hesap === "object" && !Array.isArray(hesap)
+      ? (hesap.anaparasizKalemDokumu as AnaparasizKalemDokumu | undefined)
+      : undefined;
+    if (dokum && dokum.gerekce === "NO_PRINCIPAL_BASIS" && Array.isArray(dokum.paraBirimleri)) return { kaynak: "DOKUM", dokum };
+    return { kaynak: "YOK" };
+  } catch {
+    return { kaynak: "OKUNAMADI" };
+  }
+}
+
 interface ClaimSummary {
   caseId: string;
   currency: string;
@@ -156,6 +186,8 @@ export function ClaimItemPanel({
 }: Props) {
   const [items, setItems] = useState<ClaimItem[]>([]);
   const [summary, setSummary] = useState<ClaimSummary | null>(null);
+  // null = henüz okunmadı. Yalnız anapara 0 ve kalem varken okunur (anaparasız dosya); aksi hâlde "YOK".
+  const [anaparasiz, setAnaparasiz] = useState<AnaparasizDokumDurumu | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   // PR-2A1: finansal mutation hatalari GORUNUR; faiz/kalem degeri uydurulmaz.
@@ -216,7 +248,15 @@ export function ClaimItemPanel({
       const rows = (itemsRes as { data?: { data?: unknown } })?.data?.data;
       if (!Array.isArray(rows)) throw new Error('MALFORMED_LIST_RESPONSE');
       setItems(rows as ClaimItem[]);
-      setSummary(((summaryRes as { data?: { data?: unknown } })?.data?.data as ClaimSummary) ?? null);
+      const ozet = ((summaryRes as { data?: { data?: unknown } })?.data?.data as ClaimSummary) ?? null;
+      setSummary(ozet);
+      // Anaparasız dosya: üst kutudaki faiz / toplam için sunucunun anaparasız dökümü (hata paneli BOZMAZ → OKUNAMADI).
+      if (ozet?.totals && ozet.totals.principal === 0 && rows.length > 0) {
+        setAnaparasiz(null);
+        setAnaparasiz(await readAnaparasizDokum(caseId));
+      } else {
+        setAnaparasiz({ kaynak: "YOK" });
+      }
     } catch (error) {
       setLoadError(toActionErrorMessage(error, 'Alacak kalemleri yüklenemedi.'));
       if (opts?.propagateError) throw error;
@@ -317,6 +357,15 @@ export function ClaimItemPanel({
   // değerleriyle yazılır. Karar yoksa (eski sunucu yanıtı) ya da toplam gösterilebiliyorsa gösterim aynen sürer.
   const paraBirimiDurumu = summary?.paraBirimiDurumu;
   const toplamKisitli = paraBirimiDurumu ? !paraBirimiDurumu.toplamGosterilebilir : false;
+  // Anaparasız kip: anapara 0 + kalem var ve sunucu dosyanın anaparasız OLMADIĞINI söylemedi (okunuyor / döküm / okunamadı).
+  const anaparasizKip = !!summary && summary.totals.principal === 0 && items.length > 0 && anaparasiz?.kaynak !== "YOK";
+  const anaparasizGrup = anaparasiz?.kaynak === "DOKUM" && summary
+    ? (anaparasiz.dokum.paraBirimleri.find((g) => g.paraBirimi === summary.currency)
+      ?? (anaparasiz.dokum.paraBirimleri.length === 1 ? anaparasiz.dokum.paraBirimleri[0] : undefined))
+    : undefined;
+  // Sunucunun faiz toplamı (yalnız her kalemin faiz durumu belliyken sayı; gerçek sıfır dahil). Aksi hâlde null = belirlenemedi.
+  const anaparasizFaiz: number | null = anaparasizGrup && typeof anaparasizGrup.faizToplami === "number" ? anaparasizGrup.faizToplami : null;
+  const anaparasizOkunuyor = anaparasizKip && anaparasiz === null;
 
   return (
     <div className="space-y-6">
@@ -389,9 +438,24 @@ export function ClaimItemPanel({
           </div>
           <div className="bg-green-50 rounded-xl border border-green-200 p-4">
             <p className="text-sm text-green-700">Toplam Faiz</p>
-            <p className="text-xl font-bold text-green-600">
-              {formatCurrency(summary.totals.totalInterest, summary.currency)}
-            </p>
+            {!anaparasizKip ? (
+              <p className="text-xl font-bold text-green-600">
+                {formatCurrency(summary.totals.totalInterest, summary.currency)}
+              </p>
+            ) : anaparasizOkunuyor ? (
+              <p data-testid="claim-summary-interest-loading" className="text-sm font-medium text-gray-500">…</p>
+            ) : anaparasizFaiz !== null ? (
+              <>
+                <p data-testid="claim-summary-interest-principal-free" className="text-xl font-bold text-green-600">
+                  {formatCurrency(anaparasizFaiz, summary.currency)}
+                </p>
+                <p className="text-[11px] text-green-700">açıklayıcı döküm; ayrıntı Hesap Özeti</p>
+              </>
+            ) : (
+              <p data-testid="claim-summary-interest-undetermined" className="text-sm font-medium text-gray-500">
+                belirlenemedi
+              </p>
+            )}
           </div>
           <div className="bg-orange-50 rounded-xl border border-orange-200 p-4">
             <p className="text-sm text-orange-700">Masraf + Harç</p>
@@ -401,9 +465,19 @@ export function ClaimItemPanel({
           </div>
           <div className="bg-purple-50 rounded-xl border border-purple-200 p-4">
             <p className="text-sm text-purple-700">Toplam Alacak</p>
-            <p className="text-2xl font-bold text-purple-600">
-              {formatCurrency(summary.totals.grandTotal, summary.currency)}
-            </p>
+            {!anaparasizKip ? (
+              <p className="text-2xl font-bold text-purple-600">
+                {formatCurrency(summary.totals.grandTotal, summary.currency)}
+              </p>
+            ) : (
+              <>
+                {/* Anaparasız dosyada nihai borç toplamı yoktur (sunucu: nihaiBorcToplami null); kalem toplamı nihai borç gibi sunulmaz. */}
+                <p data-testid="claim-summary-total-not-final" className="text-sm font-medium text-gray-500">hesaplanamadı</p>
+                <p className="text-[11px] text-purple-700">
+                  Kalem tutarları toplamı {formatCurrency(summary.totals.grandTotal, summary.currency)}; nihai borç değildir
+                </p>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -666,7 +740,8 @@ export function ClaimItemPanel({
                   </div>
                 ))}
                 <div className="flex justify-between py-2 font-semibold">
-                  <span>Toplam ({grup.paraBirimi})</span>
+                  {/* Anaparasız dosyada bu rakam kalem tutarları toplamıdır (faiz hariç); nihai borç gibi adlandırılmaz. */}
+                  <span>{anaparasizKip ? `Kalem tutarları toplamı (${grup.paraBirimi}; faiz hariç, nihai borç değil)` : `Toplam (${grup.paraBirimi})`}</span>
                   <span>{formatCurrency(grup.totals.grandTotal, grup.paraBirimi)}</span>
                 </div>
               </div>
@@ -732,12 +807,35 @@ export function ClaimItemPanel({
                 <span className="font-medium">{formatCurrency(summary.totals.tax, summary.currency)}</span>
               </div>
             )}
-            <div className="flex justify-between py-3 bg-primary/10 rounded px-3 mt-2">
-              <span className="font-semibold">TOPLAM ALACAK</span>
-              <span className="font-bold text-primary text-lg">
-                {formatCurrency(summary.totals.grandTotal, summary.currency)}
-              </span>
-            </div>
+            {anaparasizKip ? (
+              <>
+                <div className="flex justify-between py-2 border-b" data-testid="claim-summary-principal-free-interest-row">
+                  <span>Faiz</span>
+                  <span className="font-medium">
+                    {anaparasizOkunuyor ? "…" : anaparasizFaiz !== null ? formatCurrency(anaparasizFaiz, summary.currency) : "belirlenemedi"}
+                  </span>
+                </div>
+                <div className="flex justify-between py-2 border-b">
+                  <span>Kalem tutarları toplamı (faiz hariç)</span>
+                  <span className="font-medium">{formatCurrency(summary.totals.grandTotal, summary.currency)}</span>
+                </div>
+                <div className="flex justify-between py-3 bg-primary/10 rounded px-3 mt-2">
+                  <span className="font-semibold">TOPLAM ALACAK</span>
+                  <span data-testid="claim-summary-grand-total-not-final" className="font-medium text-gray-500">hesaplanamadı</span>
+                </div>
+                <p data-testid="claim-summary-principal-free-note" className="text-xs text-gray-600">
+                  Dosyada anapara kalemi yok. Kalem tutarları kayıtlı tutarlardır; harç, masraf, takip vekâlet ücreti ve ödemeler
+                  dahil değildir. Nihai borç toplamı hesaplanamadı. Ayrıntı: Hesap Özeti.
+                </p>
+              </>
+            ) : (
+              <div className="flex justify-between py-3 bg-primary/10 rounded px-3 mt-2">
+                <span className="font-semibold">TOPLAM ALACAK</span>
+                <span className="font-bold text-primary text-lg">
+                  {formatCurrency(summary.totals.grandTotal, summary.currency)}
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}

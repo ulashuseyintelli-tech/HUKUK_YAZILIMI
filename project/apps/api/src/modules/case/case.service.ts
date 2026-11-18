@@ -687,7 +687,7 @@ export class CaseService {
    * /// Çağrıldığı yerler:
    * ///  - CaseService.updateCaseLawyer() → PATCH /cases/:id/lawyers/:caseLawyerId (casePermissions/canSign/hasSignatureAuthority)
    * ///  - CaseService.updateCaseStaff() → POST/PATCH/DELETE /cases/:id/staff (membership, roleOnCase, canEdit/canApprove/canView)
-   * ///  - CaseService.addCaseLawyer() → POST /cases/:id/lawyers (istemci canSign bildirirse)
+   * ///  - CaseService.addCaseLawyer() / removeCaseLawyer() → POST / DELETE /cases/:id/lawyers (ekip ÜYELİĞİ; P02 ekran teslimi 18.11.2026)
    * /// </remarks>
    */
   private async assertCanGrantCasePermissions(tenantId: string, actorUserId: string | undefined): Promise<void> {
@@ -4266,11 +4266,11 @@ export class CaseService {
     role?: 'RESPONSIBLE' | 'ASSIGNED' | 'ASSISTANT' | 'INTERN';
     canSign?: boolean;
   }, userId: string) {
-    // K2: istemcinin bildirdiği imza yetkisi bir yetki VERMEDİR → F01 yönetim kuralı. Bildirilmezse sunucu
-    // varsayılanı (rütbe) uygulanır; atamanın kendisi mevcut davranışta kalır.
-    if (data.canSign !== undefined) {
-      await this.assertCanGrantCasePermissions(tenantId, userId);
-    }
+    // Ekip ÜYELİĞİ (18.11.2026; DV207 G2 personel üyeliğiyle AYNI kural): avukat ataması, yetkisi boş olsa bile dosyayı
+    // görünür kılar (F02 P3-D1 görünüm kapsamı: CaseLawyer bağı = "dosya bağı"). Bu yüzden ekleme mevcut F01 yönetim
+    // kuralına bağlıdır — istemcinin canSign bildirip bildirmemesinden bağımsız. Kontrol ilk okumadan ÖNCE (varlık sızmaz);
+    // yazı ve denetim kaydı kilitli F01 yeniden değerlendirmesiyle aynı işlemde.
+    await this.assertCanGrantCasePermissions(tenantId, userId);
 
     // Dosyanın bu tenant'a ait olduğunu kontrol et
     const caseExists = await this.prisma.case.findFirst({
@@ -4341,48 +4341,49 @@ export class CaseService {
     const willBeResponsible = role === 'RESPONSIBLE';
 
     // Ekle. WP-1d-5-9: lifecycle ekleme artık mevcut sorumluyu DEMOTE ETMEZ (willBeResponsible yalnız
-    // hasResponsible=false iken → demote edilecek kimse yok) → demote/$transaction gerekmez.
-    // P2002 → 409 dönüşümü defansif korunur. K4-2: istemci canSign bildirdiyse yazı kilitli F01 değerlendirmesiyle aynı tx'te.
-    const caseLawyer = await this.withCasePermissionGrantAuthority(tenantId, userId, data.canSign !== undefined, (db) =>
-      db.caseLawyer
-      .create({
-        data: {
-          caseId,
-          lawyerId: data.lawyerId,
-          role,
-          canSign: data.canSign ?? (lawyer.lawyerRank !== 'INTERN'),
-          isResponsible: willBeResponsible,
-        },
-        include: {
-          lawyer: {
-            select: {
-              id: true,
-              name: true,
-              surname: true,
-              barNumber: true,
-              lawyerRank: true,
+    // hasResponsible=false iken → demote edilecek kimse yok). P2002 → 409 dönüşümü defansif korunur.
+    // K4-2 + ekip üyeliği: yazı kilitli F01 değerlendirmesiyle aynı tx'te; ASSIGN-4c CREATE denetimi de aynı tx'te
+    // (DV207 G2 deseni: üyelik ile denetim kaydı birlikte commit edilir ya da birlikte geri alınır).
+    return this.withCasePermissionGrantAuthority(tenantId, userId, true, async (db) => {
+      const caseLawyer = await db.caseLawyer
+        .create({
+          data: {
+            caseId,
+            lawyerId: data.lawyerId,
+            role,
+            canSign: data.canSign ?? (lawyer.lawyerRank !== 'INTERN'),
+            isResponsible: willBeResponsible,
+          },
+          include: {
+            lawyer: {
+              select: {
+                id: true,
+                name: true,
+                surname: true,
+                barNumber: true,
+                lawyerRank: true,
+              },
             },
           },
-        },
-      })
-      .catch((e) => {
-        throw this.toCaseLawyerConflict(e);
-      }),
-    );
+        })
+        .catch((e) => {
+          throw this.toCaseLawyerConflict(e);
+        });
 
-    // ASSIGN-4c: avukat eklemesi CASE_LAWYER CREATE olarak audit'lenir.
-    await this.auditService.log({
-      tenantId,
-      action: 'CREATE',
-      entityType: 'CASE_LAWYER',
-      entityId: caseLawyer.id,
-      userId, // WP-1c-3
-      metadata: { caseId }, // WP-1d-2-pre: legal-responsible temporal için caseId
-      newValues: { lawyerId: caseLawyer.lawyerId, role: caseLawyer.role, isResponsible: caseLawyer.isResponsible },
-      description: `Dosyaya avukat eklendi: ${caseLawyer.lawyer.name} ${caseLawyer.lawyer.surname}`,
+      // ASSIGN-4c: avukat eklemesi CASE_LAWYER CREATE olarak audit'lenir.
+      await this.auditService.logInTransaction(db as Prisma.TransactionClient, {
+        tenantId,
+        action: 'CREATE',
+        entityType: 'CASE_LAWYER',
+        entityId: caseLawyer.id,
+        userId, // WP-1c-3
+        metadata: { caseId }, // WP-1d-2-pre: legal-responsible temporal için caseId
+        newValues: { lawyerId: caseLawyer.lawyerId, role: caseLawyer.role, isResponsible: caseLawyer.isResponsible },
+        description: `Dosyaya avukat eklendi: ${caseLawyer.lawyer.name} ${caseLawyer.lawyer.surname}`,
+      });
+
+      return caseLawyer;
     });
-
-    return caseLawyer;
   }
 
   /**
@@ -4396,6 +4397,10 @@ export class CaseService {
    * - CaseController.removeCaseLawyer() → DELETE /cases/:id/lawyers/:caseLawyerId
    */
   async removeCaseLawyer(tenantId: string, caseId: string, caseLawyerId: string, userId: string) {
+    // Ekip ÜYELİĞİ (18.11.2026; DV207 G2 personel çıkarmayla AYNI kural): başka bir avukatın atamasını kaldırmak onun
+    // dosya erişimini kaldırır → mevcut F01 yönetim kuralı. Kontrol ilk okumadan ÖNCE (varlık sızmaz).
+    await this.assertCanGrantCasePermissions(tenantId, userId);
+
     // Dosyanın bu tenant'a ait olduğunu kontrol et
     const caseExists = await this.prisma.case.findFirst({
       where: { id: caseId, tenantId },

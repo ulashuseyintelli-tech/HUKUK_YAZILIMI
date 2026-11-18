@@ -134,4 +134,19 @@ describe('Dosya ekibinden avukat çıkarma', () => {
     expect(String(alert.mock.calls[0][0])).toContain('Dosya ekibinden çıkarma başarısız');
     expect(screen.getByText('Bu dosya için kaydet')).toBeTruthy();
   });
+
+  it('ofis yönetim yetkisi yoksa (sunucu CASE_PERMISSION_GRANT_FORBIDDEN) ekip üyeliği mesajı gösterilir; ekip değişmez', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
+    const denied = Object.assign(new Error('Forbidden'), { status: 403, body: { code: 'CASE_PERMISSION_GRANT_FORBIDDEN' } });
+    m.removeCaseLawyer.mockRejectedValue(denied);
+    renderPage();
+    await openLawyer('Gecici Sentetik');
+    fireEvent.click(screen.getByTestId('case-lawyer-remove'));
+    await waitFor(() => expect(alert).toHaveBeenCalled());
+    const text = String(alert.mock.calls[0][0]);
+    expect(text).toContain('Dosya ekibini yalnız ofis yönetimi değiştirebilir');
+    expect(text).not.toContain('Yetki alanlarını eski hâlinde');
+    expect(screen.getByText('Bu dosya için kaydet')).toBeTruthy();
+  });
 });
