@@ -75,8 +75,8 @@ describeWithDisposableDb('Dosya açılışında kalem beyanları — POST /cases
   const TAKIP = '2026-10-20';
   const KESINLESME = '2025-04-02';
   const ORAN = 0.24;
-  const VEKALET_TUTARI = 5000.01;
-  const YARGILAMA_TUTARI = 365;
+  const VEKALET_TUTARI = 4200.01;
+  const YARGILAMA_TUTARI = 480;
 
   beforeAll(async () => {
     prisma = new PrismaClient({ datasources: { db: { url: TEST_DB_URL } } });
@@ -249,9 +249,9 @@ describeWithDisposableDb('Dosya açılışında kalem beyanları — POST /cases
     const f = await fixture('onizleme');
     const res = await previewOpening(f, [vekalet, yargilama], declarations(f));
     expect(res.status).toBe(201);
-    expect(res.body).toMatchObject({ uygulanabilir: true, secimYazmaAcik: true, kalemTutarlariToplami: 5365.01, onayaGidecekFaizBeyaniSayisi: 2, onayaGidecekSorumlulukSecimiSayisi: 2 });
-    expect(res.body.kalemler[0].sorumluluk.onayBekleyecekSecim.borclular.map((b: any) => b.pay)).toEqual([2500.01, 2500]);
-    expect(res.body.borcluDagilimi.map((b: any) => b.sorumlulukUstSiniri)).toEqual([2682.51, 2682.5]);
+    expect(res.body).toMatchObject({ uygulanabilir: true, secimYazmaAcik: true, kalemTutarlariToplami: 4680.01, onayaGidecekFaizBeyaniSayisi: 2, onayaGidecekSorumlulukSecimiSayisi: 2 });
+    expect(res.body.kalemler[0].sorumluluk.onayBekleyecekSecim.borclular.map((b: any) => b.pay)).toEqual([2100.01, 2100]);
+    expect(res.body.borcluDagilimi.map((b: any) => b.sorumlulukUstSiniri)).toEqual([2340.01, 2340]);
     expect(await rows(f.tenantId)).toEqual(EMPTY);
   });
 
@@ -308,7 +308,7 @@ describeWithDisposableDb('Dosya açılışında kalem beyanları — POST /cases
       expect(kalem).toMatchObject({ faizDurumu: 'BELIRLENEMEDI', faizNedeni: 'ACCRUAL_STATUS_UNKNOWN' });
       expect(kalem).not.toHaveProperty('faiz');
     }
-    expect(pbBefore).toMatchObject({ kalemTutarlariToplami: 5365.01, faizToplami: null, kalemVeFaizToplami: null });
+    expect(pbBefore).toMatchObject({ kalemTutarlariToplami: 4680.01, faizToplami: null, kalemVeFaizToplami: null });
     expect(pbBefore.kalemler.find((k: any) => k.kalemTuru === 'ATTORNEY_FEE').vekaletUcretiKaynagi).toBe('ILAM');
     const stateBefore = (await liabilityState(f, caseId)).body;
     expect(stateBefore.kalemler.map((k: any) => k.sorumlulukTuru)).toEqual(['BELIRLENMEDI', 'BELIRLENMEDI']);
@@ -347,9 +347,9 @@ describeWithDisposableDb('Dosya açılışında kalem beyanları — POST /cases
     const stateAfter = (await liabilityState(f, caseId)).body;
     expect(stateAfter.kalemler.map((k: any) => k.sorumlulukTuru)).toEqual(['PAYLI', 'PAYLI']);
     const vuState = stateAfter.kalemler.find((k: any) => k.kalemTuru === 'ATTORNEY_FEE');
-    expect(vuState.taraflar.map((t: any) => t.pay)).toEqual([2500.01, 2500]);
+    expect(vuState.taraflar.map((t: any) => t.pay)).toEqual([2100.01, 2100]);
     // Dosya kalanı tek rakam: borçlu payları toplanarak üretilmez.
-    expect(stateAfter.dosyaKalani).toEqual([{ paraBirimi: 'TRY', kalan: 5365.01 }]);
+    expect(stateAfter.dosyaKalani).toEqual([{ paraBirimi: 'TRY', kalan: 4680.01 }]);
 
     // ── Denetim: önizleme ↔ talep bağı kayıtlı.
     const audit = await prisma.auditLog.findFirst({ where: { tenantId: f.tenantId, action: 'CASE_OPEN_CLAIM_REQUESTS_REQUESTED', entityId: caseId } });
@@ -427,7 +427,7 @@ describeWithDisposableDb('Dosya açılışında kalem beyanları — POST /cases
     ]);
     expect(previewed.body.hatalar[0].mesaj).toBe('"Faiz işler" beyanı için faiz başlangıcının dayanağı seçilmelidir.');
     // Kalemlerin kendisi yine gösterilir (toplam ve açılış durumu); geçersiz beyan onaya gidecekler arasında yoktur.
-    expect(previewed.body).toMatchObject({ kalemTutarlariToplami: 5365.01, onayaGidecekFaizBeyaniSayisi: 0, onayaGidecekSorumlulukSecimiSayisi: 0 });
+    expect(previewed.body).toMatchObject({ kalemTutarlariToplami: 4680.01, onayaGidecekFaizBeyaniSayisi: 0, onayaGidecekSorumlulukSecimiSayisi: 0 });
     const res = await openCase(f, caseBody(f, 'H', [vekalet, yargilama], { ...yarim, previewHash: previewed.body.onizlemeOzeti }));
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('OPENING_CLAIM_REQUESTS_INVALID');

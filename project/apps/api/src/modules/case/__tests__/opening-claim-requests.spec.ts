@@ -12,15 +12,15 @@ import { evaluateOpeningClaimRequests, hasOpeningClaimRequests, type OpeningDueI
  * Tutarlar SENTETİKTİR.
  */
 const yasal = { interestType: 'YASAL', interestTypeCode: 'LEGAL_3095', interestAccrualStatus: 'UNKNOWN' } as const;
-const vekalet = { type: 'VEKALET_UCRETI', description: 'Sentetik ilam vekâlet ücreti', amount: 5000.01, attorneyFeeBasis: 'JUDGMENT_AWARDED', ...yasal } as unknown as OpeningDueInput;
-const yargilama = { type: 'YARGILAMA_GIDERI', description: 'Sentetik yargılama gideri', amount: 365, ...yasal } as unknown as OpeningDueInput;
+const vekalet = { type: 'VEKALET_UCRETI', description: 'Sentetik ilam vekâlet ücreti', amount: 4200.01, attorneyFeeBasis: 'JUDGMENT_AWARDED', ...yasal } as unknown as OpeningDueInput;
+const yargilama = { type: 'YARGILAMA_GIDERI', description: 'Sentetik yargılama gideri', amount: 480, ...yasal } as unknown as OpeningDueInput;
 const B1 = 'debtor-1';
 const B2 = 'debtor-2';
 
 const evaluate = (requests: unknown, dues: OpeningDueInput[] = [vekalet, yargilama], debtorIds: string[] = [B1, B2]) =>
   evaluateOpeningClaimRequests({ currency: 'TRY', dues, debtorIds, requests: requests as never });
 
-const kesinlesme = (dueIndex: number) => ({ dueIndex, interestStartDate: '2026-04-08', interestStartDateProvenance: 'JUDGMENT_FINALIZATION_DATE' });
+const kesinlesme = (dueIndex: number) => ({ dueIndex, interestStartDate: '2025-04-02', interestStartDateProvenance: 'JUDGMENT_FINALIZATION_DATE' });
 const esitPay = (dueIndex: number) => ({
   dueIndex,
   mode: 'PROPORTIONAL',
@@ -37,7 +37,7 @@ describe('Açılış kalem beyanları — beyan yokken hiçbir sonuç çıkarıl
     const { preview, plan } = evaluate(undefined);
     expect(preview.uygulanabilir).toBe(true);
     expect(preview.hatalar).toEqual([]);
-    expect(preview.kalemTutarlariToplami).toBe(5365.01);
+    expect(preview.kalemTutarlariToplami).toBe(4680.01);
     expect(preview.kalemler.map((kalem) => kalem.kalemTuru)).toEqual(['ATTORNEY_FEE', 'YARGILAMA_GIDERI']);
     for (const kalem of preview.kalemler) {
       expect(kalem.faiz).toEqual({ acilisDurumu: 'UNKNOWN', onayBekleyecekBeyan: null });
@@ -85,11 +85,11 @@ describe('Açılış kalem beyanları — "faiz işler" beyanı (sonradan düzen
     expect(preview.uygulanabilir).toBe(true);
     expect(preview.kalemler[0].faiz).toEqual({
       acilisDurumu: 'UNKNOWN',
-      onayBekleyecekBeyan: { durum: 'ACCRUES', faizTuruKodu: 'LEGAL_3095', baslangic: '2026-04-08', dayanak: 'JUDGMENT_FINALIZATION_DATE' },
+      onayBekleyecekBeyan: { durum: 'ACCRUES', faizTuruKodu: 'LEGAL_3095', baslangic: '2025-04-02', dayanak: 'JUDGMENT_FINALIZATION_DATE' },
     });
     expect(plan.interestAccruals).toEqual([
-      { dueIndex: 0, interestStartDate: '2026-04-08', interestStartDateProvenance: 'JUDGMENT_FINALIZATION_DATE' },
-      { dueIndex: 1, interestStartDate: '2026-04-08', interestStartDateProvenance: 'JUDGMENT_FINALIZATION_DATE' },
+      { dueIndex: 0, interestStartDate: '2025-04-02', interestStartDateProvenance: 'JUDGMENT_FINALIZATION_DATE' },
+      { dueIndex: 1, interestStartDate: '2025-04-02', interestStartDateProvenance: 'JUDGMENT_FINALIZATION_DATE' },
     ]);
   });
 
@@ -101,7 +101,7 @@ describe('Açılış kalem beyanları — "faiz işler" beyanı (sonradan düzen
 
   it.each([
     ['başlangıç tarihi yok', { dueIndex: 0, interestStartDateProvenance: 'JUDGMENT_DATE' }],
-    ['dayanak yok', { dueIndex: 0, interestStartDate: '2026-04-08', interestStartDateProvenance: '' }],
+    ['dayanak yok', { dueIndex: 0, interestStartDate: '2025-04-02', interestStartDateProvenance: '' }],
   ])('eksik beyan reddedilir (%s); eksik bilgi tamamlanmaz', (_ad, accrual) => {
     const result = evaluate({ interestAccruals: [accrual] });
     expect(result.preview.uygulanabilir).toBe(false);
@@ -110,12 +110,12 @@ describe('Açılış kalem beyanları — "faiz işler" beyanı (sonradan düzen
   });
 
   it('yarım / bozuk girdi biçim hatası değil, kalem bazında OKUNUR girdi hatasıdır (form doldurulurken önizleme kesilmez)', () => {
-    const bosDayanak = evaluate({ interestAccruals: [{ dueIndex: 0, interestStartDate: '2026-04-08', interestStartDateProvenance: '' }] });
+    const bosDayanak = evaluate({ interestAccruals: [{ dueIndex: 0, interestStartDate: '2025-04-02', interestStartDateProvenance: '' }] });
     expect(bosDayanak.preview.hatalar).toEqual([
       { kod: 'INTEREST_ACCRUAL_INVALID', alan: 'FAIZ', dueIndex: 0, debtorId: null, mesaj: '"Faiz işler" beyanı için faiz başlangıcının dayanağı seçilmelidir.' },
     ]);
     // Bilinmeyen dayanak değeri de aynı hatadır; kabul edilen değerler şema enum'udur.
-    expect(kodlar(evaluate({ interestAccruals: [{ dueIndex: 0, interestStartDate: '2026-04-08', interestStartDateProvenance: 'ILAMDAN_ANLASILIYOR' }] }))).toEqual(['INTEREST_ACCRUAL_INVALID']);
+    expect(kodlar(evaluate({ interestAccruals: [{ dueIndex: 0, interestStartDate: '2025-04-02', interestStartDateProvenance: 'ILAMDAN_ANLASILIYOR' }] }))).toEqual(['INTEREST_ACCRUAL_INVALID']);
     expect(evaluate({ interestAccruals: [{ dueIndex: 0, interestStartDateProvenance: 'JUDGMENT_DATE' }] }).preview.hatalar[0].mesaj).toContain('faiz başlangıç tarihi girilmelidir');
     // Sayı biçimi: seçim gövdesindeki kalıplarla aynı; uymayan girdi alan kurallarına sokulmaz, pay / tavan üretilmez.
     const oran = (a: string) => ({ dueIndex: 0, mode: 'PROPORTIONAL', basis: 'COURT_JUDGMENT', parties: [{ debtorId: B1, sharePercent: a }, { debtorId: B2, sharePercent: '50' }] });
@@ -168,10 +168,10 @@ describe('Açılış kalem beyanları — borçlu sorumluluğu seçimi (seçim a
     expect(preview.kalemler[0].sorumluluk.acilisTuru).toBe('BELIRLENMEDI');
     expect(secim.tur).toBe('PAYLI');
     expect(secim.dayanak).toBe('COURT_JUDGMENT');
-    // 5.000,01 ikiye bölünür: artan kuruş ilk borçluya (toplam korunur).
-    expect(secim.borclular.map((borclu) => borclu.pay)).toEqual([2500.01, 2500]);
-    expect(preview.kalemler[1].sorumluluk.onayBekleyecekSecim!.borclular.map((borclu) => borclu.pay)).toEqual([182.5, 182.5]);
-    expect(preview.borcluDagilimi.map((borclu) => borclu.sorumlulukUstSiniri)).toEqual([2682.51, 2682.5]);
+    // 4.200,01 ikiye bölünür: artan kuruş ilk borçluya (toplam korunur).
+    expect(secim.borclular.map((borclu) => borclu.pay)).toEqual([2100.01, 2100]);
+    expect(preview.kalemler[1].sorumluluk.onayBekleyecekSecim!.borclular.map((borclu) => borclu.pay)).toEqual([240, 240]);
+    expect(preview.borcluDagilimi.map((borclu) => borclu.sorumlulukUstSiniri)).toEqual([2340.01, 2340]);
     expect(preview.borcluDagilimi.every((borclu) => borclu.belirlenmeyenKalemSayisi === 0)).toBe(true);
     expect(plan.liabilitySelections[0]).toEqual({
       dueIndex: 0,
@@ -279,11 +279,11 @@ describe('Açılış kalem beyanları — önizleme özeti gösterilen girdiye b
   });
 
   it.each([
-    ['kalem tutarı', () => ozet(requests, [{ ...vekalet, amount: 5000.02 } as OpeningDueInput, yargilama])],
+    ['kalem tutarı', () => ozet(requests, [{ ...vekalet, amount: 4200.02 } as OpeningDueInput, yargilama])],
     ['kalem türü', () => ozet(requests, [{ ...vekalet, type: 'EXPENSE', attorneyFeeBasis: undefined } as unknown as OpeningDueInput, yargilama])],
     ['vekâlet ücreti kaynağı', () => ozet(requests, [{ ...vekalet, attorneyFeeBasis: 'ENFORCEMENT_TARIFF' } as OpeningDueInput, yargilama])],
     ['borçlu listesi', () => ozet(requests, undefined, [B1, B2, 'debtor-3'])],
-    ['faiz başlangıcı', () => ozet({ ...requests, interestAccruals: [{ ...kesinlesme(0), interestStartDate: '2026-04-09' }] })],
+    ['faiz başlangıcı', () => ozet({ ...requests, interestAccruals: [{ ...kesinlesme(0), interestStartDate: '2025-04-03' }] })],
     ['faiz dayanağı', () => ozet({ ...requests, interestAccruals: [{ ...kesinlesme(0), interestStartDateProvenance: 'JUDGMENT_DATE' }] })],
     ['sorumluluk türü', () => ozet({ ...requests, liabilitySelections: [{ dueIndex: 0, mode: 'JOINT_AND_SEVERAL', basis: 'COURT_JUDGMENT', parties: [{ debtorId: B1 }, { debtorId: B2 }] }] })],
     ['pay', () => ozet({ ...requests, liabilitySelections: [{ ...esitPay(0), parties: [{ debtorId: B1, shareWeight: 2 }, { debtorId: B2, shareWeight: 1 }] }] })],

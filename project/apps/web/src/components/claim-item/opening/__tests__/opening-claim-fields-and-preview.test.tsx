@@ -176,7 +176,7 @@ const preview = (patch: Partial<OpeningClaimPreviewDTO> = {}): OpeningClaimPrevi
       dueIndex: 0,
       kalemTuru: "ATTORNEY_FEE",
       aciklama: "Vekalet Ücreti",
-      tutar: 5000.01,
+      tutar: 4200.01,
       vekaletUcretiKaynagi: "JUDGMENT_AWARDED",
       faiz: { acilisDurumu: "UNKNOWN", onayBekleyecekBeyan: { durum: "ACCRUES", faizTuruKodu: "LEGAL_3095", baslangic: "2025-04-02", dayanak: "JUDGMENT_FINALIZATION_DATE" } },
       sorumluluk: {
@@ -186,8 +186,8 @@ const preview = (patch: Partial<OpeningClaimPreviewDTO> = {}): OpeningClaimPrevi
           dayanak: "COURT_JUDGMENT",
           tavanKapsami: null,
           borclular: [
-            { debtorId: "b1", pay: 2500.01, payAgirligi: 1, tavan: null, sinirsiz: false, sorumlulukSiniri: 2500.01 },
-            { debtorId: "b2", pay: 2500, payAgirligi: 1, tavan: null, sinirsiz: false, sorumlulukSiniri: 2500 },
+            { debtorId: "b1", pay: 2100.01, payAgirligi: 1, tavan: null, sinirsiz: false, sorumlulukSiniri: 2100.01 },
+            { debtorId: "b2", pay: 2100, payAgirligi: 1, tavan: null, sinirsiz: false, sorumlulukSiniri: 2100 },
           ],
         },
       },
@@ -196,16 +196,16 @@ const preview = (patch: Partial<OpeningClaimPreviewDTO> = {}): OpeningClaimPrevi
       dueIndex: 1,
       kalemTuru: "YARGILAMA_GIDERI",
       aciklama: "Yargılama Gideri",
-      tutar: 365,
+      tutar: 480,
       vekaletUcretiKaynagi: null,
       faiz: { acilisDurumu: "UNKNOWN", onayBekleyecekBeyan: null },
       sorumluluk: { acilisTuru: "BELIRLENMEDI", onayBekleyecekSecim: null },
     },
   ],
-  kalemTutarlariToplami: 5365.01,
+  kalemTutarlariToplami: 4680.01,
   borcluDagilimi: [
-    { debtorId: "b1", kalemler: [{ dueIndex: 0, durum: "PAYLI", sorumlulukSiniri: 2500.01 }, { dueIndex: 1, durum: "BELIRLENMEDI", sorumlulukSiniri: null }], belirlenmeyenKalemSayisi: 1, sorumlulukUstSiniri: null },
-    { debtorId: "b2", kalemler: [{ dueIndex: 0, durum: "PAYLI", sorumlulukSiniri: 2500 }, { dueIndex: 1, durum: "BELIRLENMEDI", sorumlulukSiniri: null }], belirlenmeyenKalemSayisi: 1, sorumlulukUstSiniri: null },
+    { debtorId: "b1", kalemler: [{ dueIndex: 0, durum: "PAYLI", sorumlulukSiniri: 2100.01 }, { dueIndex: 1, durum: "BELIRLENMEDI", sorumlulukSiniri: null }], belirlenmeyenKalemSayisi: 1, sorumlulukUstSiniri: null },
+    { debtorId: "b2", kalemler: [{ dueIndex: 0, durum: "PAYLI", sorumlulukSiniri: 2100 }, { dueIndex: 1, durum: "BELIRLENMEDI", sorumlulukSiniri: null }], belirlenmeyenKalemSayisi: 1, sorumlulukUstSiniri: null },
   ],
   onayaGidecekFaizBeyaniSayisi: 1,
   onayaGidecekSorumlulukSecimiSayisi: 1,
@@ -234,15 +234,15 @@ const card = (props: Partial<Parameters<typeof OpeningClaimPreviewCard>[0]> = {}
 describe("OpeningClaimPreviewCard", () => {
   it("dosya toplamı tek rakam; onaya gidecek beyan 'açılışta' değerinden AYRI; belirlenmeyen kalem yüzünden borçlu toplamı 'belirlenemedi'", () => {
     card();
-    expect(screen.getByTestId("opening-preview-total").textContent).toBe("5.365,01 TRY");
+    expect(screen.getByTestId("opening-preview-total").textContent).toBe("4.680,01 TRY");
     const rows = screen.getAllByTestId("opening-preview-item");
     expect(rows[0].textContent).toContain("Kaynak: İlam vekâlet ücreti");
     expect(rows[0].textContent).toContain("Açılışta: Belirlenmedi");
     expect(within(rows[0]).getByTestId("opening-preview-pending-interest").textContent).toContain("Onay bekleyecek: Faiz işler — başlangıç 02.04.2025 — dayanak: Kesinleşme tarihi");
     const pendingLiability = within(rows[0]).getByTestId("opening-preview-pending-liability").textContent!;
     expect(pendingLiability).toContain("Onay bekleyecek: Paylı sorumluluk — dayanak: İlam / mahkeme kararı");
-    expect(pendingLiability).toContain("Sentetik Borçlu Bir: pay 2.500,01 TRY");
-    expect(pendingLiability).toContain("Sentetik Borçlu İki: pay 2.500,00 TRY");
+    expect(pendingLiability).toContain("Sentetik Borçlu Bir: pay 2.100,01 TRY");
+    expect(pendingLiability).toContain("Sentetik Borçlu İki: pay 2.100,00 TRY");
     // İkinci kalemde beyan yok: onay bekleyen satır yok, sıfır da yazmıyor.
     expect(within(rows[1]).queryByTestId("opening-preview-pending-liability")).toBeNull();
     expect(within(rows[1]).queryByTestId("opening-preview-pending-interest")).toBeNull();
@@ -257,11 +257,11 @@ describe("OpeningClaimPreviewCard", () => {
   it("bütün kalemler belirliyse borçlu üst sınırı sunucudan gösterilir (toplanarak dosya borcu yazılmaz)", () => {
     card({
       preview: preview({
-        borcluDagilimi: [{ debtorId: "b1", kalemler: [{ dueIndex: 0, durum: "PAYLI", sorumlulukSiniri: 2500.01 }], belirlenmeyenKalemSayisi: 0, sorumlulukUstSiniri: 2500.01 }],
+        borcluDagilimi: [{ debtorId: "b1", kalemler: [{ dueIndex: 0, durum: "PAYLI", sorumlulukSiniri: 2100.01 }], belirlenmeyenKalemSayisi: 0, sorumlulukUstSiniri: 2100.01 }],
       }),
     });
-    expect(screen.getByTestId("opening-preview-debtor-total").textContent).toBe("Seçimler onaylanırsa kalem tutarları üzerinden en çok: 2.500,01 TRY");
-    expect(screen.getByTestId("opening-preview-total").textContent).toBe("5.365,01 TRY");
+    expect(screen.getByTestId("opening-preview-debtor-total").textContent).toBe("Seçimler onaylanırsa kalem tutarları üzerinden en çok: 2.100,01 TRY");
+    expect(screen.getByTestId("opening-preview-total").textContent).toBe("4.680,01 TRY");
   });
 
   it("girdi hataları kalemin altında; kapalı seçim bayrağı ve evrak kalemi notu görünür", () => {

@@ -158,8 +158,8 @@ const seedDraft = (withDeclarations: boolean) =>
       ],
       responsiblePerson: { type: 'LAWYER', id: 'l1' },
       claimDraftItems: [
-        { id: 'k1', raw: kalem('VEKALET_UCRETI', 5000.01, withDeclarations ? { acilisBeyani: BEYAN, ilamBilgileri: ILAM } : {}) },
-        { id: 'k2', raw: kalem('YARGILAMA_GIDERI', 365) },
+        { id: 'k1', raw: kalem('VEKALET_UCRETI', 4200.01, withDeclarations ? { acilisBeyani: BEYAN, ilamBilgileri: ILAM } : {}) },
+        { id: 'k2', raw: kalem('YARGILAMA_GIDERI', 480) },
       ],
       tenantId: 't1',
       userId: 'u1',
@@ -175,7 +175,7 @@ const serverPreview = (patch: Record<string, unknown> = {}) => ({
       dueIndex: 0,
       kalemTuru: 'ATTORNEY_FEE',
       aciklama: 'Vekalet Ücreti',
-      tutar: 5000.01,
+      tutar: 4200.01,
       vekaletUcretiKaynagi: 'JUDGMENT_AWARDED',
       faiz: { acilisDurumu: 'UNKNOWN', onayBekleyecekBeyan: { durum: 'ACCRUES', faizTuruKodu: 'LEGAL_3095', baslangic: KESINLESME, dayanak: 'JUDGMENT_FINALIZATION_DATE' } },
       sorumluluk: {
@@ -185,8 +185,8 @@ const serverPreview = (patch: Record<string, unknown> = {}) => ({
           dayanak: 'COURT_JUDGMENT',
           tavanKapsami: null,
           borclular: [
-            { debtorId: 'd1', pay: 2500.01, payAgirligi: 1, tavan: null, sinirsiz: false, sorumlulukSiniri: 2500.01 },
-            { debtorId: 'd2', pay: 2500, payAgirligi: 1, tavan: null, sinirsiz: false, sorumlulukSiniri: 2500 },
+            { debtorId: 'd1', pay: 2100.01, payAgirligi: 1, tavan: null, sinirsiz: false, sorumlulukSiniri: 2100.01 },
+            { debtorId: 'd2', pay: 2100, payAgirligi: 1, tavan: null, sinirsiz: false, sorumlulukSiniri: 2100 },
           ],
         },
       },
@@ -195,16 +195,16 @@ const serverPreview = (patch: Record<string, unknown> = {}) => ({
       dueIndex: 1,
       kalemTuru: 'YARGILAMA_GIDERI',
       aciklama: 'Yargılama Gideri',
-      tutar: 365,
+      tutar: 480,
       vekaletUcretiKaynagi: null,
       faiz: { acilisDurumu: 'UNKNOWN', onayBekleyecekBeyan: null },
       sorumluluk: { acilisTuru: 'BELIRLENMEDI', onayBekleyecekSecim: null },
     },
   ],
-  kalemTutarlariToplami: 5365.01,
+  kalemTutarlariToplami: 4680.01,
   borcluDagilimi: [
-    { debtorId: 'd1', kalemler: [{ dueIndex: 0, durum: 'PAYLI', sorumlulukSiniri: 2500.01 }, { dueIndex: 1, durum: 'BELIRLENMEDI', sorumlulukSiniri: null }], belirlenmeyenKalemSayisi: 1, sorumlulukUstSiniri: null },
-    { debtorId: 'd2', kalemler: [{ dueIndex: 0, durum: 'PAYLI', sorumlulukSiniri: 2500 }, { dueIndex: 1, durum: 'BELIRLENMEDI', sorumlulukSiniri: null }], belirlenmeyenKalemSayisi: 1, sorumlulukUstSiniri: null },
+    { debtorId: 'd1', kalemler: [{ dueIndex: 0, durum: 'PAYLI', sorumlulukSiniri: 2100.01 }, { dueIndex: 1, durum: 'BELIRLENMEDI', sorumlulukSiniri: null }], belirlenmeyenKalemSayisi: 1, sorumlulukUstSiniri: null },
+    { debtorId: 'd2', kalemler: [{ dueIndex: 0, durum: 'PAYLI', sorumlulukSiniri: 2100 }, { dueIndex: 1, durum: 'BELIRLENMEDI', sorumlulukSiniri: null }], belirlenmeyenKalemSayisi: 1, sorumlulukUstSiniri: null },
   ],
   onayaGidecekFaizBeyaniSayisi: 1,
   onayaGidecekSorumlulukSecimiSayisi: 1,
@@ -256,8 +256,8 @@ describe('Sihirbaz — açılış kalem beyanları', () => {
     render(<NewCasePage />);
 
     // Önizleme kartı sunucu yanıtını gösterir: toplam tek rakam, pay sunucudan, onaya gidecek beyan ayrı.
-    expect((await screen.findByTestId('opening-preview-total')).textContent).toBe('5.365,01 TRY');
-    expect(screen.getByTestId('opening-preview-pending-liability').textContent).toContain('Sentetik Borçlu Bir: pay 2.500,01 TRY');
+    expect((await screen.findByTestId('opening-preview-total')).textContent).toBe('4.680,01 TRY');
+    expect(screen.getByTestId('opening-preview-pending-liability').textContent).toContain('Sentetik Borçlu Bir: pay 2.100,01 TRY');
     expect(screen.getAllByTestId('claim-item-opening-chip').map((chip) => chip.textContent)).toEqual([
       'İlam vekâlet ücreti',
       'İlamdan doğuyor',
@@ -273,7 +273,7 @@ describe('Sihirbaz — açılış kalem beyanları', () => {
     expect(payload.dues).toHaveLength(2);
     expect(payload.dues[0]).toMatchObject({
       type: 'VEKALET_UCRETI',
-      amount: 5000.01,
+      amount: 4200.01,
       attorneyFeeBasis: 'JUDGMENT_AWARDED',
       sourceDocumentType: 'ILAM',
       ilamMahkeme: ILAM.mahkemeAdi,
@@ -289,7 +289,7 @@ describe('Sihirbaz — açılış kalem beyanları', () => {
     expect(payload.dues[0].interestEndDate).toBeUndefined();
     expect(payload.dues[0]).not.toHaveProperty('opening');
     // Beyansız kalem bugünkü gibi: kendi türüyle (EXPENSE değil), sihirbazın tarihleriyle; ilam / kaynak alanı yok.
-    expect(payload.dues[1]).toMatchObject({ type: 'YARGILAMA_GIDERI', amount: 365, interestStartDate: KESINLESME, interestEndDate: TAKIP });
+    expect(payload.dues[1]).toMatchObject({ type: 'YARGILAMA_GIDERI', amount: 480, interestStartDate: KESINLESME, interestEndDate: TAKIP });
     expect(payload.dues[1].sourceDocumentType).toBeUndefined();
     expect(payload.dues[1].attorneyFeeBasis).toBeUndefined();
 
