@@ -344,6 +344,18 @@ export function DebtorDetailDrawer({
     onUpdate?.();
   };
 
+  // Escape ile kapanır; üstte başka kalıcı pencere (ör. borçlu düzenleme) varsa ona bırakır (owner 18.11.2026, U-9).
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || isEditModalOpen) return;
+      if (document.querySelectorAll('[aria-modal="true"]').length > 1) return;
+      onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isOpen, isEditModalOpen, onClose]);
+
   if (!isOpen) return null;
 
   const isPassive = debtor?.lifecycleStatus === "PASSIVE";
@@ -358,7 +370,13 @@ export function DebtorDetailDrawer({
       />
 
       {/* Drawer */}
-      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-white shadow-xl z-50 flex flex-col">
+      {/* Genişlik: masaüstünde kalem bazlı borç kartı ve açıklamalar dar sütuna sıkışmasın (owner 18.11.2026, U-9). */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Borçlu Detayı"
+        className="fixed right-0 top-0 h-full w-full max-w-md lg:max-w-xl bg-white shadow-xl z-50 flex flex-col"
+      >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b">
           <div>

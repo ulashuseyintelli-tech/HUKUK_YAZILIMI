@@ -237,13 +237,23 @@ export function ClaimLiabilitySelectionDrawer({
     // Ortalanmış pencere (uygulamadaki diğer kalem pencereleriyle aynı düzen). Sağ kenara yaslı çekmece, sağ alttaki
     // yüzen "Hızlı İşlemler" düğmesinin altında kalıyordu: düğme "Onaya gönder"in üstüne binip tıklamayı yutuyordu
     // (çalışan arayüzde ölçüldü). Pencere ekranın %90'ını aşmaz ve işlem düğmeleri sola yaslıdır.
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" data-testid="claim-liability-drawer">
+    // Yerleşim (owner 18.11.2026, P02 kullanılabilirlik notu U-6): geniş ekranda iki sütun (seçim / dayanak + önizleme); yalnız
+    // gövde kayar, işlem düğmeleri altta sabit ve SOLA yaslı kalır (yüzen düğme kuralı korunur). Küçük ekranda tek sütun.
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-4" data-testid="claim-liability-drawer">
       <div
-        className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl bg-white p-5 space-y-4"
+        className="w-full max-w-2xl lg:max-w-5xl max-h-[90vh] flex flex-col rounded-xl bg-white"
         role="dialog"
+        aria-modal="true"
         aria-label="Borçlu sorumluluğu seçimi"
+        onKeyDown={(e) => {
+          if (e.key === "Escape" && busy === null) {
+            e.preventDefault();
+            e.stopPropagation();
+            onClose();
+          }
+        }}
       >
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start justify-between gap-3 border-b px-5 pt-5 pb-3">
           <div>
             <h3 className="text-lg font-semibold">{bulk ? "Dosyadaki kalemlere uygula" : "Borçlu sorumluluğu"}</h3>
             <p className="text-xs text-gray-600">
@@ -257,6 +267,11 @@ export function ClaimLiabilitySelectionDrawer({
           </button>
         </div>
 
+        <div
+          data-testid="claim-liability-body"
+          className="overflow-y-auto px-5 py-4 space-y-4 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-6"
+        >
+        <div className="space-y-4 min-w-0" data-testid="claim-liability-column-selection">
         <p data-testid="claim-liability-user-choice-note" className="rounded border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
           Bu seçim kullanıcı tercihidir. Yazılım ilam metninden, borçlu rolünden ya da borçlu sayısından sorumluluk türü
           çıkarmaz. Dosyanın alacak toplamı tek rakamdır; borçlu rakamları toplanarak dosya borcu üretilmez.
@@ -379,7 +394,9 @@ export function ClaimLiabilitySelectionDrawer({
             </ul>
           </div>
         )}
+        </div>
 
+        <div className="space-y-4 min-w-0" data-testid="claim-liability-column-review">
         {mode && mode !== "UNDETERMINED" && (
           <div className="space-y-2">
             <label className="block text-sm font-medium" htmlFor="claim-liability-basis">
@@ -488,26 +505,6 @@ export function ClaimLiabilitySelectionDrawer({
           </div>
         )}
 
-        <div className="flex justify-start gap-2" data-testid="claim-liability-actions">
-          <button
-            type="button"
-            data-testid="claim-liability-preview-button"
-            onClick={handlePreview}
-            disabled={busy !== null || !mode}
-            className="rounded border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
-          >
-            {busy === "preview" ? "Önizleniyor…" : "Önizle"}
-          </button>
-          <button
-            type="button"
-            data-testid="claim-liability-request-button"
-            onClick={handleRequest}
-            disabled={busy !== null || !preview?.uygulanabilir}
-            className="rounded bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {busy === "request" ? "Gönderiliyor…" : "Onaya gönder"}
-          </button>
-        </div>
         {/* Yalnız toplu uygulamada: tek kalemde "değişiklik yok" satırı zaten yeterlidir. */}
         {preview && preview.uygulamaTuru === "BULK" && (preview.atlananKalemSayisi ?? 0) > 0 && (
           <p data-testid="claim-liability-skip-summary" className="text-xs text-amber-800">
@@ -554,6 +551,29 @@ export function ClaimLiabilitySelectionDrawer({
             </ul>
           </div>
         )}
+        </div>
+        </div>
+
+        <div className="flex justify-start gap-2 border-t px-5 py-3" data-testid="claim-liability-actions">
+          <button
+            type="button"
+            data-testid="claim-liability-preview-button"
+            onClick={handlePreview}
+            disabled={busy !== null || !mode}
+            className="rounded border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
+          >
+            {busy === "preview" ? "Önizleniyor…" : "Önizle"}
+          </button>
+          <button
+            type="button"
+            data-testid="claim-liability-request-button"
+            onClick={handleRequest}
+            disabled={busy !== null || !preview?.uygulanabilir}
+            className="rounded bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {busy === "request" ? "Gönderiliyor…" : "Onaya gönder"}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -1223,16 +1223,39 @@ function EditMetadataModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <h3 className="font-semibold text-lg mb-1">Kalem Metadata Düzenle</h3>
-          <p className="text-xs text-muted-foreground mb-4">{lockNote}</p>
+    // Yerleşim (owner 18.11.2026, P02 kullanılabilirlik notu U-5): masaüstünde geniş pencere ve iki alan grubu (kalem / faiz)
+    // yan yana; küçük ekranda tek sütun. Yalnız alan gövdesi kayar; işlem düğmeleri her zaman görünür. Alanlar ve kurallar AYNEN.
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="claim-item-edit-title"
+        data-testid="claim-item-edit-dialog"
+        onKeyDown={(e) => {
+          if (e.key === "Escape" && !loading) {
+            e.preventDefault();
+            e.stopPropagation();
+            onClose();
+          }
+        }}
+        className="bg-white rounded-xl w-full max-w-md md:max-w-3xl max-h-[92vh] flex flex-col"
+      >
+        <div className="px-6 pt-5 pb-3 border-b">
+          <h3 id="claim-item-edit-title" className="font-semibold text-lg mb-1">Kalem Metadata Düzenle</h3>
+          <p className="text-xs text-muted-foreground">{lockNote}</p>
           {hasHighImpactChanges && (
-            <p className="text-xs text-amber-700 mb-4">
+            <p className="text-xs text-amber-700 mt-1">
               Faiz veya vade değişiklikleri doğrudan kaydedilmez; onaya gönderilir.
             </p>
           )}
-        <form onSubmit={handleSubmit} className="space-y-4">
+        </div>
+        <form onSubmit={handleSubmit} className="flex flex-col min-h-0 flex-1">
+          <div
+            data-testid="claim-item-edit-body"
+            className="overflow-y-auto px-6 py-4 space-y-4 md:space-y-0 md:grid md:grid-cols-2 md:gap-x-6"
+          >
+          <fieldset className="space-y-4 min-w-0" data-testid="claim-item-edit-group-item">
+          <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Kalem bilgileri</legend>
           {/* Kilitli alanlar — salt görüntüleme (disabled) */}
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -1325,6 +1348,9 @@ function EditMetadataModal({
               />
             </div>
           </div>
+          </fieldset>
+          <fieldset className="space-y-4 min-w-0" data-testid="claim-item-edit-group-interest">
+          <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Faiz</legend>
           {/* Faiz durumu ve faiz başlangıcının dayanağı — yüksek etkili; değişirse onaya gider. */}
           <div>
             <label htmlFor="claim-item-interest-accrual-status" className="block text-sm font-medium mb-1">
@@ -1432,20 +1458,27 @@ function EditMetadataModal({
               className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary disabled:bg-gray-100"
             />
           </div>
+          </fieldset>
+          </div>
 
-          {error && <p className="text-xs text-red-600">{error}</p>}
-
-          <div className="flex justify-end gap-2 pt-4">
-            <button type="button" onClick={onClose} className="px-4 py-2 border rounded-lg hover:bg-gray-50">
-              İptal
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50"
-            >
-              {loading ? "Kaydediliyor..." : hasHighImpactChanges ? "Onaya Gönder" : "Kaydet"}
-            </button>
+          <div data-testid="claim-item-edit-actions" className="border-t px-6 py-3 bg-white rounded-b-xl">
+            {error && (
+              <p role="alert" className="text-xs text-red-600 mb-2">
+                {error}
+              </p>
+            )}
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={onClose} className="px-4 py-2 border rounded-lg hover:bg-gray-50">
+                İptal
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50"
+              >
+                {loading ? "Kaydediliyor..." : hasHighImpactChanges ? "Onaya Gönder" : "Kaydet"}
+              </button>
+            </div>
           </div>
         </form>
       </div>
