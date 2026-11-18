@@ -171,7 +171,7 @@ export interface OpeningClaimPreview {
 
 export const OPENING_CLAIM_PREVIEW_NOTES = Object.freeze({
   onay:
-    'Faiz işler beyanı ve borçlu sorumluluğu seçimi dosya açılışında kaleme yazılmaz; dosya oluşturulduktan sonra ikinci kişinin onayına gider. Onaylanana kadar faiz "belirlenmedi", sorumluluk "belirlenmedi" görünür ve hesaplara girmez.',
+    'Faiz işler beyanı ve borçlu sorumluluğu seçimi dosya açılışında kaleme yazılmaz; dosyayla AYNI işlemde ikinci kişinin onayına gönderilir (talep açılamazsa dosya da oluşturulmaz). Onaylanana kadar faiz "belirlenmedi", sorumluluk "belirlenmedi" görünür ve hesaplara girmez.',
   kullaniciTercihi:
     'Bu bilgiler kullanıcı beyanıdır. Yazılım ilam metninden, borçlu rolünden ya da borçlu sayısından faiz ya da sorumluluk sonucu çıkarmaz.',
   toplam:
@@ -179,7 +179,7 @@ export const OPENING_CLAIM_PREVIEW_NOTES = Object.freeze({
   tavanKapsami:
     'Tutarla sınırlı sorumlulukta tavan yalnız o kalemin kayıtlı tutarını kapsar; kaleme işleyen faiz ve diğer kalemler kapsam dışıdır.',
   onaySirasi:
-    'Aynı kalemde hem faiz beyanı hem sorumluluk seçimi varsa önce faiz talebi onaylanmalıdır. Sorumluluk seçimi önce onaylanırsa faiz talebi onaylanamaz hale gelir ve o kalemde yeni değişiklik talebi açılamaz; bekleyen faiz talebi reddedilmeli, ardından faiz beyanı kalem panelinden yeniden açılmalıdır.',
+    'Faiz beyanı ve sorumluluk seçimi ayrı taleplerdir; ayrı ayrı onaylanır ve onay sırası sonucu değiştirmez.',
 });
 
 const SELECTION_ERROR_MESSAGES: Record<string, string> = {

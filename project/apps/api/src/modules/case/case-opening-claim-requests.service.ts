@@ -1,6 +1,5 @@
-import { BadRequestException, ConflictException, Injectable, Logger, Optional } from '@nestjs/common';
-import { PrismaService } from '@/prisma/prisma.service';
-import { AuditService } from '../audit/audit.service';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, Optional } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { ClaimItemService } from '../claim-item/claim-item.service';
 import type { UpdateClaimItemDto } from '../claim-item/dto/claim-item.dto';
 import { ClaimLiabilitySelectionService } from '../claim-liability/claim-liability-selection.service';
@@ -15,7 +14,8 @@ import {
   type OpeningClaimPreview,
 } from './opening-claim-requests';
 
-export type OpeningClaimRequestStatus = 'REQUESTED' | 'REJECTED' | 'SKIPPED';
+/** Talepler dosya açılış işleminin içinde açılır: ya hepsi açılmıştır ya da dosya oluşmamıştır. */
+export type OpeningClaimRequestStatus = 'REQUESTED';
 
 export interface OpeningInterestAccrualOutcome {
   readonly dueIndex: number;
@@ -40,10 +40,10 @@ export interface OpeningClaimRequestsOutcome {
   readonly previewHash: string;
   readonly faizBeyanlari: readonly OpeningInterestAccrualOutcome[];
   readonly sorumlulukSecimi: OpeningLiabilitySelectionOutcome | null;
-  /** Bütün beyanlar onay talebine dönüştü mü. `false` ise açılamayanlar dosyanın kalem panelinden yeniden yapılır. */
-  readonly tamami: boolean;
-  /** Aynı kalemde hem faiz hem sorumluluk talebi açıldıysa onay sırası uyarısı; yoksa `null`. */
-  readonly onaySirasiNotu: string | null;
+  /** Her zaman `true`: talepler dosyayla aynı işlemde açılır; biri açılamazsa dosya da oluşmaz. */
+  readonly tamami: true;
+  /** Onay sırası artık sonucu değiştirmez; alan geriye uyum için durur ve her zaman `null`dır. */
+  readonly onaySirasiNotu: null;
   readonly aciklama: string;
 }
 
@@ -122,8 +122,6 @@ export class CaseOpeningClaimRequestsService {
   private readonly logger = new Logger(CaseOpeningClaimRequestsService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly auditService: AuditService,
     @Optional() private readonly claimItems?: ClaimItemService,
     @Optional() private readonly liabilitySelection?: ClaimLiabilitySelectionService,
   ) {}
@@ -175,129 +173,102 @@ export class CaseOpeningClaimRequestsService {
   }
 
   /**
-   * Dosya commit edildikten SONRA beyanları mevcut onay yollarına talep olarak açar. Hata fırlatmaz: her beyanın sonucu
-   * (açıldı / reddedildi / atlandı) döner ve denetim kaydına yazılır. Dosya açılışı geri alınmaz.
+   * Beyanları dosya açılış transaction'ı İÇİNDE mevcut onay yollarına talep olarak açar (owner talimatı 2026-11-18:
+   * dosya kaydı ile talep açılışı arasında kesinti penceresi kalmasın). Dosya, taraflar, kalemler ve onay talepleri TEK
+   * işlemdir: ya hepsi oluşur ya da bu yöntem hata fırlatır ve çağıranın transaction'ı geri alınır — beyan sessizce
+   * kaybolamaz, talebi açılamamış "başarılı" açılış oluşamaz.
+   *
+   * Talep yolları sonradan düzenlemeyle AYNIDIR (`ClaimItemService.updateFromUser`, `ClaimLiabilitySelectionService`
+   * `preview` + `request`); yazma kapıları, değişmezler ve talep içeriği değişmez — yalnız aynı transaction istemcisiyle
+   * çalışırlar (henüz commit edilmemiş dosyayı ve dosya yetkilerini görebilmek için).
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - CaseService.create() → POST /cases (transaction'ın son adımı)
+   * </remarks>
    */
-  async requestAfterCommit(input: {
-    readonly tenantId: string;
-    readonly userId: string;
-    readonly caseId: string;
-    readonly plan: OpeningClaimPlan;
-    /** `dues[]` sırasıyla hizalı; alacak kalemi üretmeyen satırda `null`. */
-    readonly claimItemIdByDueIndex: ReadonlyArray<string | null>;
-  }): Promise<OpeningClaimRequestsOutcome> {
+  async requestInTransaction(
+    tx: Prisma.TransactionClient,
+    input: {
+      readonly tenantId: string;
+      readonly userId: string;
+      readonly caseId: string;
+      readonly plan: OpeningClaimPlan;
+      /** `dues[]` sırasıyla hizalı; alacak kalemi üretmeyen satırda `null`. */
+      readonly claimItemIdByDueIndex: ReadonlyArray<string | null>;
+    },
+  ): Promise<OpeningClaimRequestsOutcome> {
     const { tenantId, userId, caseId, plan, claimItemIdByDueIndex } = input;
 
     const faizBeyanlari: OpeningInterestAccrualOutcome[] = [];
     for (const accrual of plan.interestAccruals) {
       const claimItemId = claimItemIdByDueIndex[accrual.dueIndex] ?? null;
       if (!claimItemId) {
-        faizBeyanlari.push({
-          dueIndex: accrual.dueIndex,
-          claimItemId: null,
-          status: 'SKIPPED',
-          errorCode: 'CLAIM_ITEM_NOT_CREATED',
-          message: 'Bu satır için alacak kalemi oluşmadı; faiz talebi açılmadı.',
-        });
-        continue;
+        throw openingRequestsNotOpened('CLAIM_ITEM_NOT_CREATED', 'Faiz beyanı yapılan satır için alacak kalemi oluşmadı.', accrual.dueIndex);
       }
       if (!this.claimItems) {
-        faizBeyanlari.push({
-          dueIndex: accrual.dueIndex,
-          claimItemId,
-          status: 'SKIPPED',
-          errorCode: 'CLAIM_ITEM_SERVICE_UNAVAILABLE',
-          message: 'Kalem güncelleme servisi bu ortamda bağlı değil; faiz talebi açılmadı.',
-        });
-        continue;
+        throw openingRequestsNotOpened('CLAIM_ITEM_SERVICE_UNAVAILABLE', 'Kalem güncelleme servisi bu ortamda bağlı değil.', accrual.dueIndex);
       }
-      try {
-        // Sonradan düzenlemeyle AYNI yol: yüksek etkili alan → onay kaydı; kalem onaylanana kadar değişmez.
-        const patch = {
-          interestAccrualStatus: 'ACCRUES',
-          interestStartDateProvenance: accrual.interestStartDateProvenance,
-          ...(accrual.interestStartDate ? { interestStartDate: accrual.interestStartDate } : {}),
-        } as unknown as UpdateClaimItemDto;
-        const result = await this.claimItems.updateFromUser(tenantId, userId, claimItemId, patch);
-        if (!result.approvalRequired || !result.approvalRequestId) {
-          faizBeyanlari.push({
-            dueIndex: accrual.dueIndex,
-            claimItemId,
-            status: 'REJECTED',
-            errorCode: 'APPROVAL_NOT_REQUIRED_UNEXPECTED',
-            message: 'Faiz beyanı onay gerektiren işlem olarak sınıflandırılamadı; talep açılmadı.',
-          });
-          continue;
-        }
-        faizBeyanlari.push({ dueIndex: accrual.dueIndex, claimItemId, status: 'REQUESTED', approvalRequestId: result.approvalRequestId });
-      } catch (error) {
-        const { errorCode, message } = describeOpeningClaimRequestRejection(error);
-        // Ayrıntı yalnız sunucu günlüğünde; kullanıcıya giden ileti `describeOpeningClaimRequestRejection` çıktısıdır.
-        this.logger.warn(`Açılış faiz beyanı talebi reddedildi (case=${caseId}, claimItem=${claimItemId}): ${errorCode} — ${(error as Error)?.message ?? ''}`);
-        faizBeyanlari.push({ dueIndex: accrual.dueIndex, claimItemId, status: 'REJECTED', errorCode, message });
+      // Sonradan düzenlemeyle AYNI yol: yüksek etkili alan → onay kaydı; kalem onaylanana kadar değişmez.
+      const patch = {
+        interestAccrualStatus: 'ACCRUES',
+        interestStartDateProvenance: accrual.interestStartDateProvenance,
+        ...(accrual.interestStartDate ? { interestStartDate: accrual.interestStartDate } : {}),
+      } as unknown as UpdateClaimItemDto;
+      const result = await this.rethrowAsNotOpened(accrual.dueIndex, () => this.claimItems!.updateFromUser(tenantId, userId, claimItemId, patch, tx));
+      if (!result.approvalRequired || !result.approvalRequestId) {
+        throw openingRequestsNotOpened(
+          'APPROVAL_NOT_REQUIRED_UNEXPECTED',
+          'Faiz beyanı onay gerektiren işlem olarak sınıflandırılamadı.',
+          accrual.dueIndex,
+        );
       }
+      faizBeyanlari.push({ dueIndex: accrual.dueIndex, claimItemId, status: 'REQUESTED', approvalRequestId: result.approvalRequestId });
     }
 
     let sorumlulukSecimi: OpeningLiabilitySelectionOutcome | null = null;
     if (plan.liabilitySelections.length > 0) {
-      sorumlulukSecimi = await this.requestLiabilitySelection(tenantId, userId, caseId, plan, claimItemIdByDueIndex);
+      sorumlulukSecimi = await this.requestLiabilitySelectionInTransaction(tx, tenantId, userId, caseId, plan, claimItemIdByDueIndex);
     }
-
-    const requestedAccrualItems = new Set(faizBeyanlari.filter((row) => row.status === 'REQUESTED').map((row) => row.claimItemId));
-    const liabilityItems =
-      sorumlulukSecimi?.status === 'REQUESTED'
-        ? plan.liabilitySelections.map((selection) => claimItemIdByDueIndex[selection.dueIndex] ?? null)
-        : [];
-    const sameItemBoth = liabilityItems.some((id) => id !== null && requestedAccrualItems.has(id));
-    const tamami =
-      faizBeyanlari.every((row) => row.status === 'REQUESTED') && (sorumlulukSecimi === null || sorumlulukSecimi.status === 'REQUESTED');
 
     const outcome: OpeningClaimRequestsOutcome = {
       requested: true,
       previewHash: plan.previewHash,
       faizBeyanlari,
       sorumlulukSecimi,
-      tamami,
-      onaySirasiNotu: sameItemBoth ? OPENING_CLAIM_PREVIEW_NOTES.onaySirasi : null,
+      tamami: true,
+      onaySirasiNotu: null,
       aciklama: OPENING_CLAIM_PREVIEW_NOTES.onay,
     };
 
-    // Önizleme ↔ talep ↔ onay bağı denetim kaydında (özet + onay talebi kimlikleri + açılamayanların nedeni).
-    await this.auditService
-      .log({
+    // Önizleme ↔ talep ↔ onay bağı denetim kaydında; AYNI işlemde yazılır (dosya geri alınırsa kayıt da oluşmaz).
+    await tx.auditLog.create({
+      data: {
         tenantId,
-        action: tamami ? 'CASE_OPEN_CLAIM_REQUESTS_REQUESTED' : 'CASE_OPEN_CLAIM_REQUESTS_INCOMPLETE',
+        action: 'CASE_OPEN_CLAIM_REQUESTS_REQUESTED',
         entityType: 'Case',
         entityId: caseId,
         userId,
-        description: tamami
-          ? 'Dosya açılışında kalem beyanları için onay talepleri açıldı'
-          : 'Dosya açılışında kalem beyanlarının bir kısmı için onay talebi AÇILMADI',
+        description: 'Dosya açılışında kalem beyanları için onay talepleri açıldı',
         metadata: {
           previewHash: plan.previewHash,
           faizBeyanlari: faizBeyanlari.map((row) => ({
             dueIndex: row.dueIndex,
             claimItemId: row.claimItemId,
-            status: row.status,
             approvalRequestId: row.approvalRequestId ?? null,
-            errorCode: row.errorCode ?? null,
           })),
           sorumlulukSecimi: sorumlulukSecimi
-            ? {
-                status: sorumlulukSecimi.status,
-                kalemSayisi: sorumlulukSecimi.kalemSayisi,
-                approvalRequestId: sorumlulukSecimi.approvalRequestId ?? null,
-                errorCode: sorumlulukSecimi.errorCode ?? null,
-              }
+            ? { kalemSayisi: sorumlulukSecimi.kalemSayisi, approvalRequestId: sorumlulukSecimi.approvalRequestId ?? null }
             : null,
         },
-      } as any)
-      .catch((err: any) => this.logger.warn(`Açılış kalem talepleri denetim kaydı yazılamadı: ${err?.message ?? err}`));
+      },
+    });
 
     return outcome;
   }
 
-  private async requestLiabilitySelection(
+  private async requestLiabilitySelectionInTransaction(
+    tx: Prisma.TransactionClient,
     tenantId: string,
     userId: string,
     caseId: string,
@@ -305,64 +276,81 @@ export class CaseOpeningClaimRequestsService {
     claimItemIdByDueIndex: ReadonlyArray<string | null>,
   ): Promise<OpeningLiabilitySelectionOutcome> {
     const kalemSayisi = plan.liabilitySelections.length;
-    const skip = (errorCode: string, message: string): OpeningLiabilitySelectionOutcome => ({ status: 'SKIPPED', kalemSayisi, errorCode, message });
     if (!this.liabilitySelection) {
-      return skip('LIABILITY_SELECTION_SERVICE_UNAVAILABLE', 'Sorumluluk seçimi servisi bu ortamda bağlı değil; seçim talebi açılmadı.');
+      throw openingRequestsNotOpened('LIABILITY_SELECTION_SERVICE_UNAVAILABLE', 'Sorumluluk seçimi servisi bu ortamda bağlı değil.');
     }
+    // Kişi (Debtor.id) → dosya borçlusu satırı (CaseDebtor.id). Aynı kişi birden çok rolle yer alıyorsa ilk satır
+    // kullanılır; sorumluluk kişi düzeyinde okunur (seçim alanı aynı kişiyi iki kez kabul etmez).
+    const caseDebtors = await tx.caseDebtor.findMany({
+      where: { caseId, case: { tenantId } },
+      select: { id: true, debtorId: true },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+    const caseDebtorByPerson = new Map<string, string>();
+    for (const row of caseDebtors) {
+      if (!caseDebtorByPerson.has(row.debtorId)) caseDebtorByPerson.set(row.debtorId, row.id);
+    }
+
+    const drafts: SelectionDraft[] = [];
+    for (const selection of plan.liabilitySelections) {
+      const claimItemId = claimItemIdByDueIndex[selection.dueIndex] ?? null;
+      if (!claimItemId) {
+        throw openingRequestsNotOpened('CLAIM_ITEM_NOT_CREATED', 'Seçim yapılan satır için alacak kalemi oluşmadı.', selection.dueIndex);
+      }
+      const parties = [];
+      for (const party of selection.parties) {
+        const caseDebtorId = caseDebtorByPerson.get(party.debtorId);
+        if (!caseDebtorId) {
+          throw openingRequestsNotOpened('CASE_DEBTOR_NOT_CREATED', 'Seçimdeki borçlulardan biri dosya borçlusu olarak kaydedilmedi.', selection.dueIndex);
+        }
+        parties.push({
+          caseDebtorId,
+          ...(party.shareWeight !== null ? { shareWeight: party.shareWeight } : {}),
+          ...(party.limitAmount !== null ? { limitAmount: party.limitAmount } : {}),
+          ...(party.unlimited ? { unlimited: true } : {}),
+        });
+      }
+      drafts.push({ claimItemId, mode: selection.mode, basis: selection.basis, basisNote: selection.basisNote, parties });
+    }
+
+    // Mevcut seçim yolu, aynı işlemde: sunucu önizlemesi (yazılmış kalemlerle) → aynı özetle talep. Yetki ve bayrak orada.
+    const preview = await this.rethrowAsNotOpened(null, () => this.liabilitySelection!.preview(tenantId, userId, caseId, drafts, tx));
+    if (!preview.uygulanabilir) {
+      throw openingRequestsNotOpened('LIABILITY_SELECTION_NOT_APPLICABLE', 'Sorumluluk seçimi kayıtlı dosya durumuyla uygulanamıyor.');
+    }
+    const result = await this.rethrowAsNotOpened(null, () =>
+      this.liabilitySelection!.request(tenantId, userId, caseId, { selections: drafts, onizlemeOzeti: preview.onizlemeOzeti }, tx),
+    );
+    return { status: 'REQUESTED', kalemSayisi, approvalRequestId: result.approvalRequestId };
+  }
+
+  /**
+   * Mevcut kapıların reddini (HTTP istisnası) açılışın kendi hatasına çevirir: kod + okunur neden + hangi satır. Kapı
+   * ATLANMAZ; ret dosyanın tamamını geri aldırır. Beklenmeyen iç hata olduğu gibi yükselir (işlem yine geri alınır).
+   */
+  private async rethrowAsNotOpened<T>(dueIndex: number | null, run: () => Promise<T>): Promise<T> {
     try {
-      // Kişi (Debtor.id) → dosya borçlusu satırı (CaseDebtor.id). Aynı kişi birden çok rolle yer alıyorsa ilk satır
-      // kullanılır; sorumluluk kişi düzeyinde okunur (seçim alanı aynı kişiyi iki kez kabul etmez).
-      const caseDebtors = await this.prisma.caseDebtor.findMany({
-        where: { caseId, case: { tenantId } },
-        select: { id: true, debtorId: true },
-        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-      });
-      const caseDebtorByPerson = new Map<string, string>();
-      for (const row of caseDebtors) {
-        if (!caseDebtorByPerson.has(row.debtorId)) caseDebtorByPerson.set(row.debtorId, row.id);
-      }
-
-      const drafts: SelectionDraft[] = [];
-      for (const selection of plan.liabilitySelections) {
-        const claimItemId = claimItemIdByDueIndex[selection.dueIndex] ?? null;
-        if (!claimItemId) {
-          return skip('CLAIM_ITEM_NOT_CREATED', 'Seçim yapılan satırlardan biri için alacak kalemi oluşmadı; seçim talebi açılmadı.');
-        }
-        const parties = [];
-        for (const party of selection.parties) {
-          const caseDebtorId = caseDebtorByPerson.get(party.debtorId);
-          if (!caseDebtorId) {
-            return skip('CASE_DEBTOR_NOT_CREATED', 'Seçimdeki borçlulardan biri dosya borçlusu olarak kaydedilmedi; seçim talebi açılmadı.');
-          }
-          parties.push({
-            caseDebtorId,
-            ...(party.shareWeight !== null ? { shareWeight: party.shareWeight } : {}),
-            ...(party.limitAmount !== null ? { limitAmount: party.limitAmount } : {}),
-            ...(party.unlimited ? { unlimited: true } : {}),
-          });
-        }
-        drafts.push({ claimItemId, mode: selection.mode, basis: selection.basis, basisNote: selection.basisNote, parties });
-      }
-
-      // Mevcut seçim yolu: sunucu önizlemesi (kalıcı kayıtla) → aynı özetle talep. Yetki ve bayrak orada denetlenir.
-      const preview = await this.liabilitySelection.preview(tenantId, userId, caseId, drafts);
-      if (!preview.uygulanabilir) {
-        return {
-          status: 'REJECTED',
-          kalemSayisi,
-          errorCode: 'LIABILITY_SELECTION_NOT_APPLICABLE',
-          message: 'Sorumluluk seçimi kayıtlı dosya durumuyla uygulanamıyor; seçim talebi açılmadı.',
-        };
-      }
-      const result = await this.liabilitySelection.request(tenantId, userId, caseId, {
-        selections: drafts,
-        onizlemeOzeti: preview.onizlemeOzeti,
-      });
-      return { status: 'REQUESTED', kalemSayisi, approvalRequestId: result.approvalRequestId };
+      return await run();
     } catch (error) {
+      if (typeof (error as { getStatus?: unknown })?.getStatus !== 'function') throw error;
       const { errorCode, message } = describeOpeningClaimRequestRejection(error);
-      this.logger.warn(`Açılış sorumluluk seçimi talebi reddedildi (case=${caseId}): ${errorCode} — ${(error as Error)?.message ?? ''}`);
-      return { status: 'REJECTED', kalemSayisi, errorCode, message };
+      this.logger.warn(`Açılış kalem talebi reddedildi; dosya oluşturulmayacak: ${errorCode} — ${(error as Error)?.message ?? ''}`);
+      const status = (error as { getStatus: () => number }).getStatus();
+      throw openingRequestsNotOpened(errorCode, message, dueIndex ?? undefined, status === 403 ? 403 : 409);
     }
   }
+}
+
+/**
+ * Açılış beyanı için onay talebi açılamadı → dosya OLUŞTURULMAZ (transaction geri alınır). Kullanıcı taslağıyla kalır:
+ * beyanı kaldırıp açabilir ya da engeli giderip yeniden deneyebilir.
+ */
+function openingRequestsNotOpened(reasonCode: string, reason: string, dueIndex?: number, status: 403 | 409 = 409) {
+  const body = {
+    code: 'OPENING_CLAIM_REQUESTS_NOT_OPENED',
+    message: `Açılış beyanları için onay talebi açılamadı; dosya oluşturulmadı. ${reason}`,
+    reasonCode,
+    ...(dueIndex === undefined ? {} : { dueIndex }),
+  };
+  return status === 403 ? new ForbiddenException(body) : new ConflictException(body);
 }

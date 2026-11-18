@@ -288,5 +288,38 @@ describe('RCV-P2-WS01-P03 ClaimItemWriterRouterService', () => {
         header: expect.objectContaining({ eventType: 'CLAIM_ITEM_CANCELLED' }),
       }),
     );
+    // Dosya kilidi (COL-LOCK-001) kalem satırı yazılmadan ÖNCE alınır (onay yürütmeleriyle aynı sıra).
+    expect(transaction.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
+      transaction.claimItem.update.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('system update dosya kilidini kalem satırını yazmadan ÖNCE alır', async () => {
+    const { router, transaction } = setup('DIRECT_ALLOWED');
+    transaction.claimItem.findFirst.mockResolvedValue({
+      id: 'claim-1',
+      tenantId: 'tenant-1',
+      caseId: 'case-1',
+      currency: 'TRY',
+      status: 'ACTIVE',
+      metadata: { dueSync: { sourceDueId: 'due-1' } },
+    });
+
+    await router.updateSystemClaimItem({
+      route: 'DUE_BRIDGE',
+      tenantId: 'tenant-1',
+      caseId: 'case-1',
+      sourceId: 'due-1',
+      initiatedByUserId: 'requester-1',
+      claimItemId: 'claim-1',
+      currency: 'TRY',
+      data: { description: 'Sentetik açıklama' },
+    });
+
+    expect(transaction.claimItem.update).toHaveBeenCalledTimes(1);
+    expect(String(transaction.$executeRaw.mock.calls[0][0].join('?'))).toContain('COL-LOCK-001: canonical allocation lock');
+    expect(transaction.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
+      transaction.claimItem.update.mock.invocationCallOrder[0],
+    );
   });
 });

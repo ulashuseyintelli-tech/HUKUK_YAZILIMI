@@ -111,6 +111,7 @@ src/modules/claim-item/__tests__/claim-item-required-ci-coverage.static.spec.ts
 src/modules/claim-item/__tests__/claim-item-rule-engine-formation-admission.spec.ts
 src/modules/claim-item/__tests__/claim-item-source-provenance.spec.ts
 src/modules/claim-item/__tests__/claim-item-user-mutation-approval.spec.ts
+src/modules/claim-item/__tests__/claim-item-approval-staleness.spec.ts
 src/modules/claim-item/__tests__/claim-item-write-gate.spec.ts
 src/modules/claim-item/__tests__/claim-item-writer-amount-contract.spec.ts
 src/modules/claim-item/__tests__/claim-item-writer-router.spec.ts

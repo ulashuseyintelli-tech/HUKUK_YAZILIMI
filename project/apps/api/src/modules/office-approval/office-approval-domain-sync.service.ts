@@ -48,6 +48,7 @@ import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-
 import { interestWriteData, normalizeInterestWriteIntent } from '../claim-item/interest-write-admission';
 import { validateInterestAccrualState } from '../claim-item/interest-accrual-policy';
 import { assertAttorneyFeeBasisMatchesItemType, effectiveField } from '../claim-item/attorney-fee-basis';
+import { evaluateClaimItemApprovalStaleness, isExplainableByLiabilitySelection } from '../claim-item/claim-item-approval-staleness';
 import { AuditService } from '../audit/audit.service';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { createCollectionMutationTrace } from '../collection/collection-audit';
@@ -55,6 +56,8 @@ import {
   appendClaimItemContinuity,
   assertClaimItemCreateStatus,
   assertClaimItemLifecycleMutation,
+  claimItemLifecycleRecordHash,
+  lockClaimItemCaseBeforeWrite,
   type ClaimItemLifecycleRecord,
 } from '../claim-item/claim-item-lifecycle-contract';
 
@@ -739,6 +742,9 @@ export class OfficeApprovalDomainSyncService {
     req: OfficeApprovalRequest,
     intent: ClaimItemHighImpactSavedIntent,
   ): Promise<void> {
+    // Dosya kilidi ÖNCE (tahsilat / mahsup, sorumluluk seçimi onayı ve öteki kalem yazarlarıyla AYNI kilit, AYNI sıra):
+    // kalem bu kilit altında okunur, bayatlık bu okumayla değerlendirilir ve aynı işlemde yazılır.
+    await lockClaimItemCaseBeforeWrite(tx, intent.caseId);
     const current = await tx.claimItem.findFirst({
       where: { id: intent.claimItemId, tenantId: req.tenantId },
     });
@@ -746,11 +752,30 @@ export class OfficeApprovalDomainSyncService {
       throw new ConflictException('CLAIM_ITEM hedef kalem bulunamadi.');
     }
     const currentSnapshot = this.snapshotClaimItem(current);
-    const comparableSnapshot = intent.currentSnapshot
-      ? Object.fromEntries(Object.keys(intent.currentSnapshot).map((key) => [key, currentSnapshot[key]]))
-      : currentSnapshot;
-    if (intent.currentSnapshotHash && stableJsonHash(comparableSnapshot) !== intent.currentSnapshotHash) {
-      throw new ConflictException('ClaimItem stale-state conflict: kayit approval talebinden sonra degismis.');
+    const stalenessInput = {
+      operation: intent.operation,
+      proposedPatch: intent.proposedPatch as Record<string, unknown>,
+      requestSnapshot: intent.currentSnapshot,
+      requestSnapshotHash: intent.currentSnapshotHash,
+      currentSnapshot,
+    };
+    let staleness = evaluateClaimItemApprovalStaleness({ ...stalenessInput, liabilityChangeFromApprovedSelection: false });
+    // Değişen alanlar yalnız iki izdüşüm alanı ve / veya sürüm alanıysa kayıttan doğrulanır: talepten bu yana kaleme
+    // YALNIZ onaylı seçim mi yazdı? (Art arda iki seçim izdüşümü başa döndürdüyse yalnız sürüm alanı değişmiş görünür.)
+    if (staleness.stale && isExplainableByLiabilitySelection(staleness.changedFields)) {
+      staleness = evaluateClaimItemApprovalStaleness({
+        ...stalenessInput,
+        liabilityChangeFromApprovedSelection: await this.onlyApprovedLiabilitySelectionWroteSinceRequest(
+          tx,
+          req,
+          intent,
+          current as ClaimItemLifecycleRecord,
+        ),
+      });
+    }
+    if (staleness.stale) {
+      const fields = staleness.changedFields.length > 0 ? ` (degisen alanlar: ${staleness.changedFields.join(', ')})` : '';
+      throw new ConflictException(`ClaimItem stale-state conflict: kayit approval talebinden sonra degismis${fields}.`);
     }
     assertInvoiceClaimItemTypeTransitionAllowed(
       current,
@@ -829,6 +854,64 @@ export class OfficeApprovalDomainSyncService {
         ? { retentionDisposition: 'TOMBSTONE_RETAINED' as const }
         : {}),
     });
+  }
+
+  /**
+   * Bayatlık istisnasının KAYIT doğrulaması (tam satır): talep açıldıktan sonra bu kaleme YALNIZ onaylı borçlu sorumluluğu
+   * seçimi mi yazdı? Her kalem yazımı denetim kaydına yazımdan önceki ve sonraki TAM satırın özetini bırakır. Seçim
+   * uygulama kayıtları zincir olarak doğrulanır:
+   *  - ilk kaydın "önceki" özeti = talep anındaki satır (şimdiki satırın, iki izdüşüm alanı ve `updatedAt` talep
+   *    görüntüsündeki değerlere çevrilmiş hâli) → talep ile seçim arasında başka yazım yok;
+   *  - ardışık kayıtlar birbirine bağlı → aralarında başka yazım yok;
+   *  - son kaydın "sonraki" özeti = şimdiki satır → seçimden sonra başka yazım yok.
+   * Görüntüde bulunmayan alanlar dahil HERHANGİ bir başka yazım zinciri koparır ve talep bayat kalır.
+   * Dosya kilidi altında çağrılır.
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - OfficeApprovalDomainSyncService.applyClaimItemUpdateOrDelete() → onay kararı transaction'ı
+   * </remarks>
+   */
+  private async onlyApprovedLiabilitySelectionWroteSinceRequest(
+    tx: Prisma.TransactionClient,
+    req: OfficeApprovalRequest,
+    intent: ClaimItemHighImpactSavedIntent,
+    current: ClaimItemLifecycleRecord,
+  ): Promise<boolean> {
+    const requested = intent.currentSnapshot;
+    if (!requested || !(req.createdAt instanceof Date)) return false;
+    const requestedUpdatedAt = typeof requested.updatedAt === 'string' ? new Date(requested.updatedAt) : null;
+    if (!requestedUpdatedAt || Number.isNaN(requestedUpdatedAt.getTime())) return false;
+    if (typeof requested.isAllDebtorsLiable !== 'boolean' || !Array.isArray(requested.liableDebtorIds)) return false;
+
+    const applied = await tx.auditLog.findMany({
+      where: {
+        tenantId: req.tenantId,
+        entityType: 'ClaimItem',
+        entityId: current.id,
+        action: 'CLAIM_ITEM_LIABILITY_SELECTION_APPLIED',
+        createdAt: { gte: req.createdAt },
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      select: { oldValues: true, newValues: true },
+    });
+    if (applied.length === 0) return false;
+    const hashOf = (value: unknown): string | null => {
+      const hash = (value as { recordHash?: unknown } | null)?.recordHash;
+      return typeof hash === 'string' && hash.length > 0 ? hash : null;
+    };
+    const rowAtRequest: ClaimItemLifecycleRecord = {
+      ...current,
+      isAllDebtorsLiable: requested.isAllDebtorsLiable,
+      liableDebtorIds: [...requested.liableDebtorIds],
+      updatedAt: requestedUpdatedAt,
+    };
+    if (hashOf(applied[0].oldValues) !== claimItemLifecycleRecordHash(rowAtRequest)) return false;
+    for (let index = 1; index < applied.length; index += 1) {
+      const previous = hashOf(applied[index - 1].newValues);
+      if (!previous || previous !== hashOf(applied[index].oldValues)) return false;
+    }
+    return hashOf(applied[applied.length - 1].newValues) === claimItemLifecycleRecordHash(current);
   }
 
   private normalizeApprovedInterestPatch(

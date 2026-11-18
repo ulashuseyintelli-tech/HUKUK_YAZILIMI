@@ -23,6 +23,7 @@ import { OfficeApprovalService } from '../../office-approval/office-approval.ser
 import { CaseModule } from '../case.module';
 import { CaseService } from '../case.service';
 import { ClaimItemService } from '../../claim-item/claim-item.service';
+import { ClaimLiabilitySelectionService } from '../../claim-liability/claim-liability-selection.service';
 
 /**
  * DOSYA AÇILIŞINDA KALEM BEYANLARI (owner talimatı 2026-11-18) — ilam bilgisi, vekâlet ücreti kaynağı, faiz beyanı ve
@@ -37,7 +38,7 @@ import { ClaimItemService } from '../../claim-item/claim-item.service';
  *  2. Talep eden kendi talebini onaylayamaz. İkinci kişi onaylayınca faiz hesaplanır, paylı sorumluluk etkinleşir.
  *  3. Ters onay sırası: sorumluluk önce onaylanırsa faiz talebi bayatlar (mevcut bayatlık kapısı); kalem değişmez.
  *  4. Gösterilmemiş / değişmiş girdi, geçersiz beyan ya da kapalı seçim bayrağında dosya HİÇ oluşmaz (kısmi kayıt yok).
- *  5. Dosyada mali düzenleme yetkisi olmayan kullanıcıda dosya açılır, talepler açılmaz; neden yanıtta ve denetimde.
+ *  5. Talepler dosyayla AYNI işlemde açılır: talep açılamazsa (yetki yok, kesinti) dosya hiç oluşmaz; yeniden gönderim çalışır.
  *  6. Tekrar gönderim ikinci dosya ya da ikinci talep üretmez. Beyansız açılış bugünkü gibidir.
  * Tutarlar, oran, mahkeme ve tarihler SENTETİKTİR.
  */
@@ -266,7 +267,8 @@ describeWithDisposableDb('Dosya açılışında kalem beyanları — POST /cases
     const outcome = opened.body.openingClaimRequests;
     expect(outcome).toMatchObject({ requested: true, tamami: true, sorumlulukSecimi: { status: 'REQUESTED', kalemSayisi: 2 } });
     expect(outcome.faizBeyanlari.map((row: any) => row.status)).toEqual(['REQUESTED', 'REQUESTED']);
-    expect(typeof outcome.onaySirasiNotu).toBe('string');
+    // Onay sırası artık sonucu değiştirmez: uyarı notu yok.
+    expect(outcome.onaySirasiNotu).toBeNull();
 
     // ── Kalemler: açılışta yazılanlar yazıldı; beyanlar yazılmadı.
     const before = await claimItems(caseId);
@@ -358,36 +360,282 @@ describeWithDisposableDb('Dosya açılışında kalem beyanları — POST /cases
     expect((audit?.metadata as any).previewHash).toBe(outcome.previewHash);
   });
 
-  it('ters onay sırası: sorumluluk önce onaylanırsa faiz talebi bayatlar; kalemin faizi değişmez', async () => {
+  // ── ONAY SIRASI (owner talimatı 2026-11-18): faiz beyanı ile sorumluluk seçimi birbirinden bağımsızdır; hangi sırayla
+  //    onaylanırsa onaylansın ikisi de uygulanır. Gerçek veri çakışması bugünkü gibi bayatlıktır.
+  const expectBothApplied = async (f: Fixture, caseId: string) => {
+    for (const item of await claimItems(caseId)) {
+      expect(item.interestAccrualStatus).toBe('ACCRUES');
+      expect(item.interestStartDate?.toISOString().slice(0, 10)).toBe(KESINLESME);
+      expect(item.interestStartDateProvenance).toBe('JUDGMENT_FINALIZATION_DATE');
+      expect(item.isAllDebtorsLiable).toBe(false);
+    }
+    expect(await prisma.claimItemLiabilitySet.count({ where: { tenantId: f.tenantId, status: 'ACTIVE' } })).toBe(2);
+    expect(await pendingRequests(f.tenantId)).toHaveLength(0);
+  };
+
+  it('ters onay sırası: sorumluluk seçimi ÖNCE onaylansa da faiz talepleri uygulanır (kilitlenme yok)', async () => {
     const f = await fixture('ters');
     const { opened } = await openWithDeclarations(f, 'T');
     expect(opened.status).toBe(201);
     const pending = await pendingRequests(f.tenantId);
     const liabilityRequest = pending.find((row) => row.targetType === 'CLAIM_ITEM_CASE')!;
-    const interestRequest = pending.find((row) => row.targetType === 'CLAIM_ITEM')!;
+    const interestRequests = pending.filter((row) => row.targetType === 'CLAIM_ITEM');
+    expect(interestRequests).toHaveLength(2);
 
     await approvals.approve(liabilityRequest.id, f.approver);
-    await expect(approvals.approve(interestRequest.id, f.approver)).rejects.toThrow('stale-state conflict');
-
+    // Seçim kalemin iki izdüşüm alanını yazdı; faiz talebinin görüntüsü artık eski — ama değişiklik bağımsız ve onaylı.
     for (const item of await claimItems(opened.body.id)) {
+      expect(item.isAllDebtorsLiable).toBe(false);
       expect(item.interestAccrualStatus).toBe('UNKNOWN');
-      expect(item.interestStartDate).toBeNull();
     }
+    for (const row of interestRequests) await approvals.approve(row.id, f.approver);
+    await expectBothApplied(f, opened.body.id);
 
-    // ── Çıkış yolu (açılış sonucundaki notun söylediği): bayat talep beklerken o kalemde yeni talep AÇILAMAZ; talep
-    //    reddedilir, faiz beyanı kalem üzerinden yeniden açılır ve ikinci kişi onaylar.
+    // Denetim: her faiz uygulaması kendi onay talebine bağlı ayrı kayıttır.
+    const applied = await prisma.auditLog.count({ where: { tenantId: f.tenantId, action: 'CLAIM_ITEM_HIGH_IMPACT_UPDATE_APPLIED' } });
+    expect(applied).toBe(2);
+  });
+
+  it('eşzamanlı onay: faiz talebi ile sorumluluk seçimi aynı anda onaylanır; ikisi de uygulanır', async () => {
+    // Aynı kalem ve aynı dosya üzerinde İKİ eşzamanlı karar transaction'ı (en küçük bağlantı havuzuna sığar). Her iki
+    // yürütme aynı dosya kilidini kalemden ÖNCE alır; sıra hangisi olursa olsun sonuç aynıdır.
+    for (const round of ['a', 'b', 'c']) {
+      const f = await fixture(`esz-${round}`);
+      const { opened } = await openWithDeclarations(f, `E${round}`);
+      expect(opened.status).toBe(201);
+      const pending = await pendingRequests(f.tenantId);
+      const liabilityRequest = pending.find((row) => row.targetType === 'CLAIM_ITEM_CASE')!;
+      const [firstInterest, secondInterest] = pending.filter((row) => row.targetType === 'CLAIM_ITEM');
+
+      const settled = await Promise.allSettled([
+        approvals.approve(firstInterest.id, f.approver),
+        approvals.approve(liabilityRequest.id, f.approver),
+      ]);
+      expect(
+        settled.map((result) =>
+          result.status === 'fulfilled' ? 'ok' : `${(result.reason as Error).name}:${(result.reason as Error).message}`,
+        ),
+      ).toEqual(['ok', 'ok']);
+      await approvals.approve(secondInterest.id, f.approver);
+      await expectBothApplied(f, opened.body.id);
+    }
+  });
+
+  it('gerçek veri çakışması: seçim onaylansa bile kalemin ORTAK verisi değiştiyse faiz talebi bayattır; kalem değişmez', async () => {
+    const f = await fixture('cakisma');
+    const { opened } = await openWithDeclarations(f, 'C');
+    expect(opened.status).toBe(201);
+    const pending = await pendingRequests(f.tenantId);
+    const liabilityRequest = pending.find((row) => row.targetType === 'CLAIM_ITEM_CASE')!;
+    const interestRequest = pending.find((row) => row.targetType === 'CLAIM_ITEM')!;
+    await approvals.approve(liabilityRequest.id, f.approver);
+
+    // Talep beklerken kalemin tutarı değişti (ör. dosya kalemi düzenlemesi) — faiz beyanının dayandığı ortak veri.
+    const before = await prisma.claimItem.findUniqueOrThrow({ where: { id: interestRequest.targetRef } });
+    await prisma.claimItem.update({
+      where: { id: before.id },
+      data: { amount: Number(before.amount) + 1, demandedAmount: Number(before.demandedAmount) + 1 },
+    });
+
+    await expect(approvals.approve(interestRequest.id, f.approver)).rejects.toThrow('stale-state conflict');
+    await expect(approvals.approve(interestRequest.id, f.approver)).rejects.toThrow('degisen alanlar');
+    const after = await prisma.claimItem.findUniqueOrThrow({ where: { id: before.id } });
+    expect(after.interestAccrualStatus).toBe('UNKNOWN');
+    expect(after.interestStartDate).toBeNull();
+    // Talep beklemede kalır (karar işlemi geri alındı); çıkış yolu: reddet → kalemden yeniden aç → onayla.
+    expect((await prisma.officeApprovalRequest.findUniqueOrThrow({ where: { id: interestRequest.id } })).status).toBe(
+      OfficeApprovalStatus.PENDING_APPROVAL,
+    );
     const claimItemService = app.get(ClaimItemService);
-    const itemId = interestRequest.targetRef;
     const beyan = { interestAccrualStatus: 'ACCRUES', interestStartDate: KESINLESME, interestStartDateProvenance: 'JUDGMENT_FINALIZATION_DATE' } as any;
-    await expect(claimItemService.updateFromUser(f.tenantId, f.opener, itemId, beyan)).rejects.toThrow('farklı içerikli bekleyen');
-    await approvals.reject(interestRequest.id, f.approver, 'Sorumluluk seçimi önce onaylandı; faiz beyanı yeniden açılacak.');
-    const reopened = await claimItemService.updateFromUser(f.tenantId, f.opener, itemId, beyan);
-    expect(reopened.approvalRequired).toBe(true);
+    await expect(claimItemService.updateFromUser(f.tenantId, f.opener, before.id, beyan)).rejects.toThrow('farklı içerikli bekleyen');
+    await approvals.reject(interestRequest.id, f.approver, 'Kalem tutarı değişti; faiz beyanı yeniden açılacak.');
+    const reopened = await claimItemService.updateFromUser(f.tenantId, f.opener, before.id, beyan);
     await approvals.approve(reopened.approvalRequestId!, f.approver);
-    const reopenedItem = await prisma.claimItem.findUniqueOrThrow({ where: { id: itemId } });
-    expect(reopenedItem.interestAccrualStatus).toBe('ACCRUES');
-    expect(reopenedItem.interestStartDate?.toISOString().slice(0, 10)).toBe(KESINLESME);
-    expect(reopenedItem.interestStartDateProvenance).toBe('JUDGMENT_FINALIZATION_DATE');
+    expect((await prisma.claimItem.findUniqueOrThrow({ where: { id: before.id } })).interestAccrualStatus).toBe('ACCRUES');
+  });
+
+  it('sorumluluk alanları ONAYLI seçim dışında bir yoldan değiştiyse faiz talebi bayattır', async () => {
+    const f = await fixture('secimsiz');
+    // Yalnız faiz beyanı: seçim talebi yok.
+    const { opened } = await openWithDeclarations(f, 'S', { interestAccruals: [faizIsler(0), faizIsler(1)] });
+    expect(opened.status).toBe(201);
+    const interestRequest = (await pendingRequests(f.tenantId)).find((row) => row.targetType === 'CLAIM_ITEM')!;
+    // İzdüşüm alanları doğrudan yazıldı; kalemde talepten sonra onaylanmış etkin seçim YOK.
+    const someDebtor = await prisma.caseDebtor.findFirstOrThrow({ where: { caseId: opened.body.id } });
+    await prisma.claimItem.update({
+      where: { id: interestRequest.targetRef },
+      data: { isAllDebtorsLiable: false, liableDebtorIds: [someDebtor.debtorId] },
+    });
+    await expect(approvals.approve(interestRequest.id, f.approver)).rejects.toThrow('stale-state conflict');
+    expect((await prisma.claimItem.findUniqueOrThrow({ where: { id: interestRequest.targetRef } })).interestAccrualStatus).toBe('UNKNOWN');
+  });
+
+  it('seçim onayıyla birlikte kaleme BAŞKA bir yazım da yapıldıysa (görüntüde olmayan alan dahil) faiz talebi bayattır', async () => {
+    const f = await fixture('zincir-kopuk');
+    const { opened } = await openWithDeclarations(f, 'Z');
+    expect(opened.status).toBe(201);
+    const pending = await pendingRequests(f.tenantId);
+    const liabilityRequest = pending.find((row) => row.targetType === 'CLAIM_ITEM_CASE')!;
+    const [firstInterest, secondInterest] = pending.filter((row) => row.targetType === 'CLAIM_ITEM');
+    await approvals.approve(liabilityRequest.id, f.approver);
+
+    // Bayatlık görüntüsünde BULUNMAYAN bir alan (belge tarihi) seçimden sonra doğrudan değişti: değişen görüntü alanları
+    // yine yalnız iki izdüşüm alanıdır, ama satır artık seçimin bıraktığı satır değildir → zincir kopar.
+    await prisma.claimItem.update({ where: { id: firstInterest.targetRef }, data: { issueDate: new Date('2025-06-07T00:00:00.000Z') } });
+    await expect(approvals.approve(firstInterest.id, f.approver)).rejects.toThrow('stale-state conflict');
+    expect((await prisma.claimItem.findUniqueOrThrow({ where: { id: firstInterest.targetRef } })).interestAccrualStatus).toBe('UNKNOWN');
+
+    // Öteki kalemde izdüşüm alanları seçimden SONRA doğrudan yeniden yazıldı (satır artık seçimin bıraktığı satır değil).
+    await prisma.claimItem.update({ where: { id: secondInterest.targetRef }, data: { liableDebtorIds: ['secim-disi-yazim'] } });
+    await expect(approvals.approve(secondInterest.id, f.approver)).rejects.toThrow('stale-state conflict');
+    expect((await prisma.claimItem.findUniqueOrThrow({ where: { id: secondInterest.targetRef } })).interestAccrualStatus).toBe('UNKNOWN');
+  });
+
+  it('talep beklerken art arda İKİ onaylı seçim uygulandıysa faiz talebi yine geçerlidir (zincir bağlı)', async () => {
+    const f = await fixture('zincir-iki');
+    const { opened } = await openWithDeclarations(f, 'Y');
+    expect(opened.status).toBe(201);
+    const caseId = opened.body.id as string;
+    const pending = await pendingRequests(f.tenantId);
+    const liabilityRequest = pending.find((row) => row.targetType === 'CLAIM_ITEM_CASE')!;
+    const interestRequests = pending.filter((row) => row.targetType === 'CLAIM_ITEM');
+    await approvals.approve(liabilityRequest.id, f.approver);
+
+    // İkinci seçim: aynı kalemler bu kez müteselsil (kalem izdüşümü yeniden yazılır).
+    const selection = app.get(ClaimLiabilitySelectionService);
+    const caseDebtors = await prisma.caseDebtor.findMany({ where: { caseId }, orderBy: { createdAt: 'asc' } });
+    const drafts = interestRequests.map((row) => ({
+      claimItemId: row.targetRef,
+      mode: 'JOINT_AND_SEVERAL' as const,
+      basis: 'COURT_JUDGMENT',
+      basisNote: null,
+      parties: caseDebtors.map((debtor) => ({ caseDebtorId: debtor.id })),
+    }));
+    const preview = await selection.preview(f.tenantId, f.opener, caseId, drafts as any);
+    expect(preview.uygulanabilir).toBe(true);
+    const second = await selection.request(f.tenantId, f.opener, caseId, { selections: drafts as any, onizlemeOzeti: preview.onizlemeOzeti });
+    await approvals.approve(second.approvalRequestId, f.approver);
+
+    for (const row of interestRequests) await approvals.approve(row.id, f.approver);
+    for (const item of await claimItems(caseId)) {
+      expect(item.interestAccrualStatus).toBe('ACCRUES');
+      expect([...item.liableDebtorIds].sort()).toEqual(caseDebtors.map((debtor) => debtor.debtorId).sort());
+    }
+  });
+
+  it('art arda iki onaylı seçim izdüşümü BAŞA döndürdüyse (yalnız sürüm alanı değişmiş görünür) faiz talebi geçerlidir', async () => {
+    const f = await fixture('zincir-sifir');
+    const { opened } = await openWithDeclarations(f, 'X');
+    expect(opened.status).toBe(201);
+    const caseId = opened.body.id as string;
+    const pending = await pendingRequests(f.tenantId);
+    const liabilityRequest = pending.find((row) => row.targetType === 'CLAIM_ITEM_CASE')!;
+    const interestRequests = pending.filter((row) => row.targetType === 'CLAIM_ITEM');
+    const atRequest = await claimItems(caseId);
+    await approvals.approve(liabilityRequest.id, f.approver);
+
+    // İkinci seçim: "belirlenmedi"ye bilinçli dönüş → kalem izdüşümü talep anındaki değerlere geri döner.
+    const selection = app.get(ClaimLiabilitySelectionService);
+    const drafts = interestRequests.map((row) => ({ claimItemId: row.targetRef, mode: 'UNDETERMINED' as const, basis: 'COURT_JUDGMENT', basisNote: null, parties: [] }));
+    const preview = await selection.preview(f.tenantId, f.opener, caseId, drafts as any);
+    expect(preview.uygulanabilir).toBe(true);
+    const second = await selection.request(f.tenantId, f.opener, caseId, { selections: drafts as any, onizlemeOzeti: preview.onizlemeOzeti });
+    await approvals.approve(second.approvalRequestId, f.approver);
+    const afterTwo = await claimItems(caseId);
+    expect(afterTwo.map((item) => [item.isAllDebtorsLiable, item.liableDebtorIds])).toEqual(atRequest.map((item) => [item.isAllDebtorsLiable, item.liableDebtorIds]));
+    expect(afterTwo.every((item, index) => item.updatedAt.getTime() !== atRequest[index].updatedAt.getTime())).toBe(true);
+
+    for (const row of interestRequests) await approvals.approve(row.id, f.approver);
+    for (const item of await claimItems(caseId)) expect(item.interestAccrualStatus).toBe('ACCRUES');
+  });
+
+  it('eşzamanlı: faiz onayı ile aynı kalemin doğrudan (düşük etkili) düzenlemesi kilitlenmez — ya ikisi uygulanır ya da onay bayatlıkla reddedilir', async () => {
+    // İki yol da dosya kilidini kalem satırından ÖNCE alır. Düzenleme önce biterse açıklama değişmiştir → talep bayattır
+    // (gerçek çakışma); onay önce biterse ikisi de uygulanır. Kabul edilmeyen tek sonuç: kilitlenme / beklenmeyen hata.
+    const claimItemService = app.get(ClaimItemService);
+    const outcomes: string[] = [];
+    for (const round of ['a', 'b', 'c', 'd']) {
+      const f = await fixture(`esz-duz-${round}`);
+      const { opened } = await openWithDeclarations(f, `D${round}`, { interestAccruals: [faizIsler(0), faizIsler(1)] });
+      expect(opened.status).toBe(201);
+      const [interestRequest] = (await pendingRequests(f.tenantId)).filter((row) => row.targetType === 'CLAIM_ITEM');
+      const settled = await Promise.allSettled([
+        approvals.approve(interestRequest.id, f.approver),
+        claimItemService.updateFromUser(f.tenantId, f.opener, interestRequest.targetRef, { description: `Sentetik açıklama ${round}` } as any),
+      ]);
+      const [approval, edit] = settled.map((result) =>
+        result.status === 'fulfilled' ? 'ok' : `${(result.reason as Error).name}:${(result.reason as Error).message}`,
+      );
+      expect(edit).toBe('ok');
+      expect(approval === 'ok' || approval.includes('stale-state conflict')).toBe(true);
+      outcomes.push(approval === 'ok' ? 'ok' : 'stale');
+      const item = await prisma.claimItem.findUniqueOrThrow({ where: { id: interestRequest.targetRef } });
+      expect(item.description).toBe(`Sentetik açıklama ${round}`);
+      expect(item.interestAccrualStatus).toBe(approval === 'ok' ? 'ACCRUES' : 'UNKNOWN');
+    }
+    expect(outcomes).toHaveLength(4);
+  });
+
+  it('kilit sırası (kesin): mevcut kalemi yazan yollar dosya kilidini kalem satırından ÖNCE alır — kilit başkasındayken satır kilitlenmez', async () => {
+    // Zamanlamaya bağlı olmayan kanıt: dosya kilidi ayrı bir işlemde tutulur. Yazan yol kilidi satırdan ÖNCE alıyorsa
+    // kilitte bekler ve kalem satırına henüz dokunmamıştır (başka bağlantı satırı hemen kilitleyebilir). Satırı önce yazıp
+    // kilidi sonra alsaydı satır kilitli kalırdı — bu, kilidi önce alan onay / tahsilat yollarıyla kilitlenme demektir.
+    const f = await fixture('kilit-sirasi');
+    const { opened } = await openWithDeclarations(f, 'L', { interestAccruals: [faizIsler(0), faizIsler(1)] });
+    expect(opened.status).toBe(201);
+    const caseId = opened.body.id as string;
+    const [firstInterest, secondInterest] = (await pendingRequests(f.tenantId)).filter((row) => row.targetType === 'CLAIM_ITEM');
+    const claimItemService = app.get(ClaimItemService);
+
+    const whileCaseLockHeld = async (claimItemId: string, start: () => Promise<unknown>) => {
+      let release!: () => void;
+      const released = new Promise<void>((resolve) => (release = resolve));
+      let lockTaken!: () => void;
+      const taken = new Promise<void>((resolve) => (lockTaken = resolve));
+      const holder = prisma.$transaction(
+        async (tx) => {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${caseId}, 0))`;
+          lockTaken();
+          await released;
+        },
+        { timeout: 15_000 },
+      );
+      await taken;
+      let finished = false;
+      const running = start().then(
+        (value) => {
+          finished = true;
+          return value;
+        },
+        (error) => {
+          finished = true;
+          throw error;
+        },
+      );
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        // Yol dosya kilidinde bekliyor…
+        expect(finished).toBe(false);
+        // …ve kalem satırına henüz dokunmadı: başka bağlantı satırı beklemeden kilitleyebiliyor.
+        const probe = await prisma.$transaction((tx) => tx.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "ClaimItem" WHERE "id" = ${claimItemId} FOR UPDATE NOWAIT`);
+        expect(probe).toHaveLength(1);
+      } finally {
+        release();
+        await holder;
+      }
+      return running;
+    };
+
+    // 1) Kullanıcının düşük etkili düzenlemesi (açıklama).
+    await whileCaseLockHeld(secondInterest.targetRef, () =>
+      claimItemService.updateFromUser(f.tenantId, f.opener, secondInterest.targetRef, { description: 'Sentetik açıklama (kilit sırası)' } as any),
+    );
+    expect((await prisma.claimItem.findUniqueOrThrow({ where: { id: secondInterest.targetRef } })).description).toBe('Sentetik açıklama (kilit sırası)');
+
+    // 2) Yüksek etkili değişiklik onayının yürütmesi.
+    await whileCaseLockHeld(firstInterest.targetRef, () => approvals.approve(firstInterest.id, f.approver));
+    expect((await prisma.claimItem.findUniqueOrThrow({ where: { id: firstInterest.targetRef } })).interestAccrualStatus).toBe('ACCRUES');
   });
 
   it('gösterilen önizlemeden sonra girdi değişmişse dosya hiç oluşmaz (409)', async () => {
@@ -468,22 +716,58 @@ describeWithDisposableDb('Dosya açılışında kalem beyanları — POST /cases
     expect(await rows(f.tenantId)).toMatchObject({ cases: 1, items: 2, sets: 0, approvalRequests: 1 });
   });
 
-  it('dosyada mali düzenleme yetkisi olmayan kullanıcı: dosya açılır, talepler açılmaz; neden yanıtta ve denetimde', async () => {
+  it('dosyada mali düzenleme yetkisi olmayan kullanıcı: talep açılamaz → dosya HİÇ oluşmaz (403); beyansız açılış çalışır', async () => {
     const f = await fixture('yetkisiz', { openerHasFinanceDefault: false });
-    const { opened } = await openWithDeclarations(f, 'Y');
-    expect(opened.status).toBe(201);
-    const outcome = opened.body.openingClaimRequests;
-    expect(outcome.tamami).toBe(false);
-    expect(outcome.faizBeyanlari.map((row: any) => [row.status, row.errorCode])).toEqual([
-      ['REJECTED', 'CASE_FINANCE_PERMISSION_REQUIRED'],
-      ['REJECTED', 'CASE_FINANCE_PERMISSION_REQUIRED'],
-    ]);
-    expect(outcome.sorumlulukSecimi).toMatchObject({ status: 'REJECTED', errorCode: 'CASE_FINANCE_PERMISSION_REQUIRED' });
-    // Mevcut yetki kapısı atlanmadı: onay kaydı ve seçim yok; kalemler "belirlenmedi".
-    expect(await rows(f.tenantId)).toMatchObject({ cases: 1, items: 2, sets: 0, approvalRequests: 0 });
-    for (const item of await claimItems(opened.body.id)) expect(item.interestAccrualStatus).toBe('UNKNOWN');
-    const audit = await prisma.auditLog.findFirst({ where: { tenantId: f.tenantId, action: 'CASE_OPEN_CLAIM_REQUESTS_INCOMPLETE', entityId: opened.body.id } });
-    expect(audit).not.toBeNull();
+    const previewed = await previewOpening(f, [vekalet, yargilama], declarations(f));
+    const res = await openCase(f, caseBody(f, 'N', [vekalet, yargilama], { ...declarations(f), previewHash: previewed.body.onizlemeOzeti }));
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: 'OPENING_CLAIM_REQUESTS_NOT_OPENED', reasonCode: 'CASE_FINANCE_PERMISSION_REQUIRED', dueIndex: 0 });
+    expect(res.body.message).toContain('dosya oluşturulmadı');
+    // Talep açılamadı diye "başarılı açılış" yok: dosya, taraf, kalem, talep ve açılış denetim kaydı oluşmadı.
+    expect(await rows(f.tenantId)).toEqual(EMPTY);
+    expect(await prisma.auditLog.count({ where: { tenantId: f.tenantId, action: { startsWith: 'CASE_OPEN_CLAIM_REQUESTS' } } })).toBe(0);
+
+    // Kurtarma: aynı kullanıcı aynı dosyayı beyansız açabilir (yetki kapısı yalnız beyanın talebi içindir).
+    const plain = await openCase(f, caseBody(f, 'N', [vekalet, yargilama]));
+    expect(plain.status).toBe(201);
+    expect(plain.body.openingClaimRequests).toBeUndefined();
+    expect(await rows(f.tenantId)).toMatchObject({ cases: 1, items: 2, approvalRequests: 0 });
+  });
+
+  it('kesinti: talep açılışı yarıda kalırsa dosya, taraflar, kalemler ve açılmış talepler birlikte geri alınır; yeniden gönderim çalışır', async () => {
+    const f = await fixture('kesinti');
+    const previewed = await previewOpening(f, [vekalet, yargilama], declarations(f));
+    const body = caseBody(f, 'K', [vekalet, yargilama], { ...declarations(f), previewHash: previewed.body.onizlemeOzeti });
+
+    // İkinci onay talebi yazılırken süreç hata alır (ilk faiz talebi aynı işlemde açılmıştı).
+    const officeApproval = app.get(OfficeApprovalService);
+    const original = officeApproval.createPendingRequestInTransaction.bind(officeApproval);
+    let calls = 0;
+    const spy = jest.spyOn(officeApproval, 'createPendingRequestInTransaction').mockImplementation(async (input, tx) => {
+      calls += 1;
+      if (calls === 2) throw new Error('sentetik kesinti: ikinci talep yazılamadı');
+      return original(input, tx);
+    });
+    try {
+      const failed = await openCase(f, body);
+      expect(failed.status).toBe(500);
+      expect(calls).toBe(2);
+    } finally {
+      spy.mockRestore();
+    }
+    // Hiçbir iz kalmadı: yarım dosya, sahipsiz kalem ya da tek başına açılmış talep yok.
+    expect(await rows(f.tenantId)).toEqual(EMPTY);
+    expect(await prisma.auditLog.count({ where: { tenantId: f.tenantId, action: { startsWith: 'CASE_OPEN_CLAIM_REQUESTS' } } })).toBe(0);
+
+    // Aynı istek yeniden gönderilir: dosya ve üç talep birlikte oluşur.
+    const retried = await openCase(f, body);
+    expect(retried.status).toBe(201);
+    expect(retried.body.openingClaimRequests).toMatchObject({ tamami: true, onaySirasiNotu: null });
+    expect(await rows(f.tenantId)).toMatchObject({ cases: 1, items: 2, approvalRequests: 3 });
+    expect(await pendingRequests(f.tenantId)).toHaveLength(3);
+    // Denetim kaydı dosyayla AYNI işlemde yazıldı.
+    const audit = await prisma.auditLog.findFirst({ where: { tenantId: f.tenantId, action: 'CASE_OPEN_CLAIM_REQUESTS_REQUESTED', entityId: retried.body.id } });
+    expect((audit?.metadata as any).previewHash).toBe(previewed.body.onizlemeOzeti);
   });
 
   it('tekrar gönderim: aynı istek ikinci dosya ya da ikinci talep üretmez', async () => {

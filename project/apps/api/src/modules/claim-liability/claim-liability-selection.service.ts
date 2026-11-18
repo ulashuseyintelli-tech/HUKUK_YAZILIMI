@@ -156,10 +156,16 @@ export class ClaimLiabilitySelectionService implements OnModuleInit {
    * Önizleme — YAZMAZ. Her borçlu için önceki ve sonraki kalan sorumluluk, borçlu hesabına sayılan geçmiş mahsup ve
    * varsa engeller.
    */
-  async preview(tenantId: string, actorUserId: string, caseId: string, drafts: readonly SelectionDraft[]): Promise<LiabilitySelectionPreview> {
+  async preview(
+    tenantId: string,
+    actorUserId: string,
+    caseId: string,
+    drafts: readonly SelectionDraft[],
+    database?: Prisma.TransactionClient,
+  ): Promise<LiabilitySelectionPreview> {
     this.assertSelectionWriteEnabled();
-    const state = await this.loadState(this.prisma, tenantId, caseId);
-    await this.assertActorMayWrite(tenantId, actorUserId, caseId, drafts);
+    const state = await this.loadState(database ?? this.prisma, tenantId, caseId);
+    await this.assertActorMayWrite(tenantId, actorUserId, caseId, drafts, database);
     return this.buildPreview(state, drafts).preview;
   }
 
@@ -171,11 +177,14 @@ export class ClaimLiabilitySelectionService implements OnModuleInit {
     actorUserId: string,
     caseId: string,
     input: { readonly selections: readonly SelectionDraft[]; readonly onizlemeOzeti: string },
+    // Verilirse AYNI yol çağıranın transaction'ı içinde çalışır (dosya açılışı: dosya, kalem ve talep tek işlemde).
+    database?: Prisma.TransactionClient,
   ) {
     this.assertSelectionWriteEnabled();
     if (!this.officeApproval) throw new ConflictException('ClaimItem approval dependency is not available.');
-    const state = await this.loadState(this.prisma, tenantId, caseId);
-    await this.assertActorMayWrite(tenantId, actorUserId, caseId, input.selections);
+    const db = database ?? this.prisma;
+    const state = await this.loadState(db, tenantId, caseId);
+    await this.assertActorMayWrite(tenantId, actorUserId, caseId, input.selections, database);
     const { preview, normalized } = this.buildPreview(state, input.selections);
 
     const inputErrors = preview.kalemler.flatMap((kalem) => kalem.girdiHatalari.map((hata) => ({ claimItemId: kalem.claimItemId, ...hata })));
@@ -229,7 +238,7 @@ export class ClaimLiabilitySelectionService implements OnModuleInit {
       ? `claim-item-liability:${normalized[0].selection.claimItemId}`
       : `claim-item-liability-case:${caseId}`;
     // Bekleyen farklı içerikli talep varken ikinci talep açılmaz (mevcut kalem değişikliği yoluyla aynı kural).
-    const existing = await this.prisma.officeApprovalRequest.findUnique({
+    const existing = await db.officeApprovalRequest.findUnique({
       where: { tenantId_idempotencyKey: { tenantId, idempotencyKey } },
     });
     // bulkOperationId her talepte yeniden üretilir; karşılaştırma onsuz yapılır.
@@ -243,7 +252,7 @@ export class ClaimLiabilitySelectionService implements OnModuleInit {
         message: 'Bu kalem / dosya için farklı içerikli bekleyen bir sorumluluk seçimi talebi zaten var.',
       });
     }
-    const requestRow = await this.officeApproval.createPendingRequest({
+    const pendingInput = {
       tenantId,
       actionCode: CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE,
       targetType: single ? CLAIM_ITEM_TARGET_TYPE : CLAIM_ITEM_CASE_TARGET_TYPE,
@@ -252,7 +261,10 @@ export class ClaimLiabilitySelectionService implements OnModuleInit {
       savedIntent: intent,
       idempotencyKey,
       reason: intent.reason,
-    });
+    };
+    const requestRow = database
+      ? await this.officeApproval.createPendingRequestInTransaction(pendingInput, database)
+      : await this.officeApproval.createPendingRequest(pendingInput);
     return {
       applied: false as const,
       approvalRequired: true as const,
@@ -491,19 +503,23 @@ export class ClaimLiabilitySelectionService implements OnModuleInit {
     actorUserId: string,
     caseId: string,
     drafts: readonly SelectionDraft[],
+    database?: Prisma.TransactionClient,
   ): Promise<void> {
     if (!this.writerRouter) throw new ConflictException('ClaimItem writer boundary is not available.');
     const claimItemIds = [...new Set(drafts.map((draft) => draft.claimItemId))];
     for (const claimItemId of claimItemIds) {
-      const result = await this.writerRouter.evaluateHuman({
-        operation: 'UPDATE',
-        tenantId,
-        caseId,
-        actorUserId,
-        claimItemId,
-        // İzdüşüm alanları yüksek etkili alanlardır → kapı onay gerektirir sonucunu verir.
-        payload: { isAllDebtorsLiable: false, liableDebtorIds: [] },
-      });
+      const result = await this.writerRouter.evaluateHuman(
+        {
+          operation: 'UPDATE',
+          tenantId,
+          caseId,
+          actorUserId,
+          claimItemId,
+          // İzdüşüm alanları yüksek etkili alanlardır → kapı onay gerektirir sonucunu verir.
+          payload: { isAllDebtorsLiable: false, liableDebtorIds: [] },
+        },
+        ...(database ? [database] : []),
+      );
       if (result.outcome === 'DENIED') {
         throw new ForbiddenException({ code: 'CLAIM_LIABILITY_WRITE_DENIED', message: `Sorumluluk seçimi yetkisi yok: ${result.reasonCode}` });
       }

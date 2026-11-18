@@ -340,7 +340,8 @@ export interface OpeningClaimRequestsOutcomeDTO {
 
 /**
  * Dosya oluşturulduktan sonra açılış beyanlarının sonucunu kullanıcıya okunur metinle söyler; beyan yoksa `null`.
- * Açılamayan talep sessizce geçilmez: nedeni ve nereden yeniden yapılacağı yazılır.
+ * Onay talepleri dosyayla AYNI işlemde açılır: talep açılamazsa dosya da oluşmaz ve hata `formatOpeningClaimCreateError`
+ * ile gösterilir. Aşağıdaki "açılmadı" dalı yalnız eski sürüm sunucu yanıtı içindir (sessiz geçilmez).
  */
 export function describeOpeningClaimRequestsOutcome(outcome: OpeningClaimRequestsOutcomeDTO | null | undefined): string | null {
   if (!outcome || outcome.requested !== true) return null;
@@ -380,6 +381,17 @@ export function formatOpeningClaimCreateError(error: unknown): string | null {
       return "Takip oluşturulmadı: borçlu sorumluluğu seçimi bu ortamda kapalı. Seçimi kaldırıp yeniden gönderin; seçim dosya açıldıktan sonra da yapılabilir.";
     case "OPENING_CLAIM_REQUESTS_UNAVAILABLE":
       return "Takip oluşturulmadı: açılış beyanları bu ortamda işlenemiyor. Beyanları kaldırıp yeniden gönderin.";
+    case "OPENING_CLAIM_REQUESTS_NOT_OPENED": {
+      // Onay talepleri dosyayla AYNI işlemde açılır: talep açılamadıysa dosya, kalemler ve öteki talepler de oluşmadı.
+      const dueIndex = typeof body.dueIndex === "number" ? `${body.dueIndex + 1}. kalem: ` : "";
+      const reason =
+        body.reasonCode === "CASE_FINANCE_PERMISSION_REQUIRED"
+          ? "bu dosyada mali düzenleme yetkiniz yok (dosya yetkileri ofis yönetimince verilir)"
+          : typeof body.message === "string" && body.message
+            ? body.message.replace(/^Açılış beyanları için onay talebi açılamadı; dosya oluşturulmadı\.\s*/, "").replace(/\.$/, "")
+            : "onay talebi açılamadı";
+      return `Takip oluşturulmadı: açılış beyanları onaya gönderilemedi — ${dueIndex}${reason}. Hiçbir kayıt oluşmadı ve girdiğiniz bilgiler silinmedi. Beyanları kaldırıp dosyayı açabilir ya da engel giderildikten sonra yeniden gönderebilirsiniz.`;
+    }
     case "OPENING_CLAIM_REQUESTS_INVALID": {
       const errors = (Array.isArray(body.errors) ? body.errors : []).filter(
         (entry): entry is OpeningClaimPreviewErrorDTO => !!entry && typeof entry === "object" && typeof (entry as { mesaj?: unknown }).mesaj === "string",

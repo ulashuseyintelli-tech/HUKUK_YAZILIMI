@@ -24,6 +24,7 @@ import {
   appendClaimItemContinuity,
   assertClaimItemCreateStatus,
   assertClaimItemLifecycleMutation,
+  lockClaimItemCaseBeforeWrite,
   type ClaimItemLifecycleRecord,
 } from './claim-item-lifecycle-contract';
 
@@ -167,6 +168,8 @@ export class ClaimItemWriterRouterService {
     if (database === this.prisma) {
       return this.prisma.$transaction((tx) => this.updateSystemClaimItem<T>(input, tx));
     }
+    // Dosya kilidi kalem satırından ÖNCE (bkz. lockClaimItemCaseBeforeWrite): onay yürütmeleriyle aynı sıra.
+    await lockClaimItemCaseBeforeWrite(database as Prisma.TransactionClient, input.caseId);
     const command = await this.assertSystemRouteAllowed(
       'UPDATE',
       input,
@@ -208,6 +211,8 @@ export class ClaimItemWriterRouterService {
     if (database === this.prisma) {
       return this.prisma.$transaction((tx) => this.cancelSystemClaimItem<T>(input, tx));
     }
+    // Dosya kilidi kalem satırından ÖNCE (bkz. lockClaimItemCaseBeforeWrite): onay yürütmeleriyle aynı sıra.
+    await lockClaimItemCaseBeforeWrite(database as Prisma.TransactionClient, input.caseId);
     const payload = { status: 'CANCELLED' };
     const command = await this.assertSystemRouteAllowed(
       'CANCEL',
