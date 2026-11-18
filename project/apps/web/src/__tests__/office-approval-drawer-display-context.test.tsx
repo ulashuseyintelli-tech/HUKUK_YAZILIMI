@@ -184,7 +184,7 @@ describe("Onay Talebi Detayı — kalem alanı değişikliği ve kalem adı (P02
     proposedPatch: {
       attorneyFeeBasis: "JUDGMENT_AWARDED",
       interestAccrualStatus: "ACCRUES",
-      interestStartDate: "2026-04-08",
+      interestStartDate: "2026-03-12",
       interestStartDateProvenance: "JUDGMENT_FINALIZATION_DATE",
       interestTypeCode: "LEGAL_3095",
       interestType: "YASAL",
@@ -198,7 +198,7 @@ describe("Onay Talebi Detayı — kalem alanı değişikliği ve kalem adı (P02
       amount: "1000.00",
       currency: "TRY",
       interestAccrualStatus: "UNKNOWN",
-      interestStartDate: "2025-05-27T00:00:00.000Z",
+      interestStartDate: "2025-06-16T00:00:00.000Z",
       interestStartDateProvenance: null,
       interestTypeCode: "LEGAL_3095",
       interestType: "YASAL",
@@ -229,7 +229,7 @@ describe("Onay Talebi Detayı — kalem alanı değişikliği ve kalem adı (P02
     expect(summary).toHaveTextContent("Vekalet Ücreti");
     expect(summary).toHaveTextContent("Türü belirtilmemiş → İlam vekâlet ücreti");
     expect(summary).toHaveTextContent("Belirlenmedi → Faiz işler");
-    expect(summary).toHaveTextContent("27.05.2025 → 08.04.2026");
+    expect(summary).toHaveTextContent("16.06.2025 → 12.03.2026");
     expect(summary).toHaveTextContent("Boş → Kesinleşme tarihi");
     expect(summary).not.toHaveTextContent("Faiz türü");
     expect(screen.queryByText(/ACCRUES|JUDGMENT_FINALIZATION_DATE|JUDGMENT_AWARDED/)).toBeNull();

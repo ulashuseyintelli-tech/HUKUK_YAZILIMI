@@ -10,7 +10,7 @@ const SNAPSHOT = {
   itemType: "YARGILAMA_GIDERI",
   description: "Sentetik yargılama gideri",
   interestAccrualStatus: "UNKNOWN",
-  interestStartDate: "2025-05-27T00:00:00.000Z",
+  interestStartDate: "2025-06-16T00:00:00.000Z",
   interestStartDateProvenance: null,
   interestTypeCode: "LEGAL_3095",
   interestType: "YASAL",
@@ -40,7 +40,7 @@ describe("kalem alanı değişikliği özeti", () => {
     const result = projectClaimItemUpdate(
       intent({
         interestAccrualStatus: "ACCRUES",
-        interestStartDate: "2026-04-08",
+        interestStartDate: "2026-03-12",
         interestStartDateProvenance: "JUDGMENT_FINALIZATION_DATE",
         interestTypeCode: "LEGAL_3095",
         interestType: "YASAL",
@@ -54,7 +54,7 @@ describe("kalem alanı değişikliği özeti", () => {
     expect(values(result)).toEqual({
       Kalem: "Yargılama Gideri — Sentetik yargılama gideri",
       "Faiz durumu": "Belirlenmedi → Faiz işler",
-      "Faiz başlangıcı": "27.05.2025 → 08.04.2026",
+      "Faiz başlangıcı": "16.06.2025 → 12.03.2026",
       "Faiz başlangıcının dayanağı": "Boş → Kesinleşme tarihi",
     });
     expect(result.impactNotes).toEqual(["Onaylanınca yalnız listelenen alanlar kaleme yazılır; tutar ve kalem türü değişmez."]);
@@ -77,7 +77,7 @@ describe("kalem alanı değişikliği özeti", () => {
           ...SNAPSHOT,
           interestEndDate: "2025-06-27T00:00:00.000Z",
           interestStartDateProvenance: "JUDGMENT_FINALIZATION_DATE",
-          dueDate: "2025-05-26T00:00:00.000Z",
+          dueDate: "2025-06-15T00:00:00.000Z",
         },
       }),
       {},
@@ -85,7 +85,7 @@ describe("kalem alanı değişikliği özeti", () => {
     const v = values(result);
     expect(v["Faiz durumu"]).toBe("Belirlenmedi → Faiz işlemez");
     expect(v["Faiz işlememe gerekçesi"]).toBe("Boş → Sentetik gerekçe");
-    expect(v["Faiz başlangıcı"]).toBe("27.05.2025 → Boş");
+    expect(v["Faiz başlangıcı"]).toBe("16.06.2025 → Boş");
     expect(v["Faiz bitişi"]).toBe("27.06.2025 → Boş");
     expect(v["Faiz başlangıcının dayanağı"]).toBe("Kesinleşme tarihi → Boş");
     expect(v).not.toHaveProperty("Vade tarihi");
