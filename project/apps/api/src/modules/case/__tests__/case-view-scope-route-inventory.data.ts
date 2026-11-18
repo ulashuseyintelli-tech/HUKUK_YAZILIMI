@@ -180,6 +180,7 @@ export const CASE_RELATED_CONTROLLERS: Readonly<Record<string, readonly RouteEnt
     ["GET /cases/next-file-number", "DOSYA_DISI", "kişi listesi / sıra numarası"],
     ["GET /cases/:id", "KAPILI_ICERDE", "findOneVisible"],
     ["POST /cases", "YAZIM", ""],
+    ["POST /cases/opening-claim-preview", "DOSYA_DISI", "saf hesap (gövdeden açılış önizlemesi; kayıt okumaz / yazmaz)"],
     ["POST /cases/historical-import", "YAZIM", ""],
     ["POST /cases/suggest-type", "DOSYA_DISI", "saf sınıflandırma"],
     ["POST /cases/batch-update", "YAZIM", ""],
