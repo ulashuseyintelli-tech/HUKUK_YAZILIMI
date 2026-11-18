@@ -67,6 +67,7 @@ import { SendMessageModal } from "@/components/message/SendMessageModal";
 import { DebtorsSummaryBar, DebtorRow, ServiceStatusBadge, AlertBadge, DebtorDetailDrawer } from "@/components/debtor";
 import { UyapExportButton } from "@/components/uyap-export/UyapExportButton";
 import { DueModal, CollectionModal, HesapOzetiPanel, BalanceShadowDiffPanel } from "@/components/finance";
+import { dueBlockNotice } from "@/components/finance/DueModal";
 import { FaizDokumuPanel } from "@/components/interest";
 import { OperationDeck } from "@/components/case-detail";
 import IntakeLinksCard from "@/components/case/IntakeLinksCard";
@@ -3043,7 +3044,8 @@ export default function CaseDetailPage() {
                                       refreshCollectionDependentViews();
                                     } catch (err) {
                                       console.error('Silme hatası:', err);
-                                      alert('Silme işlemi başarısız oldu');
+                                      // Sunucunun engel reddi (bağlı etkin alacak kalemi / yetki) açıklayıcıdır ve kanonik kalem ekranına yönlendirir.
+                                      alert(dueBlockNotice(err) ?? 'Silme işlemi başarısız oldu');
                                     }
                                   }
                                 }}

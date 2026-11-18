@@ -11,6 +11,7 @@ import {
   type ClaimItemWriteOperation,
 } from './claim-item-write-command';
 import {
+  type ClaimItemCaseFinanceWriteResult,
   type ClaimItemWriteGateResult,
   ClaimItemWriteGateService,
 } from './claim-item-write-gate.service';
@@ -119,6 +120,23 @@ export class ClaimItemWriterRouterService {
     });
 
     return this.gate.evaluate(command, database);
+  }
+
+  /**
+   * Dosya düzeyi mali yazma yetkisi (EDIT_FINANCE): kalem insan yazma kapısıyla AYNI yüklem, kalem hedefi olmadan.
+   * Yazmaz; yalnız kararı döner. Çağıran, yazma transaction'ında aktör satırlarını kilitledikten sonra `database`
+   * ile çağırır (kontrol ile yazım arasındaki yetki iptali yarışı).
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - CaseService.assertDueWriteAuthorityInTx() → POST / PATCH / DELETE /cases/:id/dues[/:dueId]
+   * /// </remarks>
+   */
+  async evaluateHumanCaseFinanceWrite(
+    input: { readonly tenantId: string; readonly caseId: string; readonly actorUserId: string },
+    database: ClaimItemWriterDatabase = this.prisma,
+  ): Promise<ClaimItemCaseFinanceWriteResult> {
+    return this.gate.evaluateHumanCaseFinanceWrite(input, database);
   }
 
   async createSystemClaimItem<T>(

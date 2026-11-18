@@ -1,10 +1,14 @@
 import { Test } from '@nestjs/testing';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { type CanonicalWriteActor } from '../../../common/canonical-write-envelope';
-import { CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE } from '../claim-item-approval.constants';
+import {
+  CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE,
+  CLAIM_ITEM_HIGH_IMPACT_USER_FIELDS,
+  CLAIM_ITEM_LOW_IMPACT_USER_FIELDS,
+} from '../claim-item-approval.constants';
 import { buildClaimItemWriteCommand } from '../claim-item-write-command';
 import { ClaimItemWriteGateService } from '../claim-item-write-gate.service';
-import { CLAIM_ITEM_SYSTEM_WRITER_ROUTES } from '../claim-item-writer-routes';
+import { CLAIM_ITEM_SYSTEM_WRITER_ROUTES, DUE_BRIDGE_UPDATE_FIELDS } from '../claim-item-writer-routes';
 
 const occurredAt = '2026-07-15T08:00:00.000Z';
 
@@ -408,6 +412,133 @@ describe('RCV-P2-WS01-P02 ClaimItemWriteGateService', () => {
       expect(prisma.case.findFirst).not.toHaveBeenCalled();
     },
   );
+
+  /**
+   * Owner kararı 18.11.2026 (K1): Due köprüsü kullanıcı isteğiyle tetiklenir; bağlı kanonik kalemde yalnız düşük
+   * etkili alanları güncelleyebilir. Yüksek etkili alan taşıyan DUE_BRIDGE UPDATE yükü kapıda reddedilir.
+   */
+  describe('DUE_BRIDGE UPDATE alan süzgeci', () => {
+    const dueBridge = (payload: Record<string, unknown>) =>
+      command({
+        operation: 'UPDATE',
+        actor: { type: 'SYSTEM', system: 'DUE_BRIDGE' },
+        sourceType: CLAIM_ITEM_SYSTEM_WRITER_ROUTES.DUE_BRIDGE.sourceType,
+        policyRef: CLAIM_ITEM_SYSTEM_WRITER_ROUTES.DUE_BRIDGE.policyRef,
+        payload,
+      });
+
+    it('rota yalnız düşük etkili alanları bildirir', () => {
+      expect(CLAIM_ITEM_SYSTEM_WRITER_ROUTES.DUE_BRIDGE.updateFields).toEqual(['description', 'sortOrder']);
+      expect(DUE_BRIDGE_UPDATE_FIELDS.every((field) => (CLAIM_ITEM_LOW_IMPACT_USER_FIELDS as readonly string[]).includes(field))).toBe(true);
+      expect(DUE_BRIDGE_UPDATE_FIELDS.some((field) => (CLAIM_ITEM_HIGH_IMPACT_USER_FIELDS as readonly string[]).includes(field))).toBe(false);
+    });
+
+    it.each([{ description: 'metin' }, { sortOrder: 3 }, { description: null, sortOrder: 1 }])(
+      'düşük etkili yük %j doğrudan izinlidir',
+      async (payload) => {
+        const { gate } = makeGate();
+        await expect(gate.evaluate(dueBridge(payload))).resolves.toMatchObject({
+          outcome: 'DIRECT_ALLOWED',
+          actorType: 'SYSTEM',
+          permissionSource: 'DUE_BRIDGE',
+        });
+      },
+    );
+
+    it.each(CLAIM_ITEM_HIGH_IMPACT_USER_FIELDS.map((field) => [field]))(
+      'yüksek etkili alan %s taşıyan yük reddedilir (kapsam sorgusu bile yapılmaz)',
+      async (field) => {
+        const { gate, prisma } = makeGate();
+        await expect(gate.evaluate(dueBridge({ description: 'metin', [field]: 'x' }))).resolves.toMatchObject({
+          outcome: 'DENIED',
+          actorType: 'SYSTEM',
+          reasonCode: 'UNSUPPORTED_UPDATE_FIELD',
+        });
+        expect(prisma.case.findFirst).not.toHaveBeenCalled();
+      },
+    );
+
+    it('süzgeç yalnız UPDATE içindir: CREATE yükü etkilenmez', async () => {
+      const { gate } = makeGate();
+      await expect(gate.evaluate(command({
+        operation: 'CREATE',
+        actor: { type: 'SYSTEM', system: 'DUE_BRIDGE' },
+        sourceType: CLAIM_ITEM_SYSTEM_WRITER_ROUTES.DUE_BRIDGE.sourceType,
+        policyRef: CLAIM_ITEM_SYSTEM_WRITER_ROUTES.DUE_BRIDGE.policyRef,
+        payload: { caseId: 'case-1', amount: 1000, interestStartDate: '2026-01-02' },
+      }))).resolves.toMatchObject({ outcome: 'DIRECT_ALLOWED', permissionSource: 'DUE_BRIDGE' });
+    });
+  });
+
+  /**
+   * Dosya düzeyi mali yazma yetkisi (K3): kalem insan yazma kapısıyla AYNI yüklem; Due oluşturma / güncelleme /
+   * silme bunu kullanır. Yalnız aynı büroda bulunmak, rütbe ya da rol yetki üretmez.
+   */
+  describe('evaluateHumanCaseFinanceWrite', () => {
+    const input = { tenantId: 'tenant-1', caseId: 'case-1', actorUserId: 'user-1' };
+    const staffUser = (canSeeFinance: boolean) => ({
+      tenantId: 'tenant-1',
+      isActive: true,
+      lawyer: null,
+      staffMember: { id: 'staff-1', tenantId: 'tenant-1', isActive: true, canSeeFinance },
+    });
+
+    it('dosyada mali düzenleme izni olan avukat izinlidir', async () => {
+      const { gate, prisma } = makeGate();
+      await expect(gate.evaluateHumanCaseFinanceWrite(input)).resolves.toEqual({
+        allowed: true,
+        permission: 'EDIT_FINANCE',
+        permissionSource: 'CASE_LAWYER',
+      });
+      expect(prisma.caseLawyer.findFirst).toHaveBeenCalledWith({
+        where: { caseId: 'case-1', lawyerId: 'lawyer-1' },
+        select: { casePermissions: true },
+      });
+      expect(prisma.claimItem.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('mali modülü açık ve dosyada düzenleme izni olan personel izinlidir', async () => {
+      const { gate } = makeGate({ user: staffUser(true), staffAssignment: { canEdit: true } });
+      await expect(gate.evaluateHumanCaseFinanceWrite(input)).resolves.toMatchObject({ allowed: true, permissionSource: 'CASE_STAFF' });
+    });
+
+    it.each([
+      ['dosyaya atanmamış avukat', { lawyerAssignment: null }, 'OBJECT_PERMISSION_DENIED'],
+      ['atanmış ama izni olmayan avukat', { lawyerAssignment: { casePermissions: { canEditFinance: false } } }, 'OBJECT_PERMISSION_DENIED'],
+      ['izin alanı boş atama', { lawyerAssignment: { casePermissions: null } }, 'OBJECT_PERMISSION_DENIED'],
+      ['dosyada düzenleme izni olmayan personel', { user: staffUser(true), staffAssignment: { canEdit: false } }, 'OBJECT_PERMISSION_DENIED'],
+      ['dosyaya atanmamış personel', { user: staffUser(true), staffAssignment: null }, 'OBJECT_PERMISSION_DENIED'],
+      ['mali modülü kapalı personel', { user: staffUser(false), staffAssignment: { canEdit: true } }, 'OBJECT_PERMISSION_DENIED'],
+      ['kartsız hesap', { user: { tenantId: 'tenant-1', isActive: true, lawyer: null, staffMember: null } }, 'HUMAN_ACTOR_PROFILE_INVALID'],
+      [
+        'iki kartlı hesap',
+        { user: { tenantId: 'tenant-1', isActive: true, lawyer: { id: 'l', tenantId: 'tenant-1', isActive: true }, staffMember: { id: 's', tenantId: 'tenant-1', isActive: true, canSeeFinance: true } } },
+        'HUMAN_ACTOR_PROFILE_INVALID',
+      ],
+      ['pasif hesap', { user: { tenantId: 'tenant-1', isActive: false, lawyer: { id: 'l', tenantId: 'tenant-1', isActive: true }, staffMember: null } }, 'HUMAN_ACTOR_NOT_ACTIVE_IN_TENANT'],
+      ['pasif avukat kartı', { user: { tenantId: 'tenant-1', isActive: true, lawyer: { id: 'l', tenantId: 'tenant-1', isActive: false }, staffMember: null } }, 'HUMAN_ACTOR_NOT_ACTIVE_IN_TENANT'],
+      ['başka büronun hesabı', { user: { tenantId: 'tenant-other', isActive: true, lawyer: { id: 'l', tenantId: 'tenant-other', isActive: true }, staffMember: null } }, 'HUMAN_ACTOR_NOT_ACTIVE_IN_TENANT'],
+      ['hesap yok', { user: null }, 'HUMAN_ACTOR_NOT_ACTIVE_IN_TENANT'],
+      ['dosya büroda yok', { caseInScope: null }, 'TENANT_CASE_SCOPE_MISMATCH'],
+    ] as Array<[string, Parameters<typeof makeGate>[0], string]>)('%s reddedilir', async (_label, setup, reasonCode) => {
+      const { gate } = makeGate(setup);
+      await expect(gate.evaluateHumanCaseFinanceWrite(input)).resolves.toEqual({ allowed: false, reasonCode });
+    });
+
+    it('verilen veritabanı istemcisiyle (yazma transaction\'ı) değerlendirir', async () => {
+      const { gate, prisma } = makeGate();
+      const tx = makeGate({ lawyerAssignment: null }).prisma;
+      await expect(gate.evaluateHumanCaseFinanceWrite(input, tx)).resolves.toEqual({ allowed: false, reasonCode: 'OBJECT_PERMISSION_DENIED' });
+      expect(tx.user.findUnique).toHaveBeenCalledTimes(1);
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('okuma hatası izne çevrilmez (fail-closed)', async () => {
+      const { gate, prisma } = makeGate();
+      prisma.caseLawyer.findFirst.mockRejectedValue(new Error('db down'));
+      await expect(gate.evaluateHumanCaseFinanceWrite(input)).rejects.toThrow('db down');
+    });
+  });
 
   it.each([
     [{}, 'EMPTY_UPDATE_PAYLOAD'],

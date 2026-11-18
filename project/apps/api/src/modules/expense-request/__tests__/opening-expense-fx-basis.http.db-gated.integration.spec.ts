@@ -334,7 +334,7 @@ describeWithDisposableDb('Açılış masraf talebi — dövizli dosyada peşin h
   ])('%s: açık istek de yazmaz', async (_title, label, basisCurrencies, context) => {
     const opened = await openCase(label, { currency: 'USD', subCategory: 'DOVIZ', ...withClient(), dues: [principal(10_000)] });
     if (label === 'karma') {
-      await addLegacyMixedDueFixture(prisma, post, opened.id, { ...principal(2_000), description: 'TRY anapara' }, 'TRY');
+      await addLegacyMixedDueFixture(prisma, post, opened.id, { ...principal(2_000), description: 'TRY anapara' }, 'TRY', adminId);
     } else {
       // Dosya açılışı düzeltmesinden önceki kaydın kurulumu: kalem para birimi TRY damgalı
       await prisma.due.updateMany({ where: { caseId: opened.id }, data: { currency: 'TRY' } });

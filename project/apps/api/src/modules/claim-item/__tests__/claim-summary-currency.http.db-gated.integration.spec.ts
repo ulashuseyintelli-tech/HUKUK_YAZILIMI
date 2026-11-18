@@ -136,7 +136,7 @@ describeWithDisposableDb('Alacak özeti para birimi bağlamı (HTTP + disposable
 
   /** FR-7 öncesi karma kayıt; özetin salt okuma sözleşmesi korunur. */
   const addDue = async (caseId: string, due: Record<string, unknown>, currency: string) => {
-    await addLegacyMixedDueFixture(prisma, post, caseId, { ...due, description: `${currency} kalem` }, currency);
+    await addLegacyMixedDueFixture(prisma, post, caseId, { ...due, description: `${currency} kalem` }, currency, adminId);
   };
 
   const summaryOf = async (caseId: string, userId: string = adminId) => {
