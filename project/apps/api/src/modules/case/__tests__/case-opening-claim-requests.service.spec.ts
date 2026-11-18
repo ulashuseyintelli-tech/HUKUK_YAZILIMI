@@ -207,6 +207,10 @@ describe('describeOpeningClaimRequestRejection', () => {
       errorCode: 'LIABILITY_SELECTION_PENDING_CONFLICT',
       message: 'bekleyen talep var',
     });
-    expect(describeOpeningClaimRequestRejection(new Error('beklenmeyen')).errorCode).toBe('OPENING_CLAIM_REQUEST_FAILED');
+    // Beklenmeyen iç hatanın ham metni kullanıcıya TAŞINMAZ (genel ileti); mevcut kapıların iletisi korunur.
+    const beklenmeyen = describeOpeningClaimRequestRejection(new Error('iç ayrıntı: tablo x sütun y'));
+    expect(beklenmeyen.errorCode).toBe('OPENING_CLAIM_REQUEST_FAILED');
+    expect(beklenmeyen.message).not.toContain('iç ayrıntı');
+    expect(beklenmeyen.message).toContain('beklenmeyen bir hata');
   });
 });

@@ -13,7 +13,8 @@ import {
   buildOpeningDueFields,
   describeOpeningClaimRequestsOutcome,
   formatOpeningClaimCreateError,
-  summarizeOpeningDeclaration,
+  listedItemOpeningChips,
+  OPENING_DECLARATION_NOT_SENT_LABEL,
   type OpeningClaimPreviewDTO,
   type OpeningDueDeclaration,
 } from "@/lib/case-opening-claims";
@@ -2934,9 +2935,20 @@ export default function NewCasePage() {
                         {ci.raw?.bakiyeTutar ? ` — ${Number(ci.raw.bakiyeTutar).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${ci.raw?.currency || 'TRY'}` : ''}
                         {ci.raw?.vadeTarihi ? ` · ${ci.raw.vadeTarihi}` : ''}
                         {ci.raw?.ocrDraftId ? <span className="ml-2 text-[11px] text-emerald-700" data-testid="claim-item-ocr-source">Kaynak: evrak tarama (incelendi)</span> : null}
-                        {summarizeOpeningDeclaration(ci.raw).map((etiket) => (
-                          <span key={etiket} data-testid="claim-item-opening-chip" className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-700">{etiket}</span>
-                        ))}
+                        {/* Evrak kaydına yönlenen kalemde (çek / senet) açılış beyanı GÖNDERİLMEZ: önceki türde girilmiş beyan "onaya gidecek" diye gösterilmez. */}
+                        {(() => {
+                          const chips = listedItemOpeningChips(ci.raw, openingUnavailableReason(String(ci.raw?.kalemTuru ?? "")) !== null);
+                          return (
+                            <>
+                              {chips.labels.map((etiket) => (
+                                <span key={etiket} data-testid="claim-item-opening-chip" className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-700">{etiket}</span>
+                              ))}
+                              {chips.notSent && (
+                                <span data-testid="claim-item-opening-chip-not-sent" className="ml-2 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-800">{OPENING_DECLARATION_NOT_SENT_LABEL}</span>
+                              )}
+                            </>
+                          );
+                        })()}
                       </span>
                       <span className="flex items-center gap-2 shrink-0">
                         <button type="button" onClick={() => handleEditClaimItem(i)} className="text-xs text-blue-600 hover:underline">Düzenle</button>

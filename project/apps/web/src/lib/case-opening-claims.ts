@@ -234,6 +234,20 @@ export function summarizeOpeningDeclaration(item: { kalemTuru?: unknown; acilisB
   return chips;
 }
 
+/**
+ * Kalem listesi satırının beyan rozetleri. Evrak kaydına yönlenen kalemde (çek / senet) açılış beyanı GÖNDERİLMEZ;
+ * önceki türde girilmiş beyan "onaya gidecek" diye gösterilmez, yerine gönderilmeyeceği söylenir.
+ */
+export const OPENING_DECLARATION_NOT_SENT_LABEL = "Açılış beyanı gönderilmez (evrak kaydı)";
+export function listedItemOpeningChips(
+  item: Parameters<typeof summarizeOpeningDeclaration>[0],
+  declarationsUnavailable: boolean,
+): { labels: string[]; notSent: boolean } {
+  const labels = summarizeOpeningDeclaration(item);
+  if (!declarationsUnavailable) return { labels, notSent: false };
+  return { labels: [], notSent: labels.length > 0 };
+}
+
 // ── Due listesi → açılış isteği ─────────────────────────────────────────────────────────────────────────────────────
 
 export interface OpeningClaimDeclarationsPayload {
@@ -284,6 +298,8 @@ export interface OpeningClaimPreviewDTO {
     vekaletUcretiKaynagi: string | null;
     faiz: {
       acilisDurumu: "UNKNOWN" | "NO_INTEREST";
+      /** Kalem asıl alacak sınıfında mı (sunucu sınıflar). Asıl alacakta faiz hesabı faiz durumu alanına bağlı değildir. */
+      anaparaKalemi?: boolean;
       onayBekleyecekBeyan: { durum: "ACCRUES"; faizTuruKodu: string | null; baslangic: string | null; dayanak: string } | null;
     };
     sorumluluk: {

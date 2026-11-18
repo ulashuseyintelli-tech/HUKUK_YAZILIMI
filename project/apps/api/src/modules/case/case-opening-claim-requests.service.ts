@@ -68,7 +68,8 @@ const WRITE_DENIED_MESSAGES: Readonly<Record<string, { code: string; message: st
 
 /**
  * Mevcut yazma / onay kapılarının ret nedenini kararlı kod + Türkçe açıklamaya çevirir. Kapı burada ATLANMAZ; yalnız
- * neden söylenir. Tanınmayan kod / ileti olduğu gibi korunur.
+ * neden söylenir. Mevcut kapıların (HTTP istisnası) kodu / iletisi olduğu gibi korunur; beklenmeyen iç hatanın ham metni
+ * kullanıcıya TAŞINMAZ (genel ileti döner, ayrıntı sunucu günlüğünde kalır).
  */
 export function describeOpeningClaimRequestRejection(error: unknown): { errorCode: string; message: string } {
   const err = error as { getResponse?: () => unknown; response?: unknown; code?: unknown; message?: unknown } | null;
@@ -87,7 +88,11 @@ export function describeOpeningClaimRequestRejection(error: unknown): { errorCod
       message: `Alacak kalemi yazma kapısı talebi reddetti (${denied[1]}); onay talebi açılmadı.`,
     };
   }
-  const errorCode = String(responseObject?.code ?? err?.code ?? 'OPENING_CLAIM_REQUEST_FAILED');
+  const isHttpRejection = typeof err?.getResponse === 'function';
+  if (!isHttpRejection) {
+    return { errorCode: 'OPENING_CLAIM_REQUEST_FAILED', message: 'Onay talebi beklenmeyen bir hata nedeniyle açılamadı; beyanı kalem panelinden yeniden girin.' };
+  }
+  const errorCode = String(responseObject?.code ?? 'OPENING_CLAIM_REQUEST_FAILED');
   return { errorCode, message: rawMessage || errorCode };
 }
 
@@ -227,7 +232,8 @@ export class CaseOpeningClaimRequestsService {
         faizBeyanlari.push({ dueIndex: accrual.dueIndex, claimItemId, status: 'REQUESTED', approvalRequestId: result.approvalRequestId });
       } catch (error) {
         const { errorCode, message } = describeOpeningClaimRequestRejection(error);
-        this.logger.warn(`Açılış faiz beyanı talebi reddedildi (case=${caseId}, claimItem=${claimItemId}): ${errorCode}`);
+        // Ayrıntı yalnız sunucu günlüğünde; kullanıcıya giden ileti `describeOpeningClaimRequestRejection` çıktısıdır.
+        this.logger.warn(`Açılış faiz beyanı talebi reddedildi (case=${caseId}, claimItem=${claimItemId}): ${errorCode} — ${(error as Error)?.message ?? ''}`);
         faizBeyanlari.push({ dueIndex: accrual.dueIndex, claimItemId, status: 'REJECTED', errorCode, message });
       }
     }
@@ -355,7 +361,7 @@ export class CaseOpeningClaimRequestsService {
       return { status: 'REQUESTED', kalemSayisi, approvalRequestId: result.approvalRequestId };
     } catch (error) {
       const { errorCode, message } = describeOpeningClaimRequestRejection(error);
-      this.logger.warn(`Açılış sorumluluk seçimi talebi reddedildi (case=${caseId}): ${errorCode}`);
+      this.logger.warn(`Açılış sorumluluk seçimi talebi reddedildi (case=${caseId}): ${errorCode} — ${(error as Error)?.message ?? ''}`);
       return { status: 'REJECTED', kalemSayisi, errorCode, message };
     }
   }

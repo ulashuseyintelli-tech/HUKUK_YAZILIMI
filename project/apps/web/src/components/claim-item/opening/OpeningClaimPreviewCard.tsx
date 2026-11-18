@@ -142,6 +142,13 @@ export function OpeningClaimPreviewCard({
                       <td className="whitespace-nowrap px-2 py-1.5 text-right">{money(kalem.tutar, currency)}</td>
                       <td className="px-2 py-1.5">
                         <span>Açılışta: {INTEREST_ACCRUAL_STATUS_LABELS[kalem.faiz.acilisDurumu]}</span>
+                        {kalem.faiz.anaparaKalemi && kalem.faiz.acilisDurumu === "UNKNOWN" && (
+                          <span data-testid="opening-preview-principal-interest-note" className="block text-[11px] text-gray-600">
+                            {beyan
+                              ? "Asıl alacak kalemi: beyan onaylanana kadar kaleme faiz başlangıcı yazılmaz; bu sürede faiz hesabı eksik kalabilir."
+                              : "Asıl alacak kalemi: faiz hesabı bu alana bağlı değildir; girilen faiz türü ve başlangıç tarihiyle bugünkü gibi hesaplanır."}
+                          </span>
+                        )}
                         {beyan && (
                           <span data-testid="opening-preview-pending-interest" className="block text-[11px] text-amber-800">
                             Onay bekleyecek: {INTEREST_ACCRUAL_STATUS_LABELS.ACCRUES}

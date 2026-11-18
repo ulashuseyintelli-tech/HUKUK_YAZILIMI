@@ -6,6 +6,7 @@ import {
   describeOpeningClaimRequestsOutcome,
   emptyOpeningClaimDeclaration,
   formatOpeningClaimCreateError,
+  listedItemOpeningChips,
   normalizeOpeningClaimDeclaration,
   summarizeOpeningDeclaration,
   type OpeningClaimDeclaration,
@@ -210,6 +211,14 @@ describe("summarizeOpeningDeclaration — kalem listesi etiketi", () => {
     ).toEqual(["İlam vekâlet ücreti", "İlamdan doğuyor", "Faiz işler: onaya gidecek", "Paylı sorumluluk: onaya gidecek"]);
     // Faiz yok seçiliyse "faiz işler" etiketi gösterilmez (beyan gönderilmez).
     expect(summarizeOpeningDeclaration({ kalemTuru: "MASRAF", takipOncesiFaiz: "YOK", acilisBeyani: beyan({ faizIsler: true }) })).toEqual([]);
+  });
+
+  it("evrak kaydına yönlenen kalemde (çek / senet) önceki türde girilmiş beyan 'onaya gidecek' diye gösterilmez; gönderilmeyeceği söylenir", () => {
+    const item = { kalemTuru: "MASRAF", takipOncesiFaiz: "YASAL", acilisBeyani: beyan({ faizIsler: true, sorumluluk: esitPay() }) };
+    expect(listedItemOpeningChips(item, false)).toEqual({ labels: ["Faiz işler: onaya gidecek", "Paylı sorumluluk: onaya gidecek"], notSent: false });
+    expect(listedItemOpeningChips(item, true)).toEqual({ labels: [], notSent: true });
+    // Beyanı olmayan evrak kaleminde uyarı da yok.
+    expect(listedItemOpeningChips({ kalemTuru: "CEK" }, true)).toEqual({ labels: [], notSent: false });
   });
 });
 

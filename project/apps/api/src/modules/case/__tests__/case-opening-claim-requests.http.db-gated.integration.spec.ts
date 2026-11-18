@@ -22,6 +22,7 @@ import { MetricsRegistryModule } from '../../metrics-registry/metrics-registry.m
 import { OfficeApprovalService } from '../../office-approval/office-approval.service';
 import { CaseModule } from '../case.module';
 import { CaseService } from '../case.service';
+import { ClaimItemService } from '../../claim-item/claim-item.service';
 
 /**
  * DOSYA AÇILIŞINDA KALEM BEYANLARI (owner talimatı 2026-11-18) — ilam bilgisi, vekâlet ücreti kaynağı, faiz beyanı ve
@@ -372,6 +373,21 @@ describeWithDisposableDb('Dosya açılışında kalem beyanları — POST /cases
       expect(item.interestAccrualStatus).toBe('UNKNOWN');
       expect(item.interestStartDate).toBeNull();
     }
+
+    // ── Çıkış yolu (açılış sonucundaki notun söylediği): bayat talep beklerken o kalemde yeni talep AÇILAMAZ; talep
+    //    reddedilir, faiz beyanı kalem üzerinden yeniden açılır ve ikinci kişi onaylar.
+    const claimItemService = app.get(ClaimItemService);
+    const itemId = interestRequest.targetRef;
+    const beyan = { interestAccrualStatus: 'ACCRUES', interestStartDate: KESINLESME, interestStartDateProvenance: 'JUDGMENT_FINALIZATION_DATE' } as any;
+    await expect(claimItemService.updateFromUser(f.tenantId, f.opener, itemId, beyan)).rejects.toThrow('farklı içerikli bekleyen');
+    await approvals.reject(interestRequest.id, f.approver, 'Sorumluluk seçimi önce onaylandı; faiz beyanı yeniden açılacak.');
+    const reopened = await claimItemService.updateFromUser(f.tenantId, f.opener, itemId, beyan);
+    expect(reopened.approvalRequired).toBe(true);
+    await approvals.approve(reopened.approvalRequestId!, f.approver);
+    const reopenedItem = await prisma.claimItem.findUniqueOrThrow({ where: { id: itemId } });
+    expect(reopenedItem.interestAccrualStatus).toBe('ACCRUES');
+    expect(reopenedItem.interestStartDate?.toISOString().slice(0, 10)).toBe(KESINLESME);
+    expect(reopenedItem.interestStartDateProvenance).toBe('JUDGMENT_FINALIZATION_DATE');
   });
 
   it('gösterilen önizlemeden sonra girdi değişmişse dosya hiç oluşmaz (409)', async () => {

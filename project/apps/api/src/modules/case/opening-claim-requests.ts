@@ -3,6 +3,7 @@ import { InterestStartDateProvenance } from '@prisma/client';
 import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-json';
 import { validateInterestAccrualState } from '../claim-item/interest-accrual-policy';
 import { normalizeInterestWriteIntent } from '../claim-item/interest-write-admission';
+import { classifyClaimItemType } from '../interest-engine/classification/claim-item-classifier';
 import {
   EMPTY_ATTRIBUTION,
   evaluateItemLiability,
@@ -106,6 +107,12 @@ export interface OpeningClaimPreviewItem {
   readonly faiz: {
     /** Dosya açılışında kaleme yazılacak durum. "Faiz işler" açılışta YAZILMAZ. */
     readonly acilisDurumu: 'UNKNOWN' | 'NO_INTEREST';
+    /**
+     * Kalem motorun ASIL ALACAK sınıfında mı (tek otorite: claim-item-classifier). Asıl alacak kaleminde faiz hesabı
+     * faiz durumu alanına bağlı değildir: açılışta girilen faiz türü + başlangıç tarihi varsa faiz bugünkü gibi hesaplanır
+     * (yalnız "faiz işlemez" kaydı durdurur). Önizleme bu yüzden "belirlenmedi"yi tek başına "hesaplanmaz" diye sunmaz.
+     */
+    readonly anaparaKalemi: boolean;
     /** Onaya gidecek beyan; onaylanana kadar hesaba girmez. */
     readonly onayBekleyecekBeyan: {
       readonly durum: 'ACCRUES';
@@ -168,11 +175,11 @@ export const OPENING_CLAIM_PREVIEW_NOTES = Object.freeze({
   kullaniciTercihi:
     'Bu bilgiler kullanıcı beyanıdır. Yazılım ilam metninden, borçlu rolünden ya da borçlu sayısından faiz ya da sorumluluk sonucu çıkarmaz.',
   toplam:
-    'Dosyanın alacak toplamı tek rakamdır; borçlu rakamları toplanarak dosya borcu üretilmez. Toplam yalnız kalem tutarlarını gösterir; faiz ve takip giderleri dahil değildir.',
+    'Dosyanın alacak toplamı tek rakamdır; borçlu rakamları toplanarak dosya borcu üretilmez. Toplam yalnız girilen kalem tutarlarını gösterir (kalem olarak girilmiş işlemiş faiz dahil); kalemlere işleyecek faiz ve takip giderleri dahil değildir.',
   tavanKapsami:
     'Tutarla sınırlı sorumlulukta tavan yalnız o kalemin kayıtlı tutarını kapsar; kaleme işleyen faiz ve diğer kalemler kapsam dışıdır.',
   onaySirasi:
-    'Aynı kalemde hem faiz beyanı hem sorumluluk seçimi varsa önce faiz talebi onaylanmalıdır; sorumluluk seçimi önce onaylanırsa faiz talebi geçersizleşir ve kalem panelinden yeniden açılması gerekir.',
+    'Aynı kalemde hem faiz beyanı hem sorumluluk seçimi varsa önce faiz talebi onaylanmalıdır. Sorumluluk seçimi önce onaylanırsa faiz talebi onaylanamaz hale gelir ve o kalemde yeni değişiklik talebi açılamaz; bekleyen faiz talebi reddedilmeli, ardından faiz beyanı kalem panelinden yeniden açılmalıdır.',
 });
 
 const SELECTION_ERROR_MESSAGES: Record<string, string> = {
@@ -477,6 +484,7 @@ export function evaluateOpeningClaimRequests(input: {
       vekaletUcretiKaynagi: due.attorneyFeeBasis ?? null,
       faiz: {
         acilisDurumu: due.interestAccrualStatus === 'NO_INTEREST' ? 'NO_INTEREST' : 'UNKNOWN',
+        anaparaKalemi: itemType !== null && classifyClaimItemType(itemType).category === 'PRINCIPAL',
         onayBekleyecekBeyan: accrual
           ? { durum: 'ACCRUES', faizTuruKodu: accrual.interestTypeCode, baslangic: accrual.interestStartDate, dayanak: accrual.interestStartDateProvenance }
           : null,

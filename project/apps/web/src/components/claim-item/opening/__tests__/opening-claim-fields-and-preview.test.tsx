@@ -264,6 +264,29 @@ describe("OpeningClaimPreviewCard", () => {
     expect(screen.getByTestId("opening-preview-total").textContent).toBe("4.680,01 TRY");
   });
 
+  it("asıl alacak kalemi: 'belirlenmedi' tek başına 'faiz hesaplanmaz' diye sunulmaz; beyanlıysa başlangıcın yazılmayacağı söylenir", () => {
+    const base = preview();
+    const asil = (beyanli: boolean) => ({
+      ...base.kalemler[1],
+      kalemTuru: "PRINCIPAL",
+      aciklama: "Sentetik asıl alacak",
+      faiz: {
+        acilisDurumu: "UNKNOWN" as const,
+        anaparaKalemi: true,
+        onayBekleyecekBeyan: beyanli ? base.kalemler[0].faiz.onayBekleyecekBeyan : null,
+      },
+    });
+    const { unmount } = card({ preview: preview({ kalemler: [base.kalemler[0], asil(false)] }) });
+    // Yan kalemde (vekâlet ücreti) not yok; asıl alacakta var.
+    const notes = screen.getAllByTestId("opening-preview-principal-interest-note");
+    expect(notes).toHaveLength(1);
+    expect(notes[0].textContent).toContain("faiz hesabı bu alana bağlı değildir");
+    unmount();
+
+    card({ preview: preview({ kalemler: [asil(true)] }) });
+    expect(screen.getByTestId("opening-preview-principal-interest-note").textContent).toContain("beyan onaylanana kadar kaleme faiz başlangıcı yazılmaz");
+  });
+
   it("girdi hataları kalemin altında; kapalı seçim bayrağı ve evrak kalemi notu görünür", () => {
     card({
       preview: preview({

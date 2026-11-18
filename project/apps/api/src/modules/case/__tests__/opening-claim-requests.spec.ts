@@ -40,7 +40,7 @@ describe('Açılış kalem beyanları — beyan yokken hiçbir sonuç çıkarıl
     expect(preview.kalemTutarlariToplami).toBe(4680.01);
     expect(preview.kalemler.map((kalem) => kalem.kalemTuru)).toEqual(['ATTORNEY_FEE', 'YARGILAMA_GIDERI']);
     for (const kalem of preview.kalemler) {
-      expect(kalem.faiz).toEqual({ acilisDurumu: 'UNKNOWN', onayBekleyecekBeyan: null });
+      expect(kalem.faiz).toEqual({ acilisDurumu: 'UNKNOWN', anaparaKalemi: false, onayBekleyecekBeyan: null });
       expect(kalem.sorumluluk).toEqual({ acilisTuru: 'BELIRLENMEDI', onayBekleyecekSecim: null });
     }
     // Borçlu sayısı iki diye yarı yarıya bölünmez; kesin rakam yok.
@@ -79,12 +79,31 @@ describe('Açılış kalem beyanları — beyan yokken hiçbir sonuç çıkarıl
   });
 });
 
+describe('Açılış kalem beyanları — asıl alacak kalemi önizlemede ayrıca işaretlenir', () => {
+  it('asıl alacak sınıfındaki kalem (motorun sınıflayıcısı) işaretlenir; yan kalem işaretlenmez — "belirlenmedi" tek başına "faiz hesaplanmaz" demek değildir', () => {
+    const asil = { type: 'PRINCIPAL', description: 'Sentetik asıl alacak', amount: 1000, interestStartDate: '2025-01-01', ...yasal } as unknown as OpeningDueInput;
+    const kira = { type: 'KIRA', description: 'Sentetik kira', amount: 300, ...yasal } as unknown as OpeningDueInput;
+    const { preview } = evaluate(undefined, [asil, kira, vekalet, yargilama]);
+    expect(preview.uygulanabilir).toBe(true);
+    expect(preview.kalemler.map((kalem) => [kalem.kalemTuru, kalem.faiz.anaparaKalemi])).toEqual([
+      ['PRINCIPAL', true],
+      ['PRINCIPAL', true],
+      ['ATTORNEY_FEE', false],
+      ['YARGILAMA_GIDERI', false],
+    ]);
+    // Açılışta kaleme yazılacak durum yine "belirlenmedi"dir; işaret yalnız gösterim içindir (beyan / plan üretmez).
+    expect(preview.kalemler[0].faiz.acilisDurumu).toBe('UNKNOWN');
+    expect(preview.onayaGidecekFaizBeyaniSayisi).toBe(0);
+  });
+});
+
 describe('Açılış kalem beyanları — "faiz işler" beyanı (sonradan düzenlemeyle aynı kurallar)', () => {
   it('tür + dayanak + başlangıç tam → onaya gidecek beyan; açılış durumu "belirlenmedi" kalır', () => {
     const { preview, plan } = evaluate({ interestAccruals: [kesinlesme(0), kesinlesme(1)] });
     expect(preview.uygulanabilir).toBe(true);
     expect(preview.kalemler[0].faiz).toEqual({
       acilisDurumu: 'UNKNOWN',
+      anaparaKalemi: false,
       onayBekleyecekBeyan: { durum: 'ACCRUES', faizTuruKodu: 'LEGAL_3095', baslangic: '2025-04-02', dayanak: 'JUDGMENT_FINALIZATION_DATE' },
     });
     expect(plan.interestAccruals).toEqual([
