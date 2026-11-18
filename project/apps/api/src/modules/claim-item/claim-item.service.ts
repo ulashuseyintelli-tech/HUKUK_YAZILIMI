@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, Optional, ForbiddenException, ConflictException } from '@nestjs/common';
-import { OfficeApprovalStatus } from '@prisma/client';
+import { OfficeApprovalStatus, type Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { OfficeApprovalService } from '../office-approval/office-approval.service';
@@ -46,6 +46,7 @@ import {
   appendClaimItemContinuity,
   assertClaimItemHardDeleteForbidden,
   assertClaimItemLifecycleMutation,
+  lockClaimItemCaseBeforeWrite,
   type ClaimItemLifecycleRecord,
 } from './claim-item-lifecycle-contract';
 import { throwClaimItemFormationContextRequired } from './claim-item-formation-containment';
@@ -183,7 +184,12 @@ export class ClaimItemService {
 
   // Tek alacak kalemi getir
   async findOne(tenantId: string, id: string) {
-    const item = await (this.prisma as any).claimItem.findFirst({
+    return this.findOneIn(this.prisma, tenantId, id);
+  }
+
+  /** `findOne` ile aynı okuma; çağıranın transaction'ı içinde de kullanılabilir. */
+  private async findOneIn(database: Prisma.TransactionClient | PrismaService, tenantId: string, id: string) {
+    const item = await (database as any).claimItem.findFirst({
       where: { id, tenantId },
     });
     if (!item) {
@@ -261,11 +267,17 @@ export class ClaimItemService {
     });
   }
 
+  /**
+   * `database` verilirse AYNI yol çağıranın transaction'ı içinde çalışır (dosya açılışında kalem beyanı talebi: dosya,
+   * kalem ve onay talebi tek işlemde oluşur). Yalnız yüksek etkili değişiklik (onay talebi) bu biçimde çağrılabilir; yazma
+   * kapısı, değişmezler ve talep içeriği aynıdır — yalnız okuma / yazma istemcisi değişir.
+   */
   async updateFromUser(
     tenantId: string,
     actorUserId: string,
     id: string,
     dto: UpdateClaimItemDto,
+    database?: Prisma.TransactionClient,
   ): Promise<ClaimItemMutationResult> {
     const patch = this.stripUndefined(dto as Record<string, unknown>);
     if (Object.keys(patch).length === 0) {
@@ -281,46 +293,55 @@ export class ClaimItemService {
     }
 
     if (!highImpact) {
+      if (database) {
+        throw new ConflictException('ClaimItem low-impact update is not supported inside a caller transaction.');
+      }
       const data = await this.applyLowImpactMetadataUpdate(tenantId, actorUserId, id, patch);
       return { applied: true, approvalRequired: false, data };
     }
 
-    const existing = await this.findOne(tenantId, id);
+    const existing = database ? await this.findOneIn(database, tenantId, id) : await this.findOne(tenantId, id);
     assertInvoiceClaimItemTypeTransitionAllowed(existing, dto.itemType);
     this.assertUpdateInvariants(existing, dto);
-    await this.assertNoActiveLiabilitySelectionForLegacyPatch(tenantId, id, patch);
+    await this.assertNoActiveLiabilitySelectionForLegacyPatch(tenantId, id, patch, database);
     const currentSnapshot = this.snapshotClaimItem(existing);
     const proposedPatch = this.omitServerDerivedInterestFields(
       patch,
       this.normalizePatchForIntent(this.normalizeInterestPatch(patch, existing, actorUserId)),
     );
-    const gateResult = await this.requireClaimItemWriterRouter().evaluateHuman({
-      operation: 'UPDATE',
-      tenantId,
-      caseId: existing.caseId,
-      actorUserId,
-      claimItemId: id,
-      payload: proposedPatch,
-      currency: String(proposedPatch.currency ?? existing.currency),
-    });
-    this.assertApprovalRequired(gateResult);
-    const request = await this.createHighImpactApprovalRequest({
-      tenantId,
-      actorUserId,
-      targetType: CLAIM_ITEM_TARGET_TYPE,
-      targetRef: id,
-      intent: {
-        version: CLAIM_ITEM_INTENT_VERSION,
+    const gateResult = await this.requireClaimItemWriterRouter().evaluateHuman(
+      {
         operation: 'UPDATE',
+        tenantId,
         caseId: existing.caseId,
+        actorUserId,
         claimItemId: id,
-        proposedPatch,
-        currentSnapshot,
-        currentSnapshotHash: stableJsonHash(currentSnapshot),
-        reason: 'ClaimItem high-impact update requires K4 four-eyes approval.',
+        payload: proposedPatch,
+        currency: String(proposedPatch.currency ?? existing.currency),
       },
-      idempotencyKey: `claim-item-high-impact:${id}`,
-    });
+      ...(database ? [database] : []),
+    );
+    this.assertApprovalRequired(gateResult);
+    const request = await this.createHighImpactApprovalRequest(
+      {
+        tenantId,
+        actorUserId,
+        targetType: CLAIM_ITEM_TARGET_TYPE,
+        targetRef: id,
+        intent: {
+          version: CLAIM_ITEM_INTENT_VERSION,
+          operation: 'UPDATE',
+          caseId: existing.caseId,
+          claimItemId: id,
+          proposedPatch,
+          currentSnapshot,
+          currentSnapshotHash: stableJsonHash(currentSnapshot),
+          reason: 'ClaimItem high-impact update requires K4 four-eyes approval.',
+        },
+        idempotencyKey: `claim-item-high-impact:${id}`,
+      },
+      database,
+    );
     return {
       applied: false,
       approvalRequired: true,
@@ -1019,6 +1040,8 @@ export class ClaimItemService {
       );
       this.assertDirectAllowed(gateResult);
 
+      // Dosya kilidi kalem satırından ÖNCE (bkz. lockClaimItemCaseBeforeWrite): onay yürütmeleriyle aynı sıra.
+      await lockClaimItemCaseBeforeWrite(tx, existing.caseId);
       const updated = await tx.claimItem.update({
         where: { id },
         data,
@@ -1084,19 +1107,23 @@ export class ClaimItemService {
     }
   }
 
-  private async createHighImpactApprovalRequest(input: {
-    tenantId: string;
-    actorUserId: string;
-    targetType: string;
-    targetRef: string;
-    intent: ClaimItemHighImpactSavedIntent;
-    idempotencyKey: string;
-  }) {
+  private async createHighImpactApprovalRequest(
+    input: {
+      tenantId: string;
+      actorUserId: string;
+      targetType: string;
+      targetRef: string;
+      intent: ClaimItemHighImpactSavedIntent;
+      idempotencyKey: string;
+    },
+    database?: Prisma.TransactionClient,
+  ) {
     if (!this.officeApproval) {
       throw new ConflictException('ClaimItem approval dependency is not available.');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    // Çağıranın transaction'ı verildiyse talep ONUN içinde açılır (aynı kilit, aynı denetimler); yoksa kendi işleminde.
+    const run = async (tx: Prisma.TransactionClient) => {
       // Serialize only this ClaimItem approval key. A unique violation inside PostgreSQL's
       // transaction cannot be reconciled by querying the already-aborted transaction.
       const requestLock = `claim-item-approval:${input.tenantId}:${input.idempotencyKey}`;
@@ -1121,7 +1148,8 @@ export class ClaimItemService {
         idempotencyKey: input.idempotencyKey,
         reason: input.intent.reason,
       }, tx);
-    });
+    };
+    return database ? run(database) : this.prisma.$transaction(run);
   }
 
   private buildCreatePatch(dto: CreateClaimItemDto, actorUserId: string): ClaimItemPatch {
@@ -1307,12 +1335,13 @@ export class ClaimItemService {
     tenantId: string,
     claimItemId: string,
     patch: ClaimItemPatch,
+    database?: Prisma.TransactionClient,
   ): Promise<void> {
     const touchesLiability =
       Object.prototype.hasOwnProperty.call(patch, 'isAllDebtorsLiable') ||
       Object.prototype.hasOwnProperty.call(patch, 'liableDebtorIds');
     if (!touchesLiability) return;
-    const activeSelection = await this.prisma.claimItemLiabilitySet.findFirst({
+    const activeSelection = await (database ?? this.prisma).claimItemLiabilitySet.findFirst({
       where: { claimItemId, tenantId, status: 'ACTIVE' },
       select: { id: true },
     });

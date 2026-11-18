@@ -5,9 +5,9 @@ import { evaluateOpeningClaimRequests, type OpeningClaimPlan } from '../opening-
 /**
  * DOSYA AÇILIŞINDA KALEM BEYANLARI — servis dalları (taklit bağımlılıklarla; uçtan uca akış HTTP + PostgreSQL testinde).
  *
- * Kanıtlanan: açılış öncesi kabul hiçbir bağımlılığa dokunmadan reddeder; kayıt sonrası adım HİÇBİR durumda hata
- * fırlatmaz (dosya açılışı geri alınamaz), her beyanın sonucunu ayrı raporlar ve mevcut yolları (kalem güncelleme +
- * seçim önizleme / talep) aynı girdilerle çağırır.
+ * Kanıtlanan: açılış öncesi kabul hiçbir bağımlılığa dokunmadan reddeder; talepler dosya açılış işleminin İÇİNDE,
+ * mevcut yollarla (kalem güncelleme + seçim önizleme / talep) ve aynı transaction istemcisiyle açılır; herhangi bir
+ * talep açılamazsa hata yükselir (çağıranın işlemi geri alınır) — eksik adım sessiz geçilmez.
  */
 const FLAG = 'CLAIM_LIABILITY_SELECTION_ENABLED';
 const yasal = { interestType: 'YASAL', interestTypeCode: 'LEGAL_3095', interestAccrualStatus: 'UNKNOWN' };
@@ -33,9 +33,11 @@ const planOf = (r: unknown): OpeningClaimPlan =>
   evaluateOpeningClaimRequests({ currency: 'TRY', dues: dues as never, debtorIds: ['d1', 'd2'], requests: r as never }).plan;
 const dto = (openingClaimRequests: unknown) => ({ fileNumber: 'X', type: 'GENERAL_EXECUTION', currency: 'TRY', dues, caseDebtors, openingClaimRequests }) as never;
 
-function build(overrides: { claimItems?: unknown; liability?: unknown; caseDebtorRows?: unknown[]; auditFails?: boolean } = {}) {
-  const prisma = { caseDebtor: { findMany: jest.fn().mockResolvedValue(overrides.caseDebtorRows ?? [{ id: 'cd1', debtorId: 'd1' }, { id: 'cd2', debtorId: 'd2' }]) } };
-  const audit = { log: overrides.auditFails ? jest.fn().mockRejectedValue(new Error('denetim yazılamadı')) : jest.fn().mockResolvedValue(undefined) };
+function build(overrides: { claimItems?: unknown; liability?: unknown; caseDebtorRows?: unknown[] } = {}) {
+  const tx = {
+    caseDebtor: { findMany: jest.fn().mockResolvedValue(overrides.caseDebtorRows ?? [{ id: 'cd1', debtorId: 'd1' }, { id: 'cd2', debtorId: 'd2' }]) },
+    auditLog: { create: jest.fn().mockResolvedValue({ id: 'audit-1' }) },
+  };
   const claimItems =
     'claimItems' in overrides
       ? overrides.claimItems
@@ -47,11 +49,19 @@ function build(overrides: { claimItems?: unknown; liability?: unknown; caseDebto
           preview: jest.fn().mockResolvedValue({ uygulanabilir: true, onizlemeOzeti: 'ozet-1' }),
           request: jest.fn().mockResolvedValue({ approvalRequestId: 'apr-secim' }),
         };
-  const service = new CaseOpeningClaimRequestsService(prisma as never, audit as never, claimItems as never, liability as never);
-  return { service, prisma, audit, claimItems: claimItems as any, liability: liability as any };
+  const service = new CaseOpeningClaimRequestsService(claimItems as never, liability as never);
+  return { service, tx, claimItems: claimItems as any, liability: liability as any };
 }
-const run = (service: CaseOpeningClaimRequestsService, plan: OpeningClaimPlan, ids: Array<string | null> = ['ci-0', 'ci-1']) =>
-  service.requestAfterCommit({ tenantId: 't1', userId: 'u1', caseId: 'c1', plan, claimItemIdByDueIndex: ids });
+const run = (built: ReturnType<typeof build>, plan: OpeningClaimPlan, ids: Array<string | null> = ['ci-0', 'ci-1']) =>
+  built.service.requestInTransaction(built.tx as never, { tenantId: 't1', userId: 'u1', caseId: 'c1', plan, claimItemIdByDueIndex: ids });
+const rejection = async (promise: Promise<unknown>) => {
+  try {
+    await promise;
+  } catch (error) {
+    return { status: (error as any).getStatus?.(), body: (error as any).getResponse?.() };
+  }
+  throw new Error('hata bekleniyordu');
+};
 
 describe('Açılış kalem beyanları — açılış öncesi kabul', () => {
   const saved = process.env[FLAG];
@@ -76,7 +86,7 @@ describe('Açılış kalem beyanları — açılış öncesi kabul', () => {
   });
 
   it('geçersiz beyan → 400 ve hata listesi; özet uyuşmazlığı → 409; kapalı bayrakta seçim → 409', () => {
-    const { service, prisma, audit } = build();
+    const { service, tx, claimItems } = build();
     const invalid = { interestAccruals: [{ dueIndex: 0, interestStartDateProvenance: 'JUDGMENT_DATE' }] };
     expect(() => service.assertAdmissible(dto({ ...invalid, previewHash: hashOf(invalid) }))).toThrow(BadRequestException);
     expect(() => service.assertAdmissible(dto({ ...requests, previewHash: 'baska-ozet' }))).toThrow(ConflictException);
@@ -85,9 +95,10 @@ describe('Açılış kalem beyanları — açılış öncesi kabul', () => {
     // Bayrak yalnız SEÇİMİ kapatır: faiz beyanı aynı ortamda kabul edilir.
     const onlyInterest = { interestAccruals: [accrual(0)] };
     expect(service.assertAdmissible(dto({ ...onlyInterest, previewHash: hashOf(onlyInterest) }))).not.toBeNull();
-    // Kabul saf: veritabanına ve denetime dokunmaz.
-    expect(prisma.caseDebtor.findMany).not.toHaveBeenCalled();
-    expect(audit.log).not.toHaveBeenCalled();
+    // Kabul saf: veritabanına, denetime ve talep yollarına dokunmaz.
+    expect(tx.caseDebtor.findMany).not.toHaveBeenCalled();
+    expect(tx.auditLog.create).not.toHaveBeenCalled();
+    expect(claimItems.updateFromUser).not.toHaveBeenCalled();
   });
 
   it('önizleme yanıtı seçim bayrağının durumunu taşır', () => {
@@ -98,15 +109,17 @@ describe('Açılış kalem beyanları — açılış öncesi kabul', () => {
   });
 });
 
-describe('Açılış kalem beyanları — kayıt sonrası talepler', () => {
-  it('mevcut yollar aynı girdiyle çağrılır; kişi kimliği dosya borçlusu satırına çevrilir; sıra notu aynı kalemde iki talep varken', async () => {
-    const { service, claimItems, liability, audit } = build();
-    const outcome = await run(service, planOf(requests));
-    expect(claimItems.updateFromUser).toHaveBeenCalledWith('t1', 'u1', 'ci-0', {
-      interestAccrualStatus: 'ACCRUES',
-      interestStartDateProvenance: 'JUDGMENT_FINALIZATION_DATE',
-      interestStartDate: '2025-04-02',
-    });
+describe('Açılış kalem beyanları — talepler dosya açılış işleminin İÇİNDE açılır', () => {
+  it('mevcut yollar AYNI transaction istemcisiyle ve aynı girdiyle çağrılır; kişi kimliği dosya borçlusu satırına çevrilir', async () => {
+    const built = build();
+    const outcome = await run(built, planOf(requests));
+    expect(built.claimItems.updateFromUser).toHaveBeenCalledWith(
+      't1',
+      'u1',
+      'ci-0',
+      { interestAccrualStatus: 'ACCRUES', interestStartDateProvenance: 'JUDGMENT_FINALIZATION_DATE', interestStartDate: '2025-04-02' },
+      built.tx,
+    );
     const expectedDrafts = [
       {
         claimItemId: 'ci-0',
@@ -119,86 +132,99 @@ describe('Açılış kalem beyanları — kayıt sonrası talepler', () => {
         ],
       },
     ];
-    expect(liability.preview).toHaveBeenCalledWith('t1', 'u1', 'c1', expectedDrafts);
-    expect(liability.request).toHaveBeenCalledWith('t1', 'u1', 'c1', { selections: expectedDrafts, onizlemeOzeti: 'ozet-1' });
-    expect(outcome).toMatchObject({
+    expect(built.liability.preview).toHaveBeenCalledWith('t1', 'u1', 'c1', expectedDrafts, built.tx);
+    expect(built.liability.request).toHaveBeenCalledWith('t1', 'u1', 'c1', { selections: expectedDrafts, onizlemeOzeti: 'ozet-1' }, built.tx);
+    expect(outcome).toEqual({
       requested: true,
+      previewHash: planOf(requests).previewHash,
       tamami: true,
+      onaySirasiNotu: null,
+      aciklama: expect.any(String),
       faizBeyanlari: [{ dueIndex: 0, claimItemId: 'ci-0', status: 'REQUESTED', approvalRequestId: 'apr-faiz' }],
       sorumlulukSecimi: { status: 'REQUESTED', kalemSayisi: 1, approvalRequestId: 'apr-secim' },
     });
-    expect(outcome.onaySirasiNotu).not.toBeNull();
-    expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'CASE_OPEN_CLAIM_REQUESTS_REQUESTED', entityId: 'c1', userId: 'u1' }));
-  });
-
-  it('faiz ve seçim FARKLI kalemlerdeyse sıra notu yok; "takip tarihi" dayanağında başlangıç tarihi gönderilmez', async () => {
-    const mixed = { interestAccruals: [{ dueIndex: 0, interestStartDateProvenance: 'ENFORCEMENT_PROCEEDING_DATE' }], liabilitySelections: [selection(1)] };
-    const { service, claimItems } = build();
-    const outcome = await run(service, planOf(mixed));
-    expect(outcome.onaySirasiNotu).toBeNull();
-    expect(claimItems.updateFromUser).toHaveBeenCalledWith('t1', 'u1', 'ci-0', {
-      interestAccrualStatus: 'ACCRUES',
-      interestStartDateProvenance: 'ENFORCEMENT_PROCEEDING_DATE',
+    // Denetim kaydı AYNI işlemde: önizleme özeti + onay talebi kimlikleri.
+    expect(built.tx.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        tenantId: 't1',
+        action: 'CASE_OPEN_CLAIM_REQUESTS_REQUESTED',
+        entityType: 'Case',
+        entityId: 'c1',
+        userId: 'u1',
+        metadata: {
+          previewHash: planOf(requests).previewHash,
+          faizBeyanlari: [{ dueIndex: 0, claimItemId: 'ci-0', approvalRequestId: 'apr-faiz' }],
+          sorumlulukSecimi: { kalemSayisi: 1, approvalRequestId: 'apr-secim' },
+        },
+      }),
     });
   });
 
-  it('yazma kapısı reddederse hata fırlatılmaz: neden kararlı kodla raporlanır, eksik sonuç denetime yazılır', async () => {
-    const denied = new ForbiddenException('ClaimItem write denied: OBJECT_PERMISSION_DENIED');
-    const { service, audit } = build({
-      claimItems: { updateFromUser: jest.fn().mockRejectedValue(denied) },
+  it('"takip tarihi" dayanağında başlangıç tarihi gönderilmez', async () => {
+    const mixed = { interestAccruals: [{ dueIndex: 0, interestStartDateProvenance: 'ENFORCEMENT_PROCEEDING_DATE' }] };
+    const built = build();
+    await run(built, planOf(mixed));
+    expect(built.claimItems.updateFromUser).toHaveBeenCalledWith(
+      't1',
+      'u1',
+      'ci-0',
+      { interestAccrualStatus: 'ACCRUES', interestStartDateProvenance: 'ENFORCEMENT_PROCEEDING_DATE' },
+      built.tx,
+    );
+    expect(built.liability.preview).not.toHaveBeenCalled();
+  });
+
+  it('yazma kapısı reddederse hata yükselir (403 + okunur neden + satır); denetim kaydı YAZILMAZ — dosya işlemi geri alınır', async () => {
+    const built = build({
+      claimItems: { updateFromUser: jest.fn().mockRejectedValue(new ForbiddenException('ClaimItem write denied: OBJECT_PERMISSION_DENIED')) },
+    });
+    const { status, body } = await rejection(run(built, planOf(requests)));
+    expect(status).toBe(403);
+    expect(body).toMatchObject({ code: 'OPENING_CLAIM_REQUESTS_NOT_OPENED', reasonCode: 'CASE_FINANCE_PERMISSION_REQUIRED', dueIndex: 0 });
+    expect(body.message).toContain('dosya oluşturulmadı');
+    expect(built.liability.request).not.toHaveBeenCalled();
+    expect(built.tx.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it('seçim talebi reddedilirse (ör. bekleyen farklı talep) 409 ile yükselir; faiz talebi açılmış olsa da işlem bütün olarak düşer', async () => {
+    const built = build({
       liability: {
-        preview: jest.fn().mockRejectedValue(new ForbiddenException({ code: 'CLAIM_LIABILITY_WRITE_DENIED', message: 'Sorumluluk seçimi yetkisi yok: OBJECT_PERMISSION_DENIED' })),
-        request: jest.fn(),
+        preview: jest.fn().mockResolvedValue({ uygulanabilir: true, onizlemeOzeti: 'ozet-1' }),
+        request: jest.fn().mockRejectedValue(new ConflictException({ code: 'LIABILITY_SELECTION_PENDING_CONFLICT', message: 'bekleyen talep var' })),
       },
     });
-    const outcome = await run(service, planOf(requests));
-    expect(outcome.tamami).toBe(false);
-    expect(outcome.faizBeyanlari[0]).toMatchObject({ status: 'REJECTED', errorCode: 'CASE_FINANCE_PERMISSION_REQUIRED' });
-    expect(outcome.sorumlulukSecimi).toMatchObject({ status: 'REJECTED', errorCode: 'CASE_FINANCE_PERMISSION_REQUIRED' });
-    expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'CASE_OPEN_CLAIM_REQUESTS_INCOMPLETE' }));
+    const { status, body } = await rejection(run(built, planOf(requests)));
+    expect(status).toBe(409);
+    expect(body).toMatchObject({ code: 'OPENING_CLAIM_REQUESTS_NOT_OPENED', reasonCode: 'LIABILITY_SELECTION_PENDING_CONFLICT' });
+    expect(built.claimItems.updateFromUser).toHaveBeenCalledTimes(1);
+    expect(built.tx.auditLog.create).not.toHaveBeenCalled();
   });
 
-  it('kalem oluşmamışsa, borçlu satırı yoksa ya da servis bağlı değilse talep açılmaz (atlandı) — hata fırlatılmaz', async () => {
-    const noItem = await run(build().service, planOf(requests), [null, 'ci-1']);
-    expect(noItem.faizBeyanlari[0]).toMatchObject({ status: 'SKIPPED', errorCode: 'CLAIM_ITEM_NOT_CREATED' });
-    expect(noItem.sorumlulukSecimi).toMatchObject({ status: 'SKIPPED', errorCode: 'CLAIM_ITEM_NOT_CREATED' });
-
-    const missingDebtor = build({ caseDebtorRows: [{ id: 'cd1', debtorId: 'd1' }] });
-    const noDebtor = await run(missingDebtor.service, planOf(requests));
-    expect(noDebtor.sorumlulukSecimi).toMatchObject({ status: 'SKIPPED', errorCode: 'CASE_DEBTOR_NOT_CREATED' });
-    expect(missingDebtor.liability.request).not.toHaveBeenCalled();
-
-    const unbound = await run(build({ claimItems: undefined, liability: undefined }).service, planOf(requests));
-    expect(unbound.faizBeyanlari[0]).toMatchObject({ status: 'SKIPPED', errorCode: 'CLAIM_ITEM_SERVICE_UNAVAILABLE' });
-    expect(unbound.sorumlulukSecimi).toMatchObject({ status: 'SKIPPED', errorCode: 'LIABILITY_SELECTION_SERVICE_UNAVAILABLE' });
-    expect(unbound.tamami).toBe(false);
+  it.each([
+    ['kalem oluşmadı (faiz)', { ids: [null, 'ci-1'] as Array<string | null> }, 'CLAIM_ITEM_NOT_CREATED'],
+    ['önizleme uygulanamıyor', { liability: { preview: jest.fn().mockResolvedValue({ uygulanabilir: false, onizlemeOzeti: 'x' }), request: jest.fn() } }, 'LIABILITY_SELECTION_NOT_APPLICABLE'],
+    ['borçlu dosya borçlusu olarak yok', { caseDebtorRows: [{ id: 'cd1', debtorId: 'd1' }] }, 'CASE_DEBTOR_NOT_CREATED'],
+    ['onay gerekmedi (beklenmeyen)', { claimItems: { updateFromUser: jest.fn().mockResolvedValue({ applied: true, approvalRequired: false }) } }, 'APPROVAL_NOT_REQUIRED_UNEXPECTED'],
+    ['kalem servisi bağlı değil', { claimItems: undefined }, 'CLAIM_ITEM_SERVICE_UNAVAILABLE'],
+    ['seçim servisi bağlı değil', { liability: undefined }, 'LIABILITY_SELECTION_SERVICE_UNAVAILABLE'],
+  ])('eksik adım sessiz geçilmez: %s → hata (dosya oluşmaz)', async (_ad, over, reasonCode) => {
+    const { ids, ...overrides } = over as { ids?: Array<string | null> };
+    const built = build(overrides);
+    const { status, body } = await rejection(run(built, planOf(requests), ids));
+    expect(status).toBe(409);
+    expect(body).toMatchObject({ code: 'OPENING_CLAIM_REQUESTS_NOT_OPENED', reasonCode });
+    expect(built.tx.auditLog.create).not.toHaveBeenCalled();
   });
 
-  it('onay gerektirmeyen sonuç talep sayılmaz; kayıtlı durumla uygulanamayan seçim için talep açılmaz', async () => {
-    const direct = build({ claimItems: { updateFromUser: jest.fn().mockResolvedValue({ applied: true, approvalRequired: false }) } });
-    expect((await run(direct.service, planOf({ interestAccruals: [accrual(0)] }))).faizBeyanlari[0]).toMatchObject({
-      status: 'REJECTED',
-      errorCode: 'APPROVAL_NOT_REQUIRED_UNEXPECTED',
-    });
-    const blocked = build({ liability: { preview: jest.fn().mockResolvedValue({ uygulanabilir: false, onizlemeOzeti: 'x' }), request: jest.fn() } });
-    const outcome = await run(blocked.service, planOf({ liabilitySelections: [selection(0)] }));
-    expect(outcome.sorumlulukSecimi).toMatchObject({ status: 'REJECTED', errorCode: 'LIABILITY_SELECTION_NOT_APPLICABLE' });
-    expect(blocked.liability.request).not.toHaveBeenCalled();
-  });
-
-  it('aynı kişi iki rolle kayıtlıysa ilk satır kullanılır; denetim yazılamazsa sonuç yine döner', async () => {
-    const { service, liability } = build({
-      caseDebtorRows: [{ id: 'cd1', debtorId: 'd1' }, { id: 'cd1b', debtorId: 'd1' }, { id: 'cd2', debtorId: 'd2' }],
-      auditFails: true,
-    });
-    const outcome = await run(service, planOf({ liabilitySelections: [selection(0)] }));
-    expect(liability.preview.mock.calls[0][3][0].parties.map((party: any) => party.caseDebtorId)).toEqual(['cd1', 'cd2']);
-    expect(outcome.sorumlulukSecimi?.status).toBe('REQUESTED');
+  it('beklenmeyen iç hata olduğu gibi yükselir (işlem geri alınır); ham metin kullanıcı iletisine çevrilmez', async () => {
+    const built = build({ claimItems: { updateFromUser: jest.fn().mockRejectedValue(new Error('iç ayrıntı: bağlantı koptu')) } });
+    await expect(run(built, planOf(requests))).rejects.toThrow('iç ayrıntı: bağlantı koptu');
+    expect(built.tx.auditLog.create).not.toHaveBeenCalled();
   });
 });
 
 describe('describeOpeningClaimRequestRejection', () => {
-  it('yazma kapısı reddi kararlı koda çevrilir; bilinmeyen neden ve kod korunur', () => {
+  it('yazma kapısı reddi kararlı koda ve Türkçe açıklamaya çevrilir; tanınmayan neden kodu korunur', () => {
     expect(describeOpeningClaimRequestRejection(new ForbiddenException('ClaimItem write denied: OBJECT_PERMISSION_DENIED')).errorCode).toBe(
       'CASE_FINANCE_PERMISSION_REQUIRED',
     );
@@ -211,6 +237,5 @@ describe('describeOpeningClaimRequestRejection', () => {
     const beklenmeyen = describeOpeningClaimRequestRejection(new Error('iç ayrıntı: tablo x sütun y'));
     expect(beklenmeyen.errorCode).toBe('OPENING_CLAIM_REQUEST_FAILED');
     expect(beklenmeyen.message).not.toContain('iç ayrıntı');
-    expect(beklenmeyen.message).toContain('beklenmeyen bir hata');
   });
 });

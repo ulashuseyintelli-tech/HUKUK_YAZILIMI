@@ -275,6 +275,29 @@ describe("formatOpeningClaimCreateError — dosya oluşmadığında okunur neden
       }),
     ).toContain("2. kalem: Dayanak seçilmelidir.");
     expect(formatOpeningClaimCreateError({ body: { code: "BASKA" } })).toBeNull();
+  });
+
+  it("onay talebi açılamadıysa dosyanın da oluşmadığı, nedeni ve ne yapılacağı yazılır", () => {
+    const yetki = formatOpeningClaimCreateError({
+      body: {
+        code: "OPENING_CLAIM_REQUESTS_NOT_OPENED",
+        reasonCode: "CASE_FINANCE_PERMISSION_REQUIRED",
+        dueIndex: 0,
+        message: "Açılış beyanları için onay talebi açılamadı; dosya oluşturulmadı. Dosyada mali düzenleme yetkiniz yok.",
+      },
+    });
+    expect(yetki).toContain("Takip oluşturulmadı");
+    expect(yetki).toContain("1. kalem: bu dosyada mali düzenleme yetkiniz yok");
+    expect(yetki).toContain("Hiçbir kayıt oluşmadı");
+    expect(yetki).toContain("Beyanları kaldırıp dosyayı açabilir");
+    const diger = formatOpeningClaimCreateError({
+      body: {
+        code: "OPENING_CLAIM_REQUESTS_NOT_OPENED",
+        reasonCode: "LIABILITY_SELECTION_NOT_APPLICABLE",
+        message: "Açılış beyanları için onay talebi açılamadı; dosya oluşturulmadı. Sorumluluk seçimi kayıtlı dosya durumuyla uygulanamıyor.",
+      },
+    });
+    expect(diger).toContain("onaya gönderilemedi — Sorumluluk seçimi kayıtlı dosya durumuyla uygulanamıyor.");
     expect(formatOpeningClaimCreateError(new Error("x"))).toBeNull();
   });
 });

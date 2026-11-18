@@ -2641,7 +2641,7 @@ export class CaseService {
 
     // Açılış kalem beyanları ("faiz işler" + borçlu sorumluluğu seçimi): hiçbir yazmadan ÖNCE doğrulanır. Geçersiz
     // beyan, gösterilmemiş / değişmiş girdi ya da kapalı seçim bayrağında istek bütün olarak reddedilir → dosya, taraf
-    // ve kalem hiç oluşmaz. Beyanlar kaleme YAZILMAZ; commit sonrası mevcut iki kişi onayına talep olarak gider.
+    // ve kalem hiç oluşmaz. Beyanlar kaleme YAZILMAZ; AYNI işlemin sonunda mevcut iki kişi onayına talep olarak açılır.
     const openingClaimPlan = this.assertOpeningClaimRequestsAdmissible(dto, Boolean(historicalImport));
 
     // B.5: Başlangıç statüsü validasyonu
@@ -3247,7 +3247,21 @@ export class CaseService {
           },
         });
 
-        return { case: createdCase, clientIds, lawyerIds: dto.lawyers?.map(l => l.id).filter(Boolean) || [], staffResult, responsibleKeptId, responsibleDemotedIds, openingClaimItemIds };
+        // Açılış kalem beyanları — AYNI işlemin SON adımı: beyanlar mevcut yüksek etkili kalem değişikliği onayına talep
+        // olarak açılır (iki kişi kuralı ve yazma kapıları aynen). Talep açılamazsa hata yükselir ve dosya, taraflar,
+        // kalemler dahil HER ŞEY geri alınır: kesinti penceresi ve talebi açılmamış "başarılı" açılış yoktur.
+        const openingClaimRequests: OpeningClaimRequestsOutcome | undefined =
+          openingClaimPlan && this.openingClaimRequests
+            ? await this.openingClaimRequests.requestInTransaction(tx, {
+                tenantId,
+                userId,
+                caseId: newCase.id,
+                plan: openingClaimPlan,
+                claimItemIdByDueIndex: openingClaimItemIds,
+              })
+            : undefined;
+
+        return { case: createdCase, clientIds, lawyerIds: dto.lawyers?.map(l => l.id).filter(Boolean) || [], staffResult, responsibleKeptId, responsibleDemotedIds, openingClaimRequests };
       }, CASE_CREATE_TRANSACTION_OPTIONS);
 
       // DAR ATOMİKLİK: transaction COMMIT EDİLDİ → kuyruğa alınmış commit-sonrası (best-effort)
@@ -3287,18 +3301,7 @@ export class CaseService {
           : undefined;
       }
 
-      // Açılış kalem beyanları — commit SONRASI: beyanlar mevcut yüksek etkili kalem değişikliği onayına talep olarak
-      // açılır (iki kişi kuralı aynen). Mevcut yetki kapıları ATLANMAZ; reddi dosyayı geri almaz, sonuç yanıtta raporlanır.
-      let openingClaimRequests: OpeningClaimRequestsOutcome | undefined;
-      if (openingClaimPlan && this.openingClaimRequests && result.case?.id) {
-        openingClaimRequests = await this.openingClaimRequests.requestAfterCommit({
-          tenantId,
-          userId,
-          caseId: result.case.id,
-          plan: openingClaimPlan,
-          claimItemIdByDueIndex: result.openingClaimItemIds,
-        });
-      }
+      const openingClaimRequests = result.openingClaimRequests;
 
       // ASSIGN-2a: seçimle atanan personel için audit (yalnız dto.staff verildiğinde; default
       // yol mevcut davranışı AYNEN korur → ek audit üretmez). Tx commit sonrası.

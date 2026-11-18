@@ -555,6 +555,8 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
 
   function claimItemTx(over: Record<string, any> = {}): any {
     return {
+      // Kalem güncelleme / silme onayı dosya kilidini (COL-LOCK-001) kalemi okumadan ÖNCE alır.
+      $executeRaw: jest.fn().mockResolvedValue(undefined),
       officeApprovalRequest: {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },

@@ -308,8 +308,37 @@ function immutableAuditSnapshot(record: ClaimItemLifecycleRecord | null): Prisma
     tenantId: record.tenantId,
     caseId: record.caseId,
     status: parseClaimItemStatus(record.status),
-    recordHash: stableJsonHash(toSerializableRecord(record)),
+    recordHash: claimItemLifecycleRecordHash(record),
   };
+}
+
+/**
+ * Dosya kilidi (COL-LOCK-001) — MEVCUT bir alacak kalemi satırına yazan her yol, satıra dokunmadan ÖNCE bu kilidi alır.
+ * Tahsilat / mahsup, sorumluluk seçimi onayı ve kalem değişikliği onayı aynı kilidi satırdan önce alır; süreklilik
+ * kaydı (olay sürümü ayırıcısı) da aynı kilidi kullanır. Bir yol önce satırı yazıp kilidi sonra alırsa, kilidi önce alan
+ * bir yolla ters sırada bekler ve PostgreSQL işlemlerden birini iptal eder (kilitlenme). Kilit işlem ömürlüdür ve aynı
+ * işlemde yeniden alınabilir; erken almak yeni bir kilit sahibi doğurmaz, yalnız sırayı düzeltir.
+ *
+ * <remarks>
+ * Cagrildigi yerler:
+ * - ClaimItemService.applyLowImpactMetadataUpdate() → PUT /claim-items/:id (düşük etkili alan)
+ * - ClaimItemWriterRouterService.updateSystemClaimItem() / cancelSystemClaimItem() → sistem rotaları
+ * - OfficeApprovalDomainSyncService.applyClaimItemUpdateOrDelete() → kalem değişikliği onayı
+ * </remarks>
+ */
+export async function lockClaimItemCaseBeforeWrite(tx: Prisma.TransactionClient, caseId: string): Promise<void> {
+  await tx.$executeRaw`
+    /* COL-LOCK-001: canonical allocation lock */
+    SELECT pg_advisory_xact_lock(hashtextextended(${caseId}, 0))
+  `;
+}
+
+/**
+ * Denetim kaydına yazılan TAM satır özeti. Aynı işlev, onay yürütmesinde "talepten bu yana kaleme yalnız onaylı seçim
+ * yazdı" zincir doğrulamasında kullanılır (OfficeApprovalDomainSyncService).
+ */
+export function claimItemLifecycleRecordHash(record: ClaimItemLifecycleRecord): string {
+  return stableJsonHash(toSerializableRecord(record));
 }
 
 function toSerializableRecord(record: ClaimItemLifecycleRecord): Record<string, unknown> {
