@@ -196,7 +196,7 @@ export class UpdateClaimItemDto {
 
   @IsOptional()
   @IsEnum(InterestType)
-  interestType?: InterestType;
+  interestType?: InterestType | null;
 
   @IsOptional()
   @IsEnum(InterestTypeCode)
@@ -208,11 +208,11 @@ export class UpdateClaimItemDto {
 
   @IsOptional()
   @IsDateString()
-  interestStartDate?: string;
+  interestStartDate?: string | null;
 
   @IsOptional()
   @IsDateString()
-  interestEndDate?: string;
+  interestEndDate?: string | null;
 
   @IsOptional()
   @IsDateString()
@@ -224,7 +224,7 @@ export class UpdateClaimItemDto {
 
   @IsOptional()
   @IsEnum(InterestStartDateProvenance)
-  interestStartDateProvenance?: InterestStartDateProvenance;
+  interestStartDateProvenance?: InterestStartDateProvenance | null;
 
   // Vekâlet ücretinin hukuki kaynağı (owner K1). Yüksek etkili alan: kullanıcı yolunda onaya gider.
   // `null` açıkça gönderilirse değer "bilinmiyor"a döner (o da onaydan geçer).

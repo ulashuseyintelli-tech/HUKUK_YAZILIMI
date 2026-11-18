@@ -66,10 +66,19 @@ describe("kalem alanı değişikliği özeti", () => {
         interestAccrualStatus: "NO_INTEREST",
         noInterestReason: "Sentetik gerekçe",
         interestStartDate: null,
+        interestEndDate: null,
+        interestStartDateProvenance: null,
         interestTypeCode: null,
         interestType: null,
         interestRate: null,
         noInterestConfirmedById: "user-xyz",
+      }, {
+        currentSnapshot: {
+          ...SNAPSHOT,
+          interestEndDate: "2025-06-27T00:00:00.000Z",
+          interestStartDateProvenance: "JUDGMENT_FINALIZATION_DATE",
+          dueDate: "2025-05-26T00:00:00.000Z",
+        },
       }),
       {},
     );
@@ -77,6 +86,9 @@ describe("kalem alanı değişikliği özeti", () => {
     expect(v["Faiz durumu"]).toBe("Belirlenmedi → Faiz işlemez");
     expect(v["Faiz işlememe gerekçesi"]).toBe("Boş → Sentetik gerekçe");
     expect(v["Faiz başlangıcı"]).toBe("27.05.2025 → Boş");
+    expect(v["Faiz bitişi"]).toBe("27.06.2025 → Boş");
+    expect(v["Faiz başlangıcının dayanağı"]).toBe("Kesinleşme tarihi → Boş");
+    expect(v).not.toHaveProperty("Vade tarihi");
     expect(v["Faizsizliği teyit eden"]).toBe("Boş → Talep eden");
     expect(JSON.stringify(result)).not.toContain("user-xyz");
   });

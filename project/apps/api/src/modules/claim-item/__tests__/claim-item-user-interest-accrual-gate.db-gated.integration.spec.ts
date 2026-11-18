@@ -198,6 +198,27 @@ describeWithDisposableDb('ClaimItem user interest accrual update — HTTP + gate
     interestStartDateProvenance: 'DOCUMENT_DUE_DATE',
   };
 
+
+  const ACCRUING_ITEM = {
+    interestAccrualStatus: 'ACCRUES',
+    interestRate: 18,
+    interestStartDate: new Date('2026-01-15T00:00:00.000Z'),
+    interestEndDate: new Date('2026-02-15T00:00:00.000Z'),
+    interestStartDateProvenance: 'DOCUMENT_DUE_DATE',
+    dueDate: new Date('2026-01-14T00:00:00.000Z'),
+  };
+
+  const NO_INTEREST_BODY = {
+    interestAccrualStatus: 'NO_INTEREST',
+    noInterestReason: 'Sentetik belgede faiz talebi yok',
+    interestTypeCode: null,
+    interestType: null,
+    interestRate: null,
+    interestStartDate: null,
+    interestEndDate: null,
+    interestStartDateProvenance: null,
+  };
+
   it('test pipe seçenekleri üretim main.ts global ValidationPipe ile aynıdır', () => {
     const mainSource = fs.readFileSync(path.resolve(__dirname, '../../../main.ts'), 'utf8');
     expect(mainSource).toMatch(/whitelist:\s*true/);
@@ -361,11 +382,7 @@ describeWithDisposableDb('ClaimItem user interest accrual update — HTTP + gate
   });
 
   it('başarı + onay senkronu: ACCRUES → UNKNOWN (tür bilinir; mevcut tür korunur)', async () => {
-    const f = await fixture('unknown-typed', {
-      interestAccrualStatus: 'ACCRUES',
-      interestStartDate: new Date('2026-01-15T00:00:00.000Z'),
-      interestStartDateProvenance: 'DOCUMENT_DUE_DATE',
-    });
+    const f = await fixture('unknown-typed', { ...ACCRUING_ITEM, interestRate: null });
     const { proposedPatch, after } = await requestAndApprove(f, { interestAccrualStatus: 'UNKNOWN' });
 
     expect(proposedPatch).toEqual({
@@ -376,9 +393,15 @@ describeWithDisposableDb('ClaimItem user interest accrual update — HTTP + gate
       noInterestReason: null,
       noInterestConfirmedById: null,
     });
-    expect(after.interestAccrualStatus).toBe('UNKNOWN');
-    expect(after.interestTypeCode).toBe('LEGAL_3095');
-    expect(after.noInterestConfirmedAt).toBeNull();
+    expect(after).toMatchObject({
+      interestAccrualStatus: 'UNKNOWN',
+      interestTypeCode: 'LEGAL_3095',
+      interestStartDate: ACCRUING_ITEM.interestStartDate,
+      interestEndDate: ACCRUING_ITEM.interestEndDate,
+      interestStartDateProvenance: ACCRUING_ITEM.interestStartDateProvenance,
+      dueDate: ACCRUING_ITEM.dueDate,
+      noInterestConfirmedAt: null,
+    });
   });
 
   it('başarı + onay senkronu: NO_INTEREST → UNKNOWN sıfırlama (OMITTED dalı) faizsizlik izini temizler', async () => {
@@ -404,6 +427,80 @@ describeWithDisposableDb('ClaimItem user interest accrual update — HTTP + gate
     expect(after.noInterestReason).toBeNull();
     expect(after.noInterestConfirmedById).toBeNull();
     expect(after.noInterestConfirmedAt).toBeNull();
+  });
+
+
+  it('ACCRUES → NO_INTEREST açık null değerlerini onayla yazar, vadeyi ve audit bağını korur', async () => {
+    const f = await fixture('clear-to-no-interest', ACCRUING_ITEM);
+    const { approvalRequest, proposedPatch, currentSnapshot, after } = await requestAndApprove(f, NO_INTEREST_BODY);
+
+    expect(proposedPatch).toMatchObject({ ...NO_INTEREST_BODY, noInterestConfirmedById: f.requesterUserId });
+    expect(proposedPatch).not.toHaveProperty('dueDate');
+    expect(currentSnapshot.interestStartDate).toBe(ACCRUING_ITEM.interestStartDate.toISOString());
+    expect(after).toMatchObject({
+      ...NO_INTEREST_BODY,
+      dueDate: ACCRUING_ITEM.dueDate,
+      noInterestConfirmedById: f.requesterUserId,
+      noInterestConfirmedAt: expect.any(Date),
+    });
+    const applied = await prisma.auditLog.findMany({
+      where: { tenantId: f.tenantId, entityId: f.claimItemId, action: 'CLAIM_ITEM_HIGH_IMPACT_UPDATE_APPLIED' },
+    });
+    expect(applied).toHaveLength(1);
+    expect(applied[0].userId).toBe(f.approverUserId);
+    expect(applied[0].metadata).toMatchObject({ approvalRequestId: approvalRequest.id, approvalRequired: true });
+  });
+
+  it.each([
+    ['boş gerekçe', { noInterestReason: '  ' }],
+    ['çelişkili başlangıç', { interestStartDate: '2026-01-16' }],
+  ] as const)('NO_INTEREST reddi (%s): talep ve yazım oluşmaz', async (_label, patch) => {
+    const f = await fixture('invalid-no-interest', ACCRUING_ITEM);
+    const before = await prisma.claimItem.findUniqueOrThrow({ where: { id: f.claimItemId } });
+    const res = await put(f, { ...NO_INTEREST_BODY, ...patch });
+
+    expect(res.status).toBe(400);
+    await expectNothingChanged(f, before);
+    expect(await prisma.officeApprovalRequest.count({ where: { tenantId: f.tenantId } })).toBe(0);
+  });
+
+  it('NO_INTEREST onayı eski snapshot ile uygulanmaz', async () => {
+    const f = await fixture('stale-no-interest', ACCRUING_ITEM);
+    const { approvalRequest } = await requestChange(f, NO_INTEREST_BODY);
+    const changed = await prisma.claimItem.update({
+      where: { id: f.claimItemId },
+      data: { description: 'Onay beklerken yapılan sentetik güncelleme' },
+    });
+
+    await expect(approvals.approve(approvalRequest.id, f.approverUserId)).rejects.toThrow('stale-state conflict');
+    await expectNothingChanged(f, changed);
+    expect(await prisma.auditLog.count({
+      where: { tenantId: f.tenantId, entityId: f.claimItemId, action: 'CLAIM_ITEM_HIGH_IMPACT_UPDATE_APPLIED' },
+    })).toBe(0);
+  });
+
+  it('NO_INTEREST uygulama audit’i reddedilirse kalem ve onay kararı geri alınır', async () => {
+    const f = await fixture('rollback-no-interest', ACCRUING_ITEM);
+    const before = await prisma.claimItem.findUniqueOrThrow({ where: { id: f.claimItemId } });
+    const { approvalRequest } = await requestChange(f, NO_INTEREST_BODY);
+    // Only this fixture's application audit should fail on the disposable database.
+    const constraint = `ni_fail_audit_${randomUUID().replace(/-/g, '')}`;
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "AuditLog" ADD CONSTRAINT "${constraint}" CHECK (NOT ("entityId" = '${f.claimItemId}' AND "action" = 'CLAIM_ITEM_HIGH_IMPACT_UPDATE_APPLIED')) NOT VALID`,
+    );
+    try {
+      await expect(approvals.approve(approvalRequest.id, f.approverUserId)).rejects.toThrow(constraint);
+      expect(await prisma.claimItem.findUniqueOrThrow({ where: { id: f.claimItemId } })).toEqual(before);
+      expect(await prisma.officeApprovalRequest.findUniqueOrThrow({ where: { id: approvalRequest.id } })).toMatchObject({
+        status: OfficeApprovalStatus.PENDING_APPROVAL,
+        executionStatus: OfficeApprovalExecutionStatus.NOT_RUN,
+      });
+      expect(await prisma.auditLog.count({
+        where: { tenantId: f.tenantId, entityId: f.claimItemId, action: 'CLAIM_ITEM_HIGH_IMPACT_UPDATE_APPLIED' },
+      })).toBe(0);
+    } finally {
+      await prisma.$executeRawUnsafe(`ALTER TABLE "AuditLog" DROP CONSTRAINT "${constraint}"`);
+    }
   });
 
   it('başarı + onay senkronu: NO_INTEREST zaman damgasını senkron türetir (regresyon)', async () => {
