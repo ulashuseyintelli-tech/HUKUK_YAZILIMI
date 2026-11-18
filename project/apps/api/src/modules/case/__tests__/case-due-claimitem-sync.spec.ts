@@ -12,6 +12,12 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ClaimItemSourceIntegrityException } from '../../claim-item/claim-item-source-integrity.guard';
 import { CaseService } from '../case.service';
+import {
+  DueChangeRequiresClaimItemApprovalException,
+  DueDeleteRequiresClaimItemCancelException,
+  DueEditBlockedByPendingClaimItemApprovalException,
+  DueWriteForbiddenException,
+} from '../due-canonical-item-guard';
 import { DueType, InterestType } from '../dto/case.dto';
 
 const stub = {} as any;
@@ -27,6 +33,12 @@ function makeService(tx: any) {
       database.claimItem.update({ where: { id: claimItemId }, data })),
     cancelSystemClaimItem: jest.fn(async ({ claimItemId }: any, database: any) =>
       database.claimItem.update({ where: { id: claimItemId }, data: { status: 'CANCELLED' } })),
+    // Due yazım yetkisi: varsayılan olarak dosyada mali yazma yetkisi VAR; ret senaryoları bunu ezer.
+    evaluateHumanCaseFinanceWrite: jest.fn(async () => ({
+      allowed: true,
+      permission: 'EDIT_FINANCE',
+      permissionSource: 'CASE_LAWYER',
+    })),
   } as any;
   return {
     service: new CaseService(
@@ -145,8 +157,39 @@ function makeDue(overrides: Record<string, any> = {}) {
   return base;
 }
 
+/** `makeDue()` ile aynı değerleri taşıyan, köprüyle oluşmuş ETKİN bağlı kanonik kalem. */
+function makeClaim(overrides: Record<string, any> = {}) {
+  return {
+    id: 'claim-1',
+    tenantId: 'tenant-1',
+    caseId: 'case-1',
+    status: 'ACTIVE',
+    itemType: ClaimItemType.PRINCIPAL,
+    amount: 1000,
+    demandedAmount: 1000,
+    originalAmount: 1000,
+    currency: 'TRY',
+    dueDate: new Date('2026-01-01T00:00:00.000Z'),
+    description: 'Ana alacak',
+    sortOrder: 1,
+    interestType: null,
+    interestTypeCode: null,
+    interestRate: null,
+    interestStartDate: null,
+    interestEndDate: null,
+    interestAccrualStatus: 'UNKNOWN',
+    noInterestReason: null,
+    ...overrides,
+  };
+}
+
 function makeTx(overrides: Record<string, any> = {}) {
   const tx = {
+    // Yetki ve satır kilidi sorguları (FOR SHARE / FOR UPDATE): birim testte satır dönmesi gerekmez.
+    $queryRaw: jest.fn(async () => []),
+    officeApprovalRequest: {
+      findFirst: jest.fn(async () => null),
+    },
     case: {
       findFirst: jest.fn(async () => ({ id: 'case-1', tenantId: 'tenant-1', currency: 'TRY' })),
     },
@@ -500,25 +543,21 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
         }),
       },
       claimItem: {
-        findMany: jest.fn(async () => [{ id: 'claim-legacy-other' }]),
+        findMany: jest.fn(async () => [makeClaim({ id: 'claim-legacy-other', itemType: ClaimItemType.OTHER })]),
         update: jest.fn(async ({ data }: any) => ({ id: 'claim-legacy-other', ...data })),
       },
     });
     const { service } = makeService(tx);
 
     await service.updateDue('tenant-1', 'case-1', 'due-1', {
-      amount: 1250,
       description: 'Legacy OTHER metadata',
-      dueDate: '2026-02-01',
     }, 'requester-1');
 
     expect(tx.due.update).toHaveBeenCalled();
+    // Kaleme yalnız düşük etkili alan yansır; tür / tutar / vade / faiz alanları yazılmaz.
     expect(tx.claimItem.update).toHaveBeenCalledWith({
       where: { id: 'claim-legacy-other' },
-      data: expect.objectContaining({
-        itemType: ClaimItemType.OTHER,
-        description: 'Legacy OTHER metadata',
-      }),
+      data: { description: 'Legacy OTHER metadata' },
     });
   });
 
@@ -544,63 +583,85 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
     expect(tx.claimItem.update).not.toHaveBeenCalled();
   });
 
-  it('updateDue non-NAFAKA -> non-NAFAKA geçişini ve Due -> ClaimItem sync yönünü korur', async () => {
+  /**
+   * Owner kararı 18.11.2026 (K1 / K2): Due güncellemesi bağlı kanonik kalemde yüksek etkili değişiklik gerektiriyorsa
+   * hiçbir yazımdan önce reddedilir; kaleme yalnız düşük etkili alanlar (açıklama, sıra) yansır.
+   */
+  it.each([
+    ['kalem türünü değiştiren tür', { type: DueType.EXPENSE }, ['type']],
+    ['tutar', { amount: 1250 }, ['amount']],
+    ['vade', { dueDate: '2026-02-01' }, ['dueDate']],
+    ['faiz başlangıç / bitiş', { interestStartDate: '2026-02-02', interestEndDate: '2026-04-01' }, ['interestStartDate', 'interestEndDate']],
+    [
+      'faiz türü',
+      { interestType: InterestType.TICARI, interestTypeCode: 'COMMERCIAL_AVANS_3095_2_2' },
+      ['interestTypeCode', 'interestType'],
+    ],
+    ['açıklamayla birlikte tutar (kısmi yazım yok)', { description: 'Yazılmamalı', amount: 1250 }, ['amount']],
+  ] as Array<[string, Record<string, unknown>, string[]]>)(
+    'updateDue bağlı kalemde yüksek etkili değişiklik gerektiren isteği yazımdan önce reddeder — %s',
+    async (_label, request, fields) => {
+      const tx = makeTx({
+        due: { findFirst: jest.fn(async () => makeDue()), update: jest.fn() },
+        claimItem: { findMany: jest.fn(async () => [makeClaim()]), update: jest.fn() },
+      });
+      const { service, writerRouter } = makeService(tx);
+
+      const error = await service
+        .updateDue('tenant-1', 'case-1', 'due-1', request as any, 'requester-1')
+        .then(() => null, (e: unknown) => e);
+
+      expect(error).toBeInstanceOf(DueChangeRequiresClaimItemApprovalException);
+      expect((error as DueChangeRequiresClaimItemApprovalException).getResponse()).toEqual(expect.objectContaining({
+        code: 'DUE_CHANGE_REQUIRES_CLAIM_ITEM_APPROVAL',
+        claimItemId: 'claim-1',
+        fields,
+      }));
+      expect(tx.due.update).not.toHaveBeenCalled();
+      expect(tx.claimItem.update).not.toHaveBeenCalled();
+      expect(writerRouter.updateSystemClaimItem).not.toHaveBeenCalled();
+      expect(writerRouter.cancelSystemClaimItem).not.toHaveBeenCalled();
+    },
+  );
+
+  it('updateDue kalem türünü değiştirmeyen Due türünü (asıl alacak → kira) yalnız Due\'ya yazar', async () => {
     const tx = makeTx({
       due: {
         findFirst: jest.fn(async () => makeDue({ type: DueType.PRINCIPAL })),
-        update: jest.fn(async ({ data }: any) => makeDue({ ...data, type: DueType.EXPENSE })),
+        update: jest.fn(async ({ data }: any) => makeDue({ ...data, type: DueType.KIRA })),
       },
-      claimItem: {
-        findMany: jest.fn(async () => [{ id: 'claim-1' }]),
-        update: jest.fn(async ({ data }: any) => ({ id: 'claim-1', ...data })),
-      },
+      claimItem: { findMany: jest.fn(async () => [makeClaim()]), update: jest.fn() },
     });
-    const { service } = makeService(tx);
+    const { service, writerRouter } = makeService(tx);
 
-    await service.updateDue(
-      'tenant-1', 'case-1', 'due-1', { type: DueType.EXPENSE }, 'requester-1',
-    );
+    await service.updateDue('tenant-1', 'case-1', 'due-1', { type: DueType.KIRA }, 'requester-1');
 
     expect(tx.due.update).toHaveBeenCalled();
-    expect(tx.claimItem.update).toHaveBeenCalledWith({
-      where: { id: 'claim-1' },
-      data: expect.objectContaining({ itemType: ClaimItemType.EXPENSE }),
-    });
+    expect(writerRouter.updateSystemClaimItem).not.toHaveBeenCalled();
+    expect(tx.claimItem.update).not.toHaveBeenCalled();
   });
 
-  it('updateDue markerlı ClaimItem amount/description/dueDate alanlarını günceller', async () => {
+  it('updateDue markerlı ClaimItem\'a yalnız değişen düşük etkili alanları (açıklama, sıra) yansıtır', async () => {
     const tx = makeTx({
       due: {
         findFirst: jest.fn(async () => makeDue()),
-        update: jest.fn(async ({ data }: any) =>
-          makeDue({
-            ...data,
-            amount: 1250,
-            description: 'Güncel ana alacak',
-            dueDate: new Date('2026-02-01T00:00:00.000Z'),
-            interestType: InterestType.TICARI,
-            interestRate: 48,
-            interestStartDate: new Date('2026-02-02T00:00:00.000Z'),
-            interestEndDate: new Date('2026-04-01T00:00:00.000Z'),
-          }),
-        ),
+        update: jest.fn(async ({ data }: any) => makeDue({ ...data })),
       },
       claimItem: {
-        findMany: jest.fn(async () => [{ id: 'claim-1' }]),
+        findMany: jest.fn(async () => [makeClaim()]),
         update: jest.fn(async ({ data }: any) => ({ id: 'claim-1', ...data })),
       },
     });
-    const { service } = makeService(tx);
+    const { service, writerRouter } = makeService(tx);
 
     await service.updateDue('tenant-1', 'case-1', 'due-1', {
-      amount: 1250,
+      // Due'daki değerleri yineleyen yüksek etkili alanlar (eski ekran yükü) değişiklik sayılmaz.
+      type: DueType.PRINCIPAL,
+      amount: 1000,
+      dueDate: '2026-01-01',
+      currency: 'TRY',
       description: 'Güncel ana alacak',
-      dueDate: '2026-02-01',
-      interestType: InterestType.TICARI,
-      interestTypeCode: 'COMMERCIAL_AVANS_3095_2_2',
-      interestRate: 48,
-      interestStartDate: '2026-02-02',
-      interestEndDate: '2026-04-01',
+      sortOrder: 3,
     }, 'requester-1');
 
     expect(tx.claimItem.findMany).toHaveBeenCalledWith({
@@ -611,40 +672,123 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
       },
       take: 2,
     });
+    expect(writerRouter.updateSystemClaimItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        route: 'DUE_BRIDGE',
+        sourceId: 'due-1',
+        claimItemId: 'claim-1',
+        initiatedByUserId: 'requester-1',
+        data: { description: 'Güncel ana alacak', sortOrder: 3 },
+      }),
+      tx,
+    );
     expect(tx.claimItem.update).toHaveBeenCalledWith({
       where: { id: 'claim-1' },
-      data: expect.objectContaining({
-        itemType: ClaimItemType.PRINCIPAL,
-        demandedAmount: 1250,
-        amount: 1250,
-        description: 'Güncel ana alacak',
-        dueDate: new Date('2026-02-01T00:00:00.000Z'),
-        interestType: InterestType.TICARI,
-        interestTypeCode: 'COMMERCIAL_AVANS_3095_2_2',
-        interestRate: null,
-        interestStartDate: new Date('2026-02-02T00:00:00.000Z'),
-        interestEndDate: new Date('2026-04-01T00:00:00.000Z'),
-      }),
+      data: { description: 'Güncel ana alacak', sortOrder: 3 },
     });
-    expect(tx.claimItem.update.mock.calls[0][0].data).not.toHaveProperty('originalAmount');
-    expect(tx.claimItem.update.mock.calls[0][0].data).not.toHaveProperty('metadata');
   });
 
-  it('case-create markerıyla oluşan ClaimItemı updateDue senkronlar', async () => {
+  it('updateDue yalnız Due\'ya özgü alan değişince kaleme hiç yazmaz', async () => {
+    const tx = makeTx({
+      due: { findFirst: jest.fn(async () => makeDue()), update: jest.fn(async ({ data }: any) => makeDue({ ...data })) },
+      claimItem: { findMany: jest.fn(async () => [makeClaim()]), update: jest.fn() },
+    });
+    const { service, writerRouter } = makeService(tx);
+
+    await service.updateDue('tenant-1', 'case-1', 'due-1', { isPrimary: true, sourceDocumentNo: 'BELGE-1' }, 'requester-1');
+
+    expect(tx.due.update).toHaveBeenCalled();
+    expect(writerRouter.updateSystemClaimItem).not.toHaveBeenCalled();
+    expect(tx.officeApprovalRequest.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('updateDue bağlı kalemde bekleyen onay talebi varken kaleme yansıyan değişikliği yazımdan önce reddeder', async () => {
+    const tx = makeTx({
+      officeApprovalRequest: { findFirst: jest.fn(async () => ({ id: 'approval-1' })) },
+      due: { findFirst: jest.fn(async () => makeDue()), update: jest.fn() },
+      claimItem: { findMany: jest.fn(async () => [makeClaim()]), update: jest.fn() },
+    });
+    const { service, writerRouter } = makeService(tx);
+
+    await expect(
+      service.updateDue('tenant-1', 'case-1', 'due-1', { description: 'Talep beklerken' }, 'requester-1'),
+    ).rejects.toBeInstanceOf(DueEditBlockedByPendingClaimItemApprovalException);
+
+    expect(tx.officeApprovalRequest.findFirst).toHaveBeenCalledWith({
+      where: {
+        tenantId: 'tenant-1',
+        actionCode: 'CLAIM_ITEM_HIGH_IMPACT_CHANGE',
+        targetType: 'CLAIM_ITEM',
+        targetRef: 'claim-1',
+        status: 'PENDING_APPROVAL',
+      },
+      select: { id: true },
+    });
+    expect(tx.due.update).not.toHaveBeenCalled();
+    expect(writerRouter.updateSystemClaimItem).not.toHaveBeenCalled();
+  });
+
+  it('updateDue kapalı (iptal edilmiş) kaleme yansıyan değişikliği yazımdan önce reddeder', async () => {
+    const tx = makeTx({
+      due: { findFirst: jest.fn(async () => makeDue()), update: jest.fn() },
+      claimItem: { findMany: jest.fn(async () => [makeClaim({ status: 'CANCELLED' })]), update: jest.fn() },
+    });
+    const { service } = makeService(tx);
+
+    await expect(
+      service.updateDue('tenant-1', 'case-1', 'due-1', { description: 'Kapalı kalem' }, 'requester-1'),
+    ).rejects.toMatchObject({ conflictCode: 'CLAIM_ITEM_TERMINAL_MUTATION_FORBIDDEN' });
+
+    expect(tx.due.update).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['createDue', (service: CaseService) => service.createDue('tenant-1', 'case-1', { type: DueType.PRINCIPAL, amount: 1000, dueDate: '2026-01-01' } as any, 'requester-1')],
+    ['updateDue', (service: CaseService) => service.updateDue('tenant-1', 'case-1', 'due-1', { description: 'Yazılmamalı' }, 'requester-1')],
+    ['deleteDue', (service: CaseService) => service.deleteDue('tenant-1', 'case-1', 'due-1', 'requester-1')],
+  ] as Array<[string, (service: CaseService) => Promise<unknown>]>)(
+    '%s dosyada mali yazma yetkisi olmayan aktörü kilit altındaki denetimde, hiçbir yazımdan önce reddeder',
+    async (_label, run) => {
+      const tx = makeTx({ claimItem: { create: jest.fn(), findMany: jest.fn(async () => [makeClaim({ status: 'CANCELLED' })]), update: jest.fn() } });
+      const { service, writerRouter } = makeService(tx);
+      writerRouter.evaluateHumanCaseFinanceWrite.mockResolvedValue({ allowed: false, reasonCode: 'OBJECT_PERMISSION_DENIED' });
+
+      const error = await run(service).then(() => null, (e: unknown) => e);
+
+      expect(error).toBeInstanceOf(DueWriteForbiddenException);
+      expect((error as DueWriteForbiddenException).getResponse()).toEqual(expect.objectContaining({
+        code: 'DUE_WRITE_FORBIDDEN',
+        reasonCode: 'OBJECT_PERMISSION_DENIED',
+      }));
+      // Yetki, yazma transaction'ının istemcisiyle ve aktör satırları kilitlendikten SONRA değerlendirilir.
+      expect(writerRouter.evaluateHumanCaseFinanceWrite).toHaveBeenCalledWith(
+        { tenantId: 'tenant-1', caseId: 'case-1', actorUserId: 'requester-1' },
+        tx,
+      );
+      expect(tx.$queryRaw.mock.invocationCallOrder[0])
+        .toBeLessThan(writerRouter.evaluateHumanCaseFinanceWrite.mock.invocationCallOrder[0]);
+      expect(tx.due.create).not.toHaveBeenCalled();
+      expect(tx.due.update).not.toHaveBeenCalled();
+      expect(tx.due.delete).not.toHaveBeenCalled();
+      expect(tx.due.findFirst).not.toHaveBeenCalled();
+      expect(tx.claimItem.create).not.toHaveBeenCalled();
+      expect(tx.claimItem.update).not.toHaveBeenCalled();
+    },
+  );
+
+  it('case-create markerıyla oluşan ClaimItemı updateDue yalnız düşük etkili alanla senkronlar', async () => {
     const tx = makeTx({
       due: {
         findFirst: jest.fn(async () => makeDue()),
         update: jest.fn(async ({ data }: any) =>
           makeDue({
             ...data,
-            amount: 1500,
             description: 'Açılış alacağı güncel',
-            dueDate: new Date('2026-03-01T00:00:00.000Z'),
           }),
         ),
       },
       claimItem: {
-        findMany: jest.fn(async () => [{ id: 'claim-opening' }]),
+        findMany: jest.fn(async () => [makeClaim({ id: 'claim-opening' })]),
         update: jest.fn(async ({ data }: any) => ({ id: 'claim-opening', ...data })),
       },
     });
@@ -670,9 +814,7 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
     });
 
     await service.updateDue('tenant-1', 'case-1', 'due-1', {
-      amount: 1500,
       description: 'Açılış alacağı güncel',
-      dueDate: '2026-03-01',
     }, 'requester-1');
 
     expect(tx.claimItem.findMany).toHaveBeenCalledWith({
@@ -685,14 +827,8 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
     });
     expect(tx.claimItem.update).toHaveBeenCalledWith({
       where: { id: 'claim-opening' },
-      data: expect.objectContaining({
-        demandedAmount: 1500,
-        amount: 1500,
-        description: 'Açılış alacağı güncel',
-        dueDate: new Date('2026-03-01T00:00:00.000Z'),
-      }),
+      data: { description: 'Açılış alacağı güncel' },
     });
-    expect(tx.claimItem.update.mock.calls[0][0].data).not.toHaveProperty('originalAmount');
   });
 
   it('updateDue live marker bulunamadığında heuristic yapmadan fail-closed kalır', async () => {
@@ -741,28 +877,63 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
     expect(tx.claimItem.update).not.toHaveBeenCalled();
   });
 
-  it('deleteDue markerlı ClaimItemı hard delete yerine CANCELLED yapar', async () => {
+  /**
+   * Owner kararı 18.11.2026 (K1 / K2): Due silme isteği bağlı ETKİN kalemin iptalini gerektirir → yazımdan önce ret.
+   * Due yolu kalemi iptal ETMEZ; iptal kalem ucunda ve iki kişi onayıyla yapılır.
+   */
+  it('deleteDue etkin markerlı ClaimItem varken Due\'yu silmez ve kalemi iptal etmez (409)', async () => {
     const tx = makeTx({
       claimItem: {
-        findMany: jest.fn(async () => [{ id: 'claim-1' }]),
-        update: jest.fn(async ({ data }: any) => ({ id: 'claim-1', ...data })),
+        findMany: jest.fn(async () => [makeClaim()]),
+        update: jest.fn(),
       },
     });
-    const { service } = makeService(tx);
+    const { service, writerRouter } = makeService(tx);
+
+    const error = await service.deleteDue('tenant-1', 'case-1', 'due-1', 'requester-1').then(() => null, (e: unknown) => e);
+
+    expect(error).toBeInstanceOf(DueDeleteRequiresClaimItemCancelException);
+    expect((error as DueDeleteRequiresClaimItemCancelException).getResponse()).toEqual(expect.objectContaining({
+      code: 'DUE_DELETE_REQUIRES_CLAIM_ITEM_CANCEL_APPROVAL',
+      claimItemId: 'claim-1',
+      canonicalAction: { method: 'DELETE', path: '/claim-items/claim-1' },
+    }));
+    expect(writerRouter.cancelSystemClaimItem).not.toHaveBeenCalled();
+    expect(tx.claimItem.update).not.toHaveBeenCalled();
+    expect(tx.due.delete).not.toHaveBeenCalled();
+  });
+
+  it('deleteDue kalem zaten iptal edilmişse yalnız Due\'yu siler; kaleme dokunmaz', async () => {
+    const tx = makeTx({
+      claimItem: {
+        findMany: jest.fn(async () => [makeClaim({ status: 'CANCELLED' })]),
+        update: jest.fn(),
+      },
+    });
+    const { service, writerRouter } = makeService(tx);
 
     await service.deleteDue('tenant-1', 'case-1', 'due-1', 'requester-1');
 
-    expect(tx.claimItem.update).toHaveBeenCalledWith({
-      where: { id: 'claim-1' },
-      data: { status: 'CANCELLED' },
-    });
     expect(tx.due.delete).toHaveBeenCalledWith({ where: { id: 'due-1' } });
+    expect(writerRouter.cancelSystemClaimItem).not.toHaveBeenCalled();
+    expect(tx.claimItem.update).not.toHaveBeenCalled();
   });
 
-  it('case-create markerıyla oluşan ClaimItemı deleteDue CANCELLED yapar', async () => {
+  it.each(['WAIVED', 'COLLECTED'])('deleteDue %s kalemde mevcut yaşam döngüsü reddini korur', async (status) => {
+    const tx = makeTx({
+      claimItem: { findMany: jest.fn(async () => [makeClaim({ status })]), update: jest.fn() },
+    });
+    const { service } = makeService(tx);
+
+    await expect(service.deleteDue('tenant-1', 'case-1', 'due-1', 'requester-1'))
+      .rejects.toMatchObject({ conflictCode: 'CLAIM_ITEM_LIFECYCLE_TRANSITION_FORBIDDEN' });
+    expect(tx.due.delete).not.toHaveBeenCalled();
+  });
+
+  it('case-create markerıyla oluşan etkin ClaimItem varken deleteDue reddedilir', async () => {
     const tx = makeTx({
       claimItem: {
-        findMany: jest.fn(async () => [{ id: 'claim-opening' }]),
+        findMany: jest.fn(async () => [makeClaim({ id: 'claim-opening' })]),
         update: jest.fn(async ({ data }: any) => ({ id: 'claim-opening', ...data })),
       },
     });
@@ -787,7 +958,8 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
       }),
     });
 
-    await service.deleteDue('tenant-1', 'case-1', 'due-1', 'requester-1');
+    await expect(service.deleteDue('tenant-1', 'case-1', 'due-1', 'requester-1'))
+      .rejects.toBeInstanceOf(DueDeleteRequiresClaimItemCancelException);
 
     expect(tx.claimItem.findMany).toHaveBeenCalledWith({
       where: {
@@ -797,10 +969,8 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
       },
       take: 2,
     });
-    expect(tx.claimItem.update).toHaveBeenCalledWith({
-      where: { id: 'claim-opening' },
-      data: { status: 'CANCELLED' },
-    });
+    expect(tx.claimItem.update).not.toHaveBeenCalled();
+    expect(tx.due.delete).not.toHaveBeenCalled();
   });
 
   it('deleteDue live marker bulunamadığında Due kaydını silmeden fail-closed kalır', async () => {

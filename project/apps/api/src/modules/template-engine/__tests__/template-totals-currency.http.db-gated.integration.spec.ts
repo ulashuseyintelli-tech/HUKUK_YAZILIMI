@@ -291,7 +291,7 @@ describeWithDisposableDb('Belge şablonu toplamı — resmî çıktı ret kapıs
 
   /** FR-7 öncesi karma kayıt; belge ret sözleşmesi aynen sınanır. */
   const addDue = async (caseId: string, due: Record<string, unknown>, currency: string) => {
-    await addLegacyMixedDueFixture(prisma, post, caseId, { ...due, description: `${currency} kalem` }, currency);
+    await addLegacyMixedDueFixture(prisma, post, caseId, { ...due, description: `${currency} kalem` }, currency, adminId);
   };
 
   /** Dilekçeler günün tarihini basar; parmak izinden çıkarılır. */

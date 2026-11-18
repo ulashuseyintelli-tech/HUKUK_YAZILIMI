@@ -52,12 +52,67 @@ interface DueModalProps {
   defaultCurrency?: string | null;
 }
 
+export interface DueFormState {
+  type: string;
+  description: string;
+  amount: string;
+  dueDate: string;
+  currency: string;
+  interestType: string;
+}
+
+/** Düzenleme formunun kayıttan türetilen başlangıç değerleri (değişiklik tespitinin de ölçütü). */
+export function dueFormFromRecord(due: any): DueFormState {
+  return {
+    type: due.type || "PRINCIPAL",
+    description: due.description || "",
+    amount: due.amount?.toString() || "",
+    dueDate: due.dueDate ? new Date(due.dueDate).toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+    currency: due.currency || "TRY",
+    interestType: due.interestType || "YASAL",
+  };
+}
+
+/**
+ * Düzenlemede sunucuya YALNIZ kullanıcının değiştirdiği alanlar gider. Değişmeyen varsayılan alanlar (ör. hiç
+ * dokunulmamış "Faiz Türü") gönderilmez: sunucu, dosya kalemine bağlı alacak kaleminin onaya tabi bilgisini (tutar,
+ * tür, vade, faiz) bu pencereden değiştirtmez; gereksiz gönderilen alan onaylı bilgiyi etkileyemesin diye yük dardır.
+ * Hiçbir alan değişmediyse boş nesne döner (istek atılmaz).
+ */
+export function buildDueUpdatePayload(initial: DueFormState, form: DueFormState): Record<string, unknown> {
+  const changes: Record<string, unknown> = {};
+  if (form.type !== initial.type) changes.type = form.type;
+  // Boşaltılan açıklama gönderilmez (önceki davranış: boş açıklama "değişiklik yok" sayılır).
+  if (form.description !== initial.description && form.description) changes.description = form.description;
+  if (parseFloat(form.amount) !== parseFloat(initial.amount)) changes.amount = parseFloat(form.amount);
+  if (form.dueDate !== initial.dueDate) changes.dueDate = form.dueDate;
+  if (form.currency !== initial.currency) changes.currency = form.currency;
+  if (form.type === "PRINCIPAL" && form.interestType !== initial.interestType) changes.interestType = form.interestType;
+  return changes;
+}
+
+/** Sunucunun "bu pencereden yapılamaz / yetki yok" retleri: iletisi açıklayıcıdır ve pencerede aynen gösterilir. */
+const DUE_BLOCK_CODES = new Set([
+  "DUE_CHANGE_REQUIRES_CLAIM_ITEM_APPROVAL",
+  "DUE_DELETE_REQUIRES_CLAIM_ITEM_CANCEL_APPROVAL",
+  "DUE_EDIT_BLOCKED_BY_PENDING_CLAIM_ITEM_APPROVAL",
+  "DUE_WRITE_FORBIDDEN",
+]);
+
+/** Hata bir Due engel reddiyse kullanıcıya gösterilecek sunucu iletisi; değilse null. */
+export function dueBlockNotice(error: any): string | null {
+  const code = error?.body?.code;
+  return typeof code === "string" && DUE_BLOCK_CODES.has(code) && error?.message ? String(error.message) : null;
+}
+
 export function DueModal({ isOpen, onClose, caseId, due, onSuccess, defaultCurrency }: DueModalProps) {
   // Alan boşsa şema varsayılanı (TRY) — dosya para birimi verilmeyen çağrı önceki gibi davranır
   const newDueCurrency = recordCurrencyCode(defaultCurrency);
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [form, setForm] = useState({
+  // Sunucunun engel reddi (onaya tabi değişiklik / bekleyen talep / yetki): pencerede kalıcı ve okunur gösterilir.
+  const [blockNotice, setBlockNotice] = useState<string | null>(null);
+  const [form, setForm] = useState<DueFormState>({
     type: "PRINCIPAL",
     description: "",
     amount: "",
@@ -73,15 +128,9 @@ export function DueModal({ isOpen, onClose, caseId, due, onSuccess, defaultCurre
   );
 
   useEffect(() => {
+    setBlockNotice(null);
     if (due) {
-      setForm({
-        type: due.type || "PRINCIPAL",
-        description: due.description || "",
-        amount: due.amount?.toString() || "",
-        dueDate: due.dueDate ? new Date(due.dueDate).toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
-        currency: due.currency || "TRY",
-        interestType: due.interestType || "YASAL",
-      });
+      setForm(dueFormFromRecord(due));
     } else {
       setForm({
         type: "PRINCIPAL",
@@ -102,27 +151,35 @@ export function DueModal({ isOpen, onClose, caseId, due, onSuccess, defaultCurre
       return;
     }
 
+    // Düzenleme: yalnız değişen alanlar gider; hiçbir alan değişmediyse istek atılmaz.
+    const changes = due?.id ? buildDueUpdatePayload(dueFormFromRecord(due), form) : null;
+    if (changes && Object.keys(changes).length === 0) {
+      onClose();
+      return;
+    }
+
+    setBlockNotice(null);
     setLoading(true);
     try {
-      const data = {
-        type: form.type as any,
-        description: form.description || undefined,
-        amount: parseFloat(form.amount),
-        dueDate: form.dueDate,
-        currency: form.currency,
-        interestType: form.type === 'PRINCIPAL' ? form.interestType : undefined,
-      };
-
-      if (due?.id) {
-        await api.updateDue(caseId, due.id, data);
+      if (due?.id && changes) {
+        await api.updateDue(caseId, due.id, changes as any);
       } else {
-        await api.createDue(caseId, data);
+        await api.createDue(caseId, {
+          type: form.type as any,
+          description: form.description || undefined,
+          amount: parseFloat(form.amount),
+          dueDate: form.dueDate,
+          currency: form.currency,
+          interestType: form.type === 'PRINCIPAL' ? form.interestType : undefined,
+        });
       }
       onSuccess();
       onClose();
     } catch (error: any) {
       console.error("Kaydetme hatası:", error);
-      alert(`Kaydetme başarısız: ${error?.message || 'Bilinmeyen hata'}`);
+      const notice = dueBlockNotice(error);
+      if (notice) setBlockNotice(notice);
+      else alert(`Kaydetme başarısız: ${error?.message || 'Bilinmeyen hata'}`);
     } finally {
       setLoading(false);
     }
@@ -132,6 +189,7 @@ export function DueModal({ isOpen, onClose, caseId, due, onSuccess, defaultCurre
     if (!due?.id) return;
     if (!confirm("Bu alacak kalemini silmek istediğinize emin misiniz?")) return;
 
+    setBlockNotice(null);
     setDeleting(true);
     try {
       await api.deleteDue(caseId, due.id);
@@ -139,7 +197,9 @@ export function DueModal({ isOpen, onClose, caseId, due, onSuccess, defaultCurre
       onClose();
     } catch (error: any) {
       console.error("Silme hatası:", error);
-      alert(`Silme başarısız: ${error?.message || 'Bilinmeyen hata'}`);
+      const notice = dueBlockNotice(error);
+      if (notice) setBlockNotice(notice);
+      else alert(`Silme başarısız: ${error?.message || 'Bilinmeyen hata'}`);
     } finally {
       setDeleting(false);
     }
@@ -150,7 +210,8 @@ export function DueModal({ isOpen, onClose, caseId, due, onSuccess, defaultCurre
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+      {/* Yönlendirme notu ve engel iletisi pencereyi uzatır: kısa ekranda taşmasın diye yükseklik sınırı + kaydırma. */}
+      <div className="relative bg-white rounded-lg shadow-xl w-full max-w-md mx-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
         <div className="flex items-center justify-between px-4 py-3 border-b">
           <h3 className="text-sm font-semibold text-gray-900">
             {due ? "Alacak Kalemi Düzenle" : "Yeni Alacak Kalemi"}
@@ -173,6 +234,19 @@ export function DueModal({ isOpen, onClose, caseId, due, onSuccess, defaultCurre
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 space-y-3">
+          {due?.id && due?.type !== "NAFAKA" && (
+            <p className="text-[11px] text-gray-500 leading-snug">
+              Bağlı alacak kaleminin tutarını, türünü, vadesini ya da faiz bilgisini değiştiren düzenlemeler ve silme
+              iki kişi onayına tabidir; bu pencereden yapılamaz. Bunları &quot;Alacak Kalemleri (Kanonik)&quot;
+              panelinde kalemi düzenleyerek isteyin.
+            </p>
+          )}
+          {blockNotice && (
+            <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 leading-snug">
+              <p className="font-semibold mb-0.5">Bu işlem bu pencereden yapılamadı</p>
+              <p>{blockNotice}</p>
+            </div>
+          )}
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Tür *</label>
             <select

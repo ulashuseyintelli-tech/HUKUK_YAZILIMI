@@ -13,6 +13,7 @@ import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import * as request from 'supertest';
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
+import { ensureCaseFinanceWriter } from '../../../../test/case-finance-writer-fixture';
 import { StorageModule } from '../../../common/storage/storage.module';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { ErrorLogModule } from '../../error-log/error-log.module';
@@ -262,6 +263,8 @@ describeWithDisposableDb('Dosya açılışında alacak kalemi para birimi (HTTP 
     const opened = await openCase('sonradan', { currency: 'USD', dues: [PRINCIPAL] });
     expect(opened.status).toBe(201);
     const caseId = opened.body.id as string;
+    // Sonradan kalem ekleme dosyada mali yazma yetkisi ister (owner kararı 18.11.2026, K3); bu testin konusu para birimidir.
+    await ensureCaseFinanceWriter(prisma, caseId, adminId);
 
     const omitted = await post(`/cases/${caseId}/dues`, { ...EXPENSE, amount: 100, description: 'para birimi verilmedi' });
     expect(omitted.status).toBe(201);

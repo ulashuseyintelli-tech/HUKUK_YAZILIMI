@@ -23,9 +23,18 @@ import { CreateCaseDto, CreateDueDto, UpdateCaseDto, UpdateDueDto, CaseSubCatego
 import { Prisma, LegalCaseStatus, InterestType as PrismaInterestType, DocumentSourceType, InterestAccrualStatus, InterestTypeCode } from "@prisma/client";
 import { mapDueTypeToClaimItemType, buildClaimItemData } from "./due-to-claim-item.mapper";
 import { AttorneyFeeBasis, assertAttorneyFeeBasisMatchesItemType } from "../claim-item/attorney-fee-basis";
-import { claimItemNormalUpdateAmounts } from "../claim-item/claim-item-amount-contract";
 import { interestWriteData, normalizeInterestWriteIntent } from "../claim-item/interest-write-admission";
 import { assertGenericDueTypeTransition } from "./due-type-transition.policy";
+import {
+  DueChangeRequiresClaimItemApprovalException,
+  DueDeleteRequiresClaimItemCancelException,
+  DueEditBlockedByPendingClaimItemApprovalException,
+  DueWriteForbiddenException,
+  planDueCanonicalUpdate,
+} from "./due-canonical-item-guard";
+import { lockExecutionActorRows } from "../office-approval/office-approval-execution-authority";
+import { assertClaimItemLifecycleMutation } from "../claim-item/claim-item-lifecycle-contract";
+import { CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE, CLAIM_ITEM_TARGET_TYPE } from "../claim-item/claim-item-approval.constants";
 import {
   resolveCaseInstrumentType,
   caseInstrumentRejectionReason,
@@ -469,12 +478,6 @@ function normalizeDueInterestRate(value: unknown): number | null | undefined {
   return Number(value);
 }
 
-function normalizeClaimItemInterestRate(value: unknown): number | null | undefined {
-  if (value === undefined) return undefined;
-  if (value === null) return null;
-  return Number(value);
-}
-
 function serializeDueInterestDate(value?: Date | string | null): string | undefined {
   if (!value) return undefined;
   return value instanceof Date ? value.toISOString() : value;
@@ -518,12 +521,6 @@ export function buildSyncDueDto(due: DueForClaimItemSync): DueDto {
     kiraDonemBitis: due.kiraDonemBitis ?? undefined,
     attorneyFeeBasis: due.attorneyFeeBasis ?? undefined,
   };
-}
-
-function normalizeClaimItemInterestDate(value?: Date | string | null): Date | null | undefined {
-  if (value === undefined) return undefined;
-  if (value === null) return null;
-  return value instanceof Date ? value : new Date(value);
 }
 
 function mergeDueSyncMetadata(
@@ -675,12 +672,75 @@ export class CaseService {
    * (güncelleme / sayaç yolları) kapsam DIŞIDIR — bu dilim yalnız liste ve detay okumasını daraltır.
    * P3-D2: kural CaseViewScopeService.scopeWhere'e taşındı (belge uçlarıyla AYNI uygulama; davranış değişmedi).
    */
-  private async caseViewScope(tenantId: string, actorUserId?: string): Promise<Prisma.CaseWhereInput | null> {
+  private async caseViewScope(
+    tenantId: string,
+    actorUserId?: string,
+    // Due yazımları: kapsam, yazma transaction'ı içinde (aktör satırları kilitliyken) aynı istemciyle çözülür.
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<Prisma.CaseWhereInput | null> {
     if (!isCaseViewScopeEnabled()) return null;
     if (!this.caseViewScopeService) {
       throw new ForbiddenException({ code: "CASE_VIEW_SCOPE_UNRESOLVED", message: "Dosya görünüm kapsamı çözümlenemedi" });
     }
-    return this.caseViewScopeService.scopeWhere(tenantId, actorUserId, this.prisma);
+    return this.caseViewScopeService.scopeWhere(tenantId, actorUserId, db);
+  }
+
+  /**
+   * Due (dosya kalemi) yazımının YETKİLİ kararı — owner kararı 18.11.2026 (K3): yalnız aynı büroda bulunmak yetmez.
+   * Yazma transaction'ı İÇİNDE, ilk yazımdan ÖNCE çalışır:
+   *  1. Aktörün yetkiyi taşıyan satırları `FOR SHARE` kilitlenir: `Lawyer` → `User` (mevcut yürütme kilidi, iptal
+   *     yollarıyla aynı sıra), `StaffMember`, ve bu dosyadaki `CaseLawyer` / `CaseStaff` ataması. İptal (pasifleştirme,
+   *     izin kaldırma, ekipten çıkarma) bu satırları UPDATE / DELETE eder: iptal önce commit ettiyse kilitli okuma
+   *     yeni durumu görür → ret, yazım yok; bu kilit önce alındıysa iptal yazım commit / rollback olana dek bekler.
+   *  2. Dosya kapsamı: dosya aynı büroda VE (bayrak açıksa) aktörün dosya görünüm kapsamında olmalı; değilse 404
+   *     (var olmayan dosyayla aynı gövde — varlık sızmaz).
+   *  3. Mali yazma yetkisi: kalem insan yazma kapısının AYNI yüklemi (avukat `casePermissions.canEditFinance`;
+   *     personel `canSeeFinance` + `CaseStaff.canEdit`). Rütbe / rol / delegasyon kendiliğinden yetki ÜRETMEZ.
+   * Yeni yetki tanımlamaz; VIEWER sınıf düzeyi kapıda (ViewerWriteDenyGuard) zaten elenir.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseService.createDue() → POST /cases/:id/dues
+   * - CaseService.updateDue() → PATCH /cases/:id/dues/:dueId
+   * - CaseService.deleteDue() → DELETE /cases/:id/dues/:dueId
+   * </remarks>
+   */
+  private async assertDueWriteAuthorityInTx(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    caseId: string,
+    actorUserId: string,
+  ) {
+    if (typeof actorUserId !== "string" || !actorUserId) {
+      throw new DueWriteForbiddenException("HUMAN_ACTOR_NOT_ACTIVE_IN_TENANT");
+    }
+    await lockExecutionActorRows(tx, actorUserId);
+    await tx.$queryRaw`SELECT "id" FROM "StaffMember" WHERE "userId" = ${actorUserId} FOR SHARE`;
+    await tx.$queryRaw`
+      SELECT cl."id" FROM "CaseLawyer" cl
+      JOIN "Lawyer" l ON l."id" = cl."lawyerId"
+      WHERE cl."caseId" = ${caseId} AND l."userId" = ${actorUserId}
+      FOR SHARE OF cl
+    `;
+    await tx.$queryRaw`
+      SELECT cs."id" FROM "CaseStaff" cs
+      JOIN "StaffMember" s ON s."id" = cs."staffMemberId"
+      WHERE cs."caseId" = ${caseId} AND s."userId" = ${actorUserId}
+      FOR SHARE OF cs
+    `;
+
+    const scope = await this.caseViewScope(tenantId, actorUserId, tx);
+    const caseRow = await tx.case.findFirst({
+      where: { id: caseId, tenantId, ...(scope ? { AND: [scope] } : {}) },
+    });
+    if (!caseRow) throw new NotFoundException("Dosya bulunamadı");
+
+    const decision = await this.requireClaimItemWriterRouter().evaluateHumanCaseFinanceWrite(
+      { tenantId, caseId, actorUserId },
+      tx,
+    );
+    if (!decision.allowed) throw new DueWriteForbiddenException(decision.reasonCode);
+    return caseRow;
   }
 
   /**
@@ -1918,8 +1978,7 @@ export class CaseService {
    *
    * <remarks>
    * Çağrıldığı yerler:
-   * - CaseService.updateDue() → PATCH /cases/:id/dues/:dueId (marker'lı ClaimItem sync)
-   * - CaseService.deleteDue() → DELETE /cases/:id/dues/:dueId (marker'lı ClaimItem cancel)
+   * - CaseService.findLockedDueSyncClaimItem() → PATCH / DELETE /cases/:id/dues/:dueId (marker'lı bağlı kalem)
    * </remarks>
    */
   private async findDueSyncClaimItem(
@@ -1948,90 +2007,93 @@ export class CaseService {
   }
 
   /**
-   * PR-ALACAK-1 — güncel Due değerlerini marker'lı ClaimItem alanlarına yansıtır.
-   * Mapper null dönerse mevcut marker'lı ClaimItem iptal edilir.
+   * Marker'lı bağlı kalemi SATIR KİLİDİYLE okur: kilit alındıktan sonra satır yeniden okunur, böylece karar (yüksek
+   * etkili değişiklik gerekiyor mu / kalem etkin mi) eşzamanlı onay yürütmesinin commit ettiği güncel değerlerden
+   * verilir. Kilit sırası: Due satırı → kalem satırı (onay yürütmesi Due satırını kilitlemez; döngü yok).
    *
    * <remarks>
    * Çağrıldığı yerler:
-   * - CaseService.updateDue() → PATCH /cases/:id/dues/:dueId (marker'lı ClaimItem sync)
+   * - CaseService.updateDue() → PATCH /cases/:id/dues/:dueId
+   * - CaseService.deleteDue() → DELETE /cases/:id/dues/:dueId
    * </remarks>
    */
-  private async syncMarkedClaimItemFromDue(
+  private async findLockedDueSyncClaimItem(
     tx: Prisma.TransactionClient,
     tenantId: string,
     caseId: string,
-    due: DueForClaimItemSync,
+    dueId: string,
+  ) {
+    const found = await this.findDueSyncClaimItem(tx, tenantId, caseId, dueId);
+    if (!found) return null;
+    await tx.$queryRaw`SELECT "id" FROM "ClaimItem" WHERE "id" = ${found.id} FOR UPDATE`;
+    // Kilit altında yeniden okuma (aynı marker sorgusu: çoklu marker denetimi de güncel durumda yinelenir).
+    return this.findDueSyncClaimItem(tx, tenantId, caseId, dueId);
+  }
+
+  /**
+   * Due güncellemesinin bağlı (marker'lı) kanonik kaleme yansıması — YALNIZ düşük etkili alanlar (açıklama, sıra).
+   *
+   * Owner kararı 18.11.2026 (K1 / K2): Due yolu bağlı kalemin tutarını, türünü, para birimini, vadesini, faiz
+   * alanlarını ya da durumunu YAZAMAZ; bu değişiklikler yalnız kalem ucundan ve iki kişi onayıyla yapılır.
+   * Çağıran (`updateDue`) yüksek etkili değişiklik gerektiren isteği bu yönteme gelmeden ÖNCE reddeder; yazma
+   * kapısı da `DUE_BRIDGE` UPDATE yükünde bu iki alan dışındakileri reddeder (`DUE_BRIDGE_UPDATE_FIELDS`).
+   * İsteğin taşımadığı ya da değiştirmediği alan kaleme yazılmaz; yama boşsa kaleme hiç dokunulmaz.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseService.updateDue() → PATCH /cases/:id/dues/:dueId (marker'lı ClaimItem düşük etkili sync)
+   * </remarks>
+   */
+  private async syncLowImpactClaimItemFieldsFromDue(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    caseId: string,
+    dueId: string,
+    claimItem: { id: string; currency: string },
+    patch: Readonly<{ description?: string | null; sortOrder?: number }>,
     initiatedByUserId: string,
   ): Promise<void> {
-    const claimItem = await this.findDueSyncClaimItem(tx, tenantId, caseId, due.id);
-    const itemType = mapDueTypeToClaimItemType(due.type as DueType);
-    if (!claimItem) {
-      if (itemType !== null) {
-        throw new ClaimItemSourceIntegrityException(
-          "DUE_BRIDGE_MARKER_MISSING",
-          "Mapped Due has no live ClaimItem source marker; lifecycle sync is fail-closed.",
-        );
-      }
-      return;
-    }
-
-    if (itemType === null) {
-      await this.requireClaimItemWriterRouter().cancelSystemClaimItem(
-        {
-          route: "DUE_BRIDGE",
-          tenantId,
-          caseId,
-          sourceId: due.id,
-          initiatedByUserId,
-          claimItemId: claimItem.id,
-          currency: due.currency || "TRY",
-        },
-        tx,
-      );
-      return;
-    }
-
-    const amount = Number(due.amount);
+    if (Object.keys(patch).length === 0) return;
     await this.requireClaimItemWriterRouter().updateSystemClaimItem(
       {
         route: "DUE_BRIDGE",
         tenantId,
         caseId,
-        sourceId: due.id,
+        sourceId: dueId,
         initiatedByUserId,
         claimItemId: claimItem.id,
-        currency: due.currency || "TRY",
-        data: {
-          itemType,
-          ...claimItemNormalUpdateAmounts(amount),
-          currency: due.currency || "TRY",
-          description: due.description,
-          dueDate: due.dueDate instanceof Date ? due.dueDate : new Date(due.dueDate),
-          interestType: due.interestType ? (due.interestType as PrismaInterestType) : null,
-          interestTypeCode: due.interestTypeCode ? (due.interestTypeCode as InterestTypeCode) : null,
-          interestRate: normalizeClaimItemInterestRate(due.interestRate),
-          ...(due.interestAccrualStatus === InterestAccrualStatus.NO_INTEREST
-            ? {
-                interestAccrualStatus: InterestAccrualStatus.NO_INTEREST,
-                noInterestReason: due.noInterestReason,
-                noInterestConfirmedById: due.noInterestConfirmedById,
-                noInterestConfirmedAt: due.noInterestConfirmedAt ?? new Date(),
-              }
-            : due.interestAccrualStatus === InterestAccrualStatus.UNKNOWN
-              ? {
-                  interestAccrualStatus: InterestAccrualStatus.UNKNOWN,
-                  noInterestReason: null,
-                  noInterestConfirmedById: null,
-                  noInterestConfirmedAt: null,
-                }
-              : {}),
-          interestStartDate: normalizeClaimItemInterestDate(due.interestStartDate),
-          interestEndDate: normalizeClaimItemInterestDate(due.interestEndDate),
-          sortOrder: due.sortOrder ?? 0,
-        },
+        currency: claimItem.currency,
+        data: { ...patch },
       },
       tx,
     );
+  }
+
+  /**
+   * Bağlı kalemde bekleyen yüksek etkili onay talebi var mı. Kaleme yapılan her yazım (açıklama dahil) bekleyen
+   * talebin durum özetini bayatlatır; Due yolu bekleyen talebi sessizce onaylanamaz bırakamaz.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseService.updateDue() → PATCH /cases/:id/dues/:dueId (kaleme yansıyan değişiklikten önce)
+   * </remarks>
+   */
+  private async hasPendingClaimItemApproval(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    claimItemId: string,
+  ): Promise<boolean> {
+    const pending = await tx.officeApprovalRequest.findFirst({
+      where: {
+        tenantId,
+        actionCode: CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE,
+        targetType: CLAIM_ITEM_TARGET_TYPE,
+        targetRef: claimItemId,
+        status: "PENDING_APPROVAL",
+      },
+      select: { id: true },
+    });
+    return pending !== null;
   }
 
   /**
@@ -4692,10 +4754,8 @@ export class CaseService {
     this.assertDueCreationAdmission([data]);
     const normalizedInterest = this.normalizeDueInterestForWrite(data, actorUserId);
     return this.prisma.$transaction(async (tx) => {
-      const caseExists = await tx.case.findFirst({
-        where: { id: caseId, tenantId },
-      });
-      if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+      // K3: dosya kapsamı + mali yazma yetkisi, kilit altında ve ilk yazımdan önce (yalnız aynı büro yetmez).
+      const caseExists = await this.assertDueWriteAuthorityInTx(tx, tenantId, caseId, actorUserId);
 
       // Get max sortOrder
       const currency = data.currency === undefined ? caseExists.currency : data.currency;
@@ -4752,6 +4812,15 @@ export class CaseService {
   /**
    * Alacak kalemi güncelle.
    *
+   * Owner kararı 18.11.2026 (K1 / K2 / K3):
+   *  - Yetki: dosya kapsamı + mali yazma yetkisi, yazma transaction'ında kilit altında (`assertDueWriteAuthorityInTx`).
+   *  - Bağlı kanonik kalemde yüksek etkili değişiklik (tutar, tür, para birimi, vade, faiz alanları) gerektiren istek
+   *    hiçbir yazımdan ÖNCE 409 ile reddedilir; kullanıcı kalem ucuna (iki kişi onayı) yönlendirilir.
+   *  - Gönderilmeyen alan değişmez; Due'daki değeri yineleyen alan değişiklik sayılmaz; kaleme yalnız düşük etkili
+   *    alanlar (açıklama, sıra) yansır. Karar kuralı: `planDueCanonicalUpdate` (saf).
+   *  - Due satırı ve bağlı kalem satırı kilitlenir: aynı Due'ya eşzamanlı istekler sıraya girer, karar güncel
+   *    satırlardan verilir. Ret hâlinde Due, kalem, onay ve denetim kayıtları değişmez (tek transaction).
+   *
    * <remarks>
    * Çağrıldığı yerler:
    * - CaseController.updateDue() → PATCH /cases/:id/dues/:dueId (dosya açıldıktan sonra alacak kalemi güncelleme)
@@ -4765,11 +4834,9 @@ export class CaseService {
     actorUserId: string,
   ) {
     return this.prisma.$transaction(async (tx) => {
-      const caseExists = await tx.case.findFirst({
-        where: { id: caseId, tenantId },
-      });
-      if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+      const caseExists = await this.assertDueWriteAuthorityInTx(tx, tenantId, caseId, actorUserId);
 
+      await tx.$queryRaw`SELECT "id" FROM "Due" WHERE "id" = ${dueId} AND "caseId" = ${caseId} FOR UPDATE`;
       const due = await tx.due.findFirst({
         where: { id: dueId, caseId },
       });
@@ -4779,6 +4846,33 @@ export class CaseService {
       assertGenericDueTypeTransition(due.type as DueType, data.type);
       assertCaseClaimCurrency(caseExists.currency, data.currency === undefined ? due.currency : data.currency);
       const normalizedInterest = this.normalizeDueInterestForWrite(data, actorUserId, due);
+
+      const claimItem = await this.findLockedDueSyncClaimItem(tx, tenantId, caseId, dueId);
+      if (!claimItem && mapDueTypeToClaimItemType(due.type as DueType) !== null) {
+        throw new ClaimItemSourceIntegrityException(
+          "DUE_BRIDGE_MARKER_MISSING",
+          "Mapped Due has no live ClaimItem source marker; lifecycle sync is fail-closed.",
+        );
+      }
+
+      // Bütün retler ilk yazımdan ÖNCE verilir.
+      const plan = planDueCanonicalUpdate({
+        due,
+        claimItem,
+        request: data,
+        normalizedInterest: normalizedInterest.persisted,
+      });
+      if (claimItem && plan.highImpactFields.length > 0) {
+        throw new DueChangeRequiresClaimItemApprovalException(claimItem.id, plan.highImpactFields);
+      }
+      const claimItemTouched = claimItem !== null && Object.keys(plan.claimItemPatch).length > 0;
+      if (claimItem && claimItemTouched) {
+        // Kapalı (iptal / feragat / tahsil) kalem değiştirilemez: mevcut yaşam döngüsü reddi, yazımdan önce.
+        assertClaimItemLifecycleMutation(claimItem.status, plan.claimItemPatch);
+        if (await this.hasPendingClaimItemApproval(tx, tenantId, claimItem.id)) {
+          throw new DueEditBlockedByPendingClaimItemApprovalException(claimItem.id);
+        }
+      }
 
       const updatedDue = await tx.due.update({
         where: { id: dueId },
@@ -4802,10 +4896,17 @@ export class CaseService {
         },
       });
 
-      await this.syncMarkedClaimItemFromDue(tx, tenantId, caseId, {
-        ...updatedDue,
-        ...normalizedInterest.bridge,
-      }, actorUserId);
+      if (claimItem && claimItemTouched) {
+        await this.syncLowImpactClaimItemFieldsFromDue(
+          tx,
+          tenantId,
+          caseId,
+          dueId,
+          claimItem,
+          plan.claimItemPatch,
+          actorUserId,
+        );
+      }
 
       return updatedDue;
     });
@@ -4893,6 +4994,10 @@ export class CaseService {
   /**
    * Alacak kalemi sil.
    *
+   * Owner kararı 18.11.2026 (K1 / K2 / K3): yetki `assertDueWriteAuthorityInTx` ile kilit altında; bağlı ETKİN
+   * kanonik kalemin iptalini gerektiren silme isteği yazımdan önce 409 ile reddedilir (iptal kalem ucunda, iki kişi
+   * onayıyla yapılır). Due yolu kalemi iptal ETMEZ.
+   *
    * <remarks>
    * Çağrıldığı yerler:
    * - CaseController.deleteDue() → DELETE /cases/:id/dues/:dueId (dosya açıldıktan sonra alacak kalemi silme)
@@ -4900,17 +5005,16 @@ export class CaseService {
    */
   async deleteDue(tenantId: string, caseId: string, dueId: string, actorUserId: string) {
     return this.prisma.$transaction(async (tx) => {
-      const caseExists = await tx.case.findFirst({
-        where: { id: caseId, tenantId },
-      });
-      if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+      // K3: dosya kapsamı + mali yazma yetkisi, kilit altında ve ilk yazımdan önce.
+      await this.assertDueWriteAuthorityInTx(tx, tenantId, caseId, actorUserId);
 
+      await tx.$queryRaw`SELECT "id" FROM "Due" WHERE "id" = ${dueId} AND "caseId" = ${caseId} FOR UPDATE`;
       const due = await tx.due.findFirst({
         where: { id: dueId, caseId },
       });
       if (!due) throw new NotFoundException("Alacak kalemi bulunamadı");
 
-      const claimItem = await this.findDueSyncClaimItem(tx, tenantId, caseId, dueId);
+      const claimItem = await this.findLockedDueSyncClaimItem(tx, tenantId, caseId, dueId);
       if (!claimItem && mapDueTypeToClaimItemType(due.type as DueType) !== null) {
         throw new ClaimItemSourceIntegrityException(
           "DUE_BRIDGE_MARKER_MISSING",
@@ -4918,18 +5022,13 @@ export class CaseService {
         );
       }
       if (claimItem) {
-        await this.requireClaimItemWriterRouter().cancelSystemClaimItem(
-          {
-            route: "DUE_BRIDGE",
-            tenantId,
-            caseId,
-            sourceId: dueId,
-            initiatedByUserId: actorUserId,
-            claimItemId: claimItem.id,
-            currency: due.currency || "TRY",
-          },
-          tx,
-        );
+        // K1 / K2: ETKİN kanonik kalemin iptali yüksek etkilidir → yalnız kalem ucu + iki kişi onayı; Due silme
+        // isteği yazımdan önce reddedilir. Kalem zaten iptal edilmişse kaleme dokunulmadan yalnız Due silinir;
+        // feragat / tahsil durumundaki kalemde mevcut yaşam döngüsü reddi (409) aynen korunur.
+        if (claimItem.status === "ACTIVE") {
+          throw new DueDeleteRequiresClaimItemCancelException(claimItem.id);
+        }
+        assertClaimItemLifecycleMutation(claimItem.status, { status: "CANCELLED" });
       }
 
       await tx.due.delete({ where: { id: dueId } });

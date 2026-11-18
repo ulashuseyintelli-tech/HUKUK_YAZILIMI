@@ -43,7 +43,8 @@ const DUE_TO_CLAIM_ITEM: Record<DueType, ClaimItemType | null> = {
  * Çağrıldığı yerler:
  * - CaseService.createClaimItemsFromDues() → POST /cases (dosya açılışı, dues→ClaimItem)
  * - CaseService.createDue() → POST /cases/:id/dues (dosya açıldıktan sonra Due→ClaimItem sync)
- * - CaseService.syncMarkedClaimItemFromDue() → PATCH /cases/:id/dues/:dueId (marker'lı ClaimItem sync)
+ * - CaseService.updateDue() / deleteDue() → PATCH / DELETE /cases/:id/dues/:dueId (bağlı kalem beklenir mi)
+ * - planDueCanonicalUpdate() → PATCH /cases/:id/dues/:dueId (istenen tür kanonik kalem türünü değiştiriyor mu)
  * - planBackfillForCase() → scripts/backfill-due-to-claimitem.ts (eski Due kayıtları için plan)
  */
 export function mapDueTypeToClaimItemType(dueType: DueType): ClaimItemType | null {

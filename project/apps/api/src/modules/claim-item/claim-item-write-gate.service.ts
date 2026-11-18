@@ -13,6 +13,7 @@ import {
 } from './claim-item-write-command';
 import {
   CLAIM_ITEM_SYSTEM_WRITER_ROUTES,
+  claimItemSystemRouteUpdateFields,
   isClaimItemSystemWriterRoute,
   type ClaimItemSystemWriterRoute,
 } from './claim-item-writer-routes';
@@ -75,6 +76,28 @@ export type ClaimItemWriteGateResult =
       scope: Readonly<ClaimItemWriteGateScope>;
     }>;
 
+/**
+ * Dosya düzeyi mali yazma yetkisinin (EDIT_FINANCE) sonucu — ClaimItem insan yazma kapısıyla AYNI yüklem; kalem
+ * hedefi ve yük sınıflaması YOKTUR. Kalem dışındaki dosya mali yazımlarında (Due oluşturma / güncelleme / silme)
+ * kullanılır; yeni bir yetki tanımlamaz.
+ */
+export type ClaimItemCaseFinanceWriteResult =
+  | Readonly<{
+      allowed: true;
+      permission: ActionCode.EDIT_FINANCE;
+      permissionSource: ClaimItemWritePermissionSource;
+    }>
+  | Readonly<{
+      allowed: false;
+      reasonCode: Extract<
+        ClaimItemWriteGateDenialCode,
+        | 'HUMAN_ACTOR_NOT_ACTIVE_IN_TENANT'
+        | 'HUMAN_ACTOR_PROFILE_INVALID'
+        | 'TENANT_CASE_SCOPE_MISMATCH'
+        | 'OBJECT_PERMISSION_DENIED'
+      >;
+    }>;
+
 type HumanProfile =
   | Readonly<{ kind: 'LAWYER'; profileId: string }>
   | Readonly<{ kind: 'STAFF'; profileId: string; canSeeFinance: boolean }>;
@@ -116,6 +139,15 @@ export class ClaimItemWriteGateService {
         !(route.operations as readonly ClaimItemWriteOperation[]).includes(command.operation)
       ) {
         return this.deny(scope, actor.type, 'SYSTEM_ACTOR_AUTHORITY_NOT_ROUTED');
+      }
+      // Rota UPDATE alan süzgeci tanımlıysa (DUE_BRIDGE: yalnız düşük etkili alanlar) listede olmayan alan reddedilir.
+      const updateFields = claimItemSystemRouteUpdateFields(actor.system);
+      if (
+        command.operation === 'UPDATE' &&
+        updateFields &&
+        Object.keys(command.payload).some((field) => !updateFields.includes(field))
+      ) {
+        return this.deny(scope, actor.type, 'UNSUPPORTED_UPDATE_FIELD');
       }
 
       const scopeFailure = await this.validateResourceScope(command, scope, actor.type, db);
@@ -170,6 +202,39 @@ export class ClaimItemWriteGateService {
     }
 
     return this.approvalRequired(scope, permissionSource);
+  }
+
+  /**
+   * Dosya düzeyi mali yazma yetkisi (EDIT_FINANCE) — `evaluate`'in insan dalındaki AYNI aktör ve nesne yüklemi:
+   * aktif, aynı büroda, tek kartlı hesap + dosya aynı büroda + avukatta `casePermissions.canEditFinance`, personelde
+   * `canSeeFinance` ve `CaseStaff.canEdit`. Rütbe, rol, delegasyon ya da yalnız aynı büroda bulunmak yetki ÜRETMEZ.
+   * Okuma hatası izne çevrilmez (istisna yukarı çıkar, fail-closed). `database` verilirse yüklem o istemciyle
+   * (çağıranın yazma transaction'ı, aktör satırları kilitliyken) değerlendirilir.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - ClaimItemWriterRouterService.evaluateHumanCaseFinanceWrite() → CaseService.createDue / updateDue / deleteDue
+   * ///    (POST / PATCH / DELETE /cases/:id/dues[/:dueId])
+   * /// </remarks>
+   */
+  async evaluateHumanCaseFinanceWrite(
+    input: { readonly tenantId: string; readonly caseId: string; readonly actorUserId: string },
+    database: PrismaService | object = this.prisma,
+  ): Promise<ClaimItemCaseFinanceWriteResult> {
+    const db = database as any;
+    const profile = await this.resolveHumanProfile(input.actorUserId, input.tenantId, db);
+    if (!profile) return Object.freeze({ allowed: false, reasonCode: 'HUMAN_ACTOR_NOT_ACTIVE_IN_TENANT' });
+    if (profile === 'INVALID') return Object.freeze({ allowed: false, reasonCode: 'HUMAN_ACTOR_PROFILE_INVALID' });
+
+    const caseInScope = await db.case.findFirst({
+      where: { id: input.caseId, tenantId: input.tenantId },
+      select: { id: true },
+    });
+    if (!caseInScope) return Object.freeze({ allowed: false, reasonCode: 'TENANT_CASE_SCOPE_MISMATCH' });
+
+    const permissionSource = await this.resolveObjectPermission(profile, input.caseId, db);
+    if (!permissionSource) return Object.freeze({ allowed: false, reasonCode: 'OBJECT_PERMISSION_DENIED' });
+    return Object.freeze({ allowed: true, permission: ActionCode.EDIT_FINANCE, permissionSource });
   }
 
   private async resolveHumanProfile(
