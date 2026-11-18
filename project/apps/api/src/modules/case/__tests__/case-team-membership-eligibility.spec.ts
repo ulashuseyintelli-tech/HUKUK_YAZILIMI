@@ -72,7 +72,7 @@ describe("CANDIDATE-K1 addCaseLawyer — ekip-üyesi aktiflik kapısı", () => {
     (svc as any).prisma = m.prisma;
     (svc as any).auditService = { log: jest.fn(async () => undefined), logInTransaction: jest.fn(async () => undefined) };
 
-    await (svc as any).addCaseLawyer("t1", "case-1", { lawyerId: "law-active", role: "ASSIGNED" });
+    await (svc as any).addCaseLawyer("t1", "case-1", { lawyerId: "law-active", role: "ASSIGNED" }, "actor");
 
     expect(m.lawyerCreate).toHaveBeenCalledTimes(1);
   });
@@ -84,7 +84,7 @@ describe("CANDIDATE-K1 addCaseLawyer — ekip-üyesi aktiflik kapısı", () => {
     (svc as any).auditService = { log: jest.fn(async () => undefined), logInTransaction: jest.fn(async () => undefined) };
 
     await expect(
-      (svc as any).addCaseLawyer("t1", "case-1", { lawyerId: "law-inactive", role: "ASSIGNED" })
+      (svc as any).addCaseLawyer("t1", "case-1", { lawyerId: "law-inactive", role: "ASSIGNED" }, "actor")
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(m.lawyerCreate).not.toHaveBeenCalled();
   });
@@ -96,7 +96,7 @@ describe("CANDIDATE-K1 addCaseLawyer — ekip-üyesi aktiflik kapısı", () => {
     (svc as any).auditService = { log: jest.fn(async () => undefined), logInTransaction: jest.fn(async () => undefined) };
 
     await expect(
-      (svc as any).addCaseLawyer("t1", "case-1", { lawyerId: "law-other", role: "ASSIGNED" })
+      (svc as any).addCaseLawyer("t1", "case-1", { lawyerId: "law-other", role: "ASSIGNED" }, "actor")
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(m.lawyerCreate).not.toHaveBeenCalled();
   });

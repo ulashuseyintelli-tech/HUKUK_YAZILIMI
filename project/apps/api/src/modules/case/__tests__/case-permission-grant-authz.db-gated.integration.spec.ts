@@ -409,17 +409,15 @@ describeWithDisposableDb('K2 — dosya yetkisi verme/değiştirme F01 yönetim k
       expect(await prisma.caseLawyer.count({ where: { caseId: f.a.caseId, lawyerId: f.outsider.lawyerId } })).toBe(0);
     });
 
-    it('mevcut davranış: USER kendini canSign olmadan ekler → atama yetki TAŞIMAZ (casePermissions boş); ClaimItem kapısı kapalı', async () => {
+    it('ret (18.11.2026; önceki "mevcut davranış" kapandı): USER kendini canSign OLMADAN da ekleyemez; kayıt ve denetim yok', async () => {
+      // Önceki davranış 201 + casePermissions=null idi. Atama yetki taşımasa da F02 P3-D1 görünüm kapsamında dosyayı
+      // görünür kılıyordu (CaseLawyer bağı) → ekip üyeliği DV207 G2 personel üyeliğiyle AYNI F01 kuralına bağlandı.
       const f = await fixture('add-self');
       const res = await addLawyer(f.outsider.userId, f.a.caseId, { lawyerId: f.outsider.lawyerId });
 
-      expect(res.status).toBe(201);
-      const row = await prisma.caseLawyer.findFirstOrThrow({ where: { caseId: f.a.caseId, lawyerId: f.outsider.lawyerId } });
-      expect(row.casePermissions).toBeNull();
-      expect(row.hasSignatureAuthority).toBe(false);
-      const claim = await createClaimItem(f.outsider.userId, f.a.caseId);
-      expect(claim.status).toBe(403);
-      expect(JSON.stringify(claim.body)).toContain('OBJECT_PERMISSION_DENIED');
+      expectGrantForbidden(res);
+      expect(await prisma.caseLawyer.count({ where: { caseId: f.a.caseId, lawyerId: f.outsider.lawyerId } })).toBe(0);
+      expect(await prisma.auditLog.count({ where: { tenantId: f.a.tenantId, entityType: 'CASE_LAWYER' } })).toBe(0);
     });
 
     it('yetkili mevcut kullanım: PARTNER canSign ile atar', async () => {
@@ -431,6 +429,138 @@ describeWithDisposableDb('K2 — dosya yetkisi verme/değiştirme F01 yönetim k
       expect(row.canSign).toBe(false);
     });
   });
+
+  /**
+   * Ekip ÜYELİĞİ — avukat (18.11.2026; P02 ekran teslimi bulgusu): `POST /cases/:id/lawyers` (canSign olmadan) ve
+   * `DELETE /cases/:id/lawyers/:caseLawyerId` hiçbir yönetim kuralı olmadan çalışıyordu. Sıradan USER doğrudan API ile
+   * kendini (ya da başkasını) dosya ekibine ekleyip görünüm kapsamını aşabiliyor, başka avukatları ekipten çıkarabiliyordu.
+   * Mevcut kural uygulandı: DV207 G2'nin personel üyeliğine uyguladığı AYNI F01 yönetim kuralı + kilitli tx içi yeniden
+   * değerlendirme + üyelik ile denetim kaydının aynı işlemde yazılması. Hukuki sorumlu avukat kuralı (400) ve K7.3 kapsam
+   * geri alımı değişmedi.
+   */
+  describe('Ekip üyeliği (avukat) — F01 yönetim kuralı, yazımla aynı tx', () => {
+    const removeLawyer = (actor: string, caseId: string, clId: string) =>
+      http().delete(`/cases/${caseId}/lawyers/${clId}`).set('x-test-user-id', actor);
+    const teamRows = (f: Fixture) => prisma.caseLawyer.findMany({ where: { caseId: f.a.caseId }, orderBy: { id: 'asc' } });
+    const lawyerAudits = (f: Fixture) => prisma.auditLog.count({ where: { tenantId: f.a.tenantId, entityType: 'CASE_LAWYER' } });
+
+    it.each(['plain', 'finance', 'outsider', 'staff'] as const)(
+      'ret: %s (F01 yetkisiz) doğrudan API ile ne ekleyebilir ne çıkarabilir; ekip ve denetim aynen kalır',
+      async (who) => {
+        const f = await fixture('team-deny-' + who);
+        const actor = who === 'outsider' ? f.outsider.userId : f[who];
+        const before = await teamRows(f);
+        const audits = await lawyerAudits(f);
+
+        expectGrantForbidden(await addLawyer(actor, f.a.caseId, { lawyerId: f.outsider.lawyerId }));
+        expectGrantForbidden(await addLawyer(actor, f.a.caseId, { lawyerId: f.outsider.lawyerId, role: 'ASSIGNED' }));
+        expectGrantForbidden(await removeLawyer(actor, f.a.caseId, f.plainClId));
+        expectGrantForbidden(await removeLawyer(actor, f.a.caseId, f.financeClId));
+
+        expect(await teamRows(f)).toEqual(before);
+        expect(await lawyerAudits(f)).toBe(audits);
+      },
+    );
+
+    it('ret: VIEWER rota katmanında 403 VIEWER_WRITE_DENIED (ekleme + çıkarma); yazma yok', async () => {
+      const f = await fixture('team-viewer');
+      const before = await teamRows(f);
+      for (const res of [
+        await addLawyer(f.viewer, f.a.caseId, { lawyerId: f.outsider.lawyerId }),
+        await removeLawyer(f.viewer, f.a.caseId, f.plainClId),
+      ]) {
+        expect(res.status).toBe(403);
+        expect(JSON.stringify(res.body)).toContain('VIEWER_WRITE_DENIED');
+      }
+      expect(await teamRows(f)).toEqual(before);
+    });
+
+    it('görünüm kapsamı açık (F02 P3-D1): reddedilen öz-ekleme dosyayı görünür KILMAZ', async () => {
+      const f = await fixture('team-scope');
+      const previous = process.env.OFFICE_CASE_VIEW_SCOPE_ENABLED;
+      process.env.OFFICE_CASE_VIEW_SCOPE_ENABLED = 'true';
+      try {
+        const view = () => http().get(`/cases/${f.a.caseId}`).set('x-test-user-id', f.outsider.userId);
+        expect((await view()).status).toBe(404);
+        expectGrantForbidden(await addLawyer(f.outsider.userId, f.a.caseId, { lawyerId: f.outsider.lawyerId }));
+        expect((await view()).status).toBe(404);
+      } finally {
+        if (previous === undefined) delete process.env.OFFICE_CASE_VIEW_SCOPE_ENABLED;
+        else process.env.OFFICE_CASE_VIEW_SCOPE_ENABLED = previous;
+      }
+    });
+
+    it.each(['admin', 'partner', 'manager', 'delegated'] as const)(
+      '%s mevcut F01 kuralıyla ekler ve çıkarır; denetim CREATE / DELETE gerçek aktörle',
+      async (who) => {
+        const f = await fixture('team-allow-' + who);
+        let actor = f.admin;
+        if (who !== 'admin') {
+          actor = f.partner;
+          if (who === 'manager') await prisma.lawyer.update({ where: { userId: actor }, data: { lawyerRank: 'MANAGER' } });
+          if (who === 'delegated') await prisma.lawyer.update({ where: { userId: actor }, data: { lawyerRank: 'LAWYER', canApproveOfficeActions: true } });
+        }
+        const add = await addLawyer(actor, f.a.caseId, { lawyerId: f.outsider.lawyerId, role: 'ASSIGNED' });
+        expect(add.status).toBe(201);
+        const id = add.body.id as string;
+        const row = await prisma.caseLawyer.findUniqueOrThrow({ where: { id } });
+        expect(row).toEqual(expect.objectContaining({ lawyerId: f.outsider.lawyerId, role: 'ASSIGNED', isResponsible: false, casePermissions: null }));
+
+        expect((await removeLawyer(actor, f.a.caseId, id)).status).toBe(200);
+        expect(await prisma.caseLawyer.findUnique({ where: { id } })).toBeNull();
+        const audit = await prisma.auditLog.findMany({ where: { tenantId: f.a.tenantId, entityId: id }, orderBy: { createdAt: 'asc' } });
+        expect(audit.map((a) => a.action)).toEqual(['CREATE', 'DELETE']);
+        expect(audit.every((a) => a.userId === actor && a.entityType === 'CASE_LAWYER')).toBe(true);
+      },
+    );
+
+    // Çıkarmada tx içi kilitli yeniden değerlendirme ayrı teslimdedir (K7.3 işlemine bağlı); burada yalnız ekleme sınanır.
+    it.each(['add'] as const)('%s: erken izin sonrası yetki geri alınırsa tx içi kilitli yeniden değerlendirme reddeder; yazma ve denetim yok', async (kind) => {
+      const f = await fixture('team-revoked-' + kind);
+      const before = await teamRows(f);
+      const audits = await lawyerAudits(f);
+      const office = app.get(OfficeApprovalService), original = office.isF01WriteActorAuthorized.bind(office);
+      const revoke = jest.spyOn(office, 'isF01WriteActorAuthorized').mockImplementationOnce(async (...args) => {
+        const allowed = await original(...args);
+        await prisma.user.update({ where: { id: f.partner }, data: { role: 'VIEWER' } });
+        return allowed;
+      });
+      try {
+        expectGrantForbidden(kind === 'add'
+          ? await addLawyer(f.partner, f.a.caseId, { lawyerId: f.outsider.lawyerId })
+          : await removeLawyer(f.partner, f.a.caseId, f.plainClId));
+      } finally { revoke.mockRestore(); }
+      expect(await teamRows(f)).toEqual(before);
+      expect(await lawyerAudits(f)).toBe(audits);
+    });
+
+    it('nesne sınırı: yetkili ADMIN başka dosyanın atamasını bu dosya yoluyla çıkaramaz, başka tenant dosyasına ekleyemez (404)', async () => {
+      const f = await fixture('team-object');
+      const before = await teamRows(f);
+      expect((await removeLawyer(f.admin, f.b.caseId, f.plainClId)).status).toBe(404);
+      expect((await addLawyer(f.admin, f.b.caseId, { lawyerId: f.outsider.lawyerId })).status).toBe(404);
+      expect(await teamRows(f)).toEqual(before);
+      expect(await lawyerAudits(f)).toBe(0);
+    });
+
+    it('denetim kaydı yazımı düşerse ekleme ve çıkarma birlikte geri alınır (üyelik + denetim aynı işlem)', async () => {
+      const f = await fixture('team-atomic');
+      const before = await teamRows(f);
+      const audits = await prisma.auditLog.count({ where: { tenantId: f.a.tenantId } });
+      const service = app.get(AuditService), original = service.logInTransaction.bind(service);
+      const fault = jest.spyOn(service, 'logInTransaction').mockImplementation(async (tx, input) => {
+        await original(tx, input);
+        throw new Error('team injected failure after actual audit insert');
+      });
+      try {
+        expect((await addLawyer(f.admin, f.a.caseId, { lawyerId: f.outsider.lawyerId })).status).toBe(500);
+        expect((await removeLawyer(f.admin, f.a.caseId, f.plainClId)).status).toBe(500);
+      } finally { fault.mockRestore(); }
+      expect(await teamRows(f)).toEqual(before);
+      expect(await prisma.auditLog.count({ where: { tenantId: f.a.tenantId } })).toBe(audits);
+    });
+  });
+
   describe('DV207 G2 — CaseStaff membership/role F01 and atomic audit', () => {
     const mutate = (kind: string, actor: string, f: Fixture, body: Record<string, unknown> = {}) => {
       if (kind === 'create') return http().post(`/cases/${f.a.caseId}/staff`).set('x-test-user-id', actor).send(body);

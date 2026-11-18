@@ -68,3 +68,16 @@ export function caseAssignmentSaveErrorMessage(error: unknown, fallback: string)
   }
   return fallback;
 }
+
+/// <remarks>
+/// Dosya ekibine avukat ekleme / ekipten çıkarma (sunucu: F01 yönetim kuralı, 18.11.2026).
+/// Çağrıldığı yerler: cases/[id]/page.tsx → handleAddLawyer, handleRemoveCaseLawyer
+/// </remarks>
+export function caseTeamMembershipErrorMessage(error: unknown, fallback: string): string {
+  const body = (error as ApiHttpError | null | undefined)?.body;
+  const code = body && typeof body === 'object' ? (body as { code?: unknown }).code : undefined;
+  if (code === CASE_PERMISSION_GRANT_FORBIDDEN) {
+    return 'Dosya ekibini yalnız ofis yönetimi değiştirebilir (ADMIN, ortak, yönetici ya da yetkilendirilmiş avukat).';
+  }
+  return fallback;
+}

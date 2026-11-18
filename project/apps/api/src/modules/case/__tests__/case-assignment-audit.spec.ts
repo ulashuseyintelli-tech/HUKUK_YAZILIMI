@@ -13,13 +13,29 @@ import { CaseService } from '../case.service';
 
 const makeService = () => {
   const stub = {} as any;
-  return new CaseService(stub, stub, stub, stub, stub, stub, stub, stub, stub, stub);
+  const service = new CaseService(stub, stub, stub, stub, stub, stub, stub, stub, stub, stub);
+  // Ekip uyeligi (avukat ekleme / cikarma) F01 yonetim kuralina bagli (18.11.2026); bu testler denetim kaydini sinar -> aktor F01 yetkili.
+  (service as any).officeApproval = {
+    isF01WriteActorAuthorized: jest.fn(async () => true),
+    isF01WriteActorAuthorizedInTx: jest.fn(async () => true),
+  };
+  // Yazi kilitli F01 degerlendirmesiyle ayni tx'te: testin atadigi sahte prisma'da $transaction yoksa gecis eklenir.
+  let fakePrisma: any;
+  Object.defineProperty(service, 'prisma', {
+    configurable: true,
+    get: () => fakePrisma,
+    set: (value: any) => {
+      fakePrisma = value;
+      if (value && typeof value === 'object' && !value.$transaction) value.$transaction = async (cb: any) => cb(value);
+    },
+  });
+  return service;
 };
 
 describe('ASSIGN-4c CaseService.addCaseLawyer — CASE_LAWYER CREATE audit', () => {
   it('avukat eklenince CREATE audit üretilir (newValues: lawyerId/role/isResponsible)', async () => {
     const service = makeService();
-    const auditLog = jest.fn(async () => undefined);
+    const auditLog = jest.fn(async (_input?: unknown) => undefined);
     const txCreate = jest.fn(async ({ data }: any) => ({
       id: 'cl-new',
       lawyerId: data.lawyerId,
@@ -33,9 +49,9 @@ describe('ASSIGN-4c CaseService.addCaseLawyer — CASE_LAWYER CREATE audit', () 
       // WP-1d-5-9: addCaseLawyer count + doğrudan create (eski $transaction yok).
       caseLawyer: { findFirst: jest.fn(async () => null), count: jest.fn(async () => 0), create: txCreate },
     };
-    (service as any).auditService = { log: auditLog };
+    (service as any).auditService = { log: auditLog, logInTransaction: async (_tx: any, input: any) => auditLog(input) };
 
-    await (service as any).addCaseLawyer('tenant-1', 'case-1', { lawyerId: 'law-1', role: 'ASSIGNED' });
+    await (service as any).addCaseLawyer('tenant-1', 'case-1', { lawyerId: 'law-1', role: 'ASSIGNED' }, 'actor-1');
 
     expect(auditLog).toHaveBeenCalledWith(
       expect.objectContaining({
