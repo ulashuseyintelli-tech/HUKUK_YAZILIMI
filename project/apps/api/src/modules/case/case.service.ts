@@ -27,9 +27,11 @@ import { interestWriteData, normalizeInterestWriteIntent } from "../claim-item/i
 import { assertGenericDueTypeTransition } from "./due-type-transition.policy";
 import {
   DueChangeRequiresClaimItemApprovalException,
+  DueClaimItemBusyException,
   DueDeleteRequiresClaimItemCancelException,
   DueEditBlockedByPendingClaimItemApprovalException,
   DueWriteForbiddenException,
+  isRowLockNotAvailable,
   planDueCanonicalUpdate,
 } from "./due-canonical-item-guard";
 import { lockExecutionActorRows } from "../office-approval/office-approval-execution-authority";
@@ -696,6 +698,7 @@ export class CaseService {
    *     (var olmayan dosyayla aynı gövde — varlık sızmaz).
    *  3. Mali yazma yetkisi: kalem insan yazma kapısının AYNI yüklemi (avukat `casePermissions.canEditFinance`;
    *     personel `canSeeFinance` + `CaseStaff.canEdit`). Rütbe / rol / delegasyon kendiliğinden yetki ÜRETMEZ.
+   *  4. Yetki geçtikten sonra dosya kilidi (COL-LOCK-001) alınır — Due ve kalem satırlarından ÖNCE (kanonik sıra).
    * Yeni yetki tanımlamaz; VIEWER sınıf düzeyi kapıda (ViewerWriteDenyGuard) zaten elenir.
    *
    * <remarks>
@@ -740,6 +743,14 @@ export class CaseService {
       tx,
     );
     if (!decision.allowed) throw new DueWriteForbiddenException(decision.reasonCode);
+
+    // Kilit sırası deponun kanonik sırasıdır: aktör satırları + yetki → dosya kilidi (COL-LOCK-001) → satırlar.
+    // Tahsilat mahsubu ve seçim onayı aynı dosya kilidini satırlardan ÖNCE alır; olay kaydı (aggregateVersion) da aynı
+    // kilidi kullanır. Due yolu kilidi satırlardan sonra alsaydı bu yollarla karşılıklı kilitlenebilirdi.
+    await tx.$executeRaw`
+      /* COL-LOCK-001: canonical allocation lock */
+      SELECT pg_advisory_xact_lock(hashtextextended(${caseId}, 0))
+    `;
     return caseRow;
   }
 
@@ -2009,7 +2020,14 @@ export class CaseService {
   /**
    * Marker'lı bağlı kalemi SATIR KİLİDİYLE okur: kilit alındıktan sonra satır yeniden okunur, böylece karar (yüksek
    * etkili değişiklik gerekiyor mu / kalem etkin mi) eşzamanlı onay yürütmesinin commit ettiği güncel değerlerden
-   * verilir. Kilit sırası: Due satırı → kalem satırı (onay yürütmesi Due satırını kilitlemez; döngü yok).
+   * verilir. Kilit sırası: dosya kilidi (çağıranda, `assertDueWriteAuthorityInTx`) → Due satırı → kalem satırı.
+   *
+   * Kalem satırı `FOR NO KEY UPDATE NOWAIT` ile kilitlenir:
+   *  - `NO KEY`: kaleme bağlı satır ekleyen yolların (mahsup kaydı; yabancı anahtar `KEY SHARE`) önünü kesmez — sıradan
+   *    bir satır güncellemesiyle aynı kilit gücü;
+   *  - `NOWAIT`: satırı önce yazıp dosya kilidini sonra alan yollar (kalem onayı yürütmesi, kalem düşük etkili
+   *    düzenlemesi) satırı tutuyorsa BEKLENMEZ. Bu yol dosya kilidini tutarken beklemek karşılıklı kilitlenme olurdu;
+   *    istek 409 `DUE_CLAIM_ITEM_BUSY` ile yazımdan önce reddedilir.
    *
    * <remarks>
    * Çağrıldığı yerler:
@@ -2025,7 +2043,12 @@ export class CaseService {
   ) {
     const found = await this.findDueSyncClaimItem(tx, tenantId, caseId, dueId);
     if (!found) return null;
-    await tx.$queryRaw`SELECT "id" FROM "ClaimItem" WHERE "id" = ${found.id} FOR UPDATE`;
+    try {
+      await tx.$queryRaw`SELECT "id" FROM "ClaimItem" WHERE "id" = ${found.id} FOR NO KEY UPDATE NOWAIT`;
+    } catch (error) {
+      if (isRowLockNotAvailable(error)) throw new DueClaimItemBusyException(found.id);
+      throw error;
+    }
     // Kilit altında yeniden okuma (aynı marker sorgusu: çoklu marker denetimi de güncel durumda yinelenir).
     return this.findDueSyncClaimItem(tx, tenantId, caseId, dueId);
   }
@@ -4818,8 +4841,9 @@ export class CaseService {
    *    hiçbir yazımdan ÖNCE 409 ile reddedilir; kullanıcı kalem ucuna (iki kişi onayı) yönlendirilir.
    *  - Gönderilmeyen alan değişmez; Due'daki değeri yineleyen alan değişiklik sayılmaz; kaleme yalnız düşük etkili
    *    alanlar (açıklama, sıra) yansır. Karar kuralı: `planDueCanonicalUpdate` (saf).
-   *  - Due satırı ve bağlı kalem satırı kilitlenir: aynı Due'ya eşzamanlı istekler sıraya girer, karar güncel
-   *    satırlardan verilir. Ret hâlinde Due, kalem, onay ve denetim kayıtları değişmez (tek transaction).
+   *  - Dosya kilidi → Due satırı → bağlı kalem satırı sırasıyla kilitlenir: aynı dosyadaki Due istekleri sıraya girer,
+   *    karar güncel satırlardan verilir; kalem satırı başka işlemce yazılıyorsa beklenmez (409 `DUE_CLAIM_ITEM_BUSY`).
+   *    Ret hâlinde Due, kalem, onay ve denetim kayıtları değişmez (tek transaction).
    *
    * <remarks>
    * Çağrıldığı yerler:

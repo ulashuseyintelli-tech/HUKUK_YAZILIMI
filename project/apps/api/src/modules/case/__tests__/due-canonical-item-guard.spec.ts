@@ -1,14 +1,17 @@
 import { Prisma } from '@prisma/client';
 import {
   DUE_CHANGE_REQUIRES_CLAIM_ITEM_APPROVAL,
+  DUE_CLAIM_ITEM_BUSY,
   DUE_DELETE_REQUIRES_CLAIM_ITEM_CANCEL_APPROVAL,
   DUE_EDIT_BLOCKED_BY_PENDING_CLAIM_ITEM_APPROVAL,
   DUE_WRITE_FORBIDDEN,
   DueChangeRequiresClaimItemApprovalException,
+  DueClaimItemBusyException,
   DueDeleteRequiresClaimItemCancelException,
   DueEditBlockedByPendingClaimItemApprovalException,
   DueWriteForbiddenException,
   describeDueHighImpactFields,
+  isRowLockNotAvailable,
   planDueCanonicalUpdate,
   sameDecimal,
   sameInstant,
@@ -219,6 +222,26 @@ describe('ret sözleşmeleri', () => {
 
   it('alan adları kullanıcı diliyle ve yinelenmeden yazılır', () => {
     expect(describeDueHighImpactFields(['interestTypeCode', 'interestType', 'interestRate'])).toBe('faiz türü, faiz oranı');
+  });
+
+  it('kalem satırı meşgul reddi: 409 + kod + yeniden deneme iletisi', () => {
+    const busy = new DueClaimItemBusyException('claim-1');
+    expect([busy.getStatus(), busy.getResponse()]).toEqual([
+      409,
+      expect.objectContaining({ code: DUE_CLAIM_ITEM_BUSY, claimItemId: 'claim-1', message: expect.stringContaining('yeniden deneyin') }),
+    ]);
+  });
+
+  it.each([
+    [{ code: 'P2010', meta: { code: '55P03', message: 'could not obtain lock on row in relation "ClaimItem"' } }, true],
+    [{ code: '55P03' }, true],
+    [new Error('ERROR: could not obtain lock on row in relation "ClaimItem"'), true],
+    [{ code: 'P2010', meta: { code: '40P01', message: 'deadlock detected' } }, false],
+    [new Error('connection reset'), false],
+    [null, false],
+    ['55P03', false],
+  ] as Array<[unknown, boolean]>)('isRowLockNotAvailable(%j) → %s', (error, expected) => {
+    expect(isRowLockNotAvailable(error)).toBe(expected);
   });
 
   it('silme, bekleyen onay ve yetki retleri kendi kodlarını taşır', () => {

@@ -30,7 +30,8 @@ import { CASE_VIEW_SCOPE_FLAG } from '../case-view-scope';
  *     görüntüleyici ve başka büro yazamaz; dosya görünüm kapsamı açıkken kapsam dışı hesap 404 alır; denetim ile yazım
  *     arasındaki yetki iptali yarışı yazımı durdurur.
  *  C. Bekleyen onay: Due isteği bekleyen talebi değiştirmez / bayatlatmaz; talep sonradan onaylanabilir.
- *  D. Eşzamanlı istekler ayrışma ya da onaysız yüksek etkili yazım üretmez.
+ *  D. Eşzamanlı istekler ayrışma ya da onaysız yüksek etkili yazım üretmez; kilit sırası kanoniktir (dosya kilidi
+ *     satırlardan önce) ve kalem satırı meşgulken istek beklemeden reddedilir (karşılıklı kilitlenme yok).
  *  E. Faiz hesabı ve UYAP sayısal faiz izdüşümü Due isteklerinden sonra da onaylı kalem kaydını kullanır.
  */
 const TEST_DB_URL = resolveTestDatabaseUrl(process.env);
@@ -643,9 +644,69 @@ describeWithDisposableDb('Due yazım yolu bağlı kanonik kalemi korur — HTTP 
       ];
       expect([approval.status, approval.executionStatus]).toEqual([OfficeApprovalStatus.APPROVED, OfficeApprovalExecutionStatus.SUCCEEDED]);
       expect(Number(claim.amount)).toBe(1200); // onayın yazdığı değer
-      // Due isteği onaydan ÖNCE karar verdiyse 409 (Due 1000 kalır), SONRA verdiyse 200 (Due 1200 olur); kaleme yazmaz.
+      // Due isteği onaydan ÖNCE karar verdiyse 409 (Due 1000 kalır), SONRA verdiyse 200 (Due 1200 olur); onay kalem
+      // satırını yazarken denk geldiyse beklemeden 409 (meşgul). Hiçbir durumda kaleme yazmaz ve kilitlenme olmaz.
       expect([200, 409]).toContain(dueRes.status);
+      if (dueRes.status === 409) {
+        expect(['DUE_CHANGE_REQUIRES_CLAIM_ITEM_APPROVAL', 'DUE_CLAIM_ITEM_BUSY']).toContain(dueRes.body.code);
+      }
       expect(Number(due!.amount)).toBe(dueRes.status === 200 ? 1200 : 1000);
+    });
+
+    it('bağlı kalem satırı başka bir işlemce yazılırken Due isteği BEKLEMEDEN 409 döner; işlem bitince çalışır', async () => {
+      const f = await fixture('es-mesgul');
+      await approveAccrues(f);
+      const digestBefore = await recordDigest(f);
+      let res: request.Response | undefined;
+      let waitedMs = -1;
+      await prisma
+        .$transaction(
+          async (tx) => {
+            // Başka bir işlem (ör. kalem onayı yürütmesi) kalem satırını yazmış, henüz commit etmemiş: satır kilitli.
+            await tx.claimItem.update({ where: { id: f.claimId }, data: { referenceNo: 'SENTETIK-REFERANS' } });
+            const started = Date.now();
+            res = await patch(f.duePath, f.yetkili.userId, { description: 'Kalem meşgulken' });
+            waitedMs = Date.now() - started;
+            throw new Error('GERI_AL'); // öteki işlem geri alınır; kalem ilk hâline döner
+          },
+          { timeout: 20_000 },
+        )
+        .catch((error: Error) => {
+          if (error.message !== 'GERI_AL') throw error;
+        });
+      expect([res!.status, res!.body.code]).toEqual([409, 'DUE_CLAIM_ITEM_BUSY']);
+      expect(res!.body.message).toContain('yeniden deneyin');
+      expect(waitedMs).toBeLessThan(5_000); // satır kilidini beklemedi (karşılıklı kilitlenme yolu kapalı)
+      expect(await recordDigest(f)).toBe(digestBefore);
+      expect((await patch(f.duePath, f.yetkili.userId, { description: 'Kalem serbestken' })).status).toBe(200);
+    });
+
+    it('dosya kilidi başka bir işlemdeyken Due isteği satırlara dokunmadan bekler; kilit kalkınca tamamlanır', async () => {
+      const f = await fixture('es-dosyakilidi');
+      await approveAccrues(f);
+      let settled = false;
+      let pendingRequest: Promise<request.Response> | undefined;
+      await prisma.$transaction(
+        async (tx) => {
+          // Tahsilat mahsubu / seçim onayı gibi bir yol dosya kilidini (COL-LOCK-001) tutuyor.
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${f.caseId}, 0))`;
+          pendingRequest = patch(f.duePath, f.yetkili.userId, { description: 'Dosya kilidi beklenirken' }).then((r) => {
+            settled = true;
+            return r;
+          });
+          await new Promise((resolve) => setTimeout(resolve, 800));
+          expect(settled).toBe(false); // Due isteği dosya kilidini bekliyor
+          // Kanonik sıra: bekleyen Due isteği Due ve kalem SATIRLARINI henüz kilitlememiş — kilidi tutan yol yazabiliyor.
+          await tx.$queryRaw`SELECT "id" FROM "ClaimItem" WHERE "id" = ${f.claimId} FOR NO KEY UPDATE NOWAIT`;
+          await tx.$queryRaw`SELECT "id" FROM "Due" WHERE "id" = ${f.dueId} FOR UPDATE NOWAIT`;
+        },
+        { timeout: 20_000 },
+      );
+      const res = await pendingRequest!;
+      expect(res.status).toBe(200);
+      const [due, claim] = [await dueRow(f.dueId), await claimRow(f.claimId)];
+      expect([due!.description, claim.description]).toEqual(['Dosya kilidi beklenirken', 'Dosya kilidi beklenirken']);
+      expect([claim.interestAccrualStatus, day(claim.interestStartDate)]).toEqual(['ACCRUES', '2025-03-10']);
     });
   });
 

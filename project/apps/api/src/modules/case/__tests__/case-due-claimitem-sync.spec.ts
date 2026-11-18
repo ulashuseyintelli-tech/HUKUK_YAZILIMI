@@ -14,6 +14,7 @@ import { ClaimItemSourceIntegrityException } from '../../claim-item/claim-item-s
 import { CaseService } from '../case.service';
 import {
   DueChangeRequiresClaimItemApprovalException,
+  DueClaimItemBusyException,
   DueDeleteRequiresClaimItemCancelException,
   DueEditBlockedByPendingClaimItemApprovalException,
   DueWriteForbiddenException,
@@ -187,6 +188,8 @@ function makeTx(overrides: Record<string, any> = {}) {
   const tx = {
     // Yetki ve satır kilidi sorguları (FOR SHARE / FOR UPDATE): birim testte satır dönmesi gerekmez.
     $queryRaw: jest.fn(async () => []),
+    // Dosya kilidi (COL-LOCK-001; pg_advisory_xact_lock).
+    $executeRaw: jest.fn(async () => 1),
     officeApprovalRequest: {
       findFirst: jest.fn(async () => null),
     },
@@ -726,6 +729,58 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
     });
     expect(tx.due.update).not.toHaveBeenCalled();
     expect(writerRouter.updateSystemClaimItem).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['updateDue', (service: CaseService) => service.updateDue('tenant-1', 'case-1', 'due-1', { description: 'Kalem meşgulken' }, 'requester-1')],
+    ['deleteDue', (service: CaseService) => service.deleteDue('tenant-1', 'case-1', 'due-1', 'requester-1')],
+  ] as Array<[string, (service: CaseService) => Promise<unknown>]>)(
+    '%s kalem satırı başka işlemce kilitliyken beklemez: yazımdan önce DUE_CLAIM_ITEM_BUSY',
+    async (_label, run) => {
+      const sqlOf = (call: unknown[]) => (call[0] as readonly string[]).join('?');
+      const tx = makeTx({
+        claimItem: { findMany: jest.fn(async () => [makeClaim({ status: 'CANCELLED' })]), update: jest.fn() },
+      });
+      tx.$queryRaw.mockImplementation(async (...call: unknown[]) => {
+        if (sqlOf(call).includes('"ClaimItem"')) {
+          throw Object.assign(new Error('Raw query failed'), { code: 'P2010', meta: { code: '55P03', message: 'could not obtain lock on row in relation "ClaimItem"' } });
+        }
+        return [];
+      });
+      const { service, writerRouter } = makeService(tx);
+
+      await expect(run(service)).rejects.toBeInstanceOf(DueClaimItemBusyException);
+
+      const rawCalls = tx.$queryRaw.mock.calls as unknown[][];
+      const claimLockAt = rawCalls.findIndex((call) => sqlOf(call).includes('"ClaimItem"'));
+      const dueLockAt = rawCalls.findIndex((call) => sqlOf(call).includes('FROM "Due"'));
+      expect(claimLockAt).toBeGreaterThanOrEqual(0);
+      expect(dueLockAt).toBeGreaterThanOrEqual(0);
+      // Kalem satırı sıradan güncelleme gücünde ve BEKLEMESİZ kilitlenir (FOR UPDATE değil).
+      expect(sqlOf(rawCalls[claimLockAt])).toContain('FOR NO KEY UPDATE NOWAIT');
+      // Kanonik sıra: dosya kilidi (advisory) → Due satırı → kalem satırı.
+      const dueLockOrder = tx.$queryRaw.mock.invocationCallOrder[dueLockAt];
+      const claimLockOrder = tx.$queryRaw.mock.invocationCallOrder[claimLockAt];
+      expect(sqlOf((tx.$executeRaw.mock.calls as unknown[][])[0])).toContain('pg_advisory_xact_lock(hashtextextended(');
+      expect(tx.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(dueLockOrder);
+      expect(dueLockOrder).toBeLessThan(claimLockOrder);
+      expect(writerRouter.evaluateHumanCaseFinanceWrite.mock.invocationCallOrder[0]).toBeLessThan(tx.$executeRaw.mock.invocationCallOrder[0]);
+      expect(tx.due.update).not.toHaveBeenCalled();
+      expect(tx.due.delete).not.toHaveBeenCalled();
+      expect(tx.claimItem.update).not.toHaveBeenCalled();
+    },
+  );
+
+  it('updateDue kilit hatası olmayan sorgu hatasını yutmaz', async () => {
+    const tx = makeTx({ claimItem: { findMany: jest.fn(async () => [makeClaim()]), update: jest.fn() } });
+    tx.$queryRaw.mockImplementation(async (...call: unknown[]) => {
+      if ((call[0] as readonly string[]).join('?').includes('"ClaimItem"')) throw new Error('connection reset');
+      return [];
+    });
+    const { service } = makeService(tx);
+
+    await expect(service.updateDue('tenant-1', 'case-1', 'due-1', { description: 'x' }, 'requester-1')).rejects.toThrow('connection reset');
+    expect(tx.due.update).not.toHaveBeenCalled();
   });
 
   it('updateDue kapalı (iptal edilmiş) kaleme yansıyan değişikliği yazımdan önce reddeder', async () => {

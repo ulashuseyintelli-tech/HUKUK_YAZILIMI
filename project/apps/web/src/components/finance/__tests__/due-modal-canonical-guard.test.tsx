@@ -150,6 +150,8 @@ describe("DueModal — sunucunun engel reddi", () => {
 
   it("dueBlockNotice yalnız bilinen engel kodlarında ileti döner", () => {
     expect(dueBlockNotice(blocked("DUE_EDIT_BLOCKED_BY_PENDING_CLAIM_ITEM_APPROVAL", "Bekleyen talep var"))).toBe("Bekleyen talep var");
+    // Kalem satırı o an başka bir işlemce yazılıyorsa: yeniden deneme iletisi pencerede kalır.
+    expect(dueBlockNotice(blocked("DUE_CLAIM_ITEM_BUSY", "Birkaç saniye sonra yeniden deneyin."))).toBe("Birkaç saniye sonra yeniden deneyin.");
     expect(dueBlockNotice(blocked("CASE_CLAIM_CURRENCY_MISMATCH", "para birimi"))).toBeNull();
     expect(dueBlockNotice(new Error("x"))).toBeNull();
     expect(dueBlockNotice(null)).toBeNull();

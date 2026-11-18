@@ -27,7 +27,19 @@ import { mapDueTypeToClaimItemType } from './due-to-claim-item.mapper';
 export const DUE_CHANGE_REQUIRES_CLAIM_ITEM_APPROVAL = 'DUE_CHANGE_REQUIRES_CLAIM_ITEM_APPROVAL';
 export const DUE_DELETE_REQUIRES_CLAIM_ITEM_CANCEL_APPROVAL = 'DUE_DELETE_REQUIRES_CLAIM_ITEM_CANCEL_APPROVAL';
 export const DUE_EDIT_BLOCKED_BY_PENDING_CLAIM_ITEM_APPROVAL = 'DUE_EDIT_BLOCKED_BY_PENDING_CLAIM_ITEM_APPROVAL';
+export const DUE_CLAIM_ITEM_BUSY = 'DUE_CLAIM_ITEM_BUSY';
 export const DUE_WRITE_FORBIDDEN = 'DUE_WRITE_FORBIDDEN';
+
+/**
+ * PostgreSQL `55P03 lock_not_available`: `… FOR NO KEY UPDATE NOWAIT` satır kilidini alamadı. Prisma ham sorgu hatasında
+ * kod `meta.code` içinde, ileti `message` içinde gelir; ikisine de bakılır.
+ */
+export function isRowLockNotAvailable(error: unknown): boolean {
+  const candidate = error as { code?: unknown; message?: unknown; meta?: { code?: unknown; message?: unknown } } | null;
+  if (!candidate || typeof candidate !== 'object') return false;
+  if (candidate.code === '55P03' || candidate.meta?.code === '55P03') return true;
+  return /55P03|could not obtain lock on row/i.test(`${String(candidate.message ?? '')} ${String(candidate.meta?.message ?? '')}`);
+}
 
 /** Kanonik kalemde yüksek etkili sayılan ve Due isteğiyle değiştirilemeyen alanlar (Due isteği alan adlarıyla). */
 export const DUE_HIGH_IMPACT_FIELDS = [
@@ -300,6 +312,26 @@ export class DueEditBlockedByPendingClaimItemApprovalException extends ConflictE
       claimItemId,
     });
     this.name = 'DueEditBlockedByPendingClaimItemApprovalException';
+  }
+}
+
+/**
+ * Bağlı kalem satırı o anda başka bir işlem (onay yürütmesi, kalem düzenlemesi) tarafından yazılıyor. Due yolu dosya
+ * kilidini tutarken kalem satırını BEKLEMEZ: beklemek, satırı önce yazıp dosya kilidini sonra alan yollarla karşılıklı
+ * kilitlenme üretirdi. İstek yazımdan önce reddedilir; kullanıcı yeniden dener.
+ */
+export class DueClaimItemBusyException extends ConflictException {
+  constructor(claimItemId: string) {
+    super({
+      statusCode: 409,
+      error: 'Due Claim Item Busy',
+      code: DUE_CLAIM_ITEM_BUSY,
+      message:
+        `Bağlı alacak kalemi şu anda başka bir işlem tarafından değiştiriliyor. Birkaç saniye sonra yeniden deneyin. ` +
+        NOTHING_CHANGED,
+      claimItemId,
+    });
+    this.name = 'DueClaimItemBusyException';
   }
 }
 

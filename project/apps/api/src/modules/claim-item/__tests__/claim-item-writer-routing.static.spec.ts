@@ -65,6 +65,35 @@ describe('RCV-P2-WS01-P03 static ClaimItem direct-write absence', () => {
     }
   });
 
+  /**
+   * Kilit sırası (COL-LOCK-001): yetki denetimi dosya kilidini satır kilitlerinden ÖNCE alır; bağlı kalem satırı
+   * sıradan güncelleme gücünde ve beklemesiz kilitlenir. Tahsilat / mahsup akışları dosya kilidini tutarken kaleme
+   * yabancı anahtar kilidi koyar; `FOR UPDATE` ya da bekleyen kilit bu akışlarla kilitlenmeye yol açardı.
+   */
+  it('CaseService Due write path takes the case lock before row locks and locks the bound ClaimItem without waiting', () => {
+    const authority = methodSlice(
+      caseService,
+      'private async assertDueWriteAuthorityInTx(',
+      'private async assertCanGrantCasePermissions(',
+    );
+    const evaluated = authority.indexOf('evaluateHumanCaseFinanceWrite(');
+    const caseLock = authority.indexOf('pg_advisory_xact_lock(hashtextextended(${caseId}, 0))');
+    expect(evaluated).toBeGreaterThan(0);
+    expect(caseLock).toBeGreaterThan(evaluated);
+    expect(authority).toContain('COL-LOCK-001');
+
+    const rowLock = methodSlice(
+      caseService,
+      'private async findLockedDueSyncClaimItem(',
+      'private async syncLowImpactClaimItemFieldsFromDue(',
+    );
+    expect(rowLock).toContain('FOR NO KEY UPDATE NOWAIT');
+    expect(rowLock).not.toContain('FOR UPDATE');
+    expect(rowLock).toContain('DueClaimItemBusyException');
+    // Due yazım yolunda kalem satırına bekleyen ya da anahtar gücünde kilit yoktur.
+    expect(caseService).not.toMatch(/FROM "ClaimItem"[^`]*FOR UPDATE/);
+  });
+
   it.each([
     ['autoGenerateFromDocument', 'async autoGenerateFromDocument(', 'async calculateInterest('],
     ['generateFromRuleEngine', 'async generateFromRuleEngine(', 'async validateWithRuleEngine('],
