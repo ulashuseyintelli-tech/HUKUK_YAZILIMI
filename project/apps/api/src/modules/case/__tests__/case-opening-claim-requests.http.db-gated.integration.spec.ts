@@ -638,6 +638,122 @@ describeWithDisposableDb('Dosya açılışında kalem beyanları — POST /cases
     }
   });
 
+  // ── DUE YAZIM YOLU KORUMASI (#3319) İLE BİRLİKTE: Due ucu bağlı kalemin yüksek etkili alanlarını yazamaz ve bekleyen
+  //    talep varken kaleme yansıyan düzenlemeyi reddeder. Bu kural DEĞİŞMEDİ; aşağıdakiler iki değişikliğin birlikte
+  //    çalıştığını sınar (açılış talepleri + iki onay sırası + Due ucunun kayıtlı yansıması).
+  const patchDue = (f: Fixture, path: string, body: Record<string, unknown>) =>
+    http().patch(path).set('x-test-user-id', f.opener).send(body);
+  const vekaletDuePath = async (caseId: string) => {
+    const due = await prisma.due.findFirstOrThrow({ where: { caseId, type: 'VEKALET_UCRETI' as never } });
+    return `/cases/${caseId}/dues/${due.id}`;
+  };
+  const vekaletItem = async (caseId: string) => (await claimItems(caseId)).find((row) => row.itemType === 'ATTORNEY_FEE')!;
+
+  it.each([
+    ['faiz önce', 'JF'],
+    ['seçim önce', 'JS'],
+  ])('Due koruması ile birlikte (%s): açılış talepleri beklerken Due ucu kalemi değiştiremez; talepler uygulanır, sonra Due düzenlemesi çalışır', async (order, tag) => {
+    const f = await fixture(`due-${tag.toLowerCase()}`);
+    const { opened } = await openWithDeclarations(f, tag);
+    expect(opened.status).toBe(201);
+    const caseId = opened.body.id as string;
+    const duePath = await vekaletDuePath(caseId);
+    const before = await claimItems(caseId);
+
+    // Kaleme yansıyacak düşük etkili Due isteği: bekleyen faiz talebi varken reddedilir.
+    const blocked = await patchDue(f, duePath, { description: 'Sentetik açıklama (Due ucundan)' });
+    expect([blocked.status, blocked.body.code]).toEqual([409, 'DUE_EDIT_BLOCKED_BY_PENDING_CLAIM_ITEM_APPROVAL']);
+    // Yüksek etkili Due isteği: kalem ucuna (iki kişi onayı) yönlendirilir.
+    const high = await patchDue(f, duePath, { amount: VEKALET_TUTARI + 1 });
+    expect([high.status, high.body.code]).toEqual([409, 'DUE_CHANGE_REQUIRES_CLAIM_ITEM_APPROVAL']);
+    expect(await claimItems(caseId)).toEqual(before);
+
+    const pending = await pendingRequests(f.tenantId);
+    const liabilityRequest = pending.find((row) => row.targetType === 'CLAIM_ITEM_CASE')!;
+    const interestRequests = pending.filter((row) => row.targetType === 'CLAIM_ITEM');
+    expect(interestRequests).toHaveLength(2);
+    if (order === 'seçim önce') await approvals.approve(liabilityRequest.id, f.approver);
+    for (const row of interestRequests) await approvals.approve(row.id, f.approver);
+    if (order === 'faiz önce') await approvals.approve(liabilityRequest.id, f.approver);
+    await expectBothApplied(f, caseId);
+
+    // Talepler sonuçlandı: aynı Due düzenlemesi çalışır, kaleme yansır ve onaylı faizi / seçimi bozmaz.
+    const allowed = await patchDue(f, duePath, { description: 'Sentetik açıklama (Due ucundan)' });
+    expect(allowed.status).toBe(200);
+    expect(await vekaletItem(caseId)).toMatchObject({
+      description: 'Sentetik açıklama (Due ucundan)',
+      interestAccrualStatus: 'ACCRUES',
+      isAllDebtorsLiable: false,
+    });
+    await expectBothApplied(f, caseId);
+  });
+
+  it('Due ucu ile talep oluşturma yarışı: talep görüntüsü alındıktan sonra Due açıklaması kaleme yansıdıysa talep bayat doğmaz; yansıma kayıtlıdır', async () => {
+    const f = await fixture('due-yaris');
+    const opened = await openCase(f, caseBody(f, 'DY', [vekalet, yargilama]));
+    expect(opened.status).toBe(201);
+    const caseId = opened.body.id as string;
+    const duePath = await vekaletDuePath(caseId);
+    const target = await vekaletItem(caseId);
+    const claimItemService = app.get(ClaimItemService);
+
+    // Talep kendi işleminde açılır ve henüz kaydedilmemiştir (görüntü alındı); Due isteği bekleyen talebi GÖREMEZ,
+    // açıklamayı kaleme yansıtır ve tamamlanır. Sonra talep işlemi kaydedilir: görüntüsü Due yazımından öncedir.
+    const requested = await prisma.$transaction(
+      async (tx) => {
+        const result = await claimItemService.updateFromUser(
+          f.tenantId,
+          f.opener,
+          target.id,
+          { interestAccrualStatus: 'ACCRUES', interestStartDate: KESINLESME, interestStartDateProvenance: 'JUDGMENT_FINALIZATION_DATE' } as any,
+          tx,
+        );
+        const due = await Promise.race([
+          patchDue(f, duePath, { description: 'Sentetik açıklama (yarışta Due ucundan)' }).then((res) => res),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Due isteği talep işlemini bekledi (beklenmezdi)')), 8_000)),
+        ]);
+        expect(due.status).toBe(200);
+        return result;
+      },
+      { timeout: 20_000, maxWait: 10_000 },
+    );
+    expect(requested.approvalRequestId).toBeTruthy();
+    expect(await item(target.id)).toMatchObject({ description: 'Sentetik açıklama (yarışta Due ucundan)', interestAccrualStatus: 'UNKNOWN' });
+
+    // Talep beklerken Due ucu artık kaleme yansıyan düzenlemeyi reddeder (kural değişmedi).
+    const blocked = await patchDue(f, duePath, { description: 'Sentetik açıklama (talep beklerken)' });
+    expect([blocked.status, blocked.body.code]).toEqual([409, 'DUE_EDIT_BLOCKED_BY_PENDING_CLAIM_ITEM_APPROVAL']);
+
+    // Görüntüden sonraki tek yazım Due köprüsünün KAYITLI açıklama yansımasıdır: talep onaylanır, açıklama korunur.
+    await approvals.approve(requested.approvalRequestId!, f.approver);
+    expect(await item(target.id)).toMatchObject({ description: 'Sentetik açıklama (yarışta Due ucundan)', interestAccrualStatus: 'ACCRUES' });
+  });
+
+  it('eşzamanlı: açılış faiz onayı ile aynı kalemin Due açıklama isteği — kilitlenme yok; faiz uygulanır, Due isteği tutarlı sonuçlanır', async () => {
+    for (const round of ['a', 'b', 'c', 'd']) {
+      const { f, first } = await openInterestOnly(`esz-due-${round}`, `U${round}`);
+      const target = await item(first.targetRef);
+      const due = await prisma.due.findFirstOrThrow({ where: { caseId: target.caseId, type: (target.itemType === 'ATTORNEY_FEE' ? 'VEKALET_UCRETI' : 'YARGILAMA_GIDERI') as never } });
+      const description = `Sentetik açıklama (eşzamanlı ${round})`;
+      const [approved, dueRes] = await Promise.allSettled([
+        approvals.approve(first.id, f.approver),
+        patchDue(f, `/cases/${target.caseId}/dues/${due.id}`, { description }).then((res) => res),
+      ]);
+      expect(approved.status === 'fulfilled' ? 'ok' : `${(approved.reason as Error).name}:${(approved.reason as Error).message}`).toBe('ok');
+      expect(dueRes.status).toBe('fulfilled');
+      const res = (dueRes as PromiseFulfilledResult<request.Response>).value;
+      // Due isteği onaydan ÖNCE karar verdiyse 409 (bekleyen talep); kalem satırı o an yazılıyorsa 409 (meşgul);
+      // onaydan SONRA karar verdiyse 200 ve açıklama kaleme yansır. Hiçbir durumda faiz onayı bozulmaz.
+      expect([200, 409]).toContain(res.status);
+      if (res.status === 409) {
+        expect(['DUE_EDIT_BLOCKED_BY_PENDING_CLAIM_ITEM_APPROVAL', 'DUE_CLAIM_ITEM_BUSY']).toContain(res.body.code);
+      }
+      const after = await item(first.targetRef);
+      expect(after.interestAccrualStatus).toBe('ACCRUES');
+      expect(after.description === description).toBe(res.status === 200);
+    }
+  });
+
   it('kilit sırası (kesin): mevcut kalemi yazan yollar dosya kilidini kalem satırından ÖNCE alır — kilit başkasındayken satır kilitlenmez', async () => {
     // Zamanlamaya bağlı olmayan kanıt: dosya kilidi ayrı bir işlemde tutulur. Yazan yol kilidi satırdan ÖNCE alıyorsa
     // kilitte bekler ve kalem satırına henüz dokunmamıştır (başka bağlantı satırı hemen kilitleyebilir). Satırı önce yazıp
