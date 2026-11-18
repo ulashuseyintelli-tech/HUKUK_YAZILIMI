@@ -418,7 +418,7 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
 
     expect(applied).toEqual({ dueId: 'due-1', claimItemId: 'claim-1' });
     // Kanonik sıra: dosya kilidi satır yazımlarından önce.
-    expect((tx.$executeRaw.mock.calls[0][0] as readonly string[]).join('?')).toContain('pg_advisory_xact_lock(hashtextextended(');
+    expect(((tx.$executeRaw.mock.calls as unknown[][])[0][0] as readonly string[]).join('?')).toContain('pg_advisory_xact_lock(hashtextextended(');
     expect(tx.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(tx.due.create.mock.invocationCallOrder[0]);
     // Köprünün başlatanı talep eden; onaylayan ve talep kimliği ayrı denetim kaydında.
     expect(writerRouter.createSystemClaimItem).toHaveBeenCalledWith(
@@ -534,7 +534,7 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
       { ...base, savedIntent: { ...intent, operation: 'DUE_DELETE' } },
       { ...base, savedIntent: { ...intent, due: { ...intent.due, status: 'ACTIVE' } } },
     ]) {
-      await expect(service.applyApprovedDueCreateInTx(tx, req as any)).rejects.toMatchObject({
+      await expect(service.applyApprovedDueCreateInTx(tx as any, req as any)).rejects.toMatchObject({
         response: expect.objectContaining({ code: 'DUE_CREATE_INTENT_INVALID' }),
       });
     }
@@ -794,7 +794,7 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
     const applyTx = kiraTx();
     const applied = makeService(applyTx);
     const req = { id: 'approval-1', tenantId: 'tenant-1', targetType: 'CLAIM_ITEM_CASE', targetRef: 'case-1', savedIntent: intent, requesterUserId: 'requester-1', approverUserId: 'approver-1' };
-    await applied.service.applyApprovedDueChangeInTx(applyTx, req as any);
+    await applied.service.applyApprovedDueChangeInTx(applyTx as any, req as any);
     expect(applyTx.due.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'due-1' }, data: expect.objectContaining({ type: 'KIRA' }) }));
     expect(applied.writerRouter.updateSystemClaimItem).not.toHaveBeenCalled();
     expect(applied.officeApproval.createPendingRequestInTransaction).not.toHaveBeenCalled();
@@ -804,7 +804,7 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
     const staleTx = kiraTx({
       due: { findFirst: jest.fn(async () => makeDue({ type: DueType.PRINCIPAL, amount: 1200 })), update: jest.fn() },
     });
-    await expect(makeService(staleTx).service.applyApprovedDueChangeInTx(staleTx, req as any)).rejects.toMatchObject({
+    await expect(makeService(staleTx).service.applyApprovedDueChangeInTx(staleTx as any, req as any)).rejects.toMatchObject({
       response: expect.objectContaining({ code: 'DUE_CHANGE_STALE' }),
     });
     expect(staleTx.due.update).not.toHaveBeenCalled();
