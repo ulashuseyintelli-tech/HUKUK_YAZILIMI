@@ -718,19 +718,32 @@ export class CaseService {
   ): Promise<T> {
     if (!grantsPermission) return write(this.prisma);
     return this.prisma.$transaction(async (tx) => {
-      const allowed =
-        !!actorUserId &&
-        !!this.officeApproval &&
-        (await this.officeApproval.isF01WriteActorAuthorizedInTx(tx, actorUserId, tenantId));
-      if (!allowed) {
-        throw new ForbiddenException({
-          code: "CASE_PERMISSION_GRANT_FORBIDDEN",
-          message:
-            "Dosya yetkilerini verme/değiştirme yalnız ofis yönetim yetkisi (ADMIN veya PARTNER/MANAGER/yetkilendirilmiş avukat) ile yapılabilir.",
-        });
-      }
+      await this.assertCasePermissionGrantAuthorityInTx(tx, tenantId, actorUserId);
       return write(tx);
     });
+  }
+
+  /**
+   * F01 yönetim yetkisinin KİLİTLİ yeniden değerlendirmesi, çağıranın açtığı transaction içinde. Yazıdan ÖNCE
+   * çağrılır; yetki bu arada geri alındıysa yazı yapılmadan 403. `withCasePermissionGrantAuthority` ve kendi
+   * transaction'ını açan yollar (ekipten avukat çıkarma: K7.3 kapsam geri alımıyla aynı işlem) bunu kullanır.
+   */
+  private async assertCasePermissionGrantAuthorityInTx(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    actorUserId: string | undefined,
+  ): Promise<void> {
+    const allowed =
+      !!actorUserId &&
+      !!this.officeApproval &&
+      (await this.officeApproval.isF01WriteActorAuthorizedInTx(tx, actorUserId, tenantId));
+    if (!allowed) {
+      throw new ForbiddenException({
+        code: "CASE_PERMISSION_GRANT_FORBIDDEN",
+        message:
+          "Dosya yetkilerini verme/değiştirme yalnız ofis yönetim yetkisi (ADMIN veya PARTNER/MANAGER/yetkilendirilmiş avukat) ile yapılabilir.",
+      });
+    }
   }
 
   private requireClaimItemWriterRouter(): ClaimItemWriterRouterService {
@@ -4426,6 +4439,9 @@ export class CaseService {
     // L6: non-responsible removal still never promotes another lawyer.
     // K7.3 adds atomic scoped revocation and audit to the existing removal.
     return this.prisma.$transaction(async tx => {
+      // Ekip ÜYELİĞİ: F01 yetkisinin kilitli yeniden değerlendirmesi silmeyle AYNI işlemde (ekleme yoluyla aynı
+      // kural). Erken kontrolden sonra geri alınan yetkiyle son bir çıkarma kalıcı olamaz.
+      await this.assertCasePermissionGrantAuthorityInTx(tx, tenantId, userId);
       if (caseLawyer.lawyer.userId) await lockK73Subject(tx, tenantId, caseLawyer.lawyer.userId);
       await tx.caseLawyer.delete({ where: { id: caseLawyerId } });
       await revokeLostK73ScopesInTx(tx, tenantId, caseLawyer.lawyer.userId, userId, this.auditService);
