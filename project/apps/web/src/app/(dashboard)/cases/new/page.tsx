@@ -2042,7 +2042,12 @@ export default function NewCasePage() {
         setOpeningPreviewNonce((n) => n + 1);
         setCurrentStep(5);
       }
-      setError(formatCaseCreateAdmissionError(err) || openingClaimError || formatCaseDueValidationError(err) || err.message || "Takip oluşturulurken bir hata oluştu");
+      if (openingClaimError && !formatCaseCreateAdmissionError(err)) {
+        // Açılış beyanı reddi (geçersiz beyan / bayat önizleme / kapalı seçim): kendi mesajı; evrak kabul reddi önceliklidir.
+        setError(openingClaimError);
+        return;
+      }
+      setError(formatCaseCreateAdmissionError(err) || formatCaseDueValidationError(err) || err.message || "Takip oluşturulurken bir hata oluştu");
     } finally { setLoading(false); }
   };
 
