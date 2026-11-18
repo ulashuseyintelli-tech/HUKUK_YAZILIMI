@@ -7,6 +7,7 @@ import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import * as request from 'supertest';
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
+import { ensureCaseFinanceWriter } from '../../../../test/case-finance-writer-fixture';
 import { StorageModule } from '../../../common/storage/storage.module';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { ErrorLogModule } from '../../error-log/error-log.module';
@@ -76,6 +77,8 @@ dbDescribe('FR-7 A + temporary D — real HTTP/disposable PostgreSQL', () => {
   async function opened(currency = 'USD') {
     const response = await open(currency);
     expect(response.status).toBe(201);
+    // Due yazım uçları dosyada mali yazma yetkisi ister (owner kararı 18.11.2026, K3); bu dosyanın konusu para birimidir.
+    await ensureCaseFinanceWriter(db, response.body.id as string, adminId);
     return response.body.id as string;
   }
 
@@ -106,13 +109,19 @@ dbDescribe('FR-7 A + temporary D — real HTTP/disposable PostgreSQL', () => {
   it('currency-omitted updates use the existing record; incompatible updates roll back', async () => {
     const id = await opened();
     const row = await db.due.findFirstOrThrow({ where: { caseId: id } });
-    expect((await patch(`/cases/${id}/dues/${row.id}`, { amount: 1200 })).status).toBe(200);
+    // Para birimi verilmeyen güncelleme kaydın kendi para birimiyle kabul edilir (düşük etkili alan: açıklama).
+    expect((await patch(`/cases/${id}/dues/${row.id}`, { description: 'para birimi verilmedi' })).status).toBe(200);
     const before = await counts();
-    const response = await patch(`/cases/${id}/dues/${row.id}`, { amount: 4000, currency: 'TRY' });
+    const response = await patch(`/cases/${id}/dues/${row.id}`, { description: 'yazılmamalı', currency: 'TRY' });
     expect(response.status).toBe(400);
+    expect(response.body.code).toBe('CASE_CLAIM_CURRENCY_MISMATCH');
+    // Tutar bağlı kanonik kalemde yüksek etkili alandır: Due ucundan değiştirilemez (owner kararı 18.11.2026, K1 / K2).
+    const amount = await patch(`/cases/${id}/dues/${row.id}`, { amount: 1200 });
+    expect([amount.status, amount.body.code]).toEqual([409, 'DUE_CHANGE_REQUIRES_CLAIM_ITEM_APPROVAL']);
     expect(await counts()).toEqual(before);
-    expect((await db.due.findUniqueOrThrow({ where: { id: row.id } })).amount.toString()).toBe('1200');
-    expect((await db.claimItem.findFirstOrThrow({ where: { caseId: id } })).amount.toString()).toBe('1200');
+    const due = await db.due.findUniqueOrThrow({ where: { id: row.id } });
+    const claim = await db.claimItem.findFirstOrThrow({ where: { caseId: id } });
+    expect([due.amount.toString(), due.description, claim.amount.toString(), claim.description]).toEqual(['1000', 'para birimi verilmedi', '1000', 'para birimi verilmedi']);
   });
   it('one incompatible manual instrument rejects the whole opening batch', async () => {
     const before = await counts();

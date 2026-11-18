@@ -217,7 +217,7 @@ describeWithDisposableDb('Hesap özeti para birimi bağlamı (HTTP + disposable 
   it('karma anapara (USD + EUR + TRY): legacy asilAlacak tek sayıdır (17.000, değişmedi); blok para birimi bazında ayırır', async () => {
     const caseId = await openCase('karma', { currency: 'USD', subCategory: 'DOVIZ', dues: [principal(10_000)] });
     for (const [amount, currency] of [[5_000, 'EUR'], [2_000, 'TRY']] as const) {
-      await addLegacyMixedDueFixture(prisma, post, caseId, { ...principal(amount), description: `${currency} anapara` }, currency);
+      await addLegacyMixedDueFixture(prisma, post, caseId, { ...principal(amount), description: `${currency} anapara` }, currency, adminId);
     }
     const summary = await summaryOf(caseId);
 

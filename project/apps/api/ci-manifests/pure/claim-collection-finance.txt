@@ -410,3 +410,5 @@ src/modules/client/__tests__/client-bank-account-h13a.spec.ts
 src/modules/interest-engine/rates/__tests__/legal-3095-rate-table.spec.ts
 # Secimlik kalem bazli borclu sorumlulugu (karar gunlugu 2026-11-15, DEBTOR-OD07-CLAIM-LIABILITY-SELECTION-SA01): saf alan modulu - pay yuvarlama, atif cozumleme, tur / kapasite, izdusum, reddedilen girdiler, borclu bakiyesi ek alanlari.
 src/modules/claim-liability/__tests__/claim-liability.domain.spec.ts
+# Due yazim yolu bagli kanonik kalemi korur (owner karari 18.11.2026, K1 / K2): saf karar kurali - gonderilmeyen alan degismez, ayni deger degisiklik sayilmaz, yuksek etkili alan ihlali, ret sozlesmeleri.
+src/modules/case/__tests__/due-canonical-item-guard.spec.ts

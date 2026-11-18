@@ -601,7 +601,7 @@ describeWithDisposableDb('Açılış masrafı şartı — belirlenemeyen masraf 
 
   it('karma dosya (USD dosya + TRY anapara kalemi): açılış masrafı belirlenmedi', async () => {
     const caseId = await openUsdCase('karma');
-    await addLegacyMixedDueFixture(prisma, post, caseId, { ...principal(2_000), description: 'TRY anapara' }, 'TRY');
+    await addLegacyMixedDueFixture(prisma, post, caseId, { ...principal(2_000), description: 'TRY anapara' }, 'TRY', adminId);
 
     const gate = await gateStatus(caseId);
     expect(gate.openingExpense).toEqual(notDeterminedOf('USD', ['TRY', 'USD']));

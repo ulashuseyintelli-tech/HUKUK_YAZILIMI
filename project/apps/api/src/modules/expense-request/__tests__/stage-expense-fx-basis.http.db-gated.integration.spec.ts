@@ -343,7 +343,7 @@ describeWithDisposableDb('Aşama masraf seti — dövizli dosyada oranlı kalem 
   ])('%s: iki para birimi tek sayıda toplanıp oran uygulanmaz; kayıt yazılmaz', async (_title, label, basisCurrencies, context) => {
     const caseId = await openCase(label, { currency: 'USD', subCategory: 'DOVIZ', ...withClient(), dues: [principal(1_000_000)] });
     if (label === 'karma') {
-      await addLegacyMixedDueFixture(prisma, post, caseId, { ...principal(250_000), description: 'TRY anapara' }, 'TRY');
+      await addLegacyMixedDueFixture(prisma, post, caseId, { ...principal(250_000), description: 'TRY anapara' }, 'TRY', adminId);
     } else {
       // Dosya açılışı düzeltmesinden önceki kaydın kurulumu: alacak kalemi para birimi TRY damgalı
       await prisma.claimItem.updateMany({ where: { tenantId, caseId, itemType: 'PRINCIPAL' }, data: { currency: 'TRY' } });

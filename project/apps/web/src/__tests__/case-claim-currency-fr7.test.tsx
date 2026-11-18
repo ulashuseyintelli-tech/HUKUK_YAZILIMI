@@ -38,6 +38,8 @@ describe('FR7 form currency admission', () => {
     vi.mocked(api.updateDue).mockRejectedValueOnce(new Error('CASE_CLAIM_CURRENCY_MISMATCH'));
     const onSuccess = vi.fn(), onClose = vi.fn();
     render(<DueModal isOpen caseId="case-usd" defaultCurrency="USD" due={{ id: 'same', type: 'PRINCIPAL', amount: 1000, currency: 'USD', dueDate: '2026-01-01' }} onSuccess={onSuccess} onClose={onClose} />);
+    // Düzenlemede yalnız değişen alan gönderilir; değişiklik yoksa istek atılmaz → önce bir alan değiştirilir.
+    fireEvent.change(screen.getByPlaceholderText('Opsiyonel açıklama'), { target: { value: 'açıklama' } });
     fireEvent.click(screen.getByRole('button', { name: 'Güncelle' }));
     await waitFor(() => expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('CASE_CLAIM_CURRENCY_MISMATCH')));
     expect(api.updateDue).toHaveBeenCalledOnce();

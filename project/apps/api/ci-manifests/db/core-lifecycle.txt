@@ -396,3 +396,5 @@ src/modules/case/__tests__/case-client-address-clz05.http.db-gated.integration.s
 src/modules/case/__tests__/case-claim-currency-fr7.http.db-gated.integration.spec.ts
 # P02 ekran eksikleri (18.11.2026): kalem faiz durumu / baslangic dayanagi talep + iki kisi onayi; Belirlenmedi korunur; yetkisiz yazamaz; dosya ekibinden cikarma (sorumlu cikarilamaz, goruntuleyici cikaramaz) (gercek HTTP + PostgreSQL).
 src/modules/claim-item/__tests__/claim-item-interest-status-team-removal.http.db-gated.integration.spec.ts
+# Due yazim yolu bagli kanonik kalemi korur (owner karari 18.11.2026, K1 / K2 / K3): yuksek etkili degisiklik ve silme yazimdan once ret; aciklama onayli faizi korur; dosya kapsami + mali yazma yetkisi; bekleyen onay; eszamanli istek; faiz hesabi + UYAP izdusumu korunan kaydi kullanir.
+src/modules/case/__tests__/due-canonical-item-guard.http.db-gated.integration.spec.ts
