@@ -7,6 +7,16 @@ import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculat
 import { ProfessionalClaimItemForm } from "@/components/claim-item";
 import { assertCaseClaimDraftCurrencies, CASE_CLAIM_CURRENCY_MESSAGE } from "@/lib/case-claim-currency";
 import { api } from "@/lib/api";
+import { OpeningClaimPreviewCard } from "@/components/claim-item/opening/OpeningClaimPreviewCard";
+import {
+  buildOpeningClaimRequests,
+  buildOpeningDueFields,
+  describeOpeningClaimRequestsOutcome,
+  formatOpeningClaimCreateError,
+  summarizeOpeningDeclaration,
+  type OpeningClaimPreviewDTO,
+  type OpeningDueDeclaration,
+} from "@/lib/case-opening-claims";
 import { runMutation } from "@/lib/mutation-outcome";
 import { toActionErrorMessage } from "@/lib/action-error";
 import { readClientCreateResult, CLIENT_EXISTING_RETURNED_MESSAGE } from "@/lib/client-create-result";
@@ -222,6 +232,11 @@ interface DueItem {
   ilamKararNo?: string;
   kiraDonemBaslangic?: string;
   kiraDonemBitis?: string;
+  // Açılış beyanları: vekâlet ücreti kaynağı + ilam kesinleşme tarihi açılışta kaleme yazılır; `opening` GEÇİCİDİR
+  // ("faiz işler" beyanı + sorumluluk seçimi) ve due gövdesiyle gönderilmez (bkz. buildOpeningClaimRequests).
+  attorneyFeeBasis?: "JUDGMENT_AWARDED" | "ENFORCEMENT_TARIFF";
+  ilamKesinlesmeTarihi?: string;
+  opening?: OpeningDueDeclaration;
 }
 
 // ── PR-2a (CLAIM-ITEM-WIZARD-2a): çok-kalemli alacak girişi ──────────────────
@@ -279,7 +294,8 @@ function claimItemKalemLabel(kalemTuru?: string): string {
 // (Eski onItemsChange mantığının BİREBİR aynısı; tek-kalem → çok-kalem refactor'unda
 // tekrar kullanılabilir saf fonksiyona çıkarıldı.) Çek kimliği persist EDİLMEZ (PR-2a kapsamı:
 // yalnız ibrazTarihi → interestStartDate, eskisiyle aynı). startDate = caseData.startDate.
-function buildDuesFromClaimItem(item: any, startDate: string): DueItem[] {
+// `openingDebtorIds`: dosyanın o anki borçluları (kişi kimliği) — açılış sorumluluk seçimindeki taraflar bununla süzülür.
+function buildDuesFromClaimItem(item: any, startDate: string, openingDebtorIds: readonly string[] = []): DueItem[] {
   const newDues: DueItem[] = [];
   if (!item) return newDues;
   // PR-2a eski-draft guard: hydrate edilmiş legacy Due passthrough → BİREBİR korunur
@@ -299,6 +315,9 @@ function buildDuesFromClaimItem(item: any, startDate: string): DueItem[] {
           item.faizOrani,
           item.faizsizGerekce,
         );
+    // Açılış beyanları: yalnız kullanıcının açıkça girdiği bilgi. "Faiz işler" beyanı varsa kaleme açılışta faiz
+    // başlangıç / bitiş tarihi YAZILMAZ (beyan edilen başlangıç onaya gider; onay beklenirken başka tarih hesaba girmesin).
+    const opening = buildOpeningDueFields(item, { debtorIds: openingDebtorIds, interestIsNone: item.takipOncesiFaiz === "YOK" });
     newDues.push({
       type: anaDueType,
       description: anaKalemLabel,
@@ -310,14 +329,25 @@ function buildDuesFromClaimItem(item: any, startDate: string): DueItem[] {
       interestAccrualStatus: interestIntent?.interestAccrualStatus,
       noInterestReason: interestIntent?.noInterestReason,
       interestAmount: 0,
-      interestStartDate: kalemTuru === 'CEK' && item.cekBilgileri?.ibrazTarihi
-        ? item.cekBilgileri.ibrazTarihi
-        : item.vadeTarihi,
-      interestEndDate: startDate,
+      interestStartDate: opening.omitInterestDates
+        ? undefined
+        : kalemTuru === 'CEK' && item.cekBilgileri?.ibrazTarihi
+          ? item.cekBilgileri.ibrazTarihi
+          : item.vadeTarihi,
+      interestEndDate: opening.omitInterestDates ? undefined : startDate,
       // PR-2c-2: belge-özel alanlar (FATURA/İLAM/KİRA) → PRINCIPAL due (kambiyo-dışı; CEK/SENET → {})
       ...buildClaimDocumentFields(item),
       // K3-L KP-8: taramadan gelen fatura KDV bilgisi — yalnız kalem tutarı taramadaki tutarla aynı kaldıysa
       ...ocrKdvFieldsForDue(item),
+      // Açılış beyanları: ilamdan doğan fer'i kalemin ilam bilgisi, kesinleşme tarihi, vekâlet ücreti kaynağı
+      ...(opening.sourceDocumentType ? { sourceDocumentType: opening.sourceDocumentType } : {}),
+      ...(opening.ilamMahkeme ? { ilamMahkeme: opening.ilamMahkeme } : {}),
+      ...(opening.ilamEsasNo ? { ilamEsasNo: opening.ilamEsasNo } : {}),
+      ...(opening.ilamKararNo ? { ilamKararNo: opening.ilamKararNo } : {}),
+      ...(opening.issueDate ? { issueDate: opening.issueDate } : {}),
+      ...(opening.ilamKesinlesmeTarihi ? { ilamKesinlesmeTarihi: opening.ilamKesinlesmeTarihi } : {}),
+      ...(opening.attorneyFeeBasis ? { attorneyFeeBasis: opening.attorneyFeeBasis } : {}),
+      ...(opening.opening ? { opening: opening.opening } : {}),
     });
   }
 
@@ -363,15 +393,38 @@ function buildDuesFromClaimItem(item: any, startDate: string): DueItem[] {
 // ── PR-2b-2: kambiyo (CEK/SENET) routing — tek karar routeClaimRawsForManualInstruments (ocr-instrument, saf+testable) ──
 // Flag ON: TAM kambiyo → instruments[] (source:MANUAL), dues'a DEĞİL (K1); eksik kambiyo → dues fallback.
 // Flag OFF: hepsi dues (PR-2a).
-function claimItemsToDues(items: ClaimDraftItem[], startDate: string, manualInstrumentsEnabled: boolean): DueItem[] {
+function claimItemsToDues(
+  items: ClaimDraftItem[],
+  startDate: string,
+  manualInstrumentsEnabled: boolean,
+  openingDebtorIds: readonly string[] = [],
+): DueItem[] {
   // Batch preflight: legacy passthrough veya instrument routing dahil hiçbir dal invalid
   // classification'ı mapper'dan kaçıramaz. Tek invalid item bütün submit'i durdurur.
   for (const item of items) {
     mapClaimKalemTuruToDueType(item.raw?.kalemTuru);
   }
   const { remainingForDues } = routeClaimRawsForManualInstruments(items.map(ci => ci.raw), manualInstrumentsEnabled);
-  return remainingForDues.flatMap(raw => buildDuesFromClaimItem(raw, startDate));
+  return remainingForDues.flatMap(raw => buildDuesFromClaimItem(raw, startDate, openingDebtorIds));
 }
+
+// Açılış önizlemesi isteği (SAF): dosya açılış isteğiyle AYNI kalem ve beyan kurucularını kullanır; sunucunun önizleme
+// özeti bu girdiye bağlıdır. İstek metni aynı zamanda "gösterilen önizleme güncel mi" anahtarıdır.
+function buildOpeningPreviewRequest(duesList: DueItem[], currency: string, debtorIds: readonly string[]) {
+  const openingClaimRequests = buildOpeningClaimRequests(duesList);
+  return {
+    currency: currency || "TRY",
+    dues: buildCreateCaseDuesPayload(duesList),
+    caseDebtors: debtorIds.map((debtorId) => ({ debtorId })),
+    ...(openingClaimRequests ? { openingClaimRequests } : {}),
+  };
+}
+
+// Evrak kaydına (çek / senet) yönlenen kalem alacak kalemi satırı (due) üretmez; açılış beyanı sıra numarasına bağlanamaz.
+const openingUnavailableReason = (kalemTuru: string): string | null =>
+  FEATURE_FLAGS.MANUAL_CASE_INSTRUMENTS && (kalemTuru === "CEK" || kalemTuru === "SENET")
+    ? "Çek / senet kalemi evrak kaydı olarak açılır. Bu kalemde faiz beyanı ve borçlu sorumluluğu seçimi dosya açıldıktan sonra Alacak Kalemleri bölümünden yapılır."
+    : null;
 
 function claimItemsToManualInstruments(items: ClaimDraftItem[], manualInstrumentsEnabled: boolean): CaseInstrumentPayload[] {
   return routeClaimRawsForManualInstruments(items.map(ci => ci.raw), manualInstrumentsEnabled).manualInstruments;
@@ -567,6 +620,106 @@ export default function NewCasePage() {
   const claimFormCaseDebtors = useMemo(
     () => caseDebtors.map((cd) => ({ debtorId: cd.debtorId, role: cd.role, avalForDebtorId: cd.avalForDebtorId })),
     [caseDebtors],
+  );
+  // ── Açılış kalem beyanları (owner talimatı 2026-11-18) ────────────────────────────────────────────────────────────
+  // Önizleme sunucuda hesaplanır ve kayıt oluşturmaz. Onaya gidecek beyan ("faiz işler" / sorumluluk seçimi) varsa dosya
+  // yalnız GÖSTERİLEN güncel önizlemenin özetiyle açılır; girdi değiştiyse sunucu açılışı reddeder.
+  const openingDebtorOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const options: Array<{ debtorId: string; name: string }> = [];
+    for (const cd of submitCaseDebtors) {
+      if (!cd.debtorId || seen.has(cd.debtorId)) continue;
+      seen.add(cd.debtorId);
+      const known = existingDebtors.find((d: any) => d.id === cd.debtorId);
+      options.push({ debtorId: cd.debtorId, name: known?.displayName || known?.name || cd.debtor?.name || "" });
+    }
+    return options;
+  }, [submitCaseDebtors, existingDebtors]);
+  const openingDebtorIds = useMemo(() => submitCaseDebtors.map((cd) => cd.debtorId), [submitCaseDebtors]);
+  const openingDebtorNames = useMemo(
+    () => Object.fromEntries(openingDebtorOptions.map((option) => [option.debtorId, option.name])),
+    [openingDebtorOptions],
+  );
+  // Gönderimle AYNI küme: listedeki kalemler + editörde bekleyen geçerli yeni kalem (gönderimde listeye alınır).
+  const openingPreviewDues = useMemo<DueItem[] | null>(() => {
+    const pendingRaw =
+      editingItemIndex === null && claimFormBuffer && Number(claimFormBuffer.bakiyeTutar) > 0 && !claimFormBuffer.ocrDraftId
+        ? claimFormBuffer
+        : null;
+    const items = pendingRaw ? [...claimDraftItems, { id: "__pending__", raw: pendingRaw }] : claimDraftItems;
+    try {
+      return claimItemsToDues(items, caseData.startDate, FEATURE_FLAGS.MANUAL_CASE_INSTRUMENTS, openingDebtorIds);
+    } catch {
+      return null; // tür seçilmemiş kalem: gönderim de aynı nedenle durur
+    }
+  }, [claimDraftItems, claimFormBuffer, editingItemIndex, caseData.startDate, openingDebtorIds]);
+  const openingPreviewRequest = useMemo(
+    () => (openingPreviewDues ? buildOpeningPreviewRequest(openingPreviewDues, caseData.currency, openingDebtorIds) : null),
+    [openingPreviewDues, caseData.currency, openingDebtorIds],
+  );
+  const openingPreviewKey = openingPreviewRequest ? JSON.stringify(openingPreviewRequest) : "";
+  const [openingPreview, setOpeningPreview] = useState<{ key: string; data: OpeningClaimPreviewDTO } | null>(null);
+  const [openingPreviewError, setOpeningPreviewError] = useState<{ key: string; message: string } | null>(null);
+  const [openingPreviewLoading, setOpeningPreviewLoading] = useState(false);
+  const [openingPreviewNonce, setOpeningPreviewNonce] = useState(0);
+  useEffect(() => {
+    if (currentStep !== 5 || !openingPreviewRequest || openingPreviewRequest.dues.length === 0) {
+      setOpeningPreviewLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setOpeningPreviewLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const data = await api.previewCaseOpeningClaims(openingPreviewRequest);
+        if (!cancelled) {
+          setOpeningPreview({ key: openingPreviewKey, data });
+          setOpeningPreviewError(null);
+        }
+      } catch (err) {
+        if (!cancelled) setOpeningPreviewError({ key: openingPreviewKey, message: toActionErrorMessage(err, "sunucuya ulaşılamadı.") });
+      } finally {
+        if (!cancelled) setOpeningPreviewLoading(false);
+      }
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- istek, anahtarıyla (metniyle) aynı içeriktir
+  }, [currentStep, openingPreviewKey, openingPreviewNonce]);
+  const openingPreviewCurrent = !!openingPreview && !!openingPreviewKey && openingPreview.key === openingPreviewKey;
+  const openingHasDeclarations = !!openingPreviewRequest && "openingClaimRequests" in openingPreviewRequest;
+  /**
+   * Gönderim kapısı: onaya gidecek beyan varsa dosya yalnız gösterilen güncel ve uygulanabilir önizlemeyle açılır.
+   * Engel varsa okunur metin, yoksa null. Beyan yoksa kapı uygulanmaz (açılış bugünkü gibidir).
+   */
+  const openingPreviewGate = (duesList: DueItem[]): string | null => {
+    const declarations = buildOpeningClaimRequests(duesList);
+    if (!declarations) return null;
+    const key = JSON.stringify(buildOpeningPreviewRequest(duesList, caseData.currency, openingDebtorIds));
+    if (!openingPreview || openingPreview.key !== key) {
+      setOpeningPreviewNonce((n) => n + 1);
+      return "Açılış önizlemesi güncel değil. Önizleme yenileniyor; faiz beyanlarını ve borçlu sorumluluğu seçimlerini önizlemede kontrol edip yeniden gönderin.";
+    }
+    if (!openingPreview.data.uygulanabilir) {
+      return "Açılış beyanlarında düzeltilmesi gereken girdiler var; açılış önizlemesindeki uyarılara bakın.";
+    }
+    if (!openingPreview.data.secimYazmaAcik && (declarations.liabilitySelections?.length ?? 0) > 0) {
+      return "Borçlu sorumluluğu seçimi bu ortamda kapalı. Seçimi kaldırıp yeniden gönderin; seçim dosya açıldıktan sonra yapılabilir.";
+    }
+    return null;
+  };
+  // Listedeki son kalem (düzenlenen kalem hariç): kullanıcı isterse beyanı oradan kopyalar.
+  const openingCopySource = useMemo(() => {
+    const candidates = claimDraftItems.filter((_, index) => index !== editingItemIndex);
+    const last = candidates[candidates.length - 1]?.raw;
+    if (!last || last.__legacyDue || (!last.acilisBeyani && !last.ilamBilgileri)) return null;
+    return { label: claimItemKalemLabel(last.kalemTuru), kalemTuru: last.kalemTuru, acilisBeyani: last.acilisBeyani, ilamBilgileri: last.ilamBilgileri ?? null };
+  }, [claimDraftItems, editingItemIndex]);
+  const openingDeclarationsProp = useMemo(
+    () => ({ debtors: openingDebtorOptions, unavailableReason: openingUnavailableReason, copySource: openingCopySource }),
+    [openingDebtorOptions, openingCopySource],
   );
   // Kararlı referans: her render'da yeni fonksiyon, formun hesap döngüsünü (ve önizleme isteklerini) sonsuz tetikliyordu
   const handleClaimFormItemsChange = useCallback((items: any[]) => setClaimFormBuffer(items[0] ?? null), []);
@@ -1379,7 +1532,7 @@ export default function NewCasePage() {
   // claimDraftItems[] tek otorite; her mutasyonda dues[] buildDuesFromClaimItem köprüsüyle
   // yeniden türetilir (createCase yine dues[] gönderir). instruments[] DOKUNULMAZ.
   const applyClaimDraftItems = (next: ClaimDraftItem[]) => {
-    const allDues = claimItemsToDues(next, caseData.startDate, FEATURE_FLAGS.MANUAL_CASE_INSTRUMENTS);
+    const allDues = claimItemsToDues(next, caseData.startDate, FEATURE_FLAGS.MANUAL_CASE_INSTRUMENTS, openingDebtorIds);
     // Mapping tamamen başarılı olmadan state'i değiştirme; invalid batch UI'da da atomiktir.
     setClaimDraftItems(next);
     setDues(allDues);
@@ -1678,7 +1831,7 @@ export default function NewCasePage() {
         resetClaimEditor();
       }
       assertCaseClaimDraftCurrencies(caseData.currency, effClaimItems.map(item => item.raw));
-      effDues = claimItemsToDues(effClaimItems, caseData.startDate, FEATURE_FLAGS.MANUAL_CASE_INSTRUMENTS);
+      effDues = claimItemsToDues(effClaimItems, caseData.startDate, FEATURE_FLAGS.MANUAL_CASE_INSTRUMENTS, openingDebtorIds);
       // PR-2b-2: manuel kambiyo (CEK/SENET) → instruments[] (source:MANUAL). Flag ON'da dues'tan ÇIKARILDI (K1);
       // OFF'ta boş (kambiyo dues'a gitti = PR-2a). createCase'e effDues ile birlikte taşınır.
       manualInstruments = claimItemsToManualInstruments(effClaimItems, FEATURE_FLAGS.MANUAL_CASE_INSTRUMENTS);
@@ -1696,6 +1849,13 @@ export default function NewCasePage() {
     // kaldıysa eski `dues` durumuna DÜŞÜLMEZ (düşülseydi aynı çek iki kez yazılırdı).
     if (effDues.length === 0 && effClaimItems.length === 0 && dues.length > 0) {
       effDues = dues;
+    }
+    // Açılış kalem beyanları: onaya gidecek beyan varsa dosya yalnız GÖSTERİLEN güncel önizlemeyle açılır.
+    const openingGateMessage = openingPreviewGate(effDues);
+    if (openingGateMessage) {
+      setError(openingGateMessage);
+      setCurrentStep(5);
+      return;
     }
     // Pre-submit validasyon
     const validation = validateCaseCreation({
@@ -1775,6 +1935,18 @@ export default function NewCasePage() {
       });
       assertCaseClaimDraftCurrencies(caseData.currency, claimDraftItems.map(item => item.raw));
       assertCaseClaimDraftCurrencies(caseData.currency, instrumentsToSubmit);
+      // Açılış kalem beyanları: gönderilen kalemlerle AYNI listeden kurulur; önizleme özeti gösterilen önizlemeden gelir.
+      const duesForSubmit = duesToSubmit ?? dues;
+      const openingDeclarations = buildOpeningClaimRequests(duesForSubmit);
+      const openingGateMessage = openingPreviewGate(duesForSubmit);
+      if (openingGateMessage) {
+        setError(openingGateMessage);
+        setCurrentStep(5);
+        return;
+      }
+      const openingClaimRequests = openingDeclarations && openingPreview
+        ? { ...openingDeclarations, previewHash: openingPreview.data.onizlemeOzeti }
+        : null;
       const response = await api.createCase({
         fileNumber: caseData.fileNumber, executionFileNumber: caseData.executionFileNumber || undefined,
         type: mapCategoryToCaseType(selectedForm?.category), subType: selectedSubForm?.code || selectedForm?.code,
@@ -1833,7 +2005,9 @@ export default function NewCasePage() {
         })),
         // Eski format (geriye uyumluluk)
         debtors: debtors.filter(d => d.name).map(d => ({ id: d.isNew ? undefined : d.id, type: d.type, name: d.name, identityNo: d.identityNo, taxOffice: d.taxOffice, phone: d.phone, email: d.email, address: d.address })),
-        dues: buildCreateCaseDuesPayload(duesToSubmit ?? dues),
+        dues: buildCreateCaseDuesPayload(duesForSubmit),
+        // "Faiz işler" beyanı + borçlu sorumluluğu seçimi: kaleme yazılmaz; dosya oluşunca ikinci kişinin onayına gider.
+        ...(openingClaimRequests ? { openingClaimRequests } : {}),
         // PR-2b-2: OCR instruments[] (source yok=OCR) + manuel kambiyo (source:MANUAL). Flag OFF → yalnız OCR (PR-2a).
         // Modal yolunda manualInstrumentsToSubmit gelmez → claimDraftItems state'ten türetilir (oturmuş).
         instruments: instrumentsToSubmit, // PR-N4b/PR-2b-2: OCR + (bayrak açıkken) manuel kambiyo (CaseInstrumentInputDto[])
@@ -1851,6 +2025,9 @@ export default function NewCasePage() {
       // Dövizli / karma dosyada otomatik açılış masraf talebi oluşturulmaz: sunucunun nedeni ve gereken bilgi gösterilir
       const openingExpenseMessage = describeOpeningExpenseOutcome(response?.openingExpenseRequest);
       if (openingExpenseMessage) alert(openingExpenseMessage);
+      // Açılış kalem beyanlarının sonucu: açılan onay talepleri ve (varsa) açılamayanların nedeni
+      const openingClaimMessage = describeOpeningClaimRequestsOutcome(response?.openingClaimRequests);
+      if (openingClaimMessage) alert(openingClaimMessage);
       if (selectedForm) recordUsage(selectedForm.code);
       // Başarılı kayıt sonrası taslağı temizle
       clearCaseWizardDraftState({ tenantId: wizardTenantId, userId: wizardUserId });
@@ -1859,7 +2036,13 @@ export default function NewCasePage() {
     } catch (err: any) {
       // Evrak kabul reddi (MANUAL/OCR kaynağı kapalı, işlenemeyen evrak) koda göre kaynağa uygun mesaja çevrilir.
       // Taslak (localStorage) ve tarama sonucu (instruments) TEMİZLENMEZ; kaynak değiştirilmez → yeniden giriş yok.
-      setError(formatCaseCreateAdmissionError(err) || formatCaseDueValidationError(err) || err.message || "Takip oluşturulurken bir hata oluştu");
+      const openingClaimError = formatOpeningClaimCreateError(err);
+      if (openingClaimError) {
+        // Dosya oluşmadı: taslak korunur, önizleme yenilenir ve kullanıcı kalemler adımına döner.
+        setOpeningPreviewNonce((n) => n + 1);
+        setCurrentStep(5);
+      }
+      setError(formatCaseCreateAdmissionError(err) || openingClaimError || formatCaseDueValidationError(err) || err.message || "Takip oluşturulurken bir hata oluştu");
     } finally { setLoading(false); }
   };
 
@@ -2577,7 +2760,9 @@ export default function NewCasePage() {
           // Adım 0 ile aynı yerleşim kuralı: ebeveyn sabit yükseklikli ve overflow-hidden. Önceden bu sarmalayıcı
           // min-h-[600px] düz <div> olduğundan kalemler ekliyken içerik (taslak belge düğmeleri dahil) footer altında
           // KESİLİYOR, kaydırılamıyordu. Artık bu alan kendi içinde kayar; footer altta görünür kalır.
-          <div data-testid="wizard-claims-step-scroll" className="flex-1 min-h-0 overflow-y-auto space-y-3">
+          // `overflow-x-hidden`: kalem editöründen gelen birkaç piksellik yatay taşma, dikey alanı daraltan bir yatay kaydırma
+          // çubuğu çıkarıyordu (tarayıcıda ölçüldü: 1105 / 1103 px).
+          <div data-testid="wizard-claims-step-scroll" className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden space-y-3">
             {ocrInstruments.length > 0 && (
               <div className="border rounded-lg p-3 bg-emerald-50/40" data-testid="wizard-ocr-instruments">
                 <h3 className="text-sm font-semibold mb-1">Evrak Taramasından Gelen Kayıtlar ({ocrInstruments.length})</h3>
@@ -2744,6 +2929,9 @@ export default function NewCasePage() {
                         {ci.raw?.bakiyeTutar ? ` — ${Number(ci.raw.bakiyeTutar).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${ci.raw?.currency || 'TRY'}` : ''}
                         {ci.raw?.vadeTarihi ? ` · ${ci.raw.vadeTarihi}` : ''}
                         {ci.raw?.ocrDraftId ? <span className="ml-2 text-[11px] text-emerald-700" data-testid="claim-item-ocr-source">Kaynak: evrak tarama (incelendi)</span> : null}
+                        {summarizeOpeningDeclaration(ci.raw).map((etiket) => (
+                          <span key={etiket} data-testid="claim-item-opening-chip" className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-700">{etiket}</span>
+                        ))}
                       </span>
                       <span className="flex items-center gap-2 shrink-0">
                         <button type="button" onClick={() => handleEditClaimItem(i)} className="text-xs text-blue-600 hover:underline">Düzenle</button>
@@ -2866,25 +3054,23 @@ export default function NewCasePage() {
                 };
               })}
               onItemsChange={handleClaimFormItemsChange}
+              openingDeclarations={openingDeclarationsProp}
             />
-            <div className="flex items-center justify-end gap-2">
-              {editingItemIndex !== null && (
-                <button
-                  type="button"
-                  onClick={resetClaimEditor}
-                  className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
-                >
-                  Vazgeç
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={handleAddOrUpdateClaimItem}
-                className="inline-flex items-center gap-1 px-4 py-2 text-sm rounded-lg bg-primary text-white hover:bg-primary/90"
-              >
-                {editingItemIndex !== null ? 'Kalemi Güncelle' : '+ Kalemi Listeye Ekle'}
-              </button>
-            </div>
+            {/* "Kalemi Listeye Ekle / Güncelle" düğmesi kaydırma alanında DEĞİL, alttaki düğme satırındadır: uzun kalem formu
+                ve önizleme kaydırılırken de görünür kalır (tarayıcıda 1440x900 ve 1366x768 ölçüldü). */}
+            {/* Açılış önizlemesi: dosya toplamı + borçlu başına dağılım + onaya gidecek beyanlar (kayıt oluşturmaz) */}
+            {openingPreviewRequest && openingPreviewRequest.dues.length > 0 && (
+              <OpeningClaimPreviewCard
+                preview={openingPreview?.data ?? null}
+                loading={openingPreviewLoading}
+                error={openingPreviewError && openingPreviewError.key === openingPreviewKey ? openingPreviewError.message : null}
+                stale={!!openingPreview && !openingPreviewCurrent}
+                debtorNames={openingDebtorNames}
+                hasDeclarations={openingHasDeclarations}
+                excludedInstrumentCount={caseOpenInstruments.length}
+                onRefresh={() => setOpeningPreviewNonce((n) => n + 1)}
+              />
+            )}
           </div>
         )}
 
@@ -2935,12 +3121,39 @@ export default function NewCasePage() {
 
         {/* Wizard açıkken ana sayfa butonlarını gizle - wizard kendi butonlarını kullanır */}
         {!(currentStep === 0 && showWizard && !showDocumentSelector) && (
-          <div className="flex flex-col sm:flex-row justify-between gap-3 mt-8 pt-4 border-t mb-16">
+          // Son adımda (Alacak Kalemleri) alt boşluk kaydırma alanına geri verilir: düğme satırı sıkıştırılır ve sağ alttaki
+          // yüzen "Hızlı İşlemler" düğmesinin altında kalmaması için sağdan içeri alınır (öteki adımlar aynen).
+          <div
+            data-testid="wizard-footer"
+            className={`flex flex-col sm:flex-row justify-between gap-3 border-t ${
+              currentStep === steps.length - 1 ? "mt-2 pt-2 mb-1 sm:pr-24" : "mt-8 pt-4 mb-16"
+            }`}
+          >
             <button type="button" onClick={prevStep} className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-gray-100 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-200 hover:border-gray-400 transition-colors order-2 sm:order-1"><ArrowLeft className="h-4 w-4" /> Geri</button>
             {currentStep < steps.length - 1 ? (
               <button type="button" onClick={nextStep} className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 order-1 sm:order-2">İleri <ArrowRight className="h-4 w-4" /></button>
             ) : (
-              <button type="button" onClick={handleSubmitClick} disabled={loading} className="inline-flex items-center justify-center gap-2 px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 order-1 sm:order-2">{loading && <Loader2 className="h-4 w-4 animate-spin" />}{loading ? "Oluşturuluyor..." : "Takibi Oluştur"}</button>
+              // Son adım: kalem işlemi (ikincil) ve dosya oluşturma (birincil) yan yana, her zaman görünür.
+              <div data-testid="wizard-final-actions" className="flex flex-wrap items-center justify-end gap-2 order-1 sm:order-2">
+                {editingItemIndex !== null && (
+                  <button
+                    type="button"
+                    onClick={resetClaimEditor}
+                    className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  >
+                    Vazgeç
+                  </button>
+                )}
+                <button
+                  type="button"
+                  data-testid="wizard-add-claim-item"
+                  onClick={handleAddOrUpdateClaimItem}
+                  className="inline-flex items-center gap-1 px-4 py-2 text-sm font-medium rounded-lg border border-primary text-primary bg-white hover:bg-primary/5"
+                >
+                  {editingItemIndex !== null ? 'Kalemi Güncelle' : '+ Kalemi Listeye Ekle'}
+                </button>
+                <button type="button" onClick={handleSubmitClick} disabled={loading} className="inline-flex items-center justify-center gap-2 px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50">{loading && <Loader2 className="h-4 w-4 animate-spin" />}{loading ? "Oluşturuluyor..." : "Takibi Oluştur"}</button>
+              </div>
             )}
           </div>
         )}

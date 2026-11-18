@@ -96,6 +96,8 @@ function buildIlamMetadata(due: DueDto): Record<string, unknown> | undefined {
   if (due.ilamEsasNo) ilam.esasNo = due.ilamEsasNo;
   if (due.ilamKararNo) ilam.kararNo = due.ilamKararNo;
   if (due.davaTarihi) ilam.davaTarihi = due.davaTarihi;
+  // Kesinleşme tarihi YALNIZ kayıttır: faiz başlangıcı bu alandan türetilmez (açık beyan + onay gerekir).
+  if (due.ilamKesinlesmeTarihi) ilam.kesinlesmeTarihi = due.ilamKesinlesmeTarihi;
   return Object.keys(ilam).length > 0 ? ilam : undefined;
 }
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { OpeningClaimDeclarationFields, type OpeningIlamInfo } from "./opening/OpeningClaimDeclarationFields";
+import { normalizeOpeningClaimDeclaration, type OpeningClaimDeclaration } from "@/lib/case-opening-claims";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { caseClaimCurrencyMatches, CASE_CLAIM_CURRENCY_MESSAGE } from "@/lib/case-claim-currency";
 import {
@@ -398,7 +400,10 @@ interface AlacakKalemi {
     ilamTarihi: string;
     davaTarihi?: string; // İşlemiş faiz hesabı için
     faizTuruIlamda?: string; // İlamda belirtilen faiz türü
+    kesinlesmeTarihi?: string; // Yalnız kayıt; faiz başlangıcı buradan türetilmez
   };
+  // Açılış beyanları (vekâlet ücreti kaynağı, ilam kaynağı, "faiz işler" beyanı, borçlu sorumluluğu seçimi)
+  acilisBeyani?: OpeningClaimDeclaration;
   // Fatura bilgileri
   faturaBilgileri?: {
     faturaNo: string;
@@ -476,6 +481,17 @@ interface Props {
    */
   hesapTarihi?: string;
   onHesapTarihiChange?: (value: string) => void;
+  /**
+   * Yeni dosya formu: kalemin açılış beyanları (vekâlet ücreti kaynağı, ilam bilgisi, "faiz işler" beyanı, borçlu
+   * sorumluluğu seçimi). Verilmezse bu alanlar gösterilmez. Beyanlar kalemle birlikte `onItemsChange` ile döner.
+   */
+  openingDeclarations?: {
+    debtors: ReadonlyArray<{ debtorId: string; name: string }>;
+    /** Kalem türü için beyan alınamıyorsa nedeni (ör. evrak kaydına yönlenen çek / senet); alınabiliyorsa null. */
+    unavailableReason?: (kalemTuru: string) => string | null;
+    /** Listedeki son kalem: kullanıcı isterse ilam bilgisi, faiz beyanı ve sorumluluk seçimi buradan kopyalanır. */
+    copySource?: { label: string; kalemTuru?: string; acilisBeyani?: unknown; ilamBilgileri?: OpeningIlamInfo | null } | null;
+  };
 }
 
 // ============================================================================
@@ -735,6 +751,7 @@ export function ProfessionalClaimItemForm({
   caseDebtors = [],
   hesapTarihi: hesapTarihiProp,
   onHesapTarihiChange,
+  openingDeclarations,
 }: Props) {
   
   const getDefaultKalemTuru = () => {
@@ -2010,6 +2027,28 @@ export function ProfessionalClaimItemForm({
                   className="w-full border rounded px-1.5 py-0.5 text-xs"
                 />
               </div>
+              <div className="col-span-2">
+                <label className="block text-[10px] text-gray-500 mb-0.5" htmlFor="ilam-kesinlesme-tarihi">Kesinleşme Tarihi</label>
+                <input
+                  id="ilam-kesinlesme-tarihi"
+                  data-testid="ilam-kesinlesme-tarihi"
+                  type="date"
+                  value={kalem.ilamBilgileri?.kesinlesmeTarihi || ""}
+                  onChange={(e) => setKalem(prev => ({
+                    ...prev,
+                    ilamBilgileri: {
+                      ...prev.ilamBilgileri,
+                      kesinlesmeTarihi: e.target.value,
+                      mahkemeAdi: prev.ilamBilgileri?.mahkemeAdi || "",
+                      esasNo: prev.ilamBilgileri?.esasNo || "",
+                      kararNo: prev.ilamBilgileri?.kararNo || "",
+                      ilamTarihi: prev.ilamBilgileri?.ilamTarihi || ""
+                    }
+                  }))}
+                  title="Yalnız kayıt: faiz başlangıcı bu alandan türetilmez"
+                  className="w-full border rounded px-1.5 py-0.5 text-xs"
+                />
+              </div>
             </div>
           </div>
         )}
@@ -2048,6 +2087,59 @@ export function ProfessionalClaimItemForm({
                 />
               </div>
             </div>
+          </div>
+        )}
+
+        {/* AÇILIŞ BEYANLARI — vekâlet ücreti kaynağı · ilam bilgisi · faiz · borçlu sorumluluğu (yalnız yeni dosya formu) */}
+        {openingDeclarations && (
+          <div className="border rounded p-2 bg-slate-50/60">
+            <OpeningClaimDeclarationFields
+              kalemTuru={kalem.kalemTuru}
+              value={kalem.acilisBeyani}
+              onChange={(next) => setKalem(prev => ({ ...prev, acilisBeyani: next }))}
+              ilamBilgileri={kalem.ilamBilgileri}
+              onIlamChange={(next) => setKalem(prev => ({
+                ...prev,
+                ilamBilgileri: {
+                  ...prev.ilamBilgileri,
+                  ...next,
+                  mahkemeAdi: next.mahkemeAdi ?? prev.ilamBilgileri?.mahkemeAdi ?? "",
+                  esasNo: next.esasNo ?? prev.ilamBilgileri?.esasNo ?? "",
+                  kararNo: next.kararNo ?? prev.ilamBilgileri?.kararNo ?? "",
+                  ilamTarihi: next.ilamTarihi ?? prev.ilamBilgileri?.ilamTarihi ?? "",
+                },
+              }))}
+              debtors={openingDeclarations.debtors}
+              interestIsNone={kalem.takipOncesiFaiz === "YOK"}
+              unavailableReason={openingDeclarations.unavailableReason?.(kalem.kalemTuru) ?? null}
+              copySourceLabel={openingDeclarations.copySource?.label ?? null}
+              onCopyFromLast={() => {
+                const source = openingDeclarations.copySource;
+                if (!source) return;
+                // Kullanıcının açık eylemi: ilam bilgisi, faiz beyanı ve sorumluluk seçimi kopyalanır. Vekâlet ücreti kaynağı
+                // kaleme özgüdür, kopyalanmaz.
+                const copied = normalizeOpeningClaimDeclaration(source.acilisBeyani);
+                setKalem(prev => ({
+                  ...prev,
+                  acilisBeyani: {
+                    ...copied,
+                    vekaletUcretiKaynagi: normalizeOpeningClaimDeclaration(prev.acilisBeyani).vekaletUcretiKaynagi,
+                    ilamKaynakli: copied.ilamKaynakli || source.kalemTuru === "ILAM",
+                  },
+                  ...(source.ilamBilgileri
+                    ? {
+                        ilamBilgileri: {
+                          ...source.ilamBilgileri,
+                          mahkemeAdi: source.ilamBilgileri.mahkemeAdi ?? "",
+                          esasNo: source.ilamBilgileri.esasNo ?? "",
+                          kararNo: source.ilamBilgileri.kararNo ?? "",
+                          ilamTarihi: source.ilamBilgileri.ilamTarihi ?? "",
+                        },
+                      }
+                    : {}),
+                }));
+              }}
+            />
           </div>
         )}
 
