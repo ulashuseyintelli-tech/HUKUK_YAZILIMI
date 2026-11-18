@@ -305,7 +305,7 @@ describeWithDisposableDb('Masraf paketi önerisi — dövizli dosyada oranlı ka
 
     it('anapara DIŞI kalemin para birimi matrahı etkilemez: dövizli masraf kalemi eklenen TL dosyada yanıt aynen', async () => {
       const withFxExpense = await openCase('try-doviz-masraf', { ...inCurrency('TRY'), dues: [principal(1_000_000)] });
-      await addLegacyMixedDueFixture(prisma, post, withFxExpense, { type: 'EXPENSE', description: 'Yurt dışı tebligat gideri', amount: 500, dueDate: '2026-01-20' }, 'USD', adminId);
+      await addLegacyMixedDueFixture(prisma, post, withFxExpense, { type: 'EXPENSE', description: 'Yurt dışı tebligat gideri', amount: 500, dueDate: '2026-01-20' }, 'USD', adminId, app);
       // Kurulum doğrulaması: dövizli kalem hem Due hem alacak kalemi (ClaimItem) olarak kayıtlı, ikisi de anapara DEĞİL
       const recorded = async () => ({
         dues: (await prisma.due.findMany({ where: { caseId: withFxExpense }, orderBy: { createdAt: 'asc' } })).map((row) => `${row.type}:${row.currency}`),
@@ -464,7 +464,7 @@ describeWithDisposableDb('Masraf paketi önerisi — dövizli dosyada oranlı ka
     ['dosya TRY + sonradan USD anapara kalemi', 'karma-try-usd', 'TRY', { currency: 'USD', amount: 40_000 }],
   ])('karma — %s: oranlı kalem hesaplanmaz', async (_title, label, caseCurrency, added) => {
     const caseId = await openCase(label, { ...inCurrency(caseCurrency), dues: [principal(1_000_000)] });
-    await addLegacyMixedDueFixture(prisma, post, caseId, { ...principal(added.amount), description: 'İkinci anapara' }, added.currency, adminId);
+    await addLegacyMixedDueFixture(prisma, post, caseId, { ...principal(added.amount), description: 'İkinci anapara' }, added.currency, adminId, app);
 
     const res = await compute(caseId, OPENING);
 
@@ -578,7 +578,7 @@ describeWithDisposableDb('Masraf paketi önerisi — dövizli dosyada oranlı ka
     ])('%s dosya: eski pencerenin yüklediği (peşin harçlı) ya da peşin harçsız paket talebi 409 ile reddedilir; hiçbir kayıt yazılmaz', async (label, caseBody, added) => {
       const caseId = await openCase(`fp-${String(label).slice(0, 3)}`, { ...caseBody, ...withClient(), dues: [principal(1_000_000)] });
       if (added) {
-        await addLegacyMixedDueFixture(prisma, post, caseId, { ...principal(added.amount), description: 'İkinci anapara' }, added.currency, adminId);
+        await addLegacyMixedDueFixture(prisma, post, caseId, { ...principal(added.amount), description: 'İkinci anapara' }, added.currency, adminId, app);
       }
 
       for (const [title, items, extra] of [

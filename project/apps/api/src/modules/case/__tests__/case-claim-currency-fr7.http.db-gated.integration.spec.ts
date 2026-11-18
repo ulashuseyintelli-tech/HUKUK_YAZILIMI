@@ -8,12 +8,14 @@ import { randomUUID } from 'node:crypto';
 import * as request from 'supertest';
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
 import { ensureCaseFinanceWriter } from '../../../../test/case-finance-writer-fixture';
+import { createApprovedDue, ensureDueApprover } from '../../../../test/due-create-approval-fixture';
 import { StorageModule } from '../../../common/storage/storage.module';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { ErrorLogModule } from '../../error-log/error-log.module';
 import { MetricsRegistryModule } from '../../metrics-registry/metrics-registry.module';
 import { DomainEventIngestService } from '../../icrabot/domain-event-ingest';
 import { ClaimItemService } from '../../claim-item/claim-item.service';
+import { OfficeApprovalService } from '../../office-approval/office-approval.service';
 import { stableJsonHash } from '../../permission-diagnostics/guided-edge/canonical-json';
 import { assertCaseClaimCurrency, assertStoredCaseClaimCurrency } from '../../claim-item/case-claim-currency-policy';
 import { CaseModule } from '../case.module';
@@ -99,11 +101,15 @@ dbDescribe('FR-7 A + temporary D — real HTTP/disposable PostgreSQL', () => {
   });
   it('omitted and explicit matching Due currency remain USD without changing the amount', async () => {
     const id = await opened();
+    // Kalem ekleme iki kişi onayına tabidir (owner kararı 19.11.2026): talep → başka hesabın onayı → kayıt.
     for (const field of [{}, { currency: 'USD' }]) {
-      const response = await post(`/cases/${id}/dues`, { ...due, ...field });
-      expect(response.status).toBe(201);
-      expect(response.body.currency).toBe('USD');
-      expect(Number(response.body.amount)).toBe(1000);
+      const { dueId } = await createApprovedDue({
+        db, approvals: app.get(OfficeApprovalService), post: (path, body) => post(path, body), caseId: id,
+        due: { ...due, ...field }, requesterUserId: adminId,
+      });
+      const row = await db.due.findUniqueOrThrow({ where: { id: dueId } });
+      expect(row.currency).toBe('USD');
+      expect(Number(row.amount)).toBe(1000);
     }
   });
   it('currency-omitted updates use the existing record; incompatible updates roll back', async () => {
@@ -162,18 +168,25 @@ dbDescribe('FR-7 A + temporary D — real HTTP/disposable PostgreSQL', () => {
     const id = await opened();
     const before = await db.due.count({ where: { caseId: id } });
     const responses = await Promise.all([post(`/cases/${id}/dues`, { ...due, currency: 'USD' }), post(`/cases/${id}/dues`, { ...due, currency: 'TRY' })]);
-    expect(responses.map(r => r.status)).toEqual([201, 400]);
+    // Uyumlu istek yalnız onay talebi açar (202); uyumsuz istek talep açamaz. Onaya kadar kalem oluşmaz.
+    expect(responses.map(r => r.status)).toEqual([202, 400]);
+    expect(await db.due.count({ where: { caseId: id } })).toBe(before);
+    await app.get(OfficeApprovalService).approve(responses[0].body.approvalRequestId, await ensureDueApprover(db, tenantId, adminId));
     expect(await db.due.count({ where: { caseId: id } })).toBe(before + 1);
   });
   it('continuity failure rolls back Due, ClaimItem and the preceding success audit together', async () => {
     const id = await opened();
+    // Kalem onay yürütmesinde oluşur; süreklilik kaydı orada yazılır. Hata, kararı da geri alır: talep bekler.
+    const requested = await post(`/cases/${id}/dues`, { ...due, currency: 'USD' });
+    expect(requested.status).toBe(202);
+    const approverId = await ensureDueApprover(db, tenantId, adminId);
     const before = await counts();
     const spy = jest.spyOn(app.get(DomainEventIngestService), 'appendInTransaction').mockRejectedValueOnce(new Error('FR7 controlled continuity failure'));
-    const response = await post(`/cases/${id}/dues`, { ...due, currency: 'USD' });
-    expect(response.status).toBe(500);
+    await expect(app.get(OfficeApprovalService).approve(requested.body.approvalRequestId, approverId)).rejects.toThrow('FR7 controlled continuity failure');
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
     expect(await counts()).toEqual(before);
+    expect((await db.officeApprovalRequest.findUniqueOrThrow({ where: { id: requested.body.approvalRequestId } })).status).toBe('PENDING_APPROVAL');
   });
   it('final admission reads current DB currency and rejects a stale candidate as conflict', async () => {
     const id = await opened();

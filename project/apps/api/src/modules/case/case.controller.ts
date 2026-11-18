@@ -14,6 +14,9 @@ import {
   Optional,
   ServiceUnavailableException,
   Req,
+  Res,
+  HttpCode,
+  HttpStatus,
 } from "@nestjs/common";
 import { CaseService } from "./case.service";
 import { CreateCaseDto, CreateDueDto, OpeningClaimPreviewRequestDto, UpdateCaseDto, UpdateDueDto } from "./dto/case.dto";
@@ -648,10 +651,11 @@ export class CaseController {
   }
 
   /**
-   * Alacak kalemi ekle
-   * POST /cases/:id/dues
+   * Alacak kalemi ekleme TALEBİ (iki kişi onayı; owner kararı 19.11.2026)
+   * POST /cases/:id/dues → 202: Due / kalem OLUŞMAZ, onay talebi açılır (`approvalRequired: true`).
    */
   @Post(":id/dues")
+  @HttpCode(HttpStatus.ACCEPTED)
   async createDue(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") actorUserId: string,
@@ -672,8 +676,12 @@ export class CaseController {
     @Param("id") id: string,
     @Param("dueId") dueId: string,
     @Body() body: UpdateDueDto,
+    @Res({ passthrough: true }) res: { status(code: number): unknown },
   ) {
-    return this.caseService.updateDue(tenantId, id, dueId, body, actorUserId);
+    const result = await this.caseService.updateDue(tenantId, id, dueId, body, actorUserId);
+    // Onaya giden değişiklik (kaleme ulaşmayan etkili alan): hiçbir kayıt değişmedi → 202 (owner kararı 19.11.2026).
+    if ((result as { approvalRequired?: boolean }).approvalRequired === true) res.status(HttpStatus.ACCEPTED);
+    return result;
   }
 
   /**
@@ -685,9 +693,13 @@ export class CaseController {
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") actorUserId: string,
     @Param("id") id: string,
-    @Param("dueId") dueId: string
+    @Param("dueId") dueId: string,
+    @Res({ passthrough: true }) res: { status(code: number): unknown },
   ) {
-    return this.caseService.deleteDue(tenantId, id, dueId, actorUserId);
+    const result = await this.caseService.deleteDue(tenantId, id, dueId, actorUserId);
+    // Onaya giden silme (bağlı kalemi olmayan Due): satır yerinde → 202 (owner kararı 19.11.2026).
+    if ((result as { approvalRequired?: boolean }).approvalRequired === true) res.status(HttpStatus.ACCEPTED);
+    return result;
   }
 
   // ==================== TAHSİLATLAR (COLLECTIONS) ====================

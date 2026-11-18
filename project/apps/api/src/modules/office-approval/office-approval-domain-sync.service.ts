@@ -93,6 +93,24 @@ export type ClaimItemLiabilitySelectionApprovalHandler = (
   req: OfficeApprovalRequest,
 ) => Promise<ClaimItemLiabilityProjection[]>;
 
+/**
+ * Due (dosya kalemi) değişikliği — owner kararı 19.11.2026: Due üzerinden yeni alacak oluşturma mevcut "yüksek etkili
+ * kalem değişikliği" onayından geçer (AYNI işlem kodu, hedef dosya). Talep kayıtlı niyetin SÜRÜMÜYLE ayrışır. Değer
+ * `case/due-change-approval.ts` içindeki `CASE_DUE_CHANGE_INTENT_VERSION` ile AYNIDIR; dosya modülünü buradan içe
+ * aktarmamak için yerel sabit (eşitlik testle kilitlidir).
+ */
+export const CASE_DUE_CHANGE_APPROVAL_INTENT_VERSION = 'CASE_DUE_CHANGE_V1' as const;
+
+/**
+ * Onaylanan Due değişikliği talebini karar transaction'ı İÇİNDE uygulayan işleyici (dosya kilidi + kabul kurallarının
+ * yeniden doğrulanması + Due / köprü kalemi yazımı). Fırlatırsa karar dahil hiçbir yazma kalmaz (talep
+ * PENDING_APPROVAL'da kalır).
+ */
+export type CaseDueChangeApprovalHandler = (
+  tx: Prisma.TransactionClient,
+  req: OfficeApprovalRequest,
+) => Promise<void>;
+
 const COLLECTION_DISPOSITION_APPROVAL_ACTION = 'COLLECTION_DISPOSITION_POST';
 /** Zincir doğrulamasında kayıt saati ile satır sürüm saati arasındaki saat farkı payı. */
 const CLAIM_ITEM_AUDIT_CHAIN_CLOCK_MARGIN_MS = 5 * 60 * 1000;
@@ -105,6 +123,7 @@ export class OfficeApprovalDomainSyncService {
   private readonly claimItemSourceIntegrity = new ClaimItemSourceIntegrityGuard();
   private claimItemFormationBatchHandler?: ClaimItemFormationBatchApprovalHandler;
   private claimItemLiabilitySelectionHandler?: ClaimItemLiabilitySelectionApprovalHandler;
+  private caseDueChangeHandler?: CaseDueChangeApprovalHandler;
 
   constructor(
     @Optional() private readonly domainEventIngestService?: DomainEventIngestService,
@@ -136,6 +155,11 @@ export class OfficeApprovalDomainSyncService {
     // değişikliği dalından ÖNCE yakalanır.
     if (this.isClaimItemLiabilitySelectionApproval(req)) {
       return this.syncClaimItemLiabilitySelection(tx, req);
+    }
+    // Due değişikliği (ekleme) aynı işlem kodunu ve dosya hedefini taşır; niyet sürümüyle ayrışır ve genel kalem
+    // değişikliği dalından ÖNCE yakalanır.
+    if (this.isCaseDueChangeApproval(req)) {
+      return this.syncCaseDueChange(tx, req);
     }
     if (this.isClaimItemHighImpactApproval(req)) {
       return this.syncClaimItemHighImpact(tx, req);
@@ -173,6 +197,88 @@ export class OfficeApprovalDomainSyncService {
       throw new Error('ClaimItem liability selection approval handler is already registered');
     }
     this.claimItemLiabilitySelectionHandler = handler;
+  }
+
+  /**
+   * Due değişikliği — onay yürütme işleyicisinin tek kaydı. Kayıt yoksa ONAY kapalı-hata verir; ret, revizyon ve iptal
+   * yine no-op'tur.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - CaseDueApprovalHandlerService.onModuleInit() → dosya modülü işleyici kaydı
+   * /// </remarks>
+   */
+  registerCaseDueChangeHandler(handler: CaseDueChangeApprovalHandler): void {
+    if (this.caseDueChangeHandler && this.caseDueChangeHandler !== handler) {
+      throw new Error('Case due change approval handler is already registered');
+    }
+    this.caseDueChangeHandler = handler;
+  }
+
+  private isCaseDueChangeApproval(req: OfficeApprovalRequest): boolean {
+    if (req.actionCode !== CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE) return false;
+    if (req.targetType !== CLAIM_ITEM_CASE_TARGET_TYPE) return false;
+    const intent = req.savedIntent as { version?: unknown } | null;
+    return Boolean(intent && typeof intent === 'object' && intent.version === CASE_DUE_CHANGE_APPROVAL_INTENT_VERSION);
+  }
+
+  /**
+   * Onay → Due satırı ve köprü kalemi karar transaction'ında birlikte yazılır (ya hep ya hiç). Ret, revizyon ve iptal
+   * hiçbir kayıt YAZMAZ. Değiştirerek onay desteklenmez: onay içeriği talep edilen kaleme bağlıdır.
+   */
+  private async syncCaseDueChange(tx: Prisma.TransactionClient, req: OfficeApprovalRequest): Promise<void> {
+    switch (req.status) {
+      case OfficeApprovalStatus.APPROVED:
+        return this.approveCaseDueChange(tx, req);
+      case OfficeApprovalStatus.APPROVED_WITH_CHANGES:
+        throw new BadRequestException(
+          'Dosya kalemi talebi değiştirilerek onaylanamaz; revizyon isteyin veya normal onaylayın.',
+        );
+      default:
+        return;
+    }
+  }
+
+  private async approveCaseDueChange(tx: Prisma.TransactionClient, req: OfficeApprovalRequest): Promise<void> {
+    if (!req.approverUserId) {
+      throw new ConflictException('Onayli CLAIM_ITEM approval kaydinda approverUserId yok.');
+    }
+    if (!this.caseDueChangeHandler) {
+      throw new ConflictException({
+        code: 'CASE_DUE_CHANGE_HANDLER_UNAVAILABLE',
+        message: 'Dosya kalemi talebinin onayı bu ortamda uygulanamaz; talep onay bekler durumda kalır.',
+      });
+    }
+    const claim = await tx.officeApprovalRequest.updateMany({
+      where: {
+        id: req.id,
+        status: OfficeApprovalStatus.APPROVED,
+        executionStatus: OfficeApprovalExecutionStatus.NOT_RUN,
+      },
+      data: {
+        executionStatus: OfficeApprovalExecutionStatus.RUNNING,
+        runningStartedAt: new Date(),
+      },
+    });
+    if (claim.count === 0) {
+      throw new ConflictException('ClaimItem approval zaten yurutulmus veya yurutme icin kilitlenmis.');
+    }
+
+    await this.caseDueChangeHandler(tx, req);
+
+    const done = await tx.officeApprovalRequest.updateMany({
+      where: {
+        id: req.id,
+        executionStatus: OfficeApprovalExecutionStatus.RUNNING,
+      },
+      data: {
+        executionStatus: OfficeApprovalExecutionStatus.SUCCEEDED,
+        executedAt: new Date(),
+      },
+    });
+    if (done.count === 0) {
+      throw new ConflictException('ClaimItem approval yurutme sonucu isaretlenemedi.');
+    }
   }
 
   private isClaimItemLiabilitySelectionApproval(req: OfficeApprovalRequest): boolean {

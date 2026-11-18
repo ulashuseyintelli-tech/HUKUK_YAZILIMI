@@ -256,6 +256,86 @@ export function planDueCanonicalUpdate(input: {
   };
 }
 
+/**
+ * Kaleme ULAŞMAYAN ama Due satırından okuyan mali / hukuki çıktıyı değiştiren istek alanları — owner kararı 19.11.2026.
+ *
+ * Eski hesap özeti (yalnız `PRINCIPAL` Due "asıl alacak" sayılır), açılış masrafı matrahı, belge tutar sınıfı ve
+ * "UYAP'a Aktar" XML'i (`tur`, tutar, para birimi, faiz) Due satırından okur. Bu yüzden:
+ *  - `type`: Due türü değişiyorsa (kalem türünü değiştiren değişim `planDueCanonicalUpdate` ile ÖNCE reddedilir; buraya
+ *    kalan, aynı kalem türüne eşlenen alt tür değişimidir — ör. asıl alacak ↔ kira / prim) → onaya tabi;
+ *  - bağlı kalemi OLMAYAN Due'da (kanonik kalem üretmeyen tür: nafaka) tutar, para birimi, vade ve faiz alanları →
+ *    onaya tabi. Bağlı kalemli Due'da bu alanlar ya değişmez ya da kalemin onaylı değerine yakınsar (onaysız kabul).
+ * Açıklayıcı alanlar (açıklama, sıra, ana kalem, KDV, kesinleşme, kaynak belge no) burada YOKTUR: onaya bağlanmaz.
+ *
+ * Boş tarih "gönderilmedi" sayılır (mevcut yazım kuralı). Dönen liste boşsa istek doğrudan uygulanır.
+ */
+export function planDueOnlyEffectiveChange(input: {
+  readonly due: DueRowForCanonicalGuard;
+  readonly claimItem: BoundClaimItemForCanonicalGuard | null;
+  readonly request: UpdateDueDto;
+  readonly normalizedInterest: DueNormalizedInterestWrite;
+}): DueHighImpactField[] {
+  const { due, claimItem, request, normalizedInterest } = input;
+  const fields = new Set<DueHighImpactField>();
+  if (has(request, 'type') && request.type !== due.type) fields.add('type');
+  if (!claimItem) {
+    if (has(request, 'amount') && !sameDecimal(request.amount, due.amount)) fields.add('amount');
+    if (has(request, 'currency') && !sameText(request.currency, due.currency)) fields.add('currency');
+    if (has(request, 'dueDate') && request.dueDate && !sameInstant(request.dueDate, due.dueDate)) fields.add('dueDate');
+    if (has(normalizedInterest, 'interestTypeCode') && !sameText(normalizedInterest.interestTypeCode, due.interestTypeCode)) {
+      fields.add('interestTypeCode');
+    }
+    if (has(normalizedInterest, 'interestType') && !sameText(normalizedInterest.interestType, due.interestType)) {
+      fields.add('interestType');
+    }
+    if (has(normalizedInterest, 'interestRate') && !sameDecimal(normalizedInterest.interestRate, due.interestRate)) {
+      fields.add('interestRate');
+    }
+    if (has(request, 'interestStartDate') && request.interestStartDate && !sameInstant(request.interestStartDate, due.interestStartDate)) {
+      fields.add('interestStartDate');
+    }
+    if (has(request, 'interestEndDate') && request.interestEndDate && !sameInstant(request.interestEndDate, due.interestEndDate)) {
+      fields.add('interestEndDate');
+    }
+  }
+  return DUE_HIGH_IMPACT_FIELDS.filter((field) => fields.has(field));
+}
+
+/** Bekleyen farklı içerikli Due değişikliği talebi varken ikinci talep açılmaz (kalem değişikliği yoluyla aynı kural). */
+export const DUE_CHANGE_PENDING_CONFLICT = 'DUE_CHANGE_PENDING_CONFLICT';
+/** Talepten sonra dosya kalemi değişmiş: onay yürütmesi uygulanmaz, talep bekler. */
+export const DUE_CHANGE_STALE = 'DUE_CHANGE_STALE';
+
+export class DueChangePendingConflictException extends ConflictException {
+  constructor(dueId: string) {
+    super({
+      statusCode: 409,
+      error: 'Due Change Pending Conflict',
+      code: DUE_CHANGE_PENDING_CONFLICT,
+      message:
+        'Bu dosya kalemi için farklı içerikli bekleyen bir onay talebi zaten var. Önce Onay Kutusu\'ndaki talep ' +
+        `sonuçlanmalı (onay, ret ya da talep edenin iptali). ${NOTHING_CHANGED}`,
+      dueId,
+    });
+    this.name = 'DueChangePendingConflictException';
+  }
+}
+
+export class DueChangeStaleException extends ConflictException {
+  constructor(dueId: string) {
+    super({
+      statusCode: 409,
+      error: 'Due Change Stale',
+      code: DUE_CHANGE_STALE,
+      message:
+        'Talepten sonra dosya kalemi değişmiş ya da silinmiş; talep uygulanmadı. Güncel kayıtla yeniden talep edin.',
+      dueId,
+    });
+    this.name = 'DueChangeStaleException';
+  }
+}
+
+
 const CANONICAL_SCREEN = '"Alacak Kalemleri (Kanonik)" panelinde';
 const NOTHING_CHANGED = 'Hiçbir kayıt değiştirilmedi.';
 

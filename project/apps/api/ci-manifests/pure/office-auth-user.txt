@@ -513,3 +513,5 @@ src/modules/debtor/__tests__/debtor-case-view-scope-routes.static.spec.ts
 src/modules/case/__tests__/case-view-scope-artifact-tenant.static.spec.ts
 # F02 P3 tarama (owner 09.11.2026): butun-controller dosya gorunum kapsami rota envanteri (fail-closed kaynak taramasi; siniflanmamis yeni rota / controller kirmizi).
 src/modules/case/__tests__/case-view-scope-global-route-inventory.static.spec.ts
+# Due degisikligi onayinin onay altyapisindaki dali (owner karari 19.11.2026): niyet surumuyle ayrim, isleyici kaydi, kapali-hata, eski derleme reddi.
+src/modules/office-approval/__tests__/office-approval-domain-sync.case-due-change.spec.ts

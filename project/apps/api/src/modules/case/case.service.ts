@@ -20,24 +20,57 @@ import { OfficeApprovalService } from "../office-approval/office-approval.servic
 import { maskIban } from "@/common/pii-mask.util";
 import { resolveClientAddress } from "../client/client-address-resolver";
 import { CreateCaseDto, CreateDueDto, UpdateCaseDto, UpdateDueDto, CaseSubCategory, Currency, DueDto, DueType, InterestType, CaseInstrumentInputDto, CaseInstrumentSource, CaseStaffInputDto } from "./dto/case.dto";
-import { Prisma, LegalCaseStatus, InterestType as PrismaInterestType, DocumentSourceType, InterestAccrualStatus, InterestTypeCode } from "@prisma/client";
+import { Prisma, LegalCaseStatus, InterestType as PrismaInterestType, DocumentSourceType, InterestAccrualStatus, InterestTypeCode, type OfficeApprovalRequest } from "@prisma/client";
 import { mapDueTypeToClaimItemType, buildClaimItemData } from "./due-to-claim-item.mapper";
 import { AttorneyFeeBasis, assertAttorneyFeeBasisMatchesItemType } from "../claim-item/attorney-fee-basis";
 import { interestWriteData, normalizeInterestWriteIntent } from "../claim-item/interest-write-admission";
 import { assertGenericDueTypeTransition } from "./due-type-transition.policy";
 import {
   DueBoundClaimItemClosedException,
+  DueChangePendingConflictException,
   DueChangeRequiresClaimItemApprovalException,
+  DueChangeStaleException,
   DueClaimItemBusyException,
   DueDeleteRequiresClaimItemCancelException,
   DueEditBlockedByPendingClaimItemApprovalException,
   DueWriteForbiddenException,
   isRowLockNotAvailable,
   planDueCanonicalUpdate,
+  planDueOnlyEffectiveChange,
 } from "./due-canonical-item-guard";
 import { lockExecutionActorRows } from "../office-approval/office-approval-execution-authority";
 import { assertClaimItemLifecycleMutation } from "../claim-item/claim-item-lifecycle-contract";
-import { CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE, CLAIM_ITEM_TARGET_TYPE } from "../claim-item/claim-item-approval.constants";
+import { CLAIM_ITEM_CASE_TARGET_TYPE, CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE, CLAIM_ITEM_TARGET_TYPE } from "../claim-item/claim-item-approval.constants";
+import {
+  CASE_DUE_CREATE_REQUESTED_MESSAGE,
+  CASE_DUE_DELETE_OPERATION,
+  CASE_DUE_DELETE_REQUESTED_MESSAGE,
+  CASE_DUE_UPDATE_OPERATION,
+  CASE_DUE_UPDATE_REQUESTED_MESSAGE,
+  buildCaseDueCreateIntent,
+  buildCaseDueDeleteIntent,
+  buildCaseDueUpdateIntent,
+  caseDueChangeOperation,
+  caseDueCreateDtoFromIntent,
+  caseDueCreateIdempotencyKey,
+  caseDueDeleteIdempotencyKey,
+  caseDueEffectiveSnapshot,
+  caseDueStateDigest,
+  caseDueUpdateComparable,
+  caseDueUpdateIdempotencyKey,
+  readCaseDueCreateIntent,
+  readCaseDueDeleteIntent,
+  readCaseDueUpdateIntent,
+  type CaseDueChangeRequestResult,
+  type CaseDueCreateRequestResult,
+  type CaseDueUpdateSavedIntent,
+} from "./due-change-approval";
+
+/** Onay yürütme işleyicisinin okuduğu talep alanları (karar transaction'ındaki kayıt). */
+type ApprovedDueChangeRequest = Pick<
+  OfficeApprovalRequest,
+  "id" | "tenantId" | "targetType" | "targetRef" | "savedIntent" | "requesterUserId" | "approverUserId"
+>;
 import {
   resolveCaseInstrumentType,
   caseInstrumentRejectionReason,
@@ -4763,11 +4796,21 @@ export class CaseService {
   }
 
   /**
-   * Alacak kalemi ekle.
+   * Alacak kalemi EKLEME TALEBİ — owner kararı 19.11.2026: Due üzerinden yeni alacak oluşturma da iki kişi onayına
+   * tabidir. Bu yöntem Due satırı da kanonik kalem de OLUŞTURMAZ; mevcut "yüksek etkili kalem değişikliği" onayına
+   * (aynı işlem kodu, aynı iki kişi kuralı; hedef dosya) talep açar. Onaylanmamış alacak etkin borca, tahsilat
+   * dağıtımına ve dışa aktarıma giremez — ortada okunacak satır yoktur. Kalem onay yürütmesinde oluşur
+   * (`applyApprovedDueCreateInTx`).
+   *
+   *  - Kabul kuralları (tür, vekâlet ücreti kaynağı, faiz girişi, dosya para birimi) talepten ÖNCE çalışır: geçersiz
+   *    istek onay kutusuna hiç düşmez.
+   *  - Yetki: dosya kapsamı + mali yazma yetkisi, talep kaydıyla AYNI transaction'da ve kilit altında (K3).
+   *  - Aynı içerikli bekleyen talep ikinci kez açılmaz (mevcut talep döner).
+   *  - Dosya açılışı (POST /cases) bu yoldan GEÇMEZ; açılıştaki kalemler bugünkü gibi dosyayla birlikte oluşur.
    *
    * <remarks>
    * Çağrıldığı yerler:
-   * - CaseController.createDue() → POST /cases/:id/dues (dosya açıldıktan sonra alacak kalemi ekleme)
+   * - CaseController.createDue() → POST /cases/:id/dues (dosya açıldıktan sonra alacak kalemi ekleme talebi)
    * </remarks>
    */
   async createDue(
@@ -4775,65 +4818,165 @@ export class CaseService {
     caseId: string,
     data: CreateDueDto,
     actorUserId: string,
-  ) {
-    // Yeni Due admission, faiz normalizasyonu ve transaction dahil bütün yan etkilerden önce
-    // fail-closed çalışır. Shared legacy mapper bilinçli olarak değiştirilmez.
+  ): Promise<CaseDueCreateRequestResult> {
+    // Kabul ve faiz girişi doğrulaması transaction dahil bütün yan etkilerden önce fail-closed çalışır.
     this.assertDueCreationAdmission([data]);
-    const normalizedInterest = this.normalizeDueInterestForWrite(data, actorUserId);
+    this.normalizeDueInterestForWrite(data, actorUserId);
+    const officeApproval = this.officeApproval;
+    if (!officeApproval) {
+      throw new ConflictException({
+        code: "DUE_CREATE_APPROVAL_UNAVAILABLE",
+        message: "Kalem ekleme onayı bu ortamda işlenemiyor; talep açılmadı ve hiçbir kayıt oluşturulmadı.",
+      });
+    }
     return this.prisma.$transaction(async (tx) => {
-      // K3: dosya kapsamı + mali yazma yetkisi, kilit altında ve ilk yazımdan önce (yalnız aynı büro yetmez).
-      const caseExists = await this.assertDueWriteAuthorityInTx(tx, tenantId, caseId, actorUserId);
+      // K3: dosya kapsamı + mali yazma yetkisi, kilit altında ve talep kaydından önce (yalnız aynı büro yetmez).
+      const caseRow = await this.assertDueWriteAuthorityInTx(tx, tenantId, caseId, actorUserId);
+      // Eksik değer DOSYA para birimini alır; açık değer FR-7 A denetiminden geçer. Çevirme yapılmaz.
+      const currency = data.currency === undefined ? caseRow.currency : data.currency;
+      assertCaseClaimCurrency(caseRow.currency, currency);
 
-      // Get max sortOrder
-      const currency = data.currency === undefined ? caseExists.currency : data.currency;
-      assertCaseClaimCurrency(caseExists.currency, currency);
-      const maxSort = await tx.due.aggregate({
-        where: { caseId },
-        _max: { sortOrder: true },
-      });
-
-      const due = await tx.due.create({
-        data: {
-          caseId,
-          type: data.type as any,
-          description: data.description,
-          amount: data.amount,
-          dueDate: new Date(data.dueDate),
-          // Eksik değer DOSYA para birimini alır; açık değer FR-7 A denetiminden geçmiştir. Çevirme yapılmaz.
-          currency,
-          ...normalizedInterest.persisted,
-          interestStartDate: data.interestStartDate ? new Date(data.interestStartDate) : undefined,
-          interestEndDate: data.interestEndDate ? new Date(data.interestEndDate) : undefined,
-          sourceDocumentNo: data.sourceDocumentNo,
-          hasKdv: data.hasKdv || false,
-          kdvRate: data.kdvRate,
-          isPrimary: data.isPrimary || false,
-          sortOrder: (maxSort._max.sortOrder || 0) + 1,
+      const intent = buildCaseDueCreateIntent(caseId, data, String(currency));
+      const request = await officeApproval.createPendingRequestInTransaction(
+        {
+          tenantId,
+          actionCode: CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE,
+          targetType: CLAIM_ITEM_CASE_TARGET_TYPE,
+          targetRef: caseId,
+          requesterUserId: actorUserId,
+          savedIntent: intent,
+          idempotencyKey: caseDueCreateIdempotencyKey(intent),
+          reason: intent.reason,
         },
-      });
-
-      const claimItemData = this.buildDueSyncClaimItemData(tenantId, caseId, {
-        ...due,
-        ...normalizedInterest.bridge,
-        attorneyFeeBasis: data.attorneyFeeBasis ?? null,
-      });
-      if (claimItemData) {
-        await this.requireClaimItemWriterRouter().createSystemClaimItem(
-          {
-            route: "DUE_BRIDGE",
-            tenantId,
-            caseId,
-            sourceId: due.id,
-            initiatedByUserId: actorUserId,
-            data: claimItemData,
-            currency: due.currency || "TRY",
-          },
-          tx,
-        );
-      }
-
-      return due;
+        tx,
+      );
+      return {
+        applied: false as const,
+        approvalRequired: true as const,
+        approvalRequestId: request.id,
+        status: request.status,
+        message: CASE_DUE_CREATE_REQUESTED_MESSAGE,
+      };
     });
+  }
+
+  /**
+   * ONAY YÜRÜTMESİ — onaylanan kalem ekleme talebini karar transaction'ı İÇİNDE uygular: Due satırı + (tür eşleniyorsa)
+   * kanonik kalem, dosya açılışıyla AYNI köprüden (`DUE_BRIDGE`) oluşur. Fırlatırsa karar dahil hiçbir yazma kalmaz
+   * (talep onay bekler durumda kalır).
+   *
+   *  - Dosya kilidi (COL-LOCK-001) satırlardan ÖNCE alınır (tahsilat / mahsup ile aynı kanonik sıra).
+   *  - Kabul kuralları güncel durumla YENİDEN çalışır: talepten sonra dosya para birimi değiştiyse ya da kabul kuralı
+   *    artık sağlanmıyorsa yürütme reddedilir.
+   *  - Kaleme köprünün başlatanı olarak TALEP EDEN yazılır; onaylayan ve talep kimliği ayrı denetim kaydındadır.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseDueApprovalHandlerService → OfficeApprovalDomainSyncService (CLAIM_ITEM_HIGH_IMPACT_CHANGE, niyet
+   *   CASE_DUE_CHANGE_V1) → POST /office-approvals/:id/approve
+   * </remarks>
+   */
+  async applyApprovedDueCreateInTx(
+    tx: Prisma.TransactionClient,
+    req: ApprovedDueChangeRequest,
+  ): Promise<{ dueId: string; claimItemId: string | null }> {
+    const intent = readCaseDueCreateIntent(req);
+    const caseRow = await tx.case.findFirst({ where: { id: intent.caseId, tenantId: req.tenantId } });
+    if (!caseRow) {
+      throw new ConflictException({ code: "DUE_CREATE_CASE_NOT_FOUND", message: "Kalem ekleme talebinin dosyası bulunamadı; uygulanmadı." });
+    }
+    await tx.$executeRaw`
+      /* COL-LOCK-001: canonical allocation lock */
+      SELECT pg_advisory_xact_lock(hashtextextended(${intent.caseId}, 0))
+    `;
+
+    const data = caseDueCreateDtoFromIntent(intent);
+    this.assertDueCreationAdmission([data]);
+    const normalizedInterest = this.normalizeDueInterestForWrite(data, req.requesterUserId);
+    assertCaseClaimCurrency(caseRow.currency, intent.due.currency);
+
+    const created = await this.writeDueWithBridgeInTx(tx, req.tenantId, intent.caseId, data, intent.due.currency, normalizedInterest, req.requesterUserId);
+    await this.auditService.logInTransaction(tx, {
+      tenantId: req.tenantId,
+      action: "CASE_DUE_CREATE_APPROVED_APPLIED",
+      entityType: "CASE",
+      entityId: intent.caseId,
+      userId: req.approverUserId ?? undefined,
+      actorType: "USER",
+      metadata: {
+        approvalRequestId: req.id,
+        requesterUserId: req.requesterUserId,
+        dueId: created.due.id,
+        claimItemId: created.claimItemId,
+      },
+      description: "Onaylanan kalem ekleme talebi uygulandı: dosya kalemi ve bağlı alacak kalemi oluşturuldu",
+    });
+    return { dueId: created.due.id, claimItemId: created.claimItemId };
+  }
+
+  /**
+   * Due satırını ve — tür eşleniyorsa — marker'lı kanonik kalemi (köprü rotası `DUE_BRIDGE`) oluşturur. Çağıran kabul
+   * kurallarını, para birimi denetimini ve dosya kilidini ÖNCEDEN sağlamış olmalıdır.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseService.applyApprovedDueCreateInTx() → onaylanan kalem ekleme talebinin yürütmesi
+   * </remarks>
+   */
+  private async writeDueWithBridgeInTx(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    caseId: string,
+    data: CreateDueDto,
+    currency: string,
+    normalizedInterest: ReturnType<CaseService["normalizeDueInterestForWrite"]>,
+    initiatedByUserId: string,
+  ): Promise<{ due: Awaited<ReturnType<Prisma.TransactionClient["due"]["create"]>>; claimItemId: string | null }> {
+    const maxSort = await tx.due.aggregate({
+      where: { caseId },
+      _max: { sortOrder: true },
+    });
+
+    const due = await tx.due.create({
+      data: {
+        caseId,
+        type: data.type as any,
+        description: data.description,
+        amount: data.amount,
+        dueDate: new Date(data.dueDate),
+        // Talep anında çözülen para birimi; yürütmede dosya para birimiyle yeniden karşılaştırılmıştır. Çevirme yapılmaz.
+        currency,
+        ...normalizedInterest.persisted,
+        interestStartDate: data.interestStartDate ? new Date(data.interestStartDate) : undefined,
+        interestEndDate: data.interestEndDate ? new Date(data.interestEndDate) : undefined,
+        sourceDocumentNo: data.sourceDocumentNo,
+        hasKdv: data.hasKdv || false,
+        kdvRate: data.kdvRate,
+        isPrimary: data.isPrimary || false,
+        sortOrder: (maxSort._max.sortOrder || 0) + 1,
+      },
+    });
+
+    const claimItemData = this.buildDueSyncClaimItemData(tenantId, caseId, {
+      ...due,
+      ...normalizedInterest.bridge,
+      attorneyFeeBasis: data.attorneyFeeBasis ?? null,
+    });
+    if (!claimItemData) return { due, claimItemId: null };
+
+    const claimItem = await this.requireClaimItemWriterRouter().createSystemClaimItem<{ id: string }>(
+      {
+        route: "DUE_BRIDGE",
+        tenantId,
+        caseId,
+        sourceId: due.id,
+        initiatedByUserId,
+        data: claimItemData,
+        currency: due.currency || "TRY",
+      },
+      tx,
+    );
+    return { due, claimItemId: claimItem.id };
   }
 
   /**
@@ -4865,12 +5008,111 @@ export class CaseService {
   ) {
     return this.prisma.$transaction(async (tx) => {
       const caseExists = await this.assertDueWriteAuthorityInTx(tx, tenantId, caseId, actorUserId);
+      return this.updateDueCoreInTx(tx, tenantId, caseExists, dueId, data, actorUserId, null);
+    });
+  }
 
+  /**
+   * ONAY YÜRÜTMESİ — onaylanan Due güncelleme talebini karar transaction'ı İÇİNDE uygular (owner kararı 19.11.2026).
+   * Dosya kilidi → Due satırı kilidi → durum özeti yeniden hesaplanır (talepten sonra Due değiştiyse / silindiyse RED)
+   * → `updateDue` ile AYNI çekirdek yeniden çalışır: kabul kuralları, bağlı kalem planı (kaleme ulaşan yüksek etkili
+   * değişiklik burada da reddedilir), kapalı kalem ve bekleyen kalem talebi denetimleri. Fırlatırsa karar dahil hiçbir
+   * yazma kalmaz (talep onay bekler durumda kalır).
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseService.applyApprovedDueChangeInTx() → onay yürütme işleyicisi (niyet işlemi DUE_UPDATE)
+   * </remarks>
+   */
+  private async applyApprovedDueUpdateInTx(
+    tx: Prisma.TransactionClient,
+    req: ApprovedDueChangeRequest,
+  ): Promise<void> {
+    const intent = readCaseDueUpdateIntent(req);
+    const caseRow = await this.lockApprovedDueChangeCaseInTx(tx, req.tenantId, intent.caseId);
+    const updated = await this.updateDueCoreInTx(
+      tx,
+      req.tenantId,
+      caseRow,
+      intent.dueId,
+      intent.patch as unknown as UpdateDueDto,
+      req.requesterUserId,
+      { stateDigest: intent.stateDigest },
+    );
+    await this.auditService.logInTransaction(tx, {
+      tenantId: req.tenantId,
+      action: "CASE_DUE_UPDATE_APPROVED_APPLIED",
+      entityType: "CASE",
+      entityId: intent.caseId,
+      userId: req.approverUserId ?? undefined,
+      actorType: "USER",
+      metadata: {
+        approvalRequestId: req.id,
+        requesterUserId: req.requesterUserId,
+        dueId: intent.dueId,
+        fields: intent.effectiveFields,
+        before: intent.before,
+        after: caseDueEffectiveSnapshot(updated as Parameters<typeof caseDueEffectiveSnapshot>[0]),
+      },
+      description: "Onaylanan dosya kalemi değişikliği talebi uygulandı",
+    });
+  }
+
+  /**
+   * Onay yürütmesinin ortak başlangıcı: dosya (kiracı içinde) bulunur ve dosya kilidi (COL-LOCK-001) satırlardan ÖNCE
+   * alınır.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseService.applyApprovedDueUpdateInTx() / applyApprovedDueDeleteInTx() → onaylanan Due güncelleme / silme
+   * </remarks>
+   */
+  private async lockApprovedDueChangeCaseInTx(tx: Prisma.TransactionClient, tenantId: string, caseId: string) {
+    const caseRow = await tx.case.findFirst({ where: { id: caseId, tenantId } });
+    if (!caseRow) {
+      throw new ConflictException({ code: "DUE_CHANGE_CASE_NOT_FOUND", message: "Dosya kalemi talebinin dosyası bulunamadı; uygulanmadı." });
+    }
+    await tx.$executeRaw`
+      /* COL-LOCK-001: canonical allocation lock */
+      SELECT pg_advisory_xact_lock(hashtextextended(${caseId}, 0))
+    `;
+    return caseRow;
+  }
+
+  /**
+   * Due güncellemesinin ortak çekirdeği. Çağıran dosya kilidini ÖNCEDEN almış olmalıdır (doğrudan istekte
+   * `assertDueWriteAuthorityInTx`, onay yürütmesinde `lockApprovedDueChangeCaseInTx`).
+   *
+   * `approved === null` → kullanıcının doğrudan isteği: kaleme ulaşmayan ama Due'dan okuyan çıktıyı değiştiren alan
+   * (alt tür; kalemsiz Due'da tutar / para birimi / vade / faiz) varsa HİÇBİR ŞEY yazılmaz, mevcut onaya talep açılır.
+   * `approved` dolu → onay yürütmesi: talep anındaki durum özeti doğrulanır ve değişiklik uygulanır.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseService.updateDue() → PATCH /cases/:id/dues/:dueId
+   * - CaseService.applyApprovedDueUpdateInTx() → onaylanan Due güncelleme talebinin yürütmesi
+   * </remarks>
+   */
+  private async updateDueCoreInTx(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    caseExists: { id: string; currency: unknown },
+    dueId: string,
+    data: UpdateDueDto,
+    actorUserId: string,
+    approved: { stateDigest: string } | null,
+  ) {
+    {
+      const caseId = caseExists.id;
       await tx.$queryRaw`SELECT "id" FROM "Due" WHERE "id" = ${dueId} AND "caseId" = ${caseId} FOR UPDATE`;
       const due = await tx.due.findFirst({
         where: { id: dueId, caseId },
       });
-      if (!due) throw new NotFoundException("Alacak kalemi bulunamadı");
+      if (!due) {
+        if (approved) throw new DueChangeStaleException(dueId);
+        throw new NotFoundException("Alacak kalemi bulunamadı");
+      }
+      if (approved && caseDueStateDigest(due) !== approved.stateDigest) throw new DueChangeStaleException(dueId);
 
       this.assertDuePatchAdmission(due.type as DueType, data.type);
       assertGenericDueTypeTransition(due.type as DueType, data.type);
@@ -4909,6 +5151,18 @@ export class CaseService {
         }
       }
 
+      // Kaleme ULAŞMAYAN ama Due satırından okuyan mali / hukuki çıktıyı değiştiren alanlar (owner kararı 19.11.2026):
+      // doğrudan istekte hiçbir şey yazılmaz, değişikliğin tamamı mevcut onaya talep olur.
+      const effectiveFields = planDueOnlyEffectiveChange({
+        due,
+        claimItem,
+        request: data,
+        normalizedInterest: normalizedInterest.persisted,
+      });
+      if (effectiveFields.length > 0 && !approved) {
+        return this.requestDueUpdateApprovalInTx(tx, tenantId, caseId, due, data, effectiveFields, actorUserId);
+      }
+
       const updatedDue = await tx.due.update({
         where: { id: dueId },
         data: {
@@ -4944,6 +5198,130 @@ export class CaseService {
       }
 
       return updatedDue;
+    }
+  }
+
+  /**
+   * Due güncelleme TALEBİ: mevcut "yüksek etkili kalem değişikliği" onayına (aynı işlem kodu, hedef dosya) kayıt açar;
+   * Due satırı DEĞİŞMEZ. Bir Due için aynı anda tek bekleyen güncelleme talebi olabilir: aynı içerik mevcut talebi
+   * döner, farklı içerik reddedilir.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseService.updateDueCoreInTx() → PATCH /cases/:id/dues/:dueId (kaleme ulaşmayan etkili alan değişikliği)
+   * </remarks>
+   */
+  private async requestDueUpdateApprovalInTx(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    caseId: string,
+    due: Parameters<typeof caseDueStateDigest>[0] & { id: string },
+    data: UpdateDueDto,
+    effectiveFields: readonly string[],
+    actorUserId: string,
+  ): Promise<CaseDueChangeRequestResult> {
+    const officeApproval = this.requireDueChangeApproval();
+    const intent = buildCaseDueUpdateIntent({ caseId, dueId: due.id, request: data, effectiveFields, due });
+    const idempotencyKey = caseDueUpdateIdempotencyKey(due.id);
+    const existing = await tx.officeApprovalRequest.findUnique({
+      where: { tenantId_idempotencyKey: { tenantId, idempotencyKey } },
+    });
+    if (
+      existing?.status === "PENDING_APPROVAL" &&
+      caseDueUpdateComparable(existing.savedIntent as unknown as CaseDueUpdateSavedIntent) !== caseDueUpdateComparable(intent)
+    ) {
+      throw new DueChangePendingConflictException(due.id);
+    }
+    const request = await officeApproval.createPendingRequestInTransaction(
+      {
+        tenantId,
+        actionCode: CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE,
+        targetType: CLAIM_ITEM_CASE_TARGET_TYPE,
+        targetRef: caseId,
+        requesterUserId: actorUserId,
+        savedIntent: intent,
+        idempotencyKey,
+        reason: intent.reason,
+      },
+      tx,
+    );
+    return {
+      applied: false as const,
+      approvalRequired: true as const,
+      approvalRequestId: request.id,
+      status: request.status,
+      fields: [...effectiveFields],
+      message: CASE_DUE_UPDATE_REQUESTED_MESSAGE,
+    };
+  }
+
+  /**
+   * Due değişikliği onayı için onay altyapısı; yoksa kapalı-hata (talep açılmaz, hiçbir kayıt değişmez).
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseService.requestDueUpdateApprovalInTx() / deleteDue() → Due güncelleme / silme talebi
+   * </remarks>
+   */
+  private requireDueChangeApproval(): OfficeApprovalService {
+    if (!this.officeApproval) {
+      throw new ConflictException({
+        code: "DUE_CHANGE_APPROVAL_UNAVAILABLE",
+        message: "Dosya kalemi onayı bu ortamda işlenemiyor; talep açılmadı ve hiçbir kayıt değiştirilmedi.",
+      });
+    }
+    return this.officeApproval;
+  }
+
+  /**
+   * ONAY YÜRÜTMESİ — kayıtlı niyetin işlemine göre onaylanan Due talebini uygular (ekleme / güncelleme / silme).
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseDueApprovalHandlerService → OfficeApprovalDomainSyncService (CLAIM_ITEM_HIGH_IMPACT_CHANGE, niyet
+   *   CASE_DUE_CHANGE_V1) → POST /office-approvals/:id/approve
+   * </remarks>
+   */
+  async applyApprovedDueChangeInTx(tx: Prisma.TransactionClient, req: ApprovedDueChangeRequest): Promise<void> {
+    switch (caseDueChangeOperation(req.savedIntent)) {
+      case CASE_DUE_UPDATE_OPERATION:
+        return this.applyApprovedDueUpdateInTx(tx, req);
+      case CASE_DUE_DELETE_OPERATION:
+        return this.applyApprovedDueDeleteInTx(tx, req);
+      default:
+        await this.applyApprovedDueCreateInTx(tx, req);
+    }
+  }
+
+  /**
+   * ONAY YÜRÜTMESİ — onaylanan Due silme talebi (bağlı kalemi olmayan Due). Dosya kilidi → Due satırı kilidi → durum
+   * özeti doğrulaması → hâlâ bağlı kalemsizse silinir. Talepten sonra Due değiştiyse / silindiyse ya da artık bağlı
+   * kalemi varsa uygulanmaz.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseService.applyApprovedDueChangeInTx() → onay yürütme işleyicisi (niyet işlemi DUE_DELETE)
+   * </remarks>
+   */
+  private async applyApprovedDueDeleteInTx(tx: Prisma.TransactionClient, req: ApprovedDueChangeRequest): Promise<void> {
+    const intent = readCaseDueDeleteIntent(req);
+    await this.lockApprovedDueChangeCaseInTx(tx, req.tenantId, intent.caseId);
+    await tx.$queryRaw`SELECT "id" FROM "Due" WHERE "id" = ${intent.dueId} AND "caseId" = ${intent.caseId} FOR UPDATE`;
+    const due = await tx.due.findFirst({ where: { id: intent.dueId, caseId: intent.caseId } });
+    if (!due || caseDueStateDigest(due) !== intent.stateDigest) throw new DueChangeStaleException(intent.dueId);
+    const claimItem = await this.findLockedDueSyncClaimItem(tx, req.tenantId, intent.caseId, intent.dueId);
+    if (claimItem || mapDueTypeToClaimItemType(due.type as DueType) !== null) throw new DueChangeStaleException(intent.dueId);
+
+    await tx.due.delete({ where: { id: intent.dueId } });
+    await this.auditService.logInTransaction(tx, {
+      tenantId: req.tenantId,
+      action: "CASE_DUE_DELETE_APPROVED_APPLIED",
+      entityType: "CASE",
+      entityId: intent.caseId,
+      userId: req.approverUserId ?? undefined,
+      actorType: "USER",
+      metadata: { approvalRequestId: req.id, requesterUserId: req.requesterUserId, dueId: intent.dueId, before: intent.before },
+      description: "Onaylanan dosya kalemi silme talebi uygulandı",
     });
   }
 
@@ -5064,6 +5442,30 @@ export class CaseService {
           throw new DueDeleteRequiresClaimItemCancelException(claimItem.id);
         }
         assertClaimItemLifecycleMutation(claimItem.status, { status: "CANCELLED" });
+      } else {
+        // Bağlı kalemi OLMAYAN Due (kanonik kalem üretmeyen tür): satır Due'dan okuyan çıktılarda (UYAP XML, hesap)
+        // tek başına yer alır; silinmesi mevcut onaya talep olur (owner kararı 19.11.2026). Due satırı yerinde kalır.
+        const intent = buildCaseDueDeleteIntent({ caseId, dueId, due });
+        const request = await this.requireDueChangeApproval().createPendingRequestInTransaction(
+          {
+            tenantId,
+            actionCode: CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE,
+            targetType: CLAIM_ITEM_CASE_TARGET_TYPE,
+            targetRef: caseId,
+            requesterUserId: actorUserId,
+            savedIntent: intent,
+            idempotencyKey: caseDueDeleteIdempotencyKey(dueId),
+            reason: intent.reason,
+          },
+          tx,
+        );
+        return {
+          applied: false as const,
+          approvalRequired: true as const,
+          approvalRequestId: request.id,
+          status: request.status,
+          message: CASE_DUE_DELETE_REQUESTED_MESSAGE,
+        };
       }
 
       await tx.due.delete({ where: { id: dueId } });
