@@ -21,6 +21,7 @@ import {
   DueWriteForbiddenException,
 } from '../due-canonical-item-guard';
 import { DueType, InterestType } from '../dto/case.dto';
+import { buildCaseDueCreateIntent, caseDueCreateIdempotencyKey } from '../due-change-approval';
 
 const stub = {} as any;
 
@@ -42,13 +43,33 @@ function makeService(tx: any) {
       permissionSource: 'CASE_LAWYER',
     })),
   } as any;
+  // Due ekleme talebi mevcut onay altyapısına açılır; onay yürütmesi ayrı denetim kaydı yazar.
+  const officeApproval = {
+    createPendingRequestInTransaction: jest.fn(async (input: any) => ({ id: 'approval-1', status: 'PENDING_APPROVAL', ...input })),
+  } as any;
+  const audit = { logInTransaction: jest.fn(async () => undefined) } as any;
   return {
     service: new CaseService(
-      prisma, stub, stub, stub, stub, stub, stub, stub, stub, stub, undefined, writerRouter,
+      prisma, audit, stub, stub, stub, stub, stub, stub, stub, stub, undefined, writerRouter, officeApproval,
     ),
     prisma,
     writerRouter,
+    officeApproval,
+    audit,
   };
+}
+
+/** Onaylanan kalem ekleme talebinin yürütmesi (karar transaction'ı içinde çağrılır). */
+function applyApprovedCreate(service: CaseService, tx: any, dto: Record<string, unknown>, currency = 'TRY') {
+  return service.applyApprovedDueCreateInTx(tx, {
+    id: 'approval-1',
+    tenantId: 'tenant-1',
+    targetType: 'CLAIM_ITEM_CASE',
+    targetRef: 'case-1',
+    savedIntent: buildCaseDueCreateIntent('case-1', dto as any, currency) as any,
+    requesterUserId: 'requester-1',
+    approverUserId: 'approver-1',
+  });
 }
 
 function makeAdmissionHarness() {
@@ -327,11 +348,60 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
     });
   });
 
-  it('createDue PRINCIPAL → markerlı ClaimItem.PRINCIPAL oluşturur', async () => {
+  it('createDue Due / kalem OLUŞTURMAZ; mevcut onaya dosya hedefli talep açar (owner kararı 19.11.2026)', async () => {
     const tx = makeTx();
-    const { service } = makeService(tx);
+    const { service, officeApproval, writerRouter } = makeService(tx);
+    const dto = { type: DueType.PRINCIPAL, description: 'Ana alacak', amount: 1000, dueDate: '2026-01-01', isPrimary: true };
 
-    await service.createDue('tenant-1', 'case-1', {
+    const result = await service.createDue('tenant-1', 'case-1', dto as any, 'requester-1');
+
+    expect(result).toEqual({
+      applied: false,
+      approvalRequired: true,
+      approvalRequestId: 'approval-1',
+      status: 'PENDING_APPROVAL',
+      message: expect.stringContaining('onaya gönderildi'),
+    });
+    const intent = buildCaseDueCreateIntent('case-1', dto as any, 'TRY'); // para birimi dosyadan çözülür
+    expect(officeApproval.createPendingRequestInTransaction).toHaveBeenCalledTimes(1);
+    expect(officeApproval.createPendingRequestInTransaction).toHaveBeenCalledWith(
+      {
+        tenantId: 'tenant-1',
+        actionCode: 'CLAIM_ITEM_HIGH_IMPACT_CHANGE',
+        targetType: 'CLAIM_ITEM_CASE',
+        targetRef: 'case-1',
+        requesterUserId: 'requester-1',
+        savedIntent: intent,
+        idempotencyKey: caseDueCreateIdempotencyKey(intent),
+        reason: intent.reason,
+      },
+      tx, // yetki denetimiyle AYNI transaction
+    );
+    // Yetki talep kaydından önce; hiçbir Due / kalem yazımı yok.
+    expect(writerRouter.evaluateHumanCaseFinanceWrite.mock.invocationCallOrder[0])
+      .toBeLessThan(officeApproval.createPendingRequestInTransaction.mock.invocationCallOrder[0]);
+    expect(tx.due.create).not.toHaveBeenCalled();
+    expect(tx.claimItem.create).not.toHaveBeenCalled();
+    expect(writerRouter.createSystemClaimItem).not.toHaveBeenCalled();
+  });
+
+  it('createDue onay altyapısı yoksa kapalı-hata verir; talep ve kayıt oluşmaz', async () => {
+    const tx = makeTx();
+    const prisma = { $transaction: jest.fn(async (fn: any) => fn(tx)) } as any;
+    const service = new CaseService(prisma, stub, stub, stub, stub, stub, stub, stub, stub, stub, undefined, stub);
+
+    await expect(
+      service.createDue('tenant-1', 'case-1', { type: DueType.PRINCIPAL, amount: 1000, dueDate: '2026-01-01' } as any, 'requester-1'),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'DUE_CREATE_APPROVAL_UNAVAILABLE' }) });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(tx.due.create).not.toHaveBeenCalled();
+  });
+
+  it('onay yürütmesi: dosya kilidi → Due → markerlı ClaimItem.PRINCIPAL (köprü) + denetim kaydı', async () => {
+    const tx = makeTx();
+    const { service, writerRouter, audit } = makeService(tx);
+
+    const applied = await applyApprovedCreate(service, tx, {
       type: DueType.PRINCIPAL,
       description: 'Ana alacak',
       amount: 1000,
@@ -342,8 +412,23 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
       interestRate: 24,
       interestStartDate: '2026-01-02',
       interestEndDate: '2026-02-02',
-    }, 'requester-1');
+    });
 
+    expect(applied).toEqual({ dueId: 'due-1', claimItemId: 'claim-1' });
+    // Kanonik sıra: dosya kilidi satır yazımlarından önce.
+    expect((tx.$executeRaw.mock.calls[0][0] as readonly string[]).join('?')).toContain('pg_advisory_xact_lock(hashtextextended(');
+    expect(tx.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(tx.due.create.mock.invocationCallOrder[0]);
+    // Köprünün başlatanı talep eden; onaylayan ve talep kimliği ayrı denetim kaydında.
+    expect(writerRouter.createSystemClaimItem).toHaveBeenCalledWith(
+      expect.objectContaining({ route: 'DUE_BRIDGE', sourceId: 'due-1', initiatedByUserId: 'requester-1' }),
+      tx,
+    );
+    expect(audit.logInTransaction).toHaveBeenCalledWith(tx, expect.objectContaining({
+      action: 'CASE_DUE_CREATE_APPROVED_APPLIED',
+      entityId: 'case-1',
+      userId: 'approver-1',
+      metadata: { approvalRequestId: 'approval-1', requesterUserId: 'requester-1', dueId: 'due-1', claimItemId: 'claim-1' },
+    }));
     expect(tx.claimItem.create).toHaveBeenCalledTimes(1);
     expect(tx.claimItem.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -369,7 +454,7 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
     });
   });
 
-  it('createDue NAFAKA → ClaimItem oluşturmaz', async () => {
+  it('onay yürütmesi NAFAKA → ClaimItem oluşturmaz', async () => {
     const tx = makeTx({
       due: {
         aggregate: jest.fn(async () => ({ _max: { sortOrder: 0 } })),
@@ -378,22 +463,23 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
     });
     const { service } = makeService(tx);
 
-    await service.createDue('tenant-1', 'case-1', {
+    const applied = await applyApprovedCreate(service, tx, {
       type: DueType.NAFAKA,
       description: 'Nafaka taksiti',
       amount: 500,
       dueDate: '2026-01-01',
       currency: 'TRY',
-    }, 'requester-1');
+    });
 
+    expect(applied).toEqual({ dueId: 'due-nafaka', claimItemId: null });
     expect(tx.claimItem.create).not.toHaveBeenCalled();
   });
 
-  it('createDue YOK niyetini server actor/reason/time ile ClaimItem NO_INTEREST yapar', async () => {
+  it('onay yürütmesi YOK niyetini TALEP EDEN aktör / gerekçe / zaman ile ClaimItem NO_INTEREST yapar', async () => {
     const tx = makeTx();
     const { service } = makeService(tx);
 
-    await service.createDue('tenant-1', 'case-1', {
+    await applyApprovedCreate(service, tx, {
       type: DueType.PRINCIPAL,
       amount: 1000,
       dueDate: '2026-01-01',
@@ -401,7 +487,7 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
       interestRate: null,
       interestAccrualStatus: 'NO_INTEREST',
       noInterestReason: 'sözleşmede faiz yok',
-    } as any, 'requester-1');
+    });
 
     expect(tx.claimItem.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -414,6 +500,43 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
         noInterestConfirmedAt: expect.any(Date),
       }),
     });
+  });
+
+  it.each([
+    ['dosya para birimi talepten sonra değişmiş', { case: { findFirst: jest.fn(async () => ({ id: 'case-1', tenantId: 'tenant-1', currency: 'USD' })) } }, 'CASE_CLAIM_CURRENCY_MISMATCH'],
+    ['dosya bulunamıyor', { case: { findFirst: jest.fn(async () => null) } }, 'DUE_CREATE_CASE_NOT_FOUND'],
+  ] as Array<[string, Record<string, any>, string]>)(
+    'onay yürütmesi kabul kuralını güncel durumla yeniden uygular: %s → hiçbir kayıt oluşmaz',
+    async (_label, overrides, code) => {
+      const tx = makeTx(overrides);
+      const { service, audit } = makeService(tx);
+
+      await expect(
+        applyApprovedCreate(service, tx, { type: DueType.PRINCIPAL, amount: 1000, dueDate: '2026-01-01' }),
+      ).rejects.toMatchObject({ response: expect.objectContaining({ code }) });
+      expect(tx.due.create).not.toHaveBeenCalled();
+      expect(tx.claimItem.create).not.toHaveBeenCalled();
+      expect(audit.logInTransaction).not.toHaveBeenCalled();
+    },
+  );
+
+  it('onay yürütmesi bozuk / başka hedefli niyeti reddeder', async () => {
+    const tx = makeTx();
+    const { service } = makeService(tx);
+    const intent = buildCaseDueCreateIntent('case-1', { type: DueType.PRINCIPAL, amount: 1000, dueDate: '2026-01-01' } as any, 'TRY');
+    const base = { id: 'approval-1', tenantId: 'tenant-1', targetType: 'CLAIM_ITEM_CASE', targetRef: 'case-1', requesterUserId: 'requester-1', approverUserId: 'approver-1' };
+
+    for (const req of [
+      { ...base, targetRef: 'case-2', savedIntent: intent },
+      { ...base, targetType: 'CLAIM_ITEM', savedIntent: intent },
+      { ...base, savedIntent: { ...intent, operation: 'DUE_DELETE' } },
+      { ...base, savedIntent: { ...intent, due: { ...intent.due, status: 'ACTIVE' } } },
+    ]) {
+      await expect(service.applyApprovedDueCreateInTx(tx, req as any)).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'DUE_CREATE_INTENT_INVALID' }),
+      });
+    }
+    expect(tx.due.create).not.toHaveBeenCalled();
   });
 
   it('direct Due fixed rate eksikse hicbir write yapmadan fail-closed olur', async () => {

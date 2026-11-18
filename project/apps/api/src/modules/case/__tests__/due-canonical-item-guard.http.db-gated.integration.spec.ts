@@ -6,6 +6,7 @@ import { Test } from '@nestjs/testing';
 import { OfficeApprovalExecutionStatus, OfficeApprovalStatus, PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import * as request from 'supertest';
+import { createApprovedDue } from '../../../../test/due-create-approval-fixture';
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
 import { StorageModule } from '../../../common/storage/storage.module';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -168,13 +169,20 @@ describeWithDisposableDb('Due yazım yolu bağlı kanonik kalemi korur — HTTP 
     await prisma.caseStaff.create({ data: { caseId: legalCase.id, staffMemberId: personelDuzenleyemez.staffMemberId, roleOnCase: 'MUHASEBE', canEdit: false, canView: true } });
     await prisma.caseStaff.create({ data: { caseId: legalCase.id, staffMemberId: personelMaliKapali.staffMemberId, roleOnCase: 'YAZI_ISLERI', canEdit: true, canView: true } });
 
-    // Due + bağlı kanonik kalem GERÇEK köprüyle oluşur.
-    const created = await post(`/cases/${legalCase.id}/dues`, yetkili.userId, ASIL_ALACAK);
-    if (created.status !== 201) throw new Error(`Due oluşturulamadı: ${created.status} ${JSON.stringify(created.body)}`);
+    // Due + bağlı kanonik kalem GERÇEK yoldan oluşur: ekleme talebi → başka hesabın onayı → köprü (owner 19.11.2026).
+    const created = await createApprovedDue({
+      db: prisma,
+      approvals,
+      post: (path, body) => post(path, yetkili.userId, body),
+      caseId: legalCase.id,
+      due: ASIL_ALACAK,
+      requesterUserId: yetkili.userId,
+      approverUserId: onayci.userId,
+    });
     const claim = await prisma.claimItem.findFirstOrThrow({ where: { caseId: legalCase.id } });
     return {
-      tenantId, caseId: legalCase.id, dueId: created.body.id as string, claimId: claim.id,
-      duesPath: `/cases/${legalCase.id}/dues`, duePath: `/cases/${legalCase.id}/dues/${created.body.id}`,
+      tenantId, caseId: legalCase.id, dueId: created.dueId, claimId: claim.id,
+      duesPath: `/cases/${legalCase.id}/dues`, duePath: `/cases/${legalCase.id}/dues/${created.dueId}`,
       yetkili, onayci, atanmamis, izinsiz, izleyici, personelYetkili, personelDuzenleyemez, personelMaliKapali,
       kartsizUserId: kartsiz.id, yabanciUserId: yabanci.id, yetkiliAtamaId: yetkiliAtama.id,
     };
@@ -183,6 +191,18 @@ describeWithDisposableDb('Due yazım yolu bağlı kanonik kalemi korur — HTTP 
 
   const claimRow = (id: string) => prisma.claimItem.findUniqueOrThrow({ where: { id } });
   const dueRow = (id: string) => prisma.due.findUnique({ where: { id } });
+
+  /** Ek dosya kalemi: ekleme talebi (202) → onaycının onayı → oluşan Due kimliği. */
+  const addApproved = (f: Fixture, requesterUserId: string, due: Record<string, unknown>) =>
+    createApprovedDue({
+      db: prisma,
+      approvals,
+      post: (path, body) => post(path, requesterUserId, body),
+      caseId: f.caseId,
+      due,
+      requesterUserId,
+      approverUserId: f.onayci.userId,
+    });
 
   /** Onaya giden kalem talebi (PUT / DELETE /claim-items/:id) → talep kimliği. */
   async function approvalIdOf(res: request.Response): Promise<string> {
@@ -274,7 +294,8 @@ describeWithDisposableDb('Due yazım yolu bağlı kanonik kalemi korur — HTTP 
       expect(afterRest).toEqual(beforeRest); // faiz durumu, başlangıç, dayanak, tutar, tür … aynen
       expect([after.interestAccrualStatus, day(after.interestStartDate), after.interestStartDateProvenance])
         .toEqual(['ACCRUES', '2025-03-10', 'DEFAULT_NOTICE_DATE']);
-      expect(await prisma.officeApprovalRequest.count({ where: { tenantId: f.tenantId } })).toBe(1); // yalnız ilk onay
+      // Yalnız hazırlığın iki talebi var (kalem ekleme + "faiz işler"); açıklama değişikliği yeni talep doğurmadı.
+      expect(await prisma.officeApprovalRequest.count({ where: { tenantId: f.tenantId } })).toBe(2);
       const audit = await prisma.auditLog.findMany({ where: { tenantId: f.tenantId, action: 'CLAIM_ITEM_SYSTEM_UPDATED', entityId: f.claimId } });
       expect(audit).toHaveLength(1);
       expect(audit[0].userId).toBe(f.yetkili.userId);
@@ -463,15 +484,14 @@ describeWithDisposableDb('Due yazım yolu bağlı kanonik kalemi korur — HTTP 
 
     it('kanonik kalem üretmeyen tür (nafaka): Due kendi alanlarıyla güncellenir ve silinir', async () => {
       const f = await fixture('nafaka');
-      const created = await post(f.duesPath, f.yetkili.userId, { type: 'NAFAKA', amount: 300, dueDate: '2025-05-05', description: 'Sentetik nafaka taksiti' });
-      expect(created.status).toBe(201);
-      const path = `${f.duesPath}/${created.body.id}`;
+      const created = await addApproved(f, f.yetkili.userId, { type: 'NAFAKA', amount: 300, dueDate: '2025-05-05', description: 'Sentetik nafaka taksiti' });
+      const path = `${f.duesPath}/${created.dueId}`;
       expect(await prisma.claimItem.count({ where: { caseId: f.caseId } })).toBe(1); // nafaka kalem üretmez
       const updated = await patch(path, f.yetkili.userId, { amount: 350, dueDate: '2025-06-05' });
       expect(updated.status).toBe(200);
-      expect(Number((await dueRow(created.body.id))!.amount)).toBe(350);
+      expect(Number((await dueRow(created.dueId))!.amount)).toBe(350);
       expect((await del(path, f.yetkili.userId)).status).toBe(200);
-      expect(await dueRow(created.body.id)).toBeNull();
+      expect(await dueRow(created.dueId)).toBeNull();
     });
   });
 
@@ -507,11 +527,10 @@ describeWithDisposableDb('Due yazım yolu bağlı kanonik kalemi korur — HTTP 
         expect(res.body.message).toBe('Dosya bulunamadı');
       }
 
-      // Yetkili avukat ve yetkili personel: ekleme + düşük etkili düzenleme çalışır.
+      // Yetkili avukat ve yetkili personel: ekleme talebi açabilir (kalem onayla oluşur) + düşük etkili düzenleme çalışır.
       for (const userId of [f.yetkili.userId, f.personelYetkili.userId]) {
-        const added = await post(f.duesPath, userId, { type: 'EXPENSE', amount: 50, dueDate: '2025-04-04', description: 'Sentetik masraf' });
-        expect(added.status).toBe(201);
-        const edited = await patch(`${f.duesPath}/${added.body.id}`, userId, { description: 'Sentetik masraf (düzeltildi)' });
+        const added = await addApproved(f, userId, { type: 'EXPENSE', amount: 50, dueDate: '2025-04-04', description: `Sentetik masraf ${userId.slice(-4)}` });
+        const edited = await patch(`${f.duesPath}/${added.dueId}`, userId, { description: 'Sentetik masraf (düzeltildi)' });
         expect(edited.status).toBe(200);
       }
     });

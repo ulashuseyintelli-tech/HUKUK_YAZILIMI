@@ -29,6 +29,8 @@ import { CaseViewScopeModule } from "./case-view-scope.module";
 // içe aktarmaz → döngü yok).
 import { ClaimLiabilityModule } from "../claim-liability/claim-liability.module";
 import { CaseOpeningClaimRequestsService } from "./case-opening-claim-requests.service";
+// Due ekleme onayı (owner kararı 19.11.2026): onay yürütme işleyicisinin onay altyapısına tek kaydı.
+import { CaseDueApprovalHandlerService } from "./case-due-approval-handler.service";
 
 @Module({
   imports: [
@@ -53,7 +55,7 @@ import { CaseOpeningClaimRequestsService } from "./case-opening-claim-requests.s
     ClaimLiabilityModule,
   ],
   controllers: [CaseController, CasePaymentPreviewController],
-  providers: [CaseService, CasePaymentPreviewService, ResponsibleCandidatesService, TemporalResponsibilityService, ResponsibilityHistoryService, LegalResponsibleLawyerService, CaseOpeningClaimRequestsService],
+  providers: [CaseService, CasePaymentPreviewService, ResponsibleCandidatesService, TemporalResponsibilityService, ResponsibilityHistoryService, LegalResponsibleLawyerService, CaseOpeningClaimRequestsService, CaseDueApprovalHandlerService],
   exports: [CaseService, TemporalResponsibilityService, ResponsibilityHistoryService],
 })
 export class CaseModule {}

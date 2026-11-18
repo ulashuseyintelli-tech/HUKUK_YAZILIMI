@@ -14,6 +14,8 @@ import {
   Optional,
   ServiceUnavailableException,
   Req,
+  HttpCode,
+  HttpStatus,
 } from "@nestjs/common";
 import { CaseService } from "./case.service";
 import { CreateCaseDto, CreateDueDto, OpeningClaimPreviewRequestDto, UpdateCaseDto, UpdateDueDto } from "./dto/case.dto";
@@ -648,10 +650,11 @@ export class CaseController {
   }
 
   /**
-   * Alacak kalemi ekle
-   * POST /cases/:id/dues
+   * Alacak kalemi ekleme TALEBİ (iki kişi onayı; owner kararı 19.11.2026)
+   * POST /cases/:id/dues → 202: Due / kalem OLUŞMAZ, onay talebi açılır (`approvalRequired: true`).
    */
   @Post(":id/dues")
+  @HttpCode(HttpStatus.ACCEPTED)
   async createDue(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") actorUserId: string,

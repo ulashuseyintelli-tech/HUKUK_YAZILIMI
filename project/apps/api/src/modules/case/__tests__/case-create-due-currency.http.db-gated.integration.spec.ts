@@ -14,10 +14,12 @@ import { randomUUID } from 'node:crypto';
 import * as request from 'supertest';
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
 import { ensureCaseFinanceWriter } from '../../../../test/case-finance-writer-fixture';
+import { createApprovedDue } from '../../../../test/due-create-approval-fixture';
 import { StorageModule } from '../../../common/storage/storage.module';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { ErrorLogModule } from '../../error-log/error-log.module';
 import { MetricsRegistryModule } from '../../metrics-registry/metrics-registry.module';
+import { OfficeApprovalService } from '../../office-approval/office-approval.service';
 import { CaseModule } from '../case.module';
 
 /**
@@ -266,9 +268,12 @@ describeWithDisposableDb('Dosya açılışında alacak kalemi para birimi (HTTP 
     // Sonradan kalem ekleme dosyada mali yazma yetkisi ister (owner kararı 18.11.2026, K3); bu testin konusu para birimidir.
     await ensureCaseFinanceWriter(prisma, caseId, adminId);
 
-    const omitted = await post(`/cases/${caseId}/dues`, { ...EXPENSE, amount: 100, description: 'para birimi verilmedi' });
-    expect(omitted.status).toBe(201);
-    expect(omitted.body.currency).toBe('USD');
+    // Sonradan kalem ekleme iki kişi onayına tabidir (owner kararı 19.11.2026): talep → başka hesabın onayı → kayıt.
+    const omitted = await createApprovedDue({
+      db: prisma, approvals: app.get(OfficeApprovalService), post: (path, body) => post(path, body), caseId,
+      due: { ...EXPENSE, amount: 100, description: 'para birimi verilmedi' }, requesterUserId: adminId,
+    });
+    expect((await prisma.due.findUniqueOrThrow({ where: { id: omitted.dueId } })).currency).toBe('USD');
 
     const beforeRejected = await tenantCounts();
     const explicit = await post(`/cases/${caseId}/dues`, { ...EXPENSE, amount: 200, description: 'açıkça EUR', currency: 'EUR' });
