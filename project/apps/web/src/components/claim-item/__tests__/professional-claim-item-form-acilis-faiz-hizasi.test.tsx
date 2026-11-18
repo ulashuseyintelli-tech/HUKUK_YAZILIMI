@@ -92,7 +92,7 @@ const KALEM = (kalemTuru: string, extra: Record<string, unknown> = {}) => ({
 });
 
 const FAIZ_ISLER = { ...emptyOpeningClaimDeclaration(), faizIsler: true, faizBaslangic: "2026-08-01", faizDayanak: "JUDGMENT_FINALIZATION_DATE" };
-const ACILIS = { debtors: [] as Array<{ id: string; name: string }> };
+const ACILIS = { debtors: [] as Array<{ debtorId: string; name: string }> };
 const SABIT_BORCLULAR: never[] = [];
 
 async function goster(kalem: Record<string, unknown>, acilis: boolean) {
