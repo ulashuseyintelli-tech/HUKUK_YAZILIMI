@@ -1108,6 +1108,15 @@ class ApiClient {
     });
   }
 
+  /**
+   * Yeni dosya sihirbazı — dosya ekibi için DAR avukat aday listesi (GET /cases/lawyer-candidates). `getLawyers` büro
+   * yönetimi kapısındadır (yönetici / delege olmayan avukat 403 alır); bu uç yalnız seçim alanlarını döndürür.
+   */
+  async getCaseLawyerCandidates() {
+    const res = await this.request<{ data: any[] }>("/cases/lawyer-candidates");
+    return res?.data ?? [];
+  }
+
   // Lawyers
   async getLawyers(search?: string) {
     const query = search ? `?search=${encodeURIComponent(search)}` : "";

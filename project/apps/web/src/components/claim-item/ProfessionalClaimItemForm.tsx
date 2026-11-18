@@ -1,7 +1,14 @@
 "use client";
 
 import { OpeningClaimDeclarationFields, type OpeningIlamInfo } from "./opening/OpeningClaimDeclarationFields";
-import { normalizeOpeningClaimDeclaration, type OpeningClaimDeclaration } from "@/lib/case-opening-claims";
+import {
+  OPENING_INTEREST_DISPOSITION_NOTES,
+  normalizeOpeningClaimDeclaration,
+  openingInterestDisposition,
+  type OpeningClaimDeclaration,
+  type OpeningInterestDisposition,
+} from "@/lib/case-opening-claims";
+import { isPrincipalClaimKalemTuru } from "@/lib/case-due-payload";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { caseClaimCurrencyMatches, CASE_CLAIM_CURRENCY_MESSAGE } from "@/lib/case-claim-currency";
 import {
@@ -432,6 +439,11 @@ interface HesapOzetiSatir {
   color?: string;
   /** Masraf önizlemesi alınamadı: `tutar` 0 yer tutucudur, GERÇEK SIFIR DEĞİLDİR (tüketiciler 0'ı tutar saymamalı). */
   hesaplanamadi?: boolean;
+  /**
+   * Dosya açılışında bu satır hesaba KATILMAZ (onay bekleyen ya da faiz durumu belirlenmemiş faiz): tutar yerine bu
+   * kısa neden yazılır; `tutar` 0 yer tutucudur ve toplamlara eklenmemiştir.
+   */
+  kapsamDisi?: string;
 }
 
 interface IhtiyatiHacizKarari {
@@ -999,6 +1011,8 @@ export function ProfessionalClaimItemForm({
   }, [kalem]);
 
   // Hesap özetini hesapla - ASYNC (Backend API kullanır)
+  // Dosya açılışı bağlamı (sihirbaz): "Hesap Özeti" faiz hükmü sunucunun açılış kayıt / onay durumuyla hizalanır.
+  const acilisBaglami = Boolean(openingDeclarations);
   const hesapla = useCallback(async () => {
     // Eski (sökülmüş editöre ya da yeni girdiye ait) hesap sonucu bildirilmez: aynı kalem listeye iki kez girmesin
     const generation = ++calcGenerationRef.current;
@@ -1067,10 +1081,17 @@ export function ProfessionalClaimItemForm({
     let takipOncesiFaiz = 0;
     let takipOncesiUnavailable = false;
     
+    // Açılış bağlamında faiz hükmü sunucunun kayıt / onay durumuyla hizalıdır: onay bekleyen ya da faiz durumu
+    // belirlenmemiş (yan kalem) faiz HESABA KATILMAZ ve önizleme ucu çağrılmaz. Açılış dışındaki kullanımda değişmez.
+    const faizHukmu: OpeningInterestDisposition = acilisBaglami
+      ? openingInterestDisposition(kalem, isPrincipalClaimKalemTuru)
+      : "HESAPLANIR";
+    const faizKapsamDisi = faizHukmu === "HESAPLANIR" ? null : OPENING_INTEREST_DISPOSITION_NOTES[faizHukmu];
+
     if (isIlamsizTakip && faizBaslangicTercih === "TAKIP") {
       // Takip tarihinden başlat - takip öncesi faiz yok
       takipOncesiFaiz = 0;
-    } else if (kalem.takipOncesiFaiz !== "YOK") {
+    } else if (kalem.takipOncesiFaiz !== "YOK" && !faizKapsamDisi) {
       // Backend API'den faiz hesapla
       const faizBaslangic = kalem.kalemTuru === "CEK" && kalem.cekBilgileri?.ibrazTarihi 
         ? kalem.cekBilgileri.ibrazTarihi 
@@ -1094,7 +1115,9 @@ export function ProfessionalClaimItemForm({
       }
     }
     
-    if (takipOncesiUnavailable) {
+    if (faizKapsamDisi && kalem.takipOncesiFaiz !== "YOK" && !(isIlamsizTakip && faizBaslangicTercih === "TAKIP")) {
+      satirlar.push({ key: "takip_oncesi_faiz", label: "Takip Öncesi Faiz", tutar: 0, kapsamDisi: faizKapsamDisi });
+    } else if (takipOncesiUnavailable) {
       satirlar.push({ key: "takip_oncesi_faiz", label: "Takip Öncesi Faiz (Hesaplanamadı)", tutar: 0, color: "red" });
     } else if (takipOncesiFaiz > 0) {
       satirlar.push({ key: "takip_oncesi_faiz", label: "Takip Öncesi Faiz", tutar: takipOncesiFaiz });
@@ -1170,7 +1193,7 @@ export function ProfessionalClaimItemForm({
     let takipSonrasiFaiz = 0;
     let takipSonrasiUnavailable = false;
     
-    if (kalem.takipSonrasiFaiz !== "YOK") {
+    if (kalem.takipSonrasiFaiz !== "YOK" && !faizKapsamDisi) {
       const result = await hesaplaFaizFromBackend(
         kalem.bakiyeTutar,
         kalem.takipSonrasiFaiz,
@@ -1188,7 +1211,9 @@ export function ProfessionalClaimItemForm({
       }
     }
     
-    if (takipSonrasiUnavailable) {
+    if (faizKapsamDisi && kalem.takipSonrasiFaiz !== "YOK") {
+      satirlar.push({ key: "takip_sonrasi_faiz", label: "Takip Sonrası Faiz", tutar: 0, bold: true, kapsamDisi: faizKapsamDisi });
+    } else if (takipSonrasiUnavailable) {
       satirlar.push({ key: "takip_sonrasi_faiz", label: "Takip Sonrası Faiz (Hesaplanamadı)", tutar: 0, color: "red", bold: true });
     } else {
       satirlar.push({ key: "takip_sonrasi_faiz", label: "Takip Sonrası Faiz", tutar: takipSonrasiFaiz, bold: true });
@@ -1244,7 +1269,7 @@ export function ProfessionalClaimItemForm({
       // PR-i3: ilamYanAlacaklar artık emit EDİLMEZ (nested emekli; standalone fer'i kalemler).
       onItemsChange([{ ...kalem, hesapOzeti: satirlar, cekTazminatOnizleme }]);
     }
-  }, [kalem, currency, takipTuruCode, takipTarihi, hesapTarihi, borcluSayisi, hasIhtiyatiHaciz, ihtiyatiHacizMasraflari, checkZorunluAlanlar, onItemsChange, faizBaslangicTercih, caseDebtors]);
+  }, [kalem, currency, takipTuruCode, takipTarihi, hesapTarihi, borcluSayisi, hasIhtiyatiHaciz, ihtiyatiHacizMasraflari, checkZorunluAlanlar, onItemsChange, faizBaslangicTercih, caseDebtors, acilisBaglami]);
 
   // OTOMATİK HESAPLAMA - değişiklik olduğunda 500ms sonra hesapla
   useEffect(() => {
@@ -1383,6 +1408,7 @@ export function ProfessionalClaimItemForm({
   const masrafaBagliToplam = (key: string): boolean =>
     masrafHesaplanamadi !== null && (key === "toplam_borc" || key === "son_borc" || key.startsWith("tahsil_"));
   const satirTutari = (satir: HesapOzetiSatir): string => {
+    if (satir.kapsamDisi) return satir.kapsamDisi;
     if (masrafaBagliHesaplanamadi(satir)) return "hesaplanamadı";
     if (masrafaBagliToplam(satir.key)) return "gösterilemez";
     const alan = satirAlani(satir.key);
@@ -2470,12 +2496,13 @@ export function ProfessionalClaimItemForm({
                   key={satir.key}
                   className={`flex justify-between py-0 ${
                     isVekaletUcreti || isTakipSonrasiFaiz ? "border-t border-gray-200 pt-0.5 mt-0.5" : ""
-                  } ${isAltBaslik ? "text-gray-400" : ""}`}
+                  } ${isAltBaslik ? "text-gray-400" : ""} ${satir.kapsamDisi ? "gap-2" : ""}`}
                 >
-                  <span className={`${satir.bold ? "font-semibold" : "text-gray-600"}`}>
+                  <span className={`${satir.bold ? "font-semibold" : "text-gray-600"} ${satir.kapsamDisi ? "shrink-0" : ""}`}>
                     {satir.label} {satir.bold && !["son_borc", "toplam_borc"].includes(satir.key) ? "=" : ""}
                   </span>
-                  <span className={`text-right ${
+                  {/* Hesaba katılmayan satırın nedeni uzun metindir: dar panelde satır içinde kırılır (yatay taşma olmaz). */}
+                  <span className={`text-right ${satir.kapsamDisi ? "min-w-0 break-words text-[10px] leading-tight text-amber-700" : ""} ${
                     satir.color === "green" ? "text-green-600 font-bold" : 
                     satir.color === "blue" ? "text-blue-600 font-semibold" : 
                     satir.color === "orange" ? "text-orange-600 font-semibold" : 

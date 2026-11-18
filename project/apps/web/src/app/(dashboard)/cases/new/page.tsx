@@ -1027,7 +1027,13 @@ export default function NewCasePage() {
        * `loadFailures` üzerinden GÖRÜNÜR olur.
        */
       const settled = await Promise.allSettled([
-        api.getLawyers(),
+        // Büro yönetimi listesi (`GET /lawyers`) yönetici / delege olmayan avukata kapalıdır (403). Dosya açabilen
+        // kullanıcı ekibi yine seçebilmeli: 403'te yalnız seçim alanlarını döndüren dar aday ucu kullanılır. Başka
+        // hata (ağ, 5xx) yedeğe DÜŞMEZ; "Avukatlar" yükleme hatası olarak görünür kalır.
+        api.getLawyers().catch((error: unknown) => {
+          if ((error as { status?: number } | null)?.status === 403) return api.getCaseLawyerCandidates();
+          throw error;
+        }),
         api.get('/clients'),
         api.searchDebtors(),
         api.get('/execution-offices'),

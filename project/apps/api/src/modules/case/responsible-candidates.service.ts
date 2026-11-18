@@ -48,6 +48,20 @@ const STAFF_TYPE_LABEL: Record<string, string> = {
   DIGER: "Diğer",
 };
 
+/** Sihirbazın dosya ekibi avukat seçimi için dar aday: yalnız seçim alanları (kimlik / iletişim / yetki alanı YOK). */
+export interface CaseLawyerCandidate {
+  id: string;
+  name: string;
+  surname: string;
+  title: string | null;
+  lawyerRank: string;
+  barNumber: string | null;
+  barCity: string | null;
+  canSign: boolean;
+  isDefaultForNewCases: boolean;
+  isActive: boolean;
+}
+
 const squish = (s: string) => s.replace(/\s+/g, " ").trim();
 
 // Ortak biçimlendirme — hem aday listesi (G2) hem mevcut-sorumlu okuması (G3b) hem
@@ -150,6 +164,39 @@ export class ResponsibleCandidatesService {
    * Bir tenant'taki Dosya Sorumlusu adayları: aktif avukatlar (canBeResponsible) + aktif personel.
    * Soft-delete edilenler (isActive=false) otomatik dışarıda kalır.
    */
+  /**
+   * Yeni dosya sihirbazında dosya ekibine avukat SEÇMEK için dar aday listesi (owner talimatı 2026-11-18).
+   *
+   * Neden ayrı uç: `GET /lawyers` büro yönetimi kapısındadır (F01; yönetici olmayan / delege olmayan avukat 403 alır) ve
+   * kimlik, iletişim ve yetki alanları taşır. Dosya açabilen her kullanıcı (`POST /cases` yalnız kimlik + yazma
+   * kapısındadır) ekibe avukat seçebilmelidir; bunun için yalnız SEÇİM ALANLARI yeter. Genel yetki genişletilmez:
+   * `GET /lawyers` ve kapısı değişmez; bu uç TCKN, e-posta, telefon, adres, banka, varsayılan yetki, onay yetkisi ve
+   * hesap bağı DÖNDÜRMEZ. Yalnız aynı büronun (kiracı) etkin avukatları listelenir.
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - CaseController.getLawyerCandidates() → GET /cases/lawyer-candidates
+   * </remarks>
+   */
+  async getCaseLawyerCandidates(tenantId: string): Promise<CaseLawyerCandidate[]> {
+    return this.prisma.lawyer.findMany({
+      where: { tenantId, isActive: true },
+      select: {
+        id: true,
+        name: true,
+        surname: true,
+        title: true,
+        lawyerRank: true,
+        barNumber: true,
+        barCity: true,
+        canSign: true,
+        isDefaultForNewCases: true,
+        isActive: true,
+      },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }, { id: "asc" }],
+    });
+  }
+
   async getResponsibleCandidates(tenantId: string): Promise<ResponsibleCandidate[]> {
     const [lawyers, staff] = await Promise.all([
       this.prisma.lawyer.findMany({
