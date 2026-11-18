@@ -174,7 +174,7 @@ Depends On: #3220 (MERGED). Formdan yeni türün yazılabilmesi için hedef orta
 Unlock Condition: Owner'ın düzeltmeyi açması (ayrı dar PR). Daha önce formdan EXPENSE olarak yazılmış yargılama gideri kayıtlarının dönüştürülüp dönüştürülmeyeceği ayrı owner kararıdır; bu kayıt dönüştürme yetkisi VERMEZ.
 Estimated Size: S
 Related Modules: project/apps/web/src/lib/case-due-payload.ts (+ `project/apps/web/src/__tests__/case-due-payload.test.ts`), project/apps/web/src/app/(dashboard)/cases/new/page.tsx; backend köprüsü `project/apps/api/src/modules/case/due-to-claim-item.mapper.ts`.
-Status: OPEN — açık kusur kaydı (2026-11-13). Ölçüm main `3bed1b87` üzerinde (kaynak okuma; çalışma zamanı denemesi yapılmadı). Düzeltme PR'ı açılmadı.
+Status: OPEN — **Main düzeltmesi tamamlandı.** Yeni dosya formunda `YARGILAMA_GIDERI` ve eski `ILAM_YARGILAMA_GIDERI` girdileri `YARGILAMA_GIDERI` olarak eşleniyor. [#3311](https://github.com/ulashuseyintelli-tech/HUKUK_YAZILIMI/pull/3311), squash `d3301d5d87be0875e92bee10418ce548bf35280d`. [Main CI](https://github.com/ulashuseyintelli-tech/HUKUK_YAZILIMI/actions/runs/44353142843), [CodeQL](https://github.com/ulashuseyintelli-tech/HUKUK_YAZILIMI/actions/runs/44353142594) ve [yönetişim](https://github.com/ulashuseyintelli-tech/HUKUK_YAZILIMI/actions/runs/44353142816) başarılı. **Toplu yayın ve canlı doğrulama bekliyor.** Hedef ortamda #3220 şeması yayın önkoşuludur. Önceden `EXPENSE` olarak yazılmış kayıtların dönüşümü ayrı owner kararı gerektirir.
 
 ---
 ID: ILAM-KALEMLERI-D2-D1
