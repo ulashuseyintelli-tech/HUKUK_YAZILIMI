@@ -25,13 +25,13 @@ const ITEMS = [
   {
     id: "vu", itemType: "ATTORNEY_FEE", amount: 1000, currency: "TRY", description: "Sentetik vekâlet ücreti", status: "ACTIVE",
     isCalculated: false, attorneyFeeBasis: null, interestAccrualStatus: "UNKNOWN", interestType: "YASAL", interestTypeCode: "LEGAL_3095",
-    interestStartDate: "2025-05-27T00:00:00.000Z", interestStartDateProvenance: null,
+    interestStartDate: "2025-06-16T00:00:00.000Z", interestStartDateProvenance: null,
   },
   {
     id: "yg-isler", itemType: "YARGILAMA_GIDERI", amount: 100, currency: "TRY", description: "Sentetik işleyen gider", status: "ACTIVE",
     isCalculated: false, interestAccrualStatus: "ACCRUES", interestType: "YASAL", interestTypeCode: "LEGAL_3095",
-    interestStartDate: "2026-04-08T00:00:00.000Z", interestStartDateProvenance: "JUDGMENT_FINALIZATION_DATE",
-    interestEndDate: "2026-05-01T00:00:00.000Z", interestRate: 18, dueDate: "2026-04-07T00:00:00.000Z",
+    interestStartDate: "2026-03-12T00:00:00.000Z", interestStartDateProvenance: "JUDGMENT_FINALIZATION_DATE",
+    interestEndDate: "2026-05-01T00:00:00.000Z", interestRate: 18, dueDate: "2026-03-11T00:00:00.000Z",
   },
   {
     id: "tursuz", itemType: "OTHER", amount: 50, currency: "TRY", description: "Sentetik türsüz kalem", status: "ACTIVE",
@@ -83,7 +83,7 @@ describe("ClaimItemPanel — faiz durumu ve başlangıç dayanağı", () => {
     await screen.findByText(`Alacak Kalemleri (${ITEMS.length})`);
     expect(screen.getByTestId("claim-item-interest-status-vu").textContent).toBe("Faiz: Belirlenmedi");
     expect(screen.getByTestId("claim-item-interest-status-yg-isler").textContent).toBe(
-      "Faiz: Faiz işler · başlangıç 08.04.2026 · dayanak: Kesinleşme tarihi",
+      "Faiz: Faiz işler · başlangıç 12.03.2026 · dayanak: Kesinleşme tarihi",
     );
   });
 
@@ -101,11 +101,11 @@ describe("ClaimItemPanel — faiz durumu ve başlangıç dayanağı", () => {
     }
   });
 
-  it("belirlenmedi → faiz işler + kesinleşme + 08.04.2026 + ilam vekâlet ücreti: tek yük, 'Onaya Gönder'", async () => {
+  it("belirlenmedi → faiz işler + kesinleşme + 12.03.2026 + ilam vekâlet ücreti: tek yük, 'Onaya Gönder'", async () => {
     await duzenle("vu");
     durumSec("ACCRUES");
     fireEvent.change(screen.getByTestId("claim-item-interest-start-provenance-select"), { target: { value: "JUDGMENT_FINALIZATION_DATE" } });
-    fireEvent.change(screen.getByTestId("claim-item-interest-start-date"), { target: { value: "2026-04-08" } });
+    fireEvent.change(screen.getByTestId("claim-item-interest-start-date"), { target: { value: "2026-03-12" } });
     fireEvent.change(screen.getByTestId("claim-item-attorney-fee-basis-select"), { target: { value: "JUDGMENT_AWARDED" } });
     fireEvent.click(screen.getByRole("button", { name: "Onaya Gönder" }));
     await waitFor(() => expect(apiPut).toHaveBeenCalledTimes(1));
@@ -113,7 +113,7 @@ describe("ClaimItemPanel — faiz durumu ve başlangıç dayanağı", () => {
     expect(apiPut.mock.calls[0][1]).toMatchObject({
       interestAccrualStatus: "ACCRUES",
       interestStartDateProvenance: "JUDGMENT_FINALIZATION_DATE",
-      interestStartDate: "2026-04-08",
+      interestStartDate: "2026-03-12",
       attorneyFeeBasis: "JUDGMENT_AWARDED",
     });
     expect(apiPut.mock.calls[0][1]).not.toHaveProperty("noInterestReason");
@@ -196,7 +196,7 @@ describe("ClaimItemPanel — faiz durumu ve başlangıç dayanağı", () => {
     expect(apiPut).not.toHaveBeenCalled();
 
     fireEvent.change(screen.getByRole("textbox", { name: "Faiz işlememe gerekçesi" }), { target: { value: "Sentetik gerekçe" } });
-    fireEvent.change(screen.getByDisplayValue("2026-04-07"), { target: { value: "2026-04-10" } });
+    fireEvent.change(screen.getByDisplayValue("2026-03-11"), { target: { value: "2026-04-10" } });
     fireEvent.click(screen.getByRole("button", { name: "Onaya Gönder" }));
     expect(await screen.findByText("Vade değişikliğini ayrı onaya gönderin.")).toBeInTheDocument();
     expect(apiPut).not.toHaveBeenCalled();

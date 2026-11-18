@@ -131,7 +131,7 @@ describeWithDisposableDb('Kalem faiz durumu / dayanağı ve dosya ekibinden çı
       interestAccrualStatus: 'UNKNOWN' as const,
       interestType: 'YASAL' as const,
       interestTypeCode: 'LEGAL_3095' as const,
-      interestStartDate: new Date('2025-05-27T00:00:00.000Z'),
+      interestStartDate: new Date('2025-06-16T00:00:00.000Z'),
       liableDebtorIds: [],
     };
     const fee = await prisma.claimItem.create({
@@ -158,14 +158,14 @@ describeWithDisposableDb('Kalem faiz durumu / dayanağı ve dosya ekibinden çı
     return prisma.officeApprovalRequest.findUniqueOrThrow({ where: { id: res.body.data.approvalRequestId } });
   }
 
-  it('belirlenmedi → faiz işler + 08.04.2026 + kesinleşme + ilam vekâlet ücreti: onaya gider; kendi talebi onaylanamaz; başka kişi onaylar', async () => {
+  it('belirlenmedi → faiz işler + 12.03.2026 + kesinleşme + ilam vekâlet ücreti: onaya gider; kendi talebi onaylanamaz; başka kişi onaylar', async () => {
     const f = await fixture('isler');
     const before = await row(f.feeId);
     const costBefore = await rowDigest(f.costId);
     // Ekranın gönderdiği yük (yalnız değişen alanlar).
     const body = {
       interestAccrualStatus: 'ACCRUES',
-      interestStartDate: '2026-04-08',
+      interestStartDate: '2026-03-12',
       interestStartDateProvenance: 'JUDGMENT_FINALIZATION_DATE',
       attorneyFeeBasis: 'JUDGMENT_AWARDED',
     };
@@ -190,7 +190,7 @@ describeWithDisposableDb('Kalem faiz durumu / dayanağı ve dosya ekibinden çı
 
     const after = await row(f.feeId);
     expect(after.interestAccrualStatus).toBe('ACCRUES');
-    expect(after.interestStartDate?.toISOString().slice(0, 10)).toBe('2026-04-08');
+    expect(after.interestStartDate?.toISOString().slice(0, 10)).toBe('2026-03-12');
     expect(after.interestStartDateProvenance).toBe('JUDGMENT_FINALIZATION_DATE');
     expect(after.attorneyFeeBasis).toBe('JUDGMENT_AWARDED');
     expect(after.interestTypeCode).toBe('LEGAL_3095');
@@ -215,7 +215,7 @@ describeWithDisposableDb('Kalem faiz durumu / dayanağı ve dosya ekibinden çı
   it('dayanaksız "faiz işler" 400; talep oluşmaz, kalem değişmez', async () => {
     const f = await fixture('dayanaksiz');
     const before = await rowDigest(f.costId);
-    const res = await put(f.costId, f.requester.userId, { interestAccrualStatus: 'ACCRUES', interestStartDate: '2026-04-08' });
+    const res = await put(f.costId, f.requester.userId, { interestAccrualStatus: 'ACCRUES', interestStartDate: '2026-03-12' });
     expect(res.status).toBe(400);
     expect(JSON.stringify(res.body)).toContain('interestStartDateProvenance');
     expect(await requests(f.tenantId)).toBe(0);
@@ -224,7 +224,7 @@ describeWithDisposableDb('Kalem faiz durumu / dayanağı ve dosya ekibinden çı
 
   it('faiz işler → belirlenmedi (ekranın gönderdiği yalnız durum): onaydan geçer; faiz türü, başlangıç ve dayanak korunur', async () => {
     const f = await fixture('geri');
-    const first = await requestOf(await put(f.costId, f.requester.userId, { interestAccrualStatus: 'ACCRUES', interestStartDate: '2026-04-08', interestStartDateProvenance: 'JUDGMENT_DATE' }));
+    const first = await requestOf(await put(f.costId, f.requester.userId, { interestAccrualStatus: 'ACCRUES', interestStartDate: '2026-03-12', interestStartDateProvenance: 'JUDGMENT_DATE' }));
     await approvals.approve(first.id, f.approver.userId);
     expect((await row(f.costId)).interestAccrualStatus).toBe('ACCRUES');
 
@@ -233,14 +233,14 @@ describeWithDisposableDb('Kalem faiz durumu / dayanağı ve dosya ekibinden çı
     const after = await row(f.costId);
     expect(after.interestAccrualStatus).toBe('UNKNOWN');
     expect(after.interestTypeCode).toBe('LEGAL_3095');
-    expect(after.interestStartDate?.toISOString().slice(0, 10)).toBe('2026-04-08');
+    expect(after.interestStartDate?.toISOString().slice(0, 10)).toBe('2026-03-12');
     expect(after.interestStartDateProvenance).toBe('JUDGMENT_DATE');
   });
 
   it('yetkisiz: dosyaya atanmamış avukat ve mali düzenleme izni olmayan avukat yazamaz; talep oluşmaz', async () => {
     const f = await fixture('yetkisiz');
     const before = await rowDigest(f.feeId);
-    const body = { interestAccrualStatus: 'ACCRUES', interestStartDate: '2026-04-08', interestStartDateProvenance: 'JUDGMENT_FINALIZATION_DATE' };
+    const body = { interestAccrualStatus: 'ACCRUES', interestStartDate: '2026-03-12', interestStartDateProvenance: 'JUDGMENT_FINALIZATION_DATE' };
     for (const userId of [f.outsider.userId, f.noFinance.userId]) {
       const res = await put(f.feeId, userId, body);
       expect([403, 404]).toContain(res.status);
@@ -265,7 +265,7 @@ describeWithDisposableDb('Kalem faiz durumu / dayanağı ve dosya ekibinden çı
     expect(audit).toHaveLength(1);
     expect(audit[0].userId).toBe(f.approver.userId);
 
-    const afterRemoval = await put(f.feeId, f.requester.userId, { interestAccrualStatus: 'ACCRUES', interestStartDate: '2026-04-08', interestStartDateProvenance: 'JUDGMENT_FINALIZATION_DATE' });
+    const afterRemoval = await put(f.feeId, f.requester.userId, { interestAccrualStatus: 'ACCRUES', interestStartDate: '2026-03-12', interestStartDateProvenance: 'JUDGMENT_FINALIZATION_DATE' });
     expect([403, 404]).toContain(afterRemoval.status);
     expect(await requests(f.tenantId)).toBe(0);
 
