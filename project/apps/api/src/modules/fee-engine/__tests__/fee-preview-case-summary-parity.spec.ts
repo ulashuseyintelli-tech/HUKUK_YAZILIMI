@@ -36,6 +36,8 @@ function makePrisma(principal: number, debtorCount: number) {
         caseInstruments: [],
       }),
     },
+    // Due görünümü bağlı kanonik kalemleri okur (varsayılan: bağlı kalem yok → Due aynen)
+    claimItem: { findMany: jest.fn().mockResolvedValue([]) },
     collectionAllocationHold: { findMany: jest.fn().mockResolvedValue([]) },
   };
 }

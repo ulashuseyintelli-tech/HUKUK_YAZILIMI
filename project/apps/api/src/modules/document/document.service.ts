@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
+import { DUE_OVERLAY_CLAIM_ITEM_SELECT, overlayDuesWithCanonicalItems } from "../case/due-canonical-overlay";
 import { TemplateService, DocumentData } from "./template.service";
 import { TDocumentDefinitions } from "pdfmake/interfaces";
 import { resolveClientAddress } from "../client/client-address-resolver";
@@ -74,17 +75,24 @@ export class DocumentService {
     }
     const lawyer = caseData.lawyers[0]?.lawyer;
     
-    // Alacak kalemlerinden toplam hesapla
-    const principal = caseData.dues
-      ?.filter(d => d.type === 'PRINCIPAL')
-      .reduce((sum, d) => sum + Number(d.amount), 0) || Number(caseData.principalAmount || 0);
-    
-    const interest = caseData.dues
-      ?.filter(d => d.type === 'INTEREST')
+    // Alacak kalemlerinden toplam hesapla — onaylı değer bağlı kanonik kalemden okunur (owner 19.11.2026): Due'daki eski
+    // tutar yerine kalemin onaylı tutarı; bağlı kalemi iptal / feragat edilmiş Due toplanmaz. Tür sınıfları DEĞİŞMEDİ.
+    const dues = overlayDuesWithCanonicalItems(
+      caseData.dues ?? [],
+      await this.prisma.claimItem.findMany({ where: { caseId, tenantId }, select: DUE_OVERLAY_CLAIM_ITEM_SELECT }),
+    ).dues;
+    // Asıl alacak Due'ları VAR ama hepsinin kalemi iptal / feragat edilmişse dosyadaki eski tutara DÜŞÜLMEZ (0'dır).
+    const principalDues = dues.filter(d => d.type === 'PRINCIPAL');
+    const allPrincipalDuesClosed = principalDues.length === 0 && (caseData.dues ?? []).some(d => d.type === 'PRINCIPAL');
+    const principal = principalDues.reduce((sum, d) => sum + Number(d.amount), 0)
+      || (allPrincipalDuesClosed ? 0 : Number(caseData.principalAmount || 0));
+
+    const interest = dues
+      .filter(d => d.type === 'INTEREST')
       .reduce((sum, d) => sum + Number(d.amount), 0) || 0;
-    
-    const expenses = caseData.dues
-      ?.filter(d => d.type === 'EXPENSE' || d.type === 'OTHER' || d.type === 'YARGILAMA_GIDERI')
+
+    const expenses = dues
+      .filter(d => d.type === 'EXPENSE' || d.type === 'OTHER' || d.type === 'YARGILAMA_GIDERI')
       .reduce((sum, d) => sum + Number(d.amount), 0) || 0;
 
     // Eğer dues yoksa eski hesaplama yöntemi

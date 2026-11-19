@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { overlayDuesWithCanonicalItems } from '../case/due-canonical-overlay';
 import {
   UyapETakipDosyasi,
   UyapTakipTalebi,
@@ -129,8 +130,12 @@ export class UyapCaseMapperService {
       taraflar.push(this.mapDebtorToTaraf(cd.debtor, rol));
     }
 
-    // Alacak kalemleri
-    const alacakKalemleri = this.mapDuesToAlacakKalemleri(caseData.dues);
+    // Alacak kalemleri — onaylı değer bağlı kanonik kalemden okunur (owner 19.11.2026): kalem ekranından onaylanan
+    // tutar / faiz Due satırına geri yazılmaz; Due'daki eski değer yerine kalemin değeri dışa aktarılır. Bağlı kalemi
+    // onayla iptal / feragat edilmiş Due dışa aktarılmaz. Tür eşlemesi (Due alt türü) ve faiz bloğu koşulu DEĞİŞMEDİ.
+    const alacakKalemleri = this.mapDuesToAlacakKalemleri(
+      overlayDuesWithCanonicalItems(caseData.dues, caseData.claimItems).dues,
+    );
 
     // Çek/Senet bilgileri - claimItems üzerinden
     const cekler: UyapCekBilgisi[] = [];

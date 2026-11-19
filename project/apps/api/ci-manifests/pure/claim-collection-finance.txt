@@ -415,3 +415,4 @@ src/modules/case/__tests__/due-canonical-item-guard.spec.ts
 # Due ekleme / degisikligi onayi (owner karari 19.11.2026): kayitli niyet sozlesmesi (ekleme, guncelleme, silme) ve kaleme ulasmayan etkili alan karar kurali.
 src/modules/case/__tests__/due-change-approval.spec.ts
 src/modules/case/__tests__/due-effective-change.spec.ts
+src/modules/case/__tests__/due-canonical-overlay.spec.ts

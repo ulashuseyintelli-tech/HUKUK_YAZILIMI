@@ -41,7 +41,7 @@ describe('CLIENT-DOCUMENT-ADDRESS-OUTPUT-DEFECT-R01 — alacaklı adresi hukuki 
   });
 
   const build = (clientAddress: unknown) => {
-    const prisma: any = { case: { findFirst: jest.fn().mockResolvedValue(makeCase(clientAddress)) } };
+    const prisma: any = { case: { findFirst: jest.fn().mockResolvedValue(makeCase(clientAddress)) }, claimItem: { findMany: jest.fn().mockResolvedValue([]) } };
     return new DocumentService(prisma, new TemplateService());
   };
 
@@ -119,7 +119,7 @@ describe('CLIENT-DOCUMENT-ADDRESS-OUTPUT-DEFECT-R01 — alacaklı adresi hukuki 
     // `client.addresses` include'u üzerinden (I01/I03'ün kanonik sözleşmesiyle AYNI: yalnız
     // isCurrent=true, isPrimary desc/createdAt asc sıralı). Test GEVŞETİLMEDİ — sınır
     // İLERLETİLDİ: artık HANGİ sözleşmeyle okunduğu pinlenir.
-    const prisma: any = { case: { findFirst: jest.fn().mockResolvedValue(makeCase(CREDITOR_ADDRESS)) } };
+    const prisma: any = { case: { findFirst: jest.fn().mockResolvedValue(makeCase(CREDITOR_ADDRESS)) }, claimItem: { findMany: jest.fn().mockResolvedValue([]) } };
     const svc = new DocumentService(prisma, new TemplateService());
     await svc.prepareDocumentData('case-1', 'tenant-A');
 
@@ -148,6 +148,7 @@ describe('CLIENT-DOCUMENT-ADDRESS-OUTPUT-DEFECT-R01 — alacaklı adresi hukuki 
     // bir değer taşıyor. Resolver bypass edilip ham `client.address` okunsaydı bu test
     // legacy değeri görür ve YANLIŞLIKLA geçerdi — [8]/[8c] birlikte bunu kapatır.
     const prisma: any = {
+      claimItem: { findMany: jest.fn().mockResolvedValue([]) },
       case: {
         findFirst: jest.fn().mockResolvedValue({
           ...makeCase('Legacy Cadde'),

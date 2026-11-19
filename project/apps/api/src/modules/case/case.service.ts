@@ -38,6 +38,7 @@ import {
   planDueCanonicalUpdate,
   planDueOnlyEffectiveChange,
 } from "./due-canonical-item-guard";
+import { DUE_OVERLAY_CLAIM_ITEM_SELECT, overlayDuesWithCanonicalItems } from "./due-canonical-overlay";
 import { lockExecutionActorRows } from "../office-approval/office-approval-execution-authority";
 import { assertClaimItemLifecycleMutation } from "../claim-item/claim-item-lifecycle-contract";
 import { CLAIM_ITEM_CASE_TARGET_TYPE, CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE, CLAIM_ITEM_TARGET_TYPE } from "../claim-item/claim-item-approval.constants";
@@ -5791,11 +5792,14 @@ export class CaseService {
     });
     if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
 
-    const [dues, confirmedCollections, allocationHold] = await Promise.all([
+    const [rawDues, dueOverlayItems, confirmedCollections, allocationHold] = await Promise.all([
       this.prisma.due.findMany({ where: { caseId } }),
+      this.prisma.claimItem.findMany({ where: { caseId, tenantId }, select: DUE_OVERLAY_CLAIM_ITEM_SELECT }),
       this.prisma.collection.findMany({ where: { caseId, tenantId, status: "CONFIRMED" } }),
       readActiveAllocationHoldSummary(this.prisma, tenantId, caseId),
     ]);
+    // Onaylı değer bağlı kanonik kalemden okunur (owner 19.11.2026); iptal / feragat edilmiş kalemin Due'su toplanmaz.
+    const dues = overlayDuesWithCanonicalItems(rawDues, dueOverlayItems).dues;
     // K3-L: mahsubu bekletilen tahsilat bakiyeden DÜŞÜLMEZ; ayrı gösterilir.
     const collections = confirmedCollections.filter((c) => !allocationHold.collectionIds.has(c.id));
 
@@ -5887,11 +5891,21 @@ export class CaseService {
     const hesapTarihi = calculationDate;
 
     // 2. Asıl alacak ve kalem türü belirleme
-    const principalDues = caseData.dues.filter((d: any) => 
-      ['PRINCIPAL', 'ASIL_ALACAK', 'CEK', 'SENET', 'CHECK', 'BOND'].includes(d.type)
-    );
-    
-    const asilAlacak = principalDues.length > 0
+    // Onaylı değer bağlı kanonik kalemden okunur (owner 19.11.2026): kalem ekranından onaylanan tutar / para birimi
+    // Due satırına geri yazılmaz; Due'daki eski değer yerine kalemin değeri kullanılır. Bağlı kalemi onayla iptal /
+    // feragat edilmiş Due hesaba girmez. Sınıflandırma (hangi Due "asıl alacak") DEĞİŞMEDİ.
+    const isPrincipalDue = (d: any) => ['PRINCIPAL', 'ASIL_ALACAK', 'CEK', 'SENET', 'CHECK', 'BOND'].includes(d.type);
+    const dueOverlayItems = await this.prisma.claimItem.findMany({
+      where: { caseId, tenantId },
+      select: DUE_OVERLAY_CLAIM_ITEM_SELECT,
+    });
+    const canonicalDues = overlayDuesWithCanonicalItems(caseData.dues, dueOverlayItems).dues;
+    const principalDues = canonicalDues.filter(isPrincipalDue);
+    // Dosyada hiç asıl alacak Due'su yoksa eski yedek (dosya asıl alacak tutarı) geçerlidir; Due'ları VAR ama hepsinin
+    // kalemi iptal / feragat edilmişse yedek KULLANILMAZ (asıl alacak 0'dır).
+    const hasPrincipalDueRows = caseData.dues.some(isPrincipalDue);
+
+    const asilAlacak = hasPrincipalDueRows
       ? principalDues.reduce((sum: number, d: any) => sum + Number(d.amount), 0)
       : Number(caseData.principalAmount || 0);
 
@@ -6011,7 +6025,7 @@ export class CaseService {
     // dövizli alacakta harç / vekalet ücreti kuralı (tutar ve kur) owner kararıdır.
     const paraBirimiDurumu = buildCalculationSummaryCurrencyStatus({
       caseCurrency: legacyCurrency,
-      principalAmounts: principalDues.length > 0
+      principalAmounts: hasPrincipalDueRows
         ? principalDues.map((d: any) => ({ amount: Number(d.amount), currency: d.currency }))
         : [{ amount: Number(caseData.principalAmount || 0), currency: legacyCurrency }],
       penaltyAmounts: tazminatDurumu.kalemler.map((kalem) => ({ amount: kalem.tutar, currency: kalem.paraBirimi })),

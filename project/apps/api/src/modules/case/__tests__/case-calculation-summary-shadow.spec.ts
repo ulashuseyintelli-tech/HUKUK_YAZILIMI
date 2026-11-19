@@ -41,6 +41,8 @@ function makePrisma(overrides: Record<string, any> = {}) {
         ...overrides,
       }),
     },
+    // Due görünümü bağlı kanonik kalemleri okur (varsayılan: bağlı kalem yok → Due aynen)
+    claimItem: { findMany: jest.fn().mockResolvedValue([]) },
     // K3-L: mahsubu bekletilen tahsilat okuyucusu (varsayılan: bekletme yok)
     collectionAllocationHold: {
       findMany: jest.fn().mockResolvedValue([]),

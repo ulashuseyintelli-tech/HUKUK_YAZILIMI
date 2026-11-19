@@ -15,7 +15,7 @@ function build(clientOver: Record<string, unknown>) {
     debtors: [{ debtor: { name: 'Borçlu', identityNo: '22222222220', addresses: null } }],
     lawyers: [], executionOffice: null, collections: [], dues: [], notes: null,
   };
-  const prisma: any = { case: { findFirst: jest.fn().mockResolvedValue(caseRecord) } };
+  const prisma: any = { case: { findFirst: jest.fn().mockResolvedValue(caseRecord) }, claimItem: { findMany: jest.fn().mockResolvedValue([]) } };
   return { svc: new DocumentTemplateService(prisma), prisma };
 }
 

@@ -127,6 +127,7 @@ const BOUNDED_CASE_ROW = {
 
 function buildService(over: any = {}) {
   const prisma = {
+    claimItem: { findMany: jest.fn().mockResolvedValue([]) },
     case: {
       findFirst: jest
         .fn()
