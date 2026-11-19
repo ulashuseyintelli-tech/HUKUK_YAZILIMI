@@ -8,6 +8,8 @@
  * - OLDEST_DUE_FIRST: startDate ascending
  * - HIGHEST_RATE_FIRST: rate descending
  * - CUSTOM: priority field ascending
+ * Her kuralın SON eşitlik kırıcısı kalem kimliğidir (ikili karşılaştırma; D8 / PR-6, 2026-11-19): tanımlı ölçütlerin hepsi
+ * eşitken sonuç giriş / sorgu sırasına bağlı kalmaz (tahsilat dağıtımı ve faiz belirlenimci).
  */
 
 import { Injectable } from '@nestjs/common';
@@ -16,6 +18,11 @@ import { ClaimBucket, Segment } from '../types/domain.types';
 // ═══════════════════════════════════════════════════════════════════════════
 // CLAIM PRIORITY RULE
 // ═══════════════════════════════════════════════════════════════════════════
+
+/** Son eşitlik kırıcı: kalem kimliği, ikili karşılaştırma (yerel ayara bağlı değil). */
+function compareClaimId(a: ClaimWithInterest, b: ClaimWithInterest): number {
+  return a.claim.id < b.claim.id ? -1 : a.claim.id > b.claim.id ? 1 : 0;
+}
 
 export enum ClaimPriorityRule {
   OLDEST_DUE_FIRST = 'OLDEST_DUE_FIRST',
@@ -83,7 +90,10 @@ export class ClaimPriorityService {
       if (dateCompare !== 0) return dateCompare;
       
       // Secondary: amount descending (larger debts first for same date)
-      return b.claim.amount - a.claim.amount;
+      const amountCompare = b.claim.amount - a.claim.amount;
+      if (amountCompare !== 0) return amountCompare;
+
+      return compareClaimId(a, b);
     });
   }
 
@@ -99,7 +109,10 @@ export class ClaimPriorityService {
       // Secondary: startDate ascending (older first for same rate)
       const dateA = a.claim.ibrazTarihi || a.claim.startDate;
       const dateB = b.claim.ibrazTarihi || b.claim.startDate;
-      return dateA.localeCompare(dateB);
+      const dateCompare = dateA.localeCompare(dateB);
+      if (dateCompare !== 0) return dateCompare;
+
+      return compareClaimId(a, b);
     });
   }
 
@@ -118,7 +131,10 @@ export class ClaimPriorityService {
       // Secondary: startDate ascending
       const dateA = a.claim.ibrazTarihi || a.claim.startDate;
       const dateB = b.claim.ibrazTarihi || b.claim.startDate;
-      return dateA.localeCompare(dateB);
+      const dateCompare = dateA.localeCompare(dateB);
+      if (dateCompare !== 0) return dateCompare;
+
+      return compareClaimId(a, b);
     });
   }
 
