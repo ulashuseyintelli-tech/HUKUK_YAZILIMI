@@ -128,6 +128,19 @@ export default function PortalCaseDetailPage() {
         setLoadError(null);
         return;
       }
+      if (res.status === 409) {
+        // Dosyanın tutar bilgileri doğrulanamıyor (owner E4 kararı): sunucunun müvekkile yönelik iletisi gösterilir ve
+        // önceki okumanın tutarları ekranda BIRAKILMAZ (eski değer kesin bilgi gibi görünmesin).
+        const body: unknown = await res.json().catch(() => null);
+        const code = body && typeof body === "object" ? (body as { code?: unknown }).code : undefined;
+        if (typeof code === "string" && code.startsWith("DUE_CANONICAL_")) {
+          if (!isMountedRef.current || requestToken !== loadTokenRef.current) return;
+          setCaseData(null);
+          setNotFound(false);
+          setLoadError(toActionErrorMessage({ body }, "Bu dosyanın tutar bilgileri şu anda gösterilemiyor."));
+          return;
+        }
+      }
       if (!res.ok) throw new Error(`CASE_HTTP_${res.status}`);
 
       const data: unknown = await res.json();

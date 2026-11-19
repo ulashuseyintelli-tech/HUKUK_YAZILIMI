@@ -866,4 +866,24 @@ describe("WSMR-A4-AB-8 — loadCase okuma hatası", () => {
     expect(screen.getByRole("alert")).toBeTruthy();
     expect(screen.queryByText("2026/CASE-A")).toBeNull();
   });
+
+  // ── Owner E4 kararı (19.11.2026): onaylı tutar güvenle kullanılamıyorsa müvekkile eski değer gösterilmez ──────────
+
+  it("[E4-1] 409 DUE_CANONICAL_*: sunucunun müvekkile yönelik iletisi uyarı olarak gösterilir; tutar / dosya verisi gösterilmez", async () => {
+    const message = "Bu dosyanın tutar bilgileri şu anda doğrulanamadığı için gösterilemiyor. Lütfen büronuzla iletişime geçin.";
+    stubFetch({ ok: false, status: 409, json: async () => ({ code: "DUE_CANONICAL_CURRENCY_MISMATCH", message }) });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    expect(screen.getByText(message)).toBeTruthy();
+    expect(screen.queryByText("2026/123")).toBeNull();
+    expect(screen.queryByText("Dosya bulunamadı")).toBeNull();
+  });
+
+  it("[E4-2] başka kodlu 409 eski davranışta kalır: genel hata iletisi, sunucu metni gösterilmez", async () => {
+    stubFetch({ ok: false, status: 409, json: async () => ({ code: "BASKA_KURAL", message: "İç kural iletisi" }) });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    expect(screen.getByText("Dosya yüklenemedi.")).toBeTruthy();
+    expect(screen.queryByText("İç kural iletisi")).toBeNull();
+  });
 });

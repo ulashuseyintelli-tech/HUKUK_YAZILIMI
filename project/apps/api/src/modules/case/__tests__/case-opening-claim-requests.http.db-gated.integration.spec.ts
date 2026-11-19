@@ -438,7 +438,7 @@ describeWithDisposableDb('Dosya açılışında kalem beyanları — POST /cases
     });
 
     await expect(approvals.approve(interestRequest.id, f.approver)).rejects.toThrow('stale-state conflict');
-    await expect(approvals.approve(interestRequest.id, f.approver)).rejects.toThrow('degisen alanlar');
+    await expect(approvals.approve(interestRequest.id, f.approver)).rejects.toThrow('değişen alanlar');
     const after = await prisma.claimItem.findUniqueOrThrow({ where: { id: before.id } });
     expect(after.interestAccrualStatus).toBe('UNKNOWN');
     expect(after.interestStartDate).toBeNull();

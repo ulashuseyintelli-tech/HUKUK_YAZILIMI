@@ -15,13 +15,17 @@
  *  - Bağlı kalem ETKİN ya da TAHSİL EDİLMİŞ                           → kalem değerleri bindirilir.
  *  - Bağlı kalem onayla İPTAL ya da FERAGAT edilmiş, Due hâlâ duruyor → satır görünümden ÇIKAR (iptal / feragat onaylı
  *    kanonik bilgidir). Tahsil edilmiş kalem kalır: tahsilat çıktılarda ayrıca düşülür.
- *  - Aynı Due'yu gösteren birden çok kalem (bütünlük ihlali; yazım yolu zaten reddeder) → tahmin yapılmaz, Due aynen.
- *  - Due ile bağlı kalemin PARA BİRİMİ farklı (yalnız geçmiş kayıtta olabilir; yeni yazımı FR-7 kabul denetimi
- *    engeller) → tahmin yapılmaz, Due aynen. Para birimi hiçbir durumda BİNDİRİLMEZ ve yeniden etiketlenmez: bir
- *    para birimindeki tutar ötekinin etiketiyle gösterilmez; okuyucuların para birimi doğrulamaları (dosya ↔ kayıt
- *    uyuşmazlığı, karma para birimi, TL tarifesi matrahı) değişmeden çalışır.
+ *  - Onaylı kanonik bilgi GÜVENLE KULLANILAMIYORSA (owner E4 kararı 19.11.2026: "sessizce eski Due verisine dönerek
+ *    kesin çıktı üretme") → çıktı DURUR: `DueCanonicalViewUnsafeError` (409) açık uyumsuzluk hatası. Eski Due değerine
+ *    sessiz dönüş YOK; veri dönüştürülmez / yazılmaz. İki durum:
+ *      · Due ile bağlı ETKİN / TAHSİL EDİLMİŞ kalemin PARA BİRİMİ farklı ya da doğrulanamıyor (Due'da ya da kalemde para
+ *        birimi yüklenmemiş) → `DUE_CANONICAL_CURRENCY_MISMATCH`. Yeni yazımı FR-7 kabul denetimi engeller; yalnız geçmiş
+ *        kayıtta olabilir.
+ *      · Aynı Due'yu gösteren birden çok kalem (bütünlük ihlali; yazım yolu zaten reddeder) → `DUE_CANONICAL_BINDING_AMBIGUOUS`.
+ *    Para birimi hiçbir durumda BİNDİRİLMEZ ve yeniden etiketlenmez: bir para birimindeki tutar ötekinin etiketiyle
+ *    gösterilmez.
  *
- * SAF modül: veritabanı / servis bağımlılığı yok.
+ * SAF modül: veritabanı / servis bağımlılığı yok (yalnız HTTP hata sınıfı).
  *
  * Çağrıldığı yerler:
  * - UyapCaseMapperService.mapCaseToTakipTalebi() → POST /uyap-export/single · batch, GET /uyap-export/download/:caseId
@@ -31,6 +35,51 @@
  * - DocumentService.prepareDocumentData() / DocumentTemplateService.prepareVariablesFromCase() → belge tutarları
  * - PortalService.getCaseDetail() → GET /portal/cases/:id (müvekkil portalı kalem görünümü)
  */
+import { ConflictException } from '@nestjs/common';
+
+/** Bağlı kalemle para birimi uyuşmuyor / doğrulanamıyor: onaylı değer güvenle kullanılamaz, çıktı durur. */
+export const DUE_CANONICAL_CURRENCY_MISMATCH = 'DUE_CANONICAL_CURRENCY_MISMATCH' as const;
+/** Aynı Due'ya birden çok kalem bağlı: onaylı değer belirlenemez, çıktı durur. */
+export const DUE_CANONICAL_BINDING_AMBIGUOUS = 'DUE_CANONICAL_BINDING_AMBIGUOUS' as const;
+export type DueCanonicalUnsafeCode = typeof DUE_CANONICAL_CURRENCY_MISMATCH | typeof DUE_CANONICAL_BINDING_AMBIGUOUS;
+
+/** Güvenle kullanılamayan satır (hata yanıtında; tutar taşımaz). */
+export interface DueCanonicalUnsafeRow {
+  readonly dueId: string;
+  readonly claimItemIds: string[];
+  readonly dueCurrency: string | null;
+  readonly claimItemCurrency: string | null;
+}
+
+/** Hata iletisi (düz işlev: tenant envanter statik kapısı hesaplanmış metod çağrısını kabul etmez). */
+function unsafeMessage(code: DueCanonicalUnsafeCode, count: number): string {
+  if (code === DUE_CANONICAL_CURRENCY_MISMATCH) {
+    return `Dosyada bağlı alacak kalemiyle para birimi uyuşmayan ${count} kayıt var. Onaylı kalem değeri güvenle ` +
+      'kullanılamadığı için bu mali çıktı üretilmedi; tutar veya para birimi çevrilmedi. Kayıtların yetkili ' +
+      'düzeltmeyle uyumlu hâle getirilmesi gerekir.';
+  }
+  return `Dosyada aynı kayda bağlı birden çok alacak kalemi var (${count} kayıt). Onaylı değer belirlenemediği için bu ` +
+    'mali çıktı üretilmedi. Kayıtların yetkili düzeltmeyle uyumlu hâle getirilmesi gerekir.';
+}
+
+/**
+ * Onaylı kanonik bilgi güvenle kullanılamıyor → çıktı açık uyumsuzluk hatasıyla durur (409). Yanıt kod, ileti, dosya
+ * kimliği ve satırları taşır; tutar taşımaz. Müvekkil portalı bu hatayı kendi iletisiyle (iç kimliksiz) yeniden fırlatır.
+ */
+export class DueCanonicalViewUnsafeError extends ConflictException {
+  constructor(
+    readonly code: DueCanonicalUnsafeCode,
+    readonly caseId: string | null,
+    readonly rows: DueCanonicalUnsafeRow[],
+  ) {
+    super({ code, message: unsafeMessage(code, rows.length), caseId, rows });
+  }
+}
+
+/** Okuyucunun hata yanıtına koyduğu bağlam (yalnız tanılama). */
+export interface DueOverlayContext {
+  readonly caseId?: string;
+}
 
 /** Kalemden okunan (Due görünümüne bindirilen) alanlar. Para birimi BİLEREK yok (yukarıdaki son kural). */
 export const DUE_CANONICAL_OVERLAY_FIELDS = [
@@ -96,8 +145,6 @@ export interface DueCanonicalView<T extends DueOverlayRow> {
   readonly sources: ReadonlyMap<string, { source: DueCanonicalValueSource; claimItemId: string | null; claimItemStatus: string | null }>;
   /** Bağlı kalemi iptal / feragat edildiği için görünümden çıkan Due kimlikleri. */
   readonly excludedDueIds: string[];
-  /** Bağlı kalemiyle para birimi ayrıştığı için bindirilmeyen (aynen okunan) Due kimlikleri. */
-  readonly currencyMismatchDueIds: string[];
 }
 
 /** Kalemin köprü işareti: hangi Due'dan oluştuğu. İşaret yoksa null. */
@@ -120,10 +167,13 @@ const currencyCode = (value: unknown): string | null => {
 /**
  * Due satırlarını bağlı kanonik kalemlerin onaylı değerleriyle görünüme çevirir. Girdi satırları DEĞİŞMEZ (kopya
  * döner). Yalnız okuyucunun Due'da yüklediği alanlar bindirilir: Due'da seçilmemiş bir alan görünüme eklenmez.
+ * Onaylı değer güvenle kullanılamayan satır varsa (para birimi uyuşmazlığı / belirsiz bağ) görünüm KURULMAZ:
+ * bütün satırlar taranır ve `DueCanonicalViewUnsafeError` fırlatılır (kısmi görünüm ya da eski Due değeri yok).
  */
 export function overlayDuesWithCanonicalItems<T extends DueOverlayRow>(
   dues: readonly T[],
   claimItems: readonly DueOverlayClaimItem[],
+  context: DueOverlayContext = {},
 ): DueCanonicalView<T> {
   const boundByDueId = new Map<string, DueOverlayClaimItem[]>();
   for (const item of claimItems) {
@@ -137,14 +187,23 @@ export function overlayDuesWithCanonicalItems<T extends DueOverlayRow>(
   const view: T[] = [];
   const sources = new Map<string, { source: DueCanonicalValueSource; claimItemId: string | null; claimItemStatus: string | null }>();
   const excludedDueIds: string[] = [];
-  const currencyMismatchDueIds: string[] = [];
+  const currencyMismatches: DueCanonicalUnsafeRow[] = [];
+  const ambiguousBindings: DueCanonicalUnsafeRow[] = [];
+  const dueCurrencyOf = (due: T): string | null => (has(due, 'currency') ? currencyCode(due.currency) : null);
 
   for (const due of dues) {
     const bound = boundByDueId.get(due.id) ?? [];
-    if (bound.length !== 1) {
-      // Bağlı kalem yok ya da belirsiz (birden çok işaret): Due aynen; tahmin yapılmaz.
+    if (bound.length === 0) {
+      // Bağlı kalem yok (kanonik kalem üretmeyen tür): Due aynen.
       view.push({ ...due });
       sources.set(due.id, { source: 'DUE', claimItemId: null, claimItemStatus: null });
+      continue;
+    }
+    if (bound.length > 1) {
+      // Belirsiz bağ (birden çok işaret): onaylı değer belirlenemez; tahmin yapılmaz, Due'ya da dönülmez.
+      ambiguousBindings.push({
+        dueId: due.id, claimItemIds: bound.map((row) => row.id), dueCurrency: dueCurrencyOf(due), claimItemCurrency: null,
+      });
       continue;
     }
     const item = bound[0];
@@ -154,11 +213,12 @@ export function overlayDuesWithCanonicalItems<T extends DueOverlayRow>(
       continue;
     }
 
-    if (has(due, 'currency') && currencyCode(due.currency) !== currencyCode(item.currency)) {
-      // Para birimi ayrışması (ya da kalemin para birimi yüklenmemiş): tutar başka etiketle gösterilmez; Due aynen.
-      view.push({ ...due });
-      sources.set(due.id, { source: 'DUE', claimItemId: item.id, claimItemStatus: item.status });
-      currencyMismatchDueIds.push(due.id);
+    const dueCurrency = dueCurrencyOf(due);
+    const claimItemCurrency = currencyCode(item.currency);
+    if (!dueCurrency || !claimItemCurrency || dueCurrency !== claimItemCurrency) {
+      // Para birimi ayrışması ya da doğrulanamıyor (yüklenmemiş / boş): tutar başka etiketle gösterilmez, eski Due
+      // değerine de dönülmez → çıktı durur.
+      currencyMismatches.push({ dueId: due.id, claimItemIds: [item.id], dueCurrency, claimItemCurrency });
       continue;
     }
 
@@ -185,5 +245,12 @@ export function overlayDuesWithCanonicalItems<T extends DueOverlayRow>(
     sources.set(due.id, { source: 'CLAIM_ITEM', claimItemId: item.id, claimItemStatus: item.status });
   }
 
-  return { dues: view, sources, excludedDueIds, currencyMismatchDueIds };
+  const caseId = context.caseId ?? null;
+  if (currencyMismatches.length > 0) {
+    throw new DueCanonicalViewUnsafeError(DUE_CANONICAL_CURRENCY_MISMATCH, caseId, currencyMismatches);
+  }
+  if (ambiguousBindings.length > 0) {
+    throw new DueCanonicalViewUnsafeError(DUE_CANONICAL_BINDING_AMBIGUOUS, caseId, ambiguousBindings);
+  }
+  return { dues: view, sources, excludedDueIds };
 }

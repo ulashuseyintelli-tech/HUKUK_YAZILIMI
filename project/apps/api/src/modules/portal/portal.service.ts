@@ -6,7 +6,7 @@ import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
-import { DUE_OVERLAY_CLAIM_ITEM_SELECT, overlayDuesWithCanonicalItems } from "../case/due-canonical-overlay";
+import { DUE_OVERLAY_CLAIM_ITEM_SELECT, DueCanonicalViewUnsafeError, overlayDuesWithCanonicalItems } from "../case/due-canonical-overlay";
 import { maskEmail } from "../../common/pii-mask.util";
 import { AuditService } from "../audit/audit.service";
 import { OfficeApprovalService } from "../office-approval/office-approval.service";
@@ -683,10 +683,23 @@ export class PortalService {
     // Kalem görünümü onaylı değeri bağlı kanonik kalemden okur (owner 19.11.2026): kalem ekranından onaylanan tutar /
     // vade / faiz Due satırına geri yazılmaz; müvekkile Due'daki eski değer yerine kalemin onaylı değeri gösterilir.
     // Bağlı kalemi onayla iptal / feragat edilmiş Due listelenmez. Yanıt biçimi (alan kümesi) DEĞİŞMEDİ.
-    const dues = overlayDuesWithCanonicalItems(
-      caseData.dues,
-      await this.prisma.claimItem.findMany({ where: { caseId, tenantId }, select: DUE_OVERLAY_CLAIM_ITEM_SELECT }),
-    ).dues;
+    // Onaylı değer güvenle kullanılamıyorsa (owner E4 kararı) müvekkile eski Due değeri GÖSTERİLMEZ: dosya detayı açık
+    // uyumsuzluk iletisiyle durur; iç kimlikler / kalem bilgisi müvekkile verilmez (tanılama büro uçlarındadır).
+    let dues: typeof caseData.dues;
+    try {
+      dues = overlayDuesWithCanonicalItems(
+        caseData.dues,
+        await this.prisma.claimItem.findMany({ where: { caseId, tenantId }, select: DUE_OVERLAY_CLAIM_ITEM_SELECT }),
+        { caseId },
+      ).dues;
+    } catch (error) {
+      if (!(error instanceof DueCanonicalViewUnsafeError)) throw error;
+      throw new ConflictException({
+        code: error.code,
+        message:
+          "Bu dosyanın tutar bilgileri şu anda doğrulanamadığı için gösterilemiyor. Lütfen büronuzla iletişime geçin.",
+      });
+    }
 
     // CLIENT-P2-U03-TRACK-A-I02: ham asset-query alanları curated assetQuery objesine
     // dönüştürülür ve response'tan çıkarılır — assetVehicle/assetRealEstate/assetBank/
