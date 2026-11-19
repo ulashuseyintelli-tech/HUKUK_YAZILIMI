@@ -52,6 +52,15 @@ export function classifyCurrency(currency: unknown): {
   return { currency };
 }
 
+/**
+ * Para birimi kodlarının SIRA sözleşmesi (D8 / PR-6, 2026-11-19): artan, ikili (ordinal) karşılaştırma — yerel ayara bağlı
+ * değil. Kanonik bakiyenin `currencyResults` / `diagnostics.perCurrency` sırası buradan gelir; kalem / ödeme giriş sırası
+ * sonucu değiştirmez.
+ */
+export function compareCurrencyCode(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 export function groupByCurrency(buckets: ClaimBucket[], payments: Payment[]): CurrencyGroupResult {
   const map = new Map<string, CurrencyGroup>();
   const diagnostics: CurrencyGroupDiagnostic[] = [];
@@ -104,5 +113,6 @@ export function groupByCurrency(buckets: ClaimBucket[], payments: Payment[]): Cu
     // bucket var payment yok → normal (ödenmemiş alacak), diagnostic YOK.
   }
 
-  return { groups: [...map.values()], diagnostics };
+  // Gruplar ilk görülme sırasıyla DEĞİL para birimi koduna göre döner (sorgu sırası belirlenimci değildir).
+  return { groups: [...map.values()].sort((a, b) => compareCurrencyCode(a.currency, b.currency)), diagnostics };
 }
