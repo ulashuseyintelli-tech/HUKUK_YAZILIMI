@@ -51,15 +51,16 @@ export interface DueCanonicalUnsafeRow {
   readonly claimItemCurrency: string | null;
 }
 
-const UNSAFE_MESSAGES: Record<DueCanonicalUnsafeCode, (count: number) => string> = {
-  [DUE_CANONICAL_CURRENCY_MISMATCH]: (count) =>
-    `Dosyada bağlı alacak kalemiyle para birimi uyuşmayan ${count} kayıt var. Onaylı kalem değeri güvenle ` +
-    'kullanılamadığı için bu mali çıktı üretilmedi; tutar veya para birimi çevrilmedi. Kayıtların yetkili ' +
-    'düzeltmeyle uyumlu hâle getirilmesi gerekir.',
-  [DUE_CANONICAL_BINDING_AMBIGUOUS]: (count) =>
-    `Dosyada aynı kayda bağlı birden çok alacak kalemi var (${count} kayıt). Onaylı değer belirlenemediği için bu ` +
-    'mali çıktı üretilmedi. Kayıtların yetkili düzeltmeyle uyumlu hâle getirilmesi gerekir.',
-};
+/** Hata iletisi (düz işlev: tenant envanter statik kapısı hesaplanmış metod çağrısını kabul etmez). */
+function unsafeMessage(code: DueCanonicalUnsafeCode, count: number): string {
+  if (code === DUE_CANONICAL_CURRENCY_MISMATCH) {
+    return `Dosyada bağlı alacak kalemiyle para birimi uyuşmayan ${count} kayıt var. Onaylı kalem değeri güvenle ` +
+      'kullanılamadığı için bu mali çıktı üretilmedi; tutar veya para birimi çevrilmedi. Kayıtların yetkili ' +
+      'düzeltmeyle uyumlu hâle getirilmesi gerekir.';
+  }
+  return `Dosyada aynı kayda bağlı birden çok alacak kalemi var (${count} kayıt). Onaylı değer belirlenemediği için bu ` +
+    'mali çıktı üretilmedi. Kayıtların yetkili düzeltmeyle uyumlu hâle getirilmesi gerekir.';
+}
 
 /**
  * Onaylı kanonik bilgi güvenle kullanılamıyor → çıktı açık uyumsuzluk hatasıyla durur (409). Yanıt kod, ileti, dosya
@@ -71,7 +72,7 @@ export class DueCanonicalViewUnsafeError extends ConflictException {
     readonly caseId: string | null,
     readonly rows: DueCanonicalUnsafeRow[],
   ) {
-    super({ code, message: UNSAFE_MESSAGES[code](rows.length), caseId, rows });
+    super({ code, message: unsafeMessage(code, rows.length), caseId, rows });
   }
 }
 
