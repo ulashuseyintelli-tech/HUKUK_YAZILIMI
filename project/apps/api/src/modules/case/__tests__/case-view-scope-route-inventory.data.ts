@@ -174,6 +174,7 @@ export const CASE_RELATED_CONTROLLERS: Readonly<Record<string, readonly RouteEnt
     ["GET /cases", "KAPILI_ICERDE", "caseService.findAll"],
     ["GET /cases/stats", "ISTISNA", "owner T2 (09.11.2026): sayaç — bilinen fark"],
     ["GET /cases/responsible-candidates", "DOSYA_DISI", "kişi listesi / sıra numarası"],
+    ["GET /cases/lawyer-candidates", "DOSYA_DISI", "kişi listesi / sıra numarası"],
     ["GET /cases/:id/responsible-person", "KAPILI", ""],
     ["GET /cases/:id/responsibility-at", "KAPILI", ""],
     ["GET /cases/:id/responsibility-history", "KAPILI", ""],

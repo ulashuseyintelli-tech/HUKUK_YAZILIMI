@@ -243,8 +243,8 @@ export function OpeningClaimPreviewCard({
           <p className="text-[11px] leading-snug text-gray-600">
             {preview.aciklamalar.kullaniciTercihi}{" "}
             <span data-testid="opening-preview-draft-panel-note">
-              Kalem formundaki &quot;Hesap Özeti&quot; taslak bir ön hesaptır; dosya açıldıktan sonraki hesap kayıtlı ve onaylanmış bilgilere göre
-              ayrıca yapılır ve farklı olabilir.
+              Kalem formundaki &quot;Hesap Özeti&quot; taslak bir ön hesaptır ve aynı kuralı uygular: onay bekleyen ya da faiz durumu
+              belirlenmemiş faiz orada da hesaba katılmaz. Dosya açıldıktan sonraki hesap kayıtlı ve onaylanmış bilgilere göre yapılır.
             </span>
           </p>
         </div>

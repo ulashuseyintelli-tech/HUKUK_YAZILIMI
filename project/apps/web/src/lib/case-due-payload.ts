@@ -338,6 +338,16 @@ export class ClaimKalemTuruValidationError extends Error {
   }
 }
 
+/**
+ * Kalem asıl alacak sınıfında mı: sunucuya GÖNDERİLEN tür PRINCIPAL ise evet. Tanınmayan / boş türde `true` döner —
+ * böyle bir kalem zaten gönderilemez; taslak hesap mevcut davranışını korur (sihirbazın "Hesap Özeti" faiz hükmü).
+ */
+export function isPrincipalClaimKalemTuru(kalemTuru?: unknown): boolean {
+  if (typeof kalemTuru !== 'string') return true;
+  const mapped = CLAIM_KALEM_DUE_TYPE[kalemTuru];
+  return mapped === undefined || mapped === 'PRINCIPAL';
+}
+
 export function mapClaimKalemTuruToDueType(kalemTuru?: unknown): ClaimDueType {
   if (typeof kalemTuru !== 'string' || kalemTuru.trim().length === 0) {
     throw new ClaimKalemTuruValidationError();

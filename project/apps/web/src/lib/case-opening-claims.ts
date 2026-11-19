@@ -235,6 +235,33 @@ export function summarizeOpeningDeclaration(item: { kalemTuru?: unknown; acilisB
 }
 
 /**
+ * Sihirbazdaki "Hesap Özeti" taslak hesabında kalemin FAİZ HÜKMÜ — sunucunun dosya açılışında kaleme yazacağı kayıt /
+ * onay durumuyla aynı kural (owner talimatı 2026-11-18):
+ *  - ONAY_BEKLIYOR : kalemde "faiz işler" beyanı var → beyan onaya gider, kaleme faiz başlangıcı yazılmaz; faiz hesaba
+ *    katılmaz (asıl alacak dahil).
+ *  - HESAPLANIR    : asıl alacak sınıfındaki kalem (gönderilen kalem türü PRINCIPAL) — faiz, girilen tür ve başlangıçla
+ *    bugünkü gibi hesaplanır.
+ *  - BELIRLENMEDI  : yan kalem (vekâlet ücreti, yargılama gideri, masraf …) — açılışta faiz durumu "belirlenmedi" yazılır;
+ *    faiz hesaba katılmaz.
+ * Sınıf, sunucuya GÖNDERİLEN kalem türünden okunur (`mapClaimKalemTuruToDueType`); tür tanınmıyorsa mevcut davranış korunur.
+ */
+export type OpeningInterestDisposition = "HESAPLANIR" | "BELIRLENMEDI" | "ONAY_BEKLIYOR";
+
+export const OPENING_INTEREST_DISPOSITION_NOTES: Record<Exclude<OpeningInterestDisposition, "HESAPLANIR">, string> = {
+  ONAY_BEKLIYOR: "onay bekleyecek — hesaba katılmadı",
+  BELIRLENMEDI: "faiz durumu belirlenmedi — hesaba katılmadı",
+};
+
+export function openingInterestDisposition(
+  item: { kalemTuru?: unknown; acilisBeyani?: unknown; takipOncesiFaiz?: unknown } | null | undefined,
+  principalDueType: (kalemTuru: unknown) => boolean,
+): OpeningInterestDisposition {
+  const declaration = normalizeOpeningClaimDeclaration(item?.acilisBeyani);
+  if (declaration.faizIsler && hasInterestInput(item?.kalemTuru) && item?.takipOncesiFaiz !== "YOK") return "ONAY_BEKLIYOR";
+  return principalDueType(item?.kalemTuru) ? "HESAPLANIR" : "BELIRLENMEDI";
+}
+
+/**
  * Kalem listesi satırının beyan rozetleri. Evrak kaydına yönlenen kalemde (çek / senet) açılış beyanı GÖNDERİLMEZ;
  * önceki türde girilmiş beyan "onaya gidecek" diye gösterilmez, yerine gönderilmeyeceği söylenir.
  */

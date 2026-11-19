@@ -110,6 +110,14 @@ export class CaseController {
     return { data };
   }
 
+  // Yeni dosya sihirbazı: dosya ekibine avukat seçimi için DAR aday listesi (yalnız seçim alanları; aynı büro, etkin).
+  // `GET /lawyers` büro yönetimi kapısındadır ve değişmedi; dosya açabilen kullanıcı ekibi buradan seçer.
+  @Get("lawyer-candidates")
+  async getLawyerCandidates(@CurrentUser("tenantId") tenantId: string) {
+    const data = await this.responsibleCandidatesService.getCaseLawyerCandidates(tenantId);
+    return { data };
+  }
+
   // M2-G3b: Dosyanın MEVCUT Dosya Sorumlusu (gerçek kişi); legacy sorumluPersonel fallback. İzole servis.
   @CaseViewScoped("id") // F02 P3-D3: dosya görünüm kapsamı (bayrak açıkken; kapsam dışı 404)
   @Get(":id/responsible-person")

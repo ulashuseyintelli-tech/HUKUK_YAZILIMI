@@ -8,9 +8,11 @@ import {
   formatOpeningClaimCreateError,
   listedItemOpeningChips,
   normalizeOpeningClaimDeclaration,
+  openingInterestDisposition,
   summarizeOpeningDeclaration,
   type OpeningClaimDeclaration,
 } from "@/lib/case-opening-claims";
+import { isPrincipalClaimKalemTuru } from "@/lib/case-due-payload";
 
 /**
  * Açılış kalem beyanları — yeni dosya formunun saf yardımcıları (owner talimatı 2026-11-18).
@@ -299,5 +301,30 @@ describe("formatOpeningClaimCreateError — dosya oluşmadığında okunur neden
     });
     expect(diger).toContain("onaya gönderilemedi — Sorumluluk seçimi kayıtlı dosya durumuyla uygulanamıyor.");
     expect(formatOpeningClaimCreateError(new Error("x"))).toBeNull();
+  });
+});
+
+describe("openingInterestDisposition — sihirbaz 'Hesap Özeti' faiz hükmü (sunucunun açılış kaydıyla aynı kural)", () => {
+  it("asıl alacak hesaplanır; yan kalem 'belirlenmedi'; 'faiz işler' beyanı varsa onay bekler (asıl alacak dahil)", () => {
+    expect(openingInterestDisposition({ kalemTuru: "ASIL_ALACAK", takipOncesiFaiz: "YASAL" }, isPrincipalClaimKalemTuru)).toBe("HESAPLANIR");
+    expect(openingInterestDisposition({ kalemTuru: "VEKALET_UCRETI", takipOncesiFaiz: "YASAL" }, isPrincipalClaimKalemTuru)).toBe("BELIRLENMEDI");
+    expect(openingInterestDisposition({ kalemTuru: "YARGILAMA_GIDERI", takipOncesiFaiz: "YASAL" }, isPrincipalClaimKalemTuru)).toBe("BELIRLENMEDI");
+    const faizIsler = beyan({ faizIsler: true, faizBaslangic: "2025-04-02", faizDayanak: "JUDGMENT_DATE" });
+    expect(openingInterestDisposition({ kalemTuru: "VEKALET_UCRETI", takipOncesiFaiz: "YASAL", acilisBeyani: faizIsler }, isPrincipalClaimKalemTuru)).toBe("ONAY_BEKLIYOR");
+    expect(openingInterestDisposition({ kalemTuru: "ASIL_ALACAK", takipOncesiFaiz: "YASAL", acilisBeyani: faizIsler }, isPrincipalClaimKalemTuru)).toBe("ONAY_BEKLIYOR");
+  });
+
+  it("'faiz yok' seçili kalemde beyan gönderilmez: hüküm kalemin sınıfına göredir (onay bekliyor denmez)", () => {
+    const faizIsler = beyan({ faizIsler: true });
+    expect(openingInterestDisposition({ kalemTuru: "VEKALET_UCRETI", takipOncesiFaiz: "YOK", acilisBeyani: faizIsler }, isPrincipalClaimKalemTuru)).toBe("BELIRLENMEDI");
+    expect(openingInterestDisposition({ kalemTuru: "ASIL_ALACAK", takipOncesiFaiz: "YOK", acilisBeyani: faizIsler }, isPrincipalClaimKalemTuru)).toBe("HESAPLANIR");
+    expect(openingInterestDisposition(null, isPrincipalClaimKalemTuru)).toBe("HESAPLANIR");
+  });
+
+  it("isPrincipalClaimKalemTuru: sunucuya PRINCIPAL türüyle giden kalemler asıl alacaktır; tanınmayan tür mevcut davranışı korur", () => {
+    for (const kalemTuru of ["ASIL_ALACAK", "FATURA", "KIRA", "CEK", "SENET"]) expect(isPrincipalClaimKalemTuru(kalemTuru)).toBe(true);
+    for (const kalemTuru of ["VEKALET_UCRETI", "YARGILAMA_GIDERI", "MASRAF"]) expect(isPrincipalClaimKalemTuru(kalemTuru)).toBe(false);
+    expect(isPrincipalClaimKalemTuru("TANINMAYAN_TUR")).toBe(true);
+    expect(isPrincipalClaimKalemTuru(undefined)).toBe(true);
   });
 });
