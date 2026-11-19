@@ -134,7 +134,7 @@ export class UyapCaseMapperService {
     // tutar / faiz Due satırına geri yazılmaz; Due'daki eski değer yerine kalemin değeri dışa aktarılır. Bağlı kalemi
     // onayla iptal / feragat edilmiş Due dışa aktarılmaz. Tür eşlemesi (Due alt türü) ve faiz bloğu koşulu DEĞİŞMEDİ.
     const alacakKalemleri = this.mapDuesToAlacakKalemleri(
-      overlayDuesWithCanonicalItems(caseData.dues, caseData.claimItems).dues,
+      overlayDuesWithCanonicalItems(caseData.dues, caseData.claimItems, { caseId }).dues,
     );
 
     // Çek/Senet bilgileri - claimItems üzerinden

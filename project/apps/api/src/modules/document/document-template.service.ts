@@ -216,6 +216,7 @@ export class DocumentTemplateService {
     const dues = overlayDuesWithCanonicalItems(
       caseData.dues ?? [],
       await this.prisma.claimItem.findMany({ where: { caseId, tenantId }, select: DUE_OVERLAY_CLAIM_ITEM_SELECT }),
+      { caseId },
     ).dues;
     // Asıl alacak Due'ları VAR ama hepsinin kalemi iptal / feragat edilmişse dosyadaki eski tutara DÜŞÜLMEZ (0'dır).
     const principalDues = dues.filter(d => d.type === 'PRINCIPAL');

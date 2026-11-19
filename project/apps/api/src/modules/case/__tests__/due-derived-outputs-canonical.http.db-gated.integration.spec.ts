@@ -36,8 +36,11 @@ import { CaseModule } from '../case.module';
  *  B. Kalemde onaylanan tutar ve faiz başlangıcı: Due satırı DEĞİŞMEZ; yedi çıktının hepsi kalemin değerini verir.
  *  C. Kalemi onayla iptal edilen Due (satır duruyor) çıktılara girmez; kanonik kalemi olmayan Due (nafaka) aynen kalır.
  *  D. Asıl alacak kalemi iptal edildiyse çıktılar dosyadaki eski "asıl alacak tutarı" yedeğine DÜŞMEZ.
- *  E. Geçmiş kayıtta Due ile bağlı kalemin para birimi ayrışmışsa tutar yeniden etiketlenmez (Due aynen okunur);
- *     dosya ↔ kayıt para birimi uyuşmazlığı ve TL tarifesi matrah denetimi eskisi gibi çalışır.
+ *  E. Geçmiş kayıtta Due ile bağlı kalemin para birimi ayrışmışsa (owner E4 kararı) onaylı değer güvenle
+ *     kullanılamaz: yedi çıktının HEPSİ açık uyumsuzluk hatasıyla (409 DUE_CANONICAL_CURRENCY_MISMATCH) durur; eski Due
+ *     değerine sessiz dönüş ve yeniden etiketleme YOK; hiçbir satır yazılmaz / dönüştürülmez; müvekkil portalı iç kimlik
+ *     görmez.
+ *  F. Aynı Due'ya birden çok kalem bağlıysa (bütünlük ihlali) çıktılar 409 DUE_CANONICAL_BINDING_AMBIGUOUS ile durur.
  */
 const TEST_DB_URL = resolveTestDatabaseUrl(process.env);
 if (process.env.CI && !TEST_DB_URL) {
@@ -319,23 +322,67 @@ describeWithDisposableDb('Due\'dan okuyan çıktılar onaylı kanonik değeri ve
     expect(await pesinHarc(f)).toBe(120); // matrah 0 → en az tutar
   });
 
-  it('E. geçmiş kayıtta Due ile kalemin para birimi ayrışmışsa tutar yeniden etiketlenmez; para birimi doğrulamaları aynen çalışır', async () => {
+  /**
+   * Onaylı değer güvenle kullanılamıyor: Due'dan okuyan çıktıların HEPSİ açık uyumsuzluk hatasıyla durur (owner E4).
+   * Büro uçları tanılamayı (dosya + satırlar) taşır; müvekkil portalı yalnız kendi iletisini görür. Hata yanıtları
+   * tutar taşımaz. Açılış masraf seti hiçbir kayıt yazmadan reddedilir.
+   */
+  async function expectAllOutputsStop(f: Fixture, code: string, rows: Array<Record<string, unknown>>, forbiddenAmounts: number[]) {
+    const officeBody = { code, caseId: f.caseId, rows, message: expect.stringContaining('bu mali çıktı üretilmedi') };
+    const summary = await get(`/cases/${f.caseId}/calculation-summary`, f.onayci.userId, { date: AS_OF });
+    const finance = await get(`/cases/${f.caseId}/finance-summary`, f.onayci.userId);
+    for (const res of [summary, finance]) {
+      expect([res.status, res.body]).toEqual([409, expect.objectContaining(officeBody)]);
+      for (const amount of forbiddenAmounts) expect(JSON.stringify(res.body)).not.toContain(String(amount));
+    }
+    const db = prisma as never;
+    const officeError = { status: 409, response: expect.objectContaining(officeBody) };
+    await expect(new UyapCaseMapperService(db).mapCaseToTakipTalebi(f.caseId, f.tenantId)).rejects.toMatchObject(officeError);
+    await expect(new DocumentService(db, undefined as never).prepareDocumentData(f.caseId, f.tenantId)).rejects.toMatchObject(officeError);
+    await expect(new DocumentTemplateService(db).prepareVariablesFromCase(f.caseId, f.tenantId)).rejects.toMatchObject(officeError);
+    const portalError = await new PortalService(db, undefined as never, undefined as never, undefined as never, undefined as never, undefined as never)
+      .getCaseDetail(f.caseId, f.clientId, f.tenantId)
+      .then(() => null, (error: any) => error);
+    expect(portalError?.status).toBe(409);
+    expect(portalError.getResponse()).toEqual({ code, message: expect.stringContaining('büronuzla iletişime geçin') });
+    await expect(expenseRequests.createOpeningExpenseSet(f.caseId, f.tenantId, f.onayci.userId)).rejects.toMatchObject({ status: 409 });
+    expect(await prisma.expenseRequest.count({ where: { caseId: f.caseId } })).toBe(0);
+  }
+
+  it('E. geçmiş kayıtta Due ile kalemin para birimi ayrışmışsa bütün çıktılar açık uyumsuzluk hatasıyla durur; eski Due değeri yok, hiçbir şey yazılmaz', async () => {
     const f = await fixture('ayrisma');
     // Geçmiş kayıt durumunun kurulumu (yeni yazımı kabul denetimi engeller): Due USD damgalı, bağlı kalem dosya gibi TRY.
     await prisma.due.update({ where: { id: f.asilDueId }, data: { currency: 'USD' } });
     await approveClaimChange(f, await put(`/claim-items/${f.asilClaimId}`, f.yetkili.userId, { amount: 100000 }));
     const claim = await prisma.claimItem.findUniqueOrThrow({ where: { id: f.asilClaimId } });
     expect([Number(claim.demandedAmount), claim.currency]).toEqual([100000, 'TRY']);
+    const before = await dueRow(f.asilDueId);
 
-    const out = await outputs(f);
-    // Kalemin 100.000 TRY'si USD etiketiyle gösterilmez; Due aynen okunur ve uyuşmazlık bildirilmeye devam eder.
-    expect(out.anaparaTutarlari).toEqual([{ paraBirimi: 'USD', tutar: 30000 }]);
-    expect(out.paraBirimi).toEqual({ durum: 'KARMA_PARA_BIRIMI', gerekce: 'DOSYA_VE_KAYIT_PARA_BIRIMI_UYUSMUYOR', toplamGosterilebilir: false });
-    expect(out.uyap48_4).toContain(`Sentetik asıl alacak: ${tl(30000)} USD`);
-    expect(out.uyap48_4).not.toContain(tl(100000));
-    expect(out.portal[f.asilDueId]).toEqual({ amount: 30000, dueDate: '2025-07-01', interestStartDate: null });
-    // Açılış masraf setinin TL tarifesi matrah denetimi ham Due para birimini görür: yanlış tutarlı talep kayda geçmez.
-    await expect(expenseRequests.createOpeningExpenseSet(f.caseId, f.tenantId, f.onayci.userId)).rejects.toMatchObject({ status: 409 });
-    expect(await prisma.expenseRequest.count({ where: { caseId: f.caseId } })).toBe(0);
+    await expectAllOutputsStop(
+      f,
+      'DUE_CANONICAL_CURRENCY_MISMATCH',
+      [{ dueId: f.asilDueId, claimItemIds: [f.asilClaimId], dueCurrency: 'USD', claimItemCurrency: 'TRY' }],
+      [30000, 100000],
+    );
+    // Veri dönüştürülmedi / yazılmadı: Due ve kalem aynen.
+    const after = await dueRow(f.asilDueId);
+    expect([after.currency, Number(after.amount), after.updatedAt.toISOString()]).toEqual([before.currency, Number(before.amount), before.updatedAt.toISOString()]);
+    const claimAfter = await prisma.claimItem.findUniqueOrThrow({ where: { id: f.asilClaimId } });
+    expect([Number(claimAfter.demandedAmount), claimAfter.currency]).toEqual([100000, 'TRY']);
+  });
+
+  it('F. aynı Due\'ya birden çok kalem bağlıysa (bütünlük ihlali) bütün çıktılar belirsiz bağ hatasıyla durur', async () => {
+    const f = await fixture('belirsiz');
+    // Bütünlük ihlalinin kurulumu (yazım yolu reddeder): asıl alacak Due'sunu gösteren ikinci kalem satırı (açılış masraf
+    // matrahı yalnız asıl alacak Due'larını okur; yedi çıktının hepsi bu satırı görür).
+    const { id: _id, createdAt: _c, updatedAt: _u, ...copy } = await prisma.claimItem.findUniqueOrThrow({ where: { id: f.asilClaimId } });
+    const twin = await prisma.claimItem.create({ data: { ...copy, amount: '9100.00', demandedAmount: '9100.00' } as never });
+
+    await expectAllOutputsStop(
+      f,
+      'DUE_CANONICAL_BINDING_AMBIGUOUS',
+      [{ dueId: f.asilDueId, claimItemIds: expect.arrayContaining([f.asilClaimId, twin.id]), dueCurrency: 'TRY', claimItemCurrency: null }],
+      [9100],
+    );
   });
 });

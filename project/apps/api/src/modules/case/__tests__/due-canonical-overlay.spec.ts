@@ -1,11 +1,25 @@
 import { Prisma } from '@prisma/client';
 import {
+  DUE_CANONICAL_BINDING_AMBIGUOUS,
+  DUE_CANONICAL_CURRENCY_MISMATCH,
   DUE_CANONICAL_OVERLAY_FIELDS,
   DUE_OVERLAY_CLAIM_ITEM_SELECT,
+  DueCanonicalViewUnsafeError,
   dueSyncSourceDueId,
   overlayDuesWithCanonicalItems,
   type DueOverlayClaimItem,
 } from '../due-canonical-overlay';
+
+/** Görünüm kurulmaz; açık uyumsuzluk hatası (409) — yakalanıp döndürülür. */
+const unsafeError = (run: () => unknown): DueCanonicalViewUnsafeError => {
+  try {
+    run();
+  } catch (error) {
+    if (error instanceof DueCanonicalViewUnsafeError) return error;
+    throw error;
+  }
+  throw new Error('DueCanonicalViewUnsafeError bekleniyordu; görünüm kuruldu');
+};
 
 /**
  * Due satırından okuyan çıktılar için "onaylı kanonik değer" görünümü — SAF kural (owner talimatı 19.11.2026).
@@ -64,7 +78,6 @@ describe('Due görünümü onaylı değeri bağlı kanonik kalemden okur', () =>
     expect(Number(view.dues[0].amount)).toBe(1200);
     expect(view.sources.get('due-1')).toEqual({ source: 'CLAIM_ITEM', claimItemId: 'claim-1', claimItemStatus: 'ACTIVE' });
     expect(view.excludedDueIds).toEqual([]);
-    expect(view.currencyMismatchDueIds).toEqual([]);
     // Girdi satırı değişmez (kopya döner).
     expect(Number(source.amount)).toBe(1000);
     expect(source.interestStartDate).toBeNull();
@@ -86,9 +99,9 @@ describe('Due görünümü onaylı değeri bağlı kanonik kalemden okur', () =>
   });
 
   it('yalnız okuyucunun Due\'da yüklediği alanlar bindirilir; kalemde yüklenmemiş alan Due\'yu değiştirmez', () => {
-    const slim = { id: 'due-1', type: 'PRINCIPAL', amount: new Prisma.Decimal('1000.00') };
+    const slim = { id: 'due-1', type: 'PRINCIPAL', amount: new Prisma.Decimal('1000.00'), currency: 'TRY' };
     const view = overlayDuesWithCanonicalItems([slim], [item()]);
-    expect(Object.keys(view.dues[0]).sort()).toEqual(['amount', 'id', 'type']);
+    expect(Object.keys(view.dues[0]).sort()).toEqual(['amount', 'currency', 'id', 'type']);
     expect(Number(view.dues[0].amount)).toBe(1200);
 
     const partialItem = overlayDuesWithCanonicalItems([due()], [{ id: 'claim-1', status: 'ACTIVE', metadata: item().metadata, currency: 'TRY' }]);
@@ -117,10 +130,17 @@ describe('Due görünümü onaylı değeri bağlı kanonik kalemden okur', () =>
     expect(view.sources.get('due-n')).toEqual({ source: 'DUE', claimItemId: null, claimItemStatus: null });
   });
 
-  it('aynı Due\'yu gösteren birden çok kalem (bütünlük ihlali): tahmin yapılmaz, Due aynen', () => {
-    const view = overlayDuesWithCanonicalItems([due()], [item(), item({ id: 'claim-2', demandedAmount: new Prisma.Decimal('9999.00') })]);
-    expect(Number(view.dues[0].amount)).toBe(1000);
-    expect(view.sources.get('due-1')).toEqual({ source: 'DUE', claimItemId: null, claimItemStatus: null });
+  it('aynı Due\'yu gösteren birden çok kalem (bütünlük ihlali): tahmin yapılmaz, Due\'ya da dönülmez — çıktı durur', () => {
+    const error = unsafeError(() =>
+      overlayDuesWithCanonicalItems([due(), due({ id: 'due-2' })], [item(), item({ id: 'claim-2', demandedAmount: new Prisma.Decimal('9999.00') })], { caseId: 'case-1' }),
+    );
+    expect(error.getStatus()).toBe(409);
+    expect(error.getResponse()).toMatchObject({
+      code: DUE_CANONICAL_BINDING_AMBIGUOUS,
+      caseId: 'case-1',
+      rows: [{ dueId: 'due-1', claimItemIds: ['claim-1', 'claim-2'], dueCurrency: 'TRY', claimItemCurrency: null }],
+    });
+    expect(JSON.stringify(error.getResponse())).not.toContain('9999'); // hata yanıtı tutar taşımaz
   });
 
   it('Due sırası korunur', () => {
@@ -131,27 +151,53 @@ describe('Due görünümü onaylı değeri bağlı kanonik kalemden okur', () =>
     expect(view.dues.map((row) => row.id)).toEqual(['a', 'c']);
   });
 
-  describe('para birimi bindirilmez, yeniden etiketlenmez', () => {
-    it('Due ile bağlı kalemin para birimi farklıysa tahmin yapılmaz: Due aynen, ayrışma listesinde', () => {
-      const view = overlayDuesWithCanonicalItems([due()], [item({ currency: 'USD' })]);
-      expect(view.dues[0]).toMatchObject({ currency: 'TRY', description: 'Sentetik asıl alacak', interestStartDate: null });
-      expect(Number(view.dues[0].amount)).toBe(1000); // kalemin 1.200 USD'si TRY etiketiyle gösterilmez
-      expect(view.sources.get('due-1')).toEqual({ source: 'DUE', claimItemId: 'claim-1', claimItemStatus: 'ACTIVE' });
-      expect(view.currencyMismatchDueIds).toEqual(['due-1']);
-      expect(view.excludedDueIds).toEqual([]);
+  describe('para birimi bindirilmez, yeniden etiketlenmez; uyuşmazlıkta çıktı durur (owner E4)', () => {
+    it('Due ile bağlı kalemin para birimi farklıysa: eski Due değerine dönülmez, bütün ayrışan satırlarla 409', () => {
+      const dues = [due(), due({ id: 'due-2', type: 'EXPENSE' }), due({ id: 'due-3', currency: 'EUR' })];
+      const items = [
+        item({ currency: 'USD' }),
+        item({ id: 'claim-3', metadata: { dueSync: { sourceDueId: 'due-3' } }, currency: 'EUR' }),
+      ];
+      const error = unsafeError(() => overlayDuesWithCanonicalItems(dues, items, { caseId: 'case-1' }));
+      expect(error.getStatus()).toBe(409);
+      expect(error.getResponse()).toEqual({
+        code: DUE_CANONICAL_CURRENCY_MISMATCH,
+        message: expect.stringContaining('para birimi uyuşmayan 1 kayıt'),
+        caseId: 'case-1',
+        rows: [{ dueId: 'due-1', claimItemIds: ['claim-1'], dueCurrency: 'TRY', claimItemCurrency: 'USD' }],
+      });
+      expect((error.getResponse() as { message: string }).message).toContain('çevrilmedi');
+      // Girdi değişmez; hata yanıtı tutar taşımaz.
+      expect(Number(dues[0].amount)).toBe(1000);
+      expect(JSON.stringify(error.getResponse())).not.toMatch(/1000|1200/);
     });
 
-    it('Due para birimi yüklü ama kalemin para birimi yüklenmemişse doğrulanamaz: Due aynen', () => {
-      const view = overlayDuesWithCanonicalItems([due()], [item({ currency: undefined })]);
-      expect(Number(view.dues[0].amount)).toBe(1000);
-      expect(view.currencyMismatchDueIds).toEqual(['due-1']);
+    it.each([
+      ['kalemin para birimi yüklenmemiş', due(), item({ currency: undefined }), 'TRY', null],
+      ['kalemin para birimi boş', due(), item({ currency: '  ' }), 'TRY', null],
+      ['Due para birimi yüklenmemiş', { id: 'due-1', type: 'PRINCIPAL', amount: new Prisma.Decimal('1000.00') }, item(), null, 'TRY'],
+    ] as Array<[string, Record<string, unknown> & { id: string }, DueOverlayClaimItem, string | null, string | null]>)(
+      'doğrulanamayan para birimi (%s): çıktı durur',
+      (_label, row, claim, dueCurrency, claimItemCurrency) => {
+        const error = unsafeError(() => overlayDuesWithCanonicalItems([row], [claim]));
+        expect(error.getResponse()).toMatchObject({
+          code: DUE_CANONICAL_CURRENCY_MISMATCH,
+          caseId: null,
+          rows: [{ dueId: 'due-1', dueCurrency, claimItemCurrency }],
+        });
+      },
+    );
+
+    it('ayrışma yalnız bağlı kalemi olan Due\'da aranır: bağsız Due farklı para biriminde olabilir (Due aynen)', () => {
+      const nafaka = due({ id: 'due-n', type: 'NAFAKA', currency: 'USD' });
+      const view = overlayDuesWithCanonicalItems([due(), nafaka], [item()]);
+      expect(view.dues.map((row) => [row.id, row.currency, Number(row.amount)])).toEqual([['due-1', 'TRY', 1200], ['due-n', 'USD', 1000]]);
     });
 
     it('boşluk / büyük-küçük harf farkı ayrışma değildir; görünümdeki para birimi yine Due\'nun kendi değeridir', () => {
       const view = overlayDuesWithCanonicalItems([due({ currency: ' try ' })], [item({ currency: 'TRY' })]);
       expect(Number(view.dues[0].amount)).toBe(1200);
       expect(view.dues[0].currency).toBe(' try ');
-      expect(view.currencyMismatchDueIds).toEqual([]);
     });
 
     it('aynı para biriminde bindirme para birimini değiştirmez', () => {
@@ -163,7 +209,6 @@ describe('Due görünümü onaylı değeri bağlı kanonik kalemden okur', () =>
       const view = overlayDuesWithCanonicalItems([due()], [item({ currency: 'USD', status: 'CANCELLED' })]);
       expect(view.dues).toEqual([]);
       expect(view.excludedDueIds).toEqual(['due-1']);
-      expect(view.currencyMismatchDueIds).toEqual([]);
     });
   });
 
