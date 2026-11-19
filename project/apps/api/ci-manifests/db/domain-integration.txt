@@ -529,3 +529,4 @@ src/modules/client-settlement/__tests__/client-accounting-native-summary.http.db
 src/modules/office-approval/__tests__/office-approval-display-context.http.db-gated.integration.spec.ts
 # Tahsilat / mahsup kabul matrisi (F02, 17.11.2026): belirlenmedi / muteselsil / payli / tutarla sinirli x tek-iki borclu; kismi / kapatan / asan; dosya duzeyi; haciz bekletmesi; iptal ters kayitlari + yevmiye net sifir; onizleme = kesinlestirme; eszamanlilik + tekrar; bayrak kapali (gercek PostgreSQL).
 src/modules/claim-liability/__tests__/claim-liability-collection-acceptance-matrix.db-gated.integration.spec.ts
+src/modules/case/__tests__/debtor-ledger-balance-stable-order.db-gated.integration.spec.ts
