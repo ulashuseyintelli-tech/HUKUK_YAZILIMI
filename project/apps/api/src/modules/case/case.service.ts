@@ -6161,7 +6161,8 @@ export class CaseService {
     const caseData = await this.prisma.case.findFirst({
       where: { id: caseId, tenantId },
       include: {
-        debtors: { include: { debtor: { select: { name: true } } } },
+        // Kararlı sıra: borçlu satırları her okumada dosyaya eklenme sırasıyla gelir (veritabanının satır sırasına bağlı değil).
+        debtors: { include: { debtor: { select: { name: true } } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
         claimItems: { where: { status: { in: [...DEBTOR_LEDGER_BALANCE_ITEM_STATUSES] } }, orderBy: { sortOrder: "asc" } },
       },
     });
@@ -6218,7 +6219,8 @@ export class CaseService {
     const caseData = await this.prisma.case.findFirst({
       where: { id: caseId, tenantId },
       include: {
-        debtors: { include: { debtor: { select: { name: true } } } },
+        // Kararlı sıra: borçlu satırları her okumada dosyaya eklenme sırasıyla gelir (veritabanının satır sırasına bağlı değil).
+        debtors: { include: { debtor: { select: { name: true } } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
         claimItems: { where: { status: { in: [...DEBTOR_LEDGER_BALANCE_ITEM_STATUSES] } }, orderBy: { sortOrder: "asc" } },
       },
     });
