@@ -5799,7 +5799,7 @@ export class CaseService {
       readActiveAllocationHoldSummary(this.prisma, tenantId, caseId),
     ]);
     // Onaylı değer bağlı kanonik kalemden okunur (owner 19.11.2026); iptal / feragat edilmiş kalemin Due'su toplanmaz.
-    const dues = overlayDuesWithCanonicalItems(rawDues, dueOverlayItems).dues;
+    const dues = overlayDuesWithCanonicalItems(rawDues, dueOverlayItems, { caseId }).dues;
     // K3-L: mahsubu bekletilen tahsilat bakiyeden DÜŞÜLMEZ; ayrı gösterilir.
     const collections = confirmedCollections.filter((c) => !allocationHold.collectionIds.has(c.id));
 
@@ -5899,7 +5899,7 @@ export class CaseService {
       where: { caseId, tenantId },
       select: DUE_OVERLAY_CLAIM_ITEM_SELECT,
     });
-    const canonicalDues = overlayDuesWithCanonicalItems(caseData.dues, dueOverlayItems).dues;
+    const canonicalDues = overlayDuesWithCanonicalItems(caseData.dues, dueOverlayItems, { caseId }).dues;
     const principalDues = canonicalDues.filter(isPrincipalDue);
     // Dosyada hiç asıl alacak Due'su yoksa eski yedek (dosya asıl alacak tutarı) geçerlidir; Due'ları VAR ama hepsinin
     // kalemi iptal / feragat edilmişse yedek KULLANILMAZ (asıl alacak 0'dır).

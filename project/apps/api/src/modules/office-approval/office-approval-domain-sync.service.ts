@@ -889,8 +889,16 @@ export class OfficeApprovalDomainSyncService {
       });
     }
     if (staleness.stale) {
-      const fields = staleness.changedFields.length > 0 ? ` (degisen alanlar: ${staleness.changedFields.join(', ')})` : '';
-      throw new ConflictException(`ClaimItem stale-state conflict: kayit approval talebinden sonra degismis${fields}.`);
+      // Owner E4 kararı (19.11.2026): kullanıcıya anlaşılır neden + mevcut kurtarma yolu. İşlem geri alınır; hiçbir alan
+      // ve onay durumu yazılmaz. Teknik işaret ("stale-state conflict") tanılama için iletide kalır.
+      const fields = staleness.changedFields.length > 0 ? ` (değişen alanlar: ${staleness.changedFields.join(', ')})` : '';
+      throw new ConflictException({
+        code: 'CLAIM_ITEM_APPROVAL_STALE',
+        message:
+          `Bu onay uygulanamaz: talep açıldıktan sonra kalem değişti${fields}. Hiçbir değişiklik uygulanmadı. ` +
+          'Talebi reddedip kalemin güncel hâli üzerinden yeniden talep açın. (ClaimItem stale-state conflict)',
+        changedFields: staleness.changedFields,
+      });
     }
     assertInvoiceClaimItemTypeTransitionAllowed(
       current,

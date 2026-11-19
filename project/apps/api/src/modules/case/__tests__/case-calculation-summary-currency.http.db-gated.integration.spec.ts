@@ -241,8 +241,10 @@ describeWithDisposableDb('Hesap özeti para birimi bağlamı (HTTP + disposable 
 
   it('dosya dövizli, kalem kaydı TRY (eski kayıt): tutar kayıttaki para birimiyle kalır, uyuşmazlık bildirilir; kayıt DEĞİŞTİRİLMEZ', async () => {
     const caseId = await openCase('eski', { currency: 'USD', subCategory: 'DOVIZ', dues: [principal(10_000)] });
-    // Eski dosyadaki durumun kurulumu: kalem para birimi TRY damgalı (dosya açılışı düzeltmesinden önceki kayıt)
+    // Eski dosyadaki durumun kurulumu: kalem kaydı (Due ve bağlı kanonik kalem birlikte) TRY damgalı (dosya açılışı
+    // düzeltmesinden önceki kayıt). Due ile kalem aynı para biriminde olduğundan onaylı değer güvenle okunur.
     await prisma.due.updateMany({ where: { caseId }, data: { currency: 'TRY' } });
+    await prisma.claimItem.updateMany({ where: { caseId }, data: { currency: 'TRY' } });
     const before = await prisma.due.findMany({ where: { caseId }, select: { id: true, amount: true, currency: true, updatedAt: true } });
 
     const summary = await summaryOf(caseId);
@@ -258,6 +260,22 @@ describeWithDisposableDb('Hesap özeti para birimi bağlamı (HTTP + disposable 
     expect(pick(summary, TARIFF_RATE)).toEqual(TARIFF_RATE.map(() => ({ paraBirimi: null, durum: 'HESAPLANAMADI' })));
     expect(pick(summary, TOTAL)).toEqual(TOTAL.map(() => ({ paraBirimi: null, durum: 'GOSTERILEMEZ' })));
     // Hesap özeti salt okumadır: geçmiş kayıt düzeltilmedi
+    expect(await prisma.due.findMany({ where: { caseId }, select: { id: true, amount: true, currency: true, updatedAt: true } })).toEqual(before);
+  });
+
+  it('eski kayıtta Due TRY, bağlı kalem dosya gibi USD: onaylı değer güvenle kullanılamaz → hesap özeti açık uyumsuzluk hatasıyla durur (owner E4); kayıt DEĞİŞTİRİLMEZ', async () => {
+    const caseId = await openCase('ayrisan', { currency: 'USD', subCategory: 'DOVIZ', dues: [principal(10_000)] });
+    await prisma.due.updateMany({ where: { caseId }, data: { currency: 'TRY' } });
+    const before = await prisma.due.findMany({ where: { caseId }, select: { id: true, amount: true, currency: true, updatedAt: true } });
+
+    const res = await http().get(`/cases/${caseId}/calculation-summary?date=${HESAP_TARIHI}`).set('x-test-user-id', adminId);
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({
+      code: 'DUE_CANONICAL_CURRENCY_MISMATCH',
+      caseId,
+      rows: [{ dueId: before[0].id, dueCurrency: 'TRY', claimItemCurrency: 'USD' }],
+    });
+    expect(JSON.stringify(res.body)).not.toContain('10000');
     expect(await prisma.due.findMany({ where: { caseId }, select: { id: true, amount: true, currency: true, updatedAt: true } })).toEqual(before);
   });
 

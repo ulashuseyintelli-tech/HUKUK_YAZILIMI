@@ -925,6 +925,7 @@ export class ExpenseRequestService {
       ? overlayDuesWithCanonicalItems(
           caseItem.dues,
           await this.prisma.claimItem.findMany({ where: { caseId, tenantId }, select: DUE_OVERLAY_CLAIM_ITEM_SELECT }),
+          { caseId },
         ).dues
       : [];
     let asilAlacak = 0;
