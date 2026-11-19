@@ -46,7 +46,7 @@ describe('CLIENT-SEC-H2B — document services fail-closed tenant', () => {
     });
 
     it('same-tenant: case.findFirst({id,tenantId}) ile başarılı döner', async () => {
-      const prisma: any = { case: { findFirst: jest.fn().mockResolvedValue(makeCase()) } };
+      const prisma: any = { case: { findFirst: jest.fn().mockResolvedValue(makeCase()) }, claimItem: { findMany: jest.fn().mockResolvedValue([]) } };
       const service = new DocumentService(prisma, {} as any);
 
       const data = await service.prepareDocumentData('case-1', 'tenant-A');
@@ -82,7 +82,7 @@ describe('CLIENT-SEC-H2B — document services fail-closed tenant', () => {
     });
 
     it('same-tenant: case.findFirst({id,tenantId}) ile başarılı döner', async () => {
-      const prisma: any = { case: { findFirst: jest.fn().mockResolvedValue(makeCase()) } };
+      const prisma: any = { case: { findFirst: jest.fn().mockResolvedValue(makeCase()) }, claimItem: { findMany: jest.fn().mockResolvedValue([]) } };
       const service = new DocumentTemplateService(prisma);
 
       await service.prepareVariablesFromCase('case-1', 'tenant-A');

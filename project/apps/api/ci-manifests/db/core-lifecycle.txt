@@ -401,3 +401,4 @@ src/modules/claim-item/__tests__/claim-item-interest-status-team-removal.http.db
 src/modules/case/__tests__/due-canonical-item-guard.http.db-gated.integration.spec.ts
 # Due ekleme ve kaleme ulasmayan etkili Due degisiklikleri iki kisi onayina tabidir (owner karari 19.11.2026): gercek HTTP + gercek onay; onaylanmamis kayit borca / hesap ozetine / UYAP eslemesine girmez.
 src/modules/case/__tests__/due-change-approval.http.db-gated.integration.spec.ts
+src/modules/case/__tests__/due-derived-outputs-canonical.http.db-gated.integration.spec.ts

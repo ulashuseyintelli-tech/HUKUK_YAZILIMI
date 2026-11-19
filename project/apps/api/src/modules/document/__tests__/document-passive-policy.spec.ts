@@ -33,6 +33,7 @@ describe("PR-RE2 document passive policy", () => {
   it("DocumentService ACTIVE-only debtor filtresi ve tenant-safe lookup kullanir", async () => {
     const prisma: any = {
       case: { findFirst: jest.fn().mockResolvedValue(makeCase([activeCaseDebtor])) },
+      claimItem: { findMany: jest.fn().mockResolvedValue([]) },
     };
     const service = new DocumentService(prisma, {} as any);
 
@@ -54,6 +55,7 @@ describe("PR-RE2 document passive policy", () => {
   it("DocumentService all-PASSIVE case icin kontrollu hata verir", async () => {
     const prisma: any = {
       case: { findFirst: jest.fn().mockResolvedValue(makeCase([])) },
+      claimItem: { findMany: jest.fn().mockResolvedValue([]) },
     };
     const service = new DocumentService(prisma, {} as any);
 
@@ -65,6 +67,7 @@ describe("PR-RE2 document passive policy", () => {
   it("DocumentTemplateService template degiskenlerinde ACTIVE-only debtor kullanir", async () => {
     const prisma: any = {
       case: { findFirst: jest.fn().mockResolvedValue(makeCase([activeCaseDebtor])) },
+      claimItem: { findMany: jest.fn().mockResolvedValue([]) },
       documentTemplate: {
         findUnique: jest.fn().mockResolvedValue({
           templateContent: "Borclu: {{debtor.name}}",

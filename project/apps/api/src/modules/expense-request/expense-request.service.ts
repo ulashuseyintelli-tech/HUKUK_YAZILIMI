@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException, ForbiddenException, Inject, forwardRef, Logger, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { DUE_OVERLAY_CLAIM_ITEM_SELECT, overlayDuesWithCanonicalItems } from '../case/due-canonical-overlay';
 import { ExpenseRequestStatus, ExpenseGateType, Prisma, BalanceLedgerType } from '@prisma/client';
 import { CaseBalanceService } from '@/modules/case-balance/case-balance.service';
 import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
@@ -916,10 +917,20 @@ export class ExpenseRequestService {
     }
 
     // Asıl alacak tutarını hesapla (dues veya claimItems'dan)
+    // Onaylı değer bağlı kanonik kalemden okunur (owner 19.11.2026): Due'daki eski tutar / vade yerine kalemin onaylı
+    // değeri matraha girer; bağlı kalemi iptal / feragat edilmiş Due matraha girmez. "Due varsa Due'lar, yoksa kalemler"
+    // sırası DEĞİŞMEDİ (karar ham Due satırlarına göre verilir).
+    const hasPrincipalDueRows = Boolean(caseItem.dues && caseItem.dues.length > 0);
+    const canonicalPrincipalDues = hasPrincipalDueRows
+      ? overlayDuesWithCanonicalItems(
+          caseItem.dues,
+          await this.prisma.claimItem.findMany({ where: { caseId, tenantId }, select: DUE_OVERLAY_CLAIM_ITEM_SELECT }),
+        ).dues
+      : [];
     let asilAlacak = 0;
-    if (caseItem.dues && caseItem.dues.length > 0) {
-      asilAlacak = caseItem.dues.reduce(
-        (sum: number, due: any) => sum + (due.amount?.toNumber() || 0),
+    if (hasPrincipalDueRows) {
+      asilAlacak = canonicalPrincipalDues.reduce(
+        (sum: number, due: any) => sum + Number(due.amount ?? 0),
         0
       );
     } else if (caseItem.claimItems && caseItem.claimItems.length > 0) {
@@ -945,8 +956,8 @@ export class ExpenseRequestService {
 
     // Takip öncesi faiz hesapla (basit hesaplama - vade tarihi varsa)
     let takipOncesiFaiz = 0;
-    if (caseItem.dues && caseItem.dues.length > 0) {
-      const firstDue = caseItem.dues[0];
+    if (canonicalPrincipalDues.length > 0) {
+      const firstDue = canonicalPrincipalDues[0];
       if (firstDue.dueDate && caseItem.caseDate) {
         const vadeTarihi = new Date(firstDue.dueDate);
         const takipTarihi = new Date(caseItem.caseDate);

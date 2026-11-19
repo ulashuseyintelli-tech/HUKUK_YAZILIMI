@@ -6,6 +6,7 @@ import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
+import { DUE_OVERLAY_CLAIM_ITEM_SELECT, overlayDuesWithCanonicalItems } from "../case/due-canonical-overlay";
 import { maskEmail } from "../../common/pii-mask.util";
 import { AuditService } from "../audit/audit.service";
 import { OfficeApprovalService } from "../office-approval/office-approval.service";
@@ -679,11 +680,20 @@ export class PortalService {
       throw new NotFoundException("Dosya bulunamadı");
     }
 
+    // Kalem görünümü onaylı değeri bağlı kanonik kalemden okur (owner 19.11.2026): kalem ekranından onaylanan tutar /
+    // vade / faiz Due satırına geri yazılmaz; müvekkile Due'daki eski değer yerine kalemin onaylı değeri gösterilir.
+    // Bağlı kalemi onayla iptal / feragat edilmiş Due listelenmez. Yanıt biçimi (alan kümesi) DEĞİŞMEDİ.
+    const dues = overlayDuesWithCanonicalItems(
+      caseData.dues,
+      await this.prisma.claimItem.findMany({ where: { caseId, tenantId }, select: DUE_OVERLAY_CLAIM_ITEM_SELECT }),
+    ).dues;
+
     // CLIENT-P2-U03-TRACK-A-I02: ham asset-query alanları curated assetQuery objesine
     // dönüştürülür ve response'tan çıkarılır — assetVehicle/assetRealEstate/assetBank/
     // assetSgkWage/assetLastQueryAt hiçbir koşulda client response'unda KALMAZ.
     return {
       ...caseData,
+      dues,
       debtors: caseData.debtors.map((d) => {
         const { assetVehicle, assetRealEstate, assetBank, assetSgkWage, assetLastQueryAt, ...rest } = d;
         return {
