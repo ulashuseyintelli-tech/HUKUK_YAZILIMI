@@ -27,9 +27,10 @@ describe("api — dosyadan takip talebi indirme (UB-6)", () => {
   ] as const)("%s: /api/template-engine/case/:id/%s?type=takip-talebi + sessionStorage oturum anahtarı", async (helper, segment) => {
     api.setToken("oturum-anahtari-sentetik", false);
     const blob = await (api as any)[helper]("case-1", "takip-talebi");
-    // `Response.blob()` Node (undici) Blob'u döner; jsdom'un global Blob'u farklı alandandır → instanceof yerine etiket + içerik.
+    // `Response.blob()` ortama göre Node (undici) ya da jsdom Blob'u döner (farklı alanlar; jsdom Blob'unda .text() yok)
+    // → instanceof / .text() yerine iki ortamda da olan etiket + boyut ("sentetik" = 8 bayt).
     expect(Object.prototype.toString.call(blob)).toBe("[object Blob]");
-    expect(await blob.text()).toBe("sentetik");
+    expect(blob.size).toBe(8);
     const [url, init] = fetchSpy.mock.calls[0];
     expect(String(url)).toMatch(new RegExp(`/api/template-engine/case/case-1/${segment}\\?type=takip-talebi$`));
     expect((init as RequestInit).headers).toMatchObject({ Authorization: "Bearer oturum-anahtari-sentetik" });
