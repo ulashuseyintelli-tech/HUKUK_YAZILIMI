@@ -59,9 +59,11 @@ export class UyapExportController {
     );
 
     if (!result.success || !result.xml) {
+      // K-3: hata metni `message` alanında (web istemcisi bu alanı kullanıcıya gösterir).
       return res.status(HttpStatus.BAD_REQUEST).json({
         success: false,
         errors: result.errors,
+        message: `UYAP dosyası oluşturulamadı: ${(result.errors ?? []).join(' · ') || 'bilinmeyen hata'}`,
       });
     }
 
@@ -104,10 +106,13 @@ export class UyapExportController {
       dto.includeDocuments,
     );
 
-    if (!result.success || !result.xml) {
+    // K-3 (owner 22.11.2026): indirme yolunda seçilen dosyalardan biri bile doğrulamadan geçmezse HİÇBİR dosya
+    // indirilmez; eski davranış hatalı dosyayı sessizce atlayıp kalanları indiriyordu (hata kullanıcıya ulaşmıyordu).
+    if (!result.success || !result.xml || (result.errors?.length ?? 0) > 0) {
       return res.status(HttpStatus.BAD_REQUEST).json({
         success: false,
         errors: result.errors,
+        message: `UYAP dosyası oluşturulamadı, hiçbir dosya indirilmedi: ${(result.errors ?? []).join(' · ') || 'bilinmeyen hata'}`,
       });
     }
 
