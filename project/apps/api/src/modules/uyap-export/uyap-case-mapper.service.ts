@@ -192,8 +192,8 @@ export class UyapCaseMapperService {
       takipTalepleri.push(talep);
     }
 
-    // Ortak vekilleri topla
-    const ortakVekiller = await this.getOrtakVekiller(tenantId);
+    // Ortak vekiller: dışa aktarılan dosyaların HER BİRİNİN dosya ekibindeki etkin avukatlar (F02 kabul UB-8)
+    const ortakVekiller = await this.getOrtakVekiller(caseIds, tenantId);
 
     return {
       versiyon: '1.0',
@@ -215,12 +215,15 @@ export class UyapCaseMapperService {
     client: Client & { addresses?: ClientAddress[] },
     rol: UyapTarafRolu,
   ): UyapTaraf {
+    // Gerçek kişi müvekkil güncel kayıtta PERSON, eski kayıtta INDIVIDUAL (@deprecated) türündedir; ikisi de gerçek
+    // kişidir (F02 kabul UB-8: yalnız INDIVIDUAL'ı tanımak PERSON müvekkili TUZEL_KISI + unvan yapıyordu).
+    const gercekKisi = client.type === 'PERSON' || client.type === 'INDIVIDUAL';
     const kisi: UyapKisi = {
       kimlikNo: client.tckn || client.vkn || '',
-      kisiTipi: client.type === 'INDIVIDUAL' ? 'GERCEK_KISI' : 'TUZEL_KISI',
+      kisiTipi: gercekKisi ? 'GERCEK_KISI' : 'TUZEL_KISI',
     };
 
-    if (client.type === 'INDIVIDUAL') {
+    if (gercekKisi) {
       kisi.ad = client.firstName || '';
       kisi.soyad = client.lastName || '';
     } else {
@@ -579,14 +582,36 @@ export class UyapCaseMapperService {
   // ==========================================
 
   /**
-   * Tenant'ın tüm avukatlarını ortak vekil olarak getir
+   * Ortak vekiller: dışa aktarılan dosyaların HER BİRİNİN dosya ekibinde (CaseLawyer) yer alan, aynı bürodaki etkin
+   * avukatlar (kesişim). Büronun dosya ekibinde olmayan avukatı XML'e girmez; ortak avukat yoksa liste boştur ve büro
+   * avukatlarıyla doldurulmaz (F02 kabul UB-8, 21.11.2026 — önceki sürüm büronun bütün etkin avukatlarını yazıyordu).
+   * Sıra: büro avukat sırası (sortOrder), eşitlikte kimlik.
    */
-  private async getOrtakVekiller(tenantId: string): Promise<UyapVekil[]> {
-    const lawyers = await this.prisma.lawyer.findMany({
-      where: { tenantId, isActive: true },
+  private async getOrtakVekiller(caseIds: string[], tenantId: string): Promise<UyapVekil[]> {
+    const uniqueCaseIds = Array.from(new Set(caseIds));
+    if (uniqueCaseIds.length === 0) return [];
+
+    const rows = await this.prisma.caseLawyer.findMany({
+      where: {
+        caseId: { in: uniqueCaseIds },
+        case: { tenantId },
+        lawyer: { tenantId, isActive: true },
+      },
+      include: { lawyer: true },
     });
 
-    return lawyers.map((lawyer) => this.mapLawyerToVekil(lawyer));
+    const byLawyer = new Map<string, { lawyer: Lawyer; caseIds: Set<string> }>();
+    for (const row of rows) {
+      const entry = byLawyer.get(row.lawyer.id) ?? { lawyer: row.lawyer, caseIds: new Set<string>() };
+      entry.caseIds.add(row.caseId);
+      byLawyer.set(row.lawyer.id, entry);
+    }
+
+    return Array.from(byLawyer.values())
+      .filter((entry) => entry.caseIds.size === uniqueCaseIds.length)
+      .map((entry) => entry.lawyer)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id.localeCompare(b.id))
+      .map((lawyer) => this.mapLawyerToVekil(lawyer));
   }
 
   /**
