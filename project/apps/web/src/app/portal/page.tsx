@@ -26,6 +26,7 @@ import { FileText, Clock, Loader2, RefreshCw, AlertTriangle } from "lucide-react
 // production'da fail-fast). CLIENT-CONFIG-P01 ile aynı sözleşme.
 import { portalApiUrl } from "@/lib/config/portal-api-url";
 import { toActionErrorMessage } from "@/lib/action-error";
+import { formatPortalPrincipalAmount } from "@/lib/portal-principal-amount";
 
 
 export default function PortalHomePage() {
@@ -228,7 +229,9 @@ export default function PortalHomePage() {
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="font-medium">{Number(c.principalAmount || 0).toLocaleString("tr-TR")} ₺</p>
+                  {/* F02 kabul K-4: alan yalnız asıl alacağı temsil eder (toplam borç değil); bilinmiyorsa 0 yazılmaz */}
+                  <p className="text-xs text-gray-500">Asıl alacak</p>
+                  <p className="font-medium">{formatPortalPrincipalAmount(c.principalAmount)}</p>
                   <p className="text-xs text-gray-500">{new Date(c.caseDate).toLocaleDateString("tr-TR")}</p>
                 </div>
               </div>

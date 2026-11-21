@@ -57,11 +57,11 @@ describe("Portal case-list page — CLIENT-P2-U03-TRACK-B-U00B explicit projecti
     expect(screen.getByText("Derdest")).toBeTruthy();
   });
 
-  it("[2] 'Alacak' kolonu (principalAmount) render edilmeye devam eder", async () => {
+  it("[2] 'Asıl Alacak' kolonu (principalAmount) render edilmeye devam eder (F02 kabul K-4: toplam borç diye etiketlenmez)", async () => {
     stubFetch({ ok: true, json: async () => APPROVED_CASE_LIST });
     render(<PortalCasesPage />);
     await waitFor(() => expect(screen.getByText("2026/123")).toBeTruthy());
-    expect(screen.getByText("Alacak")).toBeTruthy();
+    expect(screen.getByText("Asıl Alacak")).toBeTruthy();
     expect(screen.getByText("1.000 ₺")).toBeTruthy();
   });
 
@@ -90,7 +90,7 @@ describe("Portal case-list page — CLIENT-P2-U03-TRACK-B-U00B explicit projecti
     stubFetch({ ok: true, json: async () => [withoutCollections] });
     render(<PortalCasesPage />);
     await waitFor(() => expect(screen.getByText("2026/123")).toBeTruthy());
-    expect(screen.getByText("Alacak")).toBeTruthy();
+    expect(screen.getByText("Asıl Alacak")).toBeTruthy();
   });
 
   it("[6] mevcut arama/filtreleme davranışı korunur (dosya no ile filtrelenir)", async () => {

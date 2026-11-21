@@ -10,6 +10,7 @@ import { FileText, Search, Loader2, ChevronRight, RefreshCw, AlertTriangle } fro
 // production'da fail-fast). CLIENT-CONFIG-P01 ile aynı sözleşme.
 import { portalApiUrl } from "@/lib/config/portal-api-url";
 import { toActionErrorMessage } from "@/lib/action-error";
+import { formatPortalPrincipalAmount, PORTAL_PRINCIPAL_COLUMN_LABEL } from "@/lib/portal-principal-amount";
 
 
 const statusLabels: Record<string, string> = {
@@ -195,7 +196,8 @@ export default function PortalCasesPage() {
               <th className="text-left px-4 py-3 font-medium text-gray-600">Dosya No</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Borçlu</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Durum</th>
-              <th className="text-right px-4 py-3 font-medium text-gray-600">Alacak</th>
+              {/* F02 kabul K-4: kayıtlı asıl alacak (principalAmount); toplam borç DEĞİLDİR */}
+              <th className="text-right px-4 py-3 font-medium text-gray-600">{PORTAL_PRINCIPAL_COLUMN_LABEL}</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Tarih</th>
               <th className="px-4 py-3"></th>
             </tr>
@@ -214,7 +216,7 @@ export default function PortalCasesPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right font-medium">
-                    {Number(c.principalAmount || 0).toLocaleString("tr-TR")} ₺
+                    {formatPortalPrincipalAmount(c.principalAmount)}
                   </td>
                   <td className="px-4 py-3 text-gray-500">
                     {new Date(c.caseDate).toLocaleDateString("tr-TR")}
