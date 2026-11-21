@@ -10,6 +10,8 @@ import { ArrowLeft, FileText, User, Loader2, Clock, StickyNote, RefreshCw, Alert
 // production'da fail-fast). CLIENT-CONFIG-P01 ile aynı sözleşme.
 import { portalApiUrl } from "@/lib/config/portal-api-url";
 import { toActionErrorMessage } from "@/lib/action-error";
+import { dueTypeLabel } from "@/lib/due-type-labels";
+import { debtorTypeLabel } from "@/lib/debtor-type-labels";
 
 
 const statusLabels: Record<string, string> = {
@@ -341,7 +343,10 @@ export default function PortalCaseDetailPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium">{d.debtor?.name}</p>
-                      <p className="text-sm text-gray-500">{d.debtor?.type === "PERSON" ? "Şahıs" : "Kurum"}</p>
+                      {/* F02 kabul UB-9: sunucunun gerçek kişi değeri INDIVIDUAL'dır; tanınmayan tür uydurulmaz */}
+                      {debtorTypeLabel(d.debtor?.type) && (
+                        <p className="text-sm text-gray-500">{debtorTypeLabel(d.debtor?.type)}</p>
+                      )}
                       {d.role && (
                         <p className="text-sm text-gray-500">{debtorRoleLabels[d.role] || DEBTOR_ROLE_FALLBACK_LABEL}</p>
                       )}
@@ -394,7 +399,7 @@ export default function PortalCaseDetailPage() {
                 {caseData.dues.map((d: any) => (
                   <div key={d.id} className="p-2 bg-gray-50 rounded">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm">{d.type}</span>
+                      <span className="text-sm">{dueTypeLabel(d.type)}</span>
                       <span className="font-medium">{Number(d.amount).toLocaleString("tr-TR")} ₺</span>
                     </div>
 

@@ -7,6 +7,9 @@ import { formatAmountWithCurrency, formatDecimalString } from "./format";
 import { isNonEmptyString, isRecord } from "./guards";
 import { ATTORNEY_FEE_BASIS_LABELS, type AttorneyFeeBasis, INTEREST_ACCRUAL_STATUS_LABELS } from "@/components/claim-item/claim-item-labels";
 import { getInterestReadDisplayLabel } from "@/lib/interest-type-resolver";
+// Kalem türü adları ortak kaynaktan (portal da aynı adları kullanır; F02 kabul UB-9). Tanınmayan tür bu özette
+// "unsafe" kalır (aşağıda `DUE_TYPE_LABELS[value]` undefined → okunur özet üretilmez).
+import { DUE_TYPE_LABELS } from "@/lib/due-type-labels";
 
 export const CASE_DUE_CHANGE_INTENT_VERSION = "CASE_DUE_CHANGE_V1";
 export const CASE_DUE_CHANGE_OPERATIONS = ["DUE_CREATE", "DUE_UPDATE", "DUE_DELETE"] as const;
@@ -14,22 +17,6 @@ export const CASE_DUE_CHANGE_OPERATIONS = ["DUE_CREATE", "DUE_UPDATE", "DUE_DELE
 export const CASE_DUE_CHANGE_UNSUPPORTED_REASON =
   "Bu dosya kalemi talebi tanınmayan bir alan ya da değer içeriyor; okunur özet üretilemiyor. Ayrıntı yalnız teknik bölümdedir.";
 
-const DUE_TYPE_LABELS: Record<string, string> = {
-  PRINCIPAL: "Ana Para (Asıl Alacak)",
-  INTEREST: "Faiz",
-  EXPENSE: "Masraf",
-  VEKALET_UCRETI: "Vekalet Ücreti",
-  HARC: "Harç",
-  TAZMINAT: "Tazminat",
-  CEZAI_SART: "Cezai Şart",
-  NAFAKA: "Nafaka",
-  KIRA: "Kira Alacağı",
-  AIDAT: "Aidat",
-  KOMISYON: "Komisyon",
-  PRIM: "Prim/İkramiye",
-  YARGILAMA_GIDERI: "Yargılama Gideri",
-  OTHER: "Diğer",
-};
 
 const IMPACT_CREATE = [
   "Onaylanınca dosya kalemi ve — türü eşleniyorsa — bağlı alacak kalemi oluşturulur ve borca girer.",
