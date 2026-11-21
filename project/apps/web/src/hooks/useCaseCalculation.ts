@@ -116,6 +116,12 @@ export interface CaseCalculationResult {
    */
   anaparasizKalemDokumu?: AnaparasizKalemDokumu;
   /**
+   * F02 kabul K-1 (owner 22.11.2026): anaparalı dosyada eski hesap yolunun AÇIKLAYICI kalem dökümü — eski yol faizi
+   * hesaplamaz ve asıl alacak dışı kalemleri toplamaz; varken faiz ve bağlı nihai toplamlar "hesaplanamadı" yazılır,
+   * kalemler kayıtlı tutarlarıyla dökülür (nihai borç DEĞİL). Yoksa gösterim değişmez.
+   */
+  anaparaliKalemDokumu?: AnaparaliKalemDokumu;
+  /**
    * K3-L KP-7: yalnız kanonik pilot (guarded primary) doldurur — Toplam tahsilat / Borca uygulanan / Dağıtım bekleyen,
    * hesap tarihi kapsamlı. Legacy yanıtta YOK (legacy panel "Tahsilat Düşümü" satırını gösterir).
    */
@@ -217,6 +223,12 @@ export interface AnaparasizKalemDokumu {
   faizDurumu: 'BELIRLENEMEDI' | 'HESAPLANMADI' | 'HESAPLANDI';
   nihaiBorcToplami: null;
   mesaj: string;
+}
+
+/** F02 kabul K-1: anaparalı dosya (eski hesap yolu) dökümü — biçim anaparasız dökümle aynı; gerekçe ayrı. */
+export interface AnaparaliKalemDokumu extends Omit<AnaparasizKalemDokumu, 'gerekce' | 'kanonikOtorite'> {
+  kanonikOtorite: 'ESKI_HESAP_YOLU';
+  gerekceler: Array<'ESKI_YOL_FAIZ_HESAPLAMAZ' | 'ESKI_YOL_KALEM_KAPSAMI_DISI'>;
 }
 
 /** K3-L KP-7 — kanonik tahsilat gösterimi (sunucu değerleri; istemci hesabı YOK). */

@@ -24,7 +24,7 @@ import {
   AlertCircle,
   RefreshCw,
 } from "lucide-react";
-import { useCaseCalculation, formatTL, formatDate, CaseCalculationResult, CheckPenaltySummary, FaizSegment, MahsupDetay, ParaBirimiAlani, TahsilatGosterimi, TalepEdilenIslemisFaiz, AnaparasizKalemDokumu, AnaparasizKalemFaizDurumu } from "@/hooks/useCaseCalculation";
+import { useCaseCalculation, formatTL, formatDate, CaseCalculationResult, CheckPenaltySummary, FaizSegment, MahsupDetay, ParaBirimiAlani, TahsilatGosterimi, TalepEdilenIslemisFaiz, AnaparasizKalemDokumu, AnaparaliKalemDokumu, AnaparasizKalemFaizDurumu } from "@/hooks/useCaseCalculation";
 import { useBalanceShadowDiff } from "@/hooks/useBalanceShadowDiff";
 import { turkeyToday } from "@/lib/turkey-calendar";
 import { OpeningExpenseNotice } from "@/components/expense/OpeningExpenseNotice";
@@ -203,7 +203,11 @@ export function HesapOzetiPanel({
   // Anaparasız dosya (sunucu kararı): kayıtlı kalem tutarları açıklayıcı dökümde; eski özetin toplamları bu dosyada
   // nihai borç değildir → rakam yerine "hesaplanamadı" (istemci hesabı YOK; kanonik gölge yükseltilmez).
   const anaparasizDokum = hesap.anaparasizKalemDokumu;
-  const nihaiToplamYok = Boolean(anaparasizDokum);
+  // F02 kabul K-1 (owner 22.11.2026): anaparalı dosyada eski yol faizi hesaplamaz ve asıl alacak dışı kalemleri toplamaz
+  // (sunucu kararı `anaparaliKalemDokumu`) → faiz ve bağlı nihai toplamlar "hesaplanamadı"; kalemler dökümde.
+  const anaparaliDokum = anaparasizDokum ? undefined : hesap.anaparaliKalemDokumu;
+  const anaparaliFaizMetniDegeri = anaparaliDokum ? anaparaliFaizMetni(anaparaliDokum) : null;
+  const nihaiToplamYok = Boolean(anaparasizDokum || anaparaliDokum);
   const toplamMetni = (ad: string, deger: number): string => (nihaiToplamYok ? 'hesaplanamadı' : tutar(ad, deger));
   // Takip sonrası faiz (sunucu kararı): anaparasız dosyada kalemlerin faiz durumu kanonik olarak belirsiz → eski özetin
   // yer tutucu 0'ı gösterilmez; dökümün faiz durumu aynı metinle yazılır (döküm ile eski bölüm aynı dosyada çelişmez).
@@ -215,10 +219,14 @@ export function HesapOzetiPanel({
     anaparasizDokum ? anaparasizFaizTutari(anaparasizDokum, alan) : null;
   const takipSonrasiFaizBelirsiz = anaparasizDokum
     ? dokumFaizTutari('sonrasi') == null
-    : typeof takipSonrasiFaizDegeri !== 'number' || !Number.isFinite(takipSonrasiFaizDegeri);
+    : anaparaliFaizMetniDegeri != null
+      ? anaparaliFaizMetniDegeri === 'hesaplanamadı'
+      : typeof takipSonrasiFaizDegeri !== 'number' || !Number.isFinite(takipSonrasiFaizDegeri);
   const takipSonrasiFaizMetni = anaparasizDokum
     ? anaparasizFaizMetni(anaparasizDokum, 'sonrasi')
-    : takipSonrasiFaizBelirsiz
+    : anaparaliFaizMetniDegeri != null
+      ? anaparaliFaizMetniDegeri
+      : takipSonrasiFaizBelirsiz
       ? 'belirlenemedi'
       : tutar('takipSonrasiFaiz', displayHesap.takipSonrasiFaiz);
   // Tutar yerine "gösterilemez" yazılan toplam satırı vurgulu tutar biçimiyle (büyük, renkli) basılmaz
@@ -309,6 +317,8 @@ export function HesapOzetiPanel({
       <div ref={scrollRef} className="px-3 py-2 space-y-0.5 text-xs">
         {/* Anaparasız dosya: kalem tutarları + faiz belirsiz + nihai toplam hesaplanamadı (sunucu dökümü) */}
         {anaparasizDokum && <AnaparasizKalemDokumuPanel dokum={anaparasizDokum} />}
+        {/* Anaparalı dosya (K-1): onaylı kalemler kayıtlı tutarlarıyla; faiz ve nihai toplam hesaplanamadı (sunucu dökümü) */}
+        {anaparaliDokum && <AnaparasizKalemDokumuPanel dokum={anaparaliDokum} faizMetni={anaparaliFaizMetniDegeri ?? undefined} />}
 
         {/* Asıl Alacak — birden fazla para birimindeyse tek sayıya toplanmaz; para birimi bazında ayrı satır (sunucu değerleri) */}
         {asilAlacakAyrik
@@ -336,7 +346,14 @@ export function HesapOzetiPanel({
                 <span data-testid="hesap-deger-takipOncesiFaiz" className="font-medium">{anaparasizFaizMetni(anaparasizDokum, 'oncesi')}</span>
               </div>
             )
-          : displayHesap.takipOncesiFaiz > 0 && <Row label="Takip Öncesi Faiz" value={displayHesap.takipOncesiFaiz} text={tutar('takipOncesiFaiz', displayHesap.takipOncesiFaiz)} />}
+          : anaparaliDokum
+            ? (
+              <div className="flex justify-between py-0.5">
+                <span className="text-gray-600">Takip Öncesi Faiz</span>
+                <span data-testid="hesap-deger-takipOncesiFaiz" className="font-medium text-gray-500">{anaparaliFaizMetniDegeri}</span>
+              </div>
+            )
+            : displayHesap.takipOncesiFaiz > 0 && <Row label="Takip Öncesi Faiz" value={displayHesap.takipOncesiFaiz} text={tutar('takipOncesiFaiz', displayHesap.takipOncesiFaiz)} />}
 
         {/* K3-L KP-3 / TK-7: talep edilmiş işlemiş faiz — varlığı ve tutarı açık; hesaba DAHİL EDİLMEDİ (sunucu değeri) */}
         <ClaimedInterestInfo info={hesap?.talepEdilenIslemisFaiz} />
@@ -557,7 +574,7 @@ const FAIZ_DURUMU_METNI: Record<AnaparasizKalemFaizDurumu, string> = {
 type DokumFaizAlani = 'toplam' | 'oncesi' | 'sonrasi';
 
 /** D1: dökümün faiz toplamı — YALNIZ tek para biriminde ve sunucu doldurduysa; aksi halde null (istemci hesabı yok). */
-function anaparasizFaizTutari(dokum: AnaparasizKalemDokumu, alan: DokumFaizAlani): number | null {
+function anaparasizFaizTutari(dokum: AnaparasizKalemDokumu | AnaparaliKalemDokumu, alan: DokumFaizAlani): number | null {
   if (dokum.faizDurumu !== 'HESAPLANDI' || dokum.paraBirimleri.length !== 1) return null;
   const pb = dokum.paraBirimleri[0];
   const deger = alan === 'toplam' ? pb.faizToplami : alan === 'oncesi' ? pb.takipOncesiFaizToplami : pb.takipSonrasiFaizToplami;
@@ -568,7 +585,7 @@ function anaparasizFaizTutari(dokum: AnaparasizKalemDokumu, alan: DokumFaizAlani
  * Dökümün faiz satırı ile eski bölümün takip öncesi / sonrası faiz satırları AYNI kaynaktan yazılır (iki bölüm çelişmez).
  * Belirsizse "belirlenemedi", hesaplanamadıysa "hesaplanmadı"; hesaplandıysa açıklayıcı tutar (gerçek sıfır 0,00 ₺).
  */
-function anaparasizFaizMetni(dokum: AnaparasizKalemDokumu, alan: DokumFaizAlani = 'toplam'): string {
+function anaparasizFaizMetni(dokum: AnaparasizKalemDokumu | AnaparaliKalemDokumu, alan: DokumFaizAlani = 'toplam'): string {
   if (dokum.faizDurumu === 'BELIRLENEMEDI') return 'belirlenemedi';
   if (dokum.faizDurumu !== 'HESAPLANDI') return 'hesaplanmadı';
   if (dokum.paraBirimleri.length !== 1) return 'para birimi bazında (dökümde)';
@@ -580,7 +597,19 @@ function anaparasizFaizMetni(dokum: AnaparasizKalemDokumu, alan: DokumFaizAlani 
  * Anaparasız dosya açıklayıcı dökümü — kayıtlı kalem tutarları (sunucu değerleri), "Kalem tutarları toplamı" ile
  * "Nihai borç toplamı" AYRI; faiz belirlenemedi; nihai borç hesaplanamadı. Kesin hesap / nihai mali kabul DEĞİLDİR.
  */
-export function AnaparasizKalemDokumuPanel({ dokum }: { dokum: AnaparasizKalemDokumu }) {
+/**
+ * F02 kabul K-1: anaparalı dosyada eski hesap yolu faizi hesaplamaz → faiz metni "hesaplanamadı"; yalnız her kalemin faizi
+ * kayıtlı olarak işlemezse (sunucu faiz toplamı 0) gerçek sıfır yazılır. İstemci faiz hesaplamaz.
+ */
+function anaparaliFaizMetni(dokum: AnaparaliKalemDokumu): string {
+  if (dokum.faizDurumu === 'HESAPLANDI' && dokum.paraBirimleri.length === 1) {
+    const deger = dokum.paraBirimleri[0].faizToplami;
+    if (typeof deger === 'number' && Number.isFinite(deger)) return formatParaBirimli(deger, dokum.paraBirimleri[0].paraBirimi);
+  }
+  return 'hesaplanamadı';
+}
+
+export function AnaparasizKalemDokumuPanel({ dokum, faizMetni }: { dokum: AnaparasizKalemDokumu | AnaparaliKalemDokumu; faizMetni?: string }) {
   return (
     <div data-testid="hesap-anaparasiz-dokum" className="mb-2 rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-amber-900">
       <div className="font-semibold">Kalem tutarları (açıklayıcı döküm)</div>
@@ -627,7 +656,7 @@ export function AnaparasizKalemDokumuPanel({ dokum }: { dokum: AnaparasizKalemDo
       ))}
       <div className="flex justify-between py-0.5">
         <span>Faiz</span>
-        <span data-testid="hesap-anaparasiz-faiz">{anaparasizFaizMetni(dokum)}</span>
+        <span data-testid="hesap-anaparasiz-faiz">{faizMetni ?? anaparasizFaizMetni(dokum)}</span>
       </div>
       <div className="flex justify-between border-t border-amber-300 py-0.5 font-bold">
         <span>Nihai borç toplamı</span>

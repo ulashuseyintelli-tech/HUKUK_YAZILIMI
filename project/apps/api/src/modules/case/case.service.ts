@@ -98,6 +98,7 @@ import {
   buildUnavailableCaseCalculationSummaryCompatibilityAdapter,
 } from "./case-calculation-summary.compatibility";
 import { buildAnaparasizKalemDokumu } from "./case-calculation-summary.principal-free";
+import { ANAPARALI_DOKUM_KALEM_SELECT, buildAnaparaliKalemDokumu } from "./case-calculation-summary.principal-legacy";
 import { buildCalculationSummaryCurrencyStatus } from "./case-calculation-summary-currency";
 import { assertCaseClaimCurrency } from "../claim-item/case-claim-currency-policy";
 import { resolveInitialPolicy } from "../interest-engine/interest-strategy.config";
@@ -6139,12 +6140,26 @@ export class CaseService {
     // Anaparasız dosya: kayıtlı kalem tutarları açıklayıcı döküm olarak eklenir; eski alanlar DEĞİŞMEZ. Ekran, bu alan
     // varken eski toplamları nihai borç gibi göstermez (nihai toplam hesaplanamadı). Yalnız doluyken yazılır.
     const anaparasizKalemDokumu = buildAnaparasizKalemDokumu(canonicalDisplay);
+    // F02 kabul K-1 (owner 22.11.2026, seçenek A): anaparalı dosyada eski yol faizi hesaplamaz ve asıl alacak dışındaki
+    // kalemleri toplamaya almaz → onaylı kalemlerin açıklayıcı dökümü EKLENİR (yalnız eski toplam güvenilir değilken).
+    // Eski alanlar ve kanonik gölge DEĞİŞMEZ; ekran bu alan varken faizi ve bağlı nihai toplamları "hesaplanamadı" yazar.
+    const anaparaliKalemDokumu = anaparasizKalemDokumu
+      ? undefined
+      : buildAnaparaliKalemDokumu({
+          items: await this.prisma.claimItem.findMany({
+            where: { caseId, tenantId },
+            select: ANAPARALI_DOKUM_KALEM_SELECT,
+            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+          }),
+          caseCurrency: legacyCurrency,
+        });
 
     return {
       ...legacySummary,
       canonicalShadow,
       canonicalCompatibility,
       ...(anaparasizKalemDokumu ? { anaparasizKalemDokumu } : {}),
+      ...(anaparaliKalemDokumu ? { anaparaliKalemDokumu } : {}),
     };
   }
 
