@@ -120,14 +120,14 @@ function faizToplamlari(kalemler: AnaparasizKalemDokumuKalem[]) {
 }
 
 /** Kayıtlı `attorneyFeeBasis` → döküm değeri. Açıklama metnine BAKILMAZ (owner K1: çıkarım yok). */
-function vekaletUcretiKaynagi(itemType: unknown, basis: unknown): AnaparasizVekaletUcretiKaynagi | undefined {
+export function vekaletUcretiKaynagi(itemType: unknown, basis: unknown): AnaparasizVekaletUcretiKaynagi | undefined {
   if (itemType !== 'ATTORNEY_FEE') return undefined;
   if (basis === 'JUDGMENT_AWARDED') return 'ILAM';
   if (basis === 'ENFORCEMENT_TARIFF') return 'TAKIP';
   return 'BILINMIYOR';
 }
 
-const VEKALET_KAYNAK_ETIKET: Record<AnaparasizVekaletUcretiKaynagi, string> = {
+export const VEKALET_KAYNAK_ETIKET: Record<AnaparasizVekaletUcretiKaynagi, string> = {
   ILAM: 'İlam Vekâlet Ücreti (alacak kalemi)',
   TAKIP: 'Takip Vekâlet Ücreti (kayıtlı kalem)',
   BILINMIYOR: 'Vekâlet Ücreti (alacak kalemi; türü belirtilmemiş)',
