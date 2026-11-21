@@ -1706,28 +1706,18 @@ export default function CaseDetailPage() {
     if (!caseData?.id) return;
     try {
       setDownloadingDoc(format);
-      
-      // Doğrudan fetch kullan (blob response için)
-      const token = localStorage.getItem('token');
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/template-engine/cases/${caseData.id}/documents/${format}?type=takip-talebi`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({}),
-        }
-      );
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Doküman oluşturulamadı');
-      }
-      
+
+      // F02 kabul UB-6: API istemcisinin dosyadan takip talebi yardımcıları (GET /api/template-engine/case/:id/…;
+      // oturum anahtarı merkezi depolamadan). Eski adres (`/api` öneksiz POST /template-engine/cases/:id/documents/…)
+      // API'de yoktu ve yalnız localStorage anahtarını okuyordu.
+      const blob =
+        format === 'pdf'
+          ? await api.downloadPdfFromCase(caseData.id, 'takip-talebi')
+          : format === 'docx'
+            ? await api.downloadWordFromCase(caseData.id, 'takip-talebi')
+            : await api.downloadXmlFromCase(caseData.id, 'takip-talebi');
+
       // Dosyayı indir
-      const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;

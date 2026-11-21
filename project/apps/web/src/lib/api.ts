@@ -1670,31 +1670,47 @@ class ApiClient {
   }
 
   /**
-   * Case ID'den PDF indir
+   * Dosyadan belge (GET /api/template-engine/case/:id/:format?type=…). Oturum anahtarı merkezi depolamadan
+   * (sessionStorage / localStorage); hata yanıtında sunucunun metni taşınır (F02 kabul UB-6).
    */
-  async downloadPdfFromCase(caseId: string, documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi'): Promise<Blob> {
+  private async getCaseTemplateBlob(
+    caseId: string,
+    format: 'pdf' | 'word' | 'xml',
+    documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri',
+    fallbackMessage: string,
+  ): Promise<Blob> {
     const token = this.getToken();
-    const response = await fetch(`${this.getApiUrl()}/api/template-engine/case/${caseId}/pdf?type=${documentType}`, {
+    const response = await fetch(`${this.getApiUrl()}/api/template-engine/case/${caseId}/${format}?type=${documentType}`, {
       headers: {
         ...(token && { Authorization: `Bearer ${token}` }),
       },
     });
-    if (!response.ok) throw new Error("PDF indirme hatası");
+    if (!response.ok) throw buildApiHttpError(await readErrorBody(response), response.status, fallbackMessage);
     return response.blob();
   }
 
   /**
+   * Case ID'den PDF indir
+   * /// <remarks>Çağrıldığı yerler: dosya detay başlığı "PDF İndir"</remarks>
+   */
+  async downloadPdfFromCase(caseId: string, documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi'): Promise<Blob> {
+    return this.getCaseTemplateBlob(caseId, 'pdf', documentType, "PDF indirme hatası");
+  }
+
+  /**
    * Case ID'den Word indir
+   * /// <remarks>Çağrıldığı yerler: dosya detay başlığı "Word İndir"</remarks>
    */
   async downloadWordFromCase(caseId: string, documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi'): Promise<Blob> {
-    const token = this.getToken();
-    const response = await fetch(`${this.getApiUrl()}/api/template-engine/case/${caseId}/word?type=${documentType}`, {
-      headers: {
-        ...(token && { Authorization: `Bearer ${token}` }),
-      },
-    });
-    if (!response.ok) throw new Error("Word indirme hatası");
-    return response.blob();
+    return this.getCaseTemplateBlob(caseId, 'word', documentType, "Word indirme hatası");
+  }
+
+  /**
+   * Case ID'den XML indir
+   * /// <remarks>Çağrıldığı yerler: dosya detay başlığı "XML İndir"</remarks>
+   */
+  async downloadXmlFromCase(caseId: string, documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi'): Promise<Blob> {
+    return this.getCaseTemplateBlob(caseId, 'xml', documentType, "XML indirme hatası");
   }
 
   /**
