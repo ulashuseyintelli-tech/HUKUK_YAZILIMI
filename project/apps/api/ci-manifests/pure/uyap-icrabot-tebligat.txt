@@ -200,6 +200,7 @@ src/modules/uyap-export/__tests__/uyap-case-mapper.debtor-role-mapping.spec.ts
 src/modules/uyap-export/__tests__/uyap-case-mapper-creditor-address.spec.ts
 src/modules/uyap-export/__tests__/uyap-case-mapper.kisi-turu-ortak-vekil.spec.ts
 src/modules/uyap-export/__tests__/uyap-export-passive-policy.spec.ts
+src/modules/uyap-export/__tests__/uyap-export.gercek-kisi-ad-soyad.spec.ts
 src/modules/uyap-export/projection/__tests__/batch-faizt-readiness.contract.spec.ts
 src/modules/uyap-export/projection/__tests__/due-claimitem-relation.classifier.spec.ts
 src/modules/uyap-export/projection/__tests__/faizt-interest-projection.adapter.spec.ts

@@ -5,6 +5,19 @@ import { UyapCaseMapperService } from './uyap-case-mapper.service';
 import { UyapDocumentService } from './uyap-document.service';
 import { ExportResultDto } from './dto/uyap-export.dto';
 
+/** Gerçek kişinin ad VE soyadı ayrı alanlarda (boşluk dışı) kayıtlı mı. Tam ad (`name`) yerine GEÇMEZ. */
+function hasSeparateFullName(person: { firstName?: string | null; lastName?: string | null }): boolean {
+  return Boolean(person.firstName?.trim()) && Boolean(person.lastName?.trim());
+}
+
+/** K-3 hata metni: taraf, nedeni ve kullanıcının yapacağı düzeltme (kayıt kartında ad / soyad). */
+function missingSeparateNameError(rol: 'Müvekkil' | 'Borçlu', gorunenAd: string | null | undefined, kart: 'Müvekkil' | 'Borçlu'): string {
+  return (
+    `${rol} "${gorunenAd || '-'}": gerçek kişi ad ve soyadı ayrı alanlarda kayıtlı değil. UYAP e-Takip dosyası gerçek ` +
+    `kişide ad ve soyad ister; tam addan bölme yapılmaz. ${kart} kartında ad ve soyadı girip yeniden deneyin.`
+  );
+}
+
 /**
  * UYAP e-Takip Export Orchestration Service
  * 
@@ -203,6 +216,11 @@ export class UyapExportService {
         if (!client.tckn && !client.vkn) {
           warnings.push(`Müvekkil ${client.displayName || client.name}: Kimlik numarası eksik`);
         }
+        // K-3 (owner 22.11.2026): resmî UYAP exchange.dtd gerçek kişide `ad` ve `soyad` ZORUNLU tutar
+        // (kisiTumBilgileri). Ayrı alanlarda yoksa dışa aktarım durur; tam addan bölme yapılmaz.
+        if ((client.type === 'PERSON' || client.type === 'INDIVIDUAL') && !hasSeparateFullName(client)) {
+          errors.push(missingSeparateNameError('Müvekkil', client.displayName || client.name, 'Müvekkil'));
+        }
       }
     }
 
@@ -214,6 +232,10 @@ export class UyapExportService {
         const debtor = cd.debtor;
         if (!debtor.tckn && !debtor.vkn && !debtor.identityNo) {
           warnings.push(`Borçlu ${debtor.name}: Kimlik numarası eksik`);
+        }
+        // K-3: gerçek kişi borçlu (INDIVIDUAL) için aynı kural; kurum / kamu / tereke yolları değişmez.
+        if (debtor.type === 'INDIVIDUAL' && !hasSeparateFullName(debtor)) {
+          errors.push(missingSeparateNameError('Borçlu', debtor.name, 'Borçlu'));
         }
       }
     }
