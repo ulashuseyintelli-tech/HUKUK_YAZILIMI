@@ -117,6 +117,7 @@ describeDb("F02-B dilim 3 — GET /tasks görünüm kapsamı (gerçek HTTP + tek
     else process.env[TASK_VIEW_SCOPE_FLAG] = originalFlag;
     await app?.close();
     await db.permissionGrant.deleteMany({ where: { tenantId } }).catch(() => undefined);
+    await db.taskHistoryEvent.deleteMany({ where: { tenantId } }).catch(() => undefined); // F03-A2: geçmiş satırları göreve Restrict FK ile bağlı → görevden önce silinir
     await db.task.deleteMany({ where: { tenantId } }).catch(() => undefined);
     await db.case.deleteMany({ where: { tenantId } }).catch(() => undefined);
     await db.staffMember.deleteMany({ where: { tenantId } }).catch(() => undefined); // Tenant FK yok

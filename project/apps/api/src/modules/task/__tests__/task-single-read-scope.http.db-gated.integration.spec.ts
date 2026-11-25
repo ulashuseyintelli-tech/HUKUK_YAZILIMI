@@ -76,6 +76,7 @@ describeDb("F02 P3 tarama S10 — tek görev okuması görev kapsamı + gömül�
     caseFlag.restore();
     await app?.close();
     await w?.cleanup(async (tenants) => {
+      await db.taskHistoryEvent.deleteMany({ where: { tenantId: { in: tenants } } }).catch(() => undefined); // F03-A2: geçmiş satırları göreve Restrict FK ile bağlı → görevden önce silinir
       await db.task.deleteMany({ where: { tenantId: { in: tenants } } }).catch(() => undefined);
     });
     await db.$disconnect();

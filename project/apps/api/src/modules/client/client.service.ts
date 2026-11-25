@@ -9,6 +9,7 @@ import { ClientNotificationHistoryAccessService } from '../client-notification/c
 import { buildClientFieldDiff, buildContactsDiff, buildClientRemoveSnapshot } from './client-audit.util';
 import { Prisma } from '@prisma/client';
 import { partyDb, runPartyWrite, type PartyWriteTxContext } from '../../common/party-write-tx';
+import { TASK_HISTORY_PRODUCER_CLIENT_CONTACT, diffTaskHistory, newTaskHistoryCorrelationId, systemTaskHistoryRow } from '../task/task-history';
 import {
   assertChangedIdentityChecksum,
   assertCreateIdentityChecksum,
@@ -2178,7 +2179,7 @@ export class ClientService {
     const reopening = !!existing && (existing.status === 'COMPLETED' || existing.status === 'CANCELLED');
 
     if (existing) {
-      await this.prisma.task.update({
+      const updateTask = this.prisma.task.update({
         where: { id: existing.id },
         data: {
           missingFields: missing,
@@ -2190,6 +2191,22 @@ export class ClientService {
             : {}),
         },
       });
+      if (reopening) {
+        // F03-A2 (OFP-03a): kapalı (tamamlanmış / iptal edilmiş) görevin sistemce YENİDEN DOĞUŞU görev geçmişine yazılır. Yeniden
+        // açma davranışı DEĞİŞMEZ (yukarıdaki güncelleme aynıdır); güncelleme ve geçmiş satırları tek işlemdedir. Aktör kullanıcı
+        // yoktur (sistem üreticisi); önceki kapanış atfı geçmiş satırında saklanır.
+        const correlationId = newTaskHistoryCorrelationId();
+        const before = {
+          status: existing.status, priority: existing.priority, assigneeId: existing.assigneeId, dueDate: existing.dueDate, caseId: existing.caseId,
+          completedAt: existing.completedAt, completedByUserId: existing.completedByUserId, resolutionType: existing.resolutionType,
+        };
+        const rows = diffTaskHistory(before, { ...before, status: 'PENDING', dueDate: due }).map((change) =>
+          systemTaskHistoryRow({ tenantId: existing.tenantId, taskId: existing.id, producer: TASK_HISTORY_PRODUCER_CLIENT_CONTACT, change, correlationId }),
+        );
+        await this.prisma.$transaction([updateTask, this.prisma.taskHistoryEvent.createMany({ data: rows })]);
+      } else {
+        await updateTask;
+      }
     } else {
       await this.prisma.task.create({
         data: {

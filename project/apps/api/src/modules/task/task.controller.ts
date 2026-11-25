@@ -10,7 +10,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { TaskService } from "./task.service";
-import { CancelTaskDto, CreateTaskDto, ListTaskCancellationsQueryDto, ListTasksQueryDto, UpdateTaskDto } from "./dto/task.dto";
+import { CancelTaskDto, CreateTaskDto, ListTaskCancellationsQueryDto, ListTaskHistoryQueryDto, ListTasksQueryDto, UpdateTaskDto } from "./dto/task.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
@@ -54,6 +54,20 @@ export class TaskController {
     @Query() query: ListTaskCancellationsQueryDto,
   ) {
     return this.taskService.findCancellations(tenantId, id, userId, query);
+  }
+
+  /**
+   * F03-A2 (OFP-03a): görevin genel geçmişi + gerekçeli iptalleri tek sıralı listede. Yetki iptal geçmişiyle aynıdır
+   * (görev görünüm kapsamı); dosya numarası yalnız dosya aktöre görünüyorsa döner. Ham denetim ucu değildir.
+   */
+  @Get(":id/history")
+  findHistory(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
+    @Param("id") id: string,
+    @Query() query: ListTaskHistoryQueryDto,
+  ) {
+    return this.taskService.findHistory(tenantId, id, userId, query);
   }
 
   @Post(":id/cancel")

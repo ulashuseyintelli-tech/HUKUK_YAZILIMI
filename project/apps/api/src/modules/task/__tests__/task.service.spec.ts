@@ -13,15 +13,28 @@ import { BadRequestException } from "@nestjs/common";
 import { TaskService } from "../task.service";
 
 /**
- * F03-A1: update() durum geçişi kararını satır kilidi altında verir (işlem + `FOR UPDATE`). Sahte Prisma'ya işlem ve ham sorgu
- * eklenir; işlem istemcisi sahte nesnenin kendisidir (aynı `task.findFirst` / `task.update` sahteleri kullanılır).
+ * F03-A1: update() durum geçişi kararını satır kilidi altında verir (işlem + `FOR UPDATE`).
+ * F03-A2: create() / update() görev yazımını, geçmiş satırlarını ve denetim kaydını TEK işlemde yazar; aktör işlem içinde okunur.
+ * Sahte işlem istemcisi (`$tx`) kök nesnenin `task` sahtelerini paylaşır (aynı `findFirst` / `update` / `create`), aktör okuması
+ * ve geçmiş yazımı ise kendi sahteleridir: kök `user.findFirst` yalnız ATANAN uygunluğu için sayılmaya devam eder.
  */
-function withTx<T extends Record<string, any>>(prisma: T): T {
+function withTx<T extends Record<string, any>>(prisma: T, actor: { role: string } | null = { role: "USER" }): T {
   const db = prisma as any;
-  db.$queryRaw = jest.fn().mockResolvedValue([]);
-  db.$transaction = jest.fn(async (fn: (tx: unknown) => unknown) => fn(db));
+  const tx = {
+    $queryRaw: jest.fn().mockResolvedValue([]),
+    task: db.task,
+    taskHistoryEvent: { createMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    user: { findFirst: jest.fn(async ({ where }: any) => (actor ? { id: where.id, role: actor.role } : null)) },
+  };
+  db.$tx = tx;
+  db.$queryRaw = tx.$queryRaw;
+  db.$transaction = jest.fn(async (fn: (client: unknown) => unknown) => fn(tx));
   return prisma;
 }
+
+/** F03-A2: yazım yolları denetim servisi ister (yoksa 503). Testler işlem içi denetim yazımını bu sahteyle görür. */
+const auditMock = () => ({ logInTransaction: jest.fn().mockResolvedValue(undefined) });
+const serviceOf = (prisma: any, caseViewScope?: any, audit: any = auditMock()) => new TaskService(prisma, undefined, audit, caseViewScope);
 
 const buildPrisma = (existing: any = { id: "tk", status: "PENDING" }) =>
   withTx({
@@ -34,7 +47,7 @@ const buildPrisma = (existing: any = { id: "tk", status: "PENDING" }) =>
 describe("TaskService.update — kapanış atfı", () => {
   it("status=COMPLETED → completedByUserId=userId + resolutionType=MANUAL + completedAt set", async () => {
     const prisma = buildPrisma() as any;
-    const svc = new TaskService(prisma);
+    const svc = serviceOf(prisma);
 
     await svc.update("t1", "tk", "user-9", { status: "COMPLETED" } as any);
 
@@ -46,7 +59,7 @@ describe("TaskService.update — kapanış atfı", () => {
 
   it("COMPLETED→PENDING (yeniden açma) → kapanış izi temizlenir (null)", async () => {
     const prisma = buildPrisma({ id: "tk", status: "COMPLETED" }) as any;
-    const svc = new TaskService(prisma);
+    const svc = serviceOf(prisma);
 
     await svc.update("t1", "tk", "user-9", { status: "PENDING" } as any);
 
@@ -58,7 +71,7 @@ describe("TaskService.update — kapanış atfı", () => {
 
   it("status verilmeyen güncelleme (ör. başlık) → kapanış alanlarına DOKUNMAZ", async () => {
     const prisma = buildPrisma() as any;
-    const svc = new TaskService(prisma);
+    const svc = serviceOf(prisma);
 
     await svc.update("t1", "tk", "user-9", { title: "Yeni başlık" } as any);
 
@@ -72,7 +85,7 @@ describe("TaskService.update — kapanış atfı", () => {
   it("F03-A1: COMPLETED → COMPLETED gidiş-dönüşü atfı ve tamamlanma anını EZMEZ; diğer alanlar yazılır", async () => {
     const prisma = buildPrisma({ id: "tk", status: "COMPLETED" }) as any;
 
-    await new TaskService(prisma).update("t1", "tk", "user-9", { status: "COMPLETED", title: "Düzenlendi" } as any);
+    await serviceOf(prisma).update("t1", "tk", "user-9", { status: "COMPLETED", title: "Düzenlendi" } as any);
 
     const data = prisma.task.update.mock.calls[0][0].data;
     expect(data).toMatchObject({ status: "COMPLETED", title: "Düzenlendi" });
@@ -84,7 +97,7 @@ describe("TaskService.update — kapanış atfı", () => {
     // Kilitsiz ön okuma PENDING görür; kilit alındığında başka bir istek görevi çoktan tamamlamıştır.
     prisma.task.findFirst = jest.fn().mockResolvedValueOnce({ id: "tk", status: "PENDING" }).mockResolvedValueOnce({ status: "COMPLETED" });
 
-    await new TaskService(prisma).update("t1", "tk", "user-9", { status: "COMPLETED" } as any);
+    await serviceOf(prisma).update("t1", "tk", "user-9", { status: "COMPLETED" } as any);
 
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
@@ -96,11 +109,11 @@ describe("TaskService.update — kapanış atfı", () => {
 
   it("F03-A1: yeniden açılıp başka kişi tamamlarsa atıf YENİ kişiye geçer", async () => {
     const reopened = buildPrisma({ id: "tk", status: "COMPLETED" }) as any;
-    await new TaskService(reopened).update("t1", "tk", "user-2", { status: "PENDING" } as any);
+    await serviceOf(reopened).update("t1", "tk", "user-2", { status: "PENDING" } as any);
     expect(reopened.task.update.mock.calls[0][0].data).toMatchObject({ status: "PENDING", completedAt: null, completedByUserId: null, resolutionType: null });
 
     const again = buildPrisma({ id: "tk", status: "PENDING" }) as any;
-    await new TaskService(again).update("t1", "tk", "user-2", { status: "COMPLETED" } as any);
+    await serviceOf(again).update("t1", "tk", "user-2", { status: "COMPLETED" } as any);
     expect(again.task.update.mock.calls[0][0].data).toMatchObject({ completedByUserId: "user-2", resolutionType: "MANUAL" });
   });
 
@@ -108,7 +121,7 @@ describe("TaskService.update — kapanış atfı", () => {
     const prisma = buildPrisma() as any;
     prisma.task.findFirst = jest.fn().mockResolvedValueOnce({ id: "tk", status: "PENDING" }).mockResolvedValueOnce(null);
 
-    await expect(new TaskService(prisma).update("t1", "tk", "user-9", { status: "COMPLETED" } as any)).rejects.toMatchObject({ status: 404 });
+    await expect(serviceOf(prisma).update("t1", "tk", "user-9", { status: "COMPLETED" } as any)).rejects.toMatchObject({ status: 404 });
     expect(prisma.task.update).not.toHaveBeenCalled();
   });
 
@@ -117,7 +130,7 @@ describe("TaskService.update — kapanış atfı", () => {
     // Ön okuma CANCELLED görür; kilit alındığında görev yeniden açılmıştır.
     prisma.task.findFirst = jest.fn().mockResolvedValueOnce({ id: "tk", status: "CANCELLED" }).mockResolvedValueOnce({ status: "PENDING" });
 
-    await expect(new TaskService(prisma).update("t1", "tk", "user-9", { status: "CANCELLED", title: "x" } as any)).rejects.toMatchObject({ status: 400 });
+    await expect(serviceOf(prisma).update("t1", "tk", "user-9", { status: "CANCELLED", title: "x" } as any)).rejects.toMatchObject({ status: 400 });
     expect(prisma.task.update).not.toHaveBeenCalled();
   });
 });
@@ -153,7 +166,7 @@ describe("TaskService — CANDIDATE-J1 assignee uygunluk kapısı (tenant + akti
   // 1) aynı-tenant + aktif → KABUL
   it("create: aynı-tenant + aktif assignee → kabul (task.create çağrılır)", async () => {
     const prisma = buildPrismaWithUsers() as any;
-    const svc = new TaskService(prisma);
+    const svc = serviceOf(prisma);
 
     await svc.create(TENANT, "creator-1", { title: "İş", assigneeId: "u-active-same" } as any);
 
@@ -170,7 +183,7 @@ describe("TaskService — CANDIDATE-J1 assignee uygunluk kapısı (tenant + akti
   // 2) cross-tenant → RET
   it("create: cross-tenant assignee → ret (BadRequest, task.create çağrılmaz)", async () => {
     const prisma = buildPrismaWithUsers() as any;
-    const svc = new TaskService(prisma);
+    const svc = serviceOf(prisma);
 
     await expect(
       svc.create(TENANT, "creator-1", { title: "İş", assigneeId: "u-active-other" } as any)
@@ -182,7 +195,7 @@ describe("TaskService — CANDIDATE-J1 assignee uygunluk kapısı (tenant + akti
   // 3) aynı-tenant + pasif → RET
   it("create: aynı-tenant + pasif assignee → ret (BadRequest, task.create çağrılmaz)", async () => {
     const prisma = buildPrismaWithUsers() as any;
-    const svc = new TaskService(prisma);
+    const svc = serviceOf(prisma);
 
     await expect(
       svc.create(TENANT, "creator-1", { title: "İş", assigneeId: "u-inactive-same" } as any)
@@ -194,7 +207,7 @@ describe("TaskService — CANDIDATE-J1 assignee uygunluk kapısı (tenant + akti
   // 4) null/boş assignee → KABUL (uygunluk sorgusu hiç çalışmaz)
   it("create: assignee verilmeyen görev → kabul (user.findFirst çağrılmaz)", async () => {
     const prisma = buildPrismaWithUsers() as any;
-    const svc = new TaskService(prisma);
+    const svc = serviceOf(prisma);
 
     await svc.create(TENANT, "creator-1", { title: "Sahipsiz iş" } as any);
 
@@ -205,7 +218,7 @@ describe("TaskService — CANDIDATE-J1 assignee uygunluk kapısı (tenant + akti
   // update yolu da aynı kapıdan geçer (ileriye-dönük enforcement create + update)
   it("update: aynı-tenant + aktif assignee → kabul (task.update çağrılır)", async () => {
     const prisma = buildPrismaWithUsers() as any;
-    const svc = new TaskService(prisma);
+    const svc = serviceOf(prisma);
 
     await svc.update(TENANT, "tk", "editor-1", { assigneeId: "u-active-same" } as any);
 
@@ -215,7 +228,7 @@ describe("TaskService — CANDIDATE-J1 assignee uygunluk kapısı (tenant + akti
 
   it("update: cross-tenant assignee → ret (BadRequest, task.update çağrılmaz)", async () => {
     const prisma = buildPrismaWithUsers() as any;
-    const svc = new TaskService(prisma);
+    const svc = serviceOf(prisma);
 
     await expect(
       svc.update(TENANT, "tk", "editor-1", { assigneeId: "u-active-other" } as any)
@@ -226,7 +239,7 @@ describe("TaskService — CANDIDATE-J1 assignee uygunluk kapısı (tenant + akti
 
   it("update: assignee içermeyen güncelleme (ör. başlık) → uygunluk sorgusu çalışmaz", async () => {
     const prisma = buildPrismaWithUsers() as any;
-    const svc = new TaskService(prisma);
+    const svc = serviceOf(prisma);
 
     await svc.update(TENANT, "tk", "editor-1", { title: "Yeni başlık" } as any);
 
@@ -249,7 +262,7 @@ describe("TaskService — dueDate normalizasyonu (F01 K-F7: tarih-only 500 düze
 
   it("create: tarih-only 'YYYY-MM-DD' → UTC gece yarısı Date (web modal biçimi; önceden Prisma 500)", async () => {
     const prisma = build() as any;
-    await new TaskService(prisma).create(TENANT, "c", { title: "İş", dueDate: "2026-11-05" } as any);
+    await serviceOf(prisma).create(TENANT, "c", { title: "İş", dueDate: "2026-11-05" } as any);
     const data = prisma.task.create.mock.calls[0][0].data;
     expect(data.dueDate).toBeInstanceOf(Date);
     expect(data.dueDate.toISOString()).toBe("2026-11-05T00:00:00.000Z");
@@ -257,19 +270,19 @@ describe("TaskService — dueDate normalizasyonu (F01 K-F7: tarih-only 500 düze
 
   it("create: tam ISO-8601 (saat dilimli) → aynı an korunur", async () => {
     const prisma = build() as any;
-    await new TaskService(prisma).create(TENANT, "c", { title: "İş", dueDate: "2026-11-05T10:00:00+03:00" } as any);
+    await serviceOf(prisma).create(TENANT, "c", { title: "İş", dueDate: "2026-11-05T10:00:00+03:00" } as any);
     expect(prisma.task.create.mock.calls[0][0].data.dueDate.toISOString()).toBe("2026-11-05T07:00:00.000Z");
   });
 
   it("create: dueDate verilmeyen görev → alan undefined (Prisma dokunmaz)", async () => {
     const prisma = build() as any;
-    await new TaskService(prisma).create(TENANT, "c", { title: "İş" } as any);
+    await serviceOf(prisma).create(TENANT, "c", { title: "İş" } as any);
     expect(prisma.task.create.mock.calls[0][0].data.dueDate).toBeUndefined();
   });
 
   it.each(["abc", "2026-02-30", "2026-13-01", ""])("create: geçersiz dueDate %p → 400 BadRequest, task.create çağrılmaz", async (bad) => {
     const prisma = build() as any;
-    await expect(new TaskService(prisma).create(TENANT, "c", { title: "İş", dueDate: bad } as any)).rejects.toBeInstanceOf(
+    await expect(serviceOf(prisma).create(TENANT, "c", { title: "İş", dueDate: bad } as any)).rejects.toBeInstanceOf(
       BadRequestException
     );
     expect(prisma.task.create).not.toHaveBeenCalled();
@@ -277,13 +290,13 @@ describe("TaskService — dueDate normalizasyonu (F01 K-F7: tarih-only 500 düze
 
   it("update: tarih-only → Date; null → tarihi temizler (null); alan yoksa undefined", async () => {
     const p1 = build() as any;
-    await new TaskService(p1).update(TENANT, "tk", "u", { dueDate: "2026-11-06" } as any);
+    await serviceOf(p1).update(TENANT, "tk", "u", { dueDate: "2026-11-06" } as any);
     expect(p1.task.update.mock.calls[0][0].data.dueDate.toISOString()).toBe("2026-11-06T00:00:00.000Z");
     const p2 = build() as any;
-    await new TaskService(p2).update(TENANT, "tk", "u", { dueDate: null } as any);
+    await serviceOf(p2).update(TENANT, "tk", "u", { dueDate: null } as any);
     expect(p2.task.update.mock.calls[0][0].data.dueDate).toBeNull();
     const p3 = build() as any;
-    await new TaskService(p3).update(TENANT, "tk", "u", { title: "Başlık" } as any);
+    await serviceOf(p3).update(TENANT, "tk", "u", { title: "Başlık" } as any);
     expect(p3.task.update.mock.calls[0][0].data.dueDate).toBeUndefined();
   });
 });
@@ -312,7 +325,7 @@ describe("2b / KI-048 — legacy cancellation bypasses", () => {
 
   it("unchanged CANCELLED round trip never rewrites lifecycle fields", async () => {
     const db = buildPrisma({ id: "task", status: "CANCELLED" }) as any;
-    await new TaskService(db).update("tenant", "task", "actor", { status: "CANCELLED", title: "Yeni" } as any);
+    await serviceOf(db).update("tenant", "task", "actor", { status: "CANCELLED", title: "Yeni" } as any);
     const data = db.task.update.mock.calls[0][0].data;
     expect(data.title).toBe("Yeni");
     for (const key of ["status", "completedAt", "completedByUserId", "resolutionType"]) expect(data).not.toHaveProperty(key);
@@ -367,7 +380,7 @@ describe("TaskService — F03-B2 dosya süzgeci ve dosyaya bağlama kapsamı", (
   it("findAll: caseId kapsam katmanına girer — data, total ve summary aynı dosyada", async () => {
     delete process.env[FLAG];
     const prisma = buildListPrisma() as any;
-    await new TaskService(prisma).findAll("t1", { caseId: "c1", status: "PENDING" });
+    await serviceOf(prisma).findAll("t1", { caseId: "c1", status: "PENDING" });
     const where = prisma.task.findMany.mock.calls[0][0].where;
     expect(where).toMatchObject({ tenantId: "t1", caseId: "c1", status: "PENDING" });
     expect(prisma.task.count.mock.calls[0][0].where).toEqual(where);
@@ -381,7 +394,7 @@ describe("TaskService — F03-B2 dosya süzgeci ve dosyaya bağlama kapsamı", (
   it("findAll: caseId verilmezse dosya süzgeci eklenmez (bugünkü liste)", async () => {
     delete process.env[FLAG];
     const prisma = buildListPrisma() as any;
-    await new TaskService(prisma).findAll("t1", {});
+    await serviceOf(prisma).findAll("t1", {});
     expect(prisma.task.findMany.mock.calls[0][0].where).not.toHaveProperty("caseId");
   });
 
@@ -389,7 +402,7 @@ describe("TaskService — F03-B2 dosya süzgeci ve dosyaya bağlama kapsamı", (
     delete process.env[FLAG];
     const prisma = buildWritePrisma() as any;
     const scope = scopeOf([]);
-    await new TaskService(prisma, undefined, undefined, scope as any).create("t1", "u1", { title: "G", caseId: "c1" } as any);
+    await serviceOf(prisma, scope).create("t1", "u1", { title: "G", caseId: "c1" } as any);
     expect(scope.visibleCaseIds).not.toHaveBeenCalled();
     expect(prisma.task.create.mock.calls[0][0].data).toMatchObject({ tenantId: "t1", createdById: "u1", caseId: "c1" });
   });
@@ -398,7 +411,7 @@ describe("TaskService — F03-B2 dosya süzgeci ve dosyaya bağlama kapsamı", (
     process.env[FLAG] = "true";
     const hidden = buildWritePrisma() as any;
     const scope = scopeOf([]);
-    await expect(new TaskService(hidden, undefined, undefined, scope as any).create("t1", "u1", { title: "G", caseId: "c1" } as any)).rejects.toMatchObject({
+    await expect(serviceOf(hidden, scope).create("t1", "u1", { title: "G", caseId: "c1" } as any)).rejects.toMatchObject({
       status: 400,
       message: INVALID_CASE,
     });
@@ -406,7 +419,7 @@ describe("TaskService — F03-B2 dosya süzgeci ve dosyaya bağlama kapsamı", (
     expect(hidden.task.create).not.toHaveBeenCalled();
 
     const missing = buildWritePrisma(undefined, false) as any;
-    await expect(new TaskService(missing, undefined, undefined, scopeOf(["c1"]) as any).create("t1", "u1", { title: "G", caseId: "c1" } as any)).rejects.toMatchObject({
+    await expect(serviceOf(missing, scopeOf(["c1"])).create("t1", "u1", { title: "G", caseId: "c1" } as any)).rejects.toMatchObject({
       status: 400,
       message: INVALID_CASE,
     });
@@ -417,7 +430,7 @@ describe("TaskService — F03-B2 dosya süzgeci ve dosyaya bağlama kapsamı", (
     process.env[FLAG] = "true";
     for (const visible of [["c1"], null] as Array<string[] | null>) {
       const prisma = buildWritePrisma() as any;
-      await new TaskService(prisma, undefined, undefined, scopeOf(visible) as any).create("t1", "u1", { title: "G", caseId: "c1" } as any);
+      await serviceOf(prisma, scopeOf(visible)).create("t1", "u1", { title: "G", caseId: "c1" } as any);
       expect(prisma.task.create).toHaveBeenCalledTimes(1);
     }
   });
@@ -425,12 +438,12 @@ describe("TaskService — F03-B2 dosya süzgeci ve dosyaya bağlama kapsamı", (
   it("create: bayrak açık + kapsam servisi yok → FAIL-CLOSED 403; dosyasız görev etkilenmez", async () => {
     process.env[FLAG] = "true";
     const prisma = buildWritePrisma() as any;
-    await expect(new TaskService(prisma).create("t1", "u1", { title: "G", caseId: "c1" } as any)).rejects.toMatchObject({
+    await expect(serviceOf(prisma).create("t1", "u1", { title: "G", caseId: "c1" } as any)).rejects.toMatchObject({
       status: 403,
       response: { code: "CASE_VIEW_SCOPE_UNRESOLVED" },
     });
     expect(prisma.task.create).not.toHaveBeenCalled();
-    await new TaskService(prisma).create("t1", "u1", { title: "Dosyasız" } as any);
+    await serviceOf(prisma).create("t1", "u1", { title: "Dosyasız" } as any);
     expect(prisma.task.create).toHaveBeenCalledTimes(1);
   });
 
@@ -438,12 +451,12 @@ describe("TaskService — F03-B2 dosya süzgeci ve dosyaya bağlama kapsamı", (
     process.env[FLAG] = "true";
     const same = buildWritePrisma({ id: "tk", status: "PENDING", caseId: "c1" }) as any;
     const sameScope = scopeOf([]);
-    await new TaskService(same, undefined, undefined, sameScope as any).update("t1", "tk", "u1", { title: "Yeni", caseId: "c1" } as any);
+    await serviceOf(same, sameScope).update("t1", "tk", "u1", { title: "Yeni", caseId: "c1" } as any);
     expect(sameScope.visibleCaseIds).not.toHaveBeenCalled();
     expect(same.task.update).toHaveBeenCalledTimes(1);
 
     const changed = buildWritePrisma({ id: "tk", status: "PENDING", caseId: null }) as any;
-    await expect(new TaskService(changed, undefined, undefined, scopeOf([]) as any).update("t1", "tk", "u1", { caseId: "c1" } as any)).rejects.toMatchObject({
+    await expect(serviceOf(changed, scopeOf([])).update("t1", "tk", "u1", { caseId: "c1" } as any)).rejects.toMatchObject({
       status: 400,
       message: INVALID_CASE,
     });
@@ -451,8 +464,88 @@ describe("TaskService — F03-B2 dosya süzgeci ve dosyaya bağlama kapsamı", (
 
     const unlink = buildWritePrisma({ id: "tk", status: "PENDING", caseId: "c1" }) as any;
     const unlinkScope = scopeOf([]);
-    await new TaskService(unlink, undefined, undefined, unlinkScope as any).update("t1", "tk", "u1", { caseId: null } as any);
+    await serviceOf(unlink, unlinkScope).update("t1", "tk", "u1", { caseId: null } as any);
     expect(unlinkScope.visibleCaseIds).not.toHaveBeenCalled();
     expect(unlink.task.update.mock.calls[0][0].data.caseId).toBeNull();
+  });
+});
+
+/**
+ * F03-A2 (OFP-03a / OFF-INV-08) — görev geçmişi yazımı: görev + geçmiş satırı + denetim kaydı TEK işlemde (saf; sahte Prisma).
+ * Gerçek HTTP + PostgreSQL (atomiklik dahil) karşılığı: task-history.http.db-gated.integration.spec.ts.
+ */
+describe("TaskService — F03-A2 görev geçmişi yazımı", () => {
+  const build = (existing: any = { id: "tk", status: "PENDING", priority: "MEDIUM", assigneeId: null, dueDate: null, caseId: null, createdById: "u-creator" }, actor: { role: string } | null = { role: "USER" }) =>
+    withTx(
+      {
+        task: {
+          findFirst: jest.fn().mockResolvedValue(existing),
+          create: jest.fn(async ({ data }: any) => ({ id: "tk-new", status: "PENDING", priority: "MEDIUM", assigneeId: null, dueDate: null, caseId: null, ...data })),
+          update: jest.fn(async ({ data }: any) => ({ ...existing, ...data })),
+        },
+        user: { findFirst: jest.fn().mockResolvedValue({ id: "u-assignee" }) },
+      },
+      actor,
+    );
+
+  it("create: görev, CREATED geçmiş satırı ve denetim kaydı aynı işlem istemcisiyle yazılır; korelasyon ortaktır", async () => {
+    const prisma = build() as any;
+    const audit = auditMock();
+    await serviceOf(prisma, undefined, audit).create("t1", "u-creator", { title: "İş", priority: "HIGH" } as any);
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    const rows = prisma.$tx.taskHistoryEvent.createMany.mock.calls[0][0].data;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ tenantId: "t1", taskId: "tk-new", eventType: "CREATED", actorType: "USER", actorUserId: "u-creator", actorRole: "USER", authoritySource: "CREATOR" });
+    expect(audit.logInTransaction).toHaveBeenCalledTimes(1);
+    const [client, entry] = audit.logInTransaction.mock.calls[0];
+    expect(client).toBe(prisma.$tx);
+    expect(entry).toMatchObject({ tenantId: "t1", userId: "u-creator", action: "TASK_CREATED", entityType: "TASK", entityId: "tk-new", correlationId: rows[0].correlationId });
+  });
+
+  it("update: yalnız değişen izlenen alanlar satır olur; yetki kaynağı aktörün görevle ilişkisidir", async () => {
+    const prisma = build() as any;
+    const audit = auditMock();
+    await serviceOf(prisma, undefined, audit).update("t1", "tk", "u-creator", { status: "IN_PROGRESS", priority: "MEDIUM", title: "Yeni başlık" } as any);
+
+    const rows = prisma.$tx.taskHistoryEvent.createMany.mock.calls[0][0].data;
+    expect(rows.map((r: any) => [r.eventType, r.fromValue, r.toValue, r.authoritySource])).toEqual([["STATUS_CHANGED", "PENDING", "IN_PROGRESS", "CREATOR"]]);
+    expect(audit.logInTransaction.mock.calls[0][1]).toMatchObject({ action: "TASK_UPDATED", entityId: "tk", correlationId: rows[0].correlationId });
+  });
+
+  it("update: izlenen alan değişmediyse geçmiş satırı da denetim kaydı da yazılmaz (görev yine güncellenir)", async () => {
+    const prisma = build() as any;
+    const audit = auditMock();
+    await serviceOf(prisma, undefined, audit).update("t1", "tk", "u-x", { title: "Yalnız başlık", status: "PENDING" } as any);
+
+    expect(prisma.task.update).toHaveBeenCalledTimes(1);
+    expect(prisma.$tx.taskHistoryEvent.createMany).not.toHaveBeenCalled();
+    expect(audit.logInTransaction).not.toHaveBeenCalled();
+  });
+
+  it("denetim servisi yoksa yazım hiç başlamaz (503): işlem açılmaz, görev yazılmaz", async () => {
+    const prisma = build() as any;
+    await expect(new TaskService(prisma).create("t1", "u1", { title: "İş" } as any)).rejects.toMatchObject({ status: 503 });
+    await expect(new TaskService(prisma).update("t1", "tk", "u1", { status: "IN_PROGRESS" } as any)).rejects.toMatchObject({ status: 503 });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.task.create).not.toHaveBeenCalled();
+    expect(prisma.task.update).not.toHaveBeenCalled();
+  });
+
+  it("aktör aktif büro kullanıcısı değilse (işlem içi okuma boş) 403: görev de geçmiş de yazılmaz", async () => {
+    const prisma = build(undefined, null) as any;
+    await expect(serviceOf(prisma).create("t1", "u-yok", { title: "İş" } as any)).rejects.toMatchObject({ status: 403 });
+    await expect(serviceOf(prisma).update("t1", "tk", "u-yok", { status: "IN_PROGRESS" } as any)).rejects.toMatchObject({ status: 403 });
+    expect(prisma.task.create).not.toHaveBeenCalled();
+    expect(prisma.task.update).not.toHaveBeenCalled();
+    expect(prisma.$tx.taskHistoryEvent.createMany).not.toHaveBeenCalled();
+  });
+
+  it("geçmiş yazımı düşerse hata yutulmaz: çağrı reddedilir ve denetim kaydı yazılmaz (işlem geri alınır)", async () => {
+    const prisma = build() as any;
+    prisma.$tx.taskHistoryEvent.createMany.mockRejectedValue(new Error("geçmiş yazılamadı (sentetik)"));
+    const audit = auditMock();
+    await expect(serviceOf(prisma, undefined, audit).update("t1", "tk", "u-creator", { status: "IN_PROGRESS" } as any)).rejects.toThrow("geçmiş yazılamadı (sentetik)");
+    expect(audit.logInTransaction).not.toHaveBeenCalled();
   });
 });

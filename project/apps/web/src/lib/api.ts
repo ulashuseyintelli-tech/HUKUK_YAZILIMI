@@ -934,6 +934,14 @@ class ApiClient {
     return this.request<any>(`/tasks/${id}/cancellations?page=${page}&limit=20`);
   }
 
+  /**
+   * F03-A2: görevin genel geçmişi + gerekçeli iptalleri tek sıralı listede. Gövde olduğu gibi döner:
+   * `{ data: TaskHistoryItem[], meta: { page, limit, total, totalPages, coverage } }` (ek zarf YOK).
+   */
+  async getTaskHistory(id: string, page = 1) {
+    return this.request<any>(`/tasks/${id}/history?page=${page}&limit=20`);
+  }
+
   // Clients
   async getClients(search?: string) {
     const query = search ? `?search=${encodeURIComponent(search)}` : "";
