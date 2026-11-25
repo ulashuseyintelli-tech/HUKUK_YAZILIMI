@@ -31,6 +31,8 @@ import { CaseViewScopeService } from "../case/case-view-scope.service";
 export interface TaskListParams {
   status?: string;
   assigneeId?: string;
+  /** F03-B2: dosya süzgeci (kapsam katmanında; data + total + summary birlikte daralır). */
+  caseId?: string;
   taskCategory?: string;
   page?: number;
   limit?: number;
@@ -47,6 +49,9 @@ export interface TaskListSummary {
   inProgress: number;
   operationalOpen: number;
 }
+
+/** Dosya kiracıda yoksa VE aktörün dosya kapsamı dışındaysa AYNI ileti (varlık sızmaz). */
+const INVALID_TASK_CASE_MESSAGE = "Geçersiz dosya: aynı ofise ait bir dosya değil.";
 
 type TaskStatusGroup = { status: PrismaTaskStatus; taskCategory: PrismaTaskCategory; _count: { _all: number } };
 type TaskDb = PrismaService | Prisma.TransactionClient;
@@ -113,7 +118,26 @@ export class TaskService {
   private async assertCaseTenant(tenantId: string, caseId: string | null | undefined): Promise<void> {
     if (caseId === undefined || caseId === null) return;
     const record = await this.prisma.case.findFirst({ where: { id: caseId, tenantId }, select: { id: true } });
-    if (!record) throw new BadRequestException("Geçersiz dosya: aynı ofise ait bir dosya değil.");
+    if (!record) throw new BadRequestException(INVALID_TASK_CASE_MESSAGE);
+  }
+
+  /**
+   * F03-B2 (OFP-02; owner kararı K2-a, 25.11.2026) — görev bir dosyaya BAĞLANIRKEN (oluşturma ya da dosya bağının değişmesi)
+   * aktör o dosyayı görebilmelidir: dosya görünüm kapsamı (`OFFICE_CASE_VIEW_SCOPE_ENABLED`). Kapsam dışı dosya, var olmayan /
+   * başka büronun dosyasıyla AYNI 400 gövdesini alır (varlık sızmaz). Bayrak kapalı ya da büro geneli dosya izni → bugünkü
+   * davranış (yalnız kiracı sınırı). Bayrak açık + servis yok → fail-closed. Dosyasız görev ve bağın kaldırılması etkilenmez.
+   *
+   * @remarks Çağrıldığı yerler: create() → POST /tasks; update() → PUT /tasks/:id (yalnız `caseId` DEĞİŞİYORSA).
+   */
+  private async assertCaseBindable(tenantId: string, actorUserId: string, caseId: string | null | undefined): Promise<void> {
+    if (caseId === undefined || caseId === null) return;
+    await this.assertCaseTenant(tenantId, caseId);
+    if (!isCaseViewScopeEnabled()) return;
+    if (!this.caseViewScope) {
+      throw new ForbiddenException({ code: "CASE_VIEW_SCOPE_UNRESOLVED", message: "Dosya görünüm kapsamı çözümlenemedi" });
+    }
+    const visible = await this.caseViewScope.visibleCaseIds(tenantId, actorUserId, [caseId]);
+    if (visible && !visible.has(caseId)) throw new BadRequestException(INVALID_TASK_CASE_MESSAGE);
   }
 
   /**
@@ -145,17 +169,19 @@ export class TaskService {
    * Çağıran: TaskController.findAll → GET /tasks.
    *
    * F01-A (OFP-01): sunucu taraflı süzgeç + üst sınırlı sayfalama + sayaçlar. `where` iki katmanlıdır:
-   *   scopeWhere = tenant sınırı (+ assigneeId)          → data, total VE summary bu kapsamdadır
+   *   scopeWhere = tenant sınırı (+ assigneeId, caseId)  → data, total VE summary bu kapsamdadır
    *   where      = scopeWhere + status + taskCategory    → yalnız data ve total
    * Ekran sayaçları böylece seçili sekmeden bağımsız ve ilk sayfadan değil sunucu toplamından gelir.
    * Sıralama `id` ile kesinleştirilir: aynı öncelik/tarihli görevlerde sayfa sınırı kaymaz, kayıtlar
    * sayfalar arasında tekil kalır. Tenant sınırı (caseId null ∨ case.tenantId) değişmez.
    */
   async findAll(tenantId: string, params?: TaskListParams, actorUserId?: string) {
-    const { status, assigneeId, taskCategory, page = 1, limit = TASK_LIST_DEFAULT_LIMIT } = params || {};
+    const { status, assigneeId, caseId, taskCategory, page = 1, limit = TASK_LIST_DEFAULT_LIMIT } = params || {};
 
     const scopeWhere: Prisma.TaskWhereInput = { tenantId, OR: [{ caseId: null }, { case: { tenantId } }] };
     if (assigneeId) scopeWhere.assigneeId = assigneeId;
+    // F03-B2: dosya süzgeci tenant sınırıyla (case.tenantId) VE görünüm kapsamıyla kesişir; kapsam genişletmez.
+    if (caseId) scopeWhere.caseId = caseId;
     // F02-B dilim 3: görünüm kapsamı scopeWhere katmanına → data, total VE summary birlikte daralır.
     const viewScope = await this.viewScopeWhere(tenantId, actorUserId);
     if (viewScope) scopeWhere.AND = [viewScope];
@@ -247,7 +273,8 @@ export class TaskService {
     if (dto.status === "CANCELLED") {
       throw new BadRequestException("İptal için mevcut görevde gerekçeli iptal işlemini kullanın.");
     }
-    await this.assertCaseTenant(tenantId, dto.caseId);
+    // F03-B2: dosyaya bağlı görev yalnız aktörün gördüğü dosyaya açılır (kiracı sınırı + dosya görünüm kapsamı).
+    await this.assertCaseBindable(tenantId, userId, dto.caseId);
     // CANDIDATE-J1: dolu assignee → aynı-tenant + aktif doğrulaması. Boş/null assignee dokunulmaz
     // (sahipsiz görev meşru; null assignee davranışı korunur).
     if (dto.assigneeId) {
@@ -277,7 +304,10 @@ export class TaskService {
     if (dto.status === "CANCELLED" && existing.status !== "CANCELLED") {
       throw new BadRequestException("Durum değişikliği için gerekçeli iptal işlemini kullanın.");
     }
-    await this.assertCaseTenant(tenantId, dto.caseId);
+    // F03-B2: dosya bağı DEĞİŞİYORSA yeni dosya aktörün kapsamında olmalı. Bağ aynı kalıyorsa yalnız kiracı sınırı sınanır:
+    // atanan, görmediği dosyaya bağlı görevini (ekran formu `caseId`'yi aynen geri gönderir) düzenlemeyi sürdürür.
+    if (dto.caseId !== undefined && dto.caseId !== existing.caseId) await this.assertCaseBindable(tenantId, userId, dto.caseId);
+    else await this.assertCaseTenant(tenantId, dto.caseId);
 
     // CANDIDATE-J1: dolu assignee güncellemesi → aynı-tenant + aktif doğrulaması. Assignee alanı
     // gönderilmeyen (veya boşaltılan) güncellemeler dokunulmaz (null assignee davranışı korunur).

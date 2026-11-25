@@ -404,3 +404,5 @@ src/modules/case/__tests__/due-change-approval.http.db-gated.integration.spec.ts
 src/modules/case/__tests__/due-derived-outputs-canonical.http.db-gated.integration.spec.ts
 # Kalem degisikligi onayinda dosya-kalem para birimi uyumu (owner E4 karari 19.11.2026): talep aninda 400, yurutmede atomik 409 (neden + kurtarma yolu), eszamanli onay ve kilit altindaki yazar.
 src/modules/claim-item/__tests__/claim-item-approval-currency-admission.http.db-gated.integration.spec.ts
+# F03-B2 (OFP-02): dosyadan gorev — dosyaya bagli gorev olusturma kapsami (dosya gorunum kapsami; kapsam disi = var olmayanla ayni 400) + GET /tasks?caseId= dosya suzgeci.
+src/modules/task/__tests__/task-case-bound.http.db-gated.integration.spec.ts

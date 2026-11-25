@@ -59,6 +59,9 @@ export class ListTaskCancellationsQueryDto {
  *
  * `assigneeId` yalnız bir SÜZGEÇTİR; OWN/TEAM yetkilendirmesi değildir (kişinin yalnız kendi
  * işini görmesi OFP-09'dur ve bu DTO'da yoktur).
+ *
+ * `caseId` (F03-B2 / OFP-02) de yalnız bir SÜZGEÇTİR: dosya sayfası o dosyanın görevlerini okur. Kapsam genişletmez;
+ * görev görünüm kapsamıyla kesişir. Başka büronun ya da var olmayan dosyanın kimliği boş sonuçtur (varlık sızmaz).
  */
 export class ListTasksQueryDto {
   @IsEnum(TaskStatus)
@@ -68,6 +71,10 @@ export class ListTasksQueryDto {
   @IsString()
   @IsOptional()
   assigneeId?: string;
+
+  @IsString()
+  @IsOptional()
+  caseId?: string;
 
   @IsEnum(TaskCategory)
   @IsOptional()

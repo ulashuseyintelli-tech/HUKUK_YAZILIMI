@@ -144,6 +144,8 @@ interface Task {
   status: "BEKLIYOR" | "YAPILDI" | "IPTAL";
   dueDate?: string;
   priority?: "HIGH" | "MEDIUM" | "LOW";
+  /** F03-B2: kaynağın kendi öncelik adı (Task satırı: Acil / Yüksek / Orta / Düşük). Verilmezse üç kademeli varsayılan ad yazılır. */
+  priorityLabel?: string;
   category?: "SONRAKI_HAMLE" | "SURE_BAGLI" | "RISK";
   taskType?: string; // Backend task type (CLIENT_REQUEST_DEBTOR_ADDRESSES vb.)
 }
@@ -1103,7 +1105,7 @@ export function OperationDeck({
                         </div>
                         <div className="flex items-center gap-2">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${priorityColors[task.priority || "LOW"]}`}>
-                            {task.priority === "HIGH" ? "Acil" : task.priority === "MEDIUM" ? "Normal" : "Düşük"}
+                            {task.priorityLabel ?? (task.priority === "HIGH" ? "Acil" : task.priority === "MEDIUM" ? "Normal" : "Düşük")}
                           </span>
                           {/* "Zaten aldık" butonu - sadece adres talebi görevleri için */}
                           {(task.basis === 'CLIENT_REQUEST_DEBTOR_ADDRESSES' || task.taskType === 'CLIENT_REQUEST_DEBTOR_ADDRESSES') && onConfirmReceived && (

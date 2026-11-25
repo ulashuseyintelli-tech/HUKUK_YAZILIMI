@@ -70,6 +70,15 @@ import { DueModal, CollectionModal, HesapOzetiPanel, BalanceShadowDiffPanel } fr
 import { dueApprovalNotice, dueBlockNotice } from "@/components/finance/DueModal";
 import { FaizDokumuPanel } from "@/components/interest";
 import { OperationDeck } from "@/components/case-detail";
+import { CaseTaskCreateModal } from "@/components/case-detail/CaseTaskCreateModal";
+import {
+  CASE_TASK_MAX_PAGES,
+  CASE_TASK_OPEN_STATUSES,
+  CASE_TASK_PAGE_SIZE,
+  taskRowToDeckTask,
+  taskRowsFromListResponse,
+  type CaseDeckTask,
+} from "@/lib/case-task-deck";
 import IntakeLinksCard from "@/components/case/IntakeLinksCard";
 import { IntelStatementSection } from "@/components/case/IntelStatementSection";
 import { ClientApprovalLedgerCard } from "@/components/case/ClientApprovalLedgerCard";
@@ -989,7 +998,13 @@ export default function CaseDetailPage() {
   const [loadingAddressTasks, setLoadingAddressTasks] = useState(false);
   // Yapılacaklar eylem hatası (✓ / İptal): sessiz KALMAZ (lib/action-error.ts kuralı). Görev listede kalır; bant "Kapat" ile kalkar.
   const [taskActionError, setTaskActionError] = useState<string | null>(null);
-  
+  // F03-B2 (OFP-02): dosyaya bağlı Task satırları (GET /tasks?caseId=). Adres görevi ve masraf türevi görevden AYRI kaynaktır;
+  // eylemleri yalnız `/tasks` uçlarına gider. Okuma hatası sessiz kalmaz; liste kısaltıldıysa ekran bunu söyler.
+  const [caseTasks, setCaseTasks] = useState<CaseDeckTask[]>([]);
+  const [caseTasksLoadError, setCaseTasksLoadError] = useState<string | null>(null);
+  const [caseTasksTruncated, setCaseTasksTruncated] = useState(false);
+  const [taskCreateOpen, setTaskCreateOpen] = useState(false);
+
   // Expense Three-View State (OperationDeck entegrasyonu)
   const [expenseThreeViewData, setExpenseThreeViewData] = useState<Array<{
     task: any;
@@ -1521,6 +1536,34 @@ export default function CaseDetailPage() {
     }
   }, [params.id]);
 
+  // F03-B2: dosyanın açık Task satırları. Durum başına sayfalı okunur (sunucu üst sınırı 100); sayfa sınırı aşılırsa
+  // liste kısaltılmış sayılır ve ekranda yazılır (eksik liste "hepsi bu" gibi sunulmaz).
+  const fetchCaseTasks = useCallback(async () => {
+    if (!params.id) return;
+    try {
+      setCaseTasksLoadError(null);
+      const collected: CaseDeckTask[] = [];
+      let truncated = false;
+      for (const status of CASE_TASK_OPEN_STATUSES) {
+        for (let page = 1; ; page++) {
+          const { rows, totalPages } = taskRowsFromListResponse(
+            await api.getTasks({ caseId: params.id as string, status, page, limit: CASE_TASK_PAGE_SIZE }),
+          );
+          for (const row of rows) {
+            const deckTask = taskRowToDeckTask(row);
+            if (deckTask) collected.push(deckTask);
+          }
+          if (page >= totalPages) break;
+          if (page >= CASE_TASK_MAX_PAGES) { truncated = true; break; }
+        }
+      }
+      setCaseTasks(collected);
+      setCaseTasksTruncated(truncated);
+    } catch (error) {
+      setCaseTasksLoadError(toActionErrorMessage(error, "Dosya görevleri yüklenemedi."));
+    }
+  }, [params.id]);
+
   // Fetch expense three-view data for OperationDeck
   const fetchExpenseThreeViewData = useCallback(async () => {
     if (!params.id) return;
@@ -1620,6 +1663,13 @@ export default function CaseDetailPage() {
       fetchAddressTasksAndNotes();
     }
   }, [params.id, loading, fetchAddressTasksAndNotes]);
+
+  // F03-B2: dosyaya bağlı Task satırları dosya yüklenince okunur
+  useEffect(() => {
+    if (params.id && !loading) {
+      fetchCaseTasks();
+    }
+  }, [params.id, loading, fetchCaseTasks]);
 
   // Fetch expense three-view data when case is loaded
   useEffect(() => {
@@ -3285,6 +3335,20 @@ export default function CaseDetailPage() {
                   </button>
                 </div>
               )}
+              {caseTasksLoadError && (
+                // F03-B2: dosya görevleri okunamadıysa "Bekleyen iş yok" gerçek boş sonuç gibi görünmez. Retry yalnız bu kaynağı okur.
+                <div role="alert" className="m-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 flex items-center justify-between gap-3">
+                  <span>{caseTasksLoadError} Yapılacaklar listesinde dosya görevleri eksik olabilir.</span>
+                  <button type="button" onClick={fetchCaseTasks} className="shrink-0 rounded bg-red-100 px-2 py-1 text-red-800 hover:bg-red-200">
+                    Tekrar dene
+                  </button>
+                </div>
+              )}
+              {caseTasksTruncated && !caseTasksLoadError && (
+                <div role="status" className="m-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  Bu dosyanın açık görevlerinin tamamı burada listelenmiyor; tam liste Görevler ekranındadır.
+                </div>
+              )}
               {taskActionError && (
                 // Görev eylemi (✓ / İptal) başarısız olursa ya da görev adres görevi değilse: eskiden yalnız console.error ile
                 // YUTULUYORDU; kullanıcı düğmeye bastığında hiçbir şey olmamış görünüyordu.
@@ -3354,6 +3418,8 @@ export default function CaseDetailPage() {
                 tasks={[
                   // Adres görevleri (API'den)
                   ...addressTasks,
+                  // F03-B2: dosyaya bağlı Task satırları (GET /tasks?caseId=); eylemleri `/tasks` uçlarına gider
+                  ...caseTasks,
                   // Masraf görevleri (expense three-view'dan)
                   ...expenseThreeViewData
                     .filter((item) => item.task.status !== 'YAPILDI')
@@ -3436,11 +3502,27 @@ export default function CaseDetailPage() {
                   // Not ekleme modalı açılacak
                   console.log('Not ekle');
                 }}
-                onAddTask={() => {
-                  // Görev ekleme modalı açılacak
-                  console.log('Görev ekle');
-                }}
+                // F03-B2 (owner kararı K2-a): gerçek görev oluşturma penceresi. VIEWER görev yazamaz (sunucu da reddeder) →
+                // düğme hiç sunulmaz; API'nin reddedeceği bir eylem ekranda gösterilmez.
+                onAddTask={user && user.role !== 'VIEWER' ? () => setTaskCreateOpen(true) : undefined}
                 onTaskAction={async (taskId, action) => {
+                  // F03-B2: dosyaya bağlı Task satırı kendi uçlarına gider (`/tasks`); adres görevi uçlarıyla karışmaz.
+                  // İptal gerekçe ister (POST /tasks/:id/cancel) ve bu listede iptal penceresi yoktur → istek gönderilmez.
+                  if (caseTasks.some((task) => task.id === taskId)) {
+                    if (action !== 'complete') {
+                      setTaskActionError('Görev iptali gerekçe ister; iptal için Görevler ekranını kullanın.');
+                      return;
+                    }
+                    try {
+                      await api.updateTask(taskId, { status: 'COMPLETED' });
+                      setTaskActionError(null);
+                      fetchCaseTasks();
+                    } catch (error) {
+                      const reason = toActionErrorMessage(error, 'Görev tamamlanamadı.').trim();
+                      setTaskActionError(`${/[.!?…]$/.test(reason) ? reason : `${reason}.`} Görev listede duruyor.`);
+                    }
+                    return;
+                  }
                   // Görev tamamla veya iptal et. Bu uçlar YALNIZ adres görevleri içindir: masraf görevi (ExpenseRequest'ten
                   // türetilir) ve "Bir Sonraki Hamle" örneği (`sys-1`) adres görevi DEĞİLDİR — kimlikleri adres görevi
                   // ucunda 404 alırdı. İstek hiç gönderilmez; kullanıcıya nedeni yazılır.
@@ -4579,6 +4661,16 @@ export default function CaseDetailPage() {
           lawyers={caseData.lawyers || []}
           initialLawyerId={legalResponsibleInitialLawyerId}
           onSuccess={refreshResponsibilityPanels}
+        />
+      )}
+
+      {/* F03-B2: DOSYADAN GÖREV OLUŞTURMA */}
+      {caseData && taskCreateOpen && (
+        <CaseTaskCreateModal
+          caseId={caseData.id}
+          caseLabel={caseData.fileNumber || undefined}
+          onClose={() => setTaskCreateOpen(false)}
+          onCreated={fetchCaseTasks}
         />
       )}
 
