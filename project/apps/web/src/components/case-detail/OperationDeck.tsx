@@ -146,6 +146,8 @@ interface Task {
   priority?: "HIGH" | "MEDIUM" | "LOW";
   /** F03-B2: kaynağın kendi öncelik adı (Task satırı: Acil / Yüksek / Orta / Düşük). Verilmezse üç kademeli varsayılan ad yazılır. */
   priorityLabel?: string;
+  /** Doluysa satırda tamamlama eylemi sunulmaz; bu metin gösterilir (F03-C: kontrolde bekleyen görev). */
+  passiveText?: string;
   category?: "SONRAKI_HAMLE" | "SURE_BAGLI" | "RISK";
   taskType?: string; // Backend task type (CLIENT_REQUEST_DEBTOR_ADDRESSES vb.)
 }
@@ -1117,14 +1119,14 @@ export function OperationDeck({
                               Zaten aldık
                             </button>
                           )}
-                          {isDerivedExpenseTask(task) ? (
+                          {isDerivedExpenseTask(task) || task.passiveText ? (
                             <span
                               data-testid="task-passive-action"
-                              title={DERIVED_TASK_PASSIVE_TEXT}
+                              title={task.passiveText ?? DERIVED_TASK_PASSIVE_TEXT}
                               className="flex items-center gap-1 text-[10px] text-slate-400 cursor-default"
                             >
                               <Check aria-hidden="true" className="w-4 h-4 text-slate-300" />
-                              {DERIVED_TASK_PASSIVE_TEXT}
+                              {task.passiveText ?? DERIVED_TASK_PASSIVE_TEXT}
                             </span>
                           ) : (
                             <button

@@ -23,6 +23,9 @@ export interface CaseTaskRow {
   priority?: string | null;
   dueDate?: string | null;
   createdById?: string | null;
+  /** F03-C: kontrol alanları ("kontrolde" = IN_PROGRESS + reviewStatus AWAITING). */
+  reviewRequired?: boolean | null;
+  reviewStatus?: string | null;
 }
 
 export interface CaseDeckTask {
@@ -37,6 +40,10 @@ export interface CaseDeckTask {
   /** Görevin KENDİ öncelik etiketi (Görevler ekranındaki adla aynı). Liste üç kademeli rozete indirger; etiket indirgenmez. */
   priorityLabel: string;
   category: "SURE_BAGLI";
+  /** Doluysa satırda tamamlama eylemi SUNULMAZ; bu metin gösterilir (F03-C: kontrolde bekleyen görev). */
+  passiveText?: string;
+  /** F03-C: görev "kontrol gerekli" işaretli (tamamlanınca kontrole gider). */
+  reviewRequired?: boolean;
 }
 
 const DECK_STATUS: Record<string, CaseDeckTask["status"]> = {
@@ -45,6 +52,11 @@ const DECK_STATUS: Record<string, CaseDeckTask["status"]> = {
   COMPLETED: "YAPILDI",
   CANCELLED: "IPTAL",
 };
+
+/** Kontrolde bekleyen görev açık iştir ama dosyadan kapatılamaz: durumu yalnız kontrol kararıyla değişir. */
+export const CASE_TASK_AWAITING_REVIEW_TEXT = "Kontrolde; karar Görevler ekranından verilir";
+/** "Kontrol gerekli" görev dosyadan tamamlanınca gösterilen bilgi (Görevler ekranıyla aynı cümle). */
+export const CASE_TASK_REVIEW_SUBMITTED_TEXT = "Görev kontrole gönderildi; onaylanınca tamamlanmış sayılır.";
 
 const DECK_PRIORITY: Record<string, CaseDeckTask["priority"]> = {
   URGENT: "HIGH",
@@ -77,6 +89,8 @@ export function taskRowToDeckTask(row: CaseTaskRow): CaseDeckTask | null {
     priority: DECK_PRIORITY[String(row.priority ?? "")] ?? "MEDIUM",
     priorityLabel: TASK_PRIORITY_LABEL[String(row.priority ?? "")] ?? TASK_PRIORITY_LABEL.MEDIUM,
     category: "SURE_BAGLI",
+    ...(row.status === "IN_PROGRESS" && row.reviewStatus === "AWAITING" ? { passiveText: CASE_TASK_AWAITING_REVIEW_TEXT } : {}),
+    ...(row.reviewRequired ? { reviewRequired: true } : {}),
   };
 }
 

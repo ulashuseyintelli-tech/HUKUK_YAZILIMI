@@ -43,6 +43,9 @@ const AUTHORITY_LABEL: Record<string, string> = {
   ADMIN: "yönetici",
   TENANT_WRITER: "büro kullanıcısı",
   SYSTEM_PRODUCER: "sistem",
+  // F03-C: kontrol kararını hangi sıfatla verdiği.
+  REVIEWER_ADMIN: "kontrol eden yönetici",
+  REVIEWER_CREATOR: "kontrol eden, görevi oluşturan",
 };
 
 const NONE = "—";
@@ -76,6 +79,19 @@ export function describeTaskHistoryEvent(item: TaskHistoryItem): string {
       return `Dosya: ${caseRef(item.fromValue, item.fromLabel)} → ${caseRef(item.toValue, item.toLabel)}`;
     case "CANCELLED":
       return `İptal edildi: ${status(item.fromValue)} → ${status(item.toValue)}`;
+    // F03-C: görev içi bağımsız ilk kontrol. "Kontrolde" ayrı bir durum değeri değildir; olay adı ne olduğunu söyler.
+    case "REVIEW_REQUIREMENT_SET":
+      return "Kontrol gerekli olarak işaretlendi";
+    case "REVIEW_REQUIREMENT_REMOVED":
+      return "Kontrol işareti kaldırıldı";
+    case "REVIEW_SUBMITTED":
+      return "Tamamlandı bildirildi; kontrole gönderildi";
+    case "REVIEW_APPROVED":
+      return "Kontrol: onaylandı — görev tamamlandı";
+    case "REVIEW_REVISION_REQUESTED":
+      return "Kontrol: revizyon istendi — görev işi yapana döndü";
+    case "REVIEW_REJECTED":
+      return "Kontrol: reddedildi — görev yeniden bekliyor";
     default:
       return item.eventType;
   }

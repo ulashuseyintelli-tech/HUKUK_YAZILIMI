@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEnum, IsDateString, IsInt, Min, Max, IsNotEmpty, MaxLength } from "class-validator";
+import { IsString, IsOptional, IsEnum, IsDateString, IsInt, Min, Max, IsNotEmpty, MaxLength, IsBoolean } from "class-validator";
 import { Transform, Type } from "class-transformer";
 
 export enum TaskStatus {
@@ -19,6 +19,22 @@ export enum Priority {
 export enum TaskCategory {
   LEGAL_WORKFLOW = "LEGAL_WORKFLOW",
   OPERATIONAL_COMPLETENESS = "OPERATIONAL_COMPLETENESS",
+}
+
+/**
+ * F03-C: GET /tasks kontrol süzgeci. "Kontrolde" ayrı bir `TaskStatus` değeri DEĞİLDİR (IN_PROGRESS + kontrol bekliyor);
+ * liste onu bu süzgeçle ayırır. `status` süzgeciyle kesişir.
+ */
+export enum TaskReviewFilter {
+  AWAITING = "AWAITING",
+  NOT_AWAITING = "NOT_AWAITING",
+}
+
+/** F03-C: kontrol kararı (K9): onay → tamamlandı; revizyon → işi yapanda devam ediyor; ret → bekliyor. */
+export enum TaskReviewDecisionValue {
+  APPROVE = "APPROVE",
+  REJECT = "REJECT",
+  REQUEST_REVISION = "REQUEST_REVISION",
 }
 
 /** GET /tasks varsayılan sayfa boyu (bugünkü davranış korunur). */
@@ -79,6 +95,10 @@ export class ListTasksQueryDto {
   @IsOptional()
   caseId?: string;
 
+  @IsEnum(TaskReviewFilter)
+  @IsOptional()
+  review?: TaskReviewFilter;
+
   @IsEnum(TaskCategory)
   @IsOptional()
   taskCategory?: TaskCategory;
@@ -130,6 +150,40 @@ export class CreateTaskDto {
   @IsString()
   @IsOptional()
   assigneeId?: string;
+
+  /**
+   * F03-C (owner kararı K4-b): oluşturan görevi "kontrol gerekli" diye işaretler (varsayılan kapalı). İşaretli görev tamamlanınca
+   * işi yapandan FARKLI bir kişi onaylamadan tamamlanmış sayılmaz. İşi yapacak kişiden başka kontrol edebilecek kişi yoksa
+   * işaret konamaz (K5-b; 409). Sonradan değiştirmek için `POST /tasks/:id/review-requirement` (PUT bu alanı kabul etmez).
+   */
+  @IsBoolean()
+  @IsOptional()
+  reviewRequired?: boolean;
+}
+
+/** POST /tasks/:id/review-requirement — işareti koyma (yalnız oluşturan) ya da gerekçeyle kaldırma (oluşturan / ADMIN). */
+export class SetTaskReviewRequirementDto {
+  @IsBoolean()
+  required: boolean;
+
+  /** Kaldırmada ZORUNLU (1–2000 karakter); koymada yok sayılır. */
+  @Transform(({ value }) => (typeof value === "string" ? value.trim() : value))
+  @IsString()
+  @IsOptional()
+  @MaxLength(2000)
+  reason?: string;
+}
+
+/** POST /tasks/:id/review — kontrol kararı. Ret ve revizyonda gerekçe ZORUNLU; onayda isteğe bağlı not. */
+export class ReviewTaskDto {
+  @IsEnum(TaskReviewDecisionValue)
+  decision: TaskReviewDecisionValue;
+
+  @Transform(({ value }) => (typeof value === "string" ? value.trim() : value))
+  @IsString()
+  @IsOptional()
+  @MaxLength(2000)
+  note?: string;
 }
 
 export class UpdateTaskDto {

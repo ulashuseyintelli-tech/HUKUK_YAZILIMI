@@ -410,3 +410,5 @@ src/modules/task/__tests__/task-case-bound.http.db-gated.integration.spec.ts
 src/modules/task/__tests__/task-completion-attribution.http.db-gated.integration.spec.ts
 # F03-A2 (OFP-03a / OFF-INV-08): genel gorev gecmisi — islem ici yazim (atomiklik), GET /tasks/:id/history birlesik okuma, kapsam ve dosya numarasi gorunurlugu.
 src/modules/task/__tests__/task-history.http.db-gated.integration.spec.ts
+# F03-C (OFP-04 / WR01 B05): gorev ici bagimsiz ilk kontrol — zincir, kisi duzeyi bagimsizlik, K5 / K8, karar ve gerekce izi, gorunum kapsami.
+src/modules/task/__tests__/task-review.http.db-gated.integration.spec.ts

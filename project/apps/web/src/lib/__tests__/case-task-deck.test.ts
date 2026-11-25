@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CASE_TASK_DECK_TYPE, taskRowToDeckTask, taskRowsFromListResponse } from '../case-task-deck';
+import { CASE_TASK_AWAITING_REVIEW_TEXT, CASE_TASK_DECK_TYPE, taskRowToDeckTask, taskRowsFromListResponse } from '../case-task-deck';
 
 /**
  * F03-B2 — dosyaya bağlı Task satırı → "Yapılacaklar" görevi (saf dönüştürücü).
@@ -54,5 +54,25 @@ describe('taskRowsFromListResponse', () => {
     expect(taskRowsFromListResponse(null)).toEqual({ rows: [], totalPages: 1 });
     expect(taskRowsFromListResponse({ data: [{ id: 'a' }] })).toEqual({ rows: [{ id: 'a' }], totalPages: 1 });
     expect(taskRowsFromListResponse({ data: 'x', meta: { totalPages: 0 } })).toEqual({ rows: [], totalPages: 1 });
+  });
+});
+
+// F03-C: "kontrolde" ayri bir sunucu durumu degildir (IN_PROGRESS + reviewStatus AWAITING).
+describe('taskRowToDeckTask — F03-C kontrol', () => {
+  const base = { id: 't1', title: 'Sentetik görev', priority: 'MEDIUM', createdById: 'u1' };
+
+  it('kontrolde bekleyen görev açık iştir ama pasiftir: tamamlama eylemi yerine neden yazılır', () => {
+    const task = taskRowToDeckTask({ ...base, status: 'IN_PROGRESS', reviewRequired: true, reviewStatus: 'AWAITING' });
+    expect(task?.status).toBe('BEKLIYOR');
+    expect(task?.passiveText).toBe(CASE_TASK_AWAITING_REVIEW_TEXT);
+    expect(task?.reviewRequired).toBe(true);
+  });
+
+  it('kontrolde olmayan görev pasif değildir (işaretli, revizyon istenmiş ya da bayat AWAITING)', () => {
+    expect(taskRowToDeckTask({ ...base, status: 'PENDING', reviewRequired: true, reviewStatus: null })).toMatchObject({ reviewRequired: true });
+    expect(taskRowToDeckTask({ ...base, status: 'PENDING', reviewRequired: true, reviewStatus: null })?.passiveText).toBeUndefined();
+    expect(taskRowToDeckTask({ ...base, status: 'IN_PROGRESS', reviewRequired: true, reviewStatus: 'REVISION_REQUESTED' })?.passiveText).toBeUndefined();
+    expect(taskRowToDeckTask({ ...base, status: 'PENDING', reviewStatus: 'AWAITING' })?.passiveText).toBeUndefined();
+    expect(taskRowToDeckTask({ ...base, status: 'PENDING' })).not.toHaveProperty('reviewRequired');
   });
 });

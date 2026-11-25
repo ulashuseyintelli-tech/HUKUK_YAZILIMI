@@ -285,3 +285,53 @@ describe('Yapılacaklar — "Manuel Görev Ekle" gerçek görev oluşturur', () 
     expect(mocked.createTask).not.toHaveBeenCalled();
   });
 });
+
+// F03-C (OFP-04): "kontrolde" ayrı bir sunucu durumu değildir (IN_PROGRESS + reviewStatus AWAITING). Dosya listesi onu açık iş
+// olarak gösterir ama buradan kapatılamaz; "kontrol gerekli" görev tamamlanınca "tamamlandı" denmez.
+describe('Yapılacaklar — F03-C kontrol gerekli görev', () => {
+  it('kontrolde bekleyen görev listede durur; tamamlama düğmesi sunulmaz, nedeni yazılır', async () => {
+    primeTasks({ current: [{ ...taskRow('task-1', TASK_TITLE, 'IN_PROGRESS'), reviewRequired: true, reviewStatus: 'AWAITING' }] });
+    mountCase();
+    await openTasksTab();
+
+    const row = await waitFor(() => rowOf(TASK_TITLE), WAIT);
+    expect(within(row).queryByRole('button', { name: `Görevi tamamla: ${TASK_TITLE}` })).toBeNull();
+    expect(norm(within(row).getByTestId('task-passive-action').textContent)).toBe('Kontrolde; karar Görevler ekranından verilir');
+    expect(mocked.updateTask).not.toHaveBeenCalled();
+  });
+
+  it('"kontrol gerekli" görev ✓ ile tamamlanınca kontrole gönderildiği yazılır ve satır pasifleşir (listeden kalkmaz)', async () => {
+    const rows: { current: Rec[] } = { current: [{ ...taskRow('task-1', TASK_TITLE), reviewRequired: true, reviewStatus: null }] };
+    primeTasks(rows);
+    mocked.updateTask.mockImplementation(async () => {
+      rows.current = [{ ...taskRow('task-1', TASK_TITLE, 'IN_PROGRESS'), reviewRequired: true, reviewStatus: 'AWAITING' }];
+      return rows.current[0];
+    });
+    mountCase();
+    await openTasksTab();
+
+    const row = await waitFor(() => rowOf(TASK_TITLE), WAIT);
+    fireEvent.click(within(row).getByRole('button', { name: `Görevi tamamla: ${TASK_TITLE}` }));
+
+    await waitFor(() => expect(mocked.updateTask).toHaveBeenCalledWith('task-1', { status: 'COMPLETED' }), WAIT);
+    const notice = await screen.findByTestId('case-task-review-notice', {}, WAIT);
+    expect(norm(notice.textContent)).toContain('Görev kontrole gönderildi; onaylanınca tamamlanmış sayılır.');
+    await waitFor(() => expect(within(rowOf(TASK_TITLE)).getByTestId('task-passive-action')).toBeTruthy(), WAIT);
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('işaretsiz görev tamamlanınca kontrol bilgisi gösterilmez', async () => {
+    const rows = { current: [taskRow('task-1', TASK_TITLE)] };
+    primeTasks(rows);
+    mocked.updateTask.mockImplementation(async () => {
+      rows.current = [];
+      return { ...taskRow('task-1', TASK_TITLE, 'COMPLETED'), reviewStatus: null };
+    });
+    mountCase();
+    await openTasksTab();
+
+    fireEvent.click(within(await waitFor(() => rowOf(TASK_TITLE), WAIT)).getByRole('button', { name: `Görevi tamamla: ${TASK_TITLE}` }));
+    await waitFor(() => expect(screen.queryByText(TASK_TITLE)).toBeNull(), WAIT);
+    expect(screen.queryByTestId('case-task-review-notice')).toBeNull();
+  });
+});

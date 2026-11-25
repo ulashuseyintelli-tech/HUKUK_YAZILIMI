@@ -78,3 +78,21 @@ describe('taskHistoryCoverageNotes', () => {
     expect(notes[1]).toContain('bu geçmişte yer almaz');
   });
 });
+
+// F03-C: gorev ici bagimsiz ilk kontrol olaylari.
+describe('describeTaskHistoryEvent / describeTaskHistoryActor — F03-C kontrol olayları', () => {
+  it('kontrol olayları ne olduğunu söyler; "kontrolde" ham durum koduyla yazılmaz', () => {
+    const text = (eventType: string) => describeTaskHistoryEvent(item({ eventType, fromValue: 'IN_PROGRESS', toValue: 'COMPLETED' }));
+    expect(text('REVIEW_REQUIREMENT_SET')).toBe('Kontrol gerekli olarak işaretlendi');
+    expect(text('REVIEW_REQUIREMENT_REMOVED')).toBe('Kontrol işareti kaldırıldı');
+    expect(text('REVIEW_SUBMITTED')).toBe('Tamamlandı bildirildi; kontrole gönderildi');
+    expect(text('REVIEW_APPROVED')).toBe('Kontrol: onaylandı — görev tamamlandı');
+    expect(text('REVIEW_REVISION_REQUESTED')).toBe('Kontrol: revizyon istendi — görev işi yapana döndü');
+    expect(text('REVIEW_REJECTED')).toBe('Kontrol: reddedildi — görev yeniden bekliyor');
+  });
+
+  it('karar verenin sıfatı yazılır: kontrol eden yönetici / kontrol eden, görevi oluşturan', () => {
+    expect(describeTaskHistoryActor(item({ authoritySource: 'REVIEWER_ADMIN', actorName: 'Sentetik Yönetici' }))).toBe('Sentetik Yönetici (kontrol eden yönetici)');
+    expect(describeTaskHistoryActor(item({ authoritySource: 'REVIEWER_CREATOR', actorName: 'Sentetik Oluşturan' }))).toBe('Sentetik Oluşturan (kontrol eden, görevi oluşturan)');
+  });
+});

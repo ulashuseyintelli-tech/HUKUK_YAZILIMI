@@ -846,6 +846,8 @@ export const CASE_RELATED_CONTROLLERS: Readonly<Record<string, readonly RouteEnt
     ["GET /tasks/:id/cancellations", "BASKA_KAPI", "görev görünüm kapsamı (task.service.ts:276)"],
     ["GET /tasks/:id/history", "KAPILI_ICERDE", "task/task.service.ts::findHistory"],
     ["POST /tasks/:id/cancel", "YAZIM", ""],
+    ["POST /tasks/:id/review-requirement", "YAZIM", ""],
+    ["POST /tasks/:id/review", "YAZIM", ""],
   ],
   "tebligat/tebligat.controller.ts": [
     ["POST /tebligat", "YAZIM", ""],

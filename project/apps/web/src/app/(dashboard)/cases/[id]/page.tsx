@@ -75,6 +75,7 @@ import {
   CASE_TASK_MAX_PAGES,
   CASE_TASK_OPEN_STATUSES,
   CASE_TASK_PAGE_SIZE,
+  CASE_TASK_REVIEW_SUBMITTED_TEXT,
   taskRowToDeckTask,
   taskRowsFromListResponse,
   type CaseDeckTask,
@@ -998,6 +999,8 @@ export default function CaseDetailPage() {
   const [loadingAddressTasks, setLoadingAddressTasks] = useState(false);
   // Yapılacaklar eylem hatası (✓ / İptal): sessiz KALMAZ (lib/action-error.ts kuralı). Görev listede kalır; bant "Kapat" ile kalkar.
   const [taskActionError, setTaskActionError] = useState<string | null>(null);
+  // F03-C: "kontrol gerekli" görev dosyadan tamamlanınca tamamlanmış sayılmaz; kontrole gider ve ekran bunu söyler.
+  const [taskActionNotice, setTaskActionNotice] = useState<string | null>(null);
   // F03-B2 (OFP-02): dosyaya bağlı Task satırları (GET /tasks?caseId=). Adres görevi ve masraf türevi görevden AYRI kaynaktır;
   // eylemleri yalnız `/tasks` uçlarına gider. Okuma hatası sessiz kalmaz; liste kısaltıldıysa ekran bunu söyler.
   const [caseTasks, setCaseTasks] = useState<CaseDeckTask[]>([]);
@@ -3349,6 +3352,14 @@ export default function CaseDetailPage() {
                   Bu dosyanın açık görevlerinin tamamı burada listelenmiyor; tam liste Görevler ekranındadır.
                 </div>
               )}
+              {taskActionNotice && (
+                <div role="status" data-testid="case-task-review-notice" className="m-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900 flex items-center justify-between gap-3">
+                  <span>{taskActionNotice}</span>
+                  <button type="button" onClick={() => setTaskActionNotice(null)} className="shrink-0 rounded bg-blue-100 px-2 py-1 text-blue-900 hover:bg-blue-200">
+                    Kapat
+                  </button>
+                </div>
+              )}
               {taskActionError && (
                 // Görev eylemi (✓ / İptal) başarısız olursa ya da görev adres görevi değilse: eskiden yalnız console.error ile
                 // YUTULUYORDU; kullanıcı düğmeye bastığında hiçbir şey olmamış görünüyordu.
@@ -3514,10 +3525,13 @@ export default function CaseDetailPage() {
                       return;
                     }
                     try {
-                      await api.updateTask(taskId, { status: 'COMPLETED' });
+                      const saved = await api.updateTask(taskId, { status: 'COMPLETED' });
                       setTaskActionError(null);
+                      // F03-C: sunucu görevi kontrole aldıysa (devam ediyor + kontrol bekliyor) "tamamlandı" denmez.
+                      setTaskActionNotice(saved?.status === 'IN_PROGRESS' && saved?.reviewStatus === 'AWAITING' ? CASE_TASK_REVIEW_SUBMITTED_TEXT : null);
                       fetchCaseTasks();
                     } catch (error) {
+                      setTaskActionNotice(null);
                       const reason = toActionErrorMessage(error, 'Görev tamamlanamadı.').trim();
                       setTaskActionError(`${/[.!?…]$/.test(reason) ? reason : `${reason}.`} Görev listede duruyor.`);
                     }

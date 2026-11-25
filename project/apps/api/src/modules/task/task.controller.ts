@@ -10,7 +10,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { TaskService } from "./task.service";
-import { CancelTaskDto, CreateTaskDto, ListTaskCancellationsQueryDto, ListTaskHistoryQueryDto, ListTasksQueryDto, UpdateTaskDto } from "./dto/task.dto";
+import { CancelTaskDto, CreateTaskDto, ListTaskCancellationsQueryDto, ListTaskHistoryQueryDto, ListTasksQueryDto, ReviewTaskDto, SetTaskReviewRequirementDto, UpdateTaskDto } from "./dto/task.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
@@ -78,6 +78,34 @@ export class TaskController {
     @Body() dto: CancelTaskDto,
   ) {
     return this.taskService.cancel(tenantId, id, userId, dto);
+  }
+
+  /**
+   * F03-C (OFP-04; K4-b, K5-b, K8): "kontrol gerekli" işareti. Koyma yalnız görevi oluşturanındır; kaldırma (gerekçe zorunlu)
+   * oluşturan ya da ADMIN. Kontrol edebilecek kişi yoksa işaret konamaz (409 `TASK_REVIEW_NO_ELIGIBLE_REVIEWER`).
+   */
+  @Post(":id/review-requirement")
+  setReviewRequirement(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
+    @Param("id") id: string,
+    @Body() dto: SetTaskReviewRequirementDto,
+  ) {
+    return this.taskService.setReviewRequirement(tenantId, id, userId, dto);
+  }
+
+  /**
+   * F03-C (OFP-04; K3-a, K5b-a, K9): bağımsız ilk kontrol kararı (onay / revizyon / ret). Karar veren işi yapanla aynı kişi
+   * olamaz; nihai avukat onayı değildir, ADR-009 onay motorunu kullanmaz.
+   */
+  @Post(":id/review")
+  review(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
+    @Param("id") id: string,
+    @Body() dto: ReviewTaskDto,
+  ) {
+    return this.taskService.review(tenantId, id, userId, dto);
   }
 
   @Put(":id")
