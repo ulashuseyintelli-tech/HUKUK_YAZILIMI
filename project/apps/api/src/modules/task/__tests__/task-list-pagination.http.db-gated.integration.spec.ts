@@ -23,6 +23,7 @@ import { randomUUID } from 'node:crypto';
 import * as request from 'supertest';
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { AuditService } from '../../audit/audit.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { TaskController } from '../task.controller';
 import { TaskService } from '../task.service';
@@ -87,7 +88,7 @@ describeDb('GET /tasks — F01-A sayfalama, sunucu toplamları, süzgeçler (ger
     await db.$connect();
     const module = await Test.createTestingModule({
       controllers: [TaskController],
-      providers: [TaskService, { provide: PrismaService, useValue: db }],
+      providers: [TaskService, AuditService, { provide: PrismaService, useValue: db }], // F03-A2: yazım yolları denetim servisi ister
     })
       .overrideGuard(JwtAuthGuard)
       .useValue(new TestIdentityGuard(db))
@@ -162,6 +163,7 @@ describeDb('GET /tasks — F01-A sayfalama, sunucu toplamları, süzgeçler (ger
 
   afterAll(async () => {
     if (db) {
+      await db.taskHistoryEvent.deleteMany({ where: { tenantId: { in: tenants } } }); // F03-A2: geçmiş satırları göreve Restrict FK ile bağlı → görevden önce silinir
       await db.task.deleteMany({ where: { tenantId: { in: tenants } } });
       await db.case.deleteMany({ where: { tenantId: { in: tenants } } });
       await db.user.deleteMany({ where: { tenantId: { in: tenants } } });

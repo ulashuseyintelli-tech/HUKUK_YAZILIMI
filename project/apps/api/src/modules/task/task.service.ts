@@ -20,7 +20,17 @@ export function normalizeDueDate(value: string | null | undefined): Date | null 
 }
 import { Prisma, TaskCategory as PrismaTaskCategory, TaskStatus as PrismaTaskStatus } from "@prisma/client";
 import { PrismaService } from "@/prisma/prisma.service";
-import { CancelTaskDto, CreateTaskDto, ListTaskCancellationsQueryDto, TASK_LIST_DEFAULT_LIMIT, UpdateTaskDto } from "./dto/task.dto";
+import { CancelTaskDto, CreateTaskDto, ListTaskCancellationsQueryDto, ListTaskHistoryQueryDto, TASK_LIST_DEFAULT_LIMIT, UpdateTaskDto } from "./dto/task.dto";
+import {
+  TASK_HISTORY_ACTOR,
+  TASK_HISTORY_AUTHORITY,
+  TASK_HISTORY_EVENT,
+  createdTaskHistory,
+  diffTaskHistory,
+  newTaskHistoryCorrelationId,
+  taskHistoryUserAuthority,
+  userTaskHistoryRows,
+} from "./task-history";
 import { AuditService } from "@/modules/audit/audit.service";
 import { WorkScopePermissionService } from "@/modules/work-scope-permission/work-scope-permission.service";
 import { TASK_VIEW_ALL_KEY, isTaskViewScopeEnabled, taskViewWhereFor } from "./task-view-scope";
@@ -49,6 +59,9 @@ export interface TaskListSummary {
   inProgress: number;
   operationalOpen: number;
 }
+
+/** GET /tasks/:id/history: iki tablodan birleştirilen pencerenin üst sınırı (`page * limit`). Ötesi 400 döner. */
+export const TASK_HISTORY_MAX_WINDOW = 2000;
 
 /** Dosya kiracıda yoksa VE aktörün dosya kapsamı dışındaysa AYNI ileti (varlık sızmaz). */
 const INVALID_TASK_CASE_MESSAGE = "Geçersiz dosya: aynı ofise ait bir dosya değil.";
@@ -280,15 +293,45 @@ export class TaskService {
     if (dto.assigneeId) {
       await this.assertAssigneeEligible(tenantId, dto.assigneeId);
     }
+    const dueDate = normalizeDueDate(dto.dueDate);
+    const audit = this.requireHistoryAudit();
 
-    return this.prisma.task.create({
-      data: {
-        tenantId,
-        createdById: userId,
-        ...dto,
-        dueDate: normalizeDueDate(dto.dueDate),
-      },
+    // F03-A2 (OFP-03a / OFF-INV-08): görev + geçmiş satırı + denetim kaydı TEK işlemde; biri yazılamazsa hiçbiri kalmaz.
+    return this.prisma.$transaction(async tx => {
+      const actor = await this.historyActor(tx, tenantId, userId);
+      const created = await tx.task.create({
+        data: {
+          tenantId,
+          createdById: userId,
+          ...dto,
+          dueDate,
+        },
+      });
+      const correlationId = newTaskHistoryCorrelationId();
+      const change = createdTaskHistory(created);
+      await tx.taskHistoryEvent.createMany({
+        data: userTaskHistoryRows({ tenantId, taskId: created.id, actor, authoritySource: TASK_HISTORY_AUTHORITY.CREATOR, correlationId, changes: [change] }),
+      });
+      await audit.logInTransaction(tx, {
+        tenantId, userId: actor.id, action: "TASK_CREATED", entityType: "TASK", entityId: created.id,
+        description: "Görev oluşturuldu.", newValues: change.details as Record<string, unknown>, correlationId,
+        metadata: { authoritySource: TASK_HISTORY_AUTHORITY.CREATOR, historyEvents: [change.eventType] },
+      });
+      return created;
     });
+  }
+
+  /** F03-A2: geçmiş + denetim kaydı domain yazımıyla AYNI işlemdedir; denetim servisi yoksa yazım hiç başlamaz (fail-closed). */
+  private requireHistoryAudit(): AuditService {
+    if (!this.audit) throw new ServiceUnavailableException("Görev geçmişi denetim kaydı kullanılamıyor.");
+    return this.audit;
+  }
+
+  /** F03-A2: aktör aktif ve aynı büroda olmalı; rolü geçmiş satırına anlık görüntü olarak yazılır (iptal yoluyla aynı doğrulama). */
+  private async historyActor(db: TaskDb, tenantId: string, userId: string) {
+    const actor = await db.user.findFirst({ where: { id: userId, tenantId, isActive: true }, select: { id: true, role: true } });
+    if (!actor) throw new ForbiddenException("Görev aktörü doğrulanamadı.");
+    return actor;
   }
 
   /**
@@ -321,14 +364,17 @@ export class TaskService {
       await this.assertAssigneeEligible(tenantId, dto.assigneeId);
     }
 
+    const audit = this.requireHistoryAudit();
     return this.prisma.$transaction(async tx => {
       await tx.$queryRaw`SELECT "id" FROM "Task" WHERE "id" = ${id} AND "tenantId" = ${tenantId} FOR UPDATE`;
-      const existing = await tx.task.findFirst({ where: { id, tenantId }, select: { status: true } });
+      // F03-A2: kilit altında TAM satır okunur — geçmiş farkı bu "önceki" duruma göre hesaplanır.
+      const existing = await tx.task.findFirst({ where: { id, tenantId } });
       if (!existing) throw new NotFoundException("Görev bulunamadı");
       // An unchanged CANCELLED field is not authority to cancel again after a concurrent reopen.
       if (dto.status === "CANCELLED" && existing.status !== "CANCELLED") {
         throw new BadRequestException("Durum değişikliği için gerekçeli iptal işlemini kullanın.");
       }
+      const actor = await this.historyActor(tx, tenantId, userId);
 
       const data: any = { ...dto, dueDate: normalizeDueDate(dto.dueDate) };
       if (dto.status === "CANCELLED") delete data.status;
@@ -345,10 +391,29 @@ export class TaskService {
         data.resolutionType = null;
       }
 
-      return tx.task.update({
+      const updated = await tx.task.update({
         where: { id },
         data,
       });
+
+      // F03-A2 (OFP-03a / OFF-INV-08): yalnız DEĞİŞEN izlenen alanlar (atama, durum, öncelik, son tarih, dosya bağı, yeniden açma)
+      // geçmişe yazılır; değişmeyen değer ve izlenmeyen alan (başlık, açıklama) satır üretmez. Geçmiş + denetim kaydı bu
+      // işlemin parçasıdır: yazılamazsa görev değişikliği de geri alınır.
+      const changes = diffTaskHistory(existing, updated);
+      if (changes.length > 0) {
+        const correlationId = newTaskHistoryCorrelationId();
+        const authoritySource = taskHistoryUserAuthority(actor, existing);
+        await tx.taskHistoryEvent.createMany({ data: userTaskHistoryRows({ tenantId, taskId: id, actor, authoritySource, correlationId, changes }) });
+        await audit.logInTransaction(tx, {
+          tenantId, userId: actor.id, action: "TASK_UPDATED", entityType: "TASK", entityId: id,
+          description: "Görev güncellendi.",
+          oldValues: Object.fromEntries(changes.map(change => [change.eventType, change.fromValue])),
+          newValues: Object.fromEntries(changes.map(change => [change.eventType, change.toValue])),
+          correlationId,
+          metadata: { authoritySource, historyEvents: changes.map(change => change.eventType) },
+        });
+      }
+      return updated;
     });
   }
 
@@ -427,5 +492,94 @@ export class TaskService {
       const names = new Map(actors.map(actor => [actor.id, `${actor.name ?? ""} ${actor.surname ?? ""}`.trim()]));
       return { data: events.map(event => ({ ...event, actorName: names.get(event.actorUserId) || null })), meta: { page, limit, total, totalPages: Math.ceil(total / limit) } };
     });
+  }
+
+  /**
+   * TaskController.findHistory -> GET /tasks/:id/history (F03-A2 / OFP-03a). Genel geçmiş (`TaskHistoryEvent`) ile gerekçeli
+   * iptaller (`TaskCancellationEvent`) TEK listede, yeni → eski sıralı döner. Yetki iptal geçmişiyle AYNIDIR (aktif büro kullanıcısı
+   * + görev görünüm kapsamı; kapsam dışı görev var olmayanla aynı 404). Ham denetim ucu DEĞİLDİR: alan izdüşümü sabittir
+   * (`details`, kiracı ve görev kimliği dönmez). Dosya bağı değişikliğinde dosya NUMARASI yalnız dosya aktöre görünüyorsa yazılır
+   * (görev erişimi dosya erişimi üretmez); dosya kimliği görevin kendi sütunudur ve bugünkü görev yanıtıyla aynı kalır.
+   * `meta.coverage` kapsam sınırını bildirir: eski görevde oluşturma kaydı yoktur ve sistem üreticilerinin yazımları (müvekkil
+   * eksik-bilgi yeniden doğuşu dışında) bu geçmişe girmez — ekran kayıtlı olmayanı "değişmedi" gibi göstermez.
+   */
+  async findHistory(tenantId: string, id: string, userId: string, query: ListTaskHistoryQueryDto = {}) {
+    this.assertCancellationIdentity(tenantId, id, userId);
+    const page = query.page ?? 1, limit = query.limit ?? TASK_LIST_DEFAULT_LIMIT;
+    if (!Number.isInteger(page) || page < 1 || !Number.isInteger(limit) || limit < 1 || limit > 100) throw new BadRequestException("Geçersiz geçmiş sayfası.");
+    // İki tablo bellekte birleştirilir: her birinden en çok `page * limit` satır okunur; pencere üst sınırlıdır.
+    const window = page * limit;
+    if (window > TASK_HISTORY_MAX_WINDOW) throw new BadRequestException("Geçmiş sayfası sınırın ötesinde.");
+
+    const read = await this.prisma.$transaction(async tx => {
+      await this.cancellationContext(tx, tenantId, id, userId);
+      const where = { tenantId, taskId: id };
+      const orderBy = [{ createdAt: "desc" as const }, { id: "desc" as const }];
+      // İşlem istemcisi eşzamanlı sorgu çalıştırmaz → sorgular sıralıdır.
+      const history = await tx.taskHistoryEvent.findMany({ where, orderBy, take: window,
+        select: { id: true, eventType: true, actorType: true, actorUserId: true, actorRole: true, authoritySource: true, fromValue: true, toValue: true, reason: true, correlationId: true, createdAt: true } });
+      const cancellations = await tx.taskCancellationEvent.findMany({ where, orderBy, take: window,
+        select: { id: true, actorUserId: true, actorRole: true, authoritySource: true, fromStatus: true, toStatus: true, reason: true, createdAt: true } });
+      const total = (await tx.taskHistoryEvent.count({ where })) + (await tx.taskCancellationEvent.count({ where }));
+      const creationRecorded = (await tx.taskHistoryEvent.count({ where: { ...where, eventType: TASK_HISTORY_EVENT.CREATED } })) > 0;
+
+      const merged = [
+        ...history.map(event => ({ ...event, kind: "HISTORY" as const, actorRole: event.actorRole as string | null })),
+        ...cancellations.map(event => ({
+          id: event.id, kind: "CANCELLATION" as const, eventType: "CANCELLED", actorType: TASK_HISTORY_ACTOR.USER as string,
+          actorUserId: event.actorUserId as string | null, actorRole: event.actorRole as string | null, authoritySource: event.authoritySource,
+          fromValue: event.fromStatus as string | null, toValue: event.toStatus as string | null, reason: event.reason as string | null,
+          correlationId: null as string | null, createdAt: event.createdAt,
+        })),
+      ]
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
+        .slice((page - 1) * limit, page * limit);
+
+      const userIds = new Set<string>();
+      const caseIds = new Set<string>();
+      for (const event of merged) {
+        if (event.actorUserId) userIds.add(event.actorUserId);
+        for (const value of [event.fromValue, event.toValue]) {
+          if (!value) continue;
+          if (event.eventType === TASK_HISTORY_EVENT.ASSIGNEE_CHANGED) userIds.add(value);
+          if (event.eventType === TASK_HISTORY_EVENT.CASE_LINK_CHANGED) caseIds.add(value);
+        }
+      }
+      const users = userIds.size ? await tx.user.findMany({ where: { tenantId, id: { in: [...userIds] } }, select: { id: true, name: true, surname: true } }) : [];
+      const cases = caseIds.size ? await tx.case.findMany({ where: { tenantId, id: { in: [...caseIds] } }, select: { id: true, fileNumber: true } }) : [];
+      return { merged, users, cases, total, creationRecorded };
+    });
+
+    // Dosya numarası yalnız aktörün gördüğü dosya için yazılır (bayrak kapalı / büro geneli izin → null = süzme yok).
+    let visibleCases: Set<string> | null = null;
+    if (read.cases.length > 0 && isCaseViewScopeEnabled()) {
+      if (!this.caseViewScope) {
+        throw new ForbiddenException({ code: "CASE_VIEW_SCOPE_UNRESOLVED", message: "Dosya görünüm kapsamı çözümlenemedi" });
+      }
+      visibleCases = await this.caseViewScope.visibleCaseIds(tenantId, userId, read.cases.map(row => row.id));
+    }
+    const userNames = new Map(read.users.map(user => [user.id, `${user.name ?? ""} ${user.surname ?? ""}`.trim()]));
+    const fileNumbers = new Map(read.cases.filter(row => !visibleCases || visibleCases.has(row.id)).map(row => [row.id, row.fileNumber]));
+    const labelOf = (eventType: string, value: string | null): string | null => {
+      if (!value) return null;
+      if (eventType === TASK_HISTORY_EVENT.ASSIGNEE_CHANGED) return userNames.get(value) || null;
+      if (eventType === TASK_HISTORY_EVENT.CASE_LINK_CHANGED) return fileNumbers.get(value) ?? null;
+      return null;
+    };
+
+    return {
+      data: read.merged.map(event => ({
+        id: event.id, kind: event.kind, eventType: event.eventType, actorType: event.actorType,
+        actorUserId: event.actorUserId, actorName: (event.actorUserId && userNames.get(event.actorUserId)) || null,
+        actorRole: event.actorRole, authoritySource: event.authoritySource,
+        fromValue: event.fromValue, toValue: event.toValue,
+        fromLabel: labelOf(event.eventType, event.fromValue), toLabel: labelOf(event.eventType, event.toValue),
+        reason: event.reason, correlationId: event.correlationId, createdAt: event.createdAt,
+      })),
+      meta: {
+        page, limit, total: read.total, totalPages: Math.ceil(read.total / limit),
+        coverage: { creationRecorded: read.creationRecorded, systemWritersRecorded: false },
+      },
+    };
   }
 }

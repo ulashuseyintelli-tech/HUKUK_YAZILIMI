@@ -11,6 +11,13 @@ import { ActionError } from "@/components/ui/action-error";
 import { toActionErrorMessage } from "@/lib/action-error";
 import { runMutation, runRefreshOnly } from "@/lib/mutation-outcome";
 import { useKeyedSubmitLock } from "@/lib/use-submit-lock";
+import {
+  describeTaskHistoryActor,
+  describeTaskHistoryEvent,
+  taskHistoryCoverageNotes,
+  type TaskHistoryCoverage,
+  type TaskHistoryItem,
+} from "@/lib/task-history";
 
 interface Task {
   id: string;
@@ -29,15 +36,6 @@ interface Task {
   missingFields?: string[];
 }
 
-interface TaskCancellation {
-  id: string;
-  actorUserId: string;
-  actorName: string | null;
-  fromStatus: string;
-  toStatus: string;
-  reason: string;
-  createdAt: string;
-}
 
 /**
  * GET /tasks `meta` sözleşmesi (F01-A). `summary` sunucu toplamıdır: kapsam tenant + (varsa) seçili
@@ -150,8 +148,9 @@ export default function TasksPage() {
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [historyTarget, setHistoryTarget] = useState<Task | null>(null);
-  const [history, setHistory] = useState<TaskCancellation[]>([]);
+  const [history, setHistory] = useState<TaskHistoryItem[]>([]);
   const [historyMeta, setHistoryMeta] = useState<TaskListMeta | null>(null);
+  const [historyCoverage, setHistoryCoverage] = useState<TaskHistoryCoverage | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const historyRequestRef = useRef(0);
@@ -388,24 +387,33 @@ export default function TasksPage() {
     }
   };
 
-  const loadCancellationHistory = async (task: Task, historyPage = 1) => {
+  // F03-A2 (OFP-03a): görevin genel geçmişi + gerekçeli iptalleri TEK listede (GET /tasks/:id/history; yeni → eski).
+  // `api.getTaskHistory` gövdeyi olduğu gibi döner: `{ data: [...], meta }`. (Önceki iptal geçmişi penceresi bu zarfı bir kat
+  // fazla açıyordu ve 200 yanıtı "alınamadı" diye gösteriyordu; birleşik pencere tek zarf okur.)
+  const loadTaskHistory = async (task: Task, historyPage = 1) => {
     const token = ++historyRequestRef.current;
     setHistoryTarget(task);
     setHistory([]);
     setHistoryMeta(null);
+    setHistoryCoverage(null);
     setHistoryError(null);
     setHistoryLoading(true);
     try {
-      const response = await api.getTaskCancellations(task.id, historyPage);
+      const body = await api.getTaskHistory(task.id, historyPage);
       if (!isMountedRef.current || token !== historyRequestRef.current) return;
-      const body = response?.data;
       const parsed = parseMeta(body?.meta);
-      if (!Array.isArray(body?.data) || !parsed) throw new Error("İptal geçmişi yanıtı geçersiz.");
+      if (!Array.isArray(body?.data) || !parsed) throw new Error("Görev geçmişi yanıtı geçersiz.");
       setHistory(body.data);
       setHistoryMeta(parsed);
+      const coverage = body.meta?.coverage;
+      setHistoryCoverage(
+        coverage && typeof coverage.creationRecorded === "boolean" && typeof coverage.systemWritersRecorded === "boolean"
+          ? { creationRecorded: coverage.creationRecorded, systemWritersRecorded: coverage.systemWritersRecorded }
+          : null,
+      );
     } catch (error) {
       if (!isMountedRef.current || token !== historyRequestRef.current) return;
-      setHistoryError(toActionErrorMessage(error, "İptal geçmişi alınamadı."));
+      setHistoryError(toActionErrorMessage(error, "Görev geçmişi alınamadı."));
     } finally {
       if (isMountedRef.current && token === historyRequestRef.current) setHistoryLoading(false);
     }
@@ -673,7 +681,7 @@ export default function TasksPage() {
                 >
                   <Edit2 className="h-4 w-4" />
                 </button>
-                <button aria-label={`${task.title} iptal geçmişi`} onClick={() => void loadCancellationHistory(task)} className="p-2 text-gray-400 hover:text-primary rounded">
+                <button aria-label={`${task.title} geçmişi`} title="Geçmiş" onClick={() => void loadTaskHistory(task)} className="p-2 text-gray-400 hover:text-primary rounded">
                   <History className="h-4 w-4" />
                 </button>
                 {canCancel(task) && (
@@ -724,28 +732,43 @@ export default function TasksPage() {
       {historyTarget && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div role="dialog" aria-modal="true" aria-labelledby="task-history-title" className="bg-white rounded-xl p-6 max-w-xl w-full max-h-[85vh] overflow-auto">
-            <h2 id="task-history-title" className="text-lg font-semibold">İptal geçmişi — {historyTarget.title}</h2>
-            <p className="text-sm text-muted-foreground mt-1">Bu kayıtlar gerekçeli manuel iptalleri gösterir.</p>
-            {historyLoading && <p role="status">İptal geçmişi yükleniyor…</p>}
+            {/* Liste uzadığında alttaki "Kapat" pencerenin kaydırma alanında kalır; üstteki düğme her zaman görünür (gerçek sayfada ölçüldü). */}
+            <div className="sticky top-0 -mt-2 flex items-start justify-between gap-3 bg-white pb-1 pt-2">
+              <h2 id="task-history-title" className="text-lg font-semibold">Geçmiş — {historyTarget.title}</h2>
+              <button
+                type="button"
+                aria-label="Geçmiş penceresini kapat"
+                onClick={() => { ++historyRequestRef.current; setHistoryTarget(null); setHistory([]); setHistoryCoverage(null); setHistoryError(null); }}
+                className="shrink-0 rounded p-1 text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1">Görevin kayıtlı değişiklikleri ve gerekçeli iptalleri; en yeni kayıt üstte.</p>
+            {historyLoading && <p role="status">Görev geçmişi yükleniyor…</p>}
             {historyError && <div role="alert" className="text-red-700 mt-2">{historyError}</div>}
-            {!historyLoading && !historyError && history.length === 0 && <p className="mt-3">Kayıtlı manuel iptal yok.</p>}
+            {/* Kapsam sınırı: kayıtlı olmayan değişiklik "olmadı" gibi sunulmaz (eski görev / sistem üreticisi yazımları). */}
+            {!historyLoading && !historyError && taskHistoryCoverageNotes(historyCoverage).map(note => (
+              <p key={note} data-testid="task-history-coverage" className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">{note}</p>
+            ))}
+            {!historyLoading && !historyError && history.length === 0 && <p className="mt-3">Bu görev için kayıtlı geçmiş yok.</p>}
             <ul className="space-y-3 mt-4">
               {history.map(event => (
-                <li key={event.id} className="border rounded p-3">
-                  <p>{event.actorName || event.actorUserId} · {new Date(event.createdAt).toLocaleString("tr-TR")}</p>
-                  <p className="text-sm">{statusLabels[event.fromStatus] ?? event.fromStatus} → {statusLabels[event.toStatus] ?? event.toStatus}</p>
-                  <p className="whitespace-pre-wrap mt-2">{event.reason}</p>
+                <li key={`${event.kind}-${event.id}`} className="border rounded p-3">
+                  <p className="text-sm text-muted-foreground">{describeTaskHistoryActor(event)} · {new Date(event.createdAt).toLocaleString("tr-TR")}</p>
+                  <p className="font-medium">{describeTaskHistoryEvent(event)}</p>
+                  {event.reason && <p className="whitespace-pre-wrap mt-2">{event.reason}</p>}
                 </li>
               ))}
             </ul>
             {historyMeta && historyMeta.totalPages > 1 && (
               <div className="flex justify-between items-center mt-3">
-                <button disabled={historyLoading || historyMeta.page <= 1} onClick={() => void loadCancellationHistory(historyTarget, historyMeta.page - 1)}>Önceki kayıtlar</button>
+                <button disabled={historyLoading || historyMeta.page <= 1} onClick={() => void loadTaskHistory(historyTarget, historyMeta.page - 1)}>Önceki kayıtlar</button>
                 <span>{historyMeta.page} / {historyMeta.totalPages}</span>
-                <button disabled={historyLoading || historyMeta.page >= historyMeta.totalPages} onClick={() => void loadCancellationHistory(historyTarget, historyMeta.page + 1)}>Sonraki kayıtlar</button>
+                <button disabled={historyLoading || historyMeta.page >= historyMeta.totalPages} onClick={() => void loadTaskHistory(historyTarget, historyMeta.page + 1)}>Sonraki kayıtlar</button>
               </div>
             )}
-            <button onClick={() => { ++historyRequestRef.current; setHistoryTarget(null); setHistory([]); setHistoryError(null); }} className="mt-4 border rounded px-3 py-2">Kapat</button>
+            <button onClick={() => { ++historyRequestRef.current; setHistoryTarget(null); setHistory([]); setHistoryCoverage(null); setHistoryError(null); }} className="mt-4 border rounded px-3 py-2">Kapat</button>
           </div>
         </div>
       )}

@@ -89,6 +89,9 @@ describe('ClientService.syncContactFollowUpTask', () => {
         update: jest.fn().mockResolvedValue({}),
       },
       client: { update: jest.fn().mockResolvedValue({}) },
+      // F03-A2: yeniden doğuşta görev güncellemesi + geçmiş satırları tek (toplu) işlemde yazılır.
+      taskHistoryEvent: { createMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      $transaction: jest.fn(async (operations: unknown[]) => Promise.all(operations)),
     }) as any;
 
   const sync = (prisma: any, client: any) =>
@@ -168,6 +171,40 @@ describe('ClientService.syncContactFollowUpTask', () => {
     // PR-PERF-1: yeniden açılışta eski kapanış izi de temizlenir.
     expect(upd.data.completedByUserId).toBeNull();
     expect(upd.data.resolutionType).toBeNull();
+  });
+
+  // ── F03-A2 (OFP-03a): yeniden doğuş görev geçmişine yazılır; yeniden açma davranışı değişmez ────────────────
+  it.each(['COMPLETED', 'CANCELLED'])('F03-A2: kapalı (%s) görevin yeniden doğuşu aynı işlemde geçmişe yazılır (sistem üreticisi, önceki atıf saklı)', async (closed) => {
+    const completedAt = new Date('2026-11-20T08:30:00.000Z');
+    const prisma = buildPrisma({
+      id: 'tk', tenantId: 't1', status: closed, priority: 'MEDIUM', assigneeId: null, dueDate: null, caseId: null,
+      completedAt, completedByUserId: 'u-closer', resolutionType: 'MANUAL',
+    });
+    await sync(prisma, { id: 'c1', phone: null, email: null, contactFollowUpStatus: 'ACTIVE' });
+
+    // güncelleme ve geçmiş TEK işlemde: iki işlem birlikte verilir
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.$transaction.mock.calls[0][0]).toHaveLength(2);
+    expect(prisma.task.update).toHaveBeenCalledTimes(1);
+    expect(prisma.task.update.mock.calls[0][0].data).toMatchObject({ status: 'PENDING', completedAt: null, completedByUserId: null, resolutionType: null, escalationLevel: 'STAFF' });
+
+    const rows = prisma.taskHistoryEvent.createMany.mock.calls[0][0].data;
+    expect(rows.map((r: any) => r.eventType)).toEqual(['REOPENED', 'DUE_DATE_CHANGED']);
+    expect(new Set(rows.map((r: any) => r.correlationId)).size).toBe(1);
+    for (const r of rows) {
+      expect(r).toMatchObject({ tenantId: 't1', taskId: 'tk', actorType: 'SYSTEM', actorUserId: null, actorRole: null, authoritySource: 'SYSTEM_PRODUCER' });
+      expect(r.details).toMatchObject({ producer: 'CLIENT_CONTACT_FOLLOWUP' });
+    }
+    expect(rows[0]).toMatchObject({ fromValue: closed, toValue: 'PENDING' });
+    expect(rows[0].details).toMatchObject({ previousCompletedAt: completedAt.toISOString(), previousCompletedByUserId: 'u-closer', previousResolutionType: 'MANUAL' });
+  });
+
+  it('F03-A2: açık görevde eksik listesi güncellemesi geçmiş satırı ÜRETMEZ ve işlem açmaz (yeniden doğuş değil)', async () => {
+    const prisma = buildPrisma({ id: 'tk', tenantId: 't1', status: 'PENDING' });
+    await sync(prisma, { id: 'c1', phone: '05321234567', email: null, contactFollowUpStatus: 'ACTIVE' });
+    expect(prisma.task.update).toHaveBeenCalledTimes(1);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.taskHistoryEvent.createMany).not.toHaveBeenCalled();
   });
 });
 

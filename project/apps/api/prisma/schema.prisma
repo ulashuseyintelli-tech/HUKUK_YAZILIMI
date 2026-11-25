@@ -2325,6 +2325,8 @@ model Task {
   // D-G3a: dosya görevi eskalasyon izleri (operasyonel EscalationEvent'ten AYRI, K-D1)
   caseTaskEscalationEvents CaseTaskEscalationEvent[]
   cancellationEvents      TaskCancellationEvent[]
+  // F03-A2: genel görev geçmişi (append-only; iptal dışındaki izlenen değişiklikler)
+  historyEvents           TaskHistoryEvent[]
 
   @@unique([id, tenantId])
   @@index([tenantId, status])
@@ -2357,6 +2359,35 @@ model TaskCancellationEvent {
   createdAt       DateTime   @default(now())
 
   @@index([tenantId, taskId, createdAt, id])
+}
+
+// F03-A2 / OFP-03a / OFF-INV-08: append-only genel görev geçmişi — oluşturma, atama, durum, öncelik, son tarih, dosya bağı,
+// yeniden açma. Domain yazımıyla AYNI işlemde yazılır (geçmiş yazılamazsa görev değişikliği de geri alınır).
+// İptal olguları burada DEĞİL, TaskCancellationEvent'tedir; okuma ucu ikisini birlikte sıralar.
+// Tenant-bound Task FK fiziksel silmeyi kısıtlar (TaskCancellationEvent ile aynı kural). Aktör atfı skalerdir: hesap
+// kaldırılsa da iz kalır. eventType / actorType / authoritySource METİNDİR (enum değil): yeni tür eklemek şema değişikliği
+// ve eski derlemenin okuma kırılmasını doğurmaz. Eski kayıtlar için geriye dönük satır ÜRETİLMEZ.
+// Kapsam sınırı (owner kararı 25.11.2026): yalnız görev uçları ve müvekkil eksik-bilgi görevinin yeniden doğuşu yazar;
+// diğer sistem üreticileri yazmaz (bkz. modules/task/task-history.ts).
+model TaskHistoryEvent {
+  id              String    @id @default(cuid())
+  tenantId        String
+  taskId          String
+  task            Task      @relation(fields: [taskId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: Restrict)
+  eventType       String
+  actorType       String // USER | SYSTEM
+  actorUserId     String?
+  actorRole       UserRole?
+  authoritySource String
+  fromValue       String?
+  toValue         String?
+  details         Json?
+  reason          String?
+  correlationId   String
+  createdAt       DateTime  @default(now())
+
+  @@index([tenantId, taskId, createdAt, id])
+  @@index([tenantId, correlationId])
 }
 
 // K2: Eskalasyon geçmişi (append-only). Operasyonel görevin eskalasyon motoru (PR-3b) her

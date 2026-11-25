@@ -55,6 +55,7 @@ describeDb("F03-A1 — tamamlama atfı yalnız gerçek geçişte yazılır (ger�
     caseFlag.restore();
     await app?.close();
     await w?.cleanup(async (tenants) => {
+      await db.taskHistoryEvent.deleteMany({ where: { tenantId: { in: tenants } } }).catch(() => undefined); // F03-A2: geçmiş satırları göreve Restrict FK ile bağlı → görevden önce silinir
       await db.task.deleteMany({ where: { tenantId: { in: tenants } } }).catch(() => undefined);
     });
     await db.$disconnect();

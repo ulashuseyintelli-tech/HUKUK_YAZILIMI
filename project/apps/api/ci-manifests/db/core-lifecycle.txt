@@ -408,3 +408,5 @@ src/modules/claim-item/__tests__/claim-item-approval-currency-admission.http.db-
 src/modules/task/__tests__/task-case-bound.http.db-gated.integration.spec.ts
 # F03-A1 (K-7): tamamlama atfi yalniz gercek geciste yazilir; COMPLETED -> COMPLETED gidis-donusu ve sistem kapanisi atfi ezmez; yeniden acma sonrasi yeni kisi.
 src/modules/task/__tests__/task-completion-attribution.http.db-gated.integration.spec.ts
+# F03-A2 (OFP-03a / OFF-INV-08): genel gorev gecmisi — islem ici yazim (atomiklik), GET /tasks/:id/history birlesik okuma, kapsam ve dosya numarasi gorunurlugu.
+src/modules/task/__tests__/task-history.http.db-gated.integration.spec.ts

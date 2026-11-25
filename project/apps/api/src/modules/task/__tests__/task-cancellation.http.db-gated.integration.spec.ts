@@ -74,6 +74,7 @@ describeDb("2b / KI-048 — reasoned task cancellation (real HTTP/disposable DB)
     if (db) {
       await db.taskCancellationEvent.deleteMany({ where: { tenantId: { in: tenants } } });
       await db.auditLog.deleteMany({ where: { tenantId: { in: tenants } } });
+      await db.taskHistoryEvent.deleteMany({ where: { tenantId: { in: tenants } } }); // F03-A2: geçmiş satırları göreve Restrict FK ile bağlı → görevden önce silinir
       await db.task.deleteMany({ where: { tenantId: { in: tenants } } });
       await db.permissionGrant.deleteMany({ where: { tenantId: { in: tenants } } });
       await db.caseLawyer.deleteMany({ where: { caseId: { in: [caseId, otherCaseId].filter(Boolean) } } });

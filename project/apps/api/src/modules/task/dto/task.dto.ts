@@ -50,6 +50,9 @@ export class ListTaskCancellationsQueryDto {
   limit?: number;
 }
 
+/** GET /tasks/:id/history sorgusu (F03-A2): iptal geçmişiyle aynı sayfalama sözleşmesi (page ≥ 1, 1 ≤ limit ≤ 100). */
+export class ListTaskHistoryQueryDto extends ListTaskCancellationsQueryDto {}
+
 /**
  * GET /tasks sorgu sözleşmesi (F01-A / OFP-01).
  *

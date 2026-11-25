@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import * as request from 'supertest';
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { AuditService } from '../../audit/audit.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { TaskController } from '../../task/task.controller';
 import { TaskService } from '../../task/task.service';
@@ -61,7 +62,7 @@ describeDb('CaseGroup / Task tenant boundary — real HTTP and disposable Postgr
     await db.$connect();
     const module = await Test.createTestingModule({
       controllers: [GroupController, CaseGroupController, TaskController],
-      providers: [GroupService, TaskService, { provide: PrismaService, useValue: db }],
+      providers: [GroupService, TaskService, AuditService, { provide: PrismaService, useValue: db }], // F03-A2: görev yazım yolları denetim servisi ister
     }).overrideGuard(JwtAuthGuard).useValue(new TestIdentityGuard(db)).compile();
     service = module.get(GroupService);
     app = module.createNestApplication();
@@ -80,12 +81,14 @@ describeDb('CaseGroup / Task tenant boundary — real HTTP and disposable Postgr
 
   beforeEach(async () => {
     await db.caseGroup.deleteMany({ where: { case: { tenantId: { in: tenants } } } });
+    await db.taskHistoryEvent.deleteMany({ where: { tenantId: { in: tenants } } }); // F03-A2: geçmiş satırları göreve Restrict FK ile bağlı → görevden önce silinir
     await db.task.deleteMany({ where: { tenantId: { in: tenants } } });
     taskA = (await db.task.create({ data: { tenantId: tenantA, title: 'Own task', caseId: caseA, createdById: userA } })).id;
   });
 
   afterAll(async () => {
     if (db) {
+      await db.taskHistoryEvent.deleteMany({ where: { tenantId: { in: tenants } } }); // F03-A2: geçmiş satırları göreve Restrict FK ile bağlı → görevden önce silinir
       await db.task.deleteMany({ where: { tenantId: { in: tenants } } });
       await db.caseGroup.deleteMany({ where: { case: { tenantId: { in: tenants } } } });
       await db.groupDefinition.deleteMany({ where: { tenantId: { in: tenants } } });
