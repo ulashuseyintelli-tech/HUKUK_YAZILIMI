@@ -2,6 +2,7 @@
  * PR-PERF-1 — Task kapanış atfı (completedByUserId + resolutionType).
  * Doğrular: (1) manuel COMPLETED → MANUAL + kapatan User, (2) yeniden açma → kapanış izi temizlenir,
  * (3) statü değişmeyen güncellemede kapanış alanlarına dokunulmaz.
+ * F03-A1 (K-7): atıf yalnız GERÇEK geçişte (COMPLETED olmayan → COMPLETED) ve satır kilidi altında yazılır.
  *
  * CANDIDATE-J1 (STF-PRD-BOLA-002 baseline) — Task assignee uygunluk kapısı.
  * Doğrular: dolu assignee için aynı-tenant + aktif kontrolü (kabul/ret), null assignee kabulü,
@@ -11,12 +12,24 @@
 import { BadRequestException } from "@nestjs/common";
 import { TaskService } from "../task.service";
 
-const buildPrisma = (existing: any = { id: "tk", status: "PENDING" }) => ({
-  task: {
-    findFirst: jest.fn().mockResolvedValue(existing),
-    update: jest.fn().mockResolvedValue({}),
-  },
-});
+/**
+ * F03-A1: update() durum geçişi kararını satır kilidi altında verir (işlem + `FOR UPDATE`). Sahte Prisma'ya işlem ve ham sorgu
+ * eklenir; işlem istemcisi sahte nesnenin kendisidir (aynı `task.findFirst` / `task.update` sahteleri kullanılır).
+ */
+function withTx<T extends Record<string, any>>(prisma: T): T {
+  const db = prisma as any;
+  db.$queryRaw = jest.fn().mockResolvedValue([]);
+  db.$transaction = jest.fn(async (fn: (tx: unknown) => unknown) => fn(db));
+  return prisma;
+}
+
+const buildPrisma = (existing: any = { id: "tk", status: "PENDING" }) =>
+  withTx({
+    task: {
+      findFirst: jest.fn().mockResolvedValue(existing),
+      update: jest.fn().mockResolvedValue({}),
+    },
+  });
 
 describe("TaskService.update — kapanış atfı", () => {
   it("status=COMPLETED → completedByUserId=userId + resolutionType=MANUAL + completedAt set", async () => {
@@ -54,6 +67,59 @@ describe("TaskService.update — kapanış atfı", () => {
     expect("completedByUserId" in data).toBe(false);
     expect("resolutionType" in data).toBe(false);
   });
+
+  // ── F03-A1 (K-7): atıf yalnız GERÇEK geçişte yazılır ──────────────────────────────────────────────
+  it("F03-A1: COMPLETED → COMPLETED gidiş-dönüşü atfı ve tamamlanma anını EZMEZ; diğer alanlar yazılır", async () => {
+    const prisma = buildPrisma({ id: "tk", status: "COMPLETED" }) as any;
+
+    await new TaskService(prisma).update("t1", "tk", "user-9", { status: "COMPLETED", title: "Düzenlendi" } as any);
+
+    const data = prisma.task.update.mock.calls[0][0].data;
+    expect(data).toMatchObject({ status: "COMPLETED", title: "Düzenlendi" });
+    for (const key of ["completedAt", "completedByUserId", "resolutionType"]) expect(data).not.toHaveProperty(key);
+  });
+
+  it("F03-A1: geçiş kararı KİLİT ALTINDA okunan duruma göre verilir — eşzamanlı tamamlamada ikinci yazan atfı ezmez", async () => {
+    const prisma = buildPrisma() as any;
+    // Kilitsiz ön okuma PENDING görür; kilit alındığında başka bir istek görevi çoktan tamamlamıştır.
+    prisma.task.findFirst = jest.fn().mockResolvedValueOnce({ id: "tk", status: "PENDING" }).mockResolvedValueOnce({ status: "COMPLETED" });
+
+    await new TaskService(prisma).update("t1", "tk", "user-9", { status: "COMPLETED" } as any);
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    // kilit sorgusu, kilit altındaki okumadan ÖNCE çalışır
+    expect(prisma.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(prisma.task.findFirst.mock.invocationCallOrder[1]);
+    const data = prisma.task.update.mock.calls[0][0].data;
+    for (const key of ["completedAt", "completedByUserId", "resolutionType"]) expect(data).not.toHaveProperty(key);
+  });
+
+  it("F03-A1: yeniden açılıp başka kişi tamamlarsa atıf YENİ kişiye geçer", async () => {
+    const reopened = buildPrisma({ id: "tk", status: "COMPLETED" }) as any;
+    await new TaskService(reopened).update("t1", "tk", "user-2", { status: "PENDING" } as any);
+    expect(reopened.task.update.mock.calls[0][0].data).toMatchObject({ status: "PENDING", completedAt: null, completedByUserId: null, resolutionType: null });
+
+    const again = buildPrisma({ id: "tk", status: "PENDING" }) as any;
+    await new TaskService(again).update("t1", "tk", "user-2", { status: "COMPLETED" } as any);
+    expect(again.task.update.mock.calls[0][0].data).toMatchObject({ completedByUserId: "user-2", resolutionType: "MANUAL" });
+  });
+
+  it("F03-A1: kilit altında görev yoksa 404; yazım yapılmaz", async () => {
+    const prisma = buildPrisma() as any;
+    prisma.task.findFirst = jest.fn().mockResolvedValueOnce({ id: "tk", status: "PENDING" }).mockResolvedValueOnce(null);
+
+    await expect(new TaskService(prisma).update("t1", "tk", "user-9", { status: "COMPLETED" } as any)).rejects.toMatchObject({ status: 404 });
+    expect(prisma.task.update).not.toHaveBeenCalled();
+  });
+
+  it("F03-A1: eşzamanlı yeniden açmadan sonra değişmemiş CANCELLED alanı iptal yetkisi sayılmaz (kilit altında 400)", async () => {
+    const prisma = buildPrisma() as any;
+    // Ön okuma CANCELLED görür; kilit alındığında görev yeniden açılmıştır.
+    prisma.task.findFirst = jest.fn().mockResolvedValueOnce({ id: "tk", status: "CANCELLED" }).mockResolvedValueOnce({ status: "PENDING" });
+
+    await expect(new TaskService(prisma).update("t1", "tk", "user-9", { status: "CANCELLED", title: "x" } as any)).rejects.toMatchObject({ status: 400 });
+    expect(prisma.task.update).not.toHaveBeenCalled();
+  });
 });
 
 describe("TaskService — CANDIDATE-J1 assignee uygunluk kapısı (tenant + aktiflik)", () => {
@@ -67,21 +133,22 @@ describe("TaskService — CANDIDATE-J1 assignee uygunluk kapısı (tenant + akti
     { id: "u-active-other", tenantId: "tenant-2", isActive: true }, // aktif, farklı tenant
   ];
 
-  const buildPrismaWithUsers = (existing: any = { id: "tk", status: "PENDING" }) => ({
-    task: {
-      findFirst: jest.fn().mockResolvedValue(existing),
-      create: jest.fn().mockResolvedValue({ id: "tk-new" }),
-      update: jest.fn().mockResolvedValue({ id: "tk" }),
-    },
-    user: {
-      findFirst: jest.fn(({ where }: any) => {
-        const match = USERS.find(
-          (u) => u.id === where.id && u.tenantId === where.tenantId && u.isActive === where.isActive
-        );
-        return Promise.resolve(match ? { id: match.id } : null);
-      }),
-    },
-  });
+  const buildPrismaWithUsers = (existing: any = { id: "tk", status: "PENDING" }) =>
+    withTx({
+      task: {
+        findFirst: jest.fn().mockResolvedValue(existing),
+        create: jest.fn().mockResolvedValue({ id: "tk-new" }),
+        update: jest.fn().mockResolvedValue({ id: "tk" }),
+      },
+      user: {
+        findFirst: jest.fn(({ where }: any) => {
+          const match = USERS.find(
+            (u) => u.id === where.id && u.tenantId === where.tenantId && u.isActive === where.isActive
+          );
+          return Promise.resolve(match ? { id: match.id } : null);
+        }),
+      },
+    });
 
   // 1) aynı-tenant + aktif → KABUL
   it("create: aynı-tenant + aktif assignee → kabul (task.create çağrılır)", async () => {
@@ -170,14 +237,15 @@ describe("TaskService — CANDIDATE-J1 assignee uygunluk kapısı (tenant + akti
 
 describe("TaskService — dueDate normalizasyonu (F01 K-F7: tarih-only 500 düzeltmesi)", () => {
   const TENANT = "tenant-1";
-  const build = () => ({
-    task: {
-      findFirst: jest.fn().mockResolvedValue({ id: "tk", status: "PENDING" }),
-      create: jest.fn().mockResolvedValue({ id: "tk-new" }),
-      update: jest.fn().mockResolvedValue({ id: "tk" }),
-    },
-    user: { findFirst: jest.fn().mockResolvedValue({ id: "u" }) },
-  });
+  const build = () =>
+    withTx({
+      task: {
+        findFirst: jest.fn().mockResolvedValue({ id: "tk", status: "PENDING" }),
+        create: jest.fn().mockResolvedValue({ id: "tk-new" }),
+        update: jest.fn().mockResolvedValue({ id: "tk" }),
+      },
+      user: { findFirst: jest.fn().mockResolvedValue({ id: "u" }) },
+    });
 
   it("create: tarih-only 'YYYY-MM-DD' → UTC gece yarısı Date (web modal biçimi; önceden Prisma 500)", async () => {
     const prisma = build() as any;
@@ -285,14 +353,15 @@ describe("TaskService — F03-B2 dosya süzgeci ve dosyaya bağlama kapsamı", (
   const buildListPrisma = () => ({
     task: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0), groupBy: jest.fn().mockResolvedValue([]) },
   });
-  const buildWritePrisma = (existing: any = { id: "tk", status: "PENDING", caseId: null }, caseFound = true) => ({
-    task: {
-      findFirst: jest.fn().mockResolvedValue(existing),
-      create: jest.fn().mockResolvedValue({ id: "tk-new" }),
-      update: jest.fn().mockResolvedValue({ id: "tk" }),
-    },
-    case: { findFirst: jest.fn().mockResolvedValue(caseFound ? { id: "c1" } : null) },
-  });
+  const buildWritePrisma = (existing: any = { id: "tk", status: "PENDING", caseId: null }, caseFound = true) =>
+    withTx({
+      task: {
+        findFirst: jest.fn().mockResolvedValue(existing),
+        create: jest.fn().mockResolvedValue({ id: "tk-new" }),
+        update: jest.fn().mockResolvedValue({ id: "tk" }),
+      },
+      case: { findFirst: jest.fn().mockResolvedValue(caseFound ? { id: "c1" } : null) },
+    });
   const scopeOf = (visible: string[] | null) => ({ visibleCaseIds: jest.fn().mockResolvedValue(visible === null ? null : new Set(visible)) });
 
   it("findAll: caseId kapsam katmanına girer — data, total ve summary aynı dosyada", async () => {

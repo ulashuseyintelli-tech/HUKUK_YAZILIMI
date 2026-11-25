@@ -406,3 +406,5 @@ src/modules/case/__tests__/due-derived-outputs-canonical.http.db-gated.integrati
 src/modules/claim-item/__tests__/claim-item-approval-currency-admission.http.db-gated.integration.spec.ts
 # F03-B2 (OFP-02): dosyadan gorev — dosyaya bagli gorev olusturma kapsami (dosya gorunum kapsami; kapsam disi = var olmayanla ayni 400) + GET /tasks?caseId= dosya suzgeci.
 src/modules/task/__tests__/task-case-bound.http.db-gated.integration.spec.ts
+# F03-A1 (K-7): tamamlama atfi yalniz gercek geciste yazilir; COMPLETED -> COMPLETED gidis-donusu ve sistem kapanisi atfi ezmez; yeniden acma sonrasi yeni kisi.
+src/modules/task/__tests__/task-completion-attribution.http.db-gated.integration.spec.ts
