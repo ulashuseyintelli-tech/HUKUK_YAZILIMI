@@ -70,6 +70,7 @@ import { DueModal, CollectionModal, HesapOzetiPanel, BalanceShadowDiffPanel } fr
 import { dueApprovalNotice, dueBlockNotice } from "@/components/finance/DueModal";
 import { FaizDokumuPanel } from "@/components/interest";
 import { OperationDeck } from "@/components/case-detail";
+import { IIK78_STATUTORY_INACTIVITY_DAYS } from "@/lib/iik78-inactivity";
 import { CaseTaskCreateModal } from "@/components/case-detail/CaseTaskCreateModal";
 import {
   CASE_TASK_MAX_PAGES,
@@ -326,8 +327,9 @@ const getDayCountStyle = (days: number) => {
   return { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700' };
 };
 
-// Kalan gün hesaplama (son icrai işlem tarihinden 365 gün - İİK 78)
-const INACTIVITY_THRESHOLD_DAYS = 365; // Büro ayarından alınabilir
+// Kalan gün hesaplama (son icrai işlem tarihinden itibaren yasal süre - İİK 78).
+// F03-D2 (K6-b): süre yasal 1 yıldır; büro ayarından ALINMAZ (ayar yalnız saklanır).
+const INACTIVITY_THRESHOLD_DAYS = IIK78_STATUTORY_INACTIVITY_DAYS;
 
 const calculateRemainingDays = (caseDate: string, lastEnforcementDate?: string): number => {
   // Son icrai işlem tarihi varsa onu kullan, yoksa takip açılış tarihini
@@ -1690,7 +1692,7 @@ export default function CaseDetailPage() {
 
   // Kalan gün hesaplama (İİK 78 - son icrai işlemden itibaren)
   const remainingDays = useMemo(() => {
-    if (!caseData?.caseDate) return 365;
+    if (!caseData?.caseDate) return INACTIVITY_THRESHOLD_DAYS;
     // Öncelik: lastEnforcementActionAt > lastAutoActionAt > caseDate
     const lastAction = caseData.lastEnforcementActionAt || caseData.lastAutoActionAt;
     return calculateRemainingDays(caseData.caseDate, lastAction);
@@ -1841,7 +1843,7 @@ export default function CaseDetailPage() {
         const baseDate = lastAction ? new Date(lastAction) : new Date(caseDate);
         const now = new Date();
         const diffDays = Math.floor((now.getTime() - baseDate.getTime()) / (1000 * 60 * 60 * 24));
-        return 365 - diffDays;
+        return INACTIVITY_THRESHOLD_DAYS - diffDays;
       };
       
       // Check if case had action in last 30 days

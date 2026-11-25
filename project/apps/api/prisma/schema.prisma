@@ -2600,9 +2600,9 @@ model Office {
   autoGreetingTime    String?   @default("09:00") // Tebrik gönderim saati (HH:mm)
   lastGreetingRunAt   DateTime? // Otomatik tebrik scheduler'ının o tenant için en son BAŞARIYLA çalıştığı an (aynı-gün tekrar gönderim guard'ı)
 
-  // İİK 78 Ayarları
-  inactivityThresholdDays Int @default(365) // Pasifleşme süresi (gün) - İİK 78
-  inactivityWarningDays   Int @default(60) // Uyarı süresi (gün) - kalan gün bu değerin altına düşünce uyarı
+  // İİK 78 Ayarları — YALNIZ SAKLANIR (F03-D2, owner kararı K6-b): hiçbir hesapta tüketilmez; dosya pasiflik hesabı yasal 1 yıldır.
+  inactivityThresholdDays Int @default(365) // Saklanan değer (gün); pasiflik hesabını DEĞİŞTİRMEZ
+  inactivityWarningDays   Int @default(60) // Saklanan değer (gün); bugün hiçbir uyarı bu değeri okumaz
 
   // Görev & Eskalasyon Ayarları (büro-geneli politika) — PR-3a config; motor PR-3b okur.
   // manager/founder = Lawyer id DİZİSİ (düz alan; FK relation değil; motor id ile çözer, yoksa skip+log).

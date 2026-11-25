@@ -189,14 +189,14 @@ export class OfficeController {
       : this.officeService.updateGreetingSettings(tenantId, data, userId);
   }
 
-  // İİK 78 ayarlarını getir (pasifleşme süresi)
+  // İİK 78 ayarlarını getir. YALNIZ SAKLANIR (F03-D2, owner kararı K6-b, 25.11.2026): hiçbir hesapta tüketilmez; dosya pasiflik hesabı yasal 1 yıldır ve bu ayarla değişmez.
   @Get("iik78-settings")
   @UseGuards(OfficeF01AuthorizationGuard)
   getIik78Settings(@CurrentUser("tenantId") tenantId: string) {
     return this.officeService.getIik78Settings(tenantId);
   }
 
-  // İİK 78 ayarlarını güncelle
+  // İİK 78 ayarlarını güncelle. YALNIZ SAKLANIR (F03-D2, owner kararı K6-b, 25.11.2026): hiçbir hesapta tüketilmez; dosya pasiflik hesabı yasal 1 yıldır ve bu ayarla değişmez.
   @Put("iik78-settings")
   @UseGuards(OfficeF01AuthorizationGuard)
   updateIik78Settings(
