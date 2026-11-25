@@ -298,15 +298,21 @@ export class TaskService {
    * </remarks>
    * PR-PERF-1 kapanış atfı: status=COMPLETED → completedByUserId=userId + resolutionType=MANUAL.
    * Görev COMPLETED'dan çıkarılırsa (yeniden açılır) kapanış alanları temizlenir (yalan veri bırakmaz).
+   *
+   * F03-A1 (K-7; owner yetkisi 25.11.2026): kapanış atfı yalnız GERÇEK geçişte (COMPLETED olmayan → COMPLETED) yazılır.
+   * Zaten tamamlanmış göreve aynı durumun yeniden gönderilmesi (ör. düzenleme formunun durumu aynen geri göndermesi) atfı ve
+   * tamamlanma anını EZMEZ; sistem kapanışı (AUTO_SYSTEM) insan atfına dönüşmez. Geçişin gerçek olup olmadığına satır kilidi
+   * altında okunan duruma göre karar verilir: eşzamanlı iki tamamlamada atfı ilk yazan alır, ikincisi ezmez.
    */
   async update(tenantId: string, id: string, userId: string, dto: UpdateTaskDto) {
-    const existing = await this.findOne(tenantId, id);
-    if (dto.status === "CANCELLED" && existing.status !== "CANCELLED") {
+    // Ön doğrulamalar kilitsiz okumayla yapılır (404, dosya ve atanan kuralları); durum geçişi kararı aşağıda kilit altındadır.
+    const current = await this.findOne(tenantId, id);
+    if (dto.status === "CANCELLED" && current.status !== "CANCELLED") {
       throw new BadRequestException("Durum değişikliği için gerekçeli iptal işlemini kullanın.");
     }
     // F03-B2: dosya bağı DEĞİŞİYORSA yeni dosya aktörün kapsamında olmalı. Bağ aynı kalıyorsa yalnız kiracı sınırı sınanır:
     // atanan, görmediği dosyaya bağlı görevini (ekran formu `caseId`'yi aynen geri gönderir) düzenlemeyi sürdürür.
-    if (dto.caseId !== undefined && dto.caseId !== existing.caseId) await this.assertCaseBindable(tenantId, userId, dto.caseId);
+    if (dto.caseId !== undefined && dto.caseId !== current.caseId) await this.assertCaseBindable(tenantId, userId, dto.caseId);
     else await this.assertCaseTenant(tenantId, dto.caseId);
 
     // CANDIDATE-J1: dolu assignee güncellemesi → aynı-tenant + aktif doğrulaması. Assignee alanı
@@ -315,23 +321,34 @@ export class TaskService {
       await this.assertAssigneeEligible(tenantId, dto.assigneeId);
     }
 
-    const data: any = { ...dto, dueDate: normalizeDueDate(dto.dueDate) };
-    // An unchanged CANCELLED field is not authority to cancel again after a concurrent reopen.
-    if (dto.status === "CANCELLED") delete data.status;
-    if (dto.status === "COMPLETED") {
-      data.completedAt = new Date();
-      data.completedByUserId = userId; // insan kapanışı → kapatanı yakala
-      data.resolutionType = "MANUAL";
-    } else if (dto.status !== undefined && dto.status !== "CANCELLED") {
-      // COMPLETED dışı bir statüye geçiş (yeniden açma vb.) → kapanış izini temizle.
-      data.completedAt = null;
-      data.completedByUserId = null;
-      data.resolutionType = null;
-    }
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "Task" WHERE "id" = ${id} AND "tenantId" = ${tenantId} FOR UPDATE`;
+      const existing = await tx.task.findFirst({ where: { id, tenantId }, select: { status: true } });
+      if (!existing) throw new NotFoundException("Görev bulunamadı");
+      // An unchanged CANCELLED field is not authority to cancel again after a concurrent reopen.
+      if (dto.status === "CANCELLED" && existing.status !== "CANCELLED") {
+        throw new BadRequestException("Durum değişikliği için gerekçeli iptal işlemini kullanın.");
+      }
 
-    return this.prisma.task.update({
-      where: { id },
-      data,
+      const data: any = { ...dto, dueDate: normalizeDueDate(dto.dueDate) };
+      if (dto.status === "CANCELLED") delete data.status;
+      if (dto.status === "COMPLETED") {
+        if (existing.status !== "COMPLETED") {
+          data.completedAt = new Date();
+          data.completedByUserId = userId; // insan kapanışı → kapatanı yakala
+          data.resolutionType = "MANUAL";
+        }
+      } else if (dto.status !== undefined && dto.status !== "CANCELLED") {
+        // COMPLETED dışı bir statüye geçiş (yeniden açma vb.) → kapanış izini temizle.
+        data.completedAt = null;
+        data.completedByUserId = null;
+        data.resolutionType = null;
+      }
+
+      return tx.task.update({
+        where: { id },
+        data,
+      });
     });
   }
 
