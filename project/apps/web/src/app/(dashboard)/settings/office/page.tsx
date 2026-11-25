@@ -270,6 +270,11 @@ function OfficeSettingsInner() {
   const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [smtpSaveStatus, setSmtpSaveStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   useEffect(() => { setSmtpSaveStatus(null); }, [smtpForm]);
+  // F03-D1 (OFP-19a): SMS ve tebrik Kaydet sonucu ekranda görünür; önceden hata yalnız konsola yazılıyordu.
+  const [smsSaveStatus, setSmsSaveStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  useEffect(() => { setSmsSaveStatus(null); }, [smsForm]);
+  const [greetingSaveStatus, setGreetingSaveStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  useEffect(() => { setGreetingSaveStatus(null); }, [greetingForm]);
   const [smsTestResult, setSmsTestResult] = useState<{ status: "verified" | "unverified" | "error"; message: string } | null>(null);
   // ACT-12 (2026-07-05): "Bugün ne gidecek?" önizlemesi — backend GET /greetings/today zaten
   // mevcuttu (findTodayGreetings), FE hiç tüketmiyordu. null = henüz yüklenmedi (loading state).
@@ -589,23 +594,32 @@ function OfficeSettingsInner() {
   const handleSaveSms = async () => {
     if (writeBlocked("sms")) return;
     setSaving(true);
+    setSmsSaveStatus(null);
     try {
       const dataToSend = { ...smsForm };
       if (!dataToSend.smsApiKey) delete (dataToSend as any).smsApiKey;
       if (!dataToSend.smsApiSecret) delete (dataToSend as any).smsApiSecret;
       await api.put("/office/sms-settings", dataToSend);
       showSaved();
-    } catch (e) { console.error(e); }
+      setSmsSaveStatus({ ok: true, msg: "Kaydedildi" });
+    } catch (e) {
+      // Ham sunucu iletisi ekrana / konsola taşınmaz (SMTP ile aynı sözleşme): yalnız yetki reddi ile genel hata ayrılır.
+      setSmsSaveStatus({ ok: false, msg: isDeniedError(e) ? "SMS ayarlarını kaydetme yetkiniz yok." : "SMS ayarları kaydedilemedi." });
+    }
     finally { setSaving(false); }
   };
 
   const handleSaveGreeting = async () => {
     if (writeBlocked("greeting")) return;
     setSaving(true);
+    setGreetingSaveStatus(null);
     try {
       await api.put("/office/greeting-settings", greetingForm);
       showSaved();
-    } catch (e) { console.error(e); }
+      setGreetingSaveStatus({ ok: true, msg: "Kaydedildi" });
+    } catch (e) {
+      setGreetingSaveStatus({ ok: false, msg: isDeniedError(e) ? "Tebrik ayarlarını kaydetme yetkiniz yok." : "Tebrik ayarları kaydedilemedi." });
+    }
     finally { setSaving(false); }
   };
 
@@ -1674,7 +1688,7 @@ function OfficeSettingsInner() {
         )}
         {drawerSection === "sms" && (
         <div className="h-full flex flex-col bg-white">
-          <WorkbenchHeader title="SMS" description="SMS sağlayıcı ayarları" saving={saving} onSave={handleSaveSms} />
+          <WorkbenchHeader title="SMS" description="SMS sağlayıcı ayarları" saving={saving} onSave={handleSaveSms} status={smsSaveStatus} />
           <div className="px-5 py-4">
             <SettingsSection title="SMS SAĞLAYICI" accent="teal">
               <div style={{ width: 240 }}>
@@ -1732,6 +1746,11 @@ function OfficeSettingsInner() {
                 </div>
                 <p className="text-[10px] text-gray-500">Doğum günü, kuruluş yıldönümü, vekalet yıldönümü ve bayram tebrikleri otomatik gönderilir.</p>
                 <button onClick={handleSaveGreeting} disabled={saving} className="w-full px-2 py-1 bg-purple-500 text-white text-xs rounded disabled:opacity-50">{saving ? "..." : "Kaydet"}</button>
+                {greetingSaveStatus && (
+                  <p role="status" data-testid="greeting-save-status" className={`text-[11px] font-medium ${greetingSaveStatus.ok ? "text-green-600" : "text-red-600"}`}>
+                    {greetingSaveStatus.ok ? "Kaydedildi" : `Hata: ${greetingSaveStatus.msg}`}
+                  </p>
+                )}
               </div>
             </div>
             {/* ACT-12: Bugün ne gidecek? önizlemesi */}
@@ -1812,7 +1831,7 @@ function OfficeSettingsInner() {
           <div className="px-5 py-4 space-y-4 text-[13px]">
             <div className="rounded-xl border-2 border-indigo-300 bg-indigo-50/30 p-4 space-y-3">
               <h3 className="text-[12.5px] font-bold tracking-wide text-indigo-800 border-b-2 border-indigo-200 pb-2">OPERASYONEL GÖREV ESKALASYONU</h3>
-              <p className="text-[11px] text-gray-500">Müvekkil iletişim bilgisi gibi eksik operasyonel görevler zamanında çözülmezse büro-geneli politikaya göre eskale edilir. (Motor sonraki sürümde aktifleşir.)</p>
+              <p className="text-[11px] text-gray-500">Müvekkil iletişim bilgisi gibi eksik operasyonel görevler zamanında çözülmezse büro-geneli politikaya göre eskale edilir. (Zamanlayıcı saatte bir çalışacak şekilde kuruludur ve aşağıdaki ayarları kullanır.)</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Yönetici Avukat(lar)</label>
@@ -1871,7 +1890,7 @@ function OfficeSettingsInner() {
                     </label>
                   ))}
                 </div>
-                <p className="text-[11px] text-gray-500 mt-1">Operasyonel eksik görevini önce bu personel türleri görür / bildirim alır (motor PR-3b'de).</p>
+                <p className="text-[11px] text-gray-500 mt-1">Operasyonel eksik görevini önce bu personel türleri görür / bildirim alır.</p>
               </div>
               <div className="flex items-center gap-4">
                 <label className="flex items-center gap-1.5"><input type="checkbox" checked={escalationForm.opEmailEnabled} onChange={e => setEscalationForm({...escalationForm, opEmailEnabled: e.target.checked})} /> E-posta aktif</label>
@@ -1881,7 +1900,7 @@ function OfficeSettingsInner() {
             </div>
             <div className="rounded-xl border-2 border-indigo-300 bg-indigo-50/30 p-4">
               <h3 className="text-[12.5px] font-bold tracking-wide text-indigo-800 border-b-2 border-indigo-200 pb-2 mb-3">📁 DOSYA GÖREVİ ESKALASYONU</h3>
-              <p className="text-[11px] text-gray-500 mb-3">Dosyaya bağlı otomatik görevler (ör. tebligat iade, ihbarname, masraf takibi) önce Dosya Sorumlusu'na, çözülmezse sırasıyla Takım Lideri → Yönetici Avukat → Kurucu'ya bildirilir. (Motor şu an kapalı; bu ayarlar açıldığında geçerli olur.)</p>
+              <p className="text-[11px] text-gray-500 mb-3">Dosyaya bağlı otomatik görevler (ör. tebligat iade, ihbarname, masraf takibi) önce Dosya Sorumlusu'na, çözülmezse sırasıyla Takım Lideri → Yönetici Avukat → Kurucu'ya bildirilir. (Bu motor ayrı bir sistem ayarıyla açılır; kapalıyken bu ayarlar yalnız saklanır.)</p>
               <div>
                 <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Takım Lideri Avukat(lar)</label>
                 {!escalationRecipientsLoaded.teamLead && <p className="text-[11px] text-amber-700 mb-1" data-testid="esc-recipients-hidden-teamlead">Alıcı listesi bu görünümde gösterilmez (alan-düzeyi izin tanımlı değil); mevcut alıcılar korunur, kaydetme bu listeyi değiştirmez.</p>}
