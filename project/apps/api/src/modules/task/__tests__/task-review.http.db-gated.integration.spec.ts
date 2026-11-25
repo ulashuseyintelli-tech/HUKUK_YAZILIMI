@@ -178,7 +178,7 @@ describeDb("F03-C — görev içi bağımsız ilk kontrol (gerçek HTTP + tek ku
       expect([last.eventType, last.actorUserId, last.authoritySource, last.reason]).toEqual(["REVIEW_REVISION_REQUESTED", u.creator, "REVIEWER_CREATOR", "Sentetik revizyon gerekçesi"]);
     });
 
-    it("yeniden tamamlama yeniden kontrole girer; ret gerekçe ister ve görevi 'bekliyor'a döndürür (iş yapılmamış sayılır)", async () => {
+    it("yeniden tamamlama yeniden kontrole girer; ret gerekçe ister ve görevi HAVUZA döndürür: 'bekliyor', atanmamış, iş yapılmamış sayılır", async () => {
       expect((await put(u.doer, id, { status: "COMPLETED" })).status).toBe(200);
       expect((await row(id)).reviewStatus).toBe("AWAITING");
       expect((await post(u.admin, `/tasks/${id}/review`, { decision: "REJECT" })).status).toBe(400);
@@ -186,6 +186,17 @@ describeDb("F03-C — görev içi bağımsız ilk kontrol (gerçek HTTP + tek ku
       expect(res.status).toBe(201);
       const t = await row(id);
       expect([t.status, t.reviewStatus, t.reviewedByUserId, t.reviewNote, t.completedAt, t.completedByUserId]).toEqual(["PENDING", "REJECTED", u.admin, "Sentetik ret gerekçesi", null, null]);
+      // K9 "ret havuza": görev işi yapanın üstünde KALMAZ; atamanın kalkması kararla aynı korelasyonda geçmişe yazılır
+      expect(t.assigneeId).toBeNull();
+      const lastTwo = await db.taskHistoryEvent.findMany({ where: { taskId: id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 2 });
+      expect(lastTwo.map((e) => [e.eventType, e.fromValue, e.toValue]).sort()).toEqual([
+        ["ASSIGNEE_CHANGED", u.doer, null],
+        ["REVIEW_REJECTED", "IN_PROGRESS", "PENDING"],
+      ]);
+      expect(new Set(lastTwo.map((e) => e.correlationId)).size).toBe(1);
+      // havuzdaki görev işi yapanın "bana atananlar" listesinden düşer
+      const mine = await get(u.doer, `/tasks?assigneeId=${u.doer}&limit=100`);
+      expect((mine.body.data as Array<{ id: string }>).map((r) => r.id)).not.toContain(id);
     });
 
     it("yeniden tamamlama → farklı kişi onaylar: görev tamamlanır ve tamamlama atfı İŞİ YAPANA yazılır", async () => {
@@ -202,6 +213,7 @@ describeDb("F03-C — görev içi bağımsız ilk kontrol (gerçek HTTP + tek ku
         "REVIEW_REVISION_REQUESTED",
         "REVIEW_SUBMITTED",
         "REVIEW_REJECTED",
+        "ASSIGNEE_CHANGED",
         "REVIEW_SUBMITTED",
         "REVIEW_APPROVED",
       ]);
@@ -367,11 +379,20 @@ describeDb("F03-C — görev içi bağımsız ilk kontrol (gerçek HTTP + tek ku
       await post(u.creator, `/tasks/${id}/review`, { decision: "REJECT", note: "Sentetik geçmiş gerekçesi" });
       const res = await get(u.doer, `/tasks/${id}/history`);
       expect(res.status).toBe(200);
-      const top = res.body.data[0];
+      type Row = { eventType: string; actorUserId: string; authoritySource: string; fromValue: string | null; toValue: string | null; fromLabel: string | null; toLabel: string | null; reason: string | null; correlationId: string };
+      const rows = res.body.data as Row[];
+      const top = rows.find((e) => e.eventType === "REVIEW_REJECTED")!;
       expect([top.eventType, top.actorUserId, top.authoritySource, top.fromValue, top.toValue, top.reason]).toEqual([
         "REVIEW_REJECTED", u.creator, "REVIEWER_CREATOR", "IN_PROGRESS", "PENDING", "Sentetik geçmiş gerekçesi",
       ]);
-      expect((res.body.data as Array<{ eventType: string }>).map((e) => e.eventType)).toEqual(["REVIEW_REJECTED", "REVIEW_SUBMITTED", "REVIEW_REQUIREMENT_SET", "CREATED"]);
+      // K9 "ret havuza": atamanın kalkması aynı kararın parçası olarak okunur (kimden kalktığı adıyla)
+      const unassigned = rows.find((e) => e.eventType === "ASSIGNEE_CHANGED")!;
+      expect([unassigned.actorUserId, unassigned.fromValue, unassigned.toValue, unassigned.fromLabel, unassigned.toLabel, unassigned.correlationId]).toEqual([
+        u.creator, u.doer, null, "doer F03C", null, top.correlationId,
+      ]);
+      expect((res.body.data as Array<{ eventType: string }>).map((e) => e.eventType).sort()).toEqual(
+        ["ASSIGNEE_CHANGED", "CREATED", "REVIEW_REJECTED", "REVIEW_REQUIREMENT_SET", "REVIEW_SUBMITTED"].sort(),
+      );
     });
 
     it("gerekçe ve not ham denetim kaydına yazılmaz (yalnız görevde ve görev geçmişinde durur)", async () => {

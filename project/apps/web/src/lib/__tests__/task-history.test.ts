@@ -88,7 +88,7 @@ describe('describeTaskHistoryEvent / describeTaskHistoryActor — F03-C kontrol 
     expect(text('REVIEW_SUBMITTED')).toBe('Tamamlandı bildirildi; kontrole gönderildi');
     expect(text('REVIEW_APPROVED')).toBe('Kontrol: onaylandı — görev tamamlandı');
     expect(text('REVIEW_REVISION_REQUESTED')).toBe('Kontrol: revizyon istendi — görev işi yapana döndü');
-    expect(text('REVIEW_REJECTED')).toBe('Kontrol: reddedildi — görev yeniden bekliyor');
+    expect(text('REVIEW_REJECTED')).toBe('Kontrol: reddedildi — görev havuza döndü (bekliyor, atanmamış)');
   });
 
   it('karar verenin sıfatı yazılır: kontrol eden yönetici / kontrol eden, görevi oluşturan', () => {

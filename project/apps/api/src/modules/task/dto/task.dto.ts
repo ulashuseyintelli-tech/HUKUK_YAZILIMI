@@ -30,7 +30,7 @@ export enum TaskReviewFilter {
   NOT_AWAITING = "NOT_AWAITING",
 }
 
-/** F03-C: kontrol kararı (K9): onay → tamamlandı; revizyon → işi yapanda devam ediyor; ret → bekliyor. */
+/** F03-C: kontrol kararı (K9): onay → tamamlandı; revizyon → işi yapanda devam ediyor; ret → havuza (bekliyor, atanmamış). */
 export enum TaskReviewDecisionValue {
   APPROVE = "APPROVE",
   REJECT = "REJECT",
