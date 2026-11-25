@@ -20,20 +20,34 @@ export function normalizeDueDate(value: string | null | undefined): Date | null 
 }
 import { Prisma, TaskCategory as PrismaTaskCategory, TaskStatus as PrismaTaskStatus } from "@prisma/client";
 import { PrismaService } from "@/prisma/prisma.service";
-import { CancelTaskDto, CreateTaskDto, ListTaskCancellationsQueryDto, ListTaskHistoryQueryDto, TASK_LIST_DEFAULT_LIMIT, UpdateTaskDto } from "./dto/task.dto";
+import { CancelTaskDto, CreateTaskDto, ListTaskCancellationsQueryDto, ListTaskHistoryQueryDto, ReviewTaskDto, SetTaskReviewRequirementDto, TASK_LIST_DEFAULT_LIMIT, UpdateTaskDto } from "./dto/task.dto";
 import {
   TASK_HISTORY_ACTOR,
   TASK_HISTORY_AUTHORITY,
   TASK_HISTORY_EVENT,
+  type TaskHistoryChange,
   createdTaskHistory,
   diffTaskHistory,
   newTaskHistoryCorrelationId,
   taskHistoryUserAuthority,
   userTaskHistoryRows,
 } from "./task-history";
+import {
+  TASK_REVIEW_AUTHORITY,
+  TASK_REVIEW_DECISION,
+  TASK_REVIEW_ERROR,
+  TASK_REVIEW_EVENT,
+  TASK_REVIEW_STATUS,
+  isAwaitingReview,
+  isReviewApplicable,
+  reviewEventForDecision,
+  reviewStatusAfterDecision,
+  statusAfterReviewDecision,
+} from "./task-review";
+import { isSameApprovalIdentity } from "@/common/approval-identity";
 import { AuditService } from "@/modules/audit/audit.service";
 import { WorkScopePermissionService } from "@/modules/work-scope-permission/work-scope-permission.service";
-import { TASK_VIEW_ALL_KEY, isTaskViewScopeEnabled, taskViewWhereFor } from "./task-view-scope";
+import { TASK_VIEW_ALL_KEY, isTaskViewScopeEnabled, taskViewCaseLinkWhere, taskViewWhereFor } from "./task-view-scope";
 import { isCaseViewScopeEnabled } from "../case/case-view-scope";
 import { CaseViewScopeService } from "../case/case-view-scope.service";
 
@@ -43,6 +57,8 @@ export interface TaskListParams {
   assigneeId?: string;
   /** F03-B2: dosya süzgeci (kapsam katmanında; data + total + summary birlikte daralır). */
   caseId?: string;
+  /** F03-C: kontrol süzgeci — `AWAITING` yalnız kontrolde bekleyenler; `NOT_AWAITING` kontrolde bekleyenler hariç. */
+  review?: string;
   taskCategory?: string;
   page?: number;
   limit?: number;
@@ -66,19 +82,52 @@ export const TASK_HISTORY_MAX_WINDOW = 2000;
 /** Dosya kiracıda yoksa VE aktörün dosya kapsamı dışındaysa AYNI ileti (varlık sızmaz). */
 const INVALID_TASK_CASE_MESSAGE = "Geçersiz dosya: aynı ofise ait bir dosya değil.";
 
-type TaskStatusGroup = { status: PrismaTaskStatus; taskCategory: PrismaTaskCategory; _count: { _all: number } };
-type TaskDb = PrismaService | Prisma.TransactionClient;
+/** F03-C (K5-b / K8): ekran bu iletiyi aynen gösterir — neden ve O ANDAKİ çıkış yolu birlikte. */
+const REVIEWERS_HINT = "(kontrol edebilenler: görevi görebilen büro yöneticileri ve görevi oluşturan)";
+const NO_ELIGIBLE_REVIEWER_MESSAGE = {
+  /** İşaret konurken (oluşturma / sonradan işaretleme). */
+  PLAN: `Bu görevi, işi yapacak kişiden başka kontrol edebilecek kişi yok ${REVIEWERS_HINT}. Görevi başka birine atayın ya da görevi kontrol işareti olmadan kaydedin.`,
+  /** İşaretli görev atanırken. */
+  ASSIGN: `Bu görevi, işi yapacak kişiden başka kontrol edebilecek kişi yok ${REVIEWERS_HINT}. Görevi başka birine atayın ya da önce kontrol işaretini gerekçeyle kaldırın.`,
+  /** Tamamlanırken (K8). */
+  COMPLETE: `Bu görevi, işi yapan kişiden başka kontrol edebilecek kişi yok ${REVIEWERS_HINT}. Görevi görebilen bir yönetici bulunmalı ya da kontrol işareti gerekçeyle kaldırılmalıdır.`,
+} as const;
+type NoReviewerMoment = keyof typeof NO_ELIGIBLE_REVIEWER_MESSAGE;
+const REVIEW_AWAITING_MESSAGE = "Görev kontrolde; durumu yalnız kontrol kararıyla ya da kontrol işaretinin kaldırılmasıyla değişir.";
+const CLOSED_TASK_STATUSES: ReadonlySet<string> = new Set(["COMPLETED", "CANCELLED"]);
+/** Kontrol izinin sıfırlanması (işaretin kaldırılması / kapalı görevin yeniden açılması). İşaretin kendisine dokunmaz. */
+const CLEARED_REVIEW_TRACE = {
+  reviewStatus: null,
+  reviewSubmittedAt: null,
+  reviewSubmittedByUserId: null,
+  reviewedAt: null,
+  reviewedByUserId: null,
+  reviewNote: null,
+} as const;
 
-function summarizeTaskGroups(groups: TaskStatusGroup[]): TaskListSummary {
+type TaskStatusGroup = { status: PrismaTaskStatus; taskCategory: PrismaTaskCategory; reviewStatus: string | null; _count: { _all: number } };
+type TaskDb = PrismaService | Prisma.TransactionClient;
+/** F03-C: "kontrol edebilecek kişi" sayımında görevin görünürlüğünü belirleyen alanlar (yazılacak / yazılmış değerler). */
+type ReviewTaskShape = { createdById: string | null; assigneeId: string | null; caseId: string | null };
+
+/**
+ * F03-C: "kontrolde" görev sunucuda IN_PROGRESS + reviewStatus AWAITING olarak durur. Sayaçlarda AYRI sayılır: `inProgress`
+ * kontrolde bekleyenleri İÇERMEZ (ekrandaki "Devam Eden" listesiyle aynı küme), `awaitingReview` onları sayar. `operationalOpen`
+ * açık iş tanımıdır ve değişmez (kontrolde görev açık iştir; tamamlanmış değildir).
+ */
+function summarizeTaskGroups(groups: TaskStatusGroup[]): { summary: TaskListSummary; awaitingReview: number } {
   const summary: TaskListSummary = { pending: 0, inProgress: 0, operationalOpen: 0 };
+  let awaitingReview = 0;
   for (const group of groups) {
     const n = group._count._all;
     const open = group.status === "PENDING" || group.status === "IN_PROGRESS";
+    const awaiting = isAwaitingReview(group);
     if (group.status === "PENDING") summary.pending += n;
-    if (group.status === "IN_PROGRESS") summary.inProgress += n;
+    if (group.status === "IN_PROGRESS" && !awaiting) summary.inProgress += n;
+    if (awaiting) awaitingReview += n;
     if (open && group.taskCategory === "OPERATIONAL_COMPLETENESS") summary.operationalOpen += n;
   }
-  return summary;
+  return { summary, awaitingReview };
 }
 
 @Injectable()
@@ -189,7 +238,7 @@ export class TaskService {
    * sayfalar arasında tekil kalır. Tenant sınırı (caseId null ∨ case.tenantId) değişmez.
    */
   async findAll(tenantId: string, params?: TaskListParams, actorUserId?: string) {
-    const { status, assigneeId, caseId, taskCategory, page = 1, limit = TASK_LIST_DEFAULT_LIMIT } = params || {};
+    const { status, assigneeId, caseId, taskCategory, review, page = 1, limit = TASK_LIST_DEFAULT_LIMIT } = params || {};
 
     const scopeWhere: Prisma.TaskWhereInput = { tenantId, OR: [{ caseId: null }, { case: { tenantId } }] };
     if (assigneeId) scopeWhere.assigneeId = assigneeId;
@@ -202,6 +251,10 @@ export class TaskService {
     const where: Prisma.TaskWhereInput = { ...scopeWhere };
     if (status) where.status = status as PrismaTaskStatus;
     if (taskCategory) where.taskCategory = taskCategory as PrismaTaskCategory;
+    // F03-C: kontrol süzgeci durum süzgeciyle KESİŞİR (yalnız data ve total; sayaçlar süzgeçten bağımsız kalır).
+    const awaitingWhere: Prisma.TaskWhereInput = { status: "IN_PROGRESS", reviewStatus: TASK_REVIEW_STATUS.AWAITING };
+    if (review === "AWAITING") where.AND = [...((scopeWhere.AND as Prisma.TaskWhereInput[] | undefined) ?? []), awaitingWhere];
+    if (review === "NOT_AWAITING") where.AND = [...((scopeWhere.AND as Prisma.TaskWhereInput[] | undefined) ?? []), { NOT: awaitingWhere }];
 
     const [tasks, total, groups] = await Promise.all([
       this.prisma.task.findMany({
@@ -219,12 +272,13 @@ export class TaskService {
       }),
       this.prisma.task.count({ where }),
       this.prisma.task.groupBy({
-        by: ["status", "taskCategory"],
+        by: ["status", "taskCategory", "reviewStatus"],
         where: scopeWhere,
         _count: { _all: true },
       }),
     ]);
 
+    const counts = summarizeTaskGroups(groups as TaskStatusGroup[]);
     return {
       data: await this.maskHiddenCases(tenantId, actorUserId, tasks),
       meta: {
@@ -232,7 +286,9 @@ export class TaskService {
         page,
         limit,
         totalPages: Math.ceil(total / limit),
-        summary: summarizeTaskGroups(groups as TaskStatusGroup[]),
+        summary: counts.summary,
+        // F03-C: kontrolde bekleyen görev sayısı (aynı kapsam; durum / kontrol süzgecinden bağımsız).
+        awaitingReview: counts.awaitingReview,
       },
     };
   }
@@ -295,10 +351,18 @@ export class TaskService {
     }
     const dueDate = normalizeDueDate(dto.dueDate);
     const audit = this.requireHistoryAudit();
+    // F03-C: kontrol tamamlama anında işler; tamamlanmış olarak açılan görev kontrolü atlamış olurdu.
+    if (dto.reviewRequired === true && dto.status === "COMPLETED") {
+      throw new ConflictException({ code: TASK_REVIEW_ERROR.NOT_APPLICABLE, message: "Tamamlanmış olarak açılan görev kontrole tabi tutulamaz." });
+    }
 
     // F03-A2 (OFP-03a / OFF-INV-08): görev + geçmiş satırı + denetim kaydı TEK işlemde; biri yazılamazsa hiçbiri kalmaz.
     return this.prisma.$transaction(async tx => {
       const actor = await this.historyActor(tx, tenantId, userId);
+      // F03-C (K4-b, K5-b): işareti oluşturan koyar; işi yapacak kişiden başka kontrol edebilecek kişi yoksa işaret konamaz.
+      if (dto.reviewRequired === true) {
+        await this.assertReviewerExists(tx, tenantId, { createdById: userId, assigneeId: dto.assigneeId || null, caseId: dto.caseId || null }, dto.assigneeId || null, "PLAN");
+      }
       const created = await tx.task.create({
         data: {
           tenantId,
@@ -309,13 +373,17 @@ export class TaskService {
       });
       const correlationId = newTaskHistoryCorrelationId();
       const change = createdTaskHistory(created);
+      const changes: TaskHistoryChange[] = [change];
+      if (created.reviewRequired) changes.push({ eventType: TASK_REVIEW_EVENT.REQUIREMENT_SET, fromValue: "false", toValue: "true" });
       await tx.taskHistoryEvent.createMany({
-        data: userTaskHistoryRows({ tenantId, taskId: created.id, actor, authoritySource: TASK_HISTORY_AUTHORITY.CREATOR, correlationId, changes: [change] }),
+        data: userTaskHistoryRows({ tenantId, taskId: created.id, actor, authoritySource: TASK_HISTORY_AUTHORITY.CREATOR, correlationId, changes }),
       });
       await audit.logInTransaction(tx, {
         tenantId, userId: actor.id, action: "TASK_CREATED", entityType: "TASK", entityId: created.id,
-        description: "Görev oluşturuldu.", newValues: change.details as Record<string, unknown>, correlationId,
-        metadata: { authoritySource: TASK_HISTORY_AUTHORITY.CREATOR, historyEvents: [change.eventType] },
+        description: "Görev oluşturuldu.",
+        newValues: created.reviewRequired ? { ...(change.details as Record<string, unknown>), reviewRequired: true } : (change.details as Record<string, unknown>),
+        correlationId,
+        metadata: { authoritySource: TASK_HISTORY_AUTHORITY.CREATOR, historyEvents: changes.map(item => item.eventType) },
       });
       return created;
     });
@@ -376,19 +444,56 @@ export class TaskService {
       }
       const actor = await this.historyActor(tx, tenantId, userId);
 
+      // F03-C: kontrolde bekleyen görevin durumu yalnız kontrol kararıyla ya da işaretin kaldırılmasıyla değişir. Durumu aynen
+      // geri gönderen düzenleme (ekran formu) serbesttir.
+      const awaiting = isAwaitingReview(existing);
+      if (awaiting && dto.status !== undefined && dto.status !== "IN_PROGRESS") {
+        throw new ConflictException({ code: TASK_REVIEW_ERROR.AWAITING, message: REVIEW_AWAITING_MESSAGE });
+      }
+      // F03-C (K5-b): işaretli açık görev, kontrol edebilecek kişi bırakmayan birine atanamaz. Kontrolde bekleyen görevde işi
+      // yapan zaten bellidir; atama değişikliği kontrol edebilecekleri değiştirmez.
+      const nextAssigneeId = dto.assigneeId !== undefined ? dto.assigneeId || null : existing.assigneeId;
+      const reviewShape: ReviewTaskShape = {
+        createdById: existing.createdById,
+        assigneeId: nextAssigneeId,
+        caseId: dto.caseId !== undefined ? dto.caseId || null : existing.caseId,
+      };
+      if (existing.reviewRequired && !awaiting && !CLOSED_TASK_STATUSES.has(existing.status) && nextAssigneeId && nextAssigneeId !== existing.assigneeId) {
+        await this.assertReviewerExists(tx, tenantId, reviewShape, nextAssigneeId, "ASSIGN");
+      }
+
       const data: any = { ...dto, dueDate: normalizeDueDate(dto.dueDate) };
       if (dto.status === "CANCELLED") delete data.status;
+      let submittedForReview = false;
       if (dto.status === "COMPLETED") {
         if (existing.status !== "COMPLETED") {
-          data.completedAt = new Date();
-          data.completedByUserId = userId; // insan kapanışı → kapatanı yakala
-          data.resolutionType = "MANUAL";
+          if (existing.reviewRequired) {
+            // F03-C (K3-a, K8): "kontrol gerekli" görev tamamlanınca TAMAMLANMIŞ SAYILMAZ; kontrolde bekler (durum IN_PROGRESS
+            // kalır, kapanış atfı yazılmaz). İşi yapan = tamamlayan hesap. Ondan başka kontrol edebilecek kişi yoksa tamamlama
+            // reddedilir (409); görev değişmez.
+            await this.assertReviewerExists(tx, tenantId, reviewShape, userId, "COMPLETE");
+            submittedForReview = true;
+            data.status = "IN_PROGRESS";
+            data.reviewStatus = TASK_REVIEW_STATUS.AWAITING;
+            data.reviewSubmittedAt = new Date();
+            data.reviewSubmittedByUserId = userId;
+            // Önceki karar (revizyon / ret) satırdan düşer; geçmişte kalır.
+            data.reviewedAt = null;
+            data.reviewedByUserId = null;
+            data.reviewNote = null;
+          } else {
+            data.completedAt = new Date();
+            data.completedByUserId = userId; // insan kapanışı → kapatanı yakala
+            data.resolutionType = "MANUAL";
+          }
         }
       } else if (dto.status !== undefined && dto.status !== "CANCELLED") {
         // COMPLETED dışı bir statüye geçiş (yeniden açma vb.) → kapanış izini temizle.
         data.completedAt = null;
         data.completedByUserId = null;
         data.resolutionType = null;
+        // F03-C: kapalı görevin yeniden açılması kontrol izini sıfırlar; işaret kalır → yeniden tamamlama yeniden kontrole girer.
+        if (CLOSED_TASK_STATUSES.has(existing.status) && existing.reviewStatus) Object.assign(data, CLEARED_REVIEW_TRACE);
       }
 
       const updated = await tx.task.update({
@@ -399,7 +504,14 @@ export class TaskService {
       // F03-A2 (OFP-03a / OFF-INV-08): yalnız DEĞİŞEN izlenen alanlar (atama, durum, öncelik, son tarih, dosya bağı, yeniden açma)
       // geçmişe yazılır; değişmeyen değer ve izlenmeyen alan (başlık, açıklama) satır üretmez. Geçmiş + denetim kaydı bu
       // işlemin parçasıdır: yazılamazsa görev değişikliği de geri alınır.
-      const changes = diffTaskHistory(existing, updated);
+      let changes: TaskHistoryChange[] = diffTaskHistory(existing, updated);
+      if (submittedForReview) {
+        // Kontrole gönderme tek olaydır: "bekliyor → devam ediyor" durum satırı yerine REVIEW_SUBMITTED yazılır.
+        changes = [
+          ...changes.filter(change => change.eventType !== TASK_HISTORY_EVENT.STATUS_CHANGED),
+          { eventType: TASK_REVIEW_EVENT.SUBMITTED, fromValue: existing.status, toValue: updated.status },
+        ];
+      }
       if (changes.length > 0) {
         const correlationId = newTaskHistoryCorrelationId();
         const authoritySource = taskHistoryUserAuthority(actor, existing);
@@ -463,6 +575,8 @@ export class TaskService {
       } });
       const updated = await tx.task.update({ where: { id }, data: {
         status: "CANCELLED", completedAt: null, completedByUserId: null, resolutionType: null,
+        // F03-C: iptal, bekleyen kontrolü / son karar izini düşürür (iptal kaydı önceki durumu ayrıca saklar).
+        ...(task.reviewStatus ? { reviewStatus: null } : {}),
       } });
       await this.audit!.logInTransaction(tx, {
         tenantId, userId: actor.id, action: "TASK_CANCELLED", entityType: "TASK", entityId: id,
@@ -472,6 +586,213 @@ export class TaskService {
           reasonPresent: true, reasonLength: reason.length, reasonHash: createHash("sha256").update(reason).digest("hex") },
       });
       return { task: updated, cancellationId: event.id };
+    });
+  }
+
+  /**
+   * F03-C (K5b-a) — kontrol edebilenler: aynı büronun aktif ADMIN'leri + görevi oluşturan (aktif, VIEWER değil). `doerUserId`
+   * verilirse onunla AYNI KİŞİ olanlar (aynı hesap ya da aynı kişinin başka hesabı; `common/approval-identity`) çıkarılır.
+   * Karar ucu görev görünüm kapsamına bağlıdır (review() → cancellationContext); sayım da AYNI kapsamı uygular: görevi göremeyen
+   * yönetici "kontrol edebilecek kişi" SAYILMAZ (rol tek başına kapsam üretmez). Sorgular sıralıdır (işlem istemcisi eşzamanlı
+   * sorgu çalıştırmaz).
+   *
+   * @remarks Çağrıldığı yer: assertReviewerExists() → create / update / setReviewRequirement.
+   */
+  private async eligibleReviewerIds(db: TaskDb, tenantId: string, shape: ReviewTaskShape, doerUserId: string | null): Promise<string[]> {
+    const admins = await db.user.findMany({ where: { tenantId, isActive: true, role: "ADMIN" }, select: { id: true } });
+    const candidates = new Set(admins.map(admin => admin.id));
+    if (shape.createdById) {
+      const creator = await db.user.findFirst({ where: { id: shape.createdById, tenantId, isActive: true, role: { not: "VIEWER" } }, select: { id: true } });
+      if (creator) candidates.add(creator.id);
+    }
+    const eligible: string[] = [];
+    for (const candidate of candidates) {
+      if (doerUserId && (await isSameApprovalIdentity(db, candidate, doerUserId, tenantId))) continue;
+      if (!(await this.reviewerSeesTask(db, tenantId, candidate, shape))) continue;
+      eligible.push(candidate);
+    }
+    return eligible;
+  }
+
+  /**
+   * F03-C: adayın görevi görüp göremeyeceği — liste kapsamıyla AYNI kural (`taskViewWhereFor`): bayrak kapalı → büro geneli;
+   * açık → `office.tasks.view_all` ALLOW (DENY yoksa) ya da atanan ∪ oluşturan ∪ dosya bağı. Bayrak açık + izin servisi yok →
+   * fail-closed. Görev henüz yazılmamış olabilir (oluşturma / atama değişikliği) → satır yerine yazılacak değerlerle sınanır.
+   */
+  private async reviewerSeesTask(db: TaskDb, tenantId: string, candidateId: string, shape: ReviewTaskShape): Promise<boolean> {
+    if (!isTaskViewScopeEnabled()) return true;
+    if (!this.workScope) {
+      throw new ForbiddenException({ code: "TASK_VIEW_SCOPE_UNRESOLVED", message: "Görev görünüm kapsamı çözümlenemedi" });
+    }
+    if (shape.createdById === candidateId || shape.assigneeId === candidateId) return true;
+    if ((await this.workScope.resolve(db, tenantId, candidateId, TASK_VIEW_ALL_KEY)) === "ALLOW") return true;
+    if (!shape.caseId) return false;
+    return (await db.case.count({ where: { id: shape.caseId, ...taskViewCaseLinkWhere(tenantId, candidateId) } })) > 0;
+  }
+
+  /** F03-C (K5-b / K8): işi yapandan (yapacak olandan) başka kontrol edebilecek kişi yoksa 409; ekran nedeni yazar. */
+  private async assertReviewerExists(db: TaskDb, tenantId: string, shape: ReviewTaskShape, doerUserId: string | null, moment: NoReviewerMoment): Promise<void> {
+    if ((await this.eligibleReviewerIds(db, tenantId, shape, doerUserId)).length === 0) {
+      throw new ConflictException({ code: TASK_REVIEW_ERROR.NO_ELIGIBLE_REVIEWER, message: NO_ELIGIBLE_REVIEWER_MESSAGE[moment] });
+    }
+  }
+
+  /**
+   * TaskController.setReviewRequirement -> POST /tasks/:id/review-requirement (F03-C; owner kararları K4-b, K5-b, K8).
+   * - Koyma: YALNIZ görevi oluşturan; kullanıcının açtığı açık görevde (sistem görevi kontrole girmez); işi yapacak kişiden başka
+   *   kontrol edebilecek kişi yoksa konamaz (409).
+   * - Kaldırma: görevi oluşturan ya da ADMIN; gerekçe ZORUNLU; kontrol bekleniyorsa bekleyen kontrol düşer (görev "devam ediyor"
+   *   kalır). Kaldırma gerekçesiyle geçmişe yazılır.
+   * Yetki: aktif büro kullanıcısı + görev görünüm kapsamı (kapsam dışı görev var olmayanla aynı 404); VIEWER yazamaz.
+   */
+  async setReviewRequirement(tenantId: string, id: string, userId: string, dto: SetTaskReviewRequirementDto) {
+    this.assertCancellationIdentity(tenantId, id, userId);
+    const required = dto?.required === true;
+    const reason = typeof dto?.reason === "string" ? dto.reason.trim() : "";
+    if (!required && (!reason || reason.length > 2000 || reason.includes("\u0000"))) {
+      throw new BadRequestException("Kontrol işaretini kaldırma gerekçesi 1–2000 karakter olmalıdır.");
+    }
+    const audit = this.requireHistoryAudit();
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} AND "tenantId" = ${tenantId} FOR SHARE`;
+      await tx.$queryRaw`SELECT "id" FROM "Task" WHERE "id" = ${id} AND "tenantId" = ${tenantId} FOR UPDATE`;
+      const { actor, task } = await this.cancellationContext(tx, tenantId, id, userId);
+      const isCreator = !!task.createdById && task.createdById === actor.id;
+      const mayChange = actor.role !== "VIEWER" && (isCreator || (!required && actor.role === "ADMIN"));
+      if (!mayChange) {
+        throw new ForbiddenException({
+          code: TASK_REVIEW_ERROR.NOT_AUTHORIZED,
+          message: required ? "Kontrol işaretini yalnız görevi oluşturan koyabilir." : "Kontrol işaretini yalnız görevi oluşturan ya da büro yöneticisi kaldırabilir.",
+        });
+      }
+      if (CLOSED_TASK_STATUSES.has(task.status) || (required && !isReviewApplicable(task))) {
+        throw new ConflictException({ code: TASK_REVIEW_ERROR.NOT_APPLICABLE, message: "Bu görev kontrole tabi tutulamaz (kapalı görev ya da sistem görevi)." });
+      }
+      // Masraf talebine bağlı görev (`ExpenseRequest.taskId`) sistem türevidir: ödeme tamamlanınca sistem kapatır (AUTO_SYSTEM).
+      // Kullanıcının açtığı görev sayılmaz → kontrole girmez. Yalnız OKUMA: masraf–görev bağı ve masraf servisi değişmez.
+      if (required && (await tx.expenseRequest.count({ where: { tenantId, taskId: id } })) > 0) {
+        throw new ConflictException({ code: TASK_REVIEW_ERROR.NOT_APPLICABLE, message: "Masraf talebine bağlı görev kontrole tabi tutulamaz." });
+      }
+      if (task.reviewRequired === required) {
+        throw new ConflictException({
+          code: TASK_REVIEW_ERROR.NOT_APPLICABLE,
+          message: required ? "Görev zaten kontrol gerekli olarak işaretli." : "Görevde kontrol işareti yok.",
+        });
+      }
+      if (required) {
+        await this.assertReviewerExists(tx, tenantId, { createdById: task.createdById, assigneeId: task.assigneeId, caseId: task.caseId }, task.assigneeId, "PLAN");
+      }
+
+      const droppedAwaitingReview = !required && isAwaitingReview(task);
+      const updated = await tx.task.update({
+        where: { id },
+        data: required ? { reviewRequired: true } : { reviewRequired: false, ...CLEARED_REVIEW_TRACE },
+      });
+      const correlationId = newTaskHistoryCorrelationId();
+      const authoritySource = isCreator ? TASK_HISTORY_AUTHORITY.CREATOR : TASK_HISTORY_AUTHORITY.ADMIN;
+      const change: TaskHistoryChange = required
+        ? { eventType: TASK_REVIEW_EVENT.REQUIREMENT_SET, fromValue: "false", toValue: "true" }
+        : { eventType: TASK_REVIEW_EVENT.REQUIREMENT_REMOVED, fromValue: "true", toValue: "false", reason, details: { droppedAwaitingReview, previousReviewStatus: task.reviewStatus } };
+      await tx.taskHistoryEvent.createMany({ data: userTaskHistoryRows({ tenantId, taskId: id, actor, authoritySource, correlationId, changes: [change] }) });
+      await audit.logInTransaction(tx, {
+        tenantId, userId: actor.id, action: required ? "TASK_REVIEW_REQUIREMENT_SET" : "TASK_REVIEW_REQUIREMENT_REMOVED", entityType: "TASK", entityId: id,
+        description: required ? "Görev kontrol gerekli olarak işaretlendi." : "Görevin kontrol işareti gerekçeyle kaldırıldı.",
+        oldValues: { reviewRequired: task.reviewRequired, reviewStatus: task.reviewStatus },
+        newValues: { reviewRequired: updated.reviewRequired, reviewStatus: updated.reviewStatus },
+        correlationId,
+        // Gerekçe domain kaydındadır (TaskHistoryEvent.reason); ham denetim kaydına yazılmaz.
+        metadata: {
+          authoritySource, historyEvents: [change.eventType], droppedAwaitingReview,
+          ...(required ? {} : { reasonPresent: true, reasonLength: reason.length, reasonHash: createHash("sha256").update(reason).digest("hex") }),
+        },
+      });
+      return updated;
+    });
+  }
+
+  /**
+   * TaskController.review -> POST /tasks/:id/review (F03-C / OFP-04; owner kararları K3-a, K5b-a, K9). Bağımsız İLK kontrol:
+   * nihai avukat onayı DEĞİLDİR ve ADR-009 onay motorunu kullanmaz; görevin kendi durum makinesidir.
+   * - Karar verebilen: aynı büronun ADMIN'i ya da görevi oluşturan; işi yapanla AYNI KİŞİ olamaz (kişi düzeyi: aynı hesap ya da
+   *   aynı kişinin başka hesabı). Atanmış olmak ya da büro kullanıcısı olmak yetki vermez.
+   * - Onay → TAMAMLANDI; tamamlama atfı İŞİ YAPANA yazılır (kontrol eden `reviewedByUserId`'dedir).
+   * - Revizyon → işi yapanda "devam ediyor" (atanan işi yapan değilse ve işi yapan hâlâ aktifse görev ona atanır).
+   * - Ret → "bekliyor" (iş yapılmamış sayılır; atanan değişmez, görev normal düzenlemeyle yeniden atanabilir).
+   * Ret ve revizyonda gerekçe zorunludur; karar ve gerekçe görevde ve geçmişte kalır.
+   */
+  async review(tenantId: string, id: string, userId: string, dto: ReviewTaskDto) {
+    this.assertCancellationIdentity(tenantId, id, userId);
+    const decision = dto?.decision;
+    if (decision !== TASK_REVIEW_DECISION.APPROVE && decision !== TASK_REVIEW_DECISION.REJECT && decision !== TASK_REVIEW_DECISION.REQUEST_REVISION) {
+      throw new BadRequestException("Geçersiz kontrol kararı.");
+    }
+    const note = typeof dto?.note === "string" ? dto.note.trim() : "";
+    if (note.length > 2000 || note.includes("\u0000")) throw new BadRequestException("Kontrol notu en çok 2000 karakter olabilir.");
+    if (decision !== TASK_REVIEW_DECISION.APPROVE && !note) throw new BadRequestException("Ret ve revizyon için gerekçe zorunludur (1–2000 karakter).");
+    const audit = this.requireHistoryAudit();
+    return this.prisma.$transaction(async tx => {
+      // Önce hesap yetkisi, sonra görev satırı kilitlenir; eşzamanlı iki karardan ikincisi ilk commit'i görür (409).
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} AND "tenantId" = ${tenantId} FOR SHARE`;
+      await tx.$queryRaw`SELECT "id" FROM "Task" WHERE "id" = ${id} AND "tenantId" = ${tenantId} FOR UPDATE`;
+      const { actor, task } = await this.cancellationContext(tx, tenantId, id, userId);
+      const isCreator = !!task.createdById && task.createdById === actor.id;
+      if (actor.role === "VIEWER" || (actor.role !== "ADMIN" && !isCreator)) {
+        throw new ForbiddenException({ code: TASK_REVIEW_ERROR.NOT_AUTHORIZED, message: "Kontrol kararını yalnız büro yöneticisi ya da görevi oluşturan verebilir." });
+      }
+      const doerUserId = task.reviewSubmittedByUserId;
+      if (!isAwaitingReview(task) || !doerUserId) {
+        throw new ConflictException({ code: TASK_REVIEW_ERROR.NOT_AWAITING, message: "Bu görev için bekleyen bir kontrol yok." });
+      }
+      if (await isSameApprovalIdentity(tx, actor.id, doerUserId, tenantId)) {
+        throw new ForbiddenException({ code: TASK_REVIEW_ERROR.SAME_PERSON, message: "İşi yapan kişi kendi işini kontrol edemez (aynı kişinin başka hesabı da sayılır)." });
+      }
+
+      const now = new Date();
+      const nextStatus = statusAfterReviewDecision(decision);
+      const data: Prisma.TaskUncheckedUpdateInput = {
+        status: nextStatus,
+        reviewStatus: reviewStatusAfterDecision(decision),
+        reviewedAt: now,
+        reviewedByUserId: actor.id,
+        reviewNote: note || null,
+      };
+      if (decision === TASK_REVIEW_DECISION.APPROVE) {
+        data.completedAt = now;
+        data.completedByUserId = doerUserId; // tamamlama atfı işi yapanındır; kontrol eden ayrı alandadır
+        data.resolutionType = "MANUAL";
+      }
+      if (decision === TASK_REVIEW_DECISION.REQUEST_REVISION && task.assigneeId !== doerUserId) {
+        const doerActive = await tx.user.findFirst({ where: { id: doerUserId, tenantId, isActive: true }, select: { id: true } });
+        if (doerActive) data.assigneeId = doerUserId;
+      }
+      const updated = await tx.task.update({ where: { id }, data });
+
+      const correlationId = newTaskHistoryCorrelationId();
+      const authoritySource = isCreator ? TASK_REVIEW_AUTHORITY.CREATOR : TASK_REVIEW_AUTHORITY.ADMIN;
+      const changes: TaskHistoryChange[] = [{
+        eventType: reviewEventForDecision(decision) as TaskHistoryChange["eventType"],
+        fromValue: task.status,
+        toValue: updated.status,
+        ...(note ? { reason: note } : {}),
+        details: { doerUserId, reviewSubmittedAt: task.reviewSubmittedAt ? task.reviewSubmittedAt.toISOString() : null },
+      }];
+      if ((task.assigneeId ?? null) !== (updated.assigneeId ?? null)) {
+        changes.push({ eventType: TASK_HISTORY_EVENT.ASSIGNEE_CHANGED, fromValue: task.assigneeId ?? null, toValue: updated.assigneeId ?? null });
+      }
+      await tx.taskHistoryEvent.createMany({ data: userTaskHistoryRows({ tenantId, taskId: id, actor, authoritySource, correlationId, changes }) });
+      await audit.logInTransaction(tx, {
+        tenantId, userId: actor.id, action: "TASK_REVIEW_DECIDED", entityType: "TASK", entityId: id,
+        description: "Görev kontrol kararı verildi.",
+        oldValues: { status: task.status, reviewStatus: task.reviewStatus },
+        newValues: { status: updated.status, reviewStatus: updated.reviewStatus },
+        correlationId,
+        // Not / gerekçe domain kaydındadır (Task.reviewNote + TaskHistoryEvent.reason); ham denetim kaydına yazılmaz.
+        metadata: {
+          decision, authoritySource, doerUserId, historyEvents: changes.map(change => change.eventType),
+          notePresent: !!note, ...(note ? { noteLength: note.length, noteHash: createHash("sha256").update(note).digest("hex") } : {}),
+        },
+      });
+      return updated;
     });
   }
 

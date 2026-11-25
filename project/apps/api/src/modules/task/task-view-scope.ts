@@ -28,20 +28,22 @@ export function isTaskViewScopeEnabled(env: NodeJS.ProcessEnv = process.env): bo
  * ayrıca korunur.
  */
 export function taskViewScopeWhere(tenantId: string, actorUserId: string): Prisma.TaskWhereInput {
+  return {
+    OR: [{ assigneeId: actorUserId }, { createdById: actorUserId }, { case: taskViewCaseLinkWhere(tenantId, actorUserId) }],
+  };
+}
+
+/**
+ * Varsayılan kapsamın "dosya bağı" kolu: aktörün CaseLawyer ya da CaseStaff(canView) olduğu dosya (aktif kart + aktif hesap,
+ * aynı büro). Tek kaynak: liste kapsamı (`taskViewScopeWhere`) ve F03-C "kontrol edebilecek kişi" sayımı aynı yüklemi kullanır.
+ */
+export function taskViewCaseLinkWhere(tenantId: string, actorUserId: string): Prisma.CaseWhereInput {
   const activeAccount = { id: actorUserId, tenantId, isActive: true };
   return {
+    tenantId,
     OR: [
-      { assigneeId: actorUserId },
-      { createdById: actorUserId },
-      {
-        case: {
-          tenantId,
-          OR: [
-            { lawyers: { some: { lawyer: { tenantId, isActive: true, user: activeAccount } } } },
-            { staff: { some: { canView: true, staffMember: { tenantId, isActive: true, user: activeAccount } } } },
-          ],
-        },
-      },
+      { lawyers: { some: { lawyer: { tenantId, isActive: true, user: activeAccount } } } },
+      { staff: { some: { canView: true, staffMember: { tenantId, isActive: true, user: activeAccount } } } },
     ],
   };
 }

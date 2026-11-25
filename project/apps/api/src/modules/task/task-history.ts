@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Prisma, UserRole } from "@prisma/client";
+import type { TaskReviewEventType } from "./task-review";
 
 /**
  * F03-A2 (OFP-03a / OFF-INV-08; owner kararı K10 "paketteki sınır", 25.11.2026) — genel görev geçmişi: sabitler + saf yardımcılar.
@@ -57,10 +58,13 @@ export interface TaskHistorySnapshot {
 }
 
 export interface TaskHistoryChange {
-  eventType: TaskHistoryEventType;
+  /** Genel olay türü ya da (F03-C) kontrol olayı; kolon metindir, yeni tür şema değişikliği gerektirmez. */
+  eventType: TaskHistoryEventType | TaskReviewEventType;
   fromValue: string | null;
   toValue: string | null;
   details?: Prisma.InputJsonValue;
+  /** Kullanıcının yazdığı gerekçe (F03-C: kontrol kararı / kontrol işaretinin kaldırılması); 1–2000 karakter. */
+  reason?: string;
 }
 
 const iso = (value: Date | null | undefined): string | null => (value instanceof Date ? value.toISOString() : null);
@@ -143,6 +147,7 @@ export function userTaskHistoryRows(input: {
     fromValue: change.fromValue,
     toValue: change.toValue,
     ...(change.details !== undefined ? { details: change.details } : {}),
+    ...(change.reason !== undefined ? { reason: change.reason } : {}),
     correlationId: input.correlationId,
   }));
 }

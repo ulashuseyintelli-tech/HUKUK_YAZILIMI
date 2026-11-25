@@ -549,3 +549,230 @@ describe("TaskService — F03-A2 görev geçmişi yazımı", () => {
     expect(audit.logInTransaction).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * F03-C (OFP-04; owner kararları K3-a, K4-b, K5-b, K5b-a, K8, K9 — 25.11.2026) — görev içi bağımsız ilk kontrol (birim).
+ * Uçtan uca zincir ve kişi düzeyi bağımsızlık (aynı kişinin ikinci hesabı) gerçek HTTP + PostgreSQL testindedir
+ * (`task-review.http.db-gated.integration.spec.ts`); burada karar dalları sahte işlem istemcisiyle sınanır.
+ */
+describe("TaskService — F03-C görev içi bağımsız ilk kontrol", () => {
+  const baseTask = (over: Record<string, unknown> = {}) => ({
+    id: "tk", tenantId: "t1", status: "PENDING", priority: "MEDIUM", assigneeId: "doer", dueDate: null, caseId: null,
+    createdById: "creator", reviewRequired: true, reviewStatus: null, reviewSubmittedAt: null, reviewSubmittedByUserId: null,
+    reviewedAt: null, reviewedByUserId: null, reviewNote: null,
+    dedupeKey: null, taskSubType: null, clientId: null, debtorId: null, addressId: null,
+    completedAt: null, completedByUserId: null, resolutionType: null,
+    ...over,
+  });
+  const awaitingTask = (over: Record<string, unknown> = {}) =>
+    baseTask({ status: "IN_PROGRESS", reviewStatus: "AWAITING", reviewSubmittedByUserId: "doer", reviewSubmittedAt: new Date("2026-01-05T10:00:00.000Z"), ...over });
+
+  /** `admins`: büronun aktif ADMIN hesapları. Kişi kartı yoktur → kişi kimliği yalnız hesap eşitliğidir. */
+  const world = (existing: any, opts: { admins?: string[]; actorRole?: string } = {}) => {
+    const prisma: any = withTx(
+      {
+        task: {
+          findFirst: jest.fn().mockResolvedValue(existing),
+          update: jest.fn(async ({ data }: any) => ({ ...existing, ...data })),
+          create: jest.fn(async ({ data }: any) => ({ id: "tk-new", status: "PENDING", priority: "MEDIUM", assigneeId: null, dueDate: null, caseId: null, reviewRequired: false, ...data })),
+        },
+        user: { findFirst: jest.fn().mockResolvedValue({ id: "uygun" }) },
+      },
+      { role: opts.actorRole ?? "USER" },
+    );
+    prisma.$tx.user.findMany = jest.fn().mockResolvedValue((opts.admins ?? []).map(id => ({ id })));
+    prisma.$tx.user.findUnique = jest.fn().mockResolvedValue({ lawyer: null, staffMember: null });
+    prisma.$tx.expenseRequest = { count: jest.fn().mockResolvedValue(0) };
+    const audit = auditMock();
+    return { prisma, audit, svc: serviceOf(prisma, undefined, audit) };
+  };
+  const historyRows = (prisma: any) => prisma.$tx.taskHistoryEvent.createMany.mock.calls.flatMap((call: any[]) => call[0].data);
+  const code = (value: string) => ({ response: { code: value } });
+
+  it("create (K5-b): işi yapacak kişiden başka kontrol edebilecek kişi yoksa işaret konamaz; görev yazılmaz", async () => {
+    const { prisma, svc } = world(baseTask(), { admins: [] });
+
+    await expect(svc.create("t1", "creator", { title: "T", reviewRequired: true, assigneeId: "creator" } as any)).rejects.toMatchObject(code("TASK_REVIEW_NO_ELIGIBLE_REVIEWER"));
+
+    expect(prisma.task.create).not.toHaveBeenCalled();
+    expect(historyRows(prisma)).toEqual([]);
+  });
+
+  it("create (K4-b): işaretli görev CREATED + REVIEW_REQUIREMENT_SET satırlarıyla, tek korelasyonla yazılır; tamamlanmış açılamaz", async () => {
+    const { prisma, audit, svc } = world(baseTask(), { admins: ["admin"] });
+
+    await svc.create("t1", "creator", { title: "T", reviewRequired: true, assigneeId: "doer" } as any);
+
+    expect(prisma.task.create.mock.calls[0][0].data.reviewRequired).toBe(true);
+    const rows = historyRows(prisma);
+    expect(rows.map((row: any) => row.eventType)).toEqual(["CREATED", "REVIEW_REQUIREMENT_SET"]);
+    expect(new Set(rows.map((row: any) => row.correlationId)).size).toBe(1);
+    expect(audit.logInTransaction.mock.calls[0][1].metadata.historyEvents).toEqual(["CREATED", "REVIEW_REQUIREMENT_SET"]);
+
+    await expect(svc.create("t1", "creator", { title: "T", reviewRequired: true, status: "COMPLETED" } as any)).rejects.toMatchObject(code("TASK_REVIEW_NOT_APPLICABLE"));
+    expect(prisma.task.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("update (K3-a): işaretli görev tamamlanınca TAMAMLANMIŞ sayılmaz — IN_PROGRESS + AWAITING, kapanış atfı yazılmaz", async () => {
+    const { prisma, svc } = world(baseTask(), { admins: ["admin"] });
+
+    await svc.update("t1", "tk", "doer", { status: "COMPLETED" } as any);
+
+    const data = prisma.task.update.mock.calls[0][0].data;
+    expect(data).toMatchObject({ status: "IN_PROGRESS", reviewStatus: "AWAITING", reviewSubmittedByUserId: "doer", reviewedByUserId: null, reviewNote: null });
+    expect(data.reviewSubmittedAt).toBeInstanceOf(Date);
+    for (const key of ["completedAt", "completedByUserId", "resolutionType"]) expect(data).not.toHaveProperty(key);
+    // kontrole gönderme tek olaydır: "bekliyor → devam ediyor" durum satırı yazılmaz
+    expect(historyRows(prisma).map((row: any) => [row.eventType, row.fromValue, row.toValue])).toEqual([["REVIEW_SUBMITTED", "PENDING", "IN_PROGRESS"]]);
+  });
+
+  it("update (K8): tamamlayandan başka kontrol edebilecek kişi yoksa tamamlama reddedilir; görev yazılmaz", async () => {
+    // tek yönetici görevi kendisi açmış ve kendisi tamamlıyor
+    const { prisma, svc } = world(baseTask({ createdById: "solo", assigneeId: null }), { admins: ["solo"], actorRole: "ADMIN" });
+
+    await expect(svc.update("t1", "tk", "solo", { status: "COMPLETED" } as any)).rejects.toMatchObject(code("TASK_REVIEW_NO_ELIGIBLE_REVIEWER"));
+
+    expect(prisma.task.update).not.toHaveBeenCalled();
+  });
+
+  it("update (K5-b): işaretli açık görev, kontrol edebilecek kişi bırakmayan birine atanamaz", async () => {
+    const { prisma, svc } = world(baseTask({ createdById: "solo", assigneeId: null }), { admins: ["solo"], actorRole: "ADMIN" });
+
+    await expect(svc.update("t1", "tk", "solo", { assigneeId: "solo" } as any)).rejects.toMatchObject(code("TASK_REVIEW_NO_ELIGIBLE_REVIEWER"));
+    expect(prisma.task.update).not.toHaveBeenCalled();
+
+    // başka birine atama serbest (yönetici kontrol edebilir)
+    await svc.update("t1", "tk", "solo", { assigneeId: "doer" } as any);
+    expect(prisma.task.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("update: kontrolde bekleyen görevin durumu PUT ile değişmez (409); durumu aynen gönderen düzenleme yazılır", async () => {
+    const { prisma, svc } = world(awaitingTask(), { admins: ["admin"] });
+
+    for (const status of ["COMPLETED", "PENDING"]) {
+      await expect(svc.update("t1", "tk", "doer", { status } as any)).rejects.toMatchObject(code("TASK_REVIEW_AWAITING"));
+    }
+    expect(prisma.task.update).not.toHaveBeenCalled();
+
+    await svc.update("t1", "tk", "creator", { status: "IN_PROGRESS", title: "Düzenlendi" } as any);
+    const data = prisma.task.update.mock.calls[0][0].data;
+    expect(data).toMatchObject({ status: "IN_PROGRESS", title: "Düzenlendi" });
+    expect(data).not.toHaveProperty("reviewStatus");
+  });
+
+  it("update: onaylanıp tamamlanmış görev yeniden açılınca kontrol izi sıfırlanır; işaretsiz görevde alanlara dokunulmaz", async () => {
+    const approved = world(baseTask({ status: "COMPLETED", reviewStatus: "APPROVED", reviewedByUserId: "admin", completedByUserId: "doer" }), { admins: ["admin"] });
+    await approved.svc.update("t1", "tk", "creator", { status: "PENDING" } as any);
+    expect(approved.prisma.task.update.mock.calls[0][0].data).toMatchObject({
+      status: "PENDING", completedByUserId: null, reviewStatus: null, reviewSubmittedByUserId: null, reviewedByUserId: null, reviewNote: null,
+    });
+
+    const plain = world(baseTask({ status: "COMPLETED", reviewRequired: false }), { admins: ["admin"] });
+    await plain.svc.update("t1", "tk", "creator", { status: "PENDING" } as any);
+    expect(plain.prisma.task.update.mock.calls[0][0].data).not.toHaveProperty("reviewStatus");
+  });
+
+  it("review (K5b-a): onay görevi tamamlar; tamamlama atfı İŞİ YAPANA, kontrol eden ayrı alana yazılır", async () => {
+    const { prisma, audit, svc } = world(awaitingTask(), { admins: ["admin"], actorRole: "ADMIN" });
+
+    await svc.review("t1", "tk", "admin", { decision: "APPROVE", note: " Sentetik not " } as any);
+
+    const data = prisma.task.update.mock.calls[0][0].data;
+    expect(data).toMatchObject({ status: "COMPLETED", reviewStatus: "APPROVED", completedByUserId: "doer", resolutionType: "MANUAL", reviewedByUserId: "admin", reviewNote: "Sentetik not" });
+    expect(data.completedAt).toBeInstanceOf(Date);
+    const [row] = historyRows(prisma);
+    expect([row.eventType, row.fromValue, row.toValue, row.authoritySource, row.reason, row.actorUserId]).toEqual(["REVIEW_APPROVED", "IN_PROGRESS", "COMPLETED", "REVIEWER_ADMIN", "Sentetik not", "admin"]);
+    // not ham denetim kaydına yazılmaz (yalnız uzunluk + özet)
+    const auditInput = audit.logInTransaction.mock.calls[0][1];
+    expect(auditInput.action).toBe("TASK_REVIEW_DECIDED");
+    expect(JSON.stringify(auditInput)).not.toContain("Sentetik not");
+    expect(auditInput.metadata).toMatchObject({ decision: "APPROVE", doerUserId: "doer", notePresent: true, noteLength: 12 });
+  });
+
+  it("review: işi yapan hesap (oluşturan ya da yönetici olsa da) kendi işini kontrol edemez — 403 TASK_REVIEW_SAME_PERSON", async () => {
+    const byCreator = world(awaitingTask({ reviewSubmittedByUserId: "creator" }), { admins: ["admin"] });
+    await expect(byCreator.svc.review("t1", "tk", "creator", { decision: "APPROVE" } as any)).rejects.toMatchObject(code("TASK_REVIEW_SAME_PERSON"));
+
+    const byAdmin = world(awaitingTask({ reviewSubmittedByUserId: "admin" }), { admins: ["admin"], actorRole: "ADMIN" });
+    await expect(byAdmin.svc.review("t1", "tk", "admin", { decision: "APPROVE" } as any)).rejects.toMatchObject(code("TASK_REVIEW_SAME_PERSON"));
+    expect(byCreator.prisma.task.update).not.toHaveBeenCalled();
+    expect(byAdmin.prisma.task.update).not.toHaveBeenCalled();
+  });
+
+  it("review: oluşturan ya da yönetici olmayan karar veremez; bekleyen kontrol yoksa 409; ret ve revizyon gerekçesiz olmaz", async () => {
+    const bystander = world(awaitingTask(), { admins: ["admin"] });
+    await expect(bystander.svc.review("t1", "tk", "baskasi", { decision: "APPROVE" } as any)).rejects.toMatchObject(code("TASK_REVIEW_NOT_AUTHORIZED"));
+    const viewer = world(awaitingTask(), { admins: ["admin"], actorRole: "VIEWER" });
+    await expect(viewer.svc.review("t1", "tk", "creator", { decision: "APPROVE" } as any)).rejects.toMatchObject(code("TASK_REVIEW_NOT_AUTHORIZED"));
+
+    const notAwaiting = world(baseTask({ status: "IN_PROGRESS", reviewStatus: "REVISION_REQUESTED" }), { admins: ["admin"], actorRole: "ADMIN" });
+    await expect(notAwaiting.svc.review("t1", "tk", "admin", { decision: "APPROVE" } as any)).rejects.toMatchObject(code("TASK_REVIEW_NOT_AWAITING"));
+    // bayat işaret: tamamlanmış ama AWAITING kalmış satır kontrolde sayılmaz
+    const stale = world(awaitingTask({ status: "COMPLETED" }), { admins: ["admin"], actorRole: "ADMIN" });
+    await expect(stale.svc.review("t1", "tk", "admin", { decision: "APPROVE" } as any)).rejects.toMatchObject(code("TASK_REVIEW_NOT_AWAITING"));
+
+    const noReason = world(awaitingTask(), { admins: ["admin"], actorRole: "ADMIN" });
+    for (const decision of ["REJECT", "REQUEST_REVISION"]) {
+      await expect(noReason.svc.review("t1", "tk", "admin", { decision, note: "   " } as any)).rejects.toBeInstanceOf(BadRequestException);
+    }
+    await expect(noReason.svc.review("t1", "tk", "admin", { decision: "BASKA" } as any)).rejects.toBeInstanceOf(BadRequestException);
+    expect(noReason.prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("review (K9): revizyon görevi işi yapana döndürür (atanan başkasıysa ona atar); ret görevi 'bekliyor'a alır, atananı değiştirmez", async () => {
+    const revision = world(awaitingTask({ assigneeId: "baskasi" }), { admins: ["admin"] });
+    await revision.svc.review("t1", "tk", "creator", { decision: "REQUEST_REVISION", note: "Sentetik revizyon" } as any);
+    expect(revision.prisma.task.update.mock.calls[0][0].data).toMatchObject({ status: "IN_PROGRESS", reviewStatus: "REVISION_REQUESTED", assigneeId: "doer", reviewNote: "Sentetik revizyon" });
+    expect(revision.prisma.task.update.mock.calls[0][0].data).not.toHaveProperty("completedAt");
+    expect(historyRows(revision.prisma).map((row: any) => [row.eventType, row.authoritySource, row.reason ?? null])).toEqual([
+      ["REVIEW_REVISION_REQUESTED", "REVIEWER_CREATOR", "Sentetik revizyon"],
+      ["ASSIGNEE_CHANGED", "REVIEWER_CREATOR", null],
+    ]);
+
+    const rejected = world(awaitingTask({ assigneeId: "baskasi" }), { admins: ["admin"], actorRole: "ADMIN" });
+    await rejected.svc.review("t1", "tk", "admin", { decision: "REJECT", note: "Sentetik ret" } as any);
+    const data = rejected.prisma.task.update.mock.calls[0][0].data;
+    expect(data).toMatchObject({ status: "PENDING", reviewStatus: "REJECTED", reviewNote: "Sentetik ret" });
+    expect(data).not.toHaveProperty("assigneeId");
+    expect(data).not.toHaveProperty("completedAt");
+  });
+
+  it("setReviewRequirement: işareti yalnız oluşturan koyar; kaldırma gerekçe ister ve bekleyen kontrolü düşürür; gerekçe ham denetime yazılmaz", async () => {
+    const unmarked = world(baseTask({ reviewRequired: false }), { admins: ["admin"], actorRole: "ADMIN" });
+    await expect(unmarked.svc.setReviewRequirement("t1", "tk", "admin", { required: true } as any)).rejects.toMatchObject(code("TASK_REVIEW_NOT_AUTHORIZED"));
+
+    const system = world(baseTask({ reviewRequired: false, dedupeKey: "uretici:1" }), { admins: ["admin"] });
+    await expect(system.svc.setReviewRequirement("t1", "tk", "creator", { required: true } as any)).rejects.toMatchObject(code("TASK_REVIEW_NOT_APPLICABLE"));
+
+    // masraf talebine bagli gorev sistem turevidir (odeme tamamlaninca AUTO_SYSTEM kapanir) -> kontrole girmez
+    const expenseLinked = world(baseTask({ reviewRequired: false }), { admins: ["admin"] });
+    expenseLinked.prisma.$tx.expenseRequest.count.mockResolvedValue(1);
+    await expect(expenseLinked.svc.setReviewRequirement("t1", "tk", "creator", { required: true } as any)).rejects.toMatchObject(code("TASK_REVIEW_NOT_APPLICABLE"));
+    expect(expenseLinked.prisma.$tx.expenseRequest.count).toHaveBeenCalledWith({ where: { tenantId: "t1", taskId: "tk" } });
+    expect(expenseLinked.prisma.task.update).not.toHaveBeenCalled();
+
+    const awaiting = world(awaitingTask(), { admins: ["admin"] });
+    await expect(awaiting.svc.setReviewRequirement("t1", "tk", "creator", { required: false } as any)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(awaiting.svc.setReviewRequirement("t1", "tk", "doer", { required: false, reason: "Sentetik" } as any)).rejects.toMatchObject(code("TASK_REVIEW_NOT_AUTHORIZED"));
+
+    await awaiting.svc.setReviewRequirement("t1", "tk", "creator", { required: false, reason: " Sentetik kaldırma gerekçesi " } as any);
+    const data = awaiting.prisma.task.update.mock.calls[0][0].data;
+    expect(data).toEqual({ reviewRequired: false, reviewStatus: null, reviewSubmittedAt: null, reviewSubmittedByUserId: null, reviewedAt: null, reviewedByUserId: null, reviewNote: null });
+    expect(data).not.toHaveProperty("status"); // görev "devam ediyor" kalır
+    const [row] = historyRows(awaiting.prisma);
+    expect([row.eventType, row.reason, row.authoritySource]).toEqual(["REVIEW_REQUIREMENT_REMOVED", "Sentetik kaldırma gerekçesi", "CREATOR"]);
+    expect(row.details).toMatchObject({ droppedAwaitingReview: true, previousReviewStatus: "AWAITING" });
+    const auditInput = awaiting.audit.logInTransaction.mock.calls[0][1];
+    expect(auditInput.action).toBe("TASK_REVIEW_REQUIREMENT_REMOVED");
+    expect(JSON.stringify(auditInput)).not.toContain("Sentetik kaldırma");
+  });
+
+  it("denetim servisi yoksa kontrol yazımları hiç başlamaz (503)", async () => {
+    const { prisma } = world(awaitingTask(), { admins: ["admin"], actorRole: "ADMIN" });
+    const svc = new TaskService(prisma, undefined, undefined, undefined);
+
+    await expect(svc.review("t1", "tk", "admin", { decision: "APPROVE" } as any)).rejects.toMatchObject({ status: 503 });
+    await expect(svc.setReviewRequirement("t1", "tk", "creator", { required: false, reason: "Sentetik" } as any)).rejects.toMatchObject({ status: 503 });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+});

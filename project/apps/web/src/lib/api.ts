@@ -930,6 +930,27 @@ class ApiClient {
     });
   }
 
+  /**
+   * F03-C: bağımsız ilk kontrol kararı (POST /tasks/:id/review). Ret ve revizyonda `note` zorunludur; gövde güncel görevdir.
+   */
+  async reviewTask(id: string, decision: "APPROVE" | "REQUEST_REVISION" | "REJECT", note?: string) {
+    return this.request<any>(`/tasks/${id}/review`, {
+      method: "POST",
+      body: JSON.stringify(note ? { decision, note } : { decision }),
+    });
+  }
+
+  /**
+   * F03-C: "kontrol gerekli" işareti (POST /tasks/:id/review-requirement). Koyma yalnız görevi oluşturanındır; kaldırmada
+   * `reason` zorunludur.
+   */
+  async setTaskReviewRequirement(id: string, required: boolean, reason?: string) {
+    return this.request<any>(`/tasks/${id}/review-requirement`, {
+      method: "POST",
+      body: JSON.stringify(reason ? { required, reason } : { required }),
+    });
+  }
+
   async getTaskCancellations(id: string, page = 1) {
     return this.request<any>(`/tasks/${id}/cancellations?page=${page}&limit=20`);
   }

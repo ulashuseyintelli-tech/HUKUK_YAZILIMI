@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { ViewScopeBadge } from '@/components/scope/ViewScopeBadge';
 import { useAuth } from '@/lib/auth-context';
 import { toActionErrorMessage } from '@/lib/action-error';
+import { REVIEW_SUBMITTED_NOTICE, isAwaitingReview, taskReviewBadge } from '@/lib/task-review';
 import { Plus, MoreVertical, Clock, User, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
@@ -17,6 +18,9 @@ interface Task {
   dueDate?: string;
   assignee?: { id?: string; name: string; surname: string };
   case?: { fileNumber: string };
+  // F03-C: kontrol alanları ("kontrolde" = IN_PROGRESS + reviewStatus AWAITING; ayrı bir durum değeri değildir).
+  reviewRequired?: boolean | null;
+  reviewStatus?: string | null;
 }
 
 /** GET /tasks `meta` (F01-A): pano sayfa sayfa yükler; toplam ve kaç sayfa kaldığı buradan okunur. */
@@ -50,6 +54,10 @@ const COLUMNS = [
 // sürüklenemez): panodan sürükleyerek iptal etme / yeniden açma yolu bu dilimde AÇILMAZ.
 const CANCELLED_COLUMN = { id: 'CANCELLED', title: 'İptal Edilen', color: 'bg-gray-50' };
 
+// F03-C: kontrolde bekleyen görevler (sunucuda IN_PROGRESS + kontrol bekliyor) kendi SALT OKUNUR sütununda görünür: bırakma
+// hedefi değildir ve kartlar sürüklenemez — durum yalnız kontrol kararıyla değişir; karar Görevler listesinden verilir.
+const AWAITING_REVIEW_COLUMN = { id: 'AWAITING_REVIEW', title: 'Kontrolde', color: 'bg-amber-50' };
+
 const PRIORITY_COLORS: Record<string, string> = {
   LOW: 'bg-gray-200 text-gray-700',
   MEDIUM: 'bg-blue-200 text-blue-700',
@@ -81,6 +89,7 @@ export default function KanbanPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
+  const [moveNotice, setMoveNotice] = useState<string | null>(null);
   const [draggedTask, setDraggedTask] = useState<Task | null>(null);
   // "" = tüm atananlar · "me" = bana atananlar · <userId> = atanana göre (liste sayfasıyla aynı sözleşme).
   // Yalnız SÜZGEÇTİR; OWN/TEAM yetkisi değildir (OFP-09 bu ekranda yok).
@@ -194,12 +203,24 @@ export default function KanbanPage() {
 
     // Optimistic update
     setMoveError(null);
+    setMoveNotice(null);
     setTasks(prev => prev.map(t =>
       t.id === movedId ? { ...t, status: columnId } : t
     ));
 
     try {
-      await api.put(`/tasks/${movedId}`, { status: columnId });
+      const res = await api.put(`/tasks/${movedId}`, { status: columnId });
+      // F03-C: kartın yeri SUNUCUNUN döndürdüğü durumdan gelir. "Kontrol gerekli" görev Tamamlandı'ya bırakılınca tamamlanmış
+      // sayılmaz (IN_PROGRESS + kontrol bekliyor) → kart Kontrolde sütununa geçer ve nedeni yazılır.
+      const saved = (res as { data?: { status?: unknown; reviewStatus?: unknown; reviewRequired?: unknown } } | undefined)?.data;
+      if (saved && typeof saved.status === 'string') {
+        const savedStatus = saved.status;
+        const reviewStatus = typeof saved.reviewStatus === 'string' ? saved.reviewStatus : null;
+        setTasks(prev => prev.map(t =>
+          t.id === movedId ? { ...t, status: savedStatus, reviewStatus, reviewRequired: saved.reviewRequired === true } : t
+        ));
+        if (columnId === 'COMPLETED' && isAwaitingReview({ status: savedStatus, reviewStatus })) setMoveNotice(REVIEW_SUBMITTED_NOTICE);
+      }
     } catch (e) {
       // WSMR-A4f: basarisiz tasima ONCEKI duruma geri alinir. Eskiden burada
       // loadTasks() cagriliyordu; o da hata verirse pano sahte demo gorevlere
@@ -213,9 +234,11 @@ export default function KanbanPage() {
     setDraggedTask(null);
   };
 
+  // Kontrolde bekleyen görev "Devam Ediyor" sütununda SAYILMAZ; kendi sütunundadır.
   const getTasksByStatus = (status: string) => {
-    return tasks.filter(t => t.status === status);
+    return tasks.filter(t => t.status === status && !isAwaitingReview(t));
   };
+  const awaitingReviewTasks = tasks.filter(t => isAwaitingReview(t));
 
   const formatDate = (date?: string) => {
     if (!date) return null;
@@ -230,17 +253,20 @@ export default function KanbanPage() {
     return { text: `${days} gün`, color: 'text-gray-500' };
   };
 
-  const renderCard = (task: Task, draggable: boolean) => (
+  const renderCard = (task: Task, draggable: boolean, fixedLabel: string | null = draggable ? null : 'İptal edildi') => {
+    const cancelled = !draggable && fixedLabel === 'İptal edildi';
+    const reviewBadge = draggable ? taskReviewBadge(task) : null;
+    return (
     <div
       key={task.id}
       draggable={draggable}
       onDragStart={draggable ? () => handleDragStart(task) : undefined}
       className={`bg-white rounded-lg p-3 shadow-sm transition-shadow ${
-        draggable ? 'cursor-move hover:shadow-md' : 'opacity-75'
+        draggable ? 'cursor-move hover:shadow-md' : cancelled ? 'opacity-75' : ''
       } ${draggedTask?.id === task.id ? 'opacity-50' : ''}`}
     >
       <div className="flex items-start justify-between mb-2">
-        <h4 className={`font-medium text-sm ${draggable ? '' : 'line-through text-gray-500'}`}>{task.title}</h4>
+        <h4 className={`font-medium text-sm ${cancelled ? 'line-through text-gray-500' : ''}`}>{task.title}</h4>
         <button className="text-gray-400 hover:text-gray-600">
           <MoreVertical className="h-4 w-4" />
         </button>
@@ -256,11 +282,14 @@ export default function KanbanPage() {
            task.priority === 'MEDIUM' ? 'Orta' :
            task.priority === 'HIGH' ? 'Yüksek' : 'Acil'}
         </span>
-        {!draggable && (
-          <span className="text-xs px-2 py-0.5 rounded bg-gray-200 text-gray-700">İptal edildi</span>
+        {!draggable && fixedLabel && (
+          <span className={`text-xs px-2 py-0.5 rounded ${cancelled ? 'bg-gray-200 text-gray-700' : 'bg-amber-100 text-amber-800'}`}>{fixedLabel}</span>
+        )}
+        {reviewBadge && (
+          <span data-testid="kanban-review-badge" className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-700">{reviewBadge.label}</span>
         )}
 
-        {task.dueDate && draggable && (
+        {task.dueDate && !cancelled && (
           <span className={`text-xs flex items-center gap-1 ${formatDate(task.dueDate)?.color}`}>
             <Clock className="h-3 w-3" />
             {formatDate(task.dueDate)?.text}
@@ -282,7 +311,8 @@ export default function KanbanPage() {
         </div>
       )}
     </div>
-  );
+    );
+  };
 
   // Kapsam etiketi: pano hangi süzgeçle yüklendiğini söyler (liste sayfasındaki scopeLabel'ın karşılığı).
   const selectedUser = users.find((u) => u.id === assigneeFilter);
@@ -355,6 +385,12 @@ export default function KanbanPage() {
         </div>
       )}
 
+      {moveNotice && (
+        <div role="status" data-testid="kanban-review-notice" className="mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+          {moveNotice}
+        </div>
+      )}
+
       {loading ? (
         <div className="flex-1 flex items-center justify-center">Yükleniyor...</div>
       ) : loadError && loadedPages === 0 ? (
@@ -392,8 +428,30 @@ export default function KanbanPage() {
           )}
           <div className="flex-1 flex gap-4 overflow-x-auto pb-4">
             {COLUMNS.map(column => (
+              <Fragment key={column.id}>
+              {/* F03-C: salt okunur "Kontrolde" sütunu akış sırasındadır (Devam Ediyor → Kontrolde → Tamamlandı); bırakma hedefi
+                  değildir, kartlar sürüklenemez. */}
+              {column.id === 'COMPLETED' && (
+                <div
+                  data-testid="kanban-awaiting-review-column"
+                  className={`flex-shrink-0 w-72 ${AWAITING_REVIEW_COLUMN.color} rounded-lg p-3 border border-dashed`}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold text-sm">{AWAITING_REVIEW_COLUMN.title}</h3>
+                    <span className="text-xs bg-white/50 px-2 py-0.5 rounded-full">{awaitingReviewTasks.length}</span>
+                  </div>
+                  <p className="text-[11px] text-gray-500 mb-2">Salt okunur; karar Görevler listesindeki “Kontrolde” sekmesinden verilir.</p>
+                  <div className="space-y-2">
+                    {awaitingReviewTasks.map(task => renderCard(task, false, 'Kontrolde'))}
+                    {awaitingReviewTasks.length === 0 && (
+                      <div className="text-center py-8 text-gray-400 text-sm">
+                        Görev yok
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
               <div
-                key={column.id}
                 className={`flex-shrink-0 w-72 ${column.color} rounded-lg p-3`}
                 onDragOver={handleDragOver}
                 onDrop={() => handleDrop(column.id)}
@@ -415,6 +473,7 @@ export default function KanbanPage() {
                   )}
                 </div>
               </div>
+              </Fragment>
             ))}
 
             {/* Salt okunur iptal sütunu: bırakma hedefi değil, kartlar sürüklenemez. */}

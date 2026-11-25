@@ -2317,6 +2317,19 @@ model Task {
   completedByUserId     String?
   completedBy           User?               @relation("CompletedTasks", fields: [completedByUserId], references: [id])
   resolutionType        TaskResolutionType?
+  // F03-C / OFP-04 / WR01 B05 (D-WR-2; owner kararları 25.11.2026): görev içi BAĞIMSIZ İLK KONTROL.
+  // Kontrol durumu AYRI alanlardadır; TaskStatus enum'una değer EKLENMEZ (eski derlemenin okuması bozulmaz).
+  // "Kontrolde" = status IN_PROGRESS + reviewStatus AWAITING: görev tamamlanmış SAYILMAZ; açık-görev süzgeçleri (eskalasyon,
+  // zamanlayıcı) görevi düşürmez, "tamamlandı" sayan tüketiciler (rapor) onaya kadar saymaz. Onayda completedByUserId işi
+  // YAPANA (reviewSubmittedByUserId) yazılır. reviewRequired yalnız kullanıcının açtığı görevde oluşturan tarafından konur.
+  // reviewStatus METİNDİR (AWAITING | APPROVED | REJECTED | REVISION_REQUESTED). Kişi atıfları skalerdir (hesap kaldırılsa da iz kalır).
+  reviewRequired          Boolean   @default(false)
+  reviewStatus            String?
+  reviewSubmittedAt       DateTime?
+  reviewSubmittedByUserId String?
+  reviewedAt              DateTime?
+  reviewedByUserId        String?
+  reviewNote              String?
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
 
@@ -2337,6 +2350,7 @@ model Task {
   @@index([debtorId])
   @@index([addressId])
   @@index([nextFollowUpAt])
+  @@index([tenantId, reviewStatus])
 }
 
 // 2b / KI-048: append-only manual cancellation facts; raw reason is domain data, not AuditLog metadata.

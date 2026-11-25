@@ -60,7 +60,7 @@ describe('TaskService.findAll — F01-A süzgeç / sayfalama / sayaç kapsamı',
     expect(list.orderBy).toEqual([{ priority: 'desc' }, { dueDate: 'asc' }, { id: 'asc' }]);
     expect(prisma.task.groupBy).toHaveBeenCalledTimes(1);
     const grouped = prisma.task.groupBy.mock.calls[0][0];
-    expect(grouped.by).toEqual(['status', 'taskCategory']);
+    expect(grouped.by).toEqual(['status', 'taskCategory', 'reviewStatus']);
     expect(grouped.where.tenantId).toBe('t1');
     expect(grouped.where.OR).toEqual([{ caseId: null }, { case: { tenantId: 't1' } }]);
     expect(result.meta).toEqual({
@@ -69,6 +69,7 @@ describe('TaskService.findAll — F01-A süzgeç / sayfalama / sayaç kapsamı',
       limit: 20,
       totalPages: 0,
       summary: { pending: 0, inProgress: 0, operationalOpen: 0 },
+      awaitingReview: 0,
     });
   });
 
@@ -128,5 +129,40 @@ describe('TaskService.findAll — F01-A süzgeç / sayfalama / sayaç kapsamı',
     const result = await svc.findAll('t1');
 
     expect(result.meta.summary).toEqual({ pending: 7, inProgress: 7, operationalOpen: 5 });
+  });
+
+  // F03-C: "kontrolde" ayri bir TaskStatus degeri degildir (IN_PROGRESS + reviewStatus AWAITING).
+  it('F03-C: kontrolde bekleyen görev inProgress sayılmaz, awaitingReview ayrı sayılır; açık iş olmayı sürdürür', async () => {
+    const prisma = buildPrisma([
+      { status: 'IN_PROGRESS', taskCategory: 'LEGAL_WORKFLOW', reviewStatus: null, _count: { _all: 5 } },
+      { status: 'IN_PROGRESS', taskCategory: 'LEGAL_WORKFLOW', reviewStatus: 'AWAITING', _count: { _all: 2 } },
+      { status: 'IN_PROGRESS', taskCategory: 'OPERATIONAL_COMPLETENESS', reviewStatus: 'AWAITING', _count: { _all: 1 } },
+      { status: 'IN_PROGRESS', taskCategory: 'LEGAL_WORKFLOW', reviewStatus: 'REVISION_REQUESTED', _count: { _all: 3 } },
+      { status: 'PENDING', taskCategory: 'LEGAL_WORKFLOW', reviewStatus: 'REJECTED', _count: { _all: 4 } },
+      // bayat isaret: tamamlanmis ama AWAITING kalmis satir kontrolde SAYILMAZ
+      { status: 'COMPLETED', taskCategory: 'LEGAL_WORKFLOW', reviewStatus: 'AWAITING', _count: { _all: 9 } },
+    ]);
+    const svc = new TaskService(prisma as any);
+
+    const result = await svc.findAll('t1');
+
+    expect(result.meta.summary).toEqual({ pending: 4, inProgress: 8, operationalOpen: 1 });
+    expect(result.meta.awaitingReview).toBe(3);
+  });
+
+  it('F03-C: review süzgeci yalnız listeye uygulanır (durumla kesişir); sayaç kapsamı değişmez', async () => {
+    const awaiting = { status: 'IN_PROGRESS', reviewStatus: 'AWAITING' };
+    for (const [review, expected] of [['AWAITING', awaiting], ['NOT_AWAITING', { NOT: awaiting }]] as const) {
+      const prisma = buildPrisma();
+      const svc = new TaskService(prisma as any);
+
+      await svc.findAll('t1', { review, status: 'IN_PROGRESS' });
+
+      const list = prisma.task.findMany.mock.calls[0][0].where;
+      expect(list.status).toBe('IN_PROGRESS');
+      expect(list.AND).toEqual([expected]);
+      expect(prisma.task.count.mock.calls[0][0].where.AND).toEqual([expected]);
+      expect(prisma.task.groupBy.mock.calls[0][0].where.AND).toBeUndefined();
+    }
   });
 });

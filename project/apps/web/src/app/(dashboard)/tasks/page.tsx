@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Plus, CheckCircle2, Circle, Clock, AlertCircle, LayoutGrid, Loader2, History, Edit2, X, User, Ban } from "lucide-react";
+import { Plus, CheckCircle2, Circle, Clock, AlertCircle, LayoutGrid, Loader2, History, Edit2, X, User, Ban, ShieldCheck } from "lucide-react";
 import { Badge } from "@hukuk/ui";
 import { ViewScopeBadge } from "@/components/scope/ViewScopeBadge";
 import Link from "next/link";
@@ -18,6 +18,22 @@ import {
   type TaskHistoryCoverage,
   type TaskHistoryItem,
 } from "@/lib/task-history";
+import {
+  REVIEW_ACTION_TEXT,
+  REVIEW_AWAITING_HINT,
+  REVIEW_AWAITING_STATUS_HINT,
+  REVIEW_DECISION_KINDS,
+  REVIEW_DECISION_LABEL,
+  REVIEW_REQUIRED_HINT,
+  REVIEW_SUBMITTED_NOTICE,
+  canOfferReviewDecision,
+  canOfferReviewRequirementRemoval,
+  canOfferReviewRequirementSet,
+  isAwaitingReview,
+  lastReviewDecisionText,
+  taskReviewBadge,
+  type ReviewActionKind,
+} from "@/lib/task-review";
 
 interface Task {
   id: string;
@@ -34,6 +50,16 @@ interface Task {
   clientId?: string;
   client?: { id: string; displayName?: string; companyName?: string; firstName?: string; lastName?: string };
   missingFields?: string[];
+  // F03-C: görev içi bağımsız ilk kontrol alanları (sunucu AYRI kolonlarda tutar; "kontrolde" ayrı bir durum değeri değildir).
+  reviewRequired?: boolean | null;
+  reviewStatus?: string | null;
+  reviewSubmittedByUserId?: string | null;
+  reviewedByUserId?: string | null;
+  reviewNote?: string | null;
+  dedupeKey?: string | null;
+  taskSubType?: string | null;
+  debtorId?: string | null;
+  addressId?: string | null;
 }
 
 
@@ -48,9 +74,12 @@ interface TaskListMeta {
   limit: number;
   totalPages: number;
   summary?: { pending: number; inProgress: number; operationalOpen: number };
+  /** F03-C: kontrolde bekleyen görev sayısı (aynı kapsam). `summary.inProgress` bunları İÇERMEZ. */
+  awaitingReview?: number;
 }
 
-type StatusFilter = "all" | "PENDING" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+/** "AWAITING_REVIEW" bir sunucu durumu DEĞİLDİR: `review=AWAITING` süzgeciyle okunan sekmedir (F03-C). */
+type StatusFilter = "all" | "PENDING" | "IN_PROGRESS" | "AWAITING_REVIEW" | "COMPLETED" | "CANCELLED";
 type CategoryFilter = "all" | "LEGAL_WORKFLOW" | "OPERATIONAL_COMPLETENESS";
 
 /** Sunucunun üst sınırı 100; ekran listesi 20'lik sayfalarla gezer. */
@@ -96,6 +125,7 @@ const STATUS_TABS: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "Tümü" },
   { value: "PENDING", label: "Bekleyen" },
   { value: "IN_PROGRESS", label: "Devam Eden" },
+  { value: "AWAITING_REVIEW", label: "Kontrolde" },
   { value: "COMPLETED", label: "Tamamlanan" },
   { value: "CANCELLED", label: "İptal Edilen" },
 ];
@@ -116,8 +146,16 @@ function parseMeta(raw: unknown): TaskListMeta | null {
     s && typeof s.pending === "number" && typeof s.inProgress === "number" && typeof s.operationalOpen === "number"
       ? { pending: s.pending, inProgress: s.inProgress, operationalOpen: s.operationalOpen }
       : undefined;
-  return { total: m.total, page: m.page, limit: m.limit, totalPages: m.totalPages, summary };
+  const awaitingReview = typeof m.awaitingReview === "number" ? m.awaitingReview : undefined;
+  return { total: m.total, page: m.page, limit: m.limit, totalPages: m.totalPages, summary, awaitingReview };
 }
+
+const REVIEW_BADGE_TONE: Record<string, string> = {
+  info: "bg-amber-100 text-amber-800",
+  warning: "bg-orange-100 text-orange-800",
+  success: "bg-green-100 text-green-800",
+  neutral: "bg-slate-100 text-slate-700",
+};
 
 export default function TasksPage() {
   const { user: currentUser } = useAuth();
@@ -147,6 +185,13 @@ export default function TasksPage() {
   const [cancelReason, setCancelReason] = useState("");
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  // F03-C: kontrol penceresi (karar / işaretin konması / kaldırılması) + kontrole gönderme bilgisi + kayıt hatası.
+  const [reviewAction, setReviewAction] = useState<{ task: Task; kind: ReviewActionKind } | null>(null);
+  const [reviewText, setReviewText] = useState("");
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [infoNotice, setInfoNotice] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [historyTarget, setHistoryTarget] = useState<Task | null>(null);
   const [history, setHistory] = useState<TaskHistoryItem[]>([]);
   const [historyMeta, setHistoryMeta] = useState<TaskListMeta | null>(null);
@@ -186,6 +231,7 @@ export default function TasksPage() {
     dueDate: "",
     caseId: "",
     assigneeId: "",
+    reviewRequired: false,
   });
 
   const handleStaleRefresh = async () => {
@@ -200,7 +246,13 @@ export default function TasksPage() {
     const q = new URLSearchParams();
     q.set("page", String(page));
     q.set("limit", String(PAGE_SIZE));
-    if (filter !== "all") q.set("status", filter);
+    // F03-C: "Kontrolde" sunucuda ayrı bir durum değildir (devam ediyor + kontrol bekliyor) → kontrol süzgeciyle okunur.
+    // "Devam Eden" sekmesi kontrolde bekleyenleri içermez (başlıktaki sayaçla aynı küme).
+    if (filter === "AWAITING_REVIEW") q.set("review", "AWAITING");
+    else if (filter !== "all") {
+      q.set("status", filter);
+      if (filter === "IN_PROGRESS") q.set("review", "NOT_AWAITING");
+    }
     if (categoryFilter !== "all") q.set("taskCategory", categoryFilter);
     const assigneeId = assigneeFilter === "me" ? currentUserId : assigneeFilter;
     if (assigneeId) q.set("assigneeId", assigneeId);
@@ -331,9 +383,12 @@ export default function TasksPage() {
   const handleSave = async () => {
     if (!form.title) return;
     setSaving(true);
+    setSaveError(null);
     try {
+      // F03-C: "kontrol gerekli" yalnız OLUŞTURMADA gönderilir (PUT bu alanı kabul etmez; sonradan değişiklik kendi ucundadır).
+      const { reviewRequired, ...fields } = form;
       const payload = {
-        ...form,
+        ...fields,
         dueDate: form.dueDate || undefined,
         caseId: form.caseId || undefined,
         assigneeId: form.assigneeId || undefined,
@@ -342,15 +397,16 @@ export default function TasksPage() {
       if (editingTask) {
         await api.put(`/tasks/${editingTask.id}`, payload);
       } else {
-        await api.post("/tasks", payload);
+        await api.post("/tasks", reviewRequired ? { ...payload, reviewRequired: true } : payload);
       }
 
       setShowModal(false);
       setEditingTask(null);
       resetForm();
       loadTasks();
-    } catch (e: any) {
-      alert(e.message || "Hata oluştu");
+    } catch (e: unknown) {
+      // Sunucunun nedeni (ör. kontrol edebilecek kişi yok) pencerede görünür; pencere açık kalır.
+      setSaveError(toActionErrorMessage(e, "Görev kaydedilemedi."));
     } finally {
       setSaving(false);
     }
@@ -358,6 +414,50 @@ export default function TasksPage() {
 
   const canCancel = (task: Task) => !!currentUser && !!currentUser.role && currentUser.role !== "VIEWER"
     && task.status !== "CANCELLED" && (currentUser.role === "ADMIN" || task.createdById === currentUser.id);
+
+  const openReviewAction = (task: Task, kind: ReviewActionKind) => {
+    setReviewAction({ task, kind });
+    setReviewText("");
+    setReviewError(null);
+  };
+
+  // F03-C: kontrol kararı / işaretin konması / kaldırılması. Sonuç yalnız doğrulanmış liste okumasıyla kesinleşir; sunucunun
+  // ret nedeni (aynı kişi, kontrol edebilecek kişi yok, bekleyen kontrol yok) pencerede aynen görünür.
+  const handleReviewAction = async () => {
+    if (!reviewAction || reviewSubmitting) return;
+    const { task, kind } = reviewAction;
+    const text = reviewText.trim();
+    if (REVIEW_ACTION_TEXT[kind].textRequired && !text) return;
+    setReviewSubmitting(true);
+    setReviewError(null);
+    setStaleNotice(null);
+    setInfoNotice(null);
+    try {
+      await rowLock.run(`task:status:${task.id}`, async () => {
+        const outcome = await runMutation({
+          mutate: () =>
+            kind === "SET_REQUIREMENT"
+              ? api.setTaskReviewRequirement(task.id, true)
+              : kind === "REMOVE_REQUIREMENT"
+                ? api.setTaskReviewRequirement(task.id, false, text)
+                : api.reviewTask(task.id, kind, text || undefined),
+          refresh: () => loadTasks({ propagateError: true }),
+          failureMessage: REVIEW_ACTION_TEXT[kind].failure,
+          staleMessage: REVIEW_ACTION_TEXT[kind].stale,
+        });
+        if (!rowLock.isMounted()) return;
+        if (outcome.status === "FAILED") {
+          setReviewError(outcome.error.message);
+          return;
+        }
+        setReviewAction(null);
+        setReviewText("");
+        if (outcome.status === "SUCCESS_STALE") setStaleNotice(outcome.stale);
+      });
+    } finally {
+      if (rowLock.isMounted()) setReviewSubmitting(false);
+    }
+  };
 
   const handleCancel = async () => {
     if (!cancelTarget || !cancelReason.trim() || cancelling) return;
@@ -422,6 +522,7 @@ export default function TasksPage() {
   const handleStatusChange = async (task: Task, newStatus: string) => {
     setActionError(null);
     setStaleNotice(null);
+    setInfoNotice(null);
     // PR-2A1: gorev bazli kilit — ayni goreve ikinci degisiklik baslamaz, farkli
     // gorevler bloklanmaz. Durum yalniz dogrulanmis reload ile kesinlesir.
     await rowLock.run(`task:status:${task.id}`, async () => {
@@ -439,10 +540,14 @@ export default function TasksPage() {
         return;
       }
       if (outcome.status === "SUCCESS_STALE") setStaleNotice(outcome.stale);
+      // F03-C: işaretli görev tamamlanınca tamamlanmış SAYILMAZ; kontrole gider. Ekran bunu söyler (durum uydurulmaz:
+      // kartın durumu yeniden okunan listeden gelir).
+      if (newStatus === "COMPLETED" && task.reviewRequired) setInfoNotice(REVIEW_SUBMITTED_NOTICE);
     });
   };
 
   const openEditModal = (task: Task) => {
+    setSaveError(null);
     setEditingTask(task);
     setForm({
       title: task.title,
@@ -452,6 +557,7 @@ export default function TasksPage() {
       dueDate: task.dueDate ? task.dueDate.split("T")[0] : "",
       caseId: task.case?.id || "",
       assigneeId: task.assignee?.id || "",
+      reviewRequired: !!task.reviewRequired,
     });
     setShowModal(true);
   };
@@ -465,7 +571,9 @@ export default function TasksPage() {
       dueDate: "",
       caseId: "",
       assigneeId: "",
+      reviewRequired: false,
     });
+    setSaveError(null);
   };
 
   const selectStatusTab = (value: StatusFilter) => {
@@ -513,13 +621,21 @@ export default function TasksPage() {
           </button>
         </div>
       ) : null}
+      {infoNotice ? (
+        <div role="status" data-testid="task-review-notice" className="flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+          <span className="flex-1">{infoNotice}</span>
+          <button type="button" onClick={() => setInfoNotice(null)} aria-label="Bilgiyi kapat" className="shrink-0 rounded px-1 hover:bg-blue-100">
+            <X className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        </div>
+      ) : null}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Görevler</h1>
           {/* F01-B: sayaçlar sunucu toplamından (meta.summary); kapsamı açıkça yazılır. */}
           <p className="text-muted-foreground" data-testid="tasks-summary">
             {summary
-              ? `${summary.pending} bekleyen, ${summary.inProgress} devam eden görev`
+              ? `${summary.pending} bekleyen, ${summary.inProgress} devam eden görev${meta?.awaitingReview ? `, ${meta.awaitingReview} kontrolde` : ""}`
               : "Toplamlar alınamadı"}
             <span className="ml-2 text-xs">({scopeLabel})</span>
           </p>
@@ -602,13 +718,27 @@ export default function TasksPage() {
             }`}
           >
             {tab.label}
+            {tab.value === "AWAITING_REVIEW" && !!meta?.awaitingReview && (
+              <span data-testid="tasks-awaiting-review-count" className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">
+                {meta.awaitingReview}
+              </span>
+            )}
           </button>
         ))}
       </div>
 
       {/* Task List */}
       <div className="space-y-3">
-        {tasks.map((task) => (
+        {tasks.map((task) => {
+          // F03-C: kontrol sunumu. Düğmeler yalnız SUNUMDUR; kararı sunucu verir (kişi düzeyi bağımsızlık, görünüm kapsamı).
+          const awaiting = isAwaitingReview(task);
+          const reviewBadge = taskReviewBadge(task);
+          const reviewDecision = lastReviewDecisionText(task);
+          const viewer = currentUser ? { id: currentUser.id, role: currentUser.role } : null;
+          const offerDecision = canOfferReviewDecision(viewer, task);
+          const offerRemoval = canOfferReviewRequirementRemoval(viewer, task);
+          const offerSet = canOfferReviewRequirementSet(viewer, task);
+          return (
           <div
             key={task.id}
             className="bg-white rounded-xl border p-4 hover:shadow-md transition-shadow"
@@ -616,11 +746,11 @@ export default function TasksPage() {
             <div className="flex items-start gap-4">
               <button
                 onClick={() => handleStatusChange(task, task.status === "COMPLETED" ? "PENDING" : "COMPLETED")}
-                disabled={task.status === "CANCELLED"}
-                title={task.status === "CANCELLED" ? "İptal edilmiş görev" : undefined}
+                disabled={task.status === "CANCELLED" || awaiting}
+                title={task.status === "CANCELLED" ? "İptal edilmiş görev" : awaiting ? REVIEW_AWAITING_STATUS_HINT : undefined}
                 className="mt-0.5 disabled:cursor-not-allowed"
               >
-                {statusIcons[task.status] ?? <Circle className="h-5 w-5 text-muted-foreground" />}
+                {awaiting ? <ShieldCheck className="h-5 w-5 text-amber-500" /> : statusIcons[task.status] ?? <Circle className="h-5 w-5 text-muted-foreground" />}
               </button>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
@@ -634,12 +764,20 @@ export default function TasksPage() {
                   <Badge variant={priorityColors[task.priority]}>
                     {priorityLabels[task.priority]}
                   </Badge>
-                  <span className="text-xs px-2 py-0.5 bg-gray-100 rounded">
-                    {statusLabels[task.status] ?? task.status}
+                  <span className={`text-xs px-2 py-0.5 rounded ${awaiting ? REVIEW_BADGE_TONE.info : "bg-gray-100"}`} data-testid="task-status-label">
+                    {awaiting ? "Kontrolde" : statusLabels[task.status] ?? task.status}
                   </span>
+                  {reviewBadge && !awaiting && (
+                    <span data-testid="task-review-badge" className={`text-xs px-2 py-0.5 rounded ${REVIEW_BADGE_TONE[reviewBadge.tone]}`}>
+                      {reviewBadge.label}
+                    </span>
+                  )}
                 </div>
                 {task.description && (
                   <p className="text-sm text-muted-foreground mb-2">{task.description}</p>
+                )}
+                {reviewDecision && reviewDecision !== reviewBadge?.label && (
+                  <p data-testid="task-review-decision" className="mb-2 whitespace-pre-wrap text-sm text-amber-900">{reviewDecision}</p>
                 )}
                 <div className="flex items-center gap-4 text-sm">
                   {task.case && (
@@ -673,6 +811,34 @@ export default function TasksPage() {
                     </span>
                   )}
                 </div>
+                {(offerDecision || offerRemoval || offerSet || awaiting) && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="task-review-actions">
+                    {awaiting && !offerDecision && <span className="text-xs text-muted-foreground">{REVIEW_AWAITING_HINT}</span>}
+                    {offerDecision &&
+                      REVIEW_DECISION_KINDS.map((kind) => (
+                        <button
+                          key={kind}
+                          type="button"
+                          onClick={() => openReviewAction(task, kind)}
+                          className={`rounded border px-2.5 py-1 text-xs font-medium ${
+                            kind === "APPROVE" ? "border-green-300 bg-green-50 text-green-800 hover:bg-green-100" : "border-gray-300 hover:bg-gray-50"
+                          }`}
+                        >
+                          {REVIEW_DECISION_LABEL[kind]}
+                        </button>
+                      ))}
+                    {offerRemoval && (
+                      <button type="button" onClick={() => openReviewAction(task, "REMOVE_REQUIREMENT")} className="rounded border border-gray-300 px-2.5 py-1 text-xs hover:bg-gray-50">
+                        Kontrol işaretini kaldır
+                      </button>
+                    )}
+                    {offerSet && (
+                      <button type="button" onClick={() => openReviewAction(task, "SET_REQUIREMENT")} className="rounded border border-gray-300 px-2.5 py-1 text-xs hover:bg-gray-50">
+                        Kontrol gerekli yap
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-1">
                 <button
@@ -695,7 +861,8 @@ export default function TasksPage() {
               )}
             </div>
           </div>
-        ))}
+          );
+        })}
 
       {/* Boş durum yalnız GERÇEK sıfırda: okuma hatası / erişim reddi boş listeyle KARIŞTIRILMAZ (deny ≠ empty). */}
         {!loadError && tasks.length === 0 && (
@@ -711,6 +878,33 @@ export default function TasksPage() {
           </div>
         )}
       </div>
+
+      {reviewAction && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="task-review-title" className="bg-white rounded-xl p-6 max-w-lg w-full max-h-[90vh] overflow-auto">
+            <h2 id="task-review-title" className="text-lg font-semibold">{REVIEW_ACTION_TEXT[reviewAction.kind].title}</h2>
+            <p className="mt-2">{reviewAction.task.title}</p>
+            <p className="text-sm text-muted-foreground mt-1">{REVIEW_ACTION_TEXT[reviewAction.kind].description}</p>
+            {REVIEW_ACTION_TEXT[reviewAction.kind].textLabel && (
+              <>
+                <label htmlFor="task-review-text" className="block mt-4 mb-1">{REVIEW_ACTION_TEXT[reviewAction.kind].textLabel}</label>
+                <textarea id="task-review-text" value={reviewText} onChange={event => setReviewText(event.target.value)} maxLength={2000} disabled={reviewSubmitting} className="w-full border rounded-lg p-2" rows={4} />
+              </>
+            )}
+            {reviewError && <div role="alert" className="text-red-700 mt-2">{reviewError}</div>}
+            <div className="flex justify-end gap-2 mt-4">
+              <button disabled={reviewSubmitting} onClick={() => { setReviewAction(null); setReviewText(""); setReviewError(null); }} className="border rounded px-3 py-2">Vazgeç</button>
+              <button
+                disabled={reviewSubmitting || (REVIEW_ACTION_TEXT[reviewAction.kind].textRequired && !reviewText.trim())}
+                onClick={() => void handleReviewAction()}
+                className="bg-primary text-white rounded px-3 py-2 disabled:opacity-50"
+              >
+                {reviewSubmitting ? "Kaydediliyor…" : REVIEW_ACTION_TEXT[reviewAction.kind].confirm}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {cancelTarget && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -807,13 +1001,14 @@ export default function TasksPage() {
 
       {/* Add/Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-lg">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          {/* Yükseklik sınırı: "Kontrol gerekli" satırıyla uzayan pencerenin düğmeleri küçük ekranda da erişilir kalır. */}
+          <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[92vh] overflow-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">
                 {editingTask ? "Görevi Düzenle" : "Yeni Görev"}
               </h2>
-              <button onClick={() => { setShowModal(false); setEditingTask(null); }} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => { setShowModal(false); setEditingTask(null); setSaveError(null); }} className="text-gray-400 hover:text-gray-600">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -850,7 +1045,8 @@ export default function TasksPage() {
                     id="task-status"
                     value={form.status}
                     onChange={(e) => setForm({ ...form, status: e.target.value })}
-                    className="w-full border rounded-lg px-3 py-2"
+                    disabled={!!editingTask && isAwaitingReview(editingTask)}
+                    className="w-full border rounded-lg px-3 py-2 disabled:bg-gray-50 disabled:text-muted-foreground"
                   >
                     <option value="PENDING">Bekliyor</option>
                     <option value="IN_PROGRESS">Devam Ediyor</option>
@@ -950,11 +1146,34 @@ export default function TasksPage() {
                   ))}
                 </select>
               </div>
+
+              {/* F03-C (K4-b): işareti görevi oluşturan koyar; varsayılan kapalıdır. Düzenlemede işaret buradan değişmez. */}
+              {!editingTask && (
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={form.reviewRequired}
+                    onChange={(e) => setForm({ ...form, reviewRequired: e.target.checked })}
+                    className="mt-1"
+                  />
+                  <span>
+                    <span className="font-medium">Kontrol gerekli</span>
+                    <span className="block text-xs text-muted-foreground">{REVIEW_REQUIRED_HINT}</span>
+                  </span>
+                </label>
+              )}
+              {editingTask && isAwaitingReview(editingTask) && (
+                <p data-testid="task-edit-review-hint" className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">{REVIEW_AWAITING_STATUS_HINT}</p>
+              )}
             </div>
 
-            <div className="flex justify-end gap-2 mt-6">
+            {/* Alt şerit yapışkandır: pencere kaydırılsa da kayıt hatası ve düğmeler görünür kalır (1366×768'de gerçek sayfada
+                "Kaydet" ve hata iletisi kaydırma alanının altında kalıyordu). */}
+            <div className="sticky bottom-0 -mx-6 -mb-6 mt-6 border-t bg-white px-6 py-3">
+              {saveError && <div role="alert" data-testid="task-save-error" className="mb-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{saveError}</div>}
+              <div className="flex justify-end gap-2">
               <button
-                onClick={() => { setShowModal(false); setEditingTask(null); }}
+                onClick={() => { setShowModal(false); setEditingTask(null); setSaveError(null); }}
                 className="px-4 py-2 border rounded-lg hover:bg-gray-50"
               >
                 İptal
@@ -966,6 +1185,7 @@ export default function TasksPage() {
               >
                 {saving ? "Kaydediliyor..." : editingTask ? "Güncelle" : "Kaydet"}
               </button>
+              </div>
             </div>
           </div>
         </div>
