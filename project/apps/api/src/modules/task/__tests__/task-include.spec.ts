@@ -152,7 +152,10 @@ describe('TaskService.findAll — F01-A süzgeç / sayfalama / sayaç kapsamı',
 
   it('F03-C: review süzgeci yalnız listeye uygulanır (durumla kesişir); sayaç kapsamı değişmez', async () => {
     const awaiting = { status: 'IN_PROGRESS', reviewStatus: 'AWAITING' };
-    for (const [review, expected] of [['AWAITING', awaiting], ['NOT_AWAITING', { NOT: awaiting }]] as const) {
+    // "hariç" süzgeci boş (NULL) reviewStatus'u AÇIKÇA kapsar; `NOT: awaiting` biçimi gerçek veritabanında o satırları düşürür
+    // (davranış kanıtı: task-review.http.db-gated.integration.spec.ts).
+    const notAwaiting = { OR: [{ status: { not: 'IN_PROGRESS' } }, { reviewStatus: null }, { reviewStatus: { not: 'AWAITING' } }] };
+    for (const [review, expected] of [['AWAITING', awaiting], ['NOT_AWAITING', notAwaiting]] as const) {
       const prisma = buildPrisma();
       const svc = new TaskService(prisma as any);
 

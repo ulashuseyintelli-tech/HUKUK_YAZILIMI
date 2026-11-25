@@ -253,8 +253,13 @@ export class TaskService {
     if (taskCategory) where.taskCategory = taskCategory as PrismaTaskCategory;
     // F03-C: kontrol süzgeci durum süzgeciyle KESİŞİR (yalnız data ve total; sayaçlar süzgeçten bağımsız kalır).
     const awaitingWhere: Prisma.TaskWhereInput = { status: "IN_PROGRESS", reviewStatus: TASK_REVIEW_STATUS.AWAITING };
+    // "Kontrolde bekleyenler hariç" `NOT: awaitingWhere` ile YAZILMAZ: reviewStatus boş (NULL) satırda SQL
+    // `NOT (status = … AND NULL)` ifadesi NULL verir ve satır düşer — hiç kontrole girmemiş "devam ediyor" görevler kaybolur.
+    const notAwaitingWhere: Prisma.TaskWhereInput = {
+      OR: [{ status: { not: "IN_PROGRESS" } }, { reviewStatus: null }, { reviewStatus: { not: TASK_REVIEW_STATUS.AWAITING } }],
+    };
     if (review === "AWAITING") where.AND = [...((scopeWhere.AND as Prisma.TaskWhereInput[] | undefined) ?? []), awaitingWhere];
-    if (review === "NOT_AWAITING") where.AND = [...((scopeWhere.AND as Prisma.TaskWhereInput[] | undefined) ?? []), { NOT: awaitingWhere }];
+    if (review === "NOT_AWAITING") where.AND = [...((scopeWhere.AND as Prisma.TaskWhereInput[] | undefined) ?? []), notAwaitingWhere];
 
     const [tasks, total, groups] = await Promise.all([
       this.prisma.task.findMany({

@@ -142,6 +142,38 @@ describeDb("F03-C — görev içi bağımsız ilk kontrol (gerçek HTTP + tek ku
       expect(awaiting.body.meta.awaitingReview).toBeGreaterThanOrEqual(1);
     });
 
+    it("'kontrolde bekleyenler hariç' süzgeci hiç kontrole girmemiş görevi DÜŞÜRMEZ (kontrol durumu boş); yalnız kontrolde bekleyeni çıkarır", async () => {
+      const plain = await post(u.creator, "/tasks", { title: title("suzgec-sade"), assigneeId: u.doer });
+      expect(plain.status).toBe(201);
+      expect((await put(u.doer, plain.body.id, { status: "IN_PROGRESS" })).status).toBe(200);
+      expect((await row(plain.body.id)).reviewStatus).toBeNull();
+      const pending = await post(u.creator, "/tasks", { title: title("suzgec-bekleyen") });
+      expect(pending.status).toBe(201);
+
+      const list = async (query: string) => {
+        const res = await get(u.admin, `/tasks?${query}${query ? "&" : ""}limit=100`);
+        expect(res.status).toBe(200);
+        expect(res.body.meta.total).toBe((res.body.data as unknown[]).length);
+        return (res.body.data as Array<{ id: string }>).map((r) => r.id);
+      };
+
+      // ekrandaki "Devam Eden" sekmesinin sorgusu
+      const inProgress = await list("status=IN_PROGRESS&review=NOT_AWAITING");
+      expect(inProgress).toContain(plain.body.id);
+      expect(inProgress).not.toContain(id);
+      // durum süzgeci olmadan: bekleyen ve sade devam eden görev listede, kontrolde bekleyen değil
+      const everything = await list("review=NOT_AWAITING");
+      expect(everything).toEqual(expect.arrayContaining([plain.body.id, pending.body.id]));
+      expect(everything).not.toContain(id);
+      // iki süzgeç her kümeyi tam ve ayrık böler: hiçbir görev iki listeden birden düşmez
+      for (const status of ["status=IN_PROGRESS", ""]) {
+        const join = (extra: string) => [status, extra].filter(Boolean).join("&");
+        const whole = await list(status);
+        const parts = [...(await list(join("review=AWAITING"))), ...(await list(join("review=NOT_AWAITING")))];
+        expect([...parts].sort()).toEqual([...whole].sort());
+      }
+    });
+
     it("kontrolde görevin durumu PUT ile değiştirilemez (karar ya da işaretin kaldırılması gerekir)", async () => {
       for (const status of ["COMPLETED", "PENDING"]) {
         const res = await put(u.doer, id, { status });
@@ -176,6 +208,10 @@ describeDb("F03-C — görev içi bağımsız ilk kontrol (gerçek HTTP + tek ku
       expect([t.status, t.reviewStatus, t.reviewedByUserId, t.reviewNote, t.assigneeId, t.completedAt]).toEqual(["IN_PROGRESS", "REVISION_REQUESTED", u.creator, "Sentetik revizyon gerekçesi", u.doer, null]);
       const last = (await db.taskHistoryEvent.findMany({ where: { taskId: id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1 }))[0];
       expect([last.eventType, last.actorUserId, last.authoritySource, last.reason]).toEqual(["REVIEW_REVISION_REQUESTED", u.creator, "REVIEWER_CREATOR", "Sentetik revizyon gerekçesi"]);
+      // revizyona dönen görev yeniden "Devam Eden" listesindedir, "Kontrolde" listesinde değildir
+      const ids = async (query: string) => ((await get(u.doer, `/tasks?${query}&limit=100`)).body.data as Array<{ id: string }>).map((r) => r.id);
+      expect(await ids("status=IN_PROGRESS&review=NOT_AWAITING")).toContain(id);
+      expect(await ids("review=AWAITING")).not.toContain(id);
     });
 
     it("yeniden tamamlama yeniden kontrole girer; ret gerekçe ister ve görevi HAVUZA döndürür: 'bekliyor', atanmamış, iş yapılmamış sayılır", async () => {
