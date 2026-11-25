@@ -899,9 +899,11 @@ class ApiClient {
   }
 
   // Tasks
-  async getTasks(params?: { status?: string; page?: number; limit?: number }) {
+  async getTasks(params?: { status?: string; caseId?: string; page?: number; limit?: number }) {
     const query = new URLSearchParams();
     if (params?.status) query.set("status", params.status);
+    // F03-B2: dosya sayfası o dosyanın görevlerini okur (GET /tasks?caseId=).
+    if (params?.caseId) query.set("caseId", params.caseId);
     if (params?.page) query.set("page", params.page.toString());
     if (params?.limit) query.set("limit", params.limit.toString());
     return this.request<any>(`/tasks?${query}`);

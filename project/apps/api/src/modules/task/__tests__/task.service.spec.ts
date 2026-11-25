@@ -268,3 +268,122 @@ describe("2b / KI-048 — legacy cancellation bypasses", () => {
     expect(db.$transaction).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * F03-B2 (OFP-02; owner kararı K2-a) — dosya süzgeci ve görevin dosyaya bağlanma kapsamı (saf; sahte Prisma).
+ * Gerçek HTTP + PostgreSQL karşılığı: task-case-bound.http.db-gated.integration.spec.ts.
+ */
+describe("TaskService — F03-B2 dosya süzgeci ve dosyaya bağlama kapsamı", () => {
+  const FLAG = "OFFICE_CASE_VIEW_SCOPE_ENABLED";
+  const original = process.env[FLAG];
+  const INVALID_CASE = "Geçersiz dosya: aynı ofise ait bir dosya değil.";
+  afterEach(() => {
+    if (original === undefined) delete process.env[FLAG];
+    else process.env[FLAG] = original;
+  });
+
+  const buildListPrisma = () => ({
+    task: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0), groupBy: jest.fn().mockResolvedValue([]) },
+  });
+  const buildWritePrisma = (existing: any = { id: "tk", status: "PENDING", caseId: null }, caseFound = true) => ({
+    task: {
+      findFirst: jest.fn().mockResolvedValue(existing),
+      create: jest.fn().mockResolvedValue({ id: "tk-new" }),
+      update: jest.fn().mockResolvedValue({ id: "tk" }),
+    },
+    case: { findFirst: jest.fn().mockResolvedValue(caseFound ? { id: "c1" } : null) },
+  });
+  const scopeOf = (visible: string[] | null) => ({ visibleCaseIds: jest.fn().mockResolvedValue(visible === null ? null : new Set(visible)) });
+
+  it("findAll: caseId kapsam katmanına girer — data, total ve summary aynı dosyada", async () => {
+    delete process.env[FLAG];
+    const prisma = buildListPrisma() as any;
+    await new TaskService(prisma).findAll("t1", { caseId: "c1", status: "PENDING" });
+    const where = prisma.task.findMany.mock.calls[0][0].where;
+    expect(where).toMatchObject({ tenantId: "t1", caseId: "c1", status: "PENDING" });
+    expect(prisma.task.count.mock.calls[0][0].where).toEqual(where);
+    const summaryWhere = prisma.task.groupBy.mock.calls[0][0].where;
+    expect(summaryWhere).toMatchObject({ tenantId: "t1", caseId: "c1" });
+    expect(summaryWhere).not.toHaveProperty("status");
+    // Kiracı sınırı korunur: dosya süzgeci `case.tenantId` koşulunun yerine geçmez.
+    expect(summaryWhere.OR).toEqual([{ caseId: null }, { case: { tenantId: "t1" } }]);
+  });
+
+  it("findAll: caseId verilmezse dosya süzgeci eklenmez (bugünkü liste)", async () => {
+    delete process.env[FLAG];
+    const prisma = buildListPrisma() as any;
+    await new TaskService(prisma).findAll("t1", {});
+    expect(prisma.task.findMany.mock.calls[0][0].where).not.toHaveProperty("caseId");
+  });
+
+  it("create: bayrak kapalı → dosya kapsamı sorgulanmaz, yalnız kiracı sınırı", async () => {
+    delete process.env[FLAG];
+    const prisma = buildWritePrisma() as any;
+    const scope = scopeOf([]);
+    await new TaskService(prisma, undefined, undefined, scope as any).create("t1", "u1", { title: "G", caseId: "c1" } as any);
+    expect(scope.visibleCaseIds).not.toHaveBeenCalled();
+    expect(prisma.task.create.mock.calls[0][0].data).toMatchObject({ tenantId: "t1", createdById: "u1", caseId: "c1" });
+  });
+
+  it("create: bayrak açık + aktörün görmediği dosya → var olmayan dosyayla AYNI 400; satır yazılmaz", async () => {
+    process.env[FLAG] = "true";
+    const hidden = buildWritePrisma() as any;
+    const scope = scopeOf([]);
+    await expect(new TaskService(hidden, undefined, undefined, scope as any).create("t1", "u1", { title: "G", caseId: "c1" } as any)).rejects.toMatchObject({
+      status: 400,
+      message: INVALID_CASE,
+    });
+    expect(scope.visibleCaseIds).toHaveBeenCalledWith("t1", "u1", ["c1"]);
+    expect(hidden.task.create).not.toHaveBeenCalled();
+
+    const missing = buildWritePrisma(undefined, false) as any;
+    await expect(new TaskService(missing, undefined, undefined, scopeOf(["c1"]) as any).create("t1", "u1", { title: "G", caseId: "c1" } as any)).rejects.toMatchObject({
+      status: 400,
+      message: INVALID_CASE,
+    });
+    expect(missing.task.create).not.toHaveBeenCalled();
+  });
+
+  it("create: bayrak açık + görünen dosya ya da büro geneli dosya izni (null) → yazılır", async () => {
+    process.env[FLAG] = "true";
+    for (const visible of [["c1"], null] as Array<string[] | null>) {
+      const prisma = buildWritePrisma() as any;
+      await new TaskService(prisma, undefined, undefined, scopeOf(visible) as any).create("t1", "u1", { title: "G", caseId: "c1" } as any);
+      expect(prisma.task.create).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("create: bayrak açık + kapsam servisi yok → FAIL-CLOSED 403; dosyasız görev etkilenmez", async () => {
+    process.env[FLAG] = "true";
+    const prisma = buildWritePrisma() as any;
+    await expect(new TaskService(prisma).create("t1", "u1", { title: "G", caseId: "c1" } as any)).rejects.toMatchObject({
+      status: 403,
+      response: { code: "CASE_VIEW_SCOPE_UNRESOLVED" },
+    });
+    expect(prisma.task.create).not.toHaveBeenCalled();
+    await new TaskService(prisma).create("t1", "u1", { title: "Dosyasız" } as any);
+    expect(prisma.task.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("update: dosya bağı DEĞİŞMİYORSA kapsam sorgulanmaz; değişiyor ve görünmüyorsa 400; kaldırma (null) kapsam istemez", async () => {
+    process.env[FLAG] = "true";
+    const same = buildWritePrisma({ id: "tk", status: "PENDING", caseId: "c1" }) as any;
+    const sameScope = scopeOf([]);
+    await new TaskService(same, undefined, undefined, sameScope as any).update("t1", "tk", "u1", { title: "Yeni", caseId: "c1" } as any);
+    expect(sameScope.visibleCaseIds).not.toHaveBeenCalled();
+    expect(same.task.update).toHaveBeenCalledTimes(1);
+
+    const changed = buildWritePrisma({ id: "tk", status: "PENDING", caseId: null }) as any;
+    await expect(new TaskService(changed, undefined, undefined, scopeOf([]) as any).update("t1", "tk", "u1", { caseId: "c1" } as any)).rejects.toMatchObject({
+      status: 400,
+      message: INVALID_CASE,
+    });
+    expect(changed.task.update).not.toHaveBeenCalled();
+
+    const unlink = buildWritePrisma({ id: "tk", status: "PENDING", caseId: "c1" }) as any;
+    const unlinkScope = scopeOf([]);
+    await new TaskService(unlink, undefined, undefined, unlinkScope as any).update("t1", "tk", "u1", { caseId: null } as any);
+    expect(unlinkScope.visibleCaseIds).not.toHaveBeenCalled();
+    expect(unlink.task.update.mock.calls[0][0].data.caseId).toBeNull();
+  });
+});
