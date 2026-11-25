@@ -114,6 +114,9 @@ describe('REVIEW_ACTION_TEXT — pencere metinleri', () => {
       REMOVE_REQUIREMENT: [true, true],
       SET_REQUIREMENT: [false, false],
     });
+    // K9 "ret havuza": pencere reddin atananı kaldırdığını söyler; revizyon görevi işi yapana döndürür
+    expect(REVIEW_ACTION_TEXT.REJECT.description).toContain('atananı kaldırılır');
+    expect(REVIEW_ACTION_TEXT.REQUEST_REVISION.description).toContain('işi yapan kişiye');
     for (const text of Object.values(REVIEW_ACTION_TEXT)) {
       expect(text.failure).toContain('DEĞİŞMEDİ');
       expect(text.stale).toContain('yenilenemedi');

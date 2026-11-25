@@ -91,7 +91,7 @@ export function describeTaskHistoryEvent(item: TaskHistoryItem): string {
     case "REVIEW_REVISION_REQUESTED":
       return "Kontrol: revizyon istendi — görev işi yapana döndü";
     case "REVIEW_REJECTED":
-      return "Kontrol: reddedildi — görev yeniden bekliyor";
+      return "Kontrol: reddedildi — görev havuza döndü (bekliyor, atanmamış)";
     default:
       return item.eventType;
   }

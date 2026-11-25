@@ -86,7 +86,10 @@ export function isReviewApplicable(task: {
   return task.status === "PENDING" || task.status === "IN_PROGRESS";
 }
 
-/** Karar sonrası görev durumu (K9): onay → tamamlandı; revizyon → işi yapanda devam ediyor; ret → bekliyor (iş yapılmamış sayılır). */
+/**
+ * Karar sonrası görev durumu (K9 "revizyon kişiye, ret havuza"): onay → tamamlandı; revizyon → işi yapanda devam ediyor;
+ * ret → bekliyor (iş yapılmamış sayılır). Ret ayrıca atananı kaldırır (havuz); atama alanını servis yazar.
+ */
 export function statusAfterReviewDecision(decision: TaskReviewDecision): "COMPLETED" | "IN_PROGRESS" | "PENDING" {
   if (decision === TASK_REVIEW_DECISION.APPROVE) return "COMPLETED";
   if (decision === TASK_REVIEW_DECISION.REQUEST_REVISION) return "IN_PROGRESS";

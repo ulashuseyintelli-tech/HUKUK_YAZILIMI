@@ -120,7 +120,7 @@ export const REVIEW_ACTION_TEXT: Record<ReviewActionKind, ReviewActionText> = {
   },
   REJECT: {
     title: "Kontrol: reddet",
-    description: "Görev “bekliyor” durumuna döner; iş yapılmamış sayılır. Gerekçe görevde ve geçmişinde kalır.",
+    description: "Görev havuza döner: “bekliyor” olur ve atananı kaldırılır; iş yapılmamış sayılır, görev yeniden atanmayı bekler. Gerekçe görevde ve geçmişinde kalır.",
     textLabel: "Ret gerekçesi",
     textRequired: true,
     confirm: "Reddet",

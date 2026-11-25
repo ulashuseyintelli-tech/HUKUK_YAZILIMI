@@ -412,3 +412,7 @@ src/modules/task/__tests__/task-completion-attribution.http.db-gated.integration
 src/modules/task/__tests__/task-history.http.db-gated.integration.spec.ts
 # F03-C (OFP-04 / WR01 B05): gorev ici bagimsiz ilk kontrol — zincir, kisi duzeyi bagimsizlik, K5 / K8, karar ve gerekce izi, gorunum kapsami.
 src/modules/task/__tests__/task-review.http.db-gated.integration.spec.ts
+# F03-C (R02 kabul olcutu): "kontrolde" gorevin tuketicileri gercek tuketici koduyla — dosya gorevi eskalasyonu acik is olarak tarar, performans raporu onaydan once saymaz ve isi yapana yazar; operasyonel / zamanlayici gorevleri kontrole giremez.
+src/modules/task/__tests__/task-review-consumers.db-gated.integration.spec.ts
+# F03-A2 (R01 par. 8 "otomatik gorev yeniden dogusu"): muvekkil eksik-bilgi gorevinin yeniden dogusu gercek PostgreSQL ile — sistem satiri tablo kisitlarindan gecer, onceki atif saklanir, gecmis yazilamazsa gorev de yeniden acilmaz.
+src/modules/client/__tests__/contact-followup-task-history.db-gated.integration.spec.ts

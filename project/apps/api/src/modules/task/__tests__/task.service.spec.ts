@@ -719,7 +719,7 @@ describe("TaskService — F03-C görev içi bağımsız ilk kontrol", () => {
     expect(noReason.prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it("review (K9): revizyon görevi işi yapana döndürür (atanan başkasıysa ona atar); ret görevi 'bekliyor'a alır, atananı değiştirmez", async () => {
+  it("review (K9): revizyon görevi işi yapana döndürür (atanan başkasıysa ona atar); ret görevi HAVUZA alır — 'bekliyor' ve atanmamış", async () => {
     const revision = world(awaitingTask({ assigneeId: "baskasi" }), { admins: ["admin"] });
     await revision.svc.review("t1", "tk", "creator", { decision: "REQUEST_REVISION", note: "Sentetik revizyon" } as any);
     expect(revision.prisma.task.update.mock.calls[0][0].data).toMatchObject({ status: "IN_PROGRESS", reviewStatus: "REVISION_REQUESTED", assigneeId: "doer", reviewNote: "Sentetik revizyon" });
@@ -732,9 +732,26 @@ describe("TaskService — F03-C görev içi bağımsız ilk kontrol", () => {
     const rejected = world(awaitingTask({ assigneeId: "baskasi" }), { admins: ["admin"], actorRole: "ADMIN" });
     await rejected.svc.review("t1", "tk", "admin", { decision: "REJECT", note: "Sentetik ret" } as any);
     const data = rejected.prisma.task.update.mock.calls[0][0].data;
-    expect(data).toMatchObject({ status: "PENDING", reviewStatus: "REJECTED", reviewNote: "Sentetik ret" });
-    expect(data).not.toHaveProperty("assigneeId");
+    expect(data).toMatchObject({ status: "PENDING", reviewStatus: "REJECTED", reviewNote: "Sentetik ret", assigneeId: null });
     expect(data).not.toHaveProperty("completedAt");
+    // atamanın kalkması kararla AYNI korelasyonda geçmişe yazılır
+    const rejectedRows = historyRows(rejected.prisma);
+    expect(rejectedRows.map((row: any) => [row.eventType, row.fromValue, row.toValue])).toEqual([
+      ["REVIEW_REJECTED", "IN_PROGRESS", "PENDING"],
+      ["ASSIGNEE_CHANGED", "baskasi", null],
+    ]);
+    expect(new Set(rejectedRows.map((row: any) => row.correlationId)).size).toBe(1);
+
+    // işi yapan aynı zamanda atanansa da görev üstünde kalmaz ("ikisi de aynı kişiye" seçilmedi)
+    const ownWork = world(awaitingTask({ assigneeId: "doer" }), { admins: ["admin"], actorRole: "ADMIN" });
+    await ownWork.svc.review("t1", "tk", "admin", { decision: "REJECT", note: "Sentetik ret" } as any);
+    expect(ownWork.prisma.task.update.mock.calls[0][0].data).toMatchObject({ status: "PENDING", assigneeId: null });
+
+    // zaten atanmamış görevde atama satırı üretilmez
+    const unassigned = world(awaitingTask({ assigneeId: null }), { admins: ["admin"], actorRole: "ADMIN" });
+    await unassigned.svc.review("t1", "tk", "admin", { decision: "REJECT", note: "Sentetik ret" } as any);
+    expect(unassigned.prisma.task.update.mock.calls[0][0].data).not.toHaveProperty("assigneeId");
+    expect(historyRows(unassigned.prisma).map((row: any) => row.eventType)).toEqual(["REVIEW_REJECTED"]);
   });
 
   it("setReviewRequirement: işareti yalnız oluşturan koyar; kaldırma gerekçe ister ve bekleyen kontrolü düşürür; gerekçe ham denetime yazılmaz", async () => {

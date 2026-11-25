@@ -717,7 +717,9 @@ export class TaskService {
    *   aynı kişinin başka hesabı). Atanmış olmak ya da büro kullanıcısı olmak yetki vermez.
    * - Onay → TAMAMLANDI; tamamlama atfı İŞİ YAPANA yazılır (kontrol eden `reviewedByUserId`'dedir).
    * - Revizyon → işi yapanda "devam ediyor" (atanan işi yapan değilse ve işi yapan hâlâ aktifse görev ona atanır).
-   * - Ret → "bekliyor" (iş yapılmamış sayılır; atanan değişmez, görev normal düzenlemeyle yeniden atanabilir).
+   * - Ret → HAVUZA: görev "bekliyor" olur ve ATANANI KALDIRILIR (iş yapılmamış sayılır; görev başka birine atanmayı bekler).
+   *   Owner kararının metni "Revizyon kişiye, ret havuza"dır; seçilmeyen seçenek "ikisi de aynı kişiye" idi. Reddedilen görev
+   *   işi yapanın üstünde kalsaydı ret de "aynı kişiye" dönmüş olurdu.
    * Ret ve revizyonda gerekçe zorunludur; karar ve gerekçe görevde ve geçmişte kalır.
    */
   async review(tenantId: string, id: string, userId: string, dto: ReviewTaskDto) {
@@ -765,6 +767,9 @@ export class TaskService {
         const doerActive = await tx.user.findFirst({ where: { id: doerUserId, tenantId, isActive: true }, select: { id: true } });
         if (doerActive) data.assigneeId = doerUserId;
       }
+      // K9 "ret havuza": reddedilen görev kimsenin üstünde kalmaz (atanan işi yapan olsun olmasın). Atama değişikliği aşağıda
+      // aynı korelasyonla geçmişe yazılır.
+      if (decision === TASK_REVIEW_DECISION.REJECT && task.assigneeId) data.assigneeId = null;
       const updated = await tx.task.update({ where: { id }, data });
 
       const correlationId = newTaskHistoryCorrelationId();
