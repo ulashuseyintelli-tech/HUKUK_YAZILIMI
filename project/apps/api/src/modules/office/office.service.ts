@@ -598,7 +598,7 @@ export class OfficeService {
     return this.projectForActor(tenantId, updated, actor);
   }
 
-  // İİK 78 ayarlarını getir (pasifleşme süresi)
+  // İİK 78 ayarlarını getir. YALNIZ SAKLANIR (F03-D2, owner kararı K6-b, 25.11.2026): hiçbir hesapta tüketilmez; dosya pasiflik hesabı yasal 1 yıldır ve bu ayarla değişmez.
   async getIik78Settings(tenantId: string) {
     const office = await this.getOrCreate(tenantId);
     return {
@@ -607,7 +607,7 @@ export class OfficeService {
     };
   }
 
-  // İİK 78 ayarlarını güncelle
+  // İİK 78 ayarlarını güncelle. YALNIZ SAKLANIR (F03-D2, owner kararı K6-b, 25.11.2026): hiçbir hesapta tüketilmez; dosya pasiflik hesabı yasal 1 yıldır ve bu ayarla değişmez.
   async updateIik78Settings(
     tenantId: string,
     body: UpdateIik78SettingsDto,

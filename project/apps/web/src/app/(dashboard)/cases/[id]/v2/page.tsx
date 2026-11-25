@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { toActionErrorMessage } from "@/lib/action-error";
+import { IIK78_STATUTORY_INACTIVITY_DAYS } from "@/lib/iik78-inactivity";
 import {
   ArrowLeft,
   Loader2,
@@ -254,7 +255,8 @@ export default function CaseDetailV2Page() {
   }
 
   const daysSinceStart = calculateDays(caseData.caseDate);
-  const remainingDays = 365 - calculateDays(caseData.lastEnforcementActionAt || caseData.caseDate);
+  // F03-D2 (K6-b): süre yasal 1 yıldır; büro ayarından alınmaz (ayar yalnız saklanır).
+  const remainingDays = IIK78_STATUTORY_INACTIVITY_DAYS - calculateDays(caseData.lastEnforcementActionAt || caseData.caseDate);
   const isUyapConnected = !!caseData.uyapBirimKodu;
 
   // Finance calculations (mock for now)

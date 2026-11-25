@@ -2,6 +2,7 @@
 
 import { ArrowLeft, Clock, AlertTriangle } from "lucide-react";
 import Link from "next/link";
+import { IIK78_STATUTORY_INACTIVITY_DAYS } from "@/lib/iik78-inactivity";
 
 interface CaseHeaderProps {
   fileNumber: string;
@@ -27,16 +28,17 @@ const statusColors: Record<string, string> = {
   IPTAL: "bg-red-100 text-red-600",
 };
 
-// Calculate days since last action and remaining days (İİK 78)
+// Calculate days since last action and remaining days (İİK 78).
+// F03-D2 (K6-b): süre yasal 1 yıldır; büro ayarından alınmaz (ayar yalnız saklanır).
 function calculateDays(lastActionDate?: string, caseDate?: string) {
   const baseDate = lastActionDate || caseDate;
-  if (!baseDate) return { daysSince: 0, remaining: 365 };
+  if (!baseDate) return { daysSince: 0, remaining: IIK78_STATUTORY_INACTIVITY_DAYS };
   
   const lastAction = new Date(baseDate);
   const now = new Date();
   const diffTime = now.getTime() - lastAction.getTime();
   const daysSince = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-  const remaining = Math.max(0, 365 - daysSince);
+  const remaining = Math.max(0, IIK78_STATUTORY_INACTIVITY_DAYS - daysSince);
   
   return { daysSince, remaining };
 }

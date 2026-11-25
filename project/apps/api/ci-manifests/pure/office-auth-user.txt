@@ -365,6 +365,8 @@ src/modules/auth/smoke/__tests__/smoke-allowlist-architecture.spec.ts
 #       secret maskeli; S3 banka / PII / bilinmeyen kolon SIZMAZ; S2 referanslari yalniz yonetim yuzeyinde.
 src/modules/office/__tests__/office-settings-get-authorization.http.spec.ts
 src/modules/office/__tests__/office-settings-projection.spec.ts
+# F03-D2 (J-25 / OFP-19b; owner karari K6-b): IIK-78 buro ayari yalniz saklanir; dosya pasiflik hesabi yasal sure sabitini kullanir (sinir sabitlemesi).
+src/modules/office/__tests__/iik78-setting-stored-only.f03d2.spec.ts
 src/modules/office/__tests__/office-settings-update-semantics.spec.ts
 
 # OFFICE-PUT-BODY-BOUNDARY - OfficeController yazma uclari gövde sinirlari (SAF, DB YOK):

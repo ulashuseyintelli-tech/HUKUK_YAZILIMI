@@ -48,7 +48,7 @@ export const OFFICE_SMS_FIELDS = ["smsProvider", "smsApiKey", "smsApiSecret", "s
 /** PUT /office/greeting-settings */
 export const OFFICE_GREETING_FIELDS = ["autoGreetingEnabled", "autoGreetingTime"] as const;
 
-/** PUT /office/iik78-settings */
+/** PUT /office/iik78-settings — YALNIZ SAKLANIR (F03-D2, owner kararı K6-b, 25.11.2026): hiçbir hesapta tüketilmez; dosya pasiflik hesabı yasal 1 yıldır ve bu ayarla değişmez. */
 export const OFFICE_IIK78_FIELDS = ["inactivityThresholdDays", "inactivityWarningDays"] as const;
 
 /** PUT /office/poa-expiry-settings */

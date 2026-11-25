@@ -10,6 +10,7 @@ import {
   type CekFormationPreviewResult,
 } from "../claim-item/formation-cek/cek-formation-preview";
 import { assertAvalBeneficiariesConsistent } from "./case-debtor-aval-consistency";
+import { IIK78_STATUTORY_INACTIVITY_DAYS } from "./iik78-inactivity";
 import { describeCheckPenaltyFormationRejection } from "./check-penalty-formation-rejection";
 import {
   DEBTOR_LEDGER_BALANCE_ITEM_STATUSES,
@@ -1643,7 +1644,8 @@ export class CaseService {
         let daysUntilPassive: number | null = null;
         if (lastActionDate) {
           const daysSinceLastAction = Math.floor((now.getTime() - new Date(lastActionDate).getTime()) / (1000 * 60 * 60 * 24));
-          daysUntilPassive = Math.max(0, 365 - daysSinceLastAction); // 1 yıl pasifleşme süresi varsayımı
+          // F03-D2 (K6-b): yasal süre; büro ayarı (Office.inactivityThresholdDays) bu hesapta TÜKETİLMEZ.
+          daysUntilPassive = Math.max(0, IIK78_STATUTORY_INACTIVITY_DAYS - daysSinceLastAction);
         }
         
         // Finansal özet hesapla
