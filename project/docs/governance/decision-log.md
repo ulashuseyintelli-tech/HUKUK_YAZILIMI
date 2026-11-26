@@ -1140,3 +1140,72 @@ K9 ilk uygulamasinda atanan korunuyordu; #3350 ile havuza (atanmamis) donus duze
 Bu kararlarin kaydi F03 gelistirmesini yeniden acmaz ve yayin/kullanici kabulu sayilmaz.
 Gorevi goremeyen yoneticinin kontrolor sayilmamasi, masrafa bagli gorevin kontrol disi olmasi ve ilk kontrolun nihai avukat onayi olmamasi uygulama yorumlari/kapsam sinirlaridir; yeni owner secimi diye kaydedilmez.
 Kisi bagimsizligi yalniz kisi kimligi iliskilendirilmis hesaplarda dogrulandi. Kartsiz ikinci hesap siniri F02 K-A1'den devam eder.
+
+
+## F03-CANDIDATE-R01-PREPARATION-DECISIONS-20261126 — owner ratification
+
+<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=F03-CANDIDATE-R01-PREPARATION-DECISIONS-20261126 -->
+
+Owner: Av. Ulaş Hüseyin Telli. Source: direct owner message “F03 — HAZIRLIK
+KARARLARI VE TAMAMLAMA YETKİSİ”, 2026-11-26 TSİ; Codex chat
+`01a21957-3eef-71e2-8a12-cb9472ba707e`, turn
+`01a21972-b3cf-7f93-b018-9efb284061ee`. This mechanically records the owner's
+existing explicit decisions; it creates no agent-derived authority.
+
+**K-SÖZ — APPROVED, single-candidate exception only.** Candidate
+`1794a0f736182903472b1b3967fd78f38974bce2`, tree
+`1f899cc673db4ed4176d6c2c61f0225bf648388b`, base R7
+`31c8f763c18905c37a12304d000cae9c2560237a`.
+Exception limited to the source-directory requirement in migration execution
+contract §3.3 and the subset/order provisions in §4. The immutable candidate's
+entire migration directory is used by one `prisma migrate deploy` invocation.
+The only pending migrations, in order, are:
+
+| Migration | Immutable SQL SHA-256 |
+|---|---|
+| `20261125100000_task_history_events` | `8036acbc4618c4492ec5adc86d00a8604e5f1a8a640724f547f9c2a5f37df781` |
+| `20261125120000_task_first_review` | `def6714f9e1349b966f6af0e8e91667fc03dde35526bc615b2749819f61aa100` |
+
+`20261115180000_poa_case_links` and
+`20261116010000_client_statement_native_currency_sets` remain excluded. Their
+later application requires their owners' authority and a fresh chain rehearsal.
+No file removal, SQL selection, reorder, `migrate resolve`, fictitious application
+record, manual ledger write or weakening of other safety provisions is permitted.
+Any candidate SHA/tree, migration SQL hash or live-base change stops this exception;
+it is not inherited by a successor. This is **not GO-MIGRATE or release authority**.
+
+**K-SIRA — APPROVED: F03 first, then R8.** The separate R8 owner must preserve
+F03 when adapting the later R8 candidate. This F03 executor must not write R8's
+branch/worktree/evidence or send an automatic message to the other chat. The
+short handoff is a deliverable for the owner to forward.
+
+**K-GD — APPROVED: maintenance with every task writer and automatic restarter
+disabled while a F03-free version is present.** The old runtime is not opened
+for normal use. Notification alone is insufficient; PID, port and DB-session
+evidence must establish technical quiescence. Starting the old API may start
+schedulers. On failure maintenance stays in place; there is no automatic old
+runtime start. New product/DB enforcement development is outside scope. D0 is
+measured for every rollback, including when the failed new runtime served no
+requests. D0=0 does not preserve history during old-code writes. Lost historical
+events must not be fabricated.
+
+**Preparation execution grant from the same direct owner message:** publish the
+four prepared record requests and necessary narrow additional requests through
+REQUEST_ONLY → validation/CI → matching-head squash merge → canonical execution
+and result records. Commit/push/PR/merge authority is task-bounded to these
+records. Immutable requests remain unchanged; stale target digests require a
+fresh revision/request ID. Complete and locally test the F03 runner, source and
+artifact manifests, P-0/P-3 and maintenance/rollback mechanism without executing
+them live. Preserve genuinely live-dependent fields as BEKLİYOR. Determine the
+supported PowerShell version from source rules; do not bypass policy or change
+machine settings. Reuse the valid candidate 26/26 evidence. This record is not a
+reusable execution grant and does not alter the standing writer contract.
+
+**Explicit exclusions remain:** live connection/read, live backup/data copy,
+migration application, installation, release, flag changes, actual sending,
+money movement, deletion and real DB restore; F04 is not started. Live-stage
+approval may be requested only after all authorized preparation is complete.
+
+Current status: OWNER PREPARATION DECISIONS RATIFIED / RECORD PUBLICATION IN
+PROGRESS / LIVE AUTHORITY NONE. This supersedes only the earlier F03 preparation
+decision-card “BEKLİYOR” entries; it does not imply deployment or user acceptance.
