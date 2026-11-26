@@ -273,3 +273,45 @@ DEĞİŞTİRİLMEZ:
 **IMPLEMENTATION AUTHORITY: NONE** — bu belge hiçbir migration, runtime veya
 GO-OPERATE yetkisi üretmez; yalnız gelecekteki bir GO-MIGRATE'in izleyeceği
 prosedürü ve o yetkinin nasıl doğrulanacağını tanımlar.
+
+
+## 11. F03 candidate R01 — owner-approved one-candidate exception (2026-11-26)
+
+Canonical owner decision locator:
+`decision-log.md` → `F03-CANDIDATE-R01-PREPARATION-DECISIONS-20261126`.
+This is a bounded exception to §3.3's source-directory requirement and §4's
+main-queue subset/order provisions, not a general replacement of this contract.
+
+| Binding | Exact value |
+|---|---|
+| Candidate | `1794a0f736182903472b1b3967fd78f38974bce2` |
+| Tree | `1f899cc673db4ed4176d6c2c61f0225bf648388b` |
+| Base | R7 `31c8f763c18905c37a12304d000cae9c2560237a` |
+| Pending migration 1 | `20261125100000_task_history_events`; SQL SHA-256 `8036acbc4618c4492ec5adc86d00a8604e5f1a8a640724f547f9c2a5f37df781` |
+| Pending migration 2 | `20261125120000_task_first_review`; SQL SHA-256 `def6714f9e1349b966f6af0e8e91667fc03dde35526bc615b2749819f61aa100` |
+
+Only the immutable candidate's complete 145-directory inventory (unchanged 143
+R7 migrations plus these two) may be the source of one `prisma migrate deploy`.
+The previous main migrations `20261115180000_poa_case_links` and
+`20261116010000_client_statement_native_currency_sets` are excluded. This F03 run
+must not apply them or mark them applied. Their later application requires their
+owners' separate authority and a current-chain rehearsal. Current live state is
+unmeasured. No fictitious application record is permitted.
+
+Fresh live-base and checksum inventory must match R7 plus exactly this pending
+pair before any separately authorized execution. Any SHA/tree, SQL-byte hash,
+live-base or actual pending-set difference stops the exception. It is not
+automatically transferred to another candidate, release order or train.
+
+All other entry, backup/restore-test, writer/process quiescence, lock-drain,
+introspection, data-invariant, failure and authority gates remain in force.
+No file is removed/renamed from the directory to choose SQL; no manual SQL
+application, ledger mutation, `migrate resolve`, reorder or automatic restart
+after a migration failure is permitted. Migration must be verified before its
+consumer runtime is opened.
+
+This clause grants no live read, data-copy, migration, deployment, restore or
+feature-activation authority. F03 is first; R8 is a separate owner's later
+candidate. A F03-free rollback stays in technically proven maintenance with
+all task writers/restarters off; the old API/runtime is never automatically
+restarted. The separate owner decision governs that bounded operating choice.
