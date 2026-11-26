@@ -1110,3 +1110,33 @@ globalAuthority : PROHIBITED
 | 2026-09-22 | **C1/C2/C3 CANLI KABUL KAPANDI (C123).** runId `87220c29`, 33/33 PASS (C1 4, C2 9, C3 16, kapanis 2, izolasyon 2); G-6 artefakt bagi 8/8; §12 arac SHA 9/9. Kapanis: aktif kullanici 5->0, ACTIVE case 2->0, PENDING_APPROVAL 4->0, audit 6->6 KORUNDU, 5/5 aktor 401. Izolasyon onceki=sonraki `bd554246…` (27 tenant). | Kayit #2764 @ `b6f4e334`; merge SHA CI+CodeQL SUCCESS. | `office-live-acceptance-c123-r01/record/C123-LIVE-RECORD-R01.md` | Owner kararlari Ö-1/Ö-2/Ö-7 ONAY; Ö-3 karar DEGIL, olculmus onkosul (`CLIENT_FINANCIAL_DISCLOSURE_WRITE_ENABLED=true`). Sentetik tenant `off-c123-87220c29` ve satirlari canlida KALICI (silme YOK); sentetik hesaplar gercek operasyonel gorev ayriligi kabulu DEGILDIR. Bagimsiz dogrulama PASS (dosya 4/4 + canli DB READ ONLY 11/11). Kusurlar AYRI: paket ciktisi GO ref literalini `c123-result.json` ve `c123-state.json` icinde tasiyor (repo kopyalarinda maskelendi; paket revizyonu icin ACIK kalem); dis sarmalayici `-999` kabul sonucu DEGIL (ic kosum exitCode 0, CLIENT blogunda `exit $rc` yok). C123 tek basina OFFICE finali DEGILDIR; hizmet kabulu 0/8 DEGISMEDI. |
 | 2026-09-22 | **H8 IFADESI OWNER ONAYI.** Kesin metin: "Kabul betiginin kilit butcesi 3500 ms'dir (tavan 4000 ms). Urun tarafinda sure taahhudu yoktur; eszamanlilik guvencesi transaction + `SELECT ... FOR NO KEY UPDATE` satir kilidi + kosullu `updateMany` birlesimiyle saglanir." | Bu PR: `f04-live-acceptance-r01/F04-LIVE-ACCEPTANCE-PACKAGE-R01.md` §A guncellendi. | Ayni belge | Onay yalniz IFADE SINIFLANDIRMASINA aittir: urune sure siniri EKLENMEDI, esik gevsetilmedi, kod DEGISMEDI. |
 | 2026-09-23 | **PERSONEL DAVETI UCTAN UCA CANLI KABUL KAPANDI (tanimli kabul).** runId `aa89937b`, **8/8 PASS**: yakalayicida TESLIM (token sha256 = DB `tokenHash`), kabul 201, yeni parolayla giris 201, ayni token tekrar 400 (parola hash'i degismedi), bekleyen davet 0, kapanista giris ve eski token 401, izolasyon onceki=sonraki. Hedef disi alici 0; yakalama dosyasi silindi (kalan 0). | Kayit #2774 @ `cc99e1da`; merge SHA'da CI+CodeQL+GOV-COORD SUCCESS. Kok neden duzeltmesi #2773 @ `0abe92e8` (oz-test 12/12). | `office-staff-invite-acceptance-r01/record/INVITE-LIVE-RECORD-R01.md` | Bagimsiz dogrulama 15/15 PASS (owner'in bu ise OZGU dogrudan READ ONLY yetkisi; `transaction_read_only=on`, writes 0); dogrulayicinin KENDI olctukleri ile CLIENT kanitindan kabul ettikleri AYRI isaretli. Ayni gun yarida kalan ILK pencerede kabul kosumu HIC BASLAMADI ve o pencerede **gercek SMTP gonderimi OLCULMEDI** kaydi KORUNUR. **Gercek posta kutusuna teslim OLCULMEDI**; bu kayit hizmet kabulu DEGILDIR, H1-H8 0/8 DEGISMEDI. Sentetik tenant `inv-aa89937b` canlida KALIR (silme yok, erisim kapali). |
+
+
+## F03-OWNER-DECISIONS-20261125-R01 — mevcut owner kararlarinin kaydi
+
+Bu ek mevcut owner kararlarini kaydeder; yeni authority marker, istisna veya canli yetki olusturmaz.
+Kaynak oturum: 68e4bef5-69f2-41b6-8cb0-20df2a699a83; ilk soru ve gercek owner cevabi 25.11.2026 09:35:18 TSI.
+- Ham owner kaydi: db1bc2b7-76ab-4fda-bd60-81a472d8729f, 2026-11-25T06:35:18.434Z, satir 248, SHA256 1d40065d7cf651a481d24ce3d97f5401d0a7688ad286991c0cb70d579ae255cb.
+- Ham owner kaydi: 57216506-793a-42e9-9f16-990d14c05f75, 2026-11-25T21:49:07.558Z, satir 6540, SHA256 afe5f6d129ac103ef9a93f5a8fb3b5795938ccec0446fdc4207d9f6a14e41fea.
+- Ham owner kaydi: 59064fd9-969b-4c3b-bec1-c31206d41658, 2026-11-25T23:19:43.547Z, satir 9581, SHA256 efd7047b46adcb4425e87468a96a4a7cafe9367b12fdb3798de9b10c89feaed9.
+
+| Kimlik | Gercek owner secimi | Kaynak |
+|---|---|---|
+| K2 | Dosyadan Manuel Gorev Ekle gercek gorev olusturur (a). | R02 EK D + ham cevap satir 248 |
+| K3 | Kontrol tasiyicisi gorevin kendi durum makinesidir (a); ADR-009 motoru kullanilmaz. | ayni |
+| K4 | Yalniz olusturanin kontrol gerekli isaretledigi MANUAL gorev; varsayilan kapali (b). | ayni |
+| K5 | Kontrolor yoksa isaret konamaz, neden ekranda soylenir (b). | ayni |
+| K5b | Ayni kiraci ADMIN + olusturan; isi yapan kisi haric (a). | ayni |
+| K6 | IIK-78 ayari yalniz saklama/uyari etiketli; pasiflik hesabi mevcut 1 yil sabitinde kalir (b). | ayni |
+| K7 | WR01 ertelemesi yalniz B05 ve gerekli ortak iz blogu icin kalkar; kalani kapali. | ayni |
+| K8 | Tamamlanirken farkli yetkili kontrolor yoksa tamamlama reddedilir; olusturan/ADMIN gerekceyle isareti kaldirabilir, gecmise yazilir. | ilk sorunun secenek metni + ham cevap satir 248 |
+| K9 | Revizyon kisiye, ret havuza: revizyonda isi yapanda devam ediyor; rette bekliyor, is yapilmamis, baska birine atanabilir. Iki gerekce zorunlu. | ilk soru secenek metni + ham cevap satir 248; C-K9 kaynak |
+| K10 | Gorev ekrani ve dosyadan degisiklikler + muvekkil eksik-bilgi gorevinin yeniden dogusu; diger sistem ureticileri gecmis kapsaminda degil, ekran bunu soyler. | ilk soru secenek metni + ham cevap satir 248 |
+| Aday hazirligi | Mevcut yayin hattina uyarlama; main'den dogrudan aday kesmeme; canli yok. | ham owner satir 6540 |
+| Migration karari | Yalniz F03 ikilisi; F03 disi iki migration eklenmez; canli uygulama yetkisi yok. | ham owner satir 9581 ve bu dar devir |
+
+K9 ilk uygulamasinda atanan korunuyordu; #3350 ile havuza (atanmamis) donus duzeltildi.
+#3351, kontrol durumu bos IN_PROGRESS gorevlerin Devam Eden listesinden dusmesini duzeltti.
+Bu kararlarin kaydi F03 gelistirmesini yeniden acmaz ve yayin/kullanici kabulu sayilmaz.
+Gorevi goremeyen yoneticinin kontrolor sayilmamasi, masrafa bagli gorevin kontrol disi olmasi ve ilk kontrolun nihai avukat onayi olmamasi uygulama yorumlari/kapsam sinirlaridir; yeni owner secimi diye kaydedilmez.
+Kisi bagimsizligi yalniz kisi kimligi iliskilendirilmis hesaplarda dogrulandi. Kartsiz ikinci hesap siniri F02 K-A1'den devam eder.
