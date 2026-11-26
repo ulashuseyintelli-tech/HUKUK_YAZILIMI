@@ -330,3 +330,20 @@ Program Task12 `TPA-04D-I02` `NOT STARTED`; bu kayıt Task12 execution başlatma
 | Superseded Register | 1 |
 | Blocked Register | 10 (tümü re-verified, KAPALI sayılır) |
 | Owner Decision Register | 28 (OWN-25 kapandı; OWN-02 kapandı/ayrıştırıldı; OWN-30 ACT-18'den yeniden sınıflandırıldı; OWN-28 yalnız referans) |
+
+
+## F03 — dar devir / yayin hazirlik durumu (2026-11-26)
+
+| Kayit | Gelistirme | Aday | Yayin | Kullanici kabulu | Kalan |
+|---|---|---|---|---|---|
+| F03-GOREV-YASAM-DONGUSU-YAYIN-HAZIRLIK | #3344–#3351 main'de | 1794a0f736182903472b1b3967fd78f38974bce2; 26/26 yerel aday kaniti yeniden kullanildi | YAPILMADI / AUTHORITY NONE | YAPILMADI | Owner exact aday istisnasini, F03 once sirasini ve tum yazicilar kapali bakim geri donusunu ONAYLADI. Yeni runner yerel 39/39 durum/dosya/native-process testi, 5/5 giris testi ve kayit baglari 5/5 PASS; canli P-0/P-3, yedek/restore/zincir provasi ve runtime/kullanici kabul kanitlari BEKLIYOR |
+Kisi bagimsizligi iliskilendirilmis hesaplarla sinirli; kartsiz ikinci hesap siniri F02 K-A1. On acik madde ve masraf M1/M2 product-backlog kaydinda acik kalir; urun gelistirme baslatilmadi.
+Bu kayit baska programin R8 durumunu degistirmez; global historical toplamlar yeniden siniflandirilmaz.
+
+Canli erisim ve yayin yetkisi YOK. Hazirlik testi yayin veya kullanici kabulu degildir. R8 yazicisi ve F04 ayri kalir.
+
+Yerel runner paketi: F03-CODEX-PAKETI-R02; package-binding SHA256
+`962ab5b2af1dc676328519e9b50ea0ae6ccbd2c81ca71733c82fa143da51f69e`.
+Desteklenen motor PowerShell 7.6.9 Core; canonical launcher pwsh 7 kurali
+korunur, 5.1 zorunlulugu bulunmadi. Gercek PID/port/DB/backup/restore sonucu
+iddia edilmez; hazirlik ve canonical aktarim kanitlari ayri raporlanir.
